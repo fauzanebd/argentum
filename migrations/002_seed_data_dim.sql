@@ -1,0 +1,111 @@
+-- Migration: Seed sample data for retail analytics
+-- 6 months of sample transaction data
+
+\c analytics_db;
+
+-- Generate date dimension data (6 months: July 2024 - December 2024)
+INSERT INTO dim_date (full_date, day_of_week, day_name, day_of_month, day_of_year, week_of_year, month_number, month_name, quarter, year, fiscal_quarter, is_weekend, is_holiday)
+SELECT 
+    d::date as full_date,
+    EXTRACT(DOW FROM d)::integer as day_of_week,
+    TO_CHAR(d, 'Day') as day_name,
+    EXTRACT(DAY FROM d)::integer as day_of_month,
+    EXTRACT(DOY FROM d)::integer as day_of_year,
+    EXTRACT(WEEK FROM d)::integer as week_of_year,
+    EXTRACT(MONTH FROM d)::integer as month_number,
+    TO_CHAR(d, 'Month') as month_name,
+    EXTRACT(QUARTER FROM d)::integer as quarter,
+    EXTRACT(YEAR FROM d)::integer as year,
+    EXTRACT(QUARTER FROM d)::integer as fiscal_quarter,
+    EXTRACT(DOW FROM d) IN (0, 6) as is_weekend,
+    d::date IN ('2024-08-17', '2024-12-25') as is_holiday
+FROM generate_series('2024-07-01'::date, '2024-12-31'::date, '1 day'::interval) d
+ON CONFLICT (full_date) DO NOTHING;
+
+-- Sample customers (50 customers)
+INSERT INTO dim_customers (customer_key, first_name, last_name, email, phone, city, state, registration_date, customer_segment) VALUES
+('CUST001', 'Ahmad', 'Wijaya', 'ahmad.wijaya@email.com', '0812345678901', 'Jakarta', 'DKI Jakarta', '2023-01-15', 'Premium'),
+('CUST002', 'Siti', 'Nurhaliza', 'siti.nurhaliza@email.com', '0812345678902', 'Surabaya', 'Jawa Timur', '2023-02-20', 'Regular'),
+('CUST003', 'Budi', 'Santoso', 'budi.santoso@email.com', '0812345678903', 'Bandung', 'Jawa Barat', '2023-03-10', 'Regular'),
+('CUST004', 'Dewi', 'Kartika', 'dewi.kartika@email.com', '0812345678904', 'Jakarta', 'DKI Jakarta', '2023-01-25', 'Premium'),
+('CUST005', 'Eko', 'Prasetyo', 'eko.prasetyo@email.com', '0812345678905', 'Medan', 'Sumatera Utara', '2023-04-05', 'Regular'),
+('CUST006', 'Fitri', 'Handayani', 'fitri.handayani@email.com', '0812345678906', 'Yogyakarta', 'DI Yogyakarta', '2023-05-12', 'Premium'),
+('CUST007', 'Gunawan', 'Putra', 'gunawan.putra@email.com', '0812345678907', 'Surabaya', 'Jawa Timur', '2023-06-18', 'Regular'),
+('CUST008', 'Hani', 'Susanti', 'hani.susanti@email.com', '0812345678908', 'Jakarta', 'DKI Jakarta', '2023-07-22', 'Regular'),
+('CUST009', 'Indra', 'Kusuma', 'indra.kusuma@email.com', '0812345678909', 'Bandung', 'Jawa Barat', '2023-08-30', 'Premium'),
+('CUST010', 'Joko', 'Widodo', 'joko.widodo@email.com', '0812345678910', 'Semarang', 'Jawa Tengah', '2023-09-14', 'Regular'),
+('CUST011', 'Kartini', 'Sari', 'kartini.sari@email.com', '0812345678911', 'Jakarta', 'DKI Jakarta', '2023-10-01', 'Regular'),
+('CUST012', 'Lukman', 'Hakim', 'lukman.hakim@email.com', '0812345678912', 'Makassar', 'Sulawesi Selatan', '2023-11-08', 'Premium'),
+('CUST013', 'Maya', 'Angela', 'maya.angela@email.com', '0812345678913', 'Surabaya', 'Jawa Timur', '2023-12-19', 'Regular'),
+('CUST014', 'Nanda', 'Firmansyah', 'nanda.firmansyah@email.com', '0812345678914', 'Jakarta', 'DKI Jakarta', '2024-01-05', 'Regular'),
+('CUST015', 'Oscar', 'Pratama', 'oscar.pratama@email.com', '0812345678915', 'Bandung', 'Jawa Barat', '2024-01-20', 'Premium'),
+('CUST016', 'Putri', 'Dewi', 'putri.dewi@email.com', '0812345678916', 'Yogyakarta', 'DI Yogyakarta', '2024-02-14', 'Regular'),
+('CUST017', 'Qori', 'Aisyah', 'qori.aisyah@email.com', '0812345678917', 'Jakarta', 'DKI Jakarta', '2024-03-01', 'Regular'),
+('CUST018', 'Rudi', 'Hermawan', 'rudi.hermawan@email.com', '0812345678918', 'Surabaya', 'Jawa Timur', '2024-03-15', 'Premium'),
+('CUST019', 'Sari', 'Indah', 'sari.indah@email.com', '0812345678919', 'Medan', 'Sumatera Utara', '2024-04-10', 'Regular'),
+('CUST020', 'Tono', 'Suwarno', 'tono.suwarno@email.com', '0812345678920', 'Jakarta', 'DKI Jakarta', '2024-05-05', 'Regular'),
+('CUST021', 'Umi', 'Kulsum', 'umi.kulsum@email.com', '0812345678921', 'Bandung', 'Jawa Barat', '2024-05-20', 'Premium'),
+('CUST022', 'Vina', 'Panduwinata', 'vina.panduwinata@email.com', '0812345678922', 'Semarang', 'Jawa Tengah', '2024-06-10', 'Regular'),
+('CUST023', 'Wawan', 'Setiawan', 'wawan.setiawan@email.com', '0812345678923', 'Jakarta', 'DKI Jakarta', '2024-06-25', 'Regular'),
+('CUST024', 'Xena', 'Warrior', 'xena.warrior@email.com', '0812345678924', 'Surabaya', 'Jawa Timur', '2024-07-01', 'Premium'),
+('CUST025', 'Yani', 'Yusuf', 'yani.yusuf@email.com', '0812345678925', 'Yogyakarta', 'DI Yogyakarta', '2024-07-15', 'Regular'),
+('CUST026', 'Zainal', 'Abidin', 'zainal.abidin@email.com', '0812345678926', 'Jakarta', 'DKI Jakarta', '2023-01-30', 'Regular'),
+('CUST027', 'Adi', 'Nugroho', 'adi.nugroho@email.com', '0812345678927', 'Bandung', 'Jawa Barat', '2023-02-15', 'Premium'),
+('CUST028', 'Bella', 'Hadid', 'bella.hadid@email.com', '0812345678928', 'Surabaya', 'Jawa Timur', '2023-03-25', 'Regular'),
+('CUST029', 'Citra', 'Kirana', 'citra.kirana@email.com', '0812345678929', 'Medan', 'Sumatera Utara', '2023-04-20', 'Regular'),
+('CUST030', 'Doni', 'Salmanan', 'doni.salmanan@email.com', '0812345678930', 'Jakarta', 'DKI Jakarta', '2023-05-30', 'Premium'),
+('CUST031', 'Elvira', 'Devinamira', 'elvira.devinamira@email.com', '0812345678931', 'Yogyakarta', 'DI Yogyakarta', '2023-06-15', 'Regular'),
+('CUST032', 'Fajar', 'Sadboy', 'fajar.sadboy@email.com', '0812345678932', 'Semarang', 'Jawa Tengah', '2023-07-20', 'Regular'),
+('CUST033', 'Gita', 'Gutawa', 'gita.gutawa@email.com', '0812345678933', 'Jakarta', 'DKI Jakarta', '2023-08-05', 'Premium'),
+('CUST034', 'Hendra', 'Setiawan', 'hendra.setiawan@email.com', '0812345678934', 'Surabaya', 'Jawa Timur', '2023-09-12', 'Regular'),
+('CUST035', 'Ira', 'Kusuma', 'ira.kusuma@email.com', '0812345678935', 'Bandung', 'Jawa Barat', '2023-10-25', 'Regular'),
+('CUST036', 'Jefri', 'Nichol', 'jefri.nichol@email.com', '0812345678936', 'Jakarta', 'DKI Jakarta', '2023-11-15', 'Premium'),
+('CUST037', 'Keisya', 'Levronka', 'keisya.levronka@email.com', '0812345678937', 'Yogyakarta', 'DI Yogyakarta', '2023-12-01', 'Regular'),
+('CUST038', 'Luna', 'Maya', 'luna.maya@email.com', '0812345678938', 'Surabaya', 'Jawa Timur', '2024-01-10', 'Regular'),
+('CUST039', 'Mario', 'Minardi', 'mario.minardi@email.com', '0812345678939', 'Medan', 'Sumatera Utara', '2024-02-20', 'Premium'),
+('CUST040', 'Nia', 'Daniati', 'nia.daniati@email.com', '0812345678940', 'Jakarta', 'DKI Jakarta', '2024-03-15', 'Regular'),
+('CUST041', 'Olla', 'Ramlan', 'olla.ramlan@email.com', '0812345678941', 'Bandung', 'Jawa Barat', '2024-04-25', 'Regular'),
+('CUST042', 'Pevita', 'Pearce', 'pevita.pearce@email.com', '0812345678942', 'Yogyakarta', 'DI Yogyakarta', '2024-05-10', 'Premium'),
+('CUST043', 'Raisa', 'Andriana', 'raisa.andriana@email.com', '0812345678943', 'Jakarta', 'DKI Jakarta', '2024-06-20', 'Regular'),
+('CUST044', 'Sherina', 'Munaf', 'sherina.munaf@email.com', '0812345678944', 'Surabaya', 'Jawa Timur', '2023-02-10', 'Premium'),
+('CUST045', 'Titi', 'Kamal', 'titi.kamal@email.com', '0812345678945', 'Semarang', 'Jawa Tengah', '2023-04-15', 'Regular'),
+('CUST046', 'Ussy', 'Sulistiawaty', 'ussy.sulistiawaty@email.com', '0812345678946', 'Bandung', 'Jawa Barat', '2023-06-20', 'Regular'),
+('CUST047', 'Vino', 'Bastian', 'vino.bastian@email.com', '0812345678947', 'Jakarta', 'DKI Jakarta', '2023-08-25', 'Premium'),
+('CUST048', 'Wulan', 'Guritno', 'wulan.guritno@email.com', '0812345678948', 'Yogyakarta', 'DI Yogyakarta', '2023-10-30', 'Regular'),
+('CUST049', 'Yuni', 'Shara', 'yuni.shara@email.com', '0812345678949', 'Surabaya', 'Jawa Timur', '2023-12-05', 'Regular'),
+('CUST050', 'Zaskia', 'Adya', 'zaskia.adya@email.com', '0812345678950', 'Medan', 'Sumatera Utara', '2024-01-15', 'Premium')
+ON CONFLICT (customer_key) DO NOTHING;
+
+-- Sample products (30 products across categories)
+INSERT INTO dim_products (product_key, product_name, product_description, category, subcategory, brand, supplier, unit_cost, unit_price) VALUES
+('PROD001', 'Samsung Galaxy S24', 'Latest Samsung flagship smartphone', 'Electronics', 'Smartphones', 'Samsung', 'Samsung Indonesia', 8500000.00, 11999000.00),
+('PROD002', 'iPhone 15 Pro', 'Apple iPhone 15 Pro 256GB', 'Electronics', 'Smartphones', 'Apple', 'Apple Indonesia', 12000000.00, 15999000.00),
+('PROD003', 'MacBook Air M3', 'Apple MacBook Air with M3 chip', 'Electronics', 'Laptops', 'Apple', 'Apple Indonesia', 11000000.00, 14999000.00),
+('PROD004', 'Dell XPS 13', 'Dell XPS 13 laptop', 'Electronics', 'Laptops', 'Dell', 'Dell Indonesia', 9500000.00, 12999000.00),
+('PROD005', 'Sony WH-1000XM5', 'Premium noise-canceling headphones', 'Electronics', 'Audio', 'Sony', 'Sony Indonesia', 2800000.00, 4299000.00),
+('PROD006', 'AirPods Pro 2', 'Apple wireless earbuds', 'Electronics', 'Audio', 'Apple', 'Apple Indonesia', 1800000.00, 2999000.00),
+('PROD007', 'Samsung 55" 4K TV', 'Samsung 55 inch 4K Smart TV', 'Electronics', 'TVs', 'Samsung', 'Samsung Indonesia', 5500000.00, 7499000.00),
+('PROD008', 'LG 65" OLED TV', 'LG 65 inch OLED Smart TV', 'Electronics', 'TVs', 'LG', 'LG Indonesia', 12000000.00, 16999000.00),
+('PROD009', 'iPad Pro 12.9', 'Apple iPad Pro 12.9 inch', 'Electronics', 'Tablets', 'Apple', 'Apple Indonesia', 9500000.00, 12999000.00),
+('PROD010', 'Samsung Galaxy Tab S9', 'Samsung tablet flagship', 'Electronics', 'Tablets', 'Samsung', 'Samsung Indonesia', 6500000.00, 8999000.00),
+('PROD011', 'Nike Air Max 90', 'Classic Nike running shoes', 'Fashion', 'Footwear', 'Nike', 'Nike Indonesia', 850000.00, 1499000.00),
+('PROD012', 'Adidas Ultraboost', 'Adidas running shoes', 'Fashion', 'Footwear', 'Adidas', 'Adidas Indonesia', 900000.00, 1599000.00),
+('PROD013', 'Levi''s 501 Jeans', 'Classic Levi''s jeans', 'Fashion', 'Clothing', 'Levi''s', 'Levi''s Indonesia', 350000.00, 699000.00),
+('PROD014', 'Uniqlo T-Shirt', 'Basic cotton t-shirt', 'Fashion', 'Clothing', 'Uniqlo', 'Uniqlo Indonesia', 80000.00, 149000.00),
+('PROD015', 'Zara Dress', 'Women''s casual dress', 'Fashion', 'Clothing', 'Zara', 'Zara Indonesia', 250000.00, 499000.00),
+('PROD016', 'H&M Jacket', 'Men''s casual jacket', 'Fashion', 'Clothing', 'H&M', 'H&M Indonesia', 200000.00, 399000.00),
+('PROD017', 'Nike Hoodie', 'Sportswear hoodie', 'Fashion', 'Clothing', 'Nike', 'Nike Indonesia', 400000.00, 799000.00),
+('PROD018', 'Ray-Ban Sunglasses', 'Classic aviator sunglasses', 'Fashion', 'Accessories', 'Ray-Ban', 'Luxottica', 1200000.00, 1899000.00),
+('PROD019', 'Fossil Watch', 'Men''s leather watch', 'Fashion', 'Accessories', 'Fossil', 'Fossil Indonesia', 800000.00, 1299000.00),
+('PROD020', 'Converse Chuck Taylor', 'Classic canvas shoes', 'Fashion', 'Footwear', 'Converse', 'Converse Indonesia', 350000.00, 649000.00),
+('PROD021', 'Indomie Goreng (40 pack)', 'Instant noodles box', 'Food & Beverages', 'Instant Food', 'Indomie', 'Indofood', 95000.00, 145000.00),
+('PROD022', 'Kapal Api Coffee 200g', 'Ground coffee', 'Food & Beverages', 'Coffee & Tea', 'Kapal Api', 'Santos Jaya', 18000.00, 28900.00),
+('PROD023', 'Greenfields Milk 1L', 'Fresh milk', 'Food & Beverages', 'Dairy', 'Greenfields', 'Greenfields', 12000.00, 18900.00),
+('PROD024', 'Oreo Cookies 137g', 'Chocolate sandwich cookies', 'Food & Beverages', 'Snacks', 'Oreo', 'Mondelez', 8500.00, 12900.00),
+('PROD025', 'Coca-Cola 1.5L', 'Soft drink', 'Food & Beverages', 'Beverages', 'Coca-Cola', 'Coca-Cola Indonesia', 8000.00, 12900.00),
+('PROD026', 'Pocari Sweat 500ml', 'Isotonic drink', 'Food & Beverages', 'Beverages', 'Pocari Sweat', 'Otsuka', 5500.00, 8500.00),
+('PROD027', 'Dove Shampoo 340ml', 'Hair care shampoo', 'Beauty & Personal Care', 'Hair Care', 'Dove', 'Unilever', 22000.00, 34900.00),
+('PROD028', 'Pepsodent Toothpaste', 'Oral care', 'Beauty & Personal Care', 'Oral Care', 'Pepsodent', 'Unilever', 9500.00, 14900.00),
+('PROD029', 'Garnier Serum', 'Face serum', 'Beauty & Personal Care', 'Skin Care', 'Garnier', 'L''Oreal', 45000.00, 69900.00),
+('PROD030', 'Nivea Body Lotion', 'Body moisturizer', 'Beauty & Personal Care', 'Skin Care', 'Nivea', 'Beiersdorf', 28000.00, 42900.00)
+ON CONFLICT (product_key) DO NOTHING;
