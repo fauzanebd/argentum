@@ -55,14 +55,14 @@ type Config struct {
 
 	// Metabase
 	MetabaseURL           string
+	MetabasePublicURL     string
 	MetabaseAPIKey        string
 	MetabaseAdminEmail    string
 	MetabaseAdminPassword string
 
-	// Vector Store
-	VectorStoreType  string // "pgvector", "pinecone", "memory"
-	PineconeAPIKey   string
-	PineconeIndexURL string
+	// Agent SDK Configuration
+	AgentConfigPath      string // path to agents.yaml
+	GuardrailsConfigPath string // path to guardrails.yaml
 
 	// Application Settings
 	MaxQueriesPerMinute int
@@ -123,14 +123,14 @@ func Load() (*Config, error) {
 
 		// Metabase
 		MetabaseURL:           getEnv("METABASE_URL", "http://localhost:3000"),
+		MetabasePublicURL:     getEnv("METABASE_PUBLIC_URL", ""),
 		MetabaseAPIKey:        getEnv("METABASE_API_KEY", ""),
 		MetabaseAdminEmail:    getEnv("METABASE_ADMIN_EMAIL", ""),
 		MetabaseAdminPassword: getEnv("METABASE_ADMIN_PASSWORD", ""),
 
-		// Vector Store
-		VectorStoreType:  getEnv("VECTOR_STORE_TYPE", "pgvector"),
-		PineconeAPIKey:   getEnv("PINECONE_API_KEY", ""),
-		PineconeIndexURL: getEnv("PINECONE_INDEX_URL", ""),
+		// Agent SDK Configuration
+		AgentConfigPath:      getEnv("AGENT_CONFIG_PATH", "config/agents.yaml"),
+		GuardrailsConfigPath: getEnv("GUARDRAILS_CONFIG_PATH", "config/guardrails.yaml"),
 
 		// Application Settings
 		MaxQueriesPerMinute: getEnvAsInt("MAX_QUERIES_PER_MINUTE", 10),

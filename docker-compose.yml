@@ -48,13 +48,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: analytics_redis
-    command: redis-server --appendonly yes
+    command: redis-server --port 6380 --appendonly yes
     volumes:
       - redis_data:/data
     ports:
       - "6380:6380"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-p", "6380", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -63,7 +63,8 @@ services:
 
   # Metabase for Dashboards
   metabase:
-    image: metabase/metabase:v0.48.0
+    # Do not use an older image than the one that last migrated the app DB (Metabase rejects downgrades).
+    image: metabase/metabase:v0.60.x
     container_name: analytics_metabase
     environment:
       MB_DB_TYPE: postgres
@@ -166,7 +167,7 @@ services:
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
       - METABASE_URL=http://metabase:3000
-      - METABASE_ADMIN_EMAIL=${METABASE_ADMIN_EMAIL:-admin@example.com}
+      - METABASE_ADMIN_EMAIL=${METABASE_ADMIN_EMAIL:-argentum@test.com}
       - METABASE_ADMIN_PASSWORD=${METABASE_ADMIN_PASSWORD:-Metabase123!}
       - WHATSAPP_API_VERSION=${WHATSAPP_API_VERSION:-v18.0}
       - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}

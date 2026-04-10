@@ -118,7 +118,7 @@ func main() {
 	})
 
 	// Metabase reverse proxy (path-based routing)
-	metabaseURL, _ := url.Parse("http://metabase:3000")
+	metabaseURL, _ := url.Parse(cfg.MetabaseURL)
 	metabaseProxy := httputil.NewSingleHostReverseProxy(metabaseURL)
 	router.Any("/metabase/*path", func(c *gin.Context) {
 		// Remove /metabase prefix from the path
@@ -192,7 +192,7 @@ func main() {
 			// Extract phone number (remove "whatsapp:" prefix)
 			phoneNumber := strings.TrimPrefix(from, "whatsapp:")
 
-			msg = models.NewMessage("", phoneNumber, body)
+			msg = models.NewMessage("example-company", phoneNumber, body)
 			msg.ID = messageSid
 
 			logrus.Infof("Received Twilio message from %s: %s", phoneNumber, body)

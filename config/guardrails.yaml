@@ -1,0 +1,88 @@
+# Guardrails configuration for the analytics agent.
+# Rules are applied to user input and/or agent output depending on `scope`.
+# scope: "input"  — applied to user messages only
+# scope: "output" — applied to agent responses only
+# scope: omitted  — applied to both
+#
+# action: "block"   — block if ANY pattern matches
+# action: "require" — block if NO pattern matches (topic enforcement)
+# action: "redact"  — replace matches with `replacement` text
+# action: "filter"  — replace matches with `replacement` text (alias for redact)
+version: 1
+
+rules:
+  # ── Topic enforcement ────────────────────────────────────────────────────────
+  # Require at least one analytics / business-intelligence keyword in every
+  # user message.  Greetings and help requests are explicitly allowed.
+  - name: require_analytics_topic
+    description: "Refuse questions unrelated to data analytics or business intelligence"
+    scope: input
+    patterns:
+      # Analytics / BI terminology
+      - type: regex
+        pattern: "(?i)\\b(data|analytics|analysis|metric|metrics|kpi|kpis|report|reports|dashboard|chart|graph|visualization|trend|insight|insights|statistic|statistics)s?\\b"
+      # Business entities
+      - type: regex
+        pattern: "(?i)\\b(sales|revenue|revenues|order|orders|customer|customers|transaction|transactions|invoice|invoices|product|products|purchase|purchases|payment|payments|profit|loss|cost|costs|expense|expenses|income|user|users|conversion|conversions)\\b"
+      # Database / query terms
+      - type: regex
+        pattern: "(?i)\\b(query|sql|table|tables|schema|database|column|columns|record|records)\\b"
+      # Quantitative question starters
+      - type: regex
+        pattern: "(?i)\\b(how many|how much|total|average|count|sum|maximum|minimum|highest|lowest|most|least|biggest|smallest|largest|best|worst|top|bottom|ranking|rank)\\b"
+      # Analytics action verbs
+      - type: regex
+        pattern: "(?i)\\b(show|display|list|find|calculate|compare|analyze|analyse|summarize|summarise|breakdown|aggregate|filter|sort|group|fetch|generate|create|build)\\b"
+      # Time-range expressions common in analytics
+      - type: regex
+        pattern: "(?i)\\b(last|this|today|yesterday|week|month|year|quarter|daily|weekly|monthly|quarterly|annually|annual|ytd|mtd|wtd)\\b"
+      # Greetings and meta-questions about the assistant
+      - type: regex
+        pattern: "(?i)\\b(hello|hi|hey|help|thanks|thank you|who are you|what can you|what do you)\\b"
+    action: require
+    message: "I'm a business analytics assistant. I can help you query your data, analyze metrics, spot trends, and build dashboards. Please ask me something about your business data!"
+
+  # Block SQL mutation attempts in user input
+  - name: block_sql_mutations
+    description: "Prevent any SQL mutation keywords from reaching the agent"
+    patterns:
+      - type: regex
+        pattern: "(?i)\\b(DROP|DELETE|TRUNCATE|ALTER|UPDATE|INSERT|CREATE|GRANT|REVOKE)\\s"
+    action: block
+    message: "For security reasons, only read-only (SELECT) queries are supported."
+
+  # Block common SQL injection patterns
+  - name: block_sql_injection
+    description: "Block common SQL injection patterns"
+    patterns:
+      - type: regex
+        pattern: "(?i)(;\\s*DROP|;\\s*DELETE|'\\s*OR\\s+'1'\\s*=\\s*'1|--\\s*$|/\\*.*\\*/)"
+    action: block
+    message: "This query pattern is not allowed."
+
+  # Redact SSN patterns in responses
+  - name: redact_ssn
+    description: "Redact Social Security Numbers from output"
+    patterns:
+      - type: regex
+        pattern: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+    action: redact
+    replacement: "[SSN REDACTED]"
+
+  # Redact credit card numbers in responses
+  - name: redact_credit_cards
+    description: "Redact credit card numbers from output"
+    patterns:
+      - type: regex
+        pattern: "\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b"
+    action: redact
+    replacement: "[CARD REDACTED]"
+
+  # Redact email addresses in responses
+  - name: redact_emails
+    description: "Redact email addresses from output"
+    patterns:
+      - type: regex
+        pattern: "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b"
+    action: redact
+    replacement: "[EMAIL REDACTED]"
