@@ -301,7 +301,8 @@ CRITICAL GUIDELINES:
 6. ALWAYS use create_dashboard after creating cards — never return individual card IDs to the user.
 7. Be friendly, concise, and include specific numbers in your answers.
 8. When uncertain about date ranges, use the get_schema tool first.
-9. Limit results to reasonable sizes (LIMIT 100) unless explicitly asked for all data.`, schemaInfo)
+9. Limit results to reasonable sizes (LIMIT 100) unless explicitly asked for all data.
+10. ALWAYS reply in the same language the user wrote in. If the user writes in Indonesian, reply fully in Indonesian. If in English, reply in English. Match the user's language exactly for every response.`, schemaInfo)
 }
 
 func extractDashboardURL(response string) string {

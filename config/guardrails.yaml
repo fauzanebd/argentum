@@ -14,46 +14,85 @@ rules:
   # ── Topic enforcement ────────────────────────────────────────────────────────
   # Require at least one analytics / business-intelligence keyword in every
   # user message.  Greetings and help requests are explicitly allowed.
+  # Each pattern covers English + Indonesian (add more languages here as needed).
   - name: require_analytics_topic
     description: "Refuse questions unrelated to data analytics or business intelligence"
     scope: input
     patterns:
       # Analytics / BI terminology
+      # EN: data, analytics, analysis, metric, KPI, report, dashboard, chart, graph, visualization, trend, insight, statistic
+      # ID: data, analitik, analisis, metrik, laporan, dasbor, grafik, tren, wawasan, statistik
       - type: regex
-        pattern: "(?i)\\b(data|analytics|analysis|metric|metrics|kpi|kpis|report|reports|dashboard|chart|graph|visualization|trend|insight|insights|statistic|statistics)s?\\b"
+        pattern: "(?i)\\b(data|analytics|analitik|analysis|analisis|metric|metrik|kpi|kpis|report|laporan|dashboard|dasbor|chart|graph|grafik|visualization|visualisasi|trend|tren|insight|wawasan|statistic|statistik)s?\\b"
       # Business entities
+      # EN: sales, revenue, order, customer, transaction, invoice, product, purchase, payment, profit, loss, cost, expense, income, user, conversion
+      # ID: penjualan, pendapatan, pemasukan, pesanan, pelanggan, transaksi, faktur, produk, pembelian, pembayaran, keuntungan, laba, rugi, biaya, pengeluaran, pengguna, konversi
       - type: regex
-        pattern: "(?i)\\b(sales|revenue|revenues|order|orders|customer|customers|transaction|transactions|invoice|invoices|product|products|purchase|purchases|payment|payments|profit|loss|cost|costs|expense|expenses|income|user|users|conversion|conversions)\\b"
+        pattern: "(?i)\\b(sales|penjualan|revenue|pendapatan|pemasukan|order|pesanan|customer|pelanggan|transaction|transaksi|invoice|faktur|product|produk|purchase|pembelian|payment|pembayaran|profit|keuntungan|laba|loss|rugi|cost|biaya|expense|pengeluaran|income|user|pengguna|conversion|konversi)s?\\b"
       # Database / query terms
+      # EN: query, SQL, table, schema, database, column, record
+      # ID: kueri, tabel, skema, basis data, kolom, rekaman
       - type: regex
-        pattern: "(?i)\\b(query|sql|table|tables|schema|database|column|columns|record|records)\\b"
+        pattern: "(?i)\\b(query|kueri|sql|table|tabel|schema|skema|database|basis data|column|kolom|record|rekaman)s?\\b"
       # Quantitative question starters
+      # EN: how many, how much, total, average, count, sum, highest, lowest, most, least, top, bottom, rank
+      # ID: berapa, total, rata-rata, jumlah, tertinggi, terendah, terbanyak, terkecil, terbesar, terbaik, terburuk, teratas, terbawah, peringkat
       - type: regex
-        pattern: "(?i)\\b(how many|how much|total|average|count|sum|maximum|minimum|highest|lowest|most|least|biggest|smallest|largest|best|worst|top|bottom|ranking|rank)\\b"
+        pattern: "(?i)\\b(how many|how much|berapa|total|average|rata-rata|count|jumlah|sum|maximum|minimum|highest|tertinggi|lowest|terendah|most|terbanyak|least|terkecil|biggest|terbesar|largest|smallest|best|terbaik|worst|terburuk|top|teratas|bottom|terbawah|ranking|peringkat|rank)\\b"
       # Analytics action verbs
+      # EN: show, display, list, find, calculate, compare, analyze, summarize, aggregate, filter, sort, group, create, generate
+      # ID: tampilkan, tunjukkan, daftar, cari, hitung, bandingkan, analisis, analisa, ringkas, kelompokkan, saring, urutkan, buat, hasilkan
       - type: regex
-        pattern: "(?i)\\b(show|display|list|find|calculate|compare|analyze|analyse|summarize|summarise|breakdown|aggregate|filter|sort|group|fetch|generate|create|build)\\b"
+        pattern: "(?i)\\b(show|tampilkan|display|tunjukkan|list|daftar|find|cari|calculate|hitung|compare|bandingkan|analyze|analyse|analisis|analisa|summarize|summarise|ringkas|breakdown|aggregate|filter|saring|sort|urutkan|group|kelompokkan|fetch|generate|hasilkan|create|buat|build)\\b"
       # Time-range expressions common in analytics
+      # EN: last, this, today, yesterday, week, month, year, quarter, daily, weekly, monthly, quarterly
+      # ID: terakhir, lalu, ini, hari ini, kemarin, minggu, bulan, tahun, kuartal, harian, mingguan, bulanan, tahunan
       - type: regex
-        pattern: "(?i)\\b(last|this|today|yesterday|week|month|year|quarter|daily|weekly|monthly|quarterly|annually|annual|ytd|mtd|wtd)\\b"
+        pattern: "(?i)\\b(last|terakhir|lalu|this|today|hari ini|yesterday|kemarin|week|minggu|month|bulan|year|tahun|quarter|kuartal|daily|harian|weekly|mingguan|monthly|bulanan|quarterly|tahunan|annually|annual|ytd|mtd|wtd)\\b"
       # Greetings and meta-questions about the assistant
+      # EN: hello, hi, hey, help, thanks, who are you, what can you
+      # ID: halo, hai, selamat (pagi/siang/sore/malam), bantu, terima kasih, makasih, siapa kamu, apa yang bisa
+      # Note: "tolong" (please) is intentionally omitted — it is always
+      # followed by a verb, so the verb itself provides the topic signal.
       - type: regex
-        pattern: "(?i)\\b(hello|hi|hey|help|thanks|thank you|who are you|what can you|what do you)\\b"
+        pattern: "(?i)\\b(hello|halo|hi|hai|hey|help|bantu|thanks|thank you|terima kasih|makasih|who are you|siapa kamu|what can you|what do you|apa yang bisa|bisa apa)\\b"
     action: require
-    message: "I'm a business analytics assistant. I can help you query your data, analyze metrics, spot trends, and build dashboards. Please ask me something about your business data!"
+    message: "I'm a business analytics assistant — I can help you query data, analyze metrics, spot trends, and build dashboards.\nSaya asisten analitik bisnis — saya bisa membantu query data, analisis metrik, melihat tren, dan membuat dasbor.\n\nPlease ask about your business data! / Silakan tanya seputar data bisnis Anda!"
 
-  # Block SQL mutation attempts in user input
+  # Block SQL mutation attempts in user input.
+  # Rules are scoped to input only — the agent's own responses may legitimately
+  # contain SQL in explanations and should not be blocked.
+  #
+  # Dangerous keywords that are almost never used in natural language analytics
+  # questions (DROP, DELETE, TRUNCATE, ALTER, GRANT, REVOKE) are matched with
+  # just a trailing space.
+  #
+  # Keywords that ARE common English words (CREATE, UPDATE, INSERT) require
+  # additional SQL-specific context so that natural language like
+  # "create a dashboard" or "update me on sales" is never blocked.
   - name: block_sql_mutations
-    description: "Prevent any SQL mutation keywords from reaching the agent"
+    description: "Prevent SQL mutation statements from reaching the agent"
+    scope: input
     patterns:
+      # Unambiguously dangerous — rare in natural language
       - type: regex
-        pattern: "(?i)\\b(DROP|DELETE|TRUNCATE|ALTER|UPDATE|INSERT|CREATE|GRANT|REVOKE)\\s"
+        pattern: "(?i)\\b(DROP|DELETE|TRUNCATE|ALTER|GRANT|REVOKE)\\s"
+      # CREATE is a common English word; only block when followed by a SQL object type
+      - type: regex
+        pattern: "(?i)\\bCREATE\\s+(TABLE|DATABASE|DB|INDEX|VIEW|TRIGGER|FUNCTION|PROCEDURE|PROC|SCHEMA|SEQUENCE|TYPE|EXTENSION|USER|ROLE)\\b"
+      # UPDATE is a common English word; only block the SQL form: UPDATE <table> SET
+      - type: regex
+        pattern: "(?i)\\bUPDATE\\s+\\w+\\s+SET\\b"
+      # INSERT is uncommon but safe to require INTO context
+      - type: regex
+        pattern: "(?i)\\bINSERT\\s+INTO\\b"
     action: block
     message: "For security reasons, only read-only (SELECT) queries are supported."
 
   # Block common SQL injection patterns
   - name: block_sql_injection
     description: "Block common SQL injection patterns"
+    scope: input
     patterns:
       - type: regex
         pattern: "(?i)(;\\s*DROP|;\\s*DELETE|'\\s*OR\\s+'1'\\s*=\\s*'1|--\\s*$|/\\*.*\\*/)"

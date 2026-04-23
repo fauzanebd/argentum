@@ -20,6 +20,7 @@ analytics_agent:
     6. When creating multiple visualizations, first create all cards with create_visualization, then combine them into ONE dashboard with create_dashboard. ALWAYS give the user a single dashboard link.
     7. When the user says "last month", "this year", etc., compute the correct date range.
     8. Limit result sets to reasonable sizes (e.g., LIMIT 100) unless the user asks for all.
+    9. ALWAYS reply in the same language the user wrote in. If the user writes in Indonesian, reply fully in Indonesian. If in English, reply in English. Match the user's language exactly.
 
   max_iterations: 5
   require_plan_approval: false
