@@ -394,6 +394,102 @@ func (c *Client) GetDatabases(ctx context.Context) ([]Database, error) {
 	return result.Data, nil
 }
 
+func (c *Client) ensureSession(ctx context.Context) error {
+	if c.sessionToken != "" {
+		return nil
+	}
+	return c.Authenticate(ctx)
+}
+
+// UpsertPostgresWarehouse creates or updates a Metabase database connection for Postgres.
+// When existingID is non-nil and greater than zero, Metabase is updated in place.
+func (c *Client) UpsertPostgresWarehouse(ctx context.Context, existingID *int, name string, details map[string]interface{}) (int, error) {
+	if err := c.ensureSession(ctx); err != nil {
+		return 0, err
+	}
+
+	payload := map[string]interface{}{
+		"engine":           "postgres",
+		"name":             name,
+		"details":          details,
+		"is_full_sync":     false,
+		"is_on_demand":     false,
+		"auto_run_queries": true,
+	}
+
+	method := http.MethodPost
+	url := fmt.Sprintf("%s/api/database", c.baseURL)
+	if existingID != nil && *existingID > 0 {
+		method = http.MethodPut
+		url = fmt.Sprintf("%s/api/database/%d", c.baseURL, *existingID)
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return 0, fmt.Errorf("marshal database payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Metabase-Session", c.sessionToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("metabase database upsert: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return 0, fmt.Errorf("metabase database upsert (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var out struct {
+		ID int `json:"id"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return 0, fmt.Errorf("decode metabase database response: %w (body: %s)", err, string(body))
+	}
+	if out.ID == 0 && existingID != nil && *existingID > 0 {
+		return *existingID, nil
+	}
+	if out.ID == 0 {
+		return 0, fmt.Errorf("metabase database upsert: missing id in response: %s", string(body))
+	}
+	logrus.Infof("Metabase warehouse upserted: id=%d name=%q", out.ID, name)
+	return out.ID, nil
+}
+
+// DeleteWarehouse removes a Metabase database connection by id.
+func (c *Client) DeleteWarehouse(ctx context.Context, databaseID int) error {
+	if databaseID <= 0 {
+		return nil
+	}
+	if err := c.ensureSession(ctx); err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/api/database/%d", c.baseURL, databaseID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Metabase-Session", c.sessionToken)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("metabase delete database %d (status %d): %s", databaseID, resp.StatusCode, string(body))
+	}
+	logrus.Infof("Metabase warehouse deleted id=%d", databaseID)
+	return nil
+}
+
 // BuildDatasetQuery constructs a Metabase dataset_query from SQL
 func BuildDatasetQuery(databaseID int, sql string) map[string]interface{} {
 	return map[string]interface{}{

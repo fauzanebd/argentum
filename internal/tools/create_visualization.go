@@ -6,22 +6,38 @@ import (
 	"fmt"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
-	"github.com/fauzanebd/argentum/internal/database"
-	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/sirupsen/logrus"
+
+	"github.com/fauzanebd/argentum/internal/adapters/db"
+	"github.com/fauzanebd/argentum/internal/metabase"
+	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
-// CreateVisualizationTool creates Metabase dashboards from SQL queries.
-type CreateVisualizationTool struct {
-	db             *database.DB
-	metabaseClient *metabase.Client
+// MetabaseTenantDB resolves Metabase `/api/database` id for this tenant's
+// default Postgres analytical warehouse.
+type MetabaseTenantDB interface {
+	DefaultPostgresMetabaseDatabaseID(ctx context.Context, companyID string) (int, error)
 }
 
-func NewCreateVisualizationTool(db *database.DB, metabaseClient *metabase.Client) *CreateVisualizationTool {
-	return &CreateVisualizationTool{db: db, metabaseClient: metabaseClient}
+// CreateVisualizationTool runs a SQL query against the tenant's analytics DB
+// and registers a Metabase card for the result targeting that tenant's
+// synced Metabase database connection (see CompanyService Metabase warehouse sync).
+type CreateVisualizationTool struct {
+	pool           *db.TenantConnPool
+	metabaseClient *metabase.Client
+	mbResolver     MetabaseTenantDB
+	recorder       UsageRecorder
+}
+
+func NewCreateVisualizationTool(pool *db.TenantConnPool, metabaseClient *metabase.Client, mbResolver MetabaseTenantDB, recorder UsageRecorder) *CreateVisualizationTool {
+	if recorder == nil {
+		recorder = nopRecorder{}
+	}
+	return &CreateVisualizationTool{pool: pool, metabaseClient: metabaseClient, mbResolver: mbResolver, recorder: recorder}
 }
 
 func (t *CreateVisualizationTool) Name() string { return "create_visualization" }
+
 func (t *CreateVisualizationTool) Description() string {
 	return "Create a visualization card (question) in Metabase from a SQL query. Returns a card_id and chart_type. Use create_dashboard afterwards to combine multiple cards into a single shareable dashboard."
 }
@@ -77,7 +93,17 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 		params.ChartType = "auto"
 	}
 
-	result, err := t.db.ExecuteReadOnly(ctx, params.SQL)
+	companyID := tenantctx.CompanyID(ctx)
+	if companyID == "" {
+		return "", fmt.Errorf("no tenant in context: cannot resolve database connection")
+	}
+
+	conn, err := t.pool.For(ctx, companyID)
+	if err != nil {
+		return "", fmt.Errorf("resolve tenant connection: %w", err)
+	}
+
+	result, err := conn.ExecuteReadOnly(ctx, params.SQL)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -100,20 +126,12 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 		chartType = metabase.DetectVisualizationType(len(result.Columns), result.Count, columnTypes)
 	}
 
-	databases, err := t.metabaseClient.GetDatabases(ctx)
+	if t.mbResolver == nil {
+		return "", fmt.Errorf("Metabase resolver not configured")
+	}
+	databaseID, err := t.mbResolver.DefaultPostgresMetabaseDatabaseID(ctx, companyID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get Metabase databases: %w", err)
-	}
-
-	var databaseID int
-	for _, db := range databases {
-		if db.Engine == "postgres" {
-			databaseID = db.ID
-			break
-		}
-	}
-	if databaseID == 0 {
-		return "", fmt.Errorf("no PostgreSQL database found in Metabase")
+		return "", fmt.Errorf("tenant Metabase database: %w", err)
 	}
 
 	card := &metabase.Card{
@@ -133,7 +151,10 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 		return "", fmt.Errorf("failed to create card: %w", err)
 	}
 
+	t.recorder.RecordMetabaseCard(ctx, companyID, tenantctx.ThreadID(ctx))
+
 	logrus.WithFields(logrus.Fields{
+		"company_id": companyID,
 		"card_id":    createdCard.ID,
 		"chart_type": chartType,
 	}).Info("Created Metabase card")

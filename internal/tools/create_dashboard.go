@@ -7,16 +7,21 @@ import (
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 	"github.com/fauzanebd/argentum/internal/metabase"
+	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/sirupsen/logrus"
 )
 
 // CreateDashboardTool assembles multiple Metabase cards into a single dashboard.
 type CreateDashboardTool struct {
 	metabaseClient *metabase.Client
+	recorder       UsageRecorder
 }
 
-func NewCreateDashboardTool(metabaseClient *metabase.Client) *CreateDashboardTool {
-	return &CreateDashboardTool{metabaseClient: metabaseClient}
+func NewCreateDashboardTool(metabaseClient *metabase.Client, recorder UsageRecorder) *CreateDashboardTool {
+	if recorder == nil {
+		recorder = nopRecorder{}
+	}
+	return &CreateDashboardTool{metabaseClient: metabaseClient, recorder: recorder}
 }
 
 func (t *CreateDashboardTool) Name() string { return "create_dashboard" }
@@ -98,6 +103,8 @@ func (t *CreateDashboardTool) Execute(ctx context.Context, args string) (string,
 	if err != nil {
 		return "", fmt.Errorf("failed to generate public URL: %w", err)
 	}
+
+	t.recorder.RecordMetabaseDashboard(ctx, tenantctx.CompanyID(ctx), tenantctx.ThreadID(ctx))
 
 	logrus.WithFields(logrus.Fields{
 		"dashboard_id": dashboard.ID,

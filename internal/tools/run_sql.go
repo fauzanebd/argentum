@@ -6,29 +6,54 @@ import (
 	"fmt"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
-	"github.com/fauzanebd/argentum/internal/database"
 	"github.com/sirupsen/logrus"
+
+	"github.com/fauzanebd/argentum/internal/adapters/db"
+	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
-// RunSQLTool executes read-only SQL queries against the analytics database.
+// RunSQLTool executes read-only SQL against the *current tenant's* database.
+// The connection is resolved per-request from tenantctx.CompanyID via the
+// injected pool, so the same agent instance can serve every company.
 type RunSQLTool struct {
-	db *database.DB
+	pool     *db.TenantConnPool
+	recorder UsageRecorder
 }
 
-func NewRunSQLTool(db *database.DB) *RunSQLTool {
-	return &RunSQLTool{db: db}
+// UsageRecorder is the narrow interface tools depend on for metering. Kept
+// in this file (and not in internal/app) to avoid an import cycle since
+// internal/app already depends on internal/tools.
+type UsageRecorder interface {
+	RecordSQL(ctx context.Context, companyID, threadID string)
+	RecordMetabaseCard(ctx context.Context, companyID, threadID string)
+	RecordMetabaseDashboard(ctx context.Context, companyID, threadID string)
+}
+
+// nopRecorder satisfies UsageRecorder when metering is disabled.
+type nopRecorder struct{}
+
+func (nopRecorder) RecordSQL(context.Context, string, string)               {}
+func (nopRecorder) RecordMetabaseCard(context.Context, string, string)      {}
+func (nopRecorder) RecordMetabaseDashboard(context.Context, string, string) {}
+
+func NewRunSQLTool(pool *db.TenantConnPool, recorder UsageRecorder) *RunSQLTool {
+	if recorder == nil {
+		recorder = nopRecorder{}
+	}
+	return &RunSQLTool{pool: pool, recorder: recorder}
 }
 
 func (t *RunSQLTool) Name() string { return "run_sql" }
+
 func (t *RunSQLTool) Description() string {
-	return "Execute a read-only SQL query against the PostgreSQL analytics database and return results. Only SELECT queries are allowed."
+	return "Execute a read-only SQL query against the connected analytics database and return results. Only SELECT queries are allowed."
 }
 
 func (t *RunSQLTool) Parameters() map[string]interfaces.ParameterSpec {
 	return map[string]interfaces.ParameterSpec{
 		"sql": {
 			Type:        "string",
-			Description: "The PostgreSQL SELECT query to execute",
+			Description: "The SELECT query to execute",
 			Required:    true,
 		},
 	}
@@ -49,12 +74,27 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 		return "", fmt.Errorf("sql parameter is required")
 	}
 
-	logrus.WithField("sql", params.SQL).Info("Executing SQL query")
+	companyID := tenantctx.CompanyID(ctx)
+	if companyID == "" {
+		return "", fmt.Errorf("no tenant in context: cannot resolve database connection")
+	}
 
-	result, err := t.db.ExecuteReadOnly(ctx, params.SQL)
+	logrus.WithFields(logrus.Fields{
+		"company_id": companyID,
+		"sql":        params.SQL,
+	}).Info("Executing SQL query")
+
+	conn, err := t.pool.For(ctx, companyID)
+	if err != nil {
+		return "", fmt.Errorf("resolve tenant connection: %w", err)
+	}
+
+	result, err := conn.ExecuteReadOnly(ctx, params.SQL)
 	if err != nil {
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
+
+	t.recorder.RecordSQL(ctx, companyID, tenantctx.ThreadID(ctx))
 
 	out, _ := json.Marshal(map[string]interface{}{
 		"columns":   result.Columns,

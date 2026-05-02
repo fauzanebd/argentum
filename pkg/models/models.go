@@ -1,73 +1,33 @@
+// Package models holds shared transport-level message types used by the
+// WhatsApp providers and webhook handlers. Domain-level entities live in
+// internal/domain.
 package models
 
-import (
-	"time"
+import "time"
 
-	"github.com/google/uuid"
-)
-
-// Message represents an incoming WhatsApp message
+// Message is an inbound WhatsApp / Twilio message normalized across providers.
 type Message struct {
 	ID          string    `json:"id"`
-	BusinessID  string    `json:"business_id"`
+	BusinessID  string    `json:"business_id,omitempty"`
 	PhoneNumber string    `json:"phone_number"`
 	Body        string    `json:"body"`
 	Timestamp   time.Time `json:"timestamp"`
 	MessageType string    `json:"message_type"`
 }
 
-// NewMessage creates a new message with generated ID
-func NewMessage(businessID, phoneNumber, body string) *Message {
-	return &Message{
-		ID:          uuid.New().String(),
-		BusinessID:  businessID,
-		PhoneNumber: phoneNumber,
-		Body:        body,
-		Timestamp:   time.Now(),
-		MessageType: "text",
-	}
-}
-
-// QueryResult represents the result of a SQL query
-type QueryResult struct {
-	SQL        string                   `json:"sql"`
-	Columns    []string                 `json:"columns"`
-	Rows       []map[string]interface{} `json:"rows"`
-	RowCount   int                      `json:"row_count"`
-	Duration   time.Duration            `json:"duration"`
-	ExecutedAt time.Time                `json:"executed_at"`
-}
-
-// AgentResponse represents the agent's response to a query
+// AgentResponse is the legacy reply shape used by whatsapp.Provider.SendResponse.
+// New callers should prefer publishing a domain.Message via the chat pipeline
+// and let the WA sink format outbound text.
 type AgentResponse struct {
-	MessageID         string       `json:"message_id"`
-	Query             string       `json:"query"`
-	Insight           string       `json:"insight"`
-	QueryResult       *QueryResult `json:"query_result,omitempty"`
-	DashboardURL      string       `json:"dashboard_url,omitempty"`
-	FollowUpQuestions []string     `json:"follow_up_questions,omitempty"`
-	Error             string       `json:"error,omitempty"`
+	MessageID         string   `json:"message_id"`
+	Query             string   `json:"query"`
+	Insight           string   `json:"insight"`
+	DashboardURL      string   `json:"dashboard_url,omitempty"`
+	FollowUpQuestions []string `json:"follow_up_questions,omitempty"`
+	Error             string   `json:"error,omitempty"`
 }
 
-// ConversationTurn represents a single turn in a conversation
-type ConversationTurn struct {
-	ID        string    `json:"id"`
-	Query     string    `json:"query"`
-	Response  string    `json:"response"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
-// ConversationContext holds the conversation state
-type ConversationContext struct {
-	SessionID    string             `json:"session_id"`
-	PhoneNumber  string             `json:"phone_number"`
-	BusinessID   string             `json:"business_id"`
-	Turns        []ConversationTurn `json:"turns"`
-	Summary      string             `json:"summary"`
-	LastActivity time.Time          `json:"last_activity"`
-}
-
-// WhatsAppWebhookPayload represents the incoming webhook from WhatsApp
+// WhatsAppWebhookPayload models the WhatsApp Business API webhook envelope.
 type WhatsAppWebhookPayload struct {
 	Object string `json:"object"`
 	Entry  []struct {
@@ -100,7 +60,7 @@ type WhatsAppWebhookPayload struct {
 	} `json:"entry"`
 }
 
-// WhatsAppMessageRequest represents an outgoing message to WhatsApp
+// WhatsAppMessageRequest is the outbound shape posted to the WA Business API.
 type WhatsAppMessageRequest struct {
 	MessagingProduct string `json:"messaging_product"`
 	RecipientType    string `json:"recipient_type"`
@@ -110,34 +70,4 @@ type WhatsAppMessageRequest struct {
 		PreviewURL bool   `json:"preview_url"`
 		Body       string `json:"body"`
 	} `json:"text"`
-}
-
-// QueueMessage represents a message sent to the queue
-type QueueMessage struct {
-	MessageID   string    `json:"message_id"`
-	BusinessID  string    `json:"business_id"`
-	PhoneNumber string    `json:"phone_number"`
-	Body        string    `json:"body"`
-	Timestamp   time.Time `json:"timestamp"`
-}
-
-// SchemaMetadata represents database schema information
-type SchemaMetadata struct {
-	Tables []TableMetadata `json:"tables"`
-}
-
-// TableMetadata represents metadata for a single table
-type TableMetadata struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description,omitempty"`
-	Columns     []ColumnMetadata `json:"columns"`
-}
-
-// ColumnMetadata represents metadata for a single column
-type ColumnMetadata struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description,omitempty"`
-	IsNullable  bool   `json:"is_nullable"`
-	IsPrimary   bool   `json:"is_primary_key"`
 }

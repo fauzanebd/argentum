@@ -1,77 +1,75 @@
 services:
-  # PostgreSQL Database with pgvector extension
+  # Postgres for the Argentum control plane.
   postgres:
     image: ankane/pgvector:latest
-    container_name: analytics_postgres
+    container_name: argentum_postgres
     environment:
-      POSTGRES_USER: ${DB_USER:-analytics}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-analytics123}
-      POSTGRES_DB: ${DB_NAME:-analytics_db}
+      POSTGRES_USER: ${DB_USER:-argentum}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-argentum123}
+      POSTGRES_DB: ${DB_NAME:-argentum}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d
+      # Ensures MB_DB_DBNAME exists before Metabase starts (fresh volumes only).
+      - ./docker/postgres-docker-init-metabase.sql:/docker-entrypoint-initdb.d/01-metabase_app.sql
     ports:
       - "5432:5432"
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${DB_USER:-analytics} -d ${DB_NAME:-analytics_db}",
-        ]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-argentum} -d ${DB_NAME:-argentum}" ]
       interval: 5s
       timeout: 5s
       retries: 5
-    networks:
-      - analytics_network
+    networks: [ argentum_network ]
 
-  # RabbitMQ Message Queue
-  rabbitmq:
-    image: rabbitmq:3.12-management-alpine
-    container_name: analytics_rabbitmq
+  # Demo tenant Postgres (for local development only). The seeded star
+  # schema lets you exercise the full chat/dashboard flow without bringing
+  # your own data warehouse.
+  # Same image family as postgres (bundles pgvector). postgres:16-alpine cannot run
+  # 004_enable_pgvector.sql — there is no vector extension on disk.
+  postgres_demo:
+    image: ankane/pgvector:latest
+    container_name: argentum_postgres_demo
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin123}
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: demo_analytics
     volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
+      - postgres_demo_data:/var/lib/postgresql/data
+      - ./migrations/demo_tenant:/docker-entrypoint-initdb.d
     ports:
-      - "5672:5672" # AMQP port
-      - "15672:15672" # Management UI
+      - "5433:5432"
     healthcheck:
-      test: rabbitmq-diagnostics -q ping
-      interval: 10s
+      test: [ "CMD-SHELL", "pg_isready -U demo -d demo_analytics" ]
+      interval: 5s
       timeout: 5s
       retries: 5
-    networks:
-      - analytics_network
+    networks: [ argentum_network ]
+    profiles: [ dev ]
 
-  # Redis for Caching
   redis:
     image: redis:7-alpine
-    container_name: analytics_redis
-    command: redis-server --port 6380 --appendonly yes
+    container_name: argentum_redis
+    command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
     ports:
-      - "6380:6380"
+      # Redis listens on 6379 in the image; expose as 6380 on the host (matches REDIS_URL default in .env).
+      - "6380:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "-p", "6380", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
-    networks:
-      - analytics_network
+    networks: [ argentum_network ]
 
-  # Metabase for Dashboards
   metabase:
-    # Do not use an older image than the one that last migrated the app DB (Metabase rejects downgrades).
     image: metabase/metabase:v0.60.x
-    container_name: analytics_metabase
+    container_name: argentum_metabase
     environment:
       MB_DB_TYPE: postgres
       MB_DB_DBNAME: metabase_app
       MB_DB_PORT: 5432
-      MB_DB_USER: ${DB_USER:-analytics}
-      MB_DB_PASS: ${DB_PASSWORD:-analytics123}
+      MB_DB_USER: ${DB_USER:-argentum}
+      MB_DB_PASS: ${DB_PASSWORD:-argentum123}
       MB_DB_HOST: postgres
       MB_JETTY_PORT: 3000
       MB_ENABLE_EMBEDDING: "true"
@@ -84,115 +82,159 @@ services:
       - "3000:3000"
     volumes:
       - metabase_data:/metabase-data
-    networks:
-      - analytics_network
+    networks: [ argentum_network ]
 
   # ngrok for WhatsApp webhook tunneling (development only)
   ngrok:
     image: ngrok/ngrok:latest
-    container_name: analytics_ngrok
-    command:
-      - "start"
-      - "--all"
-      - "--config"
-      - "/etc/ngrok.yml"
+    container_name: argentum_ngrok
+    command: start --all --config /etc/ngrok.yml
     volumes:
       - ./ngrok.yml:/etc/ngrok.yml
     ports:
       - "4040:4040"
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
-    networks:
-      - analytics_network
-    profiles:
-      - dev
+    networks: [ argentum_network ]
+    profiles: [ dev ]
 
-  # API Server (WhatsApp Webhook Handler)
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
-    container_name: analytics_api
+    container_name: argentum_api
     environment:
-      - ENV=${ENV:-development}
-      - PORT=8080
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${DB_USER:-analytics}
-      - DB_PASSWORD=${DB_PASSWORD:-analytics123}
-      - DB_NAME=${DB_NAME:-analytics_db}
-      - DB_SSL_MODE=disable
-      - REDIS_URL=redis:6380
-      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@rabbitmq:5672/
-      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-      - WHATSAPP_API_VERSION=${WHATSAPP_API_VERSION:-v18.0}
-      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
-      - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
-      - WHATSAPP_APP_SECRET=${WHATSAPP_APP_SECRET}
-      - WHATSAPP_WEBHOOK_VERIFY_TOKEN=${WHATSAPP_WEBHOOK_VERIFY_TOKEN}
+      ENV: ${ENV:-development}
+      PORT: 8080
+      LOG_LEVEL: info
+
+      # Control plane Postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-argentum}
+      DB_PASSWORD: ${DB_PASSWORD:-argentum123}
+      DB_NAME: ${DB_NAME:-argentum}
+      DB_SSL_MODE: disable
+      CONTROL_MIGRATIONS_DIR: /app/migrations/control
+
+      REDIS_URL: redis://redis:6379
+
+      # LLM
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+
+      # Metabase
+      METABASE_URL: http://metabase:3000
+      METABASE_PUBLIC_URL: ${METABASE_PUBLIC_URL:-http://localhost:3000}
+      METABASE_ADMIN_EMAIL: ${METABASE_ADMIN_EMAIL:-argentum@test.com}
+      METABASE_ADMIN_PASSWORD: ${METABASE_ADMIN_PASSWORD:-Metabase123!}
+
+      # WhatsApp / Twilio
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-twilio}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v18.0}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER:-}
+
+      # Argentum-specific secrets (REQUIRED)
+      ARGENTUM_JWT_SECRET: ${ARGENTUM_JWT_SECRET}
+      ARGENTUM_DSN_KEY: ${ARGENTUM_DSN_KEY}
+
+      # Frontend origin allowlist
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     depends_on:
       postgres:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
       redis:
         condition: service_healthy
     ports:
       - "8080:8080"
-    volumes:
-      - ./:/app
-    command: ["./api"]
-    networks:
-      - analytics_network
+    networks: [ argentum_network ]
 
-  # Agent Worker (Queue Consumer)
+  # Worker process: pulls chat:run tasks off Redis (asynq) and runs the
+  # agent. Shares all env with api, plus tunables for concurrency.
   worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: analytics_worker
+    container_name: argentum_worker
     environment:
-      - ENV=${ENV:-development}
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${DB_USER:-analytics}
-      - DB_PASSWORD=${DB_PASSWORD:-analytics123}
-      - DB_NAME=${DB_NAME:-analytics_db}
-      - DB_SSL_MODE=disable
-      - REDIS_URL=redis:6380
-      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@rabbitmq:5672/
-      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-      - METABASE_URL=http://metabase:3000
-      - METABASE_ADMIN_EMAIL=${METABASE_ADMIN_EMAIL:-argentum@test.com}
-      - METABASE_ADMIN_PASSWORD=${METABASE_ADMIN_PASSWORD:-Metabase123!}
-      - WHATSAPP_API_VERSION=${WHATSAPP_API_VERSION:-v18.0}
-      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
-      - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
+      ENV: ${ENV:-development}
+      LOG_LEVEL: info
+
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-argentum}
+      DB_PASSWORD: ${DB_PASSWORD:-argentum123}
+      DB_NAME: ${DB_NAME:-argentum}
+      DB_SSL_MODE: disable
+
+      REDIS_URL: redis://redis:6379
+      ASYNQ_REDIS_URL: ${ASYNQ_REDIS_URL:-}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
+      WORKER_QUEUES: ${WORKER_QUEUES:-default:10}
+
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+
+      METABASE_URL: http://metabase:3000
+      METABASE_PUBLIC_URL: ${METABASE_PUBLIC_URL:-http://localhost:3000}
+      METABASE_ADMIN_EMAIL: ${METABASE_ADMIN_EMAIL:-argentum@test.com}
+      METABASE_ADMIN_PASSWORD: ${METABASE_ADMIN_PASSWORD:-Metabase123!}
+
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-twilio}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v18.0}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER:-}
+
+      ARGENTUM_JWT_SECRET: ${ARGENTUM_JWT_SECRET}
+      ARGENTUM_DSN_KEY: ${ARGENTUM_DSN_KEY}
+
+      THREAD_IDLE_MINUTES: ${THREAD_IDLE_MINUTES:-30}
+      SUMMARY_EVERY_N_TURNS: ${SUMMARY_EVERY_N_TURNS:-8}
+      LLM_CLASSIFIER_MODEL: ${LLM_CLASSIFIER_MODEL:-}
     depends_on:
       postgres:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
       redis:
         condition: service_healthy
-      metabase:
+      api:
         condition: service_started
-    volumes:
-      - ./:/app
-    command: ["./worker"]
-    networks:
-      - analytics_network
+    networks: [ argentum_network ]
+
+  # Argentum dashboard (Vite dev server in dev profile, static nginx in prod).
+  dashboard:
+    build:
+      context: ../argentum-dashboard
+      dockerfile: Dockerfile
+    container_name: argentum_dashboard
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+    networks: [ argentum_network ]
+    profiles: [ prod ]
 
 volumes:
   postgres_data:
-  rabbitmq_data:
+  postgres_demo_data:
   redis_data:
   metabase_data:
 
 networks:
-  analytics_network:
+  argentum_network:
     driver: bridge

@@ -2,8 +2,11 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
@@ -27,9 +30,6 @@ type Config struct {
 	// Redis
 	RedisURL      string
 	RedisPassword string
-
-	// RabbitMQ
-	RabbitMQURL string
 
 	// LLM
 	LLMProvider string
@@ -64,6 +64,23 @@ type Config struct {
 	AgentConfigPath      string // path to agents.yaml
 	GuardrailsConfigPath string // path to guardrails.yaml
 
+	// Argentum control plane
+	JWTSecret            string
+	DSNEncryptionKeyHex  string // 64 hex chars => 32 bytes for AES-256-GCM
+	ControlMigrationsDir string
+	CookieSecure         bool
+	CORSOrigins          []string
+
+	// Conversation threading
+	ThreadIdleMinutes  int    // gap that triggers a topic-relevance check
+	ClassifierModel    string // cheap model for topic classification, defaults to LLM_MODEL
+	SummaryEveryNTurns int    // how often to refresh the rolling summary
+
+	// Asynq queue + worker
+	AsynqRedisURL     string // falls back to RedisURL when empty
+	WorkerConcurrency int    // simultaneous tasks per worker process
+	WorkerQueues      string // CSV of queue:weight pairs (e.g. "default:10")
+
 	// Application Settings
 	MaxQueriesPerMinute int
 	ContextMaxTurns     int
@@ -89,15 +106,12 @@ func Load() (*Config, error) {
 		DBPort:     getEnvAsInt("DB_PORT", 5432),
 		DBUser:     getEnv("DB_USER", "analytics"),
 		DBPassword: getEnv("DB_PASSWORD", "analytics123"),
-		DBName:     getEnv("DB_NAME", "analytics_db"),
+		DBName:     getEnv("DB_NAME", "demo_analytics"),
 		DBSSLMode:  getEnv("DB_SSL_MODE", "disable"),
 
 		// Redis
 		RedisURL:      getEnv("REDIS_URL", "localhost:6380"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
-
-		// RabbitMQ
-		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://admin:admin123@localhost:5672/"),
 
 		// LLM
 		LLMProvider: getEnv("LLM_PROVIDER", "openai"),
@@ -132,6 +146,23 @@ func Load() (*Config, error) {
 		AgentConfigPath:      getEnv("AGENT_CONFIG_PATH", "config/agents.yaml"),
 		GuardrailsConfigPath: getEnv("GUARDRAILS_CONFIG_PATH", "config/guardrails.yaml"),
 
+		// Control plane
+		JWTSecret:            getEnv("ARGENTUM_JWT_SECRET", ""),
+		DSNEncryptionKeyHex:  getEnv("ARGENTUM_DSN_KEY", ""),
+		ControlMigrationsDir: getEnv("CONTROL_MIGRATIONS_DIR", "migrations/control"),
+		CookieSecure:         getEnv("COOKIE_SECURE", "false") == "true",
+		CORSOrigins:          splitCSV(getEnv("CORS_ORIGINS", "http://localhost:5173")),
+
+		// Conversation threading
+		ThreadIdleMinutes:  getEnvAsInt("THREAD_IDLE_MINUTES", 30),
+		ClassifierModel:    getEnv("LLM_CLASSIFIER_MODEL", ""),
+		SummaryEveryNTurns: getEnvAsInt("SUMMARY_EVERY_N_TURNS", 8),
+
+		// Asynq
+		AsynqRedisURL:     getEnv("ASYNQ_REDIS_URL", ""),
+		WorkerConcurrency: getEnvAsInt("WORKER_CONCURRENCY", 10),
+		WorkerQueues:      getEnv("WORKER_QUEUES", "default:10"),
+
 		// Application Settings
 		MaxQueriesPerMinute: getEnvAsInt("MAX_QUERIES_PER_MINUTE", 10),
 		ContextMaxTurns:     getEnvAsInt("CONTEXT_MAX_TURNS", 3),
@@ -152,22 +183,46 @@ func (c *Config) Validate() error {
 	if c.LLMAPIKey == "" {
 		return fmt.Errorf("LLM_API_KEY is required")
 	}
-
-	if c.WhatsAppAccessToken == "" {
-		return fmt.Errorf("WHATSAPP_ACCESS_TOKEN is required")
+	if c.JWTSecret == "" {
+		return fmt.Errorf("ARGENTUM_JWT_SECRET is required")
+	}
+	if c.DSNEncryptionKeyHex == "" {
+		return fmt.Errorf("ARGENTUM_DSN_KEY is required (64 hex chars)")
 	}
 
-	if c.WhatsAppPhoneNumberID == "" {
-		return fmt.Errorf("WHATSAPP_PHONE_NUMBER_ID is required")
+	// WhatsApp credentials are only required when the corresponding provider
+	// is selected. Twilio uses a different set of env vars.
+	switch c.WhatsAppProvider {
+	case "whatsapp_business", "":
+		if c.WhatsAppAccessToken == "" {
+			return fmt.Errorf("WHATSAPP_ACCESS_TOKEN is required for whatsapp_business provider")
+		}
+		if c.WhatsAppPhoneNumberID == "" {
+			return fmt.Errorf("WHATSAPP_PHONE_NUMBER_ID is required for whatsapp_business provider")
+		}
+	case "twilio":
+		if c.TwilioAccountSID == "" || c.TwilioAuthToken == "" || c.TwilioFromNumber == "" {
+			return fmt.Errorf("TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER are required for twilio provider")
+		}
 	}
 
 	return nil
 }
 
-// DatabaseURL returns the PostgreSQL connection string
+// DatabaseURL returns a postgres:// URI suitable for lib/pq, pgx, and
+// golang-migrate (which parses the URL with net/url — a libpq keyword
+// string must not be prefixed with postgres://).
 func (c *Config) DatabaseURL() string {
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName, c.DBSSLMode)
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(c.DBUser, c.DBPassword),
+		Host:   fmt.Sprintf("%s:%d", c.DBHost, c.DBPort),
+		Path:   "/" + c.DBName,
+	}
+	q := url.Values{}
+	q.Set("sslmode", c.DBSSLMode)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // IsDevelopment returns true if running in development mode
@@ -178,6 +233,64 @@ func (c *Config) IsDevelopment() bool {
 // IsProduction returns true if running in production mode
 func (c *Config) IsProduction() bool {
 	return c.Env == "production"
+}
+
+// ResolvedAsynqRedisURL returns AsynqRedisURL when set, otherwise RedisURL.
+// asynq accepts a "redis://..." URI or a bare "host:port"; either is fine
+// for asynq.RedisClientOpt parsing helpers downstream.
+func (c *Config) ResolvedAsynqRedisURL() string {
+	if c.AsynqRedisURL != "" {
+		return c.AsynqRedisURL
+	}
+	return c.RedisURL
+}
+
+// RedisDialAddr returns host:port for redis.Client options that expect Addr,
+// not a redis:// URI (e.g. agent-sdk-go memory uses go-redis that way).
+func (c *Config) RedisDialAddr() string {
+	return redisDialAddr(c.RedisURL)
+}
+
+func redisDialAddr(u string) string {
+	if u == "" || !strings.Contains(u, "://") {
+		return u
+	}
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.Host == "" {
+		return u
+	}
+	host := parsed.Hostname()
+	port := parsed.Port()
+	if port == "" {
+		port = "6379"
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// WorkerQueueMap parses the WORKER_QUEUES csv ("default:10,low:1") into
+// the map asynq.Config expects. Falls back to {"default": 10} on error.
+func (c *Config) WorkerQueueMap() map[string]int {
+	out := map[string]int{}
+	for _, part := range splitCSV(c.WorkerQueues) {
+		name := part
+		weight := 1
+		for i := 0; i < len(part); i++ {
+			if part[i] == ':' {
+				name = trimSpace(part[:i])
+				if v, err := strconv.Atoi(trimSpace(part[i+1:])); err == nil && v > 0 {
+					weight = v
+				}
+				break
+			}
+		}
+		if name != "" {
+			out[name] = weight
+		}
+	}
+	if len(out) == 0 {
+		out["default"] = 10
+	}
+	return out
 }
 
 // Helper functions
@@ -195,4 +308,33 @@ func getEnvAsInt(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := []string{}
+	start := 0
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == ',' {
+			seg := s[start:i]
+			seg = trimSpace(seg)
+			if seg != "" {
+				parts = append(parts, seg)
+			}
+			start = i + 1
+		}
+	}
+	return parts
+}
+
+func trimSpace(s string) string {
+	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t') {
+		s = s[1:]
+	}
+	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\t') {
+		s = s[:len(s)-1]
+	}
+	return s
 }
