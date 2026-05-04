@@ -1,68 +1,101 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import {
-  MessageSquare,
-  ListTree,
-  Settings,
-  CircleDollarSign,
-  LogOut,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useAuthStore } from "@/store/auth";
-import { api } from "@/lib/api";
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
+import { RecentChats } from "@/components/layout/recent-chats";
+import { GeneratedDashboards } from "@/components/layout/generated-dashboards";
+import { NavUser } from "@/components/layout/nav-user";
+import { useThemeStore } from "@/store/theme";
 import { cn } from "@/lib/utils";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const user = useAuthStore((s) => s.user);
-  const clear = useAuthStore((s) => s.clear);
-  const navigate = useNavigate();
+  return (
+    <SidebarProvider>
+      <div className="relative flex h-dvh w-full">
+        <AppSidebar />
+        <SidebarInset className="flex flex-col overflow-hidden">
+          {/* Mobile sidebar trigger */}
+          <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+            <SidebarTrigger />
+            <img
+              src="/images/completeLogo_black.svg"
+              alt="Argentum"
+              className="argentum-logo h-4"
+            />
+          </div>
+          {children}
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
+  );
+}
 
-  const navItems = [
-    { to: "/chat", label: "Chat", icon: MessageSquare },
-    { to: "/threads", label: "Threads", icon: ListTree },
-    { to: "/usage", label: "Usage", icon: CircleDollarSign },
-    { to: "/settings", label: "Settings", icon: Settings },
-  ];
-
-  async function logout() {
-    try {
-      await api.post("/auth/logout");
-    } catch {
-      // server-side logout best-effort
-    }
-    clear();
-    navigate({ to: "/login" });
-  }
+function AppSidebar() {
+  const { state } = useSidebar();
+  const isCollapsed = state === "collapsed";
+  const theme = useThemeStore((s) => s.theme);
+  const isDark = theme === "dark";
 
   return (
-    <div className="grid h-screen grid-cols-[240px_1fr] bg-background">
-      <aside className="border-r border-border bg-card/50 flex flex-col">
-        <div className="px-6 py-5 border-b border-border">
-          <div className="text-lg font-bold tracking-tight">Argentum</div>
-          <div className="text-xs text-muted-foreground truncate" title={user?.email}>
-            {user?.email}
-          </div>
+    <Sidebar variant="floating" collapsible="icon">
+      {/* Header */}
+      <SidebarHeader
+        className={cn(
+          "flex shrink-0",
+          isCollapsed
+            ? "flex-row items-center justify-between gap-y-4 md:flex-col md:items-center md:justify-start"
+            : "flex-row items-center justify-between",
+        )}
+      >
+        <Link to="/chat" className="flex items-center gap-2">
+          <img
+            src="/images/shortLogo_black.svg"
+            alt="Argentum"
+            className={cn(
+              "w-8 h-8 argentum-logo",
+              isDark && "invert brightness-110",
+            )}
+          />
+          {!isCollapsed && (
+            <img
+              src="/images/textLogo_black.svg"
+              alt="Argentum"
+              className={cn(
+                "min-w-24 h-auto pt-1 argentum-logo",
+                isDark && "invert brightness-110",
+              )}
+            />
+          )}
+        </Link>
+        <div className={cn(isCollapsed && "mt-1")}>
+          <SidebarTrigger />
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              activeProps={{ className: cn("text-foreground bg-accent font-medium") }}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="px-3 py-3 border-t border-border">
-          <Button variant="ghost" size="sm" className="w-full justify-start" onClick={logout}>
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </Button>
+      </SidebarHeader>
+
+      {/* Content — split into two scrollable regions */}
+      <SidebarContent className="flex flex-col overflow-hidden p-0">
+        {/* Top region: New Conversation + Recent Chats — grows and scrolls */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-2 py-2">
+          <RecentChats />
         </div>
-      </aside>
-      <main className="overflow-hidden">{children}</main>
-    </div>
+
+        {/* Bottom region: Generated Dashboards — capped height, scrolls */}
+        <div className="max-h-[38%] overflow-y-auto overflow-x-hidden shrink-0 px-2 pb-2">
+          <GeneratedDashboards />
+        </div>
+      </SidebarContent>
+
+      {/* Footer */}
+      <SidebarFooter className="px-2 shrink-0">
+        <NavUser />
+      </SidebarFooter>
+    </Sidebar>
   );
 }

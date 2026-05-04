@@ -17,10 +17,36 @@ interface Connection {
   created_at: string;
 }
 
+type ConnMode = "fields" | "raw";
+
+function defaultPort(dbType: string) {
+  if (dbType === "mysql") return "3306";
+  return "5432";
+}
+
+function isFormReady(
+  mode: ConnMode,
+  dsn: string,
+  host: string,
+  port: string,
+  dbname: string
+) {
+  if (mode === "raw") return dsn.trim().length > 0;
+  return host.trim().length > 0 && port.trim().length > 0 && dbname.trim().length > 0;
+}
+
 export function ConnectionsTab() {
   const qc = useQueryClient();
   const [supported, setSupported] = useState<string[]>([]);
-  const [form, setForm] = useState({ db_type: "postgres", label: "", dsn: "" });
+  const [mode, setMode] = useState<ConnMode>("fields");
+  const [dbType, setDbType] = useState("postgres");
+  const [label, setLabel] = useState("");
+  const [dsn, setDsn] = useState("");
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState(defaultPort("postgres"));
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [dbname, setDbname] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,11 +60,30 @@ export function ConnectionsTab() {
     api.get("/meta/supported-databases").then((r) => setSupported(r.data.registered ?? r.data.supported ?? []));
   }, []);
 
+  useEffect(() => {
+    setPort(defaultPort(dbType));
+  }, [dbType]);
+
+  function payload() {
+    if (mode === "raw") {
+      return { db_type: dbType, label, dsn };
+    }
+    return {
+      db_type: dbType,
+      label,
+      host,
+      port,
+      username,
+      password,
+      dbname,
+    };
+  }
+
   async function testConnection() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await api.post("/connections/test", form);
+      const res = await api.post("/connections/test", payload());
       setTestResult(res.data.ok ? "ok" : res.data.error || "Failed");
     } catch (e: any) {
       setTestResult(e?.response?.data?.error || e.message);
@@ -50,8 +95,14 @@ export function ConnectionsTab() {
   async function add() {
     setError(null);
     try {
-      await api.post("/connections", { ...form, is_default: connections?.length === 0 });
-      setForm({ db_type: form.db_type, label: "", dsn: "" });
+      await api.post("/connections", { ...payload(), is_default: connections?.length === 0 });
+      setLabel("");
+      setDsn("");
+      setHost("");
+      setPort(defaultPort(dbType));
+      setUsername("");
+      setPassword("");
+      setDbname("");
       setTestResult(null);
       qc.invalidateQueries({ queryKey: ["connections"] });
     } catch (e: any) {
@@ -70,6 +121,8 @@ export function ConnectionsTab() {
     qc.invalidateQueries({ queryKey: ["connections"] });
   }
 
+  const ready = isFormReady(mode, dsn, host, port, dbname);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -81,7 +134,7 @@ export function ConnectionsTab() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Type</Label>
-              <Select value={form.db_type} onValueChange={(v) => setForm({ ...form, db_type: v })}>
+              <Select value={dbType} onValueChange={(v) => setDbType(v)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -96,27 +149,77 @@ export function ConnectionsTab() {
             </div>
             <div className="space-y-1.5">
               <Label>Label (optional)</Label>
-              <Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
+              <Input value={label} onChange={(e) => setLabel(e.target.value)} />
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>Connection string</Label>
-            <Input
-              value={form.dsn}
-              onChange={(e) => setForm({ ...form, dsn: e.target.value })}
-              placeholder="postgres://user:pass@host:5432/db?sslmode=require"
-            />
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant={mode === "fields" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setMode("fields")}
+            >
+              Connection details
+            </Button>
+            <Button
+              type="button"
+              variant={mode === "raw" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setMode("raw")}
+            >
+              Raw DSN
+            </Button>
           </div>
+
+          {mode === "fields" ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Host</Label>
+                <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="db.example.com" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Port</Label>
+                <Input value={port} onChange={(e) => setPort(e.target.value)} placeholder={defaultPort(dbType)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Username</Label>
+                <Input value={username} onChange={(e) => setUsername(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Password</Label>
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label>Database name</Label>
+                <Input value={dbname} onChange={(e) => setDbname(e.target.value)} />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label>Connection string</Label>
+              <Input
+                value={dsn}
+                onChange={(e) => setDsn(e.target.value)}
+                placeholder="postgres://user:pass@host:5432/db?sslmode=require"
+              />
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Stored encrypted at rest with AES-256-GCM. Only the database type is plaintext.
+          </p>
+
           {testResult && (
             <Badge variant={testResult === "ok" ? "secondary" : "destructive"}>{testResult}</Badge>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </CardContent>
         <CardFooter className="gap-2">
-          <Button variant="outline" disabled={testing || !form.dsn} onClick={testConnection}>
+          <Button variant="outline" disabled={testing || !ready} onClick={testConnection}>
             {testing ? "Testing…" : "Test"}
           </Button>
-          <Button onClick={add} disabled={!form.dsn}>
+          <Button onClick={add} disabled={!ready}>
             Add database
           </Button>
         </CardFooter>

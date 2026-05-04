@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Send, Bot, User, Plus, Phone, Globe, Loader2, MoreVertical, Trash2 } from "lucide-react";
+import { Send, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth";
 import type { Thread, Message, ChatEvent } from "./types";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
+import { MarkdownRenderer } from "./markdown-renderer";
 import { formatRelative } from "./format";
 
 export function ChatPage() {
@@ -20,7 +20,8 @@ export function ChatPage() {
 
   const { data: threadsData } = useQuery({
     queryKey: ["threads"],
-    queryFn: async () => (await api.get<{ threads: Thread[] }>("/threads")).data.threads,
+    queryFn: async () =>
+      (await api.get<{ threads: Thread[] }>("/threads")).data.threads,
   });
   const threads = threadsData ?? [];
 
@@ -31,16 +32,18 @@ export function ChatPage() {
     queryKey: ["messages", activeThreadId],
     queryFn: async () =>
       activeThreadId
-        ? (await api.get<{ messages: Message[] }>(`/threads/${activeThreadId}/messages`)).data.messages
+        ? (
+            await api.get<{ messages: Message[] }>(
+              `/threads/${activeThreadId}/messages`,
+            )
+          ).data.messages
         : [],
     enabled: !!activeThreadId,
   });
   const persistedMessages = messagesData ?? [];
 
-  // Optimistic messages: shown immediately before the server confirms.
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
 
-  // Live assistant state streamed over the WebSocket.
   const [liveAssistant, setLiveAssistant] = useState<{
     jobId: string;
     content: string;
@@ -51,11 +54,10 @@ export function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [hoveredThreadId, setHoveredThreadId] = useState<string | null>(null);
 
-  // Polling fallback for new threads (race-condition safety).
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finalReceivedRef = useRef(false);
+  const timelineRef = useRef<HTMLDivElement>(null);
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -80,7 +82,9 @@ export function ChatPage() {
           return;
         }
         try {
-          const res = await api.get<{ messages: Message[] }>(`/threads/${threadId}/messages`);
+          const res = await api.get<{ messages: Message[] }>(
+            `/threads/${threadId}/messages`,
+          );
           const msgs = res.data.messages;
           const hasAssistant = msgs.some((m) => m.role === "assistant");
           if (hasAssistant) {
@@ -92,7 +96,7 @@ export function ChatPage() {
         }
       }, 2000);
     },
-    [qc, stopPolling]
+    [qc, stopPolling],
   );
 
   useEffect(() => {
@@ -107,13 +111,13 @@ export function ChatPage() {
       setLiveAssistant((prev) =>
         prev && prev.jobId === evt.job_id
           ? { ...prev, content: prev.content + (evt.content ?? "") }
-          : { jobId: evt.job_id, content: evt.content ?? "" }
+          : { jobId: evt.job_id, content: evt.content ?? "" },
       );
     } else if (evt.type === "thinking") {
       setLiveAssistant((prev) =>
         prev && prev.jobId === evt.job_id
           ? { ...prev, thinking: evt.thinking_step }
-          : { jobId: evt.job_id, content: "", thinking: evt.thinking_step }
+          : { jobId: evt.job_id, content: "", thinking: evt.thinking_step },
       );
     } else if (evt.type === "tool_call" || evt.type === "tool_result") {
       setLiveAssistant((prev) => {
@@ -124,8 +128,8 @@ export function ChatPage() {
             name: evt.tool_call.name,
             payload:
               evt.type === "tool_call"
-                ? evt.tool_call.arguments ?? {}
-                : evt.tool_call.result ?? {},
+                ? (evt.tool_call.arguments ?? {})
+                : (evt.tool_call.result ?? {}),
           });
         }
         return { ...prev, toolCalls: calls };
@@ -133,7 +137,9 @@ export function ChatPage() {
     } else if (evt.type === "final") {
       finalReceivedRef.current = true;
       setLiveAssistant(null);
-      setOptimisticMessages((prev) => prev.filter((m) => m.thread_id !== evt.thread_id));
+      setOptimisticMessages((prev) =>
+        prev.filter((m) => m.thread_id !== evt.thread_id),
+      );
       qc.invalidateQueries({ queryKey: ["messages", evt.thread_id] });
       qc.invalidateQueries({ queryKey: ["threads"] });
       stopPolling();
@@ -145,28 +151,6 @@ export function ChatPage() {
     }
   });
 
-  async function createNewThread() {
-    navigate({ to: "/chat" });
-  }
-
-  async function deleteThread(id: string) {
-    // Optimistically remove from cache immediately.
-    const previousThreads = qc.getQueryData<Thread[]>(["threads"]) ?? [];
-    qc.setQueryData<Thread[]>(["threads"], previousThreads.filter((t) => t.id !== id));
-
-    if (id === activeThreadId) {
-      navigate({ to: "/chat" });
-    }
-
-    try {
-      await api.delete(`/threads/${id}`);
-    } catch (err: any) {
-      // Restore on failure.
-      qc.setQueryData<Thread[]>(["threads"], previousThreads);
-      setError(err?.response?.data?.error || "Delete failed");
-    }
-  }
-
   async function send() {
     const text = input.trim();
     if (!text || sending) return;
@@ -176,7 +160,11 @@ export function ChatPage() {
     let targetThreadId = activeThreadId;
 
     try {
-      const res = await api.post<{ thread_id: string; is_new_thread: boolean; user_msg_id: string }>("/chat", {
+      const res = await api.post<{
+        thread_id: string;
+        is_new_thread: boolean;
+        user_msg_id: string;
+      }>("/chat", {
         message: text,
         thread_id: targetThreadId ?? undefined,
       });
@@ -184,7 +172,6 @@ export function ChatPage() {
       const newThreadId = res.data.thread_id;
       const userMsgId = res.data.user_msg_id;
 
-      // Optimistically append user message.
       setOptimisticMessages((prev) => [
         ...prev,
         {
@@ -204,8 +191,6 @@ export function ChatPage() {
 
       qc.invalidateQueries({ queryKey: ["threads"] });
 
-      // Start polling as a safety net for new threads where the WS may
-      // subscribe too late to catch the first final event.
       if (res.data.is_new_thread) {
         startPolling(newThreadId);
       }
@@ -217,184 +202,182 @@ export function ChatPage() {
   }
 
   const displayedMessages = useMemo(() => {
-    // Merge persisted + optimistic messages for the active thread.
-    const threadOptimistic = optimisticMessages.filter((m) => m.thread_id === activeThreadId);
+    const threadOptimistic = optimisticMessages.filter(
+      (m) => m.thread_id === activeThreadId,
+    );
     const merged = [...persistedMessages, ...threadOptimistic];
-    // Deduplicate by id.
     const map = new Map<string, Message>();
     for (const m of merged) map.set(m.id, m);
     return Array.from(map.values()).sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     );
   }, [persistedMessages, optimisticMessages, activeThreadId]);
 
+  useEffect(() => {
+    timelineRef.current?.scrollTo({
+      top: timelineRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [
+    displayedMessages.length,
+    liveAssistant?.content,
+    liveAssistant?.thinking,
+    liveAssistant?.toolCalls?.length,
+  ]);
+
   return (
-    <div className="grid grid-cols-[280px_1fr] h-full">
-      <aside className="border-r border-border flex flex-col overflow-hidden">
-        <div className="p-3 border-b border-border flex items-center justify-between">
-          <div className="text-sm font-semibold">Threads</div>
-          <Button size="sm" variant="ghost" onClick={createNewThread} title="New conversation">
-            <Plus className="h-4 w-4" />
-          </Button>
+    <section className="flex flex-col h-full overflow-hidden">
+      {isNewChat ? (
+        /* ── New Chat: Welcome screen ─────────────────────────────── */
+        <div className="flex-1 flex flex-col items-center justify-center px-6">
+          <div className="w-full max-w-2xl flex flex-col items-center gap-6">
+            {/* Welcome text */}
+            <div className="text-center space-y-2">
+              <p className="text-sm font-medium text-primary tracking-wide uppercase">
+                Hi, welcome to Argentum
+              </p>
+              <h1 className="text-3xl font-bold text-foreground tracking-tight">
+                How can I help you today?
+              </h1>
+              <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                Ask me anything about your business — sales, customers,
+                inventory, or trends.
+              </p>
+            </div>
+            {/* Composer */}
+            <ChatComposer
+              value={input}
+              onChange={setInput}
+              onSend={send}
+              disabled={sending}
+            />
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {isNewChat && (
-            <div className="px-3 py-3 bg-accent border-b border-border/50">
-              <div className="text-sm font-medium truncate">New conversation</div>
-              <div className="text-xs text-muted-foreground mt-0.5">Dashboard</div>
+      ) : (
+        <>
+          {/* ── Existing thread ──────────────────────────────────────── */}
+          <ChatHeader
+            thread={threads.find((t) => t.id === activeThreadId)}
+            className="shrink-0 bg-background/95 backdrop-blur-md z-20"
+          />
+          <div ref={timelineRef} className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="max-w-3xl mx-auto space-y-5">
+              {displayedMessages.length === 0 && !liveAssistant && (
+                <div className="text-center text-muted-foreground py-12 text-sm">
+                  No messages yet — start the conversation below.
+                </div>
+              )}
+              {displayedMessages.map((m) => (
+                <MessageBubble key={m.id} message={m} />
+              ))}
+              {liveAssistant && (
+                <PendingBubble
+                  key={`live-${liveAssistant.jobId}`}
+                  content={liveAssistant.content}
+                  thinking={liveAssistant.thinking}
+                  toolCalls={liveAssistant.toolCalls}
+                />
+              )}
+            </div>
+          </div>
+          {error && (
+            <div className="px-6 py-2 text-sm text-destructive bg-destructive/5 rounded-lg mx-4 mb-2 shrink-0">
+              {error}
             </div>
           )}
-          {threads.map((t) => (
-            <div
-              key={t.id}
-              className={cn(
-                "flex items-center gap-2 px-3 py-3 border-b border-border/50 hover:bg-accent transition-colors",
-                t.id === activeThreadId && "bg-accent"
-              )}
-              onMouseEnter={() => setHoveredThreadId(t.id)}
-              onMouseLeave={() => setHoveredThreadId(null)}
-            >
-              <div
-                className="flex-1 min-w-0 cursor-pointer"
-                onClick={() => navigate({ to: "/chat/$threadId", params: { threadId: t.id } })}
-              >
-                <div className="flex items-center gap-2">
-                  {t.channel === "whatsapp" ? (
-                    <Phone className="h-3 w-3 text-green-600 shrink-0" />
-                  ) : (
-                    <Globe className="h-3 w-3 text-blue-600 shrink-0" />
-                  )}
-                  <div className="text-sm font-medium truncate">
-                    {t.title || "New conversation"}
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground truncate mt-0.5">
-                  {t.phone_number ? t.phone_number : "Dashboard"} · {formatRelative(t.last_message_at)}
-                </div>
-              </div>
-              <DropdownMenu
-                trigger={
-                  <div
-                    className={cn(
-                      "p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-opacity",
-                      hoveredThreadId === t.id ? "opacity-100" : "opacity-0"
-                    )}
-                  >
-                    <MoreVertical className="h-3.5 w-3.5" />
-                  </div>
-                }
-              >
-                <DropdownMenuItem destructive onClick={() => deleteThread(t.id)}>
-                  <Trash2 className="h-4 w-4" />
-                  Delete chat
-                </DropdownMenuItem>
-              </DropdownMenu>
-            </div>
-          ))}
-        </div>
-      </aside>
-
-      <section className="flex flex-col h-full overflow-hidden">
-        <ChatHeader thread={threads.find((t) => t.id === activeThreadId)} isNew={isNewChat} />
-        <ChatTimeline messages={displayedMessages} live={liveAssistant} />
-        {error && (
-          <div className="px-6 py-2 text-sm text-destructive border-t border-destructive/30 bg-destructive/5">
-            {error}
-          </div>
-        )}
-        <ChatComposer value={input} onChange={setInput} onSend={send} disabled={sending} />
-      </section>
-    </div>
+          <ChatComposer
+            value={input}
+            onChange={setInput}
+            onSend={send}
+            disabled={sending}
+            className="shrink-0 bg-background/95 backdrop-blur-md z-20"
+          />
+        </>
+      )}
+    </section>
   );
 }
 
-function ChatHeader({ thread, isNew }: { thread?: Thread; isNew?: boolean }) {
-  if (!thread || isNew) {
-    return (
-      <header className="border-b border-border px-6 py-4">
-        <div className="text-sm font-medium">New conversation</div>
-        <div className="text-xs text-muted-foreground mt-0.5">
-          Ask Argentum about your business metrics.
-        </div>
-      </header>
-    );
-  }
+/* ── Chat Header — floating, no border ───────────────────────────────── */
+function ChatHeader({
+  thread,
+  className,
+}: {
+  thread?: Thread;
+  className?: string;
+}) {
+  if (!thread) return null;
   return (
-    <header className="border-b border-border px-6 py-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-medium">{thread.title || "Conversation"}</div>
-          <div className="text-xs text-muted-foreground mt-0.5">
-            {thread.channel === "whatsapp" ? `WhatsApp · ${thread.phone_number}` : "Dashboard"}
-          </div>
+    <header className={cn("px-6 pt-5 pb-2 shrink-0", className)}>
+      <div className="max-w-3xl mx-auto">
+        <div className="text-base font-semibold leading-snug">
+          {thread.title || "Conversation"}
         </div>
-        <Badge variant="outline" className="capitalize">
-          {thread.channel}
-        </Badge>
+        <div className="text-xs text-muted-foreground mt-0.5">
+          {thread.channel === "whatsapp"
+            ? `WhatsApp · ${thread.phone_number}`
+            : "Dashboard"}
+        </div>
       </div>
     </header>
   );
 }
 
-function ChatTimeline({
-  messages,
-  live,
-}: {
-  messages: Message[];
-  live: { jobId: string; content: string; thinking?: string; toolCalls?: Array<{ name: string; payload: unknown }> } | null;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" });
-  }, [messages.length, live?.content, live?.thinking, live?.toolCalls?.length]);
-
-  const items = useMemo(() => {
-    const out: Array<Message | { id: string; pending: true; content: string; thinking?: string; toolCalls?: Array<{ name: string; payload: unknown }> }> = [...messages];
-    if (live) {
-      out.push({ id: `live-${live.jobId}`, pending: true, content: live.content, thinking: live.thinking, toolCalls: live.toolCalls });
-    }
-    return out;
-  }, [messages, live]);
-
-  return (
-    <div ref={ref} className="flex-1 overflow-y-auto px-6 py-6">
-      <div className="max-w-3xl mx-auto space-y-6">
-        {items.length === 0 && (
-          <div className="text-center text-muted-foreground py-12 text-sm">
-            No messages yet. Ask something like "revenue by month for the last 6 months" to get started.
-          </div>
-        )}
-        {items.map((m) => {
-          if ("pending" in m) {
-            return <PendingBubble key={m.id} content={m.content} thinking={m.thinking} toolCalls={m.toolCalls} />;
-          }
-          return <MessageBubble key={m.id} message={m} />;
-        })}
-      </div>
-    </div>
-  );
-}
-
+/* ── Message Bubble ──────────────────────────────────────────────────── */
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
+  const user = useAuthStore((s) => s.user);
+  const userInitials = user?.name
+    ? user.name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "U";
   return (
-    <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
+    <div
+      className={cn(
+        "flex gap-3 items-end",
+        isUser ? "flex-row-reverse" : "flex-row",
+      )}
+    >
+      {/* Avatar */}
       <div
         className={cn(
-          "h-8 w-8 rounded-md flex items-center justify-center shrink-0",
-          isUser ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
+          "h-7 w-7 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold",
+          isUser
+            ? "bg-[#212427] text-white"
+            : "bg-muted text-muted-foreground border border-border",
         )}
       >
-        {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+        {isUser ? (
+          userInitials
+        ) : (
+          <img
+            src="/images/shortLogo_black.svg"
+            alt="A"
+            className="argentum-logo h-3.5 w-3.5"
+          />
+        )}
       </div>
-      <div className={cn("flex-1", isUser && "text-right")}>
+
+      {/* Bubble */}
+      <div className={cn("flex-1", isUser && "flex flex-col items-end")}>
         <div
           className={cn(
-            "inline-block max-w-[75%] rounded-lg px-4 py-2.5 text-sm",
-            isUser ? "bg-primary text-primary-foreground" : "bg-card border border-border"
+            "inline-block max-w-[78%] rounded-3xl px-4 py-3 text-sm leading-relaxed",
+            isUser
+              ? "bg-[#212427] text-white rounded-br-md"
+              : "bg-card border border-border text-foreground rounded-bl-md",
           )}
         >
-          <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
+          {isUser ? (
+            <div className="whitespace-pre-wrap">{message.content}</div>
+          ) : (
+            <MarkdownRenderer content={message.content} />
+          )}
           {message.tool_calls && (
             <div className="mt-3 pt-3 border-t border-border/30 space-y-2 text-left">
               {Object.entries(message.tool_calls).map(([key, value]) => (
@@ -403,7 +386,12 @@ function MessageBubble({ message }: { message: Message }) {
             </div>
           )}
         </div>
-        <div className={cn("text-[11px] text-muted-foreground mt-1 px-1", isUser && "text-right")}>
+        <div
+          className={cn(
+            "text-[11px] text-muted-foreground mt-1 px-1",
+            isUser && "text-right",
+          )}
+        >
           {message.latency_ms ? `${message.latency_ms} ms · ` : ""}
           {formatRelative(message.created_at)}
         </div>
@@ -412,6 +400,7 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
+/* ── Pending (streaming) Bubble ─────────────────────────────────────── */
 function PendingBubble({
   content,
   thinking,
@@ -422,25 +411,31 @@ function PendingBubble({
   toolCalls?: Array<{ name: string; payload: unknown }>;
 }) {
   return (
-    <div className="flex gap-3">
-      <div className="h-8 w-8 rounded-md flex items-center justify-center shrink-0 bg-secondary text-secondary-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
+    <div className="flex gap-3 items-end">
+      <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0 bg-muted text-muted-foreground border border-border text-[11px] font-bold">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
       </div>
       <div className="flex-1">
-        <div className="inline-block max-w-[75%] rounded-lg px-4 py-2.5 text-sm bg-card border border-border space-y-2">
+        <div className="inline-block max-w-[78%] rounded-3xl rounded-bl-md px-4 py-3 text-sm bg-card border border-border space-y-2">
           {thinking && (
-            <div className="text-xs text-muted-foreground italic border-l-2 border-muted pl-2">
+            <div className="text-xs text-muted-foreground italic border-l-2 border-primary/40 pl-2">
               Thinking… {thinking}
             </div>
           )}
-          {content && <div className="whitespace-pre-wrap leading-relaxed">{content}</div>}
+          {content && <MarkdownRenderer content={content} />}
           {!content && !thinking && (
-            <span className="text-muted-foreground italic">Thinking…</span>
+            <span className="text-muted-foreground italic text-xs">
+              Thinking…
+            </span>
           )}
           {toolCalls && toolCalls.length > 0 && (
             <div className="space-y-2">
               {toolCalls.map((tc, i) => (
-                <ToolCallCard key={`${tc.name}-${i}`} name={tc.name} payload={tc.payload} />
+                <ToolCallCard
+                  key={`${tc.name}-${i}`}
+                  name={tc.name}
+                  payload={tc.payload}
+                />
               ))}
             </div>
           )}
@@ -450,40 +445,75 @@ function PendingBubble({
   );
 }
 
+/* ── Unified Chat Composer (used in both new-chat and thread view) ───── */
 function ChatComposer({
   value,
   onChange,
   onSend,
   disabled,
+  className,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   disabled: boolean;
+  className?: string;
 }) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    onChange(e.target.value);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      onSend();
+    }
+  };
+
   return (
-    <div className="border-t border-border p-4">
-      <div className="max-w-3xl mx-auto flex gap-2 items-end">
-        <Textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              onSend();
-            }
-          }}
-          placeholder="Ask about your business..."
-          rows={2}
-          className="resize-none"
-        />
-        <Button onClick={onSend} disabled={disabled || !value.trim()} size="icon" className="h-10 w-10">
-          <Send className="h-4 w-4" />
-        </Button>
-      </div>
-      <div className="max-w-3xl mx-auto mt-2 text-[11px] text-muted-foreground">
-        Press Enter to send, Shift+Enter for newline.
-      </div>
+    <div className={cn("px-4 pb-4 pt-1 w-full shrink-0", className)}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSend();
+        }}
+        className="w-full max-w-3xl mx-auto"
+      >
+        <div className="w-full bg-card border border-border rounded-3xl p-3 shadow-sm focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary/50 transition-all">
+          <div className="flex min-h-12 items-center px-1.5">
+            <div className="flex-1 overflow-auto max-h-48">
+              <Textarea
+                ref={textareaRef}
+                value={value}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask about your business…"
+                className="min-h-0 resize-none rounded-none border-0 p-0 text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent"
+                rows={1}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between px-1.5 pt-1">
+            <p className="text-[11px] text-muted-foreground">
+              Enter to send · Shift+Enter for newline
+            </p>
+            <Button
+              type="submit"
+              size="icon"
+              className="rounded-full h-8 w-8 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+              disabled={disabled || !value.trim()}
+            >
+              <Send className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      </form>
     </div>
   );
 }

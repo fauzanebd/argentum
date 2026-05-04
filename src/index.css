@@ -1,50 +1,102 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    /* ── Argentum Light Palette ──────────────────────────────────── */
+    /* cream #F5F5F0 → large backgrounds  */
+    /* white #FFFFFF → cards, inputs      */
+    /* red   #F25C5C → accent / ornament  */
+    /* text  #0A0A0A → primary text       */
+
+    --background: 60 7% 96%;          /* #F5F5F0 cream */
+    --foreground: 0 0% 4%;            /* #0A0A0A */
+
+    --card: 0 0% 100%;                /* #FFFFFF white */
+    --card-foreground: 0 0% 4%;
+
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --popover-foreground: 0 0% 4%;
+
+    --primary: 0 87% 65%;             /* #F25C5C red accent */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 60 7% 94%;           /* slightly darker cream for hover */
+    --secondary-foreground: 0 0% 4%;
+
+    --muted: 60 5% 92%;
+    --muted-foreground: 0 0% 42%;     /* #6B6B6B */
+
+    --accent: 0 87% 65%;              /* red accent */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 60 6% 88%;              /* #E2E2DC */
+    --input: 0 0% 100%;               /* white inputs */
+    --ring: 0 87% 65%;                /* red focus ring */
+
+    --radius: 0.75rem;
+
+    /* ── Sidebar (light) ─────────────────────────────────────────── */
+    --sidebar-background: 60 7% 96%; /* cream */
+    --sidebar-foreground: 0 0% 15%;
+    --sidebar-primary: 0 87% 65%;    /* red active */
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 60 6% 90%;
+    --sidebar-accent-foreground: 0 0% 10%;
+    --sidebar-border: 60 6% 88%;
+    --sidebar-ring: 0 87% 65%;
   }
+
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* ── Argentum Dark Palette ────────────────────────────────────── */
+    /* base    #212427 → page background   */
+    /* surface #2A2D31 → sidebar, cards    */
+    /* elevated #313539 → hover, inputs   */
+    /* silver  #C0C0C0 → shimmer accent   */
+
+    --background: 210 7% 15%;         /* #212427 */
+    --foreground: 60 5% 94%;          /* #F0F0EE */
+
+    --card: 210 7% 18%;               /* #2A2D31 */
+    --card-foreground: 60 5% 94%;
+
+    --popover: 210 7% 18%;
+    --popover-foreground: 60 5% 94%;
+
+    --primary: 0 87% 65%;             /* #F25C5C red stays */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 7% 21%;          /* #313539 */
+    --secondary-foreground: 60 5% 94%;
+
+    --muted: 210 7% 21%;
+    --muted-foreground: 213 5% 55%;   /* #8A8F98 */
+
+    --accent: 0 87% 65%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 60 5% 94%;
+
+    --border: 210 7% 23%;             /* #35393E */
+    --input: 210 7% 18%;
+    --ring: 0 87% 65%;
+
+    /* ── Sidebar (dark) ──────────────────────────────────────────── */
+    --sidebar-background: 210 7% 18%; /* #2A2D31 */
+    --sidebar-foreground: 60 5% 88%;
+    --sidebar-primary: 0 87% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 7% 24%;
+    --sidebar-accent-foreground: 60 5% 94%;
+    --sidebar-border: 210 7% 23%;
+    --sidebar-ring: 0 87% 65%;
   }
 }
 
@@ -52,7 +104,85 @@
   * {
     @apply border-border;
   }
+  html {
+    font-family: 'Space Grotesk', sans-serif;
+  }
   body {
     @apply bg-background text-foreground;
+    font-family: 'Space Grotesk', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
+
+/* ── Sidebar shimmer (both modes) ────────────────────────────────────── */
+[data-sidebar="sidebar"] {
+  position: relative;
+  overflow: hidden;
+}
+
+[data-sidebar="sidebar"]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.1) 40%,
+    transparent 70%
+  ),
+  linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    transparent 50%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dark [data-sidebar="sidebar"]::before {
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    rgba(192, 192, 192, 0.08) 0%,
+    rgba(192, 192, 192, 0.03) 40%,
+    transparent 70%
+  ),
+  linear-gradient(
+    160deg,
+    rgba(192, 192, 192, 0.06) 0%,
+    transparent 50%
+  );
+}
+
+[data-sidebar="sidebar"] > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Sidebar icon alignment fix (collapsed state) ───────────────────── */
+[data-sidebar="menu-button"][data-state="collapsed"] {
+  justify-content: center;
+}
+
+/* ── Logo invert for dark mode ──────────────────────────────────────── */
+.dark .argentum-logo {
+  filter: invert(1) brightness(1.1);
+}
+
+/* ── Scrollbar styling ──────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+

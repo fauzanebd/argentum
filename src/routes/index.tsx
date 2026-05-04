@@ -11,7 +11,6 @@ import { LoginPage } from "@/features/auth/login-page";
 import { SignupPage } from "@/features/auth/signup-page";
 import { OnboardingPage } from "@/features/onboarding/onboarding-page";
 import { ChatPage } from "@/features/chat/chat-page";
-import { ThreadsPage } from "@/features/chat/threads-page";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { UsagePage } from "@/features/usage/usage-page";
 
@@ -72,12 +71,6 @@ const chatThreadRoute = createRoute({
   component: ChatPage,
 });
 
-const threadsRoute = createRoute({
-  getParentRoute: () => protectedRoute,
-  path: "/threads",
-  component: ThreadsPage,
-});
-
 const settingsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/settings",
@@ -94,12 +87,11 @@ export const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   signupRoute,
-  protectedRoute.addChildren([
-    onboardingRoute,
-    chatRoute,
-    chatThreadRoute,
-    threadsRoute,
-    settingsRoute,
-    usageRoute,
-  ]),
+    protectedRoute.addChildren([
+      onboardingRoute,
+      chatRoute,
+      chatThreadRoute,
+      settingsRoute,
+      usageRoute,
+    ]),
 ]);

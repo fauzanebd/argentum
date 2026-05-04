@@ -15,15 +15,29 @@ import { CheckCircle2, XCircle } from "lucide-react";
 const schema = z.object({
   db_type: z.string().min(1, "Pick a database type"),
   label: z.string().optional(),
-  dsn: z.string().min(8, "DSN required"),
   default_currency: z.string().min(1, "Pick a currency"),
 });
+
+type ConnMode = "fields" | "raw";
+
+function defaultPort(dbType: string) {
+  if (dbType === "mysql") return "3306";
+  return "5432";
+}
+
 type FormValues = z.infer<typeof schema>;
 
 export function OnboardingPage() {
   const navigate = useNavigate();
   const [supported, setSupported] = useState<string[]>([]);
   const [currencies, setCurrencies] = useState<string[]>([]);
+  const [mode, setMode] = useState<ConnMode>("fields");
+  const [dsn, setDsn] = useState("");
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState(defaultPort("postgres"));
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [dbname, setDbname] = useState("");
   const [testStatus, setTestStatus] = useState<"idle" | "ok" | "error" | "testing">("idle");
   const [testError, setTestError] = useState<string | null>(null);
 
@@ -31,6 +45,8 @@ export function OnboardingPage() {
     resolver: zodResolver(schema),
     defaultValues: { db_type: "postgres", label: "Production analytics", default_currency: "USD" },
   });
+
+  const dbType = form.watch("db_type");
 
   useEffect(() => {
     api.get("/meta/supported-databases").then((r) => setSupported(r.data.registered ?? r.data.supported ?? []));
@@ -40,21 +56,50 @@ export function OnboardingPage() {
         form.setValue("default_currency", r.data.default_currency);
       }
     }).catch(() => {
-      // Settings endpoint may fail if the company isn't fully set up yet.
-      // Fall back to a reasonable default list.
       setCurrencies(["USD", "EUR", "GBP", "IDR", "SGD", "JPY"].sort());
     });
   }, []);
 
+  useEffect(() => {
+    setPort(defaultPort(dbType));
+  }, [dbType]);
+
+  function connectionPayload() {
+    if (mode === "raw") {
+      return { db_type: dbType, dsn };
+    }
+    return {
+      db_type: dbType,
+      host,
+      port,
+      username,
+      password,
+      dbname,
+    };
+  }
+
+  function validateConnection(): string | null {
+    if (mode === "raw") {
+      if (!dsn.trim()) return "DSN is required";
+      return null;
+    }
+    if (!host.trim()) return "Host is required";
+    if (!port.trim()) return "Port is required";
+    if (!dbname.trim()) return "Database name is required";
+    return null;
+  }
+
   async function testConnection() {
+    const err = validateConnection();
+    if (err) {
+      setTestStatus("error");
+      setTestError(err);
+      return;
+    }
     setTestStatus("testing");
     setTestError(null);
     try {
-      const res = await api.post("/connections/test", {
-        db_type: form.getValues("db_type"),
-        dsn: form.getValues("dsn"),
-      });
-      // Sometimes API returns { ok: true } even on 200 with bad creds.
+      const res = await api.post("/connections/test", connectionPayload());
       if (res.data.ok) {
         setTestStatus("ok");
       } else {
@@ -68,8 +113,13 @@ export function OnboardingPage() {
   }
 
   async function onSubmit(values: FormValues) {
-    await api.post("/connections", { ...values, is_default: true });
-    // Save the selected currency
+    const err = validateConnection();
+    if (err) {
+      setTestStatus("error");
+      setTestError(err);
+      return;
+    }
+    await api.post("/connections", { ...connectionPayload(), label: values.label, is_default: true });
     await api.put("/settings", { default_currency: values.default_currency });
     navigate({ to: "/chat" });
   }
@@ -114,20 +164,65 @@ export function OnboardingPage() {
                 <Label htmlFor="label">Label (optional)</Label>
                 <Input id="label" {...form.register("label")} />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="dsn">Connection string (DSN)</Label>
-                <Input
-                  id="dsn"
-                  placeholder="postgres://user:pass@host:5432/db?sslmode=require"
-                  {...form.register("dsn")}
-                />
-                {form.formState.errors.dsn && (
-                  <p className="text-xs text-destructive">{form.formState.errors.dsn.message}</p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Stored encrypted at rest with AES-256-GCM. Only the database type is plaintext.
-                </p>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant={mode === "fields" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setMode("fields")}
+                >
+                  Connection details
+                </Button>
+                <Button
+                  type="button"
+                  variant={mode === "raw" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setMode("raw")}
+                >
+                  Raw DSN
+                </Button>
               </div>
+
+              {mode === "fields" ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Host</Label>
+                    <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="db.example.com" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Port</Label>
+                    <Input value={port} onChange={(e) => setPort(e.target.value)} placeholder={defaultPort(dbType)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Username</Label>
+                    <Input value={username} onChange={(e) => setUsername(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Password</Label>
+                    <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5 col-span-2">
+                    <Label>Database name</Label>
+                    <Input value={dbname} onChange={(e) => setDbname(e.target.value)} />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="dsn">Connection string (DSN)</Label>
+                  <Input
+                    id="dsn"
+                    placeholder="postgres://user:pass@host:5432/db?sslmode=require"
+                    value={dsn}
+                    onChange={(e) => setDsn(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                Stored encrypted at rest with AES-256-GCM. Only the database type is plaintext.
+              </p>
+
               <div className="flex items-center gap-3">
                 <Button type="button" variant="outline" onClick={testConnection} disabled={testStatus === "testing"}>
                   {testStatus === "testing" ? "Testing..." : "Test connection"}

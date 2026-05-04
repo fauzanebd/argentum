@@ -6,6 +6,9 @@ export interface User {
   company_id: string;
   email: string;
   role: string;
+  name?: string;
+  avatar?: string;
+  company_name?: string;
 }
 
 interface AuthState {

@@ -3,12 +3,14 @@ import { useNavigate, Link } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+import { useThemeStore } from "@/store/theme";
 
 const schema = z.object({
   email: z.string().email(),
@@ -19,6 +21,7 @@ type FormValues = z.infer<typeof schema>;
 export function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
+  const { theme, toggle } = useThemeStore();
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -39,7 +42,17 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-screen flex items-center justify-center px-4 relative">
+      {/* Theme toggle */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={toggle}
+        className="absolute top-4 right-4 rounded-full"
+        aria-label="Toggle theme"
+      >
+        {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+      </Button>
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Sign in to Argentum</CardTitle>
