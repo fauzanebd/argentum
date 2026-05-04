@@ -88,9 +88,11 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 
 	start := time.Now()
 
-	// Prepend currency and DB-type context so the agent formats monetary
-	// values correctly and generates SQL compatible with the tenant DB.
-	agentMsg := withCurrencyContext(p.Message, p.DefaultCurrency)
+	// Prepend organization, currency, and DB-type context so the agent
+	// knows who it is assisting, formats monetary values correctly, and
+	// generates SQL compatible with the tenant DB.
+	agentMsg := withCompanyNameContext(p.Message, p.CompanyName)
+	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency)
 	if schema != nil {
 		agentMsg = withDBTypeContext(agentMsg, schema.DBType)
 	}
@@ -314,6 +316,18 @@ func (r *ChatRunner) hydrateMemory(ctx context.Context, p queue.ChatRunPayload) 
 	return nil
 }
 
+// withCompanyNameContext prepends the tenant organization name so the
+// agent can personalize references. If name is empty, msg is unchanged.
+func withCompanyNameContext(msg, companyName string) string {
+	if companyName == "" {
+		return msg
+	}
+	return fmt.Sprintf(
+		"[System context: The user's organization is named %s.]\n\n%s",
+		companyName, msg,
+	)
+}
+
 // withCurrencyContext prepends a short currency instruction to the user
 // message so the agent knows which currency to use for formatting. If
 // currency is empty, the message is returned unchanged.
@@ -346,4 +360,3 @@ func withDBTypeContext(msg, dbType string) string {
 		dbType, hints, msg,
 	)
 }
-

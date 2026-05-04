@@ -24,5 +24,6 @@ type ChatRunPayload struct {
 	Channel         domain.Channel `json:"channel"`
 	Message         string         `json:"message"`
 	UserMsgID       string         `json:"user_msg_id"`
+	CompanyName     string         `json:"company_name,omitempty"`
 	DefaultCurrency string         `json:"default_currency,omitempty"` // ISO 4217
 }
