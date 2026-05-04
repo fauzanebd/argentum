@@ -123,9 +123,10 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		return nil, fmt.Errorf("append user message: %w", err)
 	}
 
-	// Look up the company's default currency for agent context.
-	var currency string
+	// Look up company display name and default currency for agent context.
+	var companyName, currency string
 	if company, err := s.companies.GetByID(ctx, in.CompanyID); err == nil {
+		companyName = company.Name
 		currency = company.DefaultCurrency
 	}
 
@@ -137,6 +138,7 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		Channel:         in.Channel,
 		Message:         in.Message,
 		UserMsgID:       userMsg.ID,
+		CompanyName:     companyName,
 		DefaultCurrency: currency,
 	})
 	if err != nil {
