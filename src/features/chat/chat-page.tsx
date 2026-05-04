@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Send, Loader2 } from "lucide-react";
@@ -11,10 +18,7 @@ import type { Thread, Message, ChatEvent } from "./types";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
 import { MarkdownRenderer } from "./markdown-renderer";
-import {
-  formatLatencySeconds,
-  formatMessageTimestamp,
-} from "./format";
+import { formatLatencySeconds, formatMessageTimestamp } from "./format";
 
 export function ChatPage() {
   const params = useParams({ strict: false }) as { threadId?: string };
@@ -29,6 +33,8 @@ export function ChatPage() {
   const threads = threadsData ?? [];
 
   const activeThreadId = params.threadId ?? null;
+  const activeThreadIdRef = useRef<string | null>(activeThreadId);
+  activeThreadIdRef.current = activeThreadId;
   const isNewChat = activeThreadId === null;
 
   const { data: messagesData } = useQuery({
@@ -102,11 +108,40 @@ export function ChatPage() {
     [qc, stopPolling],
   );
 
+  const prevThreadIdRef = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
     return () => stopPolling();
   }, [stopPolling]);
 
+  /** Leaving a thread closes the WS (useThreadStream cleanup → ws.close), but
+   *  liveAssistant would keep showing the previous thread’s stream without this.
+   *  Do not stop fallback polling when opening a thread from new chat (null → id). */
+  useLayoutEffect(() => {
+    setLiveAssistant(null);
+    setError(null);
+
+    const prev = prevThreadIdRef.current;
+    if (prev === undefined) {
+      prevThreadIdRef.current = activeThreadId;
+      return;
+    }
+
+    if (prev !== activeThreadId) {
+      const switchedThread =
+        prev !== null && activeThreadId !== null && prev !== activeThreadId;
+      const leftForNewChat = prev !== null && activeThreadId === null;
+      if (switchedThread || leftForNewChat) {
+        finalReceivedRef.current = true;
+        stopPolling();
+      }
+    }
+
+    prevThreadIdRef.current = activeThreadId;
+  }, [activeThreadId, stopPolling]);
+
   useThreadStream(activeThreadId, (evt: ChatEvent) => {
+    if (evt.thread_id !== activeThreadIdRef.current) return;
     if (evt.type === "started") {
       finalReceivedRef.current = false;
       setLiveAssistant({ jobId: evt.job_id, content: "" });
