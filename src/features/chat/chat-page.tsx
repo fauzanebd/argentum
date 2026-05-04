@@ -11,7 +11,10 @@ import type { Thread, Message, ChatEvent } from "./types";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
 import { MarkdownRenderer } from "./markdown-renderer";
-import { formatRelative } from "./format";
+import {
+  formatLatencySeconds,
+  formatMessageTimestamp,
+} from "./format";
 
 export function ChatPage() {
   const params = useParams({ strict: false }) as { threadId?: string };
@@ -348,7 +351,7 @@ function MessageBubble({ message }: { message: Message }) {
         className={cn(
           "h-7 w-7 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold",
           isUser
-            ? "bg-[#212427] text-white"
+            ? "bg-[#212427] text-white dark:bg-white dark:text-[#212427]"
             : "bg-muted text-muted-foreground border border-border",
         )}
       >
@@ -369,7 +372,7 @@ function MessageBubble({ message }: { message: Message }) {
           className={cn(
             "inline-block max-w-[78%] rounded-3xl px-4 py-3 text-sm leading-relaxed",
             isUser
-              ? "bg-[#212427] text-white rounded-br-md"
+              ? "bg-[#212427] text-white rounded-br-md dark:bg-white dark:text-[#212427]"
               : "bg-card border border-border text-foreground rounded-bl-md",
           )}
         >
@@ -392,8 +395,10 @@ function MessageBubble({ message }: { message: Message }) {
             isUser && "text-right",
           )}
         >
-          {message.latency_ms ? `${message.latency_ms} ms · ` : ""}
-          {formatRelative(message.created_at)}
+          {message.latency_ms
+            ? `${formatLatencySeconds(message.latency_ms)} · `
+            : ""}
+          {formatMessageTimestamp(message.created_at)}
         </div>
       </div>
     </div>

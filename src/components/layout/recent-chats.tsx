@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
 import type { Thread } from "@/features/chat/types";
-import { formatRelative } from "@/features/chat/format";
+import { formatMessageTimestamp } from "@/features/chat/format";
 
 export function RecentChats() {
   const { data: threadsData } = useQuery({
@@ -92,7 +92,7 @@ export function RecentChats() {
                         </span>
                         <span className="truncate text-xs text-muted-foreground">
                           {t.phone_number || "Dashboard"} ·{" "}
-                          {formatRelative(t.last_message_at)}
+                          {formatMessageTimestamp(t.last_message_at)}
                         </span>
                       </div>
                     </Link>

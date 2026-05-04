@@ -43,7 +43,8 @@
     --radius: 0.75rem;
 
     /* ── Sidebar (light) ─────────────────────────────────────────── */
-    --sidebar-background: 60 7% 96%; /* cream */
+    /* Match chat composer / assistant bubbles (card), not page cream */
+    --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 0 0% 15%;
     --sidebar-primary: 0 87% 65%;    /* red active */
     --sidebar-primary-foreground: 0 0% 100%;
