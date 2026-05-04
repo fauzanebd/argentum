@@ -26,13 +26,16 @@ type apiDeps struct {
 	rdb       *redis.Client
 	enqueuer  *queue.Enqueuer
 
-	signer     *auth.TokenSigner
-	authSvc    *app.AuthService
-	companySvc *app.CompanyService
-	usageSvc   *app.UsageService
-	chatEnq    *app.ChatEnqueuer
-	threadRepo *pgctl.ThreadRepo
-	msgRepo    *pgctl.MessageRepo
+	signer      *auth.TokenSigner
+	authSvc     *app.AuthService
+	companySvc      *app.CompanyService
+	usageSvc        *app.UsageService
+	chatEnq         *app.ChatEnqueuer
+	threadRepo      *pgctl.ThreadRepo
+	msgRepo         *pgctl.MessageRepo
+	userRepo        *pgctl.UserRepo
+	companyRepo     *pgctl.CompanyRepo
+	dashboardSvc    *app.DashboardService
 
 	wa whatsapp.Provider
 

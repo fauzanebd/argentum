@@ -401,15 +401,16 @@ func (c *Client) ensureSession(ctx context.Context) error {
 	return c.Authenticate(ctx)
 }
 
-// UpsertPostgresWarehouse creates or updates a Metabase database connection for Postgres.
+// UpsertWarehouse creates or updates a Metabase database connection.
+// engine must be a Metabase driver identifier such as "postgres" or "mysql".
 // When existingID is non-nil and greater than zero, Metabase is updated in place.
-func (c *Client) UpsertPostgresWarehouse(ctx context.Context, existingID *int, name string, details map[string]interface{}) (int, error) {
+func (c *Client) UpsertWarehouse(ctx context.Context, engine string, existingID *int, name string, details map[string]interface{}) (int, error) {
 	if err := c.ensureSession(ctx); err != nil {
 		return 0, err
 	}
 
 	payload := map[string]interface{}{
-		"engine":           "postgres",
+		"engine":           engine,
 		"name":             name,
 		"details":          details,
 		"is_full_sync":     false,
@@ -487,6 +488,33 @@ func (c *Client) DeleteWarehouse(ctx context.Context, databaseID int) error {
 		return fmt.Errorf("metabase delete database %d (status %d): %s", databaseID, resp.StatusCode, string(body))
 	}
 	logrus.Infof("Metabase warehouse deleted id=%d", databaseID)
+	return nil
+}
+
+// DeleteDashboard permanently removes a Metabase dashboard by id.
+func (c *Client) DeleteDashboard(ctx context.Context, dashboardID int) error {
+	if dashboardID <= 0 {
+		return nil
+	}
+	if err := c.ensureSession(ctx); err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/api/dashboard/%d", c.baseURL, dashboardID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Metabase-Session", c.sessionToken)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("metabase delete dashboard %d (status %d): %s", dashboardID, resp.StatusCode, string(body))
+	}
+	logrus.Infof("Metabase dashboard deleted id=%d", dashboardID)
 	return nil
 }
 

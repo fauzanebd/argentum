@@ -93,8 +93,8 @@ func (s *CompanyService) AddConnection(ctx context.Context, companyID, dbType, l
 		}
 		s.pool.Invalidate(companyID)
 	}
-	if s.mb != nil && dbType == db.Postgres {
-		id, err := s.mb.SyncCompanyPostgres(ctx, c, dsn)
+	if s.mb != nil {
+		id, err := s.mb.SyncCompanyDatabase(ctx, c, dsn)
 		if err != nil {
 			logrus.WithError(err).Warn("metabase warehouse sync failed; dashboards stay disabled until connection can be synced")
 		} else {
@@ -126,8 +126,8 @@ func (s *CompanyService) UpdateConnectionDSN(ctx context.Context, companyID, con
 	}
 	s.pool.Invalidate(companyID)
 
-	if s.mb != nil && conn.DBType == db.Postgres {
-		id, err := s.mb.SyncCompanyPostgres(ctx, conn, dsn)
+	if s.mb != nil {
+		id, err := s.mb.SyncCompanyDatabase(ctx, conn, dsn)
 		if err != nil {
 			return fmt.Errorf("connection saved but Metabase sync failed: %w", err)
 		}

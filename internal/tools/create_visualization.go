@@ -14,9 +14,9 @@ import (
 )
 
 // MetabaseTenantDB resolves Metabase `/api/database` id for this tenant's
-// default Postgres analytical warehouse.
+// default analytical warehouse.
 type MetabaseTenantDB interface {
-	DefaultPostgresMetabaseDatabaseID(ctx context.Context, companyID string) (int, error)
+	DefaultMetabaseDatabaseID(ctx context.Context, companyID string) (int, error)
 }
 
 // CreateVisualizationTool runs a SQL query against the tenant's analytics DB
@@ -39,7 +39,7 @@ func NewCreateVisualizationTool(pool *db.TenantConnPool, metabaseClient *metabas
 func (t *CreateVisualizationTool) Name() string { return "create_visualization" }
 
 func (t *CreateVisualizationTool) Description() string {
-	return "Create a visualization card (question) in Metabase from a SQL query. Returns a card_id and chart_type. Use create_dashboard afterwards to combine multiple cards into a single shareable dashboard."
+	return "Create a visualization card (question) in Metabase from a SQL query. Returns a card_id and chart_type. Remember the returned card_id — you MUST pass it in the 'cards' array when calling create_dashboard afterwards. Use create_dashboard to combine multiple cards into a single shareable dashboard."
 }
 
 func (t *CreateVisualizationTool) Parameters() map[string]interfaces.ParameterSpec {
@@ -129,7 +129,7 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 	if t.mbResolver == nil {
 		return "", fmt.Errorf("Metabase resolver not configured")
 	}
-	databaseID, err := t.mbResolver.DefaultPostgresMetabaseDatabaseID(ctx, companyID)
+	databaseID, err := t.mbResolver.DefaultMetabaseDatabaseID(ctx, companyID)
 	if err != nil {
 		return "", fmt.Errorf("tenant Metabase database: %w", err)
 	}
@@ -153,6 +153,12 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 
 	t.recorder.RecordMetabaseCard(ctx, companyID, tenantctx.ThreadID(ctx))
 
+	entry := metabase.DashCardEntry{
+		CardID:    createdCard.ID,
+		ChartType: chartType,
+	}
+	RecordThreadCard(tenantctx.ThreadID(ctx), entry)
+
 	logrus.WithFields(logrus.Fields{
 		"company_id": companyID,
 		"card_id":    createdCard.ID,
@@ -160,9 +166,11 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 	}).Info("Created Metabase card")
 
 	out, _ := json.Marshal(map[string]interface{}{
-		"card_id":    createdCard.ID,
-		"card_name":  createdCard.Name,
-		"chart_type": chartType,
+		"card_id":         createdCard.ID,
+		"card_name":       createdCard.Name,
+		"chart_type":      chartType,
+		"dashboard_cards": []metabase.DashCardEntry{entry},
+		"note":            "To build a dashboard, call create_dashboard and pass the exact 'dashboard_cards' array above into the 'cards' parameter.",
 	})
 	return string(out), nil
 }

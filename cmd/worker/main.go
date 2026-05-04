@@ -93,11 +93,12 @@ func main() {
 		cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword,
 	)
 	getSchemaTool := tools.NewGetSchemaTool(tenantPool)
+	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
 	agentTools := []interfaces.Tool{
 		getSchemaTool,
 		tools.NewRunSQLTool(tenantPool, usageSvc),
 		tools.NewCreateVisualizationTool(tenantPool, metabaseClient, connRepo, usageSvc),
-		tools.NewCreateDashboardTool(metabaseClient, usageSvc),
+		tools.NewCreateDashboardTool(metabaseClient, usageSvc, app.NewDashboardService(dashboardRepo, metabaseClient)),
 	}
 	mem := buildMemory(cfg)
 	gr := buildGuardrails(cfg, lightLLMClient)
@@ -302,10 +303,14 @@ You have access to these tools:
 - create_dashboard: Combine multiple card_ids into a single Metabase dashboard with a shareable URL.
 
 CRITICAL GUIDELINES:
-1. Always call get_schema FIRST when in doubt about table or column names. Never invent identifiers.
-2. Generate valid SQL appropriate for the connected DB. Aggregations + filters as needed.
-3. When the user wants charts/graphs/dashboards: call create_visualization for each card, then create_dashboard ONCE with all card_ids and return that URL.
-4. NEVER return individual card IDs to the user — always wrap with a dashboard.
-5. Use LIMIT 100 unless explicitly asked otherwise.
-6. Reply in the user's language (Bahasa Indonesia or English).`
+1. LANGUAGE IS THE TOP PRIORITY: Detect the language of the user's message and reply ONLY in that exact same language. If the user writes in English, reply fully in English. If the user writes in Indonesian/Bahasa Indonesia, reply fully in Indonesian. Never mix languages and never default to Indonesian when the user wrote in English.
+2. ONLY call tools when the user asks a question that requires database data or a visualization. For greetings ("hi", "hello", "test"), small-talk, or general conversation that does NOT need data, reply directly without calling any tools.
+3. When you DO need to query data: call get_schema FIRST if you are unsure about table or column names. Never invent identifiers.
+4. Generate valid SQL appropriate for the connected DB. The DB type (mysql or postgres) and dialect hints are prepended to every user message — respect them. Aggregations + filters as needed.
+5. When the user wants charts/graphs/dashboards: call create_visualization for each card, then create_dashboard ONCE.
+   - After create_visualization returns, copy the exact "dashboard_cards" array into create_dashboard's "cards" parameter.
+   - Alternatively, pass just "card_ids": [123, 456] to create_dashboard.
+   - When returning the dashboard URL to the user, format it as a markdown link with descriptive text, e.g. [Sales Performance Dashboard](url). Never show the raw URL.
+6. NEVER return individual card IDs to the user — always wrap with a dashboard.
+7. Use LIMIT 100 unless explicitly asked otherwise.`
 }

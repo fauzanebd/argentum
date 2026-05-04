@@ -6,27 +6,34 @@ import (
 	"fmt"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
+	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/sirupsen/logrus"
 )
 
+// DashboardSaver persists a created dashboard to the control DB.
+type DashboardSaver interface {
+	Save(ctx context.Context, d *domain.SavedDashboard) error
+}
+
 // CreateDashboardTool assembles multiple Metabase cards into a single dashboard.
 type CreateDashboardTool struct {
 	metabaseClient *metabase.Client
 	recorder       UsageRecorder
+	dbSaver        DashboardSaver
 }
 
-func NewCreateDashboardTool(metabaseClient *metabase.Client, recorder UsageRecorder) *CreateDashboardTool {
+func NewCreateDashboardTool(metabaseClient *metabase.Client, recorder UsageRecorder, dbSaver DashboardSaver) *CreateDashboardTool {
 	if recorder == nil {
 		recorder = nopRecorder{}
 	}
-	return &CreateDashboardTool{metabaseClient: metabaseClient, recorder: recorder}
+	return &CreateDashboardTool{metabaseClient: metabaseClient, recorder: recorder, dbSaver: dbSaver}
 }
 
 func (t *CreateDashboardTool) Name() string { return "create_dashboard" }
 func (t *CreateDashboardTool) Description() string {
-	return "Create a Metabase dashboard from one or more card IDs (returned by create_visualization) and return a single shareable public URL. Always call this after creating cards to give the user one unified dashboard link."
+	return "Create a Metabase dashboard from one or more card IDs (returned by create_visualization) and return a single shareable public URL. Always call this after creating cards to give the user one unified dashboard link. Pass cards either as 'cards' (array of objects with card_id and chart_type) or as 'card_ids' (simple array of integers). If you omit both, cards created earlier in this conversation are used automatically."
 }
 
 func (t *CreateDashboardTool) Parameters() map[string]interfaces.ParameterSpec {
@@ -43,11 +50,20 @@ func (t *CreateDashboardTool) Parameters() map[string]interfaces.ParameterSpec {
 		},
 		"cards": {
 			Type:        "array",
-			Description: "Array of card objects. Required fields: card_id (int), chart_type (string: 'scalar','bar','line','pie','table'). Optional layout fields: col (int, 0-17), row (int), size_x (int, 1-18), size_y (int). If layout fields are omitted, smart auto-layout is used: scalars packed 3-per-row at top, charts full-width below.",
-			Required:    true,
+			Description: "Array of card objects. Fields: card_id (int), chart_type (string: 'scalar','bar','line','pie','table'). Optional layout: col, row, size_x, size_y. Prefer this when you know the chart types.",
+			Required:    false,
 			Items: &interfaces.ParameterSpec{
 				Type:        "object",
 				Description: "Card entry with card_id, chart_type, and optional layout (col, row, size_x, size_y)",
+			},
+		},
+		"card_ids": {
+			Type:        "array",
+			Description: "Simple array of card IDs (integers). Use this when you only have the card IDs from create_visualization. Example: [123, 456].",
+			Required:    false,
+			Items: &interfaces.ParameterSpec{
+				Type:        "integer",
+				Description: "A card ID returned by create_visualization",
 			},
 		},
 	}
@@ -86,8 +102,15 @@ func (t *CreateDashboardTool) Execute(ctx context.Context, args string) (string,
 	if err != nil {
 		return "", err
 	}
+
+	// Fallback: auto-resolve cards created earlier in this thread
 	if len(entries) == 0 {
-		return "", fmt.Errorf("cards parameter is required and must not be empty. Provide cards as: [{\"card_id\": 1, \"chart_type\": \"bar\"}, ...]")
+		threadID := tenantctx.ThreadID(ctx)
+		entries = GetThreadCards(threadID)
+		if len(entries) == 0 {
+			return "", fmt.Errorf("cards parameter is required and must not be empty. Provide cards as: [{\"card_id\": 1, \"chart_type\": \"bar\"}, ...] or card_ids as: [1, 2, 3]")
+		}
+		logrus.WithField("thread_id", threadID).WithField("card_count", len(entries)).Debug("create_dashboard auto-resolved cards from thread state")
 	}
 
 	dashboard, err := t.metabaseClient.CreateDashboard(ctx, name, description)
@@ -105,6 +128,18 @@ func (t *CreateDashboardTool) Execute(ctx context.Context, args string) (string,
 	}
 
 	t.recorder.RecordMetabaseDashboard(ctx, tenantctx.CompanyID(ctx), tenantctx.ThreadID(ctx))
+	ClearThreadCards(tenantctx.ThreadID(ctx))
+
+	// Persist to control DB so the user can revisit later.
+	if t.dbSaver != nil {
+		_ = t.dbSaver.Save(ctx, &domain.SavedDashboard{
+			CompanyID:           tenantctx.CompanyID(ctx),
+			ThreadID:            tenantctx.ThreadID(ctx),
+			MetabaseDashboardID: dashboard.ID,
+			Name:                name,
+			PublicURL:           publicURL,
+		})
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"dashboard_id": dashboard.ID,

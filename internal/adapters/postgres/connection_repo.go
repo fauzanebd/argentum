@@ -114,18 +114,15 @@ func (r *ConnectionRepo) Delete(ctx context.Context, id string) error {
 	return err
 }
 
-// DefaultPostgresMetabaseDatabaseID returns the Metabase /api/database identifier for the
-// company's default postgres analytical connection.
-func (r *ConnectionRepo) DefaultPostgresMetabaseDatabaseID(ctx context.Context, companyID string) (int, error) {
+// DefaultMetabaseDatabaseID returns the Metabase /api/database identifier for the
+// company's default analytical connection.
+func (r *ConnectionRepo) DefaultMetabaseDatabaseID(ctx context.Context, companyID string) (int, error) {
 	conn, err := r.GetDefaultForCompany(ctx, companyID)
 	if err != nil {
 		return 0, err
 	}
-	if conn.DBType != "postgres" {
-		return 0, fmt.Errorf("default analytical connection must be postgres for metabase dashboards (got %s)", conn.DBType)
-	}
 	if conn.MetabaseDatabaseID == nil || *conn.MetabaseDatabaseID == 0 {
-		return 0, fmt.Errorf("warehouse not synced to Metabase; add or rotate the Postgres DSN so registration can run")
+		return 0, fmt.Errorf("warehouse not synced to Metabase; add or rotate the DSN so registration can run")
 	}
 	return *conn.MetabaseDatabaseID, nil
 }

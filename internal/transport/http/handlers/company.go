@@ -2,9 +2,13 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -41,6 +45,44 @@ func companyID(c *gin.Context) string {
 	return s
 }
 
+// buildDSN constructs a driver-specific DSN from discrete fields.
+// If raw is non-empty it is returned as-is (advanced mode).
+func buildDSN(dbType, raw, host, port, user, pass, dbname string) (string, error) {
+	if raw != "" {
+		return raw, nil
+	}
+	if host == "" || port == "" || dbname == "" {
+		return "", fmt.Errorf("host, port and database name are required")
+	}
+	switch dbType {
+	case "postgres":
+		u := url.URL{
+			Scheme: "postgres",
+			User:   url.UserPassword(user, pass),
+			Host:   host + ":" + port,
+			Path:   dbname,
+		}
+		q := u.Query()
+		q.Set("sslmode", "require")
+		u.RawQuery = q.Encode()
+		return u.String(), nil
+	case "mysql":
+		cfg := mysql.Config{
+			User:                 user,
+			Passwd:               pass,
+			Net:                  "tcp",
+			Addr:                 host + ":" + port,
+			DBName:               dbname,
+			ParseTime:            true,
+			Loc:                  time.UTC,
+			AllowNativePasswords: true,
+		}
+		return cfg.FormatDSN(), nil
+	default:
+		return "", fmt.Errorf("unsupported db_type %q", dbType)
+	}
+}
+
 func (h *CompanyHandler) listConnections(c *gin.Context) {
 	out, err := h.svc.ListConnections(c.Request.Context(), companyID(c))
 	if err != nil {
@@ -51,10 +93,15 @@ func (h *CompanyHandler) listConnections(c *gin.Context) {
 }
 
 type addConnReq struct {
-	DBType    string `json:"db_type" binding:"required"`
-	Label     string `json:"label"`
-	DSN       string `json:"dsn" binding:"required"`
-	IsDefault bool   `json:"is_default"`
+	DBType   string `json:"db_type" binding:"required"`
+	Label    string `json:"label"`
+	DSN      string `json:"dsn"`
+	Host     string `json:"host"`
+	Port     string `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	DBName   string `json:"dbname"`
+	IsDefault bool  `json:"is_default"`
 }
 
 func (h *CompanyHandler) addConnection(c *gin.Context) {
@@ -63,7 +110,12 @@ func (h *CompanyHandler) addConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	conn, err := h.svc.AddConnection(c.Request.Context(), companyID(c), req.DBType, req.Label, req.DSN, req.IsDefault)
+	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	conn, err := h.svc.AddConnection(c.Request.Context(), companyID(c), req.DBType, req.Label, dsn, req.IsDefault)
 	if err != nil {
 		if errors.Is(err, domain.ErrUnsupportedDB) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -77,7 +129,13 @@ func (h *CompanyHandler) addConnection(c *gin.Context) {
 }
 
 type updateDSNReq struct {
-	DSN string `json:"dsn" binding:"required"`
+	DBType   string `json:"db_type" binding:"required"`
+	DSN      string `json:"dsn"`
+	Host     string `json:"host"`
+	Port     string `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	DBName   string `json:"dbname"`
 }
 
 func (h *CompanyHandler) updateConnectionDSN(c *gin.Context) {
@@ -86,7 +144,12 @@ func (h *CompanyHandler) updateConnectionDSN(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.svc.UpdateConnectionDSN(c.Request.Context(), companyID(c), c.Param("id"), req.DSN); err != nil {
+	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.svc.UpdateConnectionDSN(c.Request.Context(), companyID(c), c.Param("id"), dsn); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -110,8 +173,13 @@ func (h *CompanyHandler) deleteConnection(c *gin.Context) {
 }
 
 type testConnReq struct {
-	DBType string `json:"db_type" binding:"required"`
-	DSN    string `json:"dsn" binding:"required"`
+	DBType   string `json:"db_type" binding:"required"`
+	DSN      string `json:"dsn"`
+	Host     string `json:"host"`
+	Port     string `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	DBName   string `json:"dbname"`
 }
 
 func (h *CompanyHandler) testConnection(c *gin.Context) {
@@ -120,7 +188,12 @@ func (h *CompanyHandler) testConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.svc.TestConnection(c.Request.Context(), req.DBType, req.DSN); err != nil {
+	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.svc.TestConnection(c.Request.Context(), req.DBType, dsn); err != nil {
 		c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
 		return
 	}

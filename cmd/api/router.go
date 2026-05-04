@@ -34,8 +34,12 @@ func newRouter(d *apiDeps) *gin.Engine {
 		authed.Use(rateLimiter.Middleware())
 	}
 	handlers.NewCompanyHandler(d.companySvc).Register(authed)
-	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo).Register(authed)
+	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.dashboardSvc).Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
+	handlers.NewUserHandler(d.userRepo, d.companyRepo).Register(authed.Group("/users"))
+	if d.dashboardSvc != nil {
+		handlers.NewDashboardHandler(d.dashboardSvc).Register(authed)
+	}
 	authed.GET("/threads/:id/stream", ws.NewHandler(d.rdb, d.threadRepo, cfg.CORSOrigins).Stream)
 
 	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, cfg.WhatsAppWebhookVerifyToken).

@@ -55,6 +55,8 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	deps.threadRepo = threadRepo
 	deps.msgRepo = messageRepo
+	deps.userRepo = userRepo
+	deps.companyRepo = companyRepo
 
 	dsnCipher, err := crypto.NewFromHex(cfg.DSNEncryptionKeyHex)
 	if err != nil {
@@ -95,14 +97,17 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 
 	deps.authSvc = app.NewAuthService(companyRepo, userRepo, signer)
 
+	var mbCli *metabase.Client
 	var metabaseWarehouse *app.MetabaseWarehouseSync
 	if cfg.MetabaseURL != "" && cfg.MetabaseAdminEmail != "" && cfg.MetabaseAdminPassword != "" {
-		mbCli := metabase.NewClient(cfg.MetabaseURL, cfg.MetabasePublicURL,
+		mbCli = metabase.NewClient(cfg.MetabaseURL, cfg.MetabasePublicURL,
 			cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword)
 		metabaseWarehouse = app.NewMetabaseWarehouseSync(mbCli)
 	}
 	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse)
 	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
+	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
+	deps.dashboardSvc = app.NewDashboardService(dashboardRepo, mbCli)
 	lightLLMClient := buildLightLLM(cfg)
 	classifier := app.NewTopicClassifier(lightLLMClient)
 	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, lightLLMClient,

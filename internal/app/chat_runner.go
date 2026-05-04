@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -80,15 +81,19 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "started", Timestamp: now,
 	})
 
-	if _, err := r.schemaTool.PrefetchSchema(ctx, p.CompanyID); err != nil {
+	schema, err := r.schemaTool.PrefetchSchema(ctx, p.CompanyID)
+	if err != nil {
 		logrus.WithError(err).Warn("schema prefetch failed; agent will retry")
 	}
 
 	start := time.Now()
 
-	// Prepend currency context so the agent formats monetary values
-	// according to the company's preference.
+	// Prepend currency and DB-type context so the agent formats monetary
+	// values correctly and generates SQL compatible with the tenant DB.
 	agentMsg := withCurrencyContext(p.Message, p.DefaultCurrency)
+	if schema != nil {
+		agentMsg = withDBTypeContext(agentMsg, schema.DBType)
+	}
 
 	// Try streaming first; fall back to blocking Run if the LLM doesn't
 	// support it.
@@ -256,10 +261,18 @@ func (r *ChatRunner) completeWith(
 	}
 
 	if p.Channel == domain.ChannelWhatsApp && p.PhoneNumber != "" && r.wa != nil {
-		if err := r.wa.SendMessage(p.PhoneNumber, response); err != nil {
+		waText := stripMarkdownLinks(response)
+		if err := r.wa.SendMessage(p.PhoneNumber, waText); err != nil {
 			logrus.WithError(err).WithField("phone", p.PhoneNumber).Error("whatsapp send failed")
 		}
 	}
+}
+
+// stripMarkdownLinks converts [text](url) to "text: url" so WhatsApp can
+// auto-detect and hyperlink the raw URL.
+func stripMarkdownLinks(s string) string {
+	re := regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+	return re.ReplaceAllString(s, "$1: $2")
 }
 
 // hydrateMemory loads prior turns from Postgres into the agent's memory so
@@ -311,6 +324,26 @@ func withCurrencyContext(msg, currency string) string {
 	return fmt.Sprintf(
 		"[System context: The default currency is %s. Format money accordingly.]\n\n%s",
 		currency, msg,
+	)
+}
+
+// withDBTypeContext prepends the connected database type so the agent
+// generates dialect-compatible SQL. If dbType is empty, the message is
+// returned unchanged.
+func withDBTypeContext(msg, dbType string) string {
+	if dbType == "" {
+		return msg
+	}
+	hints := ""
+	switch dbType {
+	case "mysql":
+		hints = " Use MySQL-compatible syntax. For date truncation use DATE_FORMAT, not DATE_TRUNC. For string aggregation use GROUP_CONCAT, not STRING_AGG. For current timestamp use NOW(), not CURRENT_TIMESTAMP. For date arithmetic use DATE_ADD / DATE_SUB, not INTERVAL expressions."
+	case "postgres":
+		hints = " Use PostgreSQL-compatible syntax. For date truncation use DATE_TRUNC. For string aggregation use STRING_AGG. For current timestamp use CURRENT_TIMESTAMP or NOW()."
+	}
+	return fmt.Sprintf(
+		"[System context: The connected database is %s.%s]\n\n%s",
+		dbType, hints, msg,
 	)
 }
 
