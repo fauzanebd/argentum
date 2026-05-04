@@ -115,13 +115,14 @@
   }
 }
 
-/* ── Sidebar shimmer (both modes) ────────────────────────────────────── */
-[data-sidebar="sidebar"] {
+/* ── Sidebar shimmer (both modes, desktop inset only) ───────────────── */
+/* Exclude data-mobile Sheet: those rules override `fixed` and break the drawer. */
+[data-sidebar="sidebar"]:not([data-mobile="true"]) {
   position: relative;
   overflow: hidden;
 }
 
-[data-sidebar="sidebar"]::before {
+[data-sidebar="sidebar"]:not([data-mobile="true"])::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -140,7 +141,7 @@
   z-index: 0;
 }
 
-.dark [data-sidebar="sidebar"]::before {
+.dark [data-sidebar="sidebar"]:not([data-mobile="true"])::before {
   background: radial-gradient(
     ellipse 80% 60% at 50% 0%,
     rgba(192, 192, 192, 0.08) 0%,
@@ -154,7 +155,7 @@
   );
 }
 
-[data-sidebar="sidebar"] > * {
+[data-sidebar="sidebar"]:not([data-mobile="true"]) > * {
   position: relative;
   z-index: 1;
 }
