@@ -37,6 +37,11 @@ type Config struct {
 	LLMModel    string
 	LLMBaseURL  string
 
+	LightLLMProvider string
+	LightLLMAPIKey   string
+	LightLLMModel    string
+	LightLLMBaseURL  string
+
 	// WhatsApp Provider
 	WhatsAppProvider string // "whatsapp_business" or "twilio"
 
@@ -118,6 +123,11 @@ func Load() (*Config, error) {
 		LLMAPIKey:   getEnv("LLM_API_KEY", ""),
 		LLMModel:    getEnv("LLM_MODEL", "gpt-4o-mini"),
 		LLMBaseURL:  getEnv("LLM_BASE_URL", ""),
+
+		LightLLMProvider: getEnv("LIGHT_LLM_PROVIDER", "openai"),
+		LightLLMAPIKey:   getEnv("LIGHT_LLM_API_KEY", ""),
+		LightLLMModel:    getEnv("LIGHT_LLM_MODEL", "gpt-4o-mini"),
+		LightLLMBaseURL:  getEnv("LIGHT_LLM_BASE_URL", ""),
 
 		// WhatsApp Provider
 		WhatsAppProvider: getEnv("WHATSAPP_PROVIDER", "whatsapp_business"),

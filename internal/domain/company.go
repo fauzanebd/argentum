@@ -8,10 +8,11 @@ import (
 // Company is a tenant of Argentum. Every user, phone number, DB connection,
 // thread, and usage event is owned by exactly one company.
 type Company struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Slug      string    `json:"slug"`
-	CreatedAt time.Time `json:"created_at"`
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Slug            string    `json:"slug"`
+	DefaultCurrency string    `json:"default_currency"` // ISO 4217, e.g. "IDR", "USD"
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // CompanyRepository is the persistence contract for companies.

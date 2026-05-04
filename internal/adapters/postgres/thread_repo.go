@@ -103,6 +103,14 @@ func (r *ThreadRepo) Archive(ctx context.Context, id string) error {
 	return err
 }
 
+func (r *ThreadRepo) Delete(ctx context.Context, id string) error {
+	// The DB has ON DELETE CASCADE on messages, so this removes the thread
+	// and all of its messages in one go.
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM conversation_threads WHERE id = $1`, id)
+	return err
+}
+
 func (r *ThreadRepo) scanOne(ctx context.Context, q string, args ...interface{}) (*domain.ConversationThread, error) {
 	row := r.db.QueryRowContext(ctx, q, args...)
 	t, err := scanThreadRow(row)

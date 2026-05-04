@@ -23,7 +23,9 @@ func NewChatHandler(chat *app.ChatEnqueuer, threads domain.ThreadRepository, mes
 // Register installs the routes. Caller wraps with Auth middleware.
 func (h *ChatHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/threads", h.listThreads)
+	rg.POST("/threads", h.createThread)
 	rg.GET("/threads/:id", h.getThread)
+	rg.DELETE("/threads/:id", h.deleteThread)
 	rg.GET("/threads/:id/messages", h.listMessages)
 	rg.POST("/chat", h.sendMessage)
 }
@@ -38,6 +40,16 @@ func (h *ChatHandler) listThreads(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"threads": out})
 }
 
+func (h *ChatHandler) createThread(c *gin.Context) {
+	uid, _ := c.Get("user_id")
+	thread, err := h.chat.CreateDashboardThread(c.Request.Context(), companyID(c), uid.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, thread)
+}
+
 func (h *ChatHandler) getThread(c *gin.Context) {
 	thread, err := h.threads.GetByID(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -49,6 +61,23 @@ func (h *ChatHandler) getThread(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, thread)
+}
+
+func (h *ChatHandler) deleteThread(c *gin.Context) {
+	thread, err := h.threads.GetByID(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if thread.CompanyID != companyID(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	if err := h.threads.Delete(c.Request.Context(), thread.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *ChatHandler) listMessages(c *gin.Context) {
@@ -70,7 +99,8 @@ func (h *ChatHandler) listMessages(c *gin.Context) {
 }
 
 type sendReq struct {
-	Message string `json:"message" binding:"required"`
+	Message  string `json:"message" binding:"required"`
+	ThreadID string `json:"thread_id,omitempty"`
 }
 
 func (h *ChatHandler) sendMessage(c *gin.Context) {
@@ -85,6 +115,7 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 		CompanyID: companyID(c),
 		UserID:    uid.(string),
 		Message:   req.Message,
+		ThreadID:  req.ThreadID,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

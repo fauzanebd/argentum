@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
 	sdkagent "github.com/Ingenimax/agent-sdk-go/pkg/agent"
+	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 	"github.com/Ingenimax/agent-sdk-go/pkg/memory"
 	"github.com/Ingenimax/agent-sdk-go/pkg/multitenancy"
 	"github.com/sirupsen/logrus"
@@ -68,6 +71,10 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	ctx = multitenancy.WithOrgID(ctx, p.CompanyID)
 	ctx = memory.WithConversationID(ctx, p.ThreadID)
 
+	if err := r.hydrateMemory(ctx, p); err != nil {
+		logrus.WithError(err).Warn("memory hydration failed; continuing with empty context")
+	}
+
 	now := time.Now()
 	_ = r.bus.Publish(p.ThreadID, ChatEvent{
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "started", Timestamp: now,
@@ -78,42 +85,164 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	}
 
 	start := time.Now()
-	response, err := r.agent.Run(ctx, p.Message)
-	latency := time.Since(start)
 
-	if err != nil {
-		const guardrailsPrefix = "guardrails error: "
-		userMsg := err.Error()
-		if strings.HasPrefix(userMsg, guardrailsPrefix) {
-			userMsg = strings.TrimPrefix(userMsg, guardrailsPrefix)
-			r.completeWith(ctx, p, userMsg, latency)
-			return nil
+	// Prepend currency context so the agent formats monetary values
+	// according to the company's preference.
+	agentMsg := withCurrencyContext(p.Message, p.DefaultCurrency)
+
+	// Try streaming first; fall back to blocking Run if the LLM doesn't
+	// support it.
+	var response string
+	var streaming bool
+	if r.agent.GetLLM().SupportsStreaming() {
+		sp := p
+		sp.Message = agentMsg
+		if streamResp, err := r.runStream(ctx, sp); err == nil {
+			response = streamResp
+			streaming = true
+		} else {
+			logrus.WithError(err).Warn("streaming failed; falling back to blocking run")
 		}
-
-		// Permanent vs. transient: surface the original error to asynq
-		// so it can apply its retry/backoff schedule. The user sees a
-		// best-effort error event in the meantime.
-		_ = r.bus.Publish(p.ThreadID, ChatEvent{
-			JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "error",
-			Error:     "I encountered an error processing your request. Please try rephrasing.",
-			Timestamp: time.Now(),
-		})
-		logrus.WithError(err).WithField("company_id", p.CompanyID).Error("agent run failed")
-		return err
+	}
+	if !streaming {
+		var err error
+		response, err = r.agent.Run(ctx, agentMsg)
+		if err != nil {
+			return r.handleRunError(ctx, p, err)
+		}
 	}
 
-	r.completeWith(ctx, p, response, latency)
+	latency := time.Since(start)
+	r.completeWith(ctx, p, response, 0, 0, latency)
 	return nil
+}
+
+// runStream executes the agent with streaming and fans out delta / thinking /
+// tool_call / tool_result events to the EventBus. It returns the full
+// assembled response text.
+func (r *ChatRunner) runStream(ctx context.Context, p queue.ChatRunPayload) (string, error) {
+	events, err := r.agent.RunStream(ctx, p.Message)
+	if err != nil {
+		return "", err
+	}
+
+	var fullResponse strings.Builder
+
+	for evt := range events {
+		switch evt.Type {
+		case interfaces.AgentEventContent:
+			fullResponse.WriteString(evt.Content)
+			_ = r.bus.Publish(p.ThreadID, ChatEvent{
+				JobID:     p.UserMsgID,
+				ThreadID:  p.ThreadID,
+				Type:      "delta",
+				Content:   evt.Content,
+				Timestamp: time.Now(),
+			})
+
+		case interfaces.AgentEventThinking:
+			_ = r.bus.Publish(p.ThreadID, ChatEvent{
+				JobID:        p.UserMsgID,
+				ThreadID:     p.ThreadID,
+				Type:         "thinking",
+				ThinkingStep: evt.ThinkingStep,
+				Timestamp:    time.Now(),
+			})
+
+		case interfaces.AgentEventToolCall:
+			if evt.ToolCall != nil {
+				args := map[string]interface{}{}
+				if evt.ToolCall.Arguments != "" {
+					_ = json.Unmarshal([]byte(evt.ToolCall.Arguments), &args)
+				}
+				_ = r.bus.Publish(p.ThreadID, ChatEvent{
+					JobID:     p.UserMsgID,
+					ThreadID:  p.ThreadID,
+					Type:      "tool_call",
+					ToolCall:  &ToolCallEvent{Name: evt.ToolCall.Name, Arguments: args},
+					Timestamp: time.Now(),
+				})
+			}
+
+		case interfaces.AgentEventToolResult:
+			if evt.ToolCall != nil {
+				res := map[string]interface{}{}
+				if evt.ToolCall.Result != "" {
+					_ = json.Unmarshal([]byte(evt.ToolCall.Result), &res)
+				}
+				_ = r.bus.Publish(p.ThreadID, ChatEvent{
+					JobID:     p.UserMsgID,
+					ThreadID:  p.ThreadID,
+					Type:      "tool_result",
+					ToolCall:  &ToolCallEvent{Name: evt.ToolCall.Name, Result: res},
+					Timestamp: time.Now(),
+				})
+			}
+
+		case interfaces.AgentEventError:
+			if evt.Error != nil {
+				errMsg := evt.Error.Error()
+				// Guardrails rejections should be presented as normal
+				// assistant messages, not raw errors.
+				const guardrailsPrefix = "guardrails error: "
+				if strings.HasPrefix(errMsg, guardrailsPrefix) {
+					userMsg := strings.TrimPrefix(errMsg, guardrailsPrefix)
+					fullResponse.Reset()
+					fullResponse.WriteString(userMsg)
+					_ = r.bus.Publish(p.ThreadID, ChatEvent{
+						JobID:     p.UserMsgID,
+						ThreadID:  p.ThreadID,
+						Type:      "delta",
+						Content:   userMsg,
+						Timestamp: time.Now(),
+					})
+				} else {
+					_ = r.bus.Publish(p.ThreadID, ChatEvent{
+						JobID:     p.UserMsgID,
+						ThreadID:  p.ThreadID,
+						Type:      "error",
+						Error:     errMsg,
+						Timestamp: time.Now(),
+					})
+				}
+			}
+
+		case interfaces.AgentEventComplete:
+			// No-op; final event is published after the loop.
+		}
+	}
+
+	return fullResponse.String(), nil
+}
+
+// handleRunError deals with blocking-run failures. Guardrails errors are
+// surfaced as assistant messages; everything else is retried by asynq.
+func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload, err error) error {
+	const guardrailsPrefix = "guardrails error: "
+	userMsg := err.Error()
+	if strings.HasPrefix(userMsg, guardrailsPrefix) {
+		userMsg = strings.TrimPrefix(userMsg, guardrailsPrefix)
+		r.completeWith(ctx, p, userMsg, 0, 0, 0)
+		return nil
+	}
+	_ = r.bus.Publish(p.ThreadID, ChatEvent{
+		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "error",
+		Error:     "I encountered an error processing your request. Please try rephrasing.",
+		Timestamp: time.Now(),
+	})
+	logrus.WithError(err).WithField("company_id", p.CompanyID).Error("agent run failed")
+	return err
 }
 
 // completeWith persists the assistant message, publishes the final event,
 // and (for WA channels) sends the reply through the WhatsApp provider.
 func (r *ChatRunner) completeWith(
-	ctx context.Context, p queue.ChatRunPayload, response string, latency time.Duration,
+	ctx context.Context, p queue.ChatRunPayload, response string,
+	tokensIn, tokensOut int, latency time.Duration,
 ) {
 	now := time.Now()
 	if _, err := r.threads.AppendAssistantMessage(
-		ctx, p.ThreadID, response, 0, 0, latency.Milliseconds(),
+		ctx, p.ThreadID, response, tokensIn, tokensOut, latency.Milliseconds(),
 	); err != nil {
 		logrus.WithError(err).Warn("append assistant message")
 	}
@@ -132,3 +261,56 @@ func (r *ChatRunner) completeWith(
 		}
 	}
 }
+
+// hydrateMemory loads prior turns from Postgres into the agent's memory so
+// the agent has full context even if Redis was empty or reset.
+func (r *ChatRunner) hydrateMemory(ctx context.Context, p queue.ChatRunPayload) error {
+	msgs, err := r.messages.ListByThread(ctx, p.ThreadID, 200, 0)
+	if err != nil {
+		return err
+	}
+	if len(msgs) == 0 {
+		return nil
+	}
+
+	mem := r.agent.GetMemory()
+
+	// If the memory already holds messages for this conversation, skip
+	// hydration to avoid duplicates.
+	if convMem, ok := mem.(interfaces.ConversationMemory); ok {
+		existing, err := convMem.GetConversationMessages(ctx, p.ThreadID)
+		if err == nil && len(existing) > 0 {
+			return nil
+		}
+	}
+
+	for _, m := range msgs {
+		// Skip the current user message; the agent will add it itself
+		// during Run/RunStream.
+		if m.Role == domain.MessageRoleUser && m.Content == p.Message && m.ID == p.UserMsgID {
+			continue
+		}
+		sdkMsg := interfaces.Message{
+			Role:    interfaces.MessageRole(m.Role),
+			Content: m.Content,
+		}
+		if err := mem.AddMessage(ctx, sdkMsg); err != nil {
+			logrus.WithError(err).Warn("hydrate memory: add message")
+		}
+	}
+	return nil
+}
+
+// withCurrencyContext prepends a short currency instruction to the user
+// message so the agent knows which currency to use for formatting. If
+// currency is empty, the message is returned unchanged.
+func withCurrencyContext(msg, currency string) string {
+	if currency == "" {
+		return msg
+	}
+	return fmt.Sprintf(
+		"[System context: The default currency is %s. Format money accordingly.]\n\n%s",
+		currency, msg,
+	)
+}
+

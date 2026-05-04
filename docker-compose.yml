@@ -123,6 +123,10 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       LLM_API_KEY: ${LLM_API_KEY}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LIGHT_LLM_PROVIDER: ${LIGHT_LLM_PROVIDER:-openai}
+      LIGHT_LLM_API_KEY: ${LIGHT_LLM_API_KEY}
+      LIGHT_LLM_MODEL: ${LIGHT_LLM_MODEL:-gpt-4o-mini}
+      LIGHT_LLM_BASE_URL: ${LIGHT_LLM_BASE_URL:-}
 
       # Metabase
       METABASE_URL: http://metabase:3000
@@ -183,6 +187,10 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       LLM_API_KEY: ${LLM_API_KEY}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LIGHT_LLM_PROVIDER: ${LIGHT_LLM_PROVIDER:-openai}
+      LIGHT_LLM_API_KEY: ${LIGHT_LLM_API_KEY}
+      LIGHT_LLM_MODEL: ${LIGHT_LLM_MODEL:-gpt-4o-mini}
+      LIGHT_LLM_BASE_URL: ${LIGHT_LLM_BASE_URL:-}
 
       METABASE_URL: http://metabase:3000
       METABASE_PUBLIC_URL: ${METABASE_PUBLIC_URL:-http://localhost:3000}

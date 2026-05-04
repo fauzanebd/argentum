@@ -12,9 +12,36 @@ import (
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
+// validCurrencies is a lookup of common ISO 4217 codes. We keep it small
+// and practical — users pick from a dropdown, not free-text.
+var validCurrencies = map[string]bool{
+	"USD": true, "EUR": true, "GBP": true, "JPY": true, "CNY": true,
+	"IDR": true, "SGD": true, "MYR": true, "THB": true, "PHP": true,
+	"VND": true, "INR": true, "AUD": true, "NZD": true, "CAD": true,
+	"CHF": true, "HKD": true, "KRW": true, "TWD": true, "BRL": true,
+	"MXN": true, "ZAR": true, "AED": true, "SAR": true, "SEK": true,
+	"NOK": true, "DKK": true, "PLN": true, "TRY": true, "RUB": true,
+	"COP": true, "ARS": true, "CLP": true, "PEN": true, "EGP": true,
+	"NGN": true, "KES": true, "GHS": true, "BDT": true, "PKR": true,
+	"LKR": true, "MMK": true, "KHR": true, "LAK": true,
+}
+
+// IsValidCurrency reports whether code is a recognised ISO 4217 currency.
+func IsValidCurrency(code string) bool { return validCurrencies[code] }
+
+// SupportedCurrencies returns all recognised currency codes (unsorted).
+func SupportedCurrencies() []string {
+	out := make([]string, 0, len(validCurrencies))
+	for c := range validCurrencies {
+		out = append(out, c)
+	}
+	return out
+}
+
 // CompanyService is the use case layer for managing a company's
-// configuration: DB connections and the phone number allowlist.
+// configuration: DB connections, phone allowlist, and company settings.
 type CompanyService struct {
+	companies   domain.CompanyRepository
 	connections domain.ConnectionRepository
 	phones      domain.PhoneRepository
 	dsnCipher   *crypto.DSNCipher
@@ -23,13 +50,14 @@ type CompanyService struct {
 }
 
 func NewCompanyService(
+	companies domain.CompanyRepository,
 	conns domain.ConnectionRepository,
 	phones domain.PhoneRepository,
 	dsnCipher *crypto.DSNCipher,
 	pool *db.TenantConnPool,
 	mb *MetabaseWarehouseSync,
 ) *CompanyService {
-	return &CompanyService{connections: conns, phones: phones, dsnCipher: dsnCipher, pool: pool, mb: mb}
+	return &CompanyService{companies: companies, connections: conns, phones: phones, dsnCipher: dsnCipher, pool: pool, mb: mb}
 }
 
 // AddConnection registers a tenant DB. If markDefault is true (or the company
@@ -195,4 +223,22 @@ func (s *CompanyService) ResolveCompanyByPhone(ctx context.Context, phone string
 		return "", err
 	}
 	return rec.CompanyID, nil
+}
+
+// GetCompany returns the company for the given ID.
+func (s *CompanyService) GetCompany(ctx context.Context, companyID string) (*domain.Company, error) {
+	return s.companies.GetByID(ctx, companyID)
+}
+
+// UpdateCurrency validates and persists a new default currency for a company.
+func (s *CompanyService) UpdateCurrency(ctx context.Context, companyID, currencyCode string) error {
+	if !IsValidCurrency(currencyCode) {
+		return fmt.Errorf("%w: unsupported currency %q", domain.ErrInvalidInput, currencyCode)
+	}
+	c, err := s.companies.GetByID(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	c.DefaultCurrency = currencyCode
+	return s.companies.Update(ctx, c)
 }

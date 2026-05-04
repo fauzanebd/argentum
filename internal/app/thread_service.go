@@ -92,7 +92,12 @@ func (s *ThreadService) ResolveForPhone(ctx context.Context, companyID, phoneNum
 	return s.continueOrFork(ctx, latest, userMessage, s.idleThreshold, domain.ChannelWhatsApp, phoneNumber, "")
 }
 
-// ResolveForUser picks the thread for an inbound dashboard message.
+// ResolveForUser is the old dashboard thread resolver. It is kept for
+// backward compatibility but the dashboard now creates / selects threads
+// explicitly via CreateDashboardThread instead.
+//
+// DEPRECATED: not used by the dashboard chat UI; kept for potential
+// future channels that need user-scoped auto-resolution.
 func (s *ThreadService) ResolveForUser(ctx context.Context, companyID, userID, userMessage string) (*ResolveResult, error) {
 	if companyID == "" || userID == "" {
 		return nil, fmt.Errorf("companyID and userID required")
@@ -107,6 +112,19 @@ func (s *ThreadService) ResolveForUser(ctx context.Context, companyID, userID, u
 	}
 
 	return s.continueOrFork(ctx, latest, userMessage, s.dashboardIdleTTL, domain.ChannelDashboard, "", userID)
+}
+
+// CreateDashboardThread creates a fresh dashboard thread for the given user.
+// The dashboard calls this explicitly when the user clicks "New conversation".
+func (s *ThreadService) CreateDashboardThread(ctx context.Context, companyID, userID, firstMessage string) (*domain.ConversationThread, error) {
+	if companyID == "" || userID == "" {
+		return nil, fmt.Errorf("companyID and userID required")
+	}
+	res, err := s.createThread(ctx, companyID, domain.ChannelDashboard, "", userID, firstMessage)
+	if err != nil {
+		return nil, err
+	}
+	return res.Thread, nil
 }
 
 func (s *ThreadService) continueOrFork(
@@ -149,6 +167,11 @@ func (s *ThreadService) createThread(
 	return &ResolveResult{Thread: t, IsNew: true}, nil
 }
 
+// GetByID looks up a thread by ID.
+func (s *ThreadService) GetByID(ctx context.Context, id string) (*domain.ConversationThread, error) {
+	return s.threads.GetByID(ctx, id)
+}
+
 // AppendUserMessage records the user's turn and bumps last_message_at.
 func (s *ThreadService) AppendUserMessage(ctx context.Context, threadID, content string) (*domain.Message, error) {
 	now := time.Now()
@@ -187,7 +210,7 @@ func (s *ThreadService) AppendAssistantMessage(
 	_ = s.threads.Touch(ctx, threadID, now)
 
 	count, err := s.messages.CountByThread(ctx, threadID)
-	if err == nil && count%s.summaryEveryN == 0 {
+	if err == nil && (count == 2 || count%s.summaryEveryN == 0) {
 		go s.refreshSummary(context.Background(), threadID)
 	}
 	return m, nil
@@ -233,8 +256,22 @@ func (s *ThreadService) refreshSummary(ctx context.Context, threadID string) {
 		return
 	}
 	title := thread.Title
-	if title == "" || strings.HasPrefix(title, "Thread") {
-		title = deriveTitle(summary)
+	if title == "" || strings.HasPrefix(title, "Thread") || title == "New conversation" || thread.Summary == "" {
+		titlePrompt := "Generate a short, concise title (max 4-5 words) for this conversation. Respond ONLY with the title. Do not use quotes.\n\n" + b.String()
+		titleResp, titleErr := s.llm.Generate(ctx, titlePrompt,
+			interfaces.WithSystemMessage("You generate short, punchy conversation titles."),
+			interfaces.WithTemperature(0),
+		)
+		if titleErr == nil && strings.TrimSpace(titleResp) != "" {
+			title = strings.TrimSpace(titleResp)
+			// Remove surrounding quotes if the LLM added them anyway
+			title = strings.Trim(title, `"'`)
+			if len(title) > 60 {
+				title = title[:57] + "..."
+			}
+		} else {
+			title = deriveTitle(summary)
+		}
 	}
 	if err := s.threads.UpdateSummary(ctx, threadID, title, summary); err != nil {
 		logrus.WithError(err).Warn("summary refresh: update summary")

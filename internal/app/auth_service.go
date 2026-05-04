@@ -61,8 +61,9 @@ func (s *AuthService) Signup(ctx context.Context, companyName, email, password s
 	}
 
 	company := &domain.Company{
-		Name: companyName,
-		Slug: slugify(companyName),
+		Name:            companyName,
+		Slug:            slugify(companyName),
+		DefaultCurrency: "USD",
 	}
 	if err := s.companies.Create(ctx, company); err != nil {
 		return nil, fmt.Errorf("create company: %w", err)

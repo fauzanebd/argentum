@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
+	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,6 +29,8 @@ type Rule struct {
 	// "require" (block if NO pattern matches), "redact", "filter".
 	Action      string    `yaml:"action"`
 	Message     string    `yaml:"message"`
+	MessageEN   string    `yaml:"message_en"`
+	MessageID   string    `yaml:"message_id"`
 	Replacement string    `yaml:"replacement"`
 }
 
@@ -42,6 +46,7 @@ type Pattern struct {
 type Analytics struct {
 	config        Config
 	compiledRules []compiledRule
+	llm           interfaces.LLM
 }
 
 type compiledRule struct {
@@ -50,7 +55,7 @@ type compiledRule struct {
 }
 
 // LoadFromFile creates an Analytics guardrails instance from a YAML config file.
-func LoadFromFile(path string) (*Analytics, error) {
+func LoadFromFile(path string, llm interfaces.LLM) (*Analytics, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read guardrails config: %w", err)
@@ -61,11 +66,11 @@ func LoadFromFile(path string) (*Analytics, error) {
 		return nil, fmt.Errorf("failed to parse guardrails config: %w", err)
 	}
 
-	return New(cfg)
+	return New(cfg, llm)
 }
 
 // New creates an Analytics guardrails instance from a Config struct.
-func New(cfg Config) (*Analytics, error) {
+func New(cfg Config, llm interfaces.LLM) (*Analytics, error) {
 	compiled := make([]compiledRule, 0, len(cfg.Rules))
 	for _, rule := range cfg.Rules {
 		cr := compiledRule{rule: rule}
@@ -76,26 +81,54 @@ func New(cfg Config) (*Analytics, error) {
 					return nil, fmt.Errorf("invalid regex in rule %q: %w", rule.Name, err)
 				}
 				cr.patterns = append(cr.patterns, re)
+			} else {
+				cr.patterns = append(cr.patterns, nil)
 			}
 		}
 		compiled = append(compiled, cr)
 	}
-	return &Analytics{config: cfg, compiledRules: compiled}, nil
+	return &Analytics{config: cfg, compiledRules: compiled, llm: llm}, nil
 }
 
 // ProcessInput checks user input against guardrail rules.
 // Implements interfaces.Guardrails.
 func (a *Analytics) ProcessInput(ctx context.Context, input string) (string, error) {
-	return a.process(input, "input")
+	return a.process(ctx, input, "input", input)
 }
 
 // ProcessOutput checks agent output against guardrail rules.
 // Implements interfaces.Guardrails.
 func (a *Analytics) ProcessOutput(ctx context.Context, output string) (string, error) {
-	return a.process(output, "output")
+	return a.process(ctx, output, "output", "")
 }
 
-func (a *Analytics) process(text string, stage string) (string, error) {
+// resolveMessage picks the right language-specific message for a rule based
+// on the original user input. Falls back to the generic Message field.
+func resolveMessage(rule Rule, userInput string, fallback string) string {
+	if userInput != "" && rule.MessageID != "" && rule.MessageEN != "" {
+		if looksIndonesian(userInput) {
+			return rule.MessageID
+		}
+		return rule.MessageEN
+	}
+	if rule.Message != "" {
+		return rule.Message
+	}
+	return fallback
+}
+
+// looksIndonesian returns true if the text contains common Indonesian words.
+var indonesianMarkers = regexp.MustCompile(
+	`(?i)\b(saya|aku|kamu|anda|bisa|tidak|apa|siapa|bagaimana|mengapa|kenapa|` +
+		`tolong|bantu|terima kasih|makasih|halo|hai|selamat|mohon|mau|ingin|` +
+		`berapa|dimana|kapan|silakan|data|tampilkan|tunjukkan|cari|hitung|` +
+		`bulan|tahun|minggu|hari|kemarin|lalu|tren|laporan|dasbor)\b`)
+
+func looksIndonesian(text string) bool {
+	return indonesianMarkers.MatchString(strings.ToLower(text))
+}
+
+func (a *Analytics) process(ctx context.Context, text string, stage string, userInput string) (string, error) {
 	result := text
 	for _, cr := range a.compiledRules {
 		// Skip rules scoped to a different stage.
@@ -105,30 +138,48 @@ func (a *Analytics) process(text string, stage string) (string, error) {
 
 		switch cr.rule.Action {
 		case "block":
-			for _, re := range cr.patterns {
-				if re.MatchString(result) {
-					msg := cr.rule.Message
-					if msg == "" {
-						msg = fmt.Sprintf("blocked by guardrail: %s", cr.rule.Name)
+			for i, p := range cr.rule.Patterns {
+				if p.Type == "regex" {
+					re := cr.patterns[i]
+					if re != nil && re.MatchString(result) {
+						msg := resolveMessage(cr.rule, userInput, fmt.Sprintf("blocked by guardrail: %s", cr.rule.Name))
+						return "", fmt.Errorf("%s", msg)
 					}
-					return "", fmt.Errorf("%s", msg)
+				} else if p.Type == "llm" && a.llm != nil {
+					resp, err := a.llm.Generate(ctx, result,
+						interfaces.WithSystemMessage(p.Pattern),
+						interfaces.WithTemperature(0),
+					)
+					if err == nil && strings.Contains(strings.ToUpper(resp), "TRUE") {
+						msg := resolveMessage(cr.rule, userInput, fmt.Sprintf("blocked by semantic guardrail: %s", cr.rule.Name))
+						return "", fmt.Errorf("%s", msg)
+					}
 				}
 			}
 
 		case "require":
 			// Block when NONE of the patterns match — used for topic enforcement.
 			anyMatch := false
-			for _, re := range cr.patterns {
-				if re.MatchString(result) {
-					anyMatch = true
-					break
+			for i, p := range cr.rule.Patterns {
+				if p.Type == "regex" {
+					re := cr.patterns[i]
+					if re != nil && re.MatchString(result) {
+						anyMatch = true
+						break
+					}
+				} else if p.Type == "llm" && a.llm != nil {
+					resp, err := a.llm.Generate(ctx, result,
+						interfaces.WithSystemMessage(p.Pattern),
+						interfaces.WithTemperature(0),
+					)
+					if err == nil && strings.Contains(strings.ToUpper(resp), "TRUE") {
+						anyMatch = true
+						break
+					}
 				}
 			}
 			if !anyMatch {
-				msg := cr.rule.Message
-				if msg == "" {
-					msg = "I can only help with analytics and business intelligence questions."
-				}
+				msg := resolveMessage(cr.rule, userInput, "I can only help with analytics and business intelligence questions.")
 				return "", fmt.Errorf("%s", msg)
 			}
 
@@ -137,8 +188,13 @@ func (a *Analytics) process(text string, stage string) (string, error) {
 			if replacement == "" {
 				replacement = "[REDACTED]"
 			}
-			for _, re := range cr.patterns {
-				result = re.ReplaceAllString(result, replacement)
+			for i, p := range cr.rule.Patterns {
+				if p.Type == "regex" {
+					re := cr.patterns[i]
+					if re != nil {
+						result = re.ReplaceAllString(result, replacement)
+					}
+				}
 			}
 
 		case "filter":
@@ -146,8 +202,13 @@ func (a *Analytics) process(text string, stage string) (string, error) {
 			if replacement == "" {
 				replacement = "****"
 			}
-			for _, re := range cr.patterns {
-				result = re.ReplaceAllString(result, replacement)
+			for i, p := range cr.rule.Patterns {
+				if p.Type == "regex" {
+					re := cr.patterns[i]
+					if re != nil {
+						result = re.ReplaceAllString(result, replacement)
+					}
+				}
 			}
 		}
 	}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 
@@ -61,6 +62,26 @@ func (m *MeteredLLM) GenerateWithToolsDetailed(ctx context.Context, prompt strin
 
 func (m *MeteredLLM) Name() string             { return m.inner.Name() }
 func (m *MeteredLLM) SupportsStreaming() bool { return m.inner.SupportsStreaming() }
+
+// GenerateStream delegates to the inner StreamingLLM so the agent can use
+// RunStream. Token usage is not recorded for streaming today (the channel
+// events don't carry usage metadata).
+func (m *MeteredLLM) GenerateStream(ctx context.Context, prompt string, opts ...interfaces.GenerateOption) (<-chan interfaces.StreamEvent, error) {
+	streamingLLM, ok := m.inner.(interfaces.StreamingLLM)
+	if !ok {
+		return nil, fmt.Errorf("inner LLM '%s' does not support streaming", m.inner.Name())
+	}
+	return streamingLLM.GenerateStream(ctx, prompt, opts...)
+}
+
+// GenerateWithToolsStream delegates to the inner StreamingLLM.
+func (m *MeteredLLM) GenerateWithToolsStream(ctx context.Context, prompt string, tools []interfaces.Tool, opts ...interfaces.GenerateOption) (<-chan interfaces.StreamEvent, error) {
+	streamingLLM, ok := m.inner.(interfaces.StreamingLLM)
+	if !ok {
+		return nil, fmt.Errorf("inner LLM '%s' does not support streaming", m.inner.Name())
+	}
+	return streamingLLM.GenerateWithToolsStream(ctx, prompt, tools, opts...)
+}
 
 func (m *MeteredLLM) record(ctx context.Context, usage *interfaces.TokenUsage) {
 	if usage == nil || m.usage == nil {

@@ -85,6 +85,7 @@ func main() {
 	usageSvc := app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
 	rawLLM := buildLLM(cfg)
 	llmClient := app.NewMeteredLLM(rawLLM, usageSvc)
+	lightLLMClient := buildLightLLM(cfg)
 
 	// --- Agent + tools ---
 	metabaseClient := metabase.NewClient(
@@ -99,7 +100,7 @@ func main() {
 		tools.NewCreateDashboardTool(metabaseClient, usageSvc),
 	}
 	mem := buildMemory(cfg)
-	gr := buildGuardrails(cfg)
+	gr := buildGuardrails(cfg, lightLLMClient)
 
 	systemPrompt := buildSystemPrompt()
 	agentOpts := []sdkagent.Option{
@@ -112,6 +113,14 @@ func main() {
 		sdkagent.WithMaxIterations(5),
 		sdkagent.WithRequirePlanApproval(false),
 		sdkagent.WithLLMConfig(interfaces.LLMConfig{Temperature: 0.2}),
+		// Stream content from every iteration immediately. The SDK's default
+		// filtering (filterIntermediateContent) has a bug: when the agent
+		// finishes before maxIterations, content from the final iteration is
+		// captured but never replayed — resulting in empty assistant messages
+		// after tool calls.
+		sdkagent.WithStreamConfig(&interfaces.StreamConfig{
+			IncludeIntermediateMessages: true,
+		}),
 	}
 	if gr != nil {
 		agentOpts = append(agentOpts, sdkagent.WithGuardrails(gr))
@@ -146,7 +155,7 @@ func main() {
 
 	// --- Thread service (worker uses it for AppendAssistantMessage +
 	//     summary refresh; uses the same metered LLM). ---
-	classifier := app.NewTopicClassifier(llmClient)
+	classifier := app.NewTopicClassifier(lightLLMClient)
 	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, llmClient,
 		app.ThreadServiceConfig{
 			IdleMinutes:        cfg.ThreadIdleMinutes,
@@ -243,6 +252,20 @@ func buildLLM(cfg *config.Config) interfaces.LLM {
 	return openai.NewClient(cfg.LLMAPIKey, opts...)
 }
 
+func buildLightLLM(cfg *config.Config) interfaces.LLM {
+	if cfg.LightLLMAPIKey == "" {
+		return buildLLM(cfg)
+	}
+	opts := []openai.Option{}
+	if cfg.LightLLMModel != "" {
+		opts = append(opts, openai.WithModel(cfg.LightLLMModel))
+	}
+	if cfg.LightLLMBaseURL != "" {
+		opts = append(opts, openai.WithBaseURL(cfg.LightLLMBaseURL))
+	}
+	return openai.NewClient(cfg.LightLLMAPIKey, opts...)
+}
+
 func buildMemory(cfg *config.Config) interfaces.Memory {
 	if cfg.RedisURL != "" {
 		mem, err := memory.NewRedisMemoryFromConfig(memory.RedisConfig{
@@ -257,11 +280,11 @@ func buildMemory(cfg *config.Config) interfaces.Memory {
 	return memory.NewConversationBuffer(memory.WithMaxSize(20))
 }
 
-func buildGuardrails(cfg *config.Config) interfaces.Guardrails {
+func buildGuardrails(cfg *config.Config, llm interfaces.LLM) interfaces.Guardrails {
 	if cfg.GuardrailsConfigPath == "" {
 		return nil
 	}
-	gr, err := guardrails.LoadFromFile(cfg.GuardrailsConfigPath)
+	gr, err := guardrails.LoadFromFile(cfg.GuardrailsConfigPath, llm)
 	if err != nil {
 		logrus.WithError(err).Warn("guardrails disabled")
 		return nil

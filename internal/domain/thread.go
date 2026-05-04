@@ -42,4 +42,7 @@ type ThreadRepository interface {
 	UpdateSummary(ctx context.Context, id, title, summary string) error
 	Touch(ctx context.Context, id string, at time.Time) error
 	Archive(ctx context.Context, id string) error
+	// Delete removes a thread if it has no messages; otherwise no-ops.
+	// The caller should archive first if soft-delete is desired.
+	Delete(ctx context.Context, id string) error
 }

@@ -91,7 +91,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.enqueuer = queue.NewEnqueuer(asynqOpt)
 	undo = append(undo, func() { deps.enqueuer.Close() })
 
-	llmClient := buildLLM(cfg)
+	// llmClient := buildLLM(cfg)
 
 	deps.authSvc = app.NewAuthService(companyRepo, userRepo, signer)
 
@@ -101,15 +101,16 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword)
 		metabaseWarehouse = app.NewMetabaseWarehouseSync(mbCli)
 	}
-	deps.companySvc = app.NewCompanyService(connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse)
+	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse)
 	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
-	classifier := app.NewTopicClassifier(llmClient)
-	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, llmClient,
+	lightLLMClient := buildLightLLM(cfg)
+	classifier := app.NewTopicClassifier(lightLLMClient)
+	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, lightLLMClient,
 		app.ThreadServiceConfig{
 			IdleMinutes:        cfg.ThreadIdleMinutes,
 			SummaryEveryNTurns: cfg.SummaryEveryNTurns,
 		})
-	deps.chatEnq = app.NewChatEnqueuer(threadSvc, messageRepo, deps.enqueuer)
+	deps.chatEnq = app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, deps.enqueuer)
 
 	waProvider, err := whatsapp.NewProvider(whatsapp.Config{
 		Provider:           cfg.WhatsAppProvider,
