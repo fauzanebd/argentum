@@ -1,4 +1,4 @@
-import { Database, BarChart3, ExternalLink, FileText } from "lucide-react";
+import { Database, BarChart3, ExternalLink, FileText, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const TOOL_META: Record<string, { icon: any; label: string }> = {
@@ -8,7 +8,15 @@ const TOOL_META: Record<string, { icon: any; label: string }> = {
   create_dashboard: { icon: ExternalLink, label: "Dashboard" },
 };
 
-export function ToolCallCard({ name, payload }: { name: string; payload: unknown }) {
+export function ToolCallCard({
+  name,
+  payload,
+  loading,
+}: {
+  name: string;
+  payload: unknown;
+  loading?: boolean;
+}) {
   const meta = TOOL_META[name] ?? { icon: Database, label: name };
   const Icon = meta.icon;
 
@@ -25,7 +33,7 @@ export function ToolCallCard({ name, payload }: { name: string; payload: unknown
   return (
     <div className={cn("rounded-md border bg-muted/30 px-3 py-2 text-xs")}>
       <div className="flex items-center gap-1.5 font-medium text-muted-foreground mb-1">
-        <Icon className="h-3 w-3" />
+        {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
         {meta.label}
       </div>
       {summary && (

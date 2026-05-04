@@ -16,22 +16,34 @@ const schema = z.object({
   db_type: z.string().min(1, "Pick a database type"),
   label: z.string().optional(),
   dsn: z.string().min(8, "DSN required"),
+  default_currency: z.string().min(1, "Pick a currency"),
 });
 type FormValues = z.infer<typeof schema>;
 
 export function OnboardingPage() {
   const navigate = useNavigate();
   const [supported, setSupported] = useState<string[]>([]);
+  const [currencies, setCurrencies] = useState<string[]>([]);
   const [testStatus, setTestStatus] = useState<"idle" | "ok" | "error" | "testing">("idle");
   const [testError, setTestError] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { db_type: "postgres", label: "Production analytics" },
+    defaultValues: { db_type: "postgres", label: "Production analytics", default_currency: "USD" },
   });
 
   useEffect(() => {
     api.get("/meta/supported-databases").then((r) => setSupported(r.data.registered ?? r.data.supported ?? []));
+    api.get("/settings").then((r) => {
+      setCurrencies((r.data.supported_currencies ?? []).sort());
+      if (r.data.default_currency) {
+        form.setValue("default_currency", r.data.default_currency);
+      }
+    }).catch(() => {
+      // Settings endpoint may fail if the company isn't fully set up yet.
+      // Fall back to a reasonable default list.
+      setCurrencies(["USD", "EUR", "GBP", "IDR", "SGD", "JPY"].sort());
+    });
   }, []);
 
   async function testConnection() {
@@ -57,6 +69,8 @@ export function OnboardingPage() {
 
   async function onSubmit(values: FormValues) {
     await api.post("/connections", { ...values, is_default: true });
+    // Save the selected currency
+    await api.put("/settings", { default_currency: values.default_currency });
     navigate({ to: "/chat" });
   }
 
@@ -128,6 +142,32 @@ export function OnboardingPage() {
                     <XCircle className="h-3 w-3" /> {testError ?? "Failed"}
                   </Badge>
                 )}
+              </div>
+
+              <div className="border-t border-border pt-4 space-y-1.5">
+                <Label>Default currency</Label>
+                <Select
+                  value={form.watch("default_currency")}
+                  onValueChange={(v) => form.setValue("default_currency", v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select currency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencies.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {form.formState.errors.default_currency && (
+                  <p className="text-xs text-destructive">{form.formState.errors.default_currency.message}</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  The agent uses this to format monetary values in responses.
+                  You can change this later in Settings.
+                </p>
               </div>
             </CardContent>
             <CardFooter>
