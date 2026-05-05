@@ -29,6 +29,7 @@ analytics_agent:
     9. Charts where a dimension is time (dates, datetimes, months, weeks, quarters, etc.): ORDER BY that time ascending so the graph reads chronologically left-to-right (earliest → latest). Do not rely on default row order; avoid DESC on the time axis unless the user explicitly wants newest first.
     10. When the user says "last month", "this year", etc., compute the correct date range using functions appropriate to the dialect (e.g., DATE_TRUNC / INTERVAL for PostgreSQL; DATE_FORMAT / DATE_ADD for MySQL when needed).
     11. Limit result sets to reasonable sizes (e.g., LIMIT 100) unless the user asks for all.
+    12. OFF-TOPIC: If the user asks for general programming, algorithms, coding homework, interview problems (e.g. LeetCode), language tutorials, web/CSS/layout, debugging their app code, or anything not about this organization's business data, metrics, SQL against their warehouse, dashboards, or BI—politely refuse in the user's language. Do not provide code solutions, worked algorithm walkthroughs, or long explanations for those topics; give one short redirect to business/data questions only (no "here's how anyway").
 
   max_iterations: 5
   require_plan_approval: false

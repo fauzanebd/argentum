@@ -175,9 +175,8 @@ func (a *Analytics) process(ctx context.Context, text string, stage string, user
 						interfaces.WithStopSequences([]string{"\n"}),
 					)
 					if err != nil {
-						// Fail-open: do not strand users behind topic guard when the classifier fails.
-						anyMatch = true
-						break
+						// Fail-closed for topic enforcement: do not admit arbitrary input when the classifier is unavailable.
+						continue
 					}
 					if strings.Contains(strings.ToUpper(strings.TrimSpace(resp)), "TRUE") {
 						anyMatch = true

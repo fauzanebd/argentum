@@ -27,7 +27,22 @@ rules:
       # EN: … growth, churn, retention… (standalone “margin” lives in BI-only patterns below — the `(…)s?\b` suffix falsely matches CSS “margins”.)
       # ID: penjualan, pendapatan, pemasukan, pesanan, pelanggan, transaksi, faktur, produk, pembelian, pembayaran, keuntungan, laba, rugi, biaya, pengeluaran, pengguna, konversi, bisnis, usaha, kinerja, pertumbuhan, pemasaran, iklan, kampanye, promosi, gudang, pengiriman, diskon, langganan
       - type: regex
-        pattern: "(?i)\\b(sales|penjualan|revenue|pendapatan|pemasukan|order|pesanan|customer|pelanggan|transaction|transaksi|invoice|faktur|product|produk|purchase|pembelian|payment|pembayaran|profit|keuntungan|laba|loss|rugi|cost|biaya|expense|pengeluaran|income|user|pengguna|conversion|konversi|business|bisnis|usaha|performance|kinerja|growth|pertumbuhan|churn|retention|funnel|segment|channel|inventory|stock|stok|supply|demand|budget|anggaran|forecast|target|goal|benchmark|roi|arpu|aov|gmv|cac|ltv|mrr|arr|marketing|pemasaran|advertising|iklan|campaign|kampanye|promotion|promosi|warehouse|gudang|shipping|pengiriman|discount|diskon|refund|subscription|langganan|pricing|harga|price|spend|spending|belanja)s?\\b"
+        pattern: "(?i)\\b(sales|penjualan|revenue|pendapatan|pemasukan|order|pesanan|customer|pelanggan|transaction|transaksi|invoice|faktur|product|produk|purchase|pembelian|payment|pembayaran|profit|keuntungan|laba|loss|rugi|cost|biaya|expense|pengeluaran|income|user|pengguna|conversion|konversi|business|bisnis|usaha|performance|kinerja|growth|pertumbuhan|churn|retention|funnel|segment|channel|inventory|stock|stok|supply|demand|budget|anggaran|forecast|benchmark|roi|arpu|aov|gmv|cac|ltv|mrr|arr|marketing|pemasaran|advertising|iklan|campaign|kampanye|promotion|promosi|warehouse|gudang|shipping|pengiriman|discount|diskon|refund|subscription|langganan|pricing|harga|price|spend|spending|belanja)s?\\b"
+      # KPI “target” / “goal” — bare words match CS prompts (“integer target”, “the goal is to…”); keep BI phrases only.
+      - type: regex
+        pattern: "(?i)\\b(sales|revenue|quota|budget|kpi|kpis|daily|weekly|monthly|quarterly|annual|ytd|mtd)\\s+targets?\\b"
+      - type: regex
+        pattern: "(?i)\\btargets?\\s+(vs\\.?|versus|achievement|attainment|actual|variance|gap|number|figures?|metrics?|revenue|sales|for\\s+(?:q[1-4]|the\\s+year|fy|fiscal))\\b"
+      - type: regex
+        pattern: "(?i)\\b(hit|meet|miss|exceed)(ing)?\\s+(?:the\\s+|our\\s+|your\\s+|their\\s+)?targets?\\b"
+      - type: regex
+        pattern: "(?i)\\bagainst\\s+(?:the\\s+|our\\s+|your\\s+)?targets?\\b"
+      - type: regex
+        pattern: "(?i)\\b(sales|revenue|team|marketing|campaign|annual|business|company|okr|okrs|quota)\\s+goals?\\b"
+      - type: regex
+        pattern: "(?i)\\b(our|your|their|company)\\s+goals?\\b"
+      - type: regex
+        pattern: "(?i)\\bgoals?\\s+(vs\\.?|versus|for\\s+the|achievement|progress|this\\s+(?:quarter|year))\\b"
       # Financial “margin” phrasing — kept separate so generic “margins” (CSS/layout) doesn’t falsely pass topic checks.
       - type: regex
         pattern: "(?i)\\b(profit margins?|gross margins?|net margins?|operating margins?|contribution margins?|unit margins?|interest margins?|margin pendapatan|margin laba|margin keuntungan|margin\\s+(rate|ratio|percentage|pct|growth|spread|pressure|benchmark))\\b"
@@ -89,6 +104,19 @@ rules:
         pattern: "(?i)\\b(?:func\\s+main|package\\s+main|\\b(?:public\\s+static\\s+void|System\\.out\\.println))\\b"
       - type: regex
         pattern: "(?i)\\bhow\\s+to\\s+c(?:ente?r)\\b|\\b(center|centering)\\s+.{1,120}\\sdiv\\b"
+      # Textbook / interview CS (LeetCode-style) — catches prompts that sneak past topic keywords.
+      - type: regex
+        pattern: "(?i)\\bgiven\\s+an\\s+array\\s+of\\s+integers?\\b"
+      - type: regex
+        pattern: "(?i)\\btwo\\s+sum\\b"
+      - type: regex
+        pattern: "(?i)\\bindices\\s+of\\s+the\\s+two\\s+numbers?\\b"
+      - type: regex
+        pattern: "(?i)\\btwo\\s+numbers\\s+such\\s+that\\b"
+      - type: regex
+        pattern: "(?i)\\bcodewars\\b|\\bhackerrank\\b|\\bcodeforces\\b"
+      - type: regex
+        pattern: "(?i)\\btime\\s+complexity\\b|\\bspace\\s+complexity\\b|\\bbig\\s*-?\\s*o\\s*\\(|\\bO\\(\\s*n\\s*\\)\\b"
     action: block
     message: "I'm focused on business analytics and org data—not general programming tutorials or language coursework. Ask about KPIs, reports, dashboards, metrics, or your business data instead."
 
