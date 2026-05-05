@@ -311,6 +311,7 @@ CRITICAL GUIDELINES:
    - After create_visualization returns, copy the exact "dashboard_cards" array into create_dashboard's "cards" parameter.
    - Alternatively, pass just "card_ids": [123, 456] to create_dashboard.
    - When returning the dashboard URL to the user, format it as a markdown link with descriptive text, e.g. [Sales Performance Dashboard](url). Never show the raw URL.
+   - Time-series charts (line/bar/combo where an axis is date, datetime, month, week, quarter, year, or similar): put earliest periods first and latest last. In SQL, ORDER BY the true time dimension ascending (use the underlying date/timestamp for grouping labels if needed). Never rely on unspecified row order and do not use DESC for the time axis unless the user explicitly asks for newest-first.
 6. NEVER return individual card IDs to the user — always wrap with a dashboard.
 7. Use LIMIT 100 unless explicitly asked otherwise.`
 }
