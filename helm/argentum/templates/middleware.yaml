@@ -1,0 +1,13 @@
+{{- if and .Values.api.enabled .Values.ingressRoute.enabled .Values.ingressRoute.tls.enabled .Values.ingressRoute.tls.redirectHttp -}}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "argentum.api.fullname" . }}-redirect-https
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "argentum.api.labels" . | nindent 4 }}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+{{- end }}

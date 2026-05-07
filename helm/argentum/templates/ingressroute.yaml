@@ -1,0 +1,56 @@
+{{- if and .Values.api.enabled .Values.ingressRoute.enabled -}}
+{{- $fullName := include "argentum.api.fullname" . -}}
+{{- $tlsEnabled := and .Values.ingressRoute.tls .Values.ingressRoute.tls.enabled -}}
+{{- $redirectHttp := and $tlsEnabled .Values.ingressRoute.tls.redirectHttp -}}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullName }}-http
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "argentum.api.labels" . | nindent 4 }}
+  {{- with .Values.ingressRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`{{ .Values.ingressRoute.host }}`)
+      kind: Rule
+      {{- if $redirectHttp }}
+      middlewares:
+        - name: {{ $fullName }}-redirect-https
+          namespace: {{ .Release.Namespace }}
+      {{- end }}
+      services:
+        - name: {{ $fullName }}
+          port: {{ .Values.api.service.port }}
+{{- if $tlsEnabled }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullName }}-https
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "argentum.api.labels" . | nindent 4 }}
+  {{- with .Values.ingressRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`{{ .Values.ingressRoute.host }}`)
+      kind: Rule
+      services:
+        - name: {{ $fullName }}
+          port: {{ .Values.api.service.port }}
+  tls:
+    certResolver: {{ .Values.ingressRoute.tls.certResolver }}
+{{- end }}
+{{- end }}

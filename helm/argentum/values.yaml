@@ -1,0 +1,210 @@
+# Default values for argentum (api + worker)
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ghcr.io/fauzanebd
+  pullPolicy: IfNotPresent
+  # Tag applied to both api & worker. Defaults to .Chart.AppVersion when empty.
+  tag: ""
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# Container-level security context. readOnlyRootFilesystem disabled by default
+# (agent-sdk-go may write temp state); /tmp emptyDir mount is provided regardless.
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+# ----------------------------------------------------------------------------
+# API deployment (HTTP server)
+# ----------------------------------------------------------------------------
+api:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: argentum-api
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 128Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 75
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+
+# ----------------------------------------------------------------------------
+# Worker deployment (asynq consumer, no HTTP)
+# ----------------------------------------------------------------------------
+worker:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: argentum-worker
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 128Mi
+  # asynq worker has no HTTP server. Use exec liveness on process presence.
+  livenessProbe:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - pgrep -f /app/worker
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  # No readiness probe — workers don't take traffic.
+  readinessProbe: {}
+  # Avoid double-running consumers: surge=0, allow one unavailable.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+
+# ----------------------------------------------------------------------------
+# Init containers — wait for Postgres + Redis before starting either pod.
+# ----------------------------------------------------------------------------
+initContainers:
+  waitForPostgres:
+    enabled: true
+    image: busybox:1.36
+    dbHost: "postgres"
+    dbPort: "5432"
+  waitForRedis:
+    enabled: true
+    image: busybox:1.36
+    redisHost: "redis"
+    redisPort: "6379"
+
+# ----------------------------------------------------------------------------
+# Traefik IngressRoute (api only).
+# ----------------------------------------------------------------------------
+ingressRoute:
+  enabled: false
+  host: ""
+  entryPoints:
+    - web
+  annotations: {}
+  tls:
+    enabled: false
+    certResolver: "letsencrypt"
+    redirectHttp: true
+
+# ----------------------------------------------------------------------------
+# Bitwarden Secret Manager — sources the shared k8s Secret consumed by
+# both api and worker via envFrom.
+# Required keys to map (per internal/config/config.go):
+#   LLM_API_KEY, ARGENTUM_JWT_SECRET, ARGENTUM_DSN_KEY
+#   DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_SSL_MODE
+#   REDIS_URL, REDIS_PASSWORD, ASYNQ_REDIS_URL (optional)
+#   WHATSAPP_PROVIDER, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN,
+#   WHATSAPP_APP_SECRET, WHATSAPP_WEBHOOK_VERIFY_TOKEN
+#   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER
+#   METABASE_URL, METABASE_API_KEY, METABASE_ADMIN_EMAIL, METABASE_ADMIN_PASSWORD
+#   CORS_ORIGINS
+# ----------------------------------------------------------------------------
+bitwardenSecret:
+  enabled: true
+  organizationId: ""
+  authTokenSecretName: bw-auth-token
+  authTokenSecretKey: token
+  secrets: []
+    # - bwSecretId: "xxx"
+    #   secretKeyName: "LLM_API_KEY"
+    # - bwSecretId: "xxx"
+    #   secretKeyName: "ARGENTUM_JWT_SECRET"
+
+# When bitwardenSecret.enabled is false, set this to an existing k8s Secret name
+# (created out-of-band) that holds the same env keys. The chart will mount it
+# via envFrom.secretRef on both pods.
+existingSecret: ""
+
+# ----------------------------------------------------------------------------
+# Non-secret env shared by api + worker.
+# ----------------------------------------------------------------------------
+extraEnv:
+  - name: TZ
+    value: "UTC"
+  - name: ENV
+    value: "production"
+  - name: LOG_LEVEL
+    value: "info"
+  - name: PORT
+    value: "8080"
+  - name: AGENT_CONFIG_PATH
+    value: "/app/config/agents.yaml"
+  - name: GUARDRAILS_CONFIG_PATH
+    value: "/app/config/guardrails.yaml"
+  - name: CONTROL_MIGRATIONS_DIR
+    value: "/app/migrations/control"
+  - name: COOKIE_SECURE
+    value: "true"
+
+# Extra volumes / mounts (e.g. external CA bundles).
+extraVolumes: []
+extraVolumeMounts: []

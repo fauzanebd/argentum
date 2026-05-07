@@ -1,0 +1,17 @@
+{{- if .Values.api.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "argentum.api.fullname" . }}
+  labels:
+    {{- include "argentum.api.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.api.service.type }}
+  ports:
+    - port: {{ .Values.api.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "argentum.api.selectorLabels" . | nindent 4 }}
+{{- end }}
