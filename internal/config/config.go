@@ -112,7 +112,7 @@ func Load() (*Config, error) {
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBPort:     getEnvAsInt("DB_PORT", 5432),
 		DBUser:     getEnv("DB_USER", "analytics"),
-		DBPassword: getEnv("DB_PASSWORD", "analytics123"),
+		DBPassword: getEnv("DB_PASSWORD", ""),
 		DBName:     getEnv("DB_NAME", "demo_analytics"),
 		DBSSLMode:  getEnv("DB_SSL_MODE", "disable"),
 
@@ -147,13 +147,13 @@ func Load() (*Config, error) {
 		// Twilio WhatsApp
 		TwilioAccountSID: getEnv("TWILIO_ACCOUNT_SID", ""),
 		TwilioAuthToken:  getEnv("TWILIO_AUTH_TOKEN", ""),
-		TwilioFromNumber: getEnv("TWILIO_WHATSAPP_NUMBER", ""),
+		TwilioFromNumber: getEnv("TWILIO_WHATSAPP_NUMBER", "+14155238886"),
 
 		// Metabase
 		MetabaseURL:           getEnv("METABASE_URL", "http://localhost:3000"),
 		MetabasePublicURL:     getEnv("METABASE_PUBLIC_URL", ""),
 		MetabaseAPIKey:        getEnv("METABASE_API_KEY", ""),
-		MetabaseAdminEmail:    getEnv("METABASE_ADMIN_EMAIL", ""),
+		MetabaseAdminEmail:    getEnv("METABASE_ADMIN_EMAIL", "admin@argentum.local"),
 		MetabaseAdminPassword: getEnv("METABASE_ADMIN_PASSWORD", ""),
 
 		// Agent SDK Configuration
@@ -231,6 +231,9 @@ func (c *Config) Validate() error {
 	}
 	if c.DSNEncryptionKeyHex == "" {
 		return fmt.Errorf("ARGENTUM_DSN_KEY is required (64 hex chars)")
+	}
+	if c.DBPassword == "" {
+		return fmt.Errorf("DB_PASSWORD is required")
 	}
 
 	// WhatsApp credentials are only required when the corresponding provider
