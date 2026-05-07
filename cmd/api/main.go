@@ -1,6 +1,6 @@
 // Argentum API server: control plane + queue producer + WebSocket fan-out.
 //
-// The API process never runs the agent itself — it resolves threads,
+// The API process never runs the agent itself  — it resolves threads,
 // persists user messages, enqueues `chat:run` tasks via asynq, and
 // streams worker-published events back to dashboard clients via Redis
 // pub/sub. cmd/worker handles the heavy lifting.
