@@ -15,7 +15,6 @@ import (
 
 	sdkagent "github.com/Ingenimax/agent-sdk-go/pkg/agent"
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
-	"github.com/Ingenimax/agent-sdk-go/pkg/llm/openai"
 	"github.com/Ingenimax/agent-sdk-go/pkg/memory"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
@@ -29,6 +28,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/guardrails"
+	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/tools"
@@ -83,9 +83,15 @@ func main() {
 
 	// --- LLM (metered) ---
 	usageSvc := app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
-	rawLLM := buildLLM(cfg)
+	rawLLM, err := llmclient.BuildPrimary(cfg)
+	if err != nil {
+		logrus.Fatalf("primary LLM: %v", err)
+	}
 	llmClient := app.NewMeteredLLM(rawLLM, usageSvc)
-	lightLLMClient := buildLightLLM(cfg)
+	lightLLMClient, err := llmclient.BuildLight(cfg)
+	if err != nil {
+		logrus.Fatalf("light LLM: %v", err)
+	}
 
 	// --- Agent + tools ---
 	metabaseClient := metabase.NewClient(
@@ -240,31 +246,6 @@ func buildRedisClient(cfg *config.Config) *redis.Client {
 		opt.Password = cfg.RedisPassword
 	}
 	return redis.NewClient(opt)
-}
-
-func buildLLM(cfg *config.Config) interfaces.LLM {
-	opts := []openai.Option{}
-	if cfg.LLMModel != "" {
-		opts = append(opts, openai.WithModel(cfg.LLMModel))
-	}
-	if cfg.LLMBaseURL != "" {
-		opts = append(opts, openai.WithBaseURL(cfg.LLMBaseURL))
-	}
-	return openai.NewClient(cfg.LLMAPIKey, opts...)
-}
-
-func buildLightLLM(cfg *config.Config) interfaces.LLM {
-	if cfg.LightLLMAPIKey == "" {
-		return buildLLM(cfg)
-	}
-	opts := []openai.Option{}
-	if cfg.LightLLMModel != "" {
-		opts = append(opts, openai.WithModel(cfg.LightLLMModel))
-	}
-	if cfg.LightLLMBaseURL != "" {
-		opts = append(opts, openai.WithBaseURL(cfg.LightLLMBaseURL))
-	}
-	return openai.NewClient(cfg.LightLLMAPIKey, opts...)
 }
 
 func buildMemory(cfg *config.Config) interfaces.Memory {

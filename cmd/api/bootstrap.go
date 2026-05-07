@@ -11,6 +11,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/auth"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
+	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/migrate"
@@ -93,7 +94,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.enqueuer = queue.NewEnqueuer(asynqOpt)
 	undo = append(undo, func() { deps.enqueuer.Close() })
 
-	// llmClient := buildLLM(cfg)
+	// llmClient, err := llmclient.BuildPrimary(cfg)
 
 	deps.authSvc = app.NewAuthService(companyRepo, userRepo, signer)
 
@@ -108,7 +109,10 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
 	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
 	deps.dashboardSvc = app.NewDashboardService(dashboardRepo, mbCli)
-	lightLLMClient := buildLightLLM(cfg)
+	lightLLMClient, err := llmclient.BuildLight(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("light LLM: %w", err)
+	}
 	classifier := app.NewTopicClassifier(lightLLMClient)
 	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, lightLLMClient,
 		app.ThreadServiceConfig{
