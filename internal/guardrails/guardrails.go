@@ -19,19 +19,19 @@ type Config struct {
 
 // Rule represents a single guardrail rule.
 type Rule struct {
-	Name        string    `yaml:"name"`
-	Description string    `yaml:"description"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
 	// Scope controls when the rule is applied: "input" (user messages only),
 	// "output" (agent responses only), or "" / omitted (both).
-	Scope       string    `yaml:"scope"`
-	Patterns    []Pattern `yaml:"patterns"`
+	Scope    string    `yaml:"scope"`
+	Patterns []Pattern `yaml:"patterns"`
 	// Action is one of: "block" (block if any pattern matches),
 	// "require" (block if NO pattern matches), "redact", "filter".
-	Action      string    `yaml:"action"`
-	Message     string    `yaml:"message"`
-	MessageEN   string    `yaml:"message_en"`
-	MessageID   string    `yaml:"message_id"`
-	Replacement string    `yaml:"replacement"`
+	Action      string `yaml:"action"`
+	Message     string `yaml:"message"`
+	MessageEN   string `yaml:"message_en"`
+	MessageID   string `yaml:"message_id"`
+	Replacement string `yaml:"replacement"`
 }
 
 // Pattern represents a matching pattern within a rule.
@@ -149,8 +149,9 @@ func (a *Analytics) process(ctx context.Context, text string, stage string, user
 					resp, err := a.llm.Generate(ctx, result,
 						interfaces.WithSystemMessage(p.Pattern),
 						interfaces.WithTemperature(0),
+						interfaces.WithStopSequences([]string{"\n"}),
 					)
-					if err == nil && strings.Contains(strings.ToUpper(resp), "TRUE") {
+					if err == nil && strings.Contains(strings.ToUpper(strings.TrimSpace(resp)), "TRUE") {
 						msg := resolveMessage(cr.rule, userInput, fmt.Sprintf("blocked by semantic guardrail: %s", cr.rule.Name))
 						return "", fmt.Errorf("%s", msg)
 					}
@@ -171,8 +172,13 @@ func (a *Analytics) process(ctx context.Context, text string, stage string, user
 					resp, err := a.llm.Generate(ctx, result,
 						interfaces.WithSystemMessage(p.Pattern),
 						interfaces.WithTemperature(0),
+						interfaces.WithStopSequences([]string{"\n"}),
 					)
-					if err == nil && strings.Contains(strings.ToUpper(resp), "TRUE") {
+					if err != nil {
+						// Fail-closed for topic enforcement: do not admit arbitrary input when the classifier is unavailable.
+						continue
+					}
+					if strings.Contains(strings.ToUpper(strings.TrimSpace(resp)), "TRUE") {
 						anyMatch = true
 						break
 					}

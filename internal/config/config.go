@@ -32,15 +32,17 @@ type Config struct {
 	RedisPassword string
 
 	// LLM
-	LLMProvider string
-	LLMAPIKey   string
-	LLMModel    string
-	LLMBaseURL  string
+	LLMInterface string // LLM_INTERFACE: optional override (openai | anthropic | gemini); falls back to LLMProvider
+	LLMProvider  string
+	LLMAPIKey    string
+	LLMModel     string
+	LLMBaseURL   string
 
-	LightLLMProvider string
-	LightLLMAPIKey   string
-	LightLLMModel    string
-	LightLLMBaseURL  string
+	LightLLMInterface string // LIGHT_LLM_INTERFACE: optional override (openai | anthropic | gemini); falls back to LightLLMProvider
+	LightLLMProvider  string
+	LightLLMAPIKey    string
+	LightLLMModel     string
+	LightLLMBaseURL   string
 
 	// WhatsApp Provider
 	WhatsAppProvider string // "whatsapp_business" or "twilio"
@@ -119,15 +121,17 @@ func Load() (*Config, error) {
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 
 		// LLM
-		LLMProvider: getEnv("LLM_PROVIDER", "openai"),
-		LLMAPIKey:   getEnv("LLM_API_KEY", ""),
-		LLMModel:    getEnv("LLM_MODEL", "gpt-4o-mini"),
-		LLMBaseURL:  getEnv("LLM_BASE_URL", ""),
+		LLMInterface: getEnv("LLM_INTERFACE", ""),
+		LLMProvider:  getEnv("LLM_PROVIDER", "openai"),
+		LLMAPIKey:    getEnv("LLM_API_KEY", ""),
+		LLMModel:     getEnv("LLM_MODEL", "gpt-4o-mini"),
+		LLMBaseURL:   getEnv("LLM_BASE_URL", ""),
 
-		LightLLMProvider: getEnv("LIGHT_LLM_PROVIDER", "openai"),
-		LightLLMAPIKey:   getEnv("LIGHT_LLM_API_KEY", ""),
-		LightLLMModel:    getEnv("LIGHT_LLM_MODEL", "gpt-4o-mini"),
-		LightLLMBaseURL:  getEnv("LIGHT_LLM_BASE_URL", ""),
+		LightLLMInterface: getEnv("LIGHT_LLM_INTERFACE", ""),
+		LightLLMProvider:  getEnv("LIGHT_LLM_PROVIDER", "openai"),
+		LightLLMAPIKey:    getEnv("LIGHT_LLM_API_KEY", ""),
+		LightLLMModel:     getEnv("LIGHT_LLM_MODEL", "gpt-4o-mini"),
+		LightLLMBaseURL:   getEnv("LIGHT_LLM_BASE_URL", ""),
 
 		// WhatsApp Provider
 		WhatsAppProvider: getEnv("WHATSAPP_PROVIDER", "whatsapp_business"),
@@ -188,8 +192,37 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// Supported LLM wire protocols for agent-sdk-go clients.
+const (
+	LLMInterfaceOpenAI    = "openai"
+	LLMInterfaceAnthropic = "anthropic"
+	LLMInterfaceGemini    = "gemini"
+)
+
+// EffectiveLLMInterface returns LLM_INTERFACE when set, otherwise LLM_PROVIDER (trimmed, lowercased).
+func (c *Config) EffectiveLLMInterface() string {
+	if s := strings.TrimSpace(strings.ToLower(c.LLMInterface)); s != "" {
+		return s
+	}
+	return strings.TrimSpace(strings.ToLower(c.LLMProvider))
+}
+
+// EffectiveLightLLMInterface returns LIGHT_LLM_INTERFACE when set, otherwise LIGHT_LLM_PROVIDER.
+func (c *Config) EffectiveLightLLMInterface() string {
+	if s := strings.TrimSpace(strings.ToLower(c.LightLLMInterface)); s != "" {
+		return s
+	}
+	return strings.TrimSpace(strings.ToLower(c.LightLLMProvider))
+}
+
 // Validate checks if required configuration is present
 func (c *Config) Validate() error {
+	if err := validateLLMInterfaceKind(c.EffectiveLLMInterface(), "LLM_INTERFACE", "LLM_PROVIDER"); err != nil {
+		return err
+	}
+	if err := validateLLMInterfaceKind(c.EffectiveLightLLMInterface(), "LIGHT_LLM_INTERFACE", "LIGHT_LLM_PROVIDER"); err != nil {
+		return err
+	}
 	if c.LLMAPIKey == "" {
 		return fmt.Errorf("LLM_API_KEY is required")
 	}
@@ -217,6 +250,17 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func validateLLMInterfaceKind(iface, envPrimary, envFallback string) error {
+	switch iface {
+	case LLMInterfaceOpenAI, LLMInterfaceAnthropic, LLMInterfaceGemini:
+		return nil
+	default:
+		return fmt.Errorf("%s / %s must be %q, %q, or %q (got %q)",
+			envPrimary, envFallback,
+			LLMInterfaceOpenAI, LLMInterfaceAnthropic, LLMInterfaceGemini, iface)
+	}
 }
 
 // DatabaseURL returns a postgres:// URI suitable for lib/pq, pgx, and

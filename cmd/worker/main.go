@@ -15,7 +15,6 @@ import (
 
 	sdkagent "github.com/Ingenimax/agent-sdk-go/pkg/agent"
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
-	"github.com/Ingenimax/agent-sdk-go/pkg/llm/openai"
 	"github.com/Ingenimax/agent-sdk-go/pkg/memory"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
@@ -29,6 +28,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/guardrails"
+	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/tools"
@@ -83,9 +83,15 @@ func main() {
 
 	// --- LLM (metered) ---
 	usageSvc := app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
-	rawLLM := buildLLM(cfg)
+	rawLLM, err := llmclient.BuildPrimary(cfg)
+	if err != nil {
+		logrus.Fatalf("primary LLM: %v", err)
+	}
 	llmClient := app.NewMeteredLLM(rawLLM, usageSvc)
-	lightLLMClient := buildLightLLM(cfg)
+	lightLLMClient, err := llmclient.BuildLight(cfg)
+	if err != nil {
+		logrus.Fatalf("light LLM: %v", err)
+	}
 
 	// --- Agent + tools ---
 	metabaseClient := metabase.NewClient(
@@ -242,31 +248,6 @@ func buildRedisClient(cfg *config.Config) *redis.Client {
 	return redis.NewClient(opt)
 }
 
-func buildLLM(cfg *config.Config) interfaces.LLM {
-	opts := []openai.Option{}
-	if cfg.LLMModel != "" {
-		opts = append(opts, openai.WithModel(cfg.LLMModel))
-	}
-	if cfg.LLMBaseURL != "" {
-		opts = append(opts, openai.WithBaseURL(cfg.LLMBaseURL))
-	}
-	return openai.NewClient(cfg.LLMAPIKey, opts...)
-}
-
-func buildLightLLM(cfg *config.Config) interfaces.LLM {
-	if cfg.LightLLMAPIKey == "" {
-		return buildLLM(cfg)
-	}
-	opts := []openai.Option{}
-	if cfg.LightLLMModel != "" {
-		opts = append(opts, openai.WithModel(cfg.LightLLMModel))
-	}
-	if cfg.LightLLMBaseURL != "" {
-		opts = append(opts, openai.WithBaseURL(cfg.LightLLMBaseURL))
-	}
-	return openai.NewClient(cfg.LightLLMAPIKey, opts...)
-}
-
 func buildMemory(cfg *config.Config) interfaces.Memory {
 	if cfg.RedisURL != "" {
 		mem, err := memory.NewRedisMemoryFromConfig(memory.RedisConfig{
@@ -311,6 +292,7 @@ CRITICAL GUIDELINES:
    - After create_visualization returns, copy the exact "dashboard_cards" array into create_dashboard's "cards" parameter.
    - Alternatively, pass just "card_ids": [123, 456] to create_dashboard.
    - When returning the dashboard URL to the user, format it as a markdown link with descriptive text, e.g. [Sales Performance Dashboard](url). Never show the raw URL.
+   - Time-series charts (line/bar/combo where an axis is date, datetime, month, week, quarter, year, or similar): put earliest periods first and latest last. In SQL, ORDER BY the true time dimension ascending (use the underlying date/timestamp for grouping labels if needed). Never rely on unspecified row order and do not use DESC for the time axis unless the user explicitly asks for newest-first.
 6. NEVER return individual card IDs to the user — always wrap with a dashboard.
 7. Use LIMIT 100 unless explicitly asked otherwise.`
 }

@@ -39,14 +39,14 @@ func NewCreateVisualizationTool(pool *db.TenantConnPool, metabaseClient *metabas
 func (t *CreateVisualizationTool) Name() string { return "create_visualization" }
 
 func (t *CreateVisualizationTool) Description() string {
-	return "Create a visualization card (question) in Metabase from a SQL query. Returns a card_id and chart_type. Remember the returned card_id — you MUST pass it in the 'cards' array when calling create_dashboard afterwards. Use create_dashboard to combine multiple cards into a single shareable dashboard."
+	return "Create a visualization card (question) in Metabase from a SQL query. Returns a card_id and chart_type. Remember the returned card_id — you MUST pass it in the 'cards' array when calling create_dashboard afterwards. Use create_dashboard to combine multiple cards into a single shareable dashboard. If the chart axes correlate with time (dates, months, weeks, etc.), the SQL MUST ORDER BY that time dimension ascending so the chart is chronological left-to-right; never rely on unspecified row order."
 }
 
 func (t *CreateVisualizationTool) Parameters() map[string]interfaces.ParameterSpec {
 	return map[string]interfaces.ParameterSpec{
 		"sql": {
 			Type:        "string",
-			Description: "The SQL query for the visualization",
+			Description: "The SQL query for the visualization. For time-based charts, include ORDER BY the time bucketing column ascending (earliest first).",
 			Required:    true,
 		},
 		"name": {
