@@ -24,7 +24,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_OWNER: fauzanebd
+  IMAGE_OWNER: haritsrizkall
   GO_VERSION: '1.25'
 
 jobs:
@@ -70,8 +70,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: haritsrizkall
+          password: ${{ secrets.PAT }}
 
       - name: Extract metadata
         id: meta

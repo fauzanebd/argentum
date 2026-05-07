@@ -4,7 +4,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  registry: ghcr.io/fauzanebd
+  registry: ghcr.io/haritsrizkall
   pullPolicy: IfNotPresent
   # Tag applied to both api & worker. Defaults to .Chart.AppVersion when empty.
   tag: ""
