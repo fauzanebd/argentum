@@ -53,6 +53,13 @@ func (s *MetabaseWarehouseSync) SyncCompanyDatabase(ctx context.Context, conn *d
 		if err != nil {
 			return 0, err
 		}
+	case db.SQLServer:
+		engine = "sqlserver"
+		var err error
+		details, err = metabase.SQLServerMetabaseDetails(dsnPlain)
+		if err != nil {
+			return 0, err
+		}
 	default:
 		return 0, fmt.Errorf("metabase sync does not support %s", conn.DBType)
 	}

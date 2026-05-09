@@ -9,13 +9,14 @@ package db
 // Supported database type identifiers. These values appear in the control DB
 // `db_connections.db_type` column and in API payloads.
 const (
-	Postgres = "postgres"
-	MySQL    = "mysql"
+	Postgres  = "postgres"
+	MySQL     = "mysql"
+	SQLServer = "sqlserver"
 )
 
 // Supported is the canonical list of database type identifiers Argentum knows
 // how to talk to. Returned by `GET /api/meta/supported-databases`.
-var Supported = []string{Postgres, MySQL}
+var Supported = []string{Postgres, MySQL, SQLServer}
 
 // IsSupported reports whether the given identifier is a registered driver.
 func IsSupported(t string) bool {

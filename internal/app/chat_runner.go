@@ -354,6 +354,8 @@ func withDBTypeContext(msg, dbType string) string {
 		hints = " Use MySQL-compatible syntax. For date truncation use DATE_FORMAT, not DATE_TRUNC. For string aggregation use GROUP_CONCAT, not STRING_AGG. For current timestamp use NOW(), not CURRENT_TIMESTAMP. For date arithmetic use DATE_ADD / DATE_SUB, not INTERVAL expressions."
 	case "postgres":
 		hints = " Use PostgreSQL-compatible syntax. For date truncation use DATE_TRUNC. For string aggregation use STRING_AGG. For current timestamp use CURRENT_TIMESTAMP or NOW()."
+	case "sqlserver":
+		hints = " Use Microsoft SQL Server (T-SQL) syntax. Use TOP n instead of LIMIT n (e.g. SELECT TOP 100 ...); for paging use OFFSET n ROWS FETCH NEXT m ROWS ONLY with an ORDER BY. For date arithmetic use DATEADD / DATEDIFF / DATEPART (no DATE_TRUNC; emulate with DATEFROMPARTS or DATEADD/DATEDIFF). For string aggregation use STRING_AGG (SQL Server 2017+). For current timestamp use SYSDATETIME() or GETDATE(). For date formatting use FORMAT(). Quote identifiers with [square brackets]. Tables live in the dbo schema."
 	}
 	return fmt.Sprintf(
 		"[System context: The connected database is %s.%s]\n\n%s",

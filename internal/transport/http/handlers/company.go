@@ -78,6 +78,18 @@ func buildDSN(dbType, raw, host, port, user, pass, dbname string) (string, error
 			AllowNativePasswords: true,
 		}
 		return cfg.FormatDSN(), nil
+	case "sqlserver":
+		u := url.URL{
+			Scheme: "sqlserver",
+			User:   url.UserPassword(user, pass),
+			Host:   host + ":" + port,
+		}
+		q := u.Query()
+		q.Set("database", dbname)
+		q.Set("encrypt", "true")
+		q.Set("TrustServerCertificate", "false")
+		u.RawQuery = q.Encode()
+		return u.String(), nil
 	default:
 		return "", fmt.Errorf("unsupported db_type %q", dbType)
 	}
