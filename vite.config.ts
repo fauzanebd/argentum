@@ -13,11 +13,21 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: "https://argentum-api.gaia.smartsoft.co.id",
+        changeOrigin: true,
+        secure: true,
         ws: true,
       },
-      "/webhook": "http://localhost:8080",
-      "/metabase": "http://localhost:8080",
+      "/webhook": {
+        target: "https://argentum-api.gaia.smartsoft.co.id",
+        changeOrigin: true,
+        secure: true,
+      },
+      "/metabase": {
+        target: "https://argentum-api.gaia.smartsoft.co.id",
+        changeOrigin: true,
+        secure: true,
+      },
     },
   },
 });

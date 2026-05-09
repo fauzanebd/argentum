@@ -21,8 +21,7 @@ export function useThreadStream(threadId: string | null, onEvent: (e: ChatEvent)
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
-      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const url = `${proto}//${window.location.host}/api/threads/${threadId}/stream?at=${encodeURIComponent(token)}`;
+      const url = `wss://argentum-api.gaia.smartsoft.co.id/api/threads/${threadId}/stream?at=${encodeURIComponent(token)}`;
       ws = new WebSocket(url);
 
       ws.onopen = () => {

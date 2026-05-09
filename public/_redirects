@@ -1,0 +1,2 @@
+/api/*  https://argentum-api.gaia.smartsoft.co.id/api/:splat  200
+/*      /index.html                                            200
