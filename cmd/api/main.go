@@ -19,6 +19,7 @@ import (
 
 	_ "github.com/fauzanebd/argentum/internal/adapters/db/mysql"
 	_ "github.com/fauzanebd/argentum/internal/adapters/db/postgres"
+	_ "github.com/fauzanebd/argentum/internal/adapters/db/sqlserver"
 	"github.com/fauzanebd/argentum/internal/config"
 )
 

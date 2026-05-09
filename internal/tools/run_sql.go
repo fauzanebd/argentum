@@ -27,6 +27,7 @@ type UsageRecorder interface {
 	RecordSQL(ctx context.Context, companyID, threadID string)
 	RecordMetabaseCard(ctx context.Context, companyID, threadID string)
 	RecordMetabaseDashboard(ctx context.Context, companyID, threadID string)
+	RecordDocument(ctx context.Context, companyID, threadID, format string)
 }
 
 // nopRecorder satisfies UsageRecorder when metering is disabled.
@@ -35,6 +36,7 @@ type nopRecorder struct{}
 func (nopRecorder) RecordSQL(context.Context, string, string)               {}
 func (nopRecorder) RecordMetabaseCard(context.Context, string, string)      {}
 func (nopRecorder) RecordMetabaseDashboard(context.Context, string, string) {}
+func (nopRecorder) RecordDocument(context.Context, string, string, string)  {}
 
 func NewRunSQLTool(pool *db.TenantConnPool, recorder UsageRecorder) *RunSQLTool {
 	if recorder == nil {

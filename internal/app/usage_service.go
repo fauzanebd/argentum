@@ -19,6 +19,7 @@ type Pricing struct {
 	SQLQueryCost          float64 // USD per query
 	MetabaseCardCost      float64 // USD per card
 	MetabaseDashboardCost float64 // USD per dashboard
+	DocumentCost          float64 // USD per generated document
 }
 
 // DefaultPricing approximates GPT-4o + a small per-action operations charge.
@@ -28,6 +29,7 @@ var DefaultPricing = Pricing{
 	SQLQueryCost:          0.0005,
 	MetabaseCardCost:      0.001,
 	MetabaseDashboardCost: 0.002,
+	DocumentCost:          0.001,
 }
 
 // UsageService persists usage events and produces summaries.
@@ -84,6 +86,18 @@ func (s *UsageService) RecordMetabaseDashboard(ctx context.Context, companyID, t
 		ThreadID:     threadID,
 		EventType:    domain.UsageEventMetabaseDashboard,
 		CostMicroUSD: int64(s.pricing.MetabaseDashboardCost * 1_000_000),
+	})
+}
+
+// RecordDocument records one document generation. format is informational
+// metadata so we can later split pricing per format if we want.
+func (s *UsageService) RecordDocument(ctx context.Context, companyID, threadID, format string) {
+	s.append(ctx, &domain.UsageEvent{
+		CompanyID:    companyID,
+		ThreadID:     threadID,
+		EventType:    domain.UsageEventDocumentGenerated,
+		CostMicroUSD: int64(s.pricing.DocumentCost * 1_000_000),
+		Metadata:     map[string]interface{}{"format": format},
 	})
 }
 

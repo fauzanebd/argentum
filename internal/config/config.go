@@ -93,6 +93,16 @@ type Config struct {
 	ContextMaxTurns     int
 	CacheTTLShort       int // seconds
 	CacheTTLLong        int // seconds
+
+	// Object storage (MinIO / S3-compatible). Used by the generate_document
+	// tool to persist generated PDF/XLSX/CSV files and to issue presigned
+	// download URLs.
+	MinIOEndpoint          string
+	MinIOAccessKeyID       string
+	MinIOSecretAccessKey   string
+	MinIOBucket            string
+	MinIOUseSSL            bool
+	DocumentPresignTTLSecs int
 }
 
 // Load loads configuration from environment variables
@@ -182,6 +192,14 @@ func Load() (*Config, error) {
 		ContextMaxTurns:     getEnvAsInt("CONTEXT_MAX_TURNS", 3),
 		CacheTTLShort:       getEnvAsInt("CACHE_TTL_SHORT", 300),
 		CacheTTLLong:        getEnvAsInt("CACHE_TTL_LONG", 86400),
+
+		// Object storage (MinIO / S3-compatible)
+		MinIOEndpoint:          getEnv("MINIO_ENDPOINT", ""),
+		MinIOAccessKeyID:       getEnv("MINIO_ACCESS_KEY", ""),
+		MinIOSecretAccessKey:   getEnv("MINIO_SECRET_KEY", ""),
+		MinIOBucket:            getEnv("MINIO_BUCKET", "argentum-documents"),
+		MinIOUseSSL:            getEnv("MINIO_USE_SSL", "false") == "true",
+		DocumentPresignTTLSecs: getEnvAsInt("DOCUMENT_PRESIGN_TTL_SECS", 3600),
 	}
 
 	// Validate required configuration

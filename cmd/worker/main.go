@@ -23,7 +23,9 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	_ "github.com/fauzanebd/argentum/internal/adapters/db/mysql"
 	_ "github.com/fauzanebd/argentum/internal/adapters/db/postgres"
+	_ "github.com/fauzanebd/argentum/internal/adapters/db/sqlserver"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
+	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
@@ -100,11 +102,22 @@ func main() {
 	)
 	getSchemaTool := tools.NewGetSchemaTool(tenantPool)
 	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
+	documentRepo := pgctl.NewDocumentRepo(controlDB)
 	agentTools := []interfaces.Tool{
 		getSchemaTool,
 		tools.NewRunSQLTool(tenantPool, usageSvc),
 		tools.NewCreateVisualizationTool(tenantPool, metabaseClient, connRepo, usageSvc),
 		tools.NewCreateDashboardTool(metabaseClient, usageSvc, app.NewDashboardService(dashboardRepo, metabaseClient)),
+	}
+	if storageSvc, err := buildStorageService(cfg); err != nil {
+		logrus.WithError(err).Warn("storage disabled; generate_document tool will not be registered")
+	} else if storageSvc != nil {
+		presignTTL := time.Duration(cfg.DocumentPresignTTLSecs) * time.Second
+		agentTools = append(agentTools, tools.NewGenerateDocumentTool(storageSvc, documentRepo, usageSvc, presignTTL))
+		logrus.WithFields(logrus.Fields{
+			"bucket":   cfg.MinIOBucket,
+			"endpoint": cfg.MinIOEndpoint,
+		}).Info("generate_document tool enabled")
 	}
 	mem := buildMemory(cfg)
 	gr := buildGuardrails(cfg, lightLLMClient)
@@ -274,6 +287,22 @@ func buildGuardrails(cfg *config.Config, llm interfaces.LLM) interfaces.Guardrai
 	return gr
 }
 
+// buildStorageService returns a configured MinIO/S3 client, or (nil, nil)
+// when no MINIO_ENDPOINT is set (object storage is optional — without it
+// the generate_report tool simply isn't registered).
+func buildStorageService(cfg *config.Config) (*storage.StorageService, error) {
+	if cfg.MinIOEndpoint == "" {
+		return nil, nil
+	}
+	return storage.NewStorageService(&storage.MinIOConfig{
+		Endpoint:        cfg.MinIOEndpoint,
+		AccessKeyID:     cfg.MinIOAccessKeyID,
+		SecretAccessKey: cfg.MinIOSecretAccessKey,
+		Bucket:          cfg.MinIOBucket,
+		UseSSL:          cfg.MinIOUseSSL,
+	})
+}
+
 func buildSystemPrompt() string {
 	return `You are Argentum, an expert data analyst helping business owners understand their metrics.
 
@@ -282,17 +311,18 @@ You have access to these tools:
 - run_sql: Execute read-only SELECT queries against the connected analytics DB.
 - create_visualization: Create a Metabase card from a SQL query. Returns card_id and chart_type.
 - create_dashboard: Combine multiple card_ids into a single Metabase dashboard with a shareable URL.
+- generate_document: Generate a downloadable file (PDF, XLSX, or CSV) from a structured spec. Generic-purpose: invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports — any artifact the user wants to download. Returns a presigned download URL — embed it as a markdown link with descriptive text. (Only available when object storage is configured.)
 
 CRITICAL GUIDELINES:
 1. LANGUAGE IS THE TOP PRIORITY: Detect the language of the user's message and reply ONLY in that exact same language. If the user writes in English, reply fully in English. If the user writes in Indonesian/Bahasa Indonesia, reply fully in Indonesian. Never mix languages and never default to Indonesian when the user wrote in English.
 2. ONLY call tools when the user asks a question that requires database data or a visualization. For greetings ("hi", "hello", "test"), small-talk, or general conversation that does NOT need data, reply directly without calling any tools.
 3. When you DO need to query data: call get_schema FIRST if you are unsure about table or column names. Never invent identifiers.
-4. Generate valid SQL appropriate for the connected DB. The DB type (mysql or postgres) and dialect hints are prepended to every user message — respect them. Aggregations + filters as needed.
+4. Generate valid SQL appropriate for the connected DB. The DB type (mysql, postgres, or sqlserver) and dialect hints are prepended to every user message — respect them. Aggregations + filters as needed.
 5. When the user wants charts/graphs/dashboards: call create_visualization for each card, then create_dashboard ONCE.
    - After create_visualization returns, copy the exact "dashboard_cards" array into create_dashboard's "cards" parameter.
    - Alternatively, pass just "card_ids": [123, 456] to create_dashboard.
    - When returning the dashboard URL to the user, format it as a markdown link with descriptive text, e.g. [Sales Performance Dashboard](url). Never show the raw URL.
    - Time-series charts (line/bar/combo where an axis is date, datetime, month, week, quarter, year, or similar): put earliest periods first and latest last. In SQL, ORDER BY the true time dimension ascending (use the underlying date/timestamp for grouping labels if needed). Never rely on unspecified row order and do not use DESC for the time axis unless the user explicitly asks for newest-first.
 6. NEVER return individual card IDs to the user — always wrap with a dashboard.
-7. Use LIMIT 100 unless explicitly asked otherwise.`
+7. Cap result sets to 100 rows unless explicitly asked otherwise (LIMIT 100 in postgres/mysql, TOP 100 in sqlserver).`
 }
