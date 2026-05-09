@@ -14,6 +14,7 @@ const (
 	UsageEventMetabaseCard      UsageEventType = "metabase_card"
 	UsageEventMetabaseDashboard UsageEventType = "metabase_dashboard"
 	UsageEventTopicClassify     UsageEventType = "topic_classify"
+	UsageEventDocumentGenerated UsageEventType = "document_generated"
 )
 
 // UsageEvent is a single billable / observable action taken on behalf of a

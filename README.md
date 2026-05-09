@@ -1,7 +1,7 @@
 # Argentum
 
 Argentum is a B2B agentic analytics assistant. Each customer connects their
-analytical database (Postgres or MySQL today, more drivers planned), then
+analytical database (Postgres, MySQL, or SQL Server today, more drivers planned), then
 chats with Argentum from the dashboard or WhatsApp. The agent runs SQL,
 builds Metabase dashboards, and replies in the user's language.
 
@@ -171,6 +171,10 @@ argentum/
       ws/                     WebSocket handler (Redis pub/sub)
       eventbus/               Redis pub/sub EventBus implementation
     tools/                    agent-sdk Tool implementations
+                              - get_schema, run_sql, create_visualization,
+                                create_dashboard, generate_document
+    tools/document/           PDF/XLSX/CSV renderers for generate_document
+    adapters/storage/         MinIO/S3 client (object storage)
     metabase/                 Metabase REST client
     guardrails/               YAML-driven guardrail engine
     metrics/                  atomic counter snapshots
@@ -182,6 +186,47 @@ argentum/
     control/                  Argentum control plane (managed)
     demo_tenant/              dev fixtures (never run on real tenants)
   pkg/models/                 transport-level message types
+```
+
+## Object storage (optional — for the `generate_document` tool)
+
+The agent ships a `generate_document` tool that produces downloadable
+PDF / XLSX / CSV files. It is generic-purpose — used for invoices,
+agreements, terms & conditions, research summaries, data exports, ad-hoc
+reports. Files live in any S3-compatible store (MinIO works out of the
+box). The tool registers itself only when `MINIO_ENDPOINT` is set;
+without object storage the rest of the agent runs unchanged.
+
+| Env var                     | Default              | Notes                                              |
+| --------------------------- | -------------------- | -------------------------------------------------- |
+| `MINIO_ENDPOINT`            | _(empty)_            | e.g. `minio:9000` for compose, `s3.amazonaws.com`. |
+| `MINIO_ACCESS_KEY`          | _(empty)_            | access key id                                      |
+| `MINIO_SECRET_KEY`          | _(empty)_            | secret access key                                  |
+| `MINIO_BUCKET`              | `argentum-documents` | bucket name (auto-created on startup)              |
+| `MINIO_USE_SSL`             | `false`              | `true` for HTTPS endpoints                         |
+| `DOCUMENT_PRESIGN_TTL_SECS` | `3600`               | TTL on the download URL the tool returns           |
+
+For local dev, add a MinIO service to your compose file (mirroring
+`gochick-be`'s setup):
+
+```yaml
+minio:
+  image: minio/minio
+  ports: ["9000:9000", "9001:9001"]
+  environment:
+    MINIO_ROOT_USER: minioadmin
+    MINIO_ROOT_PASSWORD: minioadmin
+  command: server /data --console-address ":9001"
+```
+
+Then in `.env`:
+
+```
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET=argentum-documents
+MINIO_USE_SSL=false
 ```
 
 ## Security
