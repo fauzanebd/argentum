@@ -299,7 +299,7 @@ export function ChatPage() {
             thread={threads.find((t) => t.id === activeThreadId)}
             className="shrink-0 bg-background/95 backdrop-blur-md z-20"
           />
-          <div ref={timelineRef} className="flex-1 overflow-y-auto px-6 py-4">
+          <div ref={timelineRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
             <div className="max-w-3xl mx-auto space-y-5">
               {displayedMessages.length === 0 && !liveAssistant && (
                 <div className="text-center text-muted-foreground py-12 text-sm">
@@ -320,7 +320,7 @@ export function ChatPage() {
             </div>
           </div>
           {error && (
-            <div className="px-6 py-2 text-sm text-destructive bg-destructive/5 rounded-lg mx-4 mb-2 shrink-0">
+            <div className="px-6 py-2 text-sm text-destructive bg-destructive/5 rounded-lg mx-3 sm:mx-4 mb-2 shrink-0">
               {error}
             </div>
           )}
@@ -347,7 +347,7 @@ function ChatHeader({
 }) {
   if (!thread) return null;
   return (
-    <header className={cn("px-6 pt-5 pb-2 shrink-0", className)}>
+    <header className={cn("px-3 sm:px-6 pt-5 pb-2 shrink-0", className)}>
       <div className="max-w-3xl mx-auto">
         <div className="text-base font-semibold leading-snug">
           {thread.title || "Conversation"}
@@ -402,28 +402,35 @@ function MessageBubble({ message }: { message: Message }) {
       </div>
 
       {/* Bubble */}
-      <div className={cn("flex-1", isUser && "flex flex-col items-end")}>
-        <div
-          className={cn(
-            "inline-block max-w-[78%] rounded-3xl px-4 py-3 text-sm leading-relaxed",
-            isUser
-              ? "bg-[#212427] text-white rounded-br-md dark:bg-white dark:text-[#212427]"
-              : "bg-card border border-border text-foreground rounded-bl-md",
-          )}
-        >
-          {isUser ? (
+      <div
+        className={cn(
+          "flex-1 min-w-0",
+          isUser && "flex flex-col items-end",
+        )}
+      >
+        {isUser ? (
+          <div className="inline-block max-w-[78%] rounded-3xl rounded-br-md px-4 py-3 text-sm leading-relaxed bg-[#212427] text-white dark:bg-white dark:text-[#212427]">
             <div className="whitespace-pre-wrap">{message.content}</div>
-          ) : (
+            {message.tool_calls && (
+              <div className="mt-3 pt-3 border-t border-border/30 space-y-2 text-left">
+                {Object.entries(message.tool_calls).map(([key, value]) => (
+                  <ToolCallCard key={key} name={key} payload={value} />
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm leading-relaxed text-foreground">
             <MarkdownRenderer content={message.content} />
-          )}
-          {message.tool_calls && (
-            <div className="mt-3 pt-3 border-t border-border/30 space-y-2 text-left">
-              {Object.entries(message.tool_calls).map(([key, value]) => (
-                <ToolCallCard key={key} name={key} payload={value} />
-              ))}
-            </div>
-          )}
-        </div>
+            {message.tool_calls && (
+              <div className="mt-3 pt-3 border-t border-border/30 space-y-2 text-left">
+                {Object.entries(message.tool_calls).map(([key, value]) => (
+                  <ToolCallCard key={key} name={key} payload={value} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div
           className={cn(
             "text-[11px] text-muted-foreground mt-1 px-1",
@@ -455,8 +462,8 @@ function PendingBubble({
       <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0 bg-muted text-muted-foreground border border-border text-[11px] font-bold">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
       </div>
-      <div className="flex-1">
-        <div className="inline-block max-w-[78%] rounded-3xl rounded-bl-md px-4 py-3 text-sm bg-card border border-border space-y-2">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-foreground space-y-2">
           {thinking && (
             <div className="text-xs text-muted-foreground italic border-l-2 border-primary/40 pl-2">
               Thinking… {thinking}
@@ -517,7 +524,7 @@ function ChatComposer({
   };
 
   return (
-    <div className={cn("px-4 pb-4 pt-1 w-full shrink-0", className)}>
+    <div className={cn("px-3 sm:px-4 pb-4 pt-1 w-full shrink-0", className)}>
       <form
         onSubmit={(e) => {
           e.preventDefault();

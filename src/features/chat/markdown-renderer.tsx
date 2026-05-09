@@ -47,6 +47,11 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
               {children}
             </code>
           ),
+          table: ({ children }) => (
+            <div className="my-2 -mx-1 overflow-x-auto">
+              <table className="min-w-full text-sm">{children}</table>
+            </div>
+          ),
         }}
       >
         {content}
