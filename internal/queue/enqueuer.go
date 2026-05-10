@@ -58,3 +58,12 @@ func ParseChatRun(data []byte) (ChatRunPayload, error) {
 	}
 	return p, nil
 }
+
+// ParseScheduledRun unmarshals a scheduled:run task payload.
+func ParseScheduledRun(data []byte) (ScheduledRunPayload, error) {
+	var p ScheduledRunPayload
+	if err := json.Unmarshal(data, &p); err != nil {
+		return p, fmt.Errorf("parse scheduled payload: %w", err)
+	}
+	return p, nil
+}

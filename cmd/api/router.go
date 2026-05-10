@@ -40,6 +40,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	if d.dashboardSvc != nil {
 		handlers.NewDashboardHandler(d.dashboardSvc).Register(authed)
 	}
+	if d.scheduledSvc != nil {
+		handlers.NewScheduledTasksHandler(d.scheduledSvc).Register(authed)
+	}
 	authed.GET("/threads/:id/stream", ws.NewHandler(d.rdb, d.threadRepo, cfg.CORSOrigins).Stream)
 
 	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, cfg.WhatsAppWebhookVerifyToken).
