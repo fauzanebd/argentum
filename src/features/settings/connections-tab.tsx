@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, Star } from "lucide-react";
+import { RefreshCw, Trash2, Star } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "@/hooks/use-toast";
 
 interface Connection {
   id: string;
@@ -50,6 +51,7 @@ export function ConnectionsTab() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
 
   const { data: connections } = useQuery({
     queryKey: ["connections"],
@@ -119,6 +121,30 @@ export function ConnectionsTab() {
     if (!confirm("Remove this connection?")) return;
     await api.delete(`/connections/${id}`);
     qc.invalidateQueries({ queryKey: ["connections"] });
+  }
+
+  async function regenerateDescription(id: string) {
+    setSyncingId(id);
+    try {
+      const res = await api.post<{ label?: string; description?: string }>(
+        `/connections/${id}/regenerate-description`,
+        undefined,
+        { timeout: 95000 },
+      );
+      qc.invalidateQueries({ queryKey: ["connections"] });
+      toast({
+        title: "Description updated",
+        description: res.data.description || `Synced ${res.data.label ?? "connection"}.`,
+      });
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Sync failed",
+        description: e?.response?.data?.error || e.message,
+      });
+    } finally {
+      setSyncingId(null);
+    }
   }
 
   const ready = isFormReady(mode, dsn, host, port, dbname);
@@ -252,6 +278,15 @@ export function ConnectionsTab() {
                     Make default
                   </Button>
                 )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => regenerateDescription(c.id)}
+                  disabled={syncingId === c.id}
+                  title="Regenerate description"
+                >
+                  <RefreshCw className={`h-4 w-4 ${syncingId === c.id ? "animate-spin" : ""}`} />
+                </Button>
                 <Button variant="ghost" size="icon" onClick={() => remove(c.id)} title="Delete">
                   <Trash2 className="h-4 w-4" />
                 </Button>

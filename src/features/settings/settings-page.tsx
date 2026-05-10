@@ -3,6 +3,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { GeneralTab } from "./general-tab";
 import { ConnectionsTab } from "./connections-tab";
 import { PhonesTab } from "./phones-tab";
+import { IntegrationsTab } from "./integrations-tab";
 import { cn } from "@/lib/utils";
 
 export function SettingsPage() {
@@ -20,6 +21,7 @@ export function SettingsPage() {
               { id: "general", label: "General" },
               { id: "connections", label: "Databases" },
               { id: "phones", label: "Phone numbers" },
+              { id: "integrations", label: "Integrations" },
             ].map((t) => (
               <Tabs.Trigger
                 key={t.id}
@@ -43,6 +45,9 @@ export function SettingsPage() {
           </Tabs.Content>
           <Tabs.Content value="phones">
             <PhonesTab />
+          </Tabs.Content>
+          <Tabs.Content value="integrations">
+            <IntegrationsTab />
           </Tabs.Content>
         </Tabs.Root>
       </div>
