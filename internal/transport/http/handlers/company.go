@@ -90,7 +90,7 @@ func buildDSN(dbType, raw, host, port, user, pass, dbname string) (string, error
 		q := u.Query()
 		q.Set("database", dbname)
 		q.Set("encrypt", "true")
-		q.Set("TrustServerCertificate", "false")
+		q.Set("TrustServerCertificate", "true")
 		q.Set("tlsmin", "1.0")
 		u.RawQuery = q.Encode()
 		return u.String(), nil
