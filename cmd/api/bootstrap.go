@@ -126,6 +126,8 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			SummaryEveryNTurns: cfg.SummaryEveryNTurns,
 		})
 	deps.chatEnq = app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, deps.enqueuer)
+	scheduledRepo := pgctl.NewScheduledTaskRepo(controlDB)
+	deps.scheduledSvc = app.NewScheduledTaskService(scheduledRepo, threadSvc, companyRepo, deps.enqueuer)
 
 	waProvider, err := whatsapp.NewProvider(whatsapp.Config{
 		Provider:           cfg.WhatsAppProvider,

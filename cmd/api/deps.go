@@ -36,6 +36,7 @@ type apiDeps struct {
 	userRepo        *pgctl.UserRepo
 	companyRepo     *pgctl.CompanyRepo
 	dashboardSvc    *app.DashboardService
+	scheduledSvc    *app.ScheduledTaskService
 
 	wa whatsapp.Provider
 

@@ -21,6 +21,14 @@ import (
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
 
+// ScheduledRunMarker is the narrow contract ChatRunner uses to close out
+// a scheduled_task_runs row when the agent finishes (or errors). Defined
+// as an interface so the worker can pass *ScheduledTaskService while
+// API-only flows can pass nil.
+type ScheduledRunMarker interface {
+	MarkRunResult(ctx context.Context, runID, assistantMsgID string, runErr error)
+}
+
 // ChatRunner is the worker-side half of the chat pipeline. It runs the
 // agent against a queued ChatRunPayload, persists the assistant turn,
 // publishes streaming events through the EventBus, and (for WhatsApp
@@ -34,9 +42,11 @@ type ChatRunner struct {
 	bus         EventBus
 	wa          whatsapp.Provider
 	pool        *db.TenantConnPool
+	scheduled   ScheduledRunMarker
 }
 
-// NewChatRunner wires the worker's dependencies.
+// NewChatRunner wires the worker's dependencies. scheduled is optional;
+// pass nil when no scheduled-task subsystem is configured.
 func NewChatRunner(
 	threads *ThreadService,
 	messages domain.MessageRepository,
@@ -46,6 +56,7 @@ func NewChatRunner(
 	bus EventBus,
 	wa whatsapp.Provider,
 	pool *db.TenantConnPool,
+	scheduled ScheduledRunMarker,
 ) *ChatRunner {
 	return &ChatRunner{
 		threads:     threads,
@@ -56,6 +67,7 @@ func NewChatRunner(
 		bus:         bus,
 		wa:          wa,
 		pool:        pool,
+		scheduled:   scheduled,
 	}
 }
 
@@ -234,6 +246,9 @@ func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload,
 		Error:     "I encountered an error processing your request. Please try rephrasing.",
 		Timestamp: time.Now(),
 	})
+	if p.ScheduledRunID != "" && r.scheduled != nil {
+		r.scheduled.MarkRunResult(ctx, p.ScheduledRunID, "", err)
+	}
 	logrus.WithError(err).WithField("company_id", p.CompanyID).Error("agent run failed")
 	return err
 }
@@ -245,10 +260,18 @@ func (r *ChatRunner) completeWith(
 	tokensIn, tokensOut int, latency time.Duration,
 ) {
 	now := time.Now()
-	if _, err := r.threads.AppendAssistantMessage(
+	assistantMsg, err := r.threads.AppendAssistantMessage(
 		ctx, p.ThreadID, response, tokensIn, tokensOut, latency.Milliseconds(),
-	); err != nil {
+	)
+	if err != nil {
 		logrus.WithError(err).Warn("append assistant message")
+	}
+	if p.ScheduledRunID != "" && r.scheduled != nil {
+		var msgID string
+		if assistantMsg != nil {
+			msgID = assistantMsg.ID
+		}
+		r.scheduled.MarkRunResult(ctx, p.ScheduledRunID, msgID, nil)
 	}
 	if err := r.bus.Publish(p.ThreadID, ChatEvent{
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "final",

@@ -1,7 +1,9 @@
-// Argentum worker: consumes asynq tasks (today only `chat:run`) and runs
-// the analytics agent. Stays offline-friendly: any number of replicas can
-// share the same Redis-backed queue; failures retry automatically; chat
-// events fan out to API replicas via Redis pub/sub.
+// Argentum worker: consumes asynq tasks (`chat:run`, `scheduled:run`) and
+// runs the analytics agent. Stays offline-friendly: any number of replicas
+// can share the same Redis-backed queue; failures retry automatically;
+// chat events fan out to API replicas via Redis pub/sub. The same process
+// also hosts the asynq.PeriodicTaskManager that emits `scheduled:run`
+// ticks for enabled scheduled_tasks rows.
 package main
 
 import (
@@ -60,6 +62,8 @@ func main() {
 	messageRepo := pgctl.NewMessageRepo(controlDB)
 	usageRepo := pgctl.NewUsageRepo(controlDB)
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
+	companyRepo := pgctl.NewCompanyRepo(controlDB)
+	scheduledRepo := pgctl.NewScheduledTaskRepo(controlDB)
 
 	// --- Crypto (DSN decryption for tenant pool) ---
 	dsnCipher, err := crypto.NewFromHex(cfg.DSNEncryptionKeyHex)
@@ -103,12 +107,30 @@ func main() {
 	getSchemaTool := tools.NewGetSchemaTool(tenantPool, connRepo)
 	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
+
+	// Thread service + scheduled-task service must exist before the agent
+	// tools slice is built so schedule_task can be registered.
+	asynqOpt, err := queue.BuildRedisOpt(cfg.ResolvedAsynqRedisURL(), cfg.RedisPassword)
+	if err != nil {
+		logrus.Fatalf("asynq redis opt: %v", err)
+	}
+	scheduledEnq := queue.NewEnqueuer(asynqOpt)
+	defer scheduledEnq.Close()
+	classifier := app.NewTopicClassifier(lightLLMClient)
+	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, llmClient,
+		app.ThreadServiceConfig{
+			IdleMinutes:        cfg.ThreadIdleMinutes,
+			SummaryEveryNTurns: cfg.SummaryEveryNTurns,
+		})
+	scheduledSvc := app.NewScheduledTaskService(scheduledRepo, threadSvc, companyRepo, scheduledEnq)
+
 	agentTools := []interfaces.Tool{
 		tools.NewListSourcesTool(connRepo),
 		getSchemaTool,
 		tools.NewRunSQLTool(tenantPool, connRepo, usageSvc),
 		tools.NewCreateVisualizationTool(tenantPool, connRepo, metabaseClient, connRepo, usageSvc),
 		tools.NewCreateDashboardTool(metabaseClient, usageSvc, app.NewDashboardService(dashboardRepo, metabaseClient)),
+		tools.NewScheduleTaskTool(scheduledSvc),
 	}
 	if storageSvc, err := buildStorageService(cfg); err != nil {
 		logrus.WithError(err).Warn("storage disabled; generate_document tool will not be registered")
@@ -174,22 +196,9 @@ func main() {
 		logrus.Fatalf("WhatsApp provider: %v", err)
 	}
 
-	// --- Thread service (worker uses it for AppendAssistantMessage +
-	//     summary refresh; uses the same metered LLM). ---
-	classifier := app.NewTopicClassifier(lightLLMClient)
-	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, llmClient,
-		app.ThreadServiceConfig{
-			IdleMinutes:        cfg.ThreadIdleMinutes,
-			SummaryEveryNTurns: cfg.SummaryEveryNTurns,
-		})
-
-	runner := app.NewChatRunner(threadSvc, messageRepo, threadRepo, connRepo, analyticsAgent, bus, waProvider, tenantPool)
+	runner := app.NewChatRunner(threadSvc, messageRepo, threadRepo, connRepo, analyticsAgent, bus, waProvider, tenantPool, scheduledSvc)
 
 	// --- asynq.Server ---
-	asynqOpt, err := queue.BuildRedisOpt(cfg.ResolvedAsynqRedisURL(), cfg.RedisPassword)
-	if err != nil {
-		logrus.Fatalf("asynq redis opt: %v", err)
-	}
 	srv := asynq.NewServer(asynqOpt, asynq.Config{
 		Concurrency: cfg.WorkerConcurrency,
 		Queues:      cfg.WorkerQueueMap(),
@@ -201,6 +210,24 @@ func main() {
 
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(queue.TypeChatRun, makeChatRunHandler(runner))
+	mux.HandleFunc(queue.TypeScheduledTaskRun, makeScheduledRunHandler(scheduledSvc))
+
+	// --- Periodic task manager ---
+	// Polls scheduled_tasks every SyncInterval and registers/refreshes one
+	// asynq Scheduler entry per enabled row. Newly created tasks become
+	// live within ~SyncInterval without a worker restart.
+	pm, err := asynq.NewPeriodicTaskManager(asynq.PeriodicTaskManagerOpts{
+		PeriodicTaskConfigProvider: queue.NewDBConfigProvider(scheduledRepo),
+		RedisConnOpt:               asynqOpt,
+		SyncInterval:               30 * time.Second,
+	})
+	if err != nil {
+		logrus.Fatalf("periodic task manager: %v", err)
+	}
+	if err := pm.Start(); err != nil {
+		logrus.Fatalf("periodic task manager start: %v", err)
+	}
+	defer pm.Shutdown()
 
 	// Run blocks until OS signal. Capture signals here so we can shut
 	// the asynq server down gracefully (it will let in-flight tasks
@@ -230,6 +257,22 @@ func makeChatRunHandler(runner *app.ChatRunner) asynq.HandlerFunc {
 			return asynq.SkipRetry
 		}
 		return runner.Run(ctx, p)
+	}
+}
+
+// makeScheduledRunHandler dispatches a periodic `scheduled:run` tick. The
+// payload only carries a task ID; the service reloads the latest
+// definition and enqueues a regular chat:run against the dedicated thread.
+func makeScheduledRunHandler(svc *app.ScheduledTaskService) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var p queue.ScheduledRunPayload
+		if err := json.Unmarshal(t.Payload(), &p); err != nil {
+			return asynq.SkipRetry
+		}
+		if p.TaskID == "" {
+			return asynq.SkipRetry
+		}
+		return svc.HandleFire(ctx, p.TaskID)
 	}
 }
 
@@ -314,6 +357,7 @@ You have access to these tools:
 - create_visualization: Create a Metabase card from a SQL query against ONE source. Pass source_id when more than one source is registered. Returns card_id and chart_type.
 - create_dashboard: Combine multiple card_ids into a single Metabase dashboard with a shareable URL.
 - generate_document: Generate a downloadable file (PDF, XLSX, or CSV) from a structured spec. Generic-purpose: invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports — any artifact the user wants to download. Returns a presigned download URL — embed it as a markdown link with descriptive text. (Only available when object storage is configured.)
+- schedule_task: Create a recurring scheduled task. Each run executes a saved prompt through this agent and writes the result to a dedicated thread. Parameters: name, prompt (the instruction to run), cron_expression (5-field cron, e.g. "0 7 * * 1" = Mondays 07:00), timezone (IANA, default UTC). When the user's request is ambiguous about WHAT to run, WHEN, or in WHICH timezone, ASK the user to clarify before calling schedule_task. After it returns, tell the user the task was scheduled and quote the task_id; do not invent a URL — the dashboard renders the task by id.
 
 CRITICAL GUIDELINES:
 1. LANGUAGE IS THE TOP PRIORITY: Detect the language of the user's message and reply ONLY in that exact same language. If the user writes in English, reply fully in English. If the user writes in Indonesian/Bahasa Indonesia, reply fully in Indonesian. Never mix languages and never default to Indonesian when the user wrote in English.
