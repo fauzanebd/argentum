@@ -1,8 +1,14 @@
-const UPSTREAM = "https://argentum-api.gaia.smartsoft.co.id";
+interface Env {
+  UPSTREAM_URL: string;
+}
 
-export const onRequest: PagesFunction = async ({ request }) => {
+export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
+  const upstream = env.UPSTREAM_URL;
+  if (!upstream) {
+    return new Response("UPSTREAM_URL not configured", { status: 500 });
+  }
   const incoming = new URL(request.url);
-  const target = `${UPSTREAM}${incoming.pathname}${incoming.search}`;
+  const target = `${upstream}${incoming.pathname}${incoming.search}`;
 
   const headers = new Headers(request.headers);
   headers.delete("host");

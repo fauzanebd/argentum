@@ -20,8 +20,14 @@ export function useThreadStream(threadId: string | null, onEvent: (e: ChatEvent)
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+    const wsBase = import.meta.env.VITE_WS_BASE_URL;
+    if (!wsBase) {
+      console.error("VITE_WS_BASE_URL not set; thread stream disabled");
+      return;
+    }
+
     const connect = () => {
-      const url = `wss://argentum-api.gaia.smartsoft.co.id/api/threads/${threadId}/stream?at=${encodeURIComponent(token)}`;
+      const url = `${wsBase}/api/threads/${threadId}/stream?at=${encodeURIComponent(token)}`;
       ws = new WebSocket(url);
 
       ws.onopen = () => {
