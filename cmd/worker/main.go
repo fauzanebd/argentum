@@ -94,10 +94,11 @@ func main() {
 		logrus.Fatalf("primary LLM: %v", err)
 	}
 	llmClient := app.NewMeteredLLM(rawLLM, usageSvc)
-	lightLLMClient, err := llmclient.BuildLight(cfg)
+	rawLightLLM, err := llmclient.BuildLight(cfg)
 	if err != nil {
 		logrus.Fatalf("light LLM: %v", err)
 	}
+	lightLLMClient := app.NewMeteredLLM(rawLightLLM, usageSvc)
 
 	// --- Agent + tools ---
 	metabaseClient := metabase.NewClient(

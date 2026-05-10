@@ -44,15 +44,24 @@ func NewUsageService(usage domain.UsageRepository, credits domain.CreditsReposit
 }
 
 // RecordLLM records an LLM call. tokensIn / tokensOut may be zero if the
-// provider didn't return usage; cost is zero in that case.
-func (s *UsageService) RecordLLM(ctx context.Context, companyID, threadID, messageID string, tokensIn, tokensOut int) {
-	cost := int64((float64(tokensIn)/1000.0)*s.pricing.LLMInputCostPer1K*1_000_000 +
-		(float64(tokensOut)/1000.0)*s.pricing.LLMOutputCostPer1K*1_000_000)
+// provider didn't return usage; cost is zero in that case. Per-model rates
+// come from modelPricing; unknown models fall back to s.pricing (the flat
+// DefaultPricing rate) so unfamiliar model strings never produce zero-cost
+// rows.
+func (s *UsageService) RecordLLM(ctx context.Context, companyID, threadID, messageID, model string, tokensIn, tokensOut int) {
+	inRate := s.pricing.LLMInputCostPer1K
+	outRate := s.pricing.LLMOutputCostPer1K
+	if mp, ok := lookupModelPricing(model); ok {
+		inRate, outRate = mp.InputCostPer1K, mp.OutputCostPer1K
+	}
+	cost := int64((float64(tokensIn)/1000.0)*inRate*1_000_000 +
+		(float64(tokensOut)/1000.0)*outRate*1_000_000)
 	s.append(ctx, &domain.UsageEvent{
 		CompanyID:    companyID,
 		ThreadID:     threadID,
 		MessageID:    messageID,
 		EventType:    domain.UsageEventLLMCall,
+		Model:        model,
 		TokensIn:     tokensIn,
 		TokensOut:    tokensOut,
 		CostMicroUSD: cost,
