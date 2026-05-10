@@ -2,8 +2,8 @@
 
 # Build Go binaries
 build:
-	go build -o api cmd/api/main.go
-	go build -o worker cmd/worker/main.go
+	go build -o api ./cmd/api
+	go build -o worker ./cmd/worker
 
 # Start all services with docker-compose
 up:
@@ -37,11 +37,11 @@ deps:
 
 # Run API server locally
 dev-api:
-	go run cmd/api/main.go
+	go run ./cmd/api
 
 # Run worker locally
 dev-worker:
-	go run cmd/worker/main.go
+	go run ./cmd/worker
 
 # Setup development environment
 setup:

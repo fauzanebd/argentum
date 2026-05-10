@@ -18,7 +18,6 @@ import (
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
-	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
 
@@ -27,14 +26,14 @@ import (
 // publishes streaming events through the EventBus, and (for WhatsApp
 // channels) sends the final reply via the WA provider directly.
 type ChatRunner struct {
-	threads    *ThreadService
-	messages   domain.MessageRepository
-	threadRepo domain.ThreadRepository
-	agent      *sdkagent.Agent
-	bus        EventBus
-	wa         whatsapp.Provider
-	pool       *db.TenantConnPool
-	schemaTool *tools.GetSchemaTool
+	threads     *ThreadService
+	messages    domain.MessageRepository
+	threadRepo  domain.ThreadRepository
+	connections domain.ConnectionRepository
+	agent       *sdkagent.Agent
+	bus         EventBus
+	wa          whatsapp.Provider
+	pool        *db.TenantConnPool
 }
 
 // NewChatRunner wires the worker's dependencies.
@@ -42,21 +41,21 @@ func NewChatRunner(
 	threads *ThreadService,
 	messages domain.MessageRepository,
 	threadRepo domain.ThreadRepository,
+	connections domain.ConnectionRepository,
 	agent *sdkagent.Agent,
 	bus EventBus,
 	wa whatsapp.Provider,
 	pool *db.TenantConnPool,
-	schemaTool *tools.GetSchemaTool,
 ) *ChatRunner {
 	return &ChatRunner{
-		threads:    threads,
-		messages:   messages,
-		threadRepo: threadRepo,
-		agent:      agent,
-		bus:        bus,
-		wa:         wa,
-		pool:       pool,
-		schemaTool: schemaTool,
+		threads:     threads,
+		messages:    messages,
+		threadRepo:  threadRepo,
+		connections: connections,
+		agent:       agent,
+		bus:         bus,
+		wa:          wa,
+		pool:        pool,
 	}
 }
 
@@ -81,21 +80,19 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "started", Timestamp: now,
 	})
 
-	schema, err := r.schemaTool.PrefetchSchema(ctx, p.CompanyID)
+	sources, err := r.connections.ListByCompany(ctx, p.CompanyID)
 	if err != nil {
-		logrus.WithError(err).Warn("schema prefetch failed; agent will retry")
+		logrus.WithError(err).Warn("source catalog prefetch failed; agent will discover via list_sources")
 	}
 
 	start := time.Now()
 
-	// Prepend organization, currency, and DB-type context so the agent
-	// knows who it is assisting, formats monetary values correctly, and
-	// generates SQL compatible with the tenant DB.
+	// Prepend organization, currency, and source-catalog context so the
+	// agent knows who it is assisting, formats monetary values correctly,
+	// and picks the right data source per tool call.
 	agentMsg := withCompanyNameContext(p.Message, p.CompanyName)
 	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency)
-	if schema != nil {
-		agentMsg = withDBTypeContext(agentMsg, schema.DBType)
-	}
+	agentMsg = withSourcesContext(agentMsg, sources)
 
 	// Try streaming first; fall back to blocking Run if the LLM doesn't
 	// support it.
@@ -341,24 +338,39 @@ func withCurrencyContext(msg, currency string) string {
 	)
 }
 
-// withDBTypeContext prepends the connected database type so the agent
-// generates dialect-compatible SQL. If dbType is empty, the message is
-// returned unchanged.
-func withDBTypeContext(msg, dbType string) string {
-	if dbType == "" {
+// withSourcesContext prepends the catalog of available data sources so the
+// agent can pick a source_id per tool call without spending a list_sources /
+// get_schema round-trip. Per-source dialect hints are returned in each
+// run_sql / get_schema / create_visualization result (db_type field) so we
+// don't repeat them here.
+func withSourcesContext(msg string, sources []*domain.DBConnection) string {
+	if len(sources) == 0 {
 		return msg
 	}
-	hints := ""
-	switch dbType {
-	case "mysql":
-		hints = " Use MySQL-compatible syntax. For date truncation use DATE_FORMAT, not DATE_TRUNC. For string aggregation use GROUP_CONCAT, not STRING_AGG. For current timestamp use NOW(), not CURRENT_TIMESTAMP. For date arithmetic use DATE_ADD / DATE_SUB, not INTERVAL expressions."
-	case "postgres":
-		hints = " Use PostgreSQL-compatible syntax. For date truncation use DATE_TRUNC. For string aggregation use STRING_AGG. For current timestamp use CURRENT_TIMESTAMP or NOW()."
-	case "sqlserver":
-		hints = " Use Microsoft SQL Server (T-SQL) syntax. Use TOP n instead of LIMIT n (e.g. SELECT TOP 100 ...); for paging use OFFSET n ROWS FETCH NEXT m ROWS ONLY with an ORDER BY. For date arithmetic use DATEADD / DATEDIFF / DATEPART (no DATE_TRUNC; emulate with DATEFROMPARTS or DATEADD/DATEDIFF). For string aggregation use STRING_AGG (SQL Server 2017+). For current timestamp use SYSDATETIME() or GETDATE(). For date formatting use FORMAT(). Quote identifiers with [square brackets]. Tables live in the dbo schema."
+	var b strings.Builder
+	b.WriteString("[System context: Available data sources for this organization:\n")
+	for _, s := range sources {
+		label := s.Label
+		if label == "" {
+			label = "(unlabelled)"
+		}
+		marker := ""
+		if s.IsDefault {
+			marker = ", default"
+		}
+		desc := s.Description
+		if desc == "" {
+			desc = "(no description)"
+		}
+		fmt.Fprintf(&b, " - %s | %s (%s%s) — %s\n", s.ID, label, s.DBType, marker, desc)
 	}
-	return fmt.Sprintf(
-		"[System context: The connected database is %s.%s]\n\n%s",
-		dbType, hints, msg,
-	)
+	b.WriteString("Pick the appropriate source_id when calling get_schema, run_sql, or create_visualization. ")
+	if len(sources) > 1 {
+		b.WriteString("If unsure which source the user means, ASK before querying.")
+	} else {
+		b.WriteString("Only one source exists, so source_id is optional.")
+	}
+	b.WriteString("]\n\n")
+	b.WriteString(msg)
+	return b.String()
 }

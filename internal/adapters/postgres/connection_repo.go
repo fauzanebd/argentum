@@ -13,14 +13,37 @@ type ConnectionRepo struct{ db *sql.DB }
 
 func NewConnectionRepo(db *sql.DB) *ConnectionRepo { return &ConnectionRepo{db: db} }
 
+const connColumns = `id, company_id, db_type, label, dsn_encrypted, is_default,
+		description, description_source, metabase_database_id, created_at, updated_at`
+
+func scanConn(row interface {
+	Scan(dest ...interface{}) error
+}) (*domain.DBConnection, error) {
+	c := &domain.DBConnection{}
+	var mid sql.NullInt64
+	err := row.Scan(
+		&c.ID, &c.CompanyID, &c.DBType, &c.Label, &c.DSNEncrypted, &c.IsDefault,
+		&c.Description, &c.DescriptionSource, &mid, &c.CreatedAt, &c.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if mid.Valid {
+		v := int(mid.Int64)
+		c.MetabaseDatabaseID = &v
+	}
+	return c, nil
+}
+
 func (r *ConnectionRepo) Create(ctx context.Context, c *domain.DBConnection) error {
 	const q = `
-		INSERT INTO db_connections (company_id, db_type, label, dsn_encrypted, is_default)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO db_connections
+			(company_id, db_type, label, dsn_encrypted, is_default, description, description_source)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at
 	`
 	if err := r.db.QueryRowContext(ctx, q,
-		c.CompanyID, c.DBType, c.Label, c.DSNEncrypted, c.IsDefault,
+		c.CompanyID, c.DBType, c.Label, c.DSNEncrypted, c.IsDefault, c.Description, c.DescriptionSource,
 	).Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return fmt.Errorf("insert connection: %w", err)
 	}
@@ -28,19 +51,8 @@ func (r *ConnectionRepo) Create(ctx context.Context, c *domain.DBConnection) err
 }
 
 func (r *ConnectionRepo) GetByID(ctx context.Context, id string) (*domain.DBConnection, error) {
-	const q = `
-		SELECT id, company_id, db_type, label, dsn_encrypted, is_default, metabase_database_id, created_at, updated_at
-		FROM db_connections WHERE id = $1
-	`
-	c := &domain.DBConnection{}
-	var mid sql.NullInt64
-	err := r.db.QueryRowContext(ctx, q, id).Scan(
-		&c.ID, &c.CompanyID, &c.DBType, &c.Label, &c.DSNEncrypted, &c.IsDefault, &mid, &c.CreatedAt, &c.UpdatedAt,
-	)
-	if err == nil && mid.Valid {
-		v := int(mid.Int64)
-		c.MetabaseDatabaseID = &v
-	}
+	q := `SELECT ` + connColumns + ` FROM db_connections WHERE id = $1`
+	c, err := scanConn(r.db.QueryRowContext(ctx, q, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
 	}
@@ -48,19 +60,8 @@ func (r *ConnectionRepo) GetByID(ctx context.Context, id string) (*domain.DBConn
 }
 
 func (r *ConnectionRepo) GetDefaultForCompany(ctx context.Context, companyID string) (*domain.DBConnection, error) {
-	const q = `
-		SELECT id, company_id, db_type, label, dsn_encrypted, is_default, metabase_database_id, created_at, updated_at
-		FROM db_connections WHERE company_id = $1 AND is_default = true LIMIT 1
-	`
-	c := &domain.DBConnection{}
-	var mid sql.NullInt64
-	err := r.db.QueryRowContext(ctx, q, companyID).Scan(
-		&c.ID, &c.CompanyID, &c.DBType, &c.Label, &c.DSNEncrypted, &c.IsDefault, &mid, &c.CreatedAt, &c.UpdatedAt,
-	)
-	if err == nil && mid.Valid {
-		v := int(mid.Int64)
-		c.MetabaseDatabaseID = &v
-	}
+	q := `SELECT ` + connColumns + ` FROM db_connections WHERE company_id = $1 AND is_default = true LIMIT 1`
+	c, err := scanConn(r.db.QueryRowContext(ctx, q, companyID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
 	}
@@ -68,10 +69,7 @@ func (r *ConnectionRepo) GetDefaultForCompany(ctx context.Context, companyID str
 }
 
 func (r *ConnectionRepo) ListByCompany(ctx context.Context, companyID string) ([]*domain.DBConnection, error) {
-	const q = `
-		SELECT id, company_id, db_type, label, dsn_encrypted, is_default, metabase_database_id, created_at, updated_at
-		FROM db_connections WHERE company_id = $1 ORDER BY created_at
-	`
+	q := `SELECT ` + connColumns + ` FROM db_connections WHERE company_id = $1 ORDER BY created_at`
 	rows, err := r.db.QueryContext(ctx, q, companyID)
 	if err != nil {
 		return nil, err
@@ -79,16 +77,9 @@ func (r *ConnectionRepo) ListByCompany(ctx context.Context, companyID string) ([
 	defer rows.Close()
 	var out []*domain.DBConnection
 	for rows.Next() {
-		c := &domain.DBConnection{}
-		var mid sql.NullInt64
-		if err := rows.Scan(
-			&c.ID, &c.CompanyID, &c.DBType, &c.Label, &c.DSNEncrypted, &c.IsDefault, &mid, &c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
+		c, err := scanConn(rows)
+		if err != nil {
 			return nil, err
-		}
-		if mid.Valid {
-			v := int(mid.Int64)
-			c.MetabaseDatabaseID = &v
 		}
 		out = append(out, c)
 	}
@@ -98,14 +89,20 @@ func (r *ConnectionRepo) ListByCompany(ctx context.Context, companyID string) ([
 func (r *ConnectionRepo) Update(ctx context.Context, c *domain.DBConnection) error {
 	const q = `
 		UPDATE db_connections
-		SET db_type = $1, label = $2, dsn_encrypted = $3, metabase_database_id = $4, updated_at = now()
-		WHERE id = $5
+		SET db_type = $1,
+			label = $2,
+			dsn_encrypted = $3,
+			metabase_database_id = $4,
+			description = $5,
+			description_source = $6,
+			updated_at = now()
+		WHERE id = $7
 	`
 	var mid interface{}
 	if c.MetabaseDatabaseID != nil {
 		mid = *c.MetabaseDatabaseID
 	}
-	_, err := r.db.ExecContext(ctx, q, c.DBType, c.Label, c.DSNEncrypted, mid, c.ID)
+	_, err := r.db.ExecContext(ctx, q, c.DBType, c.Label, c.DSNEncrypted, mid, c.Description, c.DescriptionSource, c.ID)
 	return err
 }
 
@@ -114,12 +111,16 @@ func (r *ConnectionRepo) Delete(ctx context.Context, id string) error {
 	return err
 }
 
-// DefaultMetabaseDatabaseID returns the Metabase /api/database identifier for the
-// company's default analytical connection.
-func (r *ConnectionRepo) DefaultMetabaseDatabaseID(ctx context.Context, companyID string) (int, error) {
-	conn, err := r.GetDefaultForCompany(ctx, companyID)
+// MetabaseDatabaseIDForSource returns the Metabase /api/database identifier for
+// a specific tenant connection, validating that the connection belongs to the
+// given company.
+func (r *ConnectionRepo) MetabaseDatabaseIDForSource(ctx context.Context, companyID, sourceID string) (int, error) {
+	conn, err := r.GetByID(ctx, sourceID)
 	if err != nil {
 		return 0, err
+	}
+	if conn.CompanyID != companyID {
+		return 0, domain.ErrUnauthorized
 	}
 	if conn.MetabaseDatabaseID == nil || *conn.MetabaseDatabaseID == 0 {
 		return 0, fmt.Errorf("warehouse not synced to Metabase; add or rotate the DSN so registration can run")

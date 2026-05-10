@@ -16,6 +16,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/migrate"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
 
@@ -105,14 +106,19 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword)
 		metabaseWarehouse = app.NewMetabaseWarehouseSync(mbCli)
 	}
-	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse)
-	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
-	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
-	deps.dashboardSvc = app.NewDashboardService(dashboardRepo, mbCli)
 	lightLLMClient, err := llmclient.BuildLight(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("light LLM: %w", err)
 	}
+	// Schema-cache invalidation for the API: chat tools live in the worker
+	// process, so this GetSchemaTool is dedicated to the api's invalidation
+	// hooks (rotate DSN -> drop cache). Each process has its own cache.
+	apiSchemaTool := tools.NewGetSchemaTool(deps.tenant, connRepo)
+	describer := app.NewConnectionDescriber(lightLLMClient, deps.tenant, connRepo)
+	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse, apiSchemaTool, describer)
+	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
+	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
+	deps.dashboardSvc = app.NewDashboardService(dashboardRepo, mbCli)
 	classifier := app.NewTopicClassifier(lightLLMClient)
 	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, lightLLMClient,
 		app.ThreadServiceConfig{

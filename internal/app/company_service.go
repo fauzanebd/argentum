@@ -10,6 +10,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/tools"
 )
 
 // validCurrencies is a lookup of common ISO 4217 codes. We keep it small
@@ -47,6 +48,8 @@ type CompanyService struct {
 	dsnCipher   *crypto.DSNCipher
 	pool        *db.TenantConnPool
 	mb          *MetabaseWarehouseSync
+	schemaTool  *tools.GetSchemaTool   // optional; nil in tests
+	describer   *ConnectionDescriber   // optional; nil disables LLM autogen
 }
 
 func NewCompanyService(
@@ -56,14 +59,26 @@ func NewCompanyService(
 	dsnCipher *crypto.DSNCipher,
 	pool *db.TenantConnPool,
 	mb *MetabaseWarehouseSync,
+	schemaTool *tools.GetSchemaTool,
+	describer *ConnectionDescriber,
 ) *CompanyService {
-	return &CompanyService{companies: companies, connections: conns, phones: phones, dsnCipher: dsnCipher, pool: pool, mb: mb}
+	return &CompanyService{
+		companies:   companies,
+		connections: conns,
+		phones:      phones,
+		dsnCipher:   dsnCipher,
+		pool:        pool,
+		mb:          mb,
+		schemaTool:  schemaTool,
+		describer:   describer,
+	}
 }
 
 // AddConnection registers a tenant DB. If markDefault is true (or the company
 // has no other connections), the new row becomes the default. The DSN is
-// encrypted before persisting.
-func (s *CompanyService) AddConnection(ctx context.Context, companyID, dbType, label, dsn string, markDefault bool) (*domain.DBConnection, error) {
+// encrypted before persisting. If description is empty, the
+// ConnectionDescriber is asked to autogen one in the background.
+func (s *CompanyService) AddConnection(ctx context.Context, companyID, dbType, label, description, dsn string, markDefault bool) (*domain.DBConnection, error) {
 	if !db.IsSupported(dbType) {
 		return nil, fmt.Errorf("%w: %s", domain.ErrUnsupportedDB, dbType)
 	}
@@ -77,12 +92,19 @@ func (s *CompanyService) AddConnection(ctx context.Context, companyID, dbType, l
 		markDefault = true
 	}
 
+	descSource := ""
+	if description != "" {
+		descSource = domain.DescriptionSourceManual
+	}
+
 	c := &domain.DBConnection{
-		CompanyID:    companyID,
-		DBType:       dbType,
-		Label:        label,
-		DSNEncrypted: enc,
-		IsDefault:    markDefault,
+		CompanyID:         companyID,
+		DBType:            dbType,
+		Label:             label,
+		Description:       description,
+		DescriptionSource: descSource,
+		DSNEncrypted:      enc,
+		IsDefault:         markDefault,
 	}
 	if err := s.connections.Create(ctx, c); err != nil {
 		return nil, err
@@ -91,7 +113,9 @@ func (s *CompanyService) AddConnection(ctx context.Context, companyID, dbType, l
 		if err := s.connections.SetDefault(ctx, companyID, c.ID); err != nil {
 			return nil, err
 		}
-		s.pool.Invalidate(companyID)
+		// Default may have changed; drop every cached entry for the company
+		// so the next empty-source-id resolve picks the new default.
+		s.pool.InvalidateAll(companyID)
 	}
 	if s.mb != nil {
 		id, err := s.mb.SyncCompanyDatabase(ctx, c, dsn)
@@ -103,6 +127,9 @@ func (s *CompanyService) AddConnection(ctx context.Context, companyID, dbType, l
 				return nil, err
 			}
 		}
+	}
+	if description == "" && s.describer != nil {
+		s.describer.DescribeAsync(companyID, c.ID)
 	}
 	return c, nil
 }
@@ -124,7 +151,10 @@ func (s *CompanyService) UpdateConnectionDSN(ctx context.Context, companyID, con
 	if err := s.connections.Update(ctx, conn); err != nil {
 		return err
 	}
-	s.pool.Invalidate(companyID)
+	s.pool.Invalidate(companyID, conn.ID)
+	if s.schemaTool != nil {
+		s.schemaTool.Invalidate(companyID, conn.ID)
+	}
 
 	if s.mb != nil {
 		id, err := s.mb.SyncCompanyDatabase(ctx, conn, dsn)
@@ -136,7 +166,66 @@ func (s *CompanyService) UpdateConnectionDSN(ctx context.Context, companyID, con
 			return err
 		}
 	}
+	// Schema may have changed; refresh the description unless the user has
+	// explicitly written one.
+	if s.describer != nil && conn.DescriptionSource != domain.DescriptionSourceManual {
+		s.describer.DescribeAsync(companyID, conn.ID)
+	}
 	return nil
+}
+
+// UpdateConnectionMeta sets user-editable metadata (label, description). An
+// explicit description here is treated as manual, blocking future autogen
+// from overwriting it. Passing an empty description clears the row and
+// re-queues an autogen pass.
+func (s *CompanyService) UpdateConnectionMeta(ctx context.Context, companyID, connID, label, description string) error {
+	conn, err := s.connections.GetByID(ctx, connID)
+	if err != nil {
+		return err
+	}
+	if conn.CompanyID != companyID {
+		return domain.ErrUnauthorized
+	}
+	conn.Label = label
+	conn.Description = description
+	if description == "" {
+		conn.DescriptionSource = ""
+	} else {
+		conn.DescriptionSource = domain.DescriptionSourceManual
+	}
+	if err := s.connections.Update(ctx, conn); err != nil {
+		return err
+	}
+	if description == "" && s.describer != nil {
+		s.describer.DescribeAsync(companyID, conn.ID)
+	}
+	return nil
+}
+
+// RegenerateDescription forces a fresh LLM-generated description on the
+// connection, overwriting any existing manual or auto text. Returns the
+// updated row (DSN scrubbed). Synchronous — blocks until the LLM call is
+// done; the caller is expected to set a request-level timeout.
+func (s *CompanyService) RegenerateDescription(ctx context.Context, companyID, connID string) (*domain.DBConnection, error) {
+	conn, err := s.connections.GetByID(ctx, connID)
+	if err != nil {
+		return nil, err
+	}
+	if conn.CompanyID != companyID {
+		return nil, domain.ErrUnauthorized
+	}
+	if s.describer == nil {
+		return nil, fmt.Errorf("description regeneration is unavailable: LLM not configured")
+	}
+	if _, err := s.describer.Regenerate(ctx, companyID, connID); err != nil {
+		return nil, err
+	}
+	updated, err := s.connections.GetByID(ctx, connID)
+	if err != nil {
+		return nil, fmt.Errorf("read back connection: %w", err)
+	}
+	updated.DSNEncrypted = nil
+	return updated, nil
 }
 
 // SetDefaultConnection switches the active connection.
@@ -144,7 +233,9 @@ func (s *CompanyService) SetDefaultConnection(ctx context.Context, companyID, co
 	if err := s.connections.SetDefault(ctx, companyID, connID); err != nil {
 		return err
 	}
-	s.pool.Invalidate(companyID)
+	// Empty-source-id resolves to the new default; drop everything so the
+	// pool's empty-key path can repopulate against the new winner.
+	s.pool.InvalidateAll(companyID)
 	return nil
 }
 
@@ -164,7 +255,10 @@ func (s *CompanyService) DeleteConnection(ctx context.Context, companyID, connID
 	if err := s.connections.Delete(ctx, connID); err != nil {
 		return err
 	}
-	s.pool.Invalidate(companyID)
+	s.pool.Invalidate(companyID, conn.ID)
+	if s.schemaTool != nil {
+		s.schemaTool.Invalidate(companyID, conn.ID)
+	}
 	return nil
 }
 
