@@ -17,26 +17,41 @@ func NewUsageRepo(db *sql.DB) *UsageRepo { return &UsageRepo{db: db} }
 func (r *UsageRepo) Append(ctx context.Context, e *domain.UsageEvent) error {
 	const q = `
 		INSERT INTO usage_events
-			(company_id, thread_id, message_id, event_type, tokens_in, tokens_out, cost_micro_usd, metadata)
-		VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, $5, $6, $7, $8)
+			(company_id, thread_id, message_id, event_type, model, tokens_in, tokens_out, cost_micro_usd, metadata)
+		VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, NULLIF($5, ''), $6, $7, $8, $9)
 		RETURNING id, created_at
 	`
 	md, _ := json.Marshal(e.Metadata)
 	return r.db.QueryRowContext(ctx, q,
 		e.CompanyID, e.ThreadID, e.MessageID, string(e.EventType),
+		e.Model,
 		e.TokensIn, e.TokensOut, e.CostMicroUSD, jsonbOrNull(md),
 	).Scan(&e.ID, &e.CreatedAt)
 }
 
 func (r *UsageRepo) SummaryByCompany(ctx context.Context, companyID string, from, to time.Time) (*domain.UsageSummary, error) {
+	// Single round-trip: union event-type aggregates with model aggregates
+	// (model only meaningful for llm_call rows). `kind` discriminates row
+	// shape so we can scan both shapes with one query.
 	const q = `
-		SELECT event_type, COUNT(*),
-			COALESCE(SUM(tokens_in), 0),
-			COALESCE(SUM(tokens_out), 0),
-			COALESCE(SUM(cost_micro_usd), 0)
+		SELECT 'event' AS kind, event_type AS k,
+			COUNT(*) AS n,
+			COALESCE(SUM(tokens_in), 0)  AS tin,
+			COALESCE(SUM(tokens_out), 0) AS tout,
+			COALESCE(SUM(cost_micro_usd), 0) AS cost
 		FROM usage_events
 		WHERE company_id = $1 AND created_at >= $2 AND created_at < $3
 		GROUP BY event_type
+		UNION ALL
+		SELECT 'model' AS kind, COALESCE(NULLIF(model, ''), 'unknown') AS k,
+			0 AS n,
+			COALESCE(SUM(tokens_in), 0)  AS tin,
+			COALESCE(SUM(tokens_out), 0) AS tout,
+			COALESCE(SUM(cost_micro_usd), 0) AS cost
+		FROM usage_events
+		WHERE company_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND event_type = 'llm_call'
+		GROUP BY COALESCE(NULLIF(model, ''), 'unknown')
 	`
 	rows, err := r.db.QueryContext(ctx, q, companyID, from, to)
 	if err != nil {
@@ -45,23 +60,33 @@ func (r *UsageRepo) SummaryByCompany(ctx context.Context, companyID string, from
 	defer rows.Close()
 
 	summary := &domain.UsageSummary{
-		From:            from,
-		To:              to,
-		EventCounts:     map[domain.UsageEventType]int64{},
-		CostByEventType: map[domain.UsageEventType]float64{},
+		From:             from,
+		To:               to,
+		EventCounts:      map[domain.UsageEventType]int64{},
+		CostByEventType:  map[domain.UsageEventType]float64{},
+		CostByModel:      map[string]float64{},
+		TokensInByModel:  map[string]int64{},
+		TokensOutByModel: map[string]int64{},
 	}
 	for rows.Next() {
-		var typ string
+		var kind, key string
 		var count, in, out, cost int64
-		if err := rows.Scan(&typ, &count, &in, &out, &cost); err != nil {
+		if err := rows.Scan(&kind, &key, &count, &in, &out, &cost); err != nil {
 			return nil, err
 		}
-		t := domain.UsageEventType(typ)
-		summary.EventCounts[t] = count
-		summary.CostByEventType[t] = float64(cost) / 1_000_000
-		summary.TotalTokensIn += in
-		summary.TotalTokensOut += out
-		summary.TotalCostUSD += float64(cost) / 1_000_000
+		switch kind {
+		case "event":
+			t := domain.UsageEventType(key)
+			summary.EventCounts[t] = count
+			summary.CostByEventType[t] = float64(cost) / 1_000_000
+			summary.TotalTokensIn += in
+			summary.TotalTokensOut += out
+			summary.TotalCostUSD += float64(cost) / 1_000_000
+		case "model":
+			summary.CostByModel[key] = float64(cost) / 1_000_000
+			summary.TokensInByModel[key] = in
+			summary.TokensOutByModel[key] = out
+		}
 	}
 	return summary, rows.Err()
 }
@@ -73,7 +98,8 @@ func (r *UsageRepo) RecentByCompany(ctx context.Context, companyID string, limit
 	const q = `
 		SELECT id, company_id,
 			COALESCE(thread_id::text, ''), COALESCE(message_id::text, ''),
-			event_type, tokens_in, tokens_out, cost_micro_usd,
+			event_type, COALESCE(model, ''),
+			tokens_in, tokens_out, cost_micro_usd,
 			COALESCE(metadata::text, ''), created_at
 		FROM usage_events
 		WHERE company_id = $1
@@ -89,7 +115,7 @@ func (r *UsageRepo) RecentByCompany(ctx context.Context, companyID string, limit
 		e := &domain.UsageEvent{}
 		var typ, md string
 		if err := rows.Scan(&e.ID, &e.CompanyID, &e.ThreadID, &e.MessageID,
-			&typ, &e.TokensIn, &e.TokensOut, &e.CostMicroUSD, &md, &e.CreatedAt); err != nil {
+			&typ, &e.Model, &e.TokensIn, &e.TokensOut, &e.CostMicroUSD, &md, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		e.EventType = domain.UsageEventType(typ)

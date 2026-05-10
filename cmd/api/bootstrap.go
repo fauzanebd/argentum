@@ -106,17 +106,18 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword)
 		metabaseWarehouse = app.NewMetabaseWarehouseSync(mbCli)
 	}
-	lightLLMClient, err := llmclient.BuildLight(cfg)
+	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
+	rawLightLLM, err := llmclient.BuildLight(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("light LLM: %w", err)
 	}
+	lightLLMClient := app.NewMeteredLLM(rawLightLLM, deps.usageSvc)
 	// Schema-cache invalidation for the API: chat tools live in the worker
 	// process, so this GetSchemaTool is dedicated to the api's invalidation
 	// hooks (rotate DSN -> drop cache). Each process has its own cache.
 	apiSchemaTool := tools.NewGetSchemaTool(deps.tenant, connRepo)
 	describer := app.NewConnectionDescriber(lightLLMClient, deps.tenant, connRepo)
 	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse, apiSchemaTool, describer)
-	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
 	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
 	deps.dashboardSvc = app.NewDashboardService(dashboardRepo, mbCli)
 	classifier := app.NewTopicClassifier(lightLLMClient)

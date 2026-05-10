@@ -21,16 +21,17 @@ const (
 // company. Persisted for usage display today; will back per-call billing in
 // V2.
 type UsageEvent struct {
-	ID           string         `json:"id"`
-	CompanyID    string         `json:"company_id"`
-	ThreadID     string         `json:"thread_id,omitempty"`
-	MessageID    string         `json:"message_id,omitempty"`
-	EventType    UsageEventType `json:"event_type"`
-	TokensIn     int            `json:"tokens_in,omitempty"`
-	TokensOut    int            `json:"tokens_out,omitempty"`
-	CostMicroUSD int64          `json:"cost_micro_usd"`
+	ID           string                 `json:"id"`
+	CompanyID    string                 `json:"company_id"`
+	ThreadID     string                 `json:"thread_id,omitempty"`
+	MessageID    string                 `json:"message_id,omitempty"`
+	EventType    UsageEventType         `json:"event_type"`
+	Model        string                 `json:"model,omitempty"`
+	TokensIn     int                    `json:"tokens_in,omitempty"`
+	TokensOut    int                    `json:"tokens_out,omitempty"`
+	CostMicroUSD int64                  `json:"cost_micro_usd"`
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
-	CreatedAt    time.Time      `json:"created_at"`
+	CreatedAt    time.Time              `json:"created_at"`
 }
 
 // UsageRepository persists billable events.
@@ -42,13 +43,16 @@ type UsageRepository interface {
 
 // UsageSummary is an aggregate view returned to the dashboard.
 type UsageSummary struct {
-	From            time.Time                  `json:"from"`
-	To              time.Time                  `json:"to"`
-	TotalCostUSD    float64                    `json:"total_cost_usd"`
-	TotalTokensIn   int64                      `json:"total_tokens_in"`
-	TotalTokensOut  int64                      `json:"total_tokens_out"`
-	EventCounts     map[UsageEventType]int64   `json:"event_counts"`
-	CostByEventType map[UsageEventType]float64 `json:"cost_by_event_type_usd"`
+	From             time.Time                  `json:"from"`
+	To               time.Time                  `json:"to"`
+	TotalCostUSD     float64                    `json:"total_cost_usd"`
+	TotalTokensIn    int64                      `json:"total_tokens_in"`
+	TotalTokensOut   int64                      `json:"total_tokens_out"`
+	EventCounts      map[UsageEventType]int64   `json:"event_counts"`
+	CostByEventType  map[UsageEventType]float64 `json:"cost_by_event_type_usd"`
+	CostByModel      map[string]float64         `json:"cost_by_model_usd,omitempty"`
+	TokensInByModel  map[string]int64           `json:"tokens_in_by_model,omitempty"`
+	TokensOutByModel map[string]int64           `json:"tokens_out_by_model,omitempty"`
 }
 
 // CompanyCredits tracks the soft balance for a company.

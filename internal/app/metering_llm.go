@@ -92,5 +92,5 @@ func (m *MeteredLLM) record(ctx context.Context, usage *interfaces.TokenUsage) {
 		return
 	}
 	threadID := tenantctx.ThreadID(ctx)
-	m.usage.RecordLLM(ctx, companyID, threadID, "", usage.InputTokens, usage.OutputTokens)
+	m.usage.RecordLLM(ctx, companyID, threadID, "", m.inner.Name(), usage.InputTokens, usage.OutputTokens)
 }
