@@ -4,20 +4,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
 
 // ConnectionResolver is the minimum control-plane lookup the pool needs to
-// turn a company ID into the DSN + db_type to dial. The control-DB
-// ConnectionRepository in internal/adapters/postgres satisfies this once
-// wrapped with a thin DSN-decryption layer; for tests, a fake suffices.
+// turn a (companyID, sourceID) pair into the DSN + db_type to dial. Empty
+// sourceID resolves to the company's default connection. The resolver returns
+// the row's actual ID as resolvedSourceID; the pool keys its cache by that ID
+// so empty-string lookups share an entry with explicit-id lookups for the
+// same underlying connection.
+//
+// The control-DB ConnectionRepository in internal/adapters/postgres satisfies
+// this once wrapped with a thin DSN-decryption layer; for tests, a fake
+// suffices.
 type ConnectionResolver interface {
-	Resolve(ctx context.Context, companyID string) (dbType, dsn, version string, err error)
+	Resolve(ctx context.Context, companyID, sourceID string) (resolvedSourceID, dbType, dsn, version string, err error)
 }
 
-// TenantConnPool keeps a small LRU of live tenant Conns keyed by company ID.
-// It is safe for concurrent use.
+// TenantConnPool keeps a small LRU of live tenant Conns keyed by
+// `companyID:sourceID`. It is safe for concurrent use.
 //
 //   - Hot path (cache hit): one map lookup, no locking beyond the rwmutex.
 //   - Cold path (cache miss): resolve DSN from ConnectionResolver, dial via
@@ -61,19 +68,27 @@ func NewTenantConnPool(resolver ConnectionResolver, maxSize int, idleTTL time.Du
 	}
 }
 
-// For returns a live Conn for the given company, opening one if needed.
-func (p *TenantConnPool) For(ctx context.Context, companyID string) (Conn, error) {
+func cacheKey(companyID, sourceID string) string {
+	return companyID + ":" + sourceID
+}
+
+// For returns a live Conn for the given (company, source). Empty sourceID
+// resolves to the company's default connection; the pool keys the cache by
+// the resolver-returned ID so default-by-empty and explicit-id share an entry.
+func (p *TenantConnPool) For(ctx context.Context, companyID, sourceID string) (Conn, error) {
 	if companyID == "" {
 		return nil, errors.New("companyID is required")
 	}
 
-	dbType, dsn, version, err := p.resolver.Resolve(ctx, companyID)
+	resolvedID, dbType, dsn, version, err := p.resolver.Resolve(ctx, companyID, sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve tenant connection: %w", err)
 	}
 
+	key := cacheKey(companyID, resolvedID)
+
 	p.mu.Lock()
-	if e, ok := p.entries[companyID]; ok {
+	if e, ok := p.entries[key]; ok {
 		if e.version == version && e.dbType == dbType {
 			e.lastUsedAt = time.Now()
 			conn := e.conn
@@ -81,7 +96,7 @@ func (p *TenantConnPool) For(ctx context.Context, companyID string) (Conn, error
 			return conn, nil
 		}
 		_ = e.conn.Close()
-		delete(p.entries, companyID)
+		delete(p.entries, key)
 	}
 	p.mu.Unlock()
 
@@ -99,7 +114,7 @@ func (p *TenantConnPool) For(ctx context.Context, companyID string) (Conn, error
 	if len(p.entries) >= p.maxSize {
 		p.evictOldestLocked()
 	}
-	p.entries[companyID] = &tenantEntry{
+	p.entries[key] = &tenantEntry{
 		conn:       conn,
 		version:    version,
 		dbType:     dbType,
@@ -108,14 +123,30 @@ func (p *TenantConnPool) For(ctx context.Context, companyID string) (Conn, error
 	return conn, nil
 }
 
-// Invalidate forcibly drops the cached connection for a company (e.g. after
-// the user updates their DSN in the dashboard).
-func (p *TenantConnPool) Invalidate(companyID string) {
+// Invalidate forcibly drops the cached connection for one (company, source).
+// sourceID must be the resolved (non-empty) ID.
+func (p *TenantConnPool) Invalidate(companyID, sourceID string) {
+	key := cacheKey(companyID, sourceID)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if e, ok := p.entries[companyID]; ok {
+	if e, ok := p.entries[key]; ok {
 		_ = e.conn.Close()
-		delete(p.entries, companyID)
+		delete(p.entries, key)
+	}
+}
+
+// InvalidateAll drops every cached connection for a company. Used when a
+// company-wide event (default switch, key rotation) makes per-source
+// invalidation insufficient.
+func (p *TenantConnPool) InvalidateAll(companyID string) {
+	prefix := companyID + ":"
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for k, e := range p.entries {
+		if strings.HasPrefix(k, prefix) {
+			_ = e.conn.Close()
+			delete(p.entries, k)
+		}
 	}
 }
 

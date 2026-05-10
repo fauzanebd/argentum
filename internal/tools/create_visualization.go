@@ -9,37 +9,43 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
+	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
-// MetabaseTenantDB resolves Metabase `/api/database` id for this tenant's
-// default analytical warehouse.
-type MetabaseTenantDB interface {
-	DefaultMetabaseDatabaseID(ctx context.Context, companyID string) (int, error)
+// MetabaseSourceDB resolves the Metabase /api/database id for a specific
+// tenant connection (validated to belong to the given company).
+type MetabaseSourceDB interface {
+	MetabaseDatabaseIDForSource(ctx context.Context, companyID, sourceID string) (int, error)
 }
 
-// CreateVisualizationTool runs a SQL query against the tenant's analytics DB
-// and registers a Metabase card for the result targeting that tenant's
-// synced Metabase database connection (see CompanyService Metabase warehouse sync).
+// CreateVisualizationTool runs a SQL query against ONE of the tenant's
+// analytical databases and registers a Metabase card pointing at that source's
+// synced Metabase warehouse (see CompanyService Metabase warehouse sync).
 type CreateVisualizationTool struct {
 	pool           *db.TenantConnPool
+	repo           domain.ConnectionRepository
 	metabaseClient *metabase.Client
-	mbResolver     MetabaseTenantDB
+	mbResolver     MetabaseSourceDB
 	recorder       UsageRecorder
 }
 
-func NewCreateVisualizationTool(pool *db.TenantConnPool, metabaseClient *metabase.Client, mbResolver MetabaseTenantDB, recorder UsageRecorder) *CreateVisualizationTool {
+func NewCreateVisualizationTool(pool *db.TenantConnPool, repo domain.ConnectionRepository, metabaseClient *metabase.Client, mbResolver MetabaseSourceDB, recorder UsageRecorder) *CreateVisualizationTool {
 	if recorder == nil {
 		recorder = nopRecorder{}
 	}
-	return &CreateVisualizationTool{pool: pool, metabaseClient: metabaseClient, mbResolver: mbResolver, recorder: recorder}
+	return &CreateVisualizationTool{pool: pool, repo: repo, metabaseClient: metabaseClient, mbResolver: mbResolver, recorder: recorder}
 }
 
 func (t *CreateVisualizationTool) Name() string { return "create_visualization" }
 
 func (t *CreateVisualizationTool) Description() string {
-	return "Create a visualization card (question) in Metabase from a SQL query. Returns a card_id and chart_type. Remember the returned card_id — you MUST pass it in the 'cards' array when calling create_dashboard afterwards. Use create_dashboard to combine multiple cards into a single shareable dashboard. If the chart axes correlate with time (dates, months, weeks, etc.), the SQL MUST ORDER BY that time dimension ascending so the chart is chronological left-to-right; never rely on unspecified row order."
+	return "Create a visualization card (question) in Metabase from a SQL query against ONE source. " +
+		"Pass source_id when more than one source is registered. Returns a card_id and chart_type. " +
+		"Remember the returned card_id — you MUST pass it in the 'cards' array when calling create_dashboard afterwards. " +
+		"Use create_dashboard to combine multiple cards into a single shareable dashboard. " +
+		"If the chart axes correlate with time (dates, months, weeks, etc.), the SQL MUST ORDER BY that time dimension ascending so the chart is chronological left-to-right; never rely on unspecified row order."
 }
 
 func (t *CreateVisualizationTool) Parameters() map[string]interfaces.ParameterSpec {
@@ -66,6 +72,11 @@ func (t *CreateVisualizationTool) Parameters() map[string]interfaces.ParameterSp
 			Default:     "auto",
 			Enum:        []interface{}{"bar", "line", "pie", "table", "scalar", "auto"},
 		},
+		"source_id": {
+			Type:        "string",
+			Description: "ID of the data source to query. Required when more than one source is registered. If omitted and only one source exists, that source is used.",
+			Required:    false,
+		},
 	}
 }
 
@@ -79,6 +90,7 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 		Name        string `json:"name"`
 		Description string `json:"description"`
 		ChartType   string `json:"chart_type"`
+		SourceID    string `json:"source_id"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", fmt.Errorf("failed to parse parameters: %w", err)
@@ -98,7 +110,12 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 		return "", fmt.Errorf("no tenant in context: cannot resolve database connection")
 	}
 
-	conn, err := t.pool.For(ctx, companyID)
+	source, err := ResolveSource(ctx, t.repo, companyID, params.SourceID)
+	if err != nil {
+		return "", err
+	}
+
+	conn, err := t.pool.For(ctx, companyID, source.ID)
 	if err != nil {
 		return "", fmt.Errorf("resolve tenant connection: %w", err)
 	}
@@ -129,9 +146,9 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 	if t.mbResolver == nil {
 		return "", fmt.Errorf("Metabase resolver not configured")
 	}
-	databaseID, err := t.mbResolver.DefaultMetabaseDatabaseID(ctx, companyID)
+	databaseID, err := t.mbResolver.MetabaseDatabaseIDForSource(ctx, companyID, source.ID)
 	if err != nil {
-		return "", fmt.Errorf("tenant Metabase database: %w", err)
+		return "", fmt.Errorf("Metabase database for source: %w", err)
 	}
 
 	card := &metabase.Card{
@@ -161,11 +178,14 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 
 	logrus.WithFields(logrus.Fields{
 		"company_id": companyID,
+		"source_id":  source.ID,
 		"card_id":    createdCard.ID,
 		"chart_type": chartType,
 	}).Info("Created Metabase card")
 
 	out, _ := json.Marshal(map[string]interface{}{
+		"source_id":       source.ID,
+		"db_type":         source.DBType,
 		"card_id":         createdCard.ID,
 		"card_name":       createdCard.Name,
 		"chart_type":      chartType,

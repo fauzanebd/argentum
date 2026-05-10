@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -26,8 +27,10 @@ func NewCompanyHandler(svc *app.CompanyService) *CompanyHandler {
 func (h *CompanyHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/connections", h.listConnections)
 	rg.POST("/connections", h.addConnection)
+	rg.PATCH("/connections/:id", h.updateConnectionMeta)
 	rg.PUT("/connections/:id/dsn", h.updateConnectionDSN)
 	rg.POST("/connections/:id/default", h.setDefault)
+	rg.POST("/connections/:id/regenerate-description", h.regenerateDescription)
 	rg.DELETE("/connections/:id", h.deleteConnection)
 	rg.POST("/connections/test", h.testConnection)
 
@@ -105,15 +108,16 @@ func (h *CompanyHandler) listConnections(c *gin.Context) {
 }
 
 type addConnReq struct {
-	DBType   string `json:"db_type" binding:"required"`
-	Label    string `json:"label"`
-	DSN      string `json:"dsn"`
-	Host     string `json:"host"`
-	Port     string `json:"port"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	DBName   string `json:"dbname"`
-	IsDefault bool  `json:"is_default"`
+	DBType      string `json:"db_type" binding:"required"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	DSN         string `json:"dsn"`
+	Host        string `json:"host"`
+	Port        string `json:"port"`
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	DBName      string `json:"dbname"`
+	IsDefault   bool   `json:"is_default"`
 }
 
 func (h *CompanyHandler) addConnection(c *gin.Context) {
@@ -127,7 +131,7 @@ func (h *CompanyHandler) addConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	conn, err := h.svc.AddConnection(c.Request.Context(), companyID(c), req.DBType, req.Label, dsn, req.IsDefault)
+	conn, err := h.svc.AddConnection(c.Request.Context(), companyID(c), req.DBType, req.Label, req.Description, dsn, req.IsDefault)
 	if err != nil {
 		if errors.Is(err, domain.ErrUnsupportedDB) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -138,6 +142,32 @@ func (h *CompanyHandler) addConnection(c *gin.Context) {
 	}
 	conn.DSNEncrypted = nil
 	c.JSON(http.StatusCreated, conn)
+}
+
+type updateMetaReq struct {
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+func (h *CompanyHandler) updateConnectionMeta(c *gin.Context) {
+	var req updateMetaReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.svc.UpdateConnectionMeta(c.Request.Context(), companyID(c), c.Param("id"), req.Label, req.Description); err != nil {
+		if errors.Is(err, domain.ErrUnauthorized) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, domain.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 type updateDSNReq struct {
@@ -166,6 +196,26 @@ func (h *CompanyHandler) updateConnectionDSN(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *CompanyHandler) regenerateDescription(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 90*time.Second)
+	defer cancel()
+	conn, err := h.svc.RegenerateDescription(ctx, companyID(c), c.Param("id"))
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrUnauthorized):
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		case errors.Is(err, domain.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case errors.Is(err, context.DeadlineExceeded):
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "regeneration timed out; try again"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, conn)
 }
 
 func (h *CompanyHandler) setDefault(c *gin.Context) {
