@@ -20,7 +20,10 @@ func (c *conn) Ping(ctx context.Context) error { return c.sqlDB.PingContext(ctx)
 func (c *conn) Close() error                   { return c.sqlDB.Close() }
 
 func (c *conn) ExecuteReadOnly(ctx context.Context, query string) (*db.QueryResult, error) {
-	tx, err := c.sqlDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	// SQL Server has no read-only tx mode; the mssql driver rejects
+	// TxOptions.ReadOnly with "read-only transactions are not supported".
+	// Read-only enforcement is the customer's db_datareader login.
+	tx, err := c.sqlDB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
