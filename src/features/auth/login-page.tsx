@@ -76,12 +76,14 @@ export function LoginPage() {
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? "Signing in..." : "Sign in"}
             </Button>
+            {/* Sign-up hidden for now — re-enable when public registration opens.
             <p className="text-sm text-center text-muted-foreground">
               Don't have an account?{" "}
               <Link to="/signup" className="text-foreground underline">
                 Sign up
               </Link>
             </p>
+            */}
           </CardFooter>
         </form>
       </Card>
