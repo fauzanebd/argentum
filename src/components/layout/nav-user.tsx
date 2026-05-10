@@ -20,7 +20,7 @@ import {
 import { useAuthStore } from "@/store/auth";
 import { useThemeStore } from "@/store/theme";
 import { api } from "@/lib/api";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
 export function NavUser() {
@@ -28,6 +28,7 @@ export function NavUser() {
   const user = useAuthStore((s) => s.user);
   const clear = useAuthStore((s) => s.clear);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { theme, toggle } = useThemeStore();
 
   const { data: profile } = useQuery({
@@ -66,6 +67,7 @@ export function NavUser() {
       // ignore
     }
     clear();
+    queryClient.clear();
     navigate({ to: "/login" });
   }
 
