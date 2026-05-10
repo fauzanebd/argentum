@@ -13,6 +13,7 @@ import { OnboardingPage } from "@/features/onboarding/onboarding-page";
 import { ChatPage } from "@/features/chat/chat-page";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { UsagePage } from "@/features/usage/usage-page";
+import { ScheduledTasksPage } from "@/features/scheduled-tasks/scheduled-tasks-page";
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -83,6 +84,15 @@ const usageRoute = createRoute({
   component: UsagePage,
 });
 
+const scheduledTasksRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/scheduled-tasks",
+  component: ScheduledTasksPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    taskId: typeof search.taskId === "string" ? search.taskId : undefined,
+  }),
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -93,5 +103,6 @@ export const routeTree = rootRoute.addChildren([
       chatThreadRoute,
       settingsRoute,
       usageRoute,
+      scheduledTasksRoute,
     ]),
 ]);

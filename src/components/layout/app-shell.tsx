@@ -10,6 +10,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { RecentChats } from "@/components/layout/recent-chats";
+import { ScheduledTasksNav } from "@/components/layout/scheduled-tasks-nav";
 import { GeneratedDashboards } from "@/components/layout/generated-dashboards";
 import { NavUser } from "@/components/layout/nav-user";
 import { useThemeStore } from "@/store/theme";
@@ -81,8 +82,9 @@ function AppSidebar() {
 
       {/* Content — split into two scrollable regions */}
       <SidebarContent className="flex flex-col overflow-hidden p-0">
-        {/* Top region: New Conversation + Recent Chats — grows and scrolls */}
+        {/* Top region: Scheduled Tasks + New Conversation + Recent Chats — grows and scrolls */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-2 py-2">
+          <ScheduledTasksNav />
           <RecentChats />
         </div>
 
