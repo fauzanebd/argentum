@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, Trash2, Star } from "lucide-react";
+import { RefreshCw, Trash2, Star, PlugZap, Boxes, Search } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { toast } from "@/hooks/use-toast";
 
 interface Connection {
@@ -16,6 +24,33 @@ interface Connection {
   label?: string;
   is_default: boolean;
   created_at: string;
+}
+
+interface RagHit {
+  table: string;
+  distance: number;
+}
+
+interface RagResult {
+  query: string;
+  source_id: string;
+  top_k: number;
+  hits: RagHit[];
+  total_tables: number;
+  indexed_tables: number;
+  filtered_tables: number;
+  schema_preview: string;
+  embed_duration_ms: number;
+  topk_duration_ms: number;
+  schema_duration_ms: number;
+}
+
+const NOISE_TABLE_RE = /^(Backup_|Deleted_|Temp_)/i;
+
+function indexHealthHint(indexed: number) {
+  if (indexed <= 1) return { text: "Reindex required.", tone: "destructive" as const };
+  if (indexed < 50) return { text: "Sparse index — reindex may help.", tone: "destructive" as const };
+  return { text: "Index healthy.", tone: "muted" as const };
 }
 
 type ConnMode = "fields" | "raw";
@@ -52,6 +87,14 @@ export function ConnectionsTab() {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [reindexingId, setReindexingId] = useState<string | null>(null);
+  const [ragConn, setRagConn] = useState<Connection | null>(null);
+  const [ragQuery, setRagQuery] = useState("");
+  const [ragTopK, setRagTopK] = useState("8");
+  const [ragLoading, setRagLoading] = useState(false);
+  const [ragResult, setRagResult] = useState<RagResult | null>(null);
+  const [ragError, setRagError] = useState<string | null>(null);
 
   const { data: connections } = useQuery({
     queryKey: ["connections"],
@@ -121,6 +164,85 @@ export function ConnectionsTab() {
     if (!confirm("Remove this connection?")) return;
     await api.delete(`/connections/${id}`);
     qc.invalidateQueries({ queryKey: ["connections"] });
+  }
+
+  async function testExisting(id: string) {
+    setTestingId(id);
+    try {
+      const res = await api.post<{ ok: boolean; error?: string }>(`/connections/${id}/test`);
+      if (res.data.ok) {
+        toast({ title: "Connection OK" });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Connection failed",
+          description: res.data.error || "Unknown error",
+        });
+      }
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Connection failed",
+        description: e?.response?.data?.error || e.message,
+      });
+    } finally {
+      setTestingId(null);
+    }
+  }
+
+  async function reindexEmbeddings(id: string) {
+    setReindexingId(id);
+    try {
+      const res = await api.post<{ tables: number; indexed_at: string }>(
+        `/connections/${id}/reindex-embeddings`,
+        undefined,
+        { timeout: 300000 },
+      );
+      toast({
+        title: "Embeddings reindexed",
+        description: `${res.data.tables} tables indexed.`,
+      });
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Reindex failed",
+        description: e?.response?.data?.error || e.message,
+      });
+    } finally {
+      setReindexingId(null);
+    }
+  }
+
+  function openRagTest(c: Connection) {
+    setRagConn(c);
+    setRagResult(null);
+    setRagError(null);
+  }
+
+  async function runRagTest() {
+    if (!ragConn || !ragQuery.trim()) return;
+    setRagLoading(true);
+    setRagError(null);
+    setRagResult(null);
+    const body: { query: string; top_k?: number } = { query: ragQuery.trim() };
+    const parsedTopK = parseInt(ragTopK, 10);
+    if (Number.isFinite(parsedTopK) && parsedTopK > 0) {
+      body.top_k = parsedTopK;
+    }
+    try {
+      const res = await api.post<RagResult>(
+        `/connections/${ragConn.id}/test-rag`,
+        body,
+        { timeout: 60000 },
+      );
+      setRagResult(res.data);
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || e.message;
+      setRagError(msg);
+      toast({ variant: "destructive", title: "RAG test failed", description: msg });
+    } finally {
+      setRagLoading(false);
+    }
   }
 
   async function regenerateDescription(id: string) {
@@ -273,11 +395,37 @@ export function ConnectionsTab() {
                 <div className="text-xs text-muted-foreground">{c.db_type}</div>
               </div>
               <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => testExisting(c.id)}
+                  disabled={testingId === c.id}
+                >
+                  <PlugZap className="h-4 w-4" />
+                  {testingId === c.id ? "Testing…" : "Test"}
+                </Button>
                 {!c.is_default && (
                   <Button variant="outline" size="sm" onClick={() => makeDefault(c.id)}>
                     Make default
                   </Button>
                 )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => reindexEmbeddings(c.id)}
+                  disabled={reindexingId === c.id}
+                  title="Reindex embeddings"
+                >
+                  <Boxes className={`h-4 w-4 ${reindexingId === c.id ? "animate-pulse" : ""}`} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => openRagTest(c)}
+                  title="Test RAG"
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -295,6 +443,132 @@ export function ConnectionsTab() {
           ))}
         </CardContent>
       </Card>
+
+      <Sheet open={!!ragConn} onOpenChange={(o) => !o && setRagConn(null)}>
+        <SheetContent side="right" className="sm:max-w-2xl w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>
+              Test RAG — {ragConn?.label || ragConn?.db_type}
+            </SheetTitle>
+            <SheetDescription>
+              Probe the embedding index. indexed_tables ≈ 250–300 healthy; 0–1 means reindex first.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-6 space-y-4">
+            <div className="space-y-1.5">
+              <Label>Query</Label>
+              <Textarea
+                value={ragQuery}
+                onChange={(e) => setRagQuery(e.target.value)}
+                rows={3}
+                autoFocus
+                placeholder="berapa total penjualan bulan ini"
+              />
+            </div>
+            <div className="flex items-end gap-3">
+              <div className="space-y-1.5">
+                <Label>top_k</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={ragTopK}
+                  onChange={(e) => setRagTopK(e.target.value)}
+                  className="w-24"
+                />
+              </div>
+              <Button
+                onClick={runRagTest}
+                disabled={!ragQuery.trim() || ragLoading}
+              >
+                {ragLoading ? "Running…" : "Run test"}
+              </Button>
+            </div>
+
+            {ragError && <p className="text-sm text-destructive">{ragError}</p>}
+
+            {ragResult && (
+              <div className="space-y-4 pt-2">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">total {ragResult.total_tables}</Badge>
+                    <Badge
+                      variant={ragResult.indexed_tables <= 1 ? "destructive" : "secondary"}
+                    >
+                      indexed {ragResult.indexed_tables}
+                    </Badge>
+                    <Badge variant="secondary">filtered {ragResult.filtered_tables}</Badge>
+                  </div>
+                  {(() => {
+                    const hint = indexHealthHint(ragResult.indexed_tables);
+                    return (
+                      <p
+                        className={`mt-1.5 text-xs ${
+                          hint.tone === "destructive" ? "text-destructive" : "text-muted-foreground"
+                        }`}
+                      >
+                        {hint.text}
+                      </p>
+                    );
+                  })()}
+                </div>
+
+                <div>
+                  <div className="text-xs font-medium text-muted-foreground mb-1.5">
+                    Hits ({ragResult.hits.length})
+                  </div>
+                  <ul className="divide-y divide-border/50 rounded border border-border/50">
+                    {ragResult.hits.map((h, i) => {
+                      const noise = NOISE_TABLE_RE.test(h.table);
+                      return (
+                        <li
+                          key={`${h.table}-${i}`}
+                          className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-mono truncate">{h.table}</span>
+                            {noise && (
+                              <Badge variant="destructive" className="shrink-0">noise</Badge>
+                            )}
+                          </div>
+                          <span className="font-mono text-xs text-muted-foreground shrink-0">
+                            dist {h.distance.toFixed(3)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant={ragResult.embed_duration_ms < 50 ? "destructive" : "secondary"}
+                    title={
+                      ragResult.embed_duration_ms < 50
+                        ? "Suspiciously fast — embedding API may be cached"
+                        : "Real embedding call"
+                    }
+                  >
+                    embed {ragResult.embed_duration_ms}ms
+                  </Badge>
+                  <Badge variant="secondary">topk {ragResult.topk_duration_ms}ms</Badge>
+                  <Badge variant="secondary">schema {ragResult.schema_duration_ms}ms</Badge>
+                </div>
+
+                <details className="group">
+                  <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+                    Schema preview ({ragResult.schema_preview.length} chars)
+                  </summary>
+                  <pre className="whitespace-pre-wrap font-mono text-xs text-muted-foreground bg-muted/30 rounded p-3 mt-2 max-h-96 overflow-auto">
+                    {ragResult.schema_preview}
+                  </pre>
+                </details>
+              </div>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
