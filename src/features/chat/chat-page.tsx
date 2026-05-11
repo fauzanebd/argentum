@@ -15,6 +15,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
 import type { Thread, Message, ChatEvent } from "./types";
+import { useModels } from "@/lib/use-models";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
 import { MarkdownRenderer } from "./markdown-renderer";
@@ -507,6 +508,7 @@ function ChatComposer({
   className?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { data: models } = useModels();
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
@@ -549,6 +551,9 @@ function ChatComposer({
           <div className="flex items-center justify-between px-1.5 pt-1">
             <p className="text-[11px] text-muted-foreground">
               Enter to send · Shift+Enter for newline
+              {models?.primary.model && (
+                <span className="ml-2 opacity-70">· {models.primary.model}</span>
+              )}
             </p>
             <Button
               type="submit"

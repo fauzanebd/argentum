@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2 } from "lucide-react";
+import { useModels } from "@/lib/use-models";
 
 export function GeneralTab() {
   const [currency, setCurrency] = useState("USD");
@@ -14,6 +15,7 @@ export function GeneralTab() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const { data: models } = useModels();
 
   useEffect(() => {
     api.get("/settings").then((r) => {
@@ -81,6 +83,44 @@ export function GeneralTab() {
           )}
         </CardFooter>
       </Card>
+
+      {models && (
+        <Card>
+          <CardHeader>
+            <CardTitle>AI Models</CardTitle>
+            <CardDescription>
+              Models currently powering Argentum's analytics agent. Configured server-side.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="divide-y divide-border">
+            {(["primary", "light", "classifier"] as const).map((role) => {
+              const m = models[role];
+              if (!m) return null;
+              return (
+                <div
+                  key={role}
+                  className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+                >
+                  <div>
+                    <p className="text-sm font-medium capitalize">{role}</p>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      {m.model}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <Badge variant="secondary">{m.interface}</Badge>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {m.pricing_known
+                        ? `$${m.input_per_1k_usd}/1k in · $${m.output_per_1k_usd}/1k out`
+                        : "Pricing N/A"}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
