@@ -122,10 +122,10 @@ services:
       # LLM
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       LLM_API_KEY: ${LLM_API_KEY}
-      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_MODEL: ${LLM_MODEL:-claude-haiku-4-5}
       LIGHT_LLM_PROVIDER: ${LIGHT_LLM_PROVIDER:-openai}
       LIGHT_LLM_API_KEY: ${LIGHT_LLM_API_KEY}
-      LIGHT_LLM_MODEL: ${LIGHT_LLM_MODEL:-gpt-4o-mini}
+      LIGHT_LLM_MODEL: ${LIGHT_LLM_MODEL:-gpt-5-mini}
       LIGHT_LLM_BASE_URL: ${LIGHT_LLM_BASE_URL:-}
 
       # Metabase
@@ -186,10 +186,10 @@ services:
 
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       LLM_API_KEY: ${LLM_API_KEY}
-      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_MODEL: ${LLM_MODEL:-claude-haiku-4-5}
       LIGHT_LLM_PROVIDER: ${LIGHT_LLM_PROVIDER:-openai}
       LIGHT_LLM_API_KEY: ${LIGHT_LLM_API_KEY}
-      LIGHT_LLM_MODEL: ${LIGHT_LLM_MODEL:-gpt-4o-mini}
+      LIGHT_LLM_MODEL: ${LIGHT_LLM_MODEL:-gpt-5-mini}
       LIGHT_LLM_BASE_URL: ${LIGHT_LLM_BASE_URL:-}
 
       METABASE_URL: http://metabase:3000
@@ -212,7 +212,7 @@ services:
 
       THREAD_IDLE_MINUTES: ${THREAD_IDLE_MINUTES:-30}
       SUMMARY_EVERY_N_TURNS: ${SUMMARY_EVERY_N_TURNS:-8}
-      LLM_CLASSIFIER_MODEL: ${LLM_CLASSIFIER_MODEL:-}
+      LLM_CLASSIFIER_MODEL: ${LLM_CLASSIFIER_MODEL:-gpt-5-nano}
     depends_on:
       postgres:
         condition: service_healthy

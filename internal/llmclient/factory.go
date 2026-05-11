@@ -28,6 +28,26 @@ func BuildLight(cfg *config.Config) (interfaces.LLM, error) {
 	return build(context.Background(), cfg.EffectiveLightLLMInterface(), cfg.LightLLMAPIKey, cfg.LightLLMModel, cfg.LightLLMBaseURL)
 }
 
+// BuildClassifier constructs the topic-classifier LLM. It reuses the light
+// LLM's credentials, interface, and base URL but lets LLM_CLASSIFIER_MODEL
+// pin a cheaper model (e.g. gpt-5-nano) for the RELATED/NEW classification.
+// Returns BuildLight unchanged when LLM_CLASSIFIER_MODEL is empty.
+func BuildClassifier(cfg *config.Config) (interfaces.LLM, error) {
+	model := strings.TrimSpace(cfg.ClassifierModel)
+	if model == "" {
+		return BuildLight(cfg)
+	}
+	apiKey := cfg.LightLLMAPIKey
+	iface := cfg.EffectiveLightLLMInterface()
+	baseURL := cfg.LightLLMBaseURL
+	if apiKey == "" {
+		apiKey = cfg.LLMAPIKey
+		iface = cfg.EffectiveLLMInterface()
+		baseURL = cfg.LLMBaseURL
+	}
+	return build(context.Background(), iface, apiKey, model, baseURL)
+}
+
 func build(ctx context.Context, iface, apiKey, model, baseURL string) (interfaces.LLM, error) {
 	switch iface {
 	case config.LLMInterfaceAnthropic:

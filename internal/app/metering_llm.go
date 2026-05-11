@@ -63,24 +63,96 @@ func (m *MeteredLLM) GenerateWithToolsDetailed(ctx context.Context, prompt strin
 func (m *MeteredLLM) Name() string             { return m.inner.Name() }
 func (m *MeteredLLM) SupportsStreaming() bool { return m.inner.SupportsStreaming() }
 
-// GenerateStream delegates to the inner StreamingLLM so the agent can use
-// RunStream. Token usage is not recorded for streaming today (the channel
-// events don't carry usage metadata).
+// GenerateStream wraps the inner StreamingLLM and records token usage when the
+// stream emits it in Metadata["usage"] (OpenAI-compatible providers set
+// stream_options.include_usage:true and surface prompt/completion token counts
+// just before the final stop event).
 func (m *MeteredLLM) GenerateStream(ctx context.Context, prompt string, opts ...interfaces.GenerateOption) (<-chan interfaces.StreamEvent, error) {
 	streamingLLM, ok := m.inner.(interfaces.StreamingLLM)
 	if !ok {
 		return nil, fmt.Errorf("inner LLM '%s' does not support streaming", m.inner.Name())
 	}
-	return streamingLLM.GenerateStream(ctx, prompt, opts...)
+	inner, err := streamingLLM.GenerateStream(ctx, prompt, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return m.wrapStream(ctx, inner), nil
 }
 
-// GenerateWithToolsStream delegates to the inner StreamingLLM.
+// GenerateWithToolsStream wraps the inner StreamingLLM the same way as
+// GenerateStream.
 func (m *MeteredLLM) GenerateWithToolsStream(ctx context.Context, prompt string, tools []interfaces.Tool, opts ...interfaces.GenerateOption) (<-chan interfaces.StreamEvent, error) {
 	streamingLLM, ok := m.inner.(interfaces.StreamingLLM)
 	if !ok {
 		return nil, fmt.Errorf("inner LLM '%s' does not support streaming", m.inner.Name())
 	}
-	return streamingLLM.GenerateWithToolsStream(ctx, prompt, tools, opts...)
+	inner, err := streamingLLM.GenerateWithToolsStream(ctx, prompt, tools, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return m.wrapStream(ctx, inner), nil
+}
+
+// wrapStream forwards events from inner to out and records the final usage
+// once the stream closes. Usage is accumulated across all chunks because
+// providers may emit it in pieces (tool-call iterations each emit their own).
+func (m *MeteredLLM) wrapStream(ctx context.Context, inner <-chan interfaces.StreamEvent) <-chan interfaces.StreamEvent {
+	out := make(chan interfaces.StreamEvent, 16)
+	go func() {
+		defer close(out)
+		var totalIn, totalOut int
+		for evt := range inner {
+			if in, outTok, ok := extractUsage(evt.Metadata); ok {
+				totalIn += in
+				totalOut += outTok
+			}
+			out <- evt
+		}
+		if totalIn > 0 || totalOut > 0 {
+			m.record(ctx, &interfaces.TokenUsage{InputTokens: totalIn, OutputTokens: totalOut})
+		}
+	}()
+	return out
+}
+
+// extractUsage pulls prompt/completion token counts out of a stream event's
+// Metadata["usage"] map. Returns ok=false when usage is absent or malformed.
+func extractUsage(md map[string]interface{}) (in, out int, ok bool) {
+	raw, exists := md["usage"]
+	if !exists {
+		return 0, 0, false
+	}
+	u, isMap := raw.(map[string]interface{})
+	if !isMap {
+		return 0, 0, false
+	}
+	in = toInt(u["prompt_tokens"])
+	out = toInt(u["completion_tokens"])
+	if in == 0 && out == 0 {
+		// Some providers only emit input_tokens / output_tokens.
+		in = toInt(u["input_tokens"])
+		out = toInt(u["output_tokens"])
+	}
+	if in == 0 && out == 0 {
+		return 0, 0, false
+	}
+	return in, out, true
+}
+
+func toInt(v interface{}) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int32:
+		return int(n)
+	case int64:
+		return int(n)
+	case float32:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return 0
 }
 
 func (m *MeteredLLM) record(ctx context.Context, usage *interfaces.TokenUsage) {

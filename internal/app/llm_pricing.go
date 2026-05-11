@@ -15,6 +15,9 @@ type ModelPricing struct {
 // models. Unknown models fall back to UsageService.pricing (DefaultPricing).
 var modelPricing = map[string]ModelPricing{
 	// OpenAI — https://openai.com/api/pricing/
+	"gpt-5":       {InputCostPer1K: 0.00125, OutputCostPer1K: 0.010},
+	"gpt-5-mini":  {InputCostPer1K: 0.00025, OutputCostPer1K: 0.002},
+	"gpt-5-nano":  {InputCostPer1K: 0.00005, OutputCostPer1K: 0.0004},
 	"gpt-4o":      {InputCostPer1K: 0.0025, OutputCostPer1K: 0.010},
 	"gpt-4o-mini": {InputCostPer1K: 0.00015, OutputCostPer1K: 0.0006},
 	"gpt-4-turbo": {InputCostPer1K: 0.010, OutputCostPer1K: 0.030},
@@ -43,6 +46,12 @@ var modelPricing = map[string]ModelPricing{
 	"gemini-1.5-flash":      {InputCostPer1K: 0.000075, OutputCostPer1K: 0.0003},
 	"gemini-2.5-flash":      {InputCostPer1K: 0.0003, OutputCostPer1K: 0.0025},
 	"gemini-2.5-flash-lite": {InputCostPer1K: 0.0001, OutputCostPer1K: 0.0004},
+}
+
+// LookupModelPricing exposes lookupModelPricing for callers outside the app
+// package (e.g. HTTP handlers showing current-model rates in the dashboard).
+func LookupModelPricing(model string) (ModelPricing, bool) {
+	return lookupModelPricing(model)
 }
 
 // lookupModelPricing finds rates for a model. Match is case-insensitive; if

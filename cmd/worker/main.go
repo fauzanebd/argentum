@@ -117,8 +117,17 @@ func main() {
 	}
 	scheduledEnq := queue.NewEnqueuer(asynqOpt)
 	defer scheduledEnq.Close()
-	classifier := app.NewTopicClassifier(lightLLMClient)
-	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, llmClient,
+	classifierLLM := lightLLMClient
+	if cfg.ClassifierModel != "" {
+		rawClassifier, err := llmclient.BuildClassifier(cfg)
+		if err != nil {
+			logrus.WithError(err).Warn("classifier LLM build failed; falling back to light LLM")
+		} else {
+			classifierLLM = app.NewMeteredLLM(rawClassifier, usageSvc)
+		}
+	}
+	classifier := app.NewTopicClassifier(classifierLLM)
+	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, lightLLMClient,
 		app.ThreadServiceConfig{
 			IdleMinutes:        cfg.ThreadIdleMinutes,
 			SummaryEveryNTurns: cfg.SummaryEveryNTurns,

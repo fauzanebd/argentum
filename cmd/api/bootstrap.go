@@ -18,6 +18,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
+	"github.com/sirupsen/logrus"
 )
 
 // bootstrap wires control-plane DB, tenant pool, Redis, queue, services, and WhatsApp.
@@ -120,7 +121,16 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse, apiSchemaTool, describer)
 	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
 	deps.dashboardSvc = app.NewDashboardService(dashboardRepo, mbCli)
-	classifier := app.NewTopicClassifier(lightLLMClient)
+	classifierLLM := lightLLMClient
+	if cfg.ClassifierModel != "" {
+		rawClassifier, err := llmclient.BuildClassifier(cfg)
+		if err != nil {
+			logrus.WithError(err).Warn("classifier LLM build failed; falling back to light LLM")
+		} else {
+			classifierLLM = app.NewMeteredLLM(rawClassifier, deps.usageSvc)
+		}
+	}
+	classifier := app.NewTopicClassifier(classifierLLM)
 	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, lightLLMClient,
 		app.ThreadServiceConfig{
 			IdleMinutes:        cfg.ThreadIdleMinutes,

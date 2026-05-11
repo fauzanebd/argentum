@@ -132,16 +132,16 @@ func Load() (*Config, error) {
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 
 		// LLM
-		LLMInterface: getEnv("LLM_INTERFACE", ""),
-		LLMProvider:  getEnv("LLM_PROVIDER", "gemini"),
+		LLMInterface: getEnv("LLM_INTERFACE", "openai"),
+		LLMProvider:  getEnv("LLM_PROVIDER", "custom"),
 		LLMAPIKey:    getEnv("LLM_API_KEY", ""),
-		LLMModel:     getEnv("LLM_MODEL", "gemini-2.5-flash"),
+		LLMModel:     getEnv("LLM_MODEL", "claude-haiku-4-5"),
 		LLMBaseURL:   getEnv("LLM_BASE_URL", ""),
 
-		LightLLMInterface: getEnv("LIGHT_LLM_INTERFACE", ""),
-		LightLLMProvider:  getEnv("LIGHT_LLM_PROVIDER", "gemini"),
+		LightLLMInterface: getEnv("LIGHT_LLM_INTERFACE", "openai"),
+		LightLLMProvider:  getEnv("LIGHT_LLM_PROVIDER", "custom"),
 		LightLLMAPIKey:    getEnv("LIGHT_LLM_API_KEY", ""),
-		LightLLMModel:     getEnv("LIGHT_LLM_MODEL", "gemini-2.5-flash-lite"),
+		LightLLMModel:     getEnv("LIGHT_LLM_MODEL", "gpt-5-mini"),
 		LightLLMBaseURL:   getEnv("LIGHT_LLM_BASE_URL", ""),
 
 		// WhatsApp Provider
@@ -180,7 +180,7 @@ func Load() (*Config, error) {
 
 		// Conversation threading
 		ThreadIdleMinutes:  getEnvAsInt("THREAD_IDLE_MINUTES", 30),
-		ClassifierModel:    getEnv("LLM_CLASSIFIER_MODEL", ""),
+		ClassifierModel:    getEnv("LLM_CLASSIFIER_MODEL", "gpt-5-nano"),
 		SummaryEveryNTurns: getEnvAsInt("SUMMARY_EVERY_N_TURNS", 8),
 
 		// Asynq
