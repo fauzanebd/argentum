@@ -175,6 +175,18 @@ func main() {
 			IncludeIntermediateMessages: true,
 		}),
 	}
+	// Anthropic prompt caching: cache the system prompt, the tool definitions,
+	// and the rolling conversation prefix so each turn only pays for the new
+	// user message + assistant delta. With ~70k-token schema results in
+	// history, this saves ~90% of input tokens on follow-up turns.
+	if cfg.EffectiveLLMInterface() == config.LLMInterfaceAnthropic {
+		agentOpts = append(agentOpts, sdkagent.WithCacheConfig(interfaces.CacheConfig{
+			CacheSystemMessage: true,
+			CacheTools:         true,
+			CacheConversation:  true,
+			CacheTTL:           "5m",
+		}))
+	}
 	if gr != nil {
 		agentOpts = append(agentOpts, sdkagent.WithGuardrails(gr))
 	}

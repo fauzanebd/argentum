@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -68,7 +69,10 @@ func (t *GetSchemaTool) Name() string { return "get_schema" }
 func (t *GetSchemaTool) Description() string {
 	return "Get the catalog of available data sources, or the schema of a specific source. " +
 		"Without source_id, returns the list of sources for this organization (each with id, label, db_type, description) — call again with a source_id to get that source's tables/columns/relationships. " +
-		"Use this before writing SQL when you are unsure of table or column names."
+		"Use this before writing SQL when you are unsure of table or column names. " +
+		"STRONGLY PREFERRED: pass `keywords` (e.g. [\"sales\",\"penjualan\",\"jual\"]) or `tables` (exact names) to get only the relevant subset — full schemas can be hundreds of tables and are expensive. " +
+		"Unfiltered calls return every table and should be used only when you genuinely need a full overview. " +
+		"When filtered, the response also includes `all_tables` (just names) so you can re-call with a refined filter if your guess missed."
 }
 
 func (t *GetSchemaTool) Parameters() map[string]interfaces.ParameterSpec {
@@ -83,6 +87,18 @@ func (t *GetSchemaTool) Parameters() map[string]interfaces.ParameterSpec {
 			Description: "If true, bypass the schema cache and re-introspect the source.",
 			Required:    false,
 		},
+		"tables": {
+			Type:        "array",
+			Description: "Optional exact table names to return. Case-insensitive. Use when you already know the table names; combine with `keywords` if unsure.",
+			Required:    false,
+			Items:       &interfaces.ParameterSpec{Type: "string"},
+		},
+		"keywords": {
+			Type:        "array",
+			Description: "Optional case-insensitive substrings; a table is included if its name OR any of its column names contains any keyword. Use domain terms in the tenant's language (e.g. [\"sales\",\"penjualan\",\"jual\"], [\"customer\",\"cust\"], [\"product\",\"barang\",\"prdcd\"]).",
+			Required:    false,
+			Items:       &interfaces.ParameterSpec{Type: "string"},
+		},
 	}
 }
 
@@ -92,8 +108,10 @@ func (t *GetSchemaTool) Run(ctx context.Context, input string) (string, error) {
 
 func (t *GetSchemaTool) Execute(ctx context.Context, args string) (string, error) {
 	var params struct {
-		SourceID     string `json:"source_id"`
-		ForceRefresh bool   `json:"force_refresh"`
+		SourceID     string   `json:"source_id"`
+		ForceRefresh bool     `json:"force_refresh"`
+		Tables       []string `json:"tables"`
+		Keywords     []string `json:"keywords"`
 	}
 	_ = json.Unmarshal([]byte(args), &params)
 
@@ -109,7 +127,7 @@ func (t *GetSchemaTool) Execute(ctx context.Context, args string) (string, error
 		}
 		if len(conns) == 1 {
 			// One-source convenience: skip the catalog round-trip.
-			return t.fullSchemaResponse(ctx, companyID, conns[0].ID, params.ForceRefresh)
+			return t.fullSchemaResponse(ctx, companyID, conns[0].ID, params.ForceRefresh, params.Tables, params.Keywords)
 		}
 		return formatSourceCatalog(conns), nil
 	}
@@ -118,22 +136,117 @@ func (t *GetSchemaTool) Execute(ctx context.Context, args string) (string, error
 	if err != nil {
 		return "", err
 	}
-	return t.fullSchemaResponse(ctx, companyID, source.ID, params.ForceRefresh)
+	return t.fullSchemaResponse(ctx, companyID, source.ID, params.ForceRefresh, params.Tables, params.Keywords)
 }
 
-func (t *GetSchemaTool) fullSchemaResponse(ctx context.Context, companyID, sourceID string, force bool) (string, error) {
+func (t *GetSchemaTool) fullSchemaResponse(ctx context.Context, companyID, sourceID string, force bool, wantTables, keywords []string) (string, error) {
 	schema, err := t.fetchSchema(ctx, companyID, sourceID, force)
 	if err != nil {
 		return "", err
 	}
-	out, _ := json.Marshal(map[string]interface{}{
+
+	totalTables := len(schema.Tables)
+	resp := map[string]interface{}{
 		"source_id":     sourceID,
-		"schema":        db.FormatSchemaForPrompt(schema),
-		"tables":        len(schema.Tables),
-		"relationships": len(schema.Relationships),
 		"db_type":       schema.DBType,
-	})
+		"total_tables":  totalTables,
+		"relationships": len(schema.Relationships),
+	}
+
+	// Filter when caller passed `tables` or `keywords`. Otherwise return the
+	// full schema (back-compat) but flag the size so the model learns to
+	// filter on future calls.
+	if len(wantTables) > 0 || len(keywords) > 0 {
+		filtered := filterSchema(schema, wantTables, keywords)
+		matched := make([]string, 0, len(filtered.Tables))
+		for _, t := range filtered.Tables {
+			matched = append(matched, t.Name)
+		}
+		all := make([]string, 0, totalTables)
+		for _, t := range schema.Tables {
+			all = append(all, t.Name)
+		}
+		resp["filtered"] = true
+		resp["matched_tables"] = matched
+		resp["all_tables"] = all
+		resp["schema"] = db.FormatSchemaForPrompt(filtered)
+		resp["tables"] = len(filtered.Tables)
+		if len(matched) == 0 {
+			resp["hint"] = "No tables matched the supplied filter. Inspect `all_tables` and re-call with refined `tables` or `keywords`."
+		}
+	} else {
+		resp["filtered"] = false
+		resp["schema"] = db.FormatSchemaForPrompt(schema)
+		resp["tables"] = totalTables
+		if totalTables > 30 {
+			resp["hint"] = fmt.Sprintf(
+				"This source has %d tables. Next time, pass `keywords` or `tables` to get_schema so the response only includes what you need.",
+				totalTables,
+			)
+		}
+	}
+
+	out, _ := json.Marshal(resp)
 	return string(out), nil
+}
+
+// filterSchema returns a copy of s containing only tables whose name appears in
+// wantTables (exact, case-insensitive) or whose name/columns contain any of
+// keywords (substring, case-insensitive). Relationships are kept only when
+// both endpoints survive the filter.
+func filterSchema(s *db.SchemaMetadata, wantTables, keywords []string) *db.SchemaMetadata {
+	exact := make(map[string]struct{}, len(wantTables))
+	for _, n := range wantTables {
+		n = strings.TrimSpace(strings.ToLower(n))
+		if n != "" {
+			exact[n] = struct{}{}
+		}
+	}
+	kw := make([]string, 0, len(keywords))
+	for _, k := range keywords {
+		k = strings.TrimSpace(strings.ToLower(k))
+		if k != "" {
+			kw = append(kw, k)
+		}
+	}
+
+	tableMatches := func(tbl db.TableInfo) bool {
+		nameLower := strings.ToLower(tbl.Name)
+		if _, ok := exact[nameLower]; ok {
+			return true
+		}
+		for _, k := range kw {
+			if strings.Contains(nameLower, k) {
+				return true
+			}
+			for _, c := range tbl.Columns {
+				if strings.Contains(strings.ToLower(c.Name), k) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	out := &db.SchemaMetadata{
+		DBType:      s.DBType,
+		ExtractedAt: s.ExtractedAt,
+	}
+	kept := make(map[string]struct{}, len(s.Tables))
+	for _, t := range s.Tables {
+		if tableMatches(t) {
+			out.Tables = append(out.Tables, t)
+			kept[strings.ToLower(t.Name)] = struct{}{}
+		}
+	}
+	for _, r := range s.Relationships {
+		_, hasFrom := kept[strings.ToLower(r.FromTable)]
+		_, hasTo := kept[strings.ToLower(r.ToTable)]
+		if hasFrom && hasTo {
+			out.Relationships = append(out.Relationships, r)
+		}
+	}
+	return out
 }
 
 // PrefetchSourceCatalog returns the connection list for a company without
