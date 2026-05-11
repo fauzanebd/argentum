@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
+
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/app"
@@ -12,6 +14,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/llmclient"
+	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/migrate"
@@ -56,6 +59,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	messageRepo := pgctl.NewMessageRepo(controlDB)
 	usageRepo := pgctl.NewUsageRepo(controlDB)
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
+	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
 	deps.threadRepo = threadRepo
 	deps.msgRepo = messageRepo
 	deps.userRepo = userRepo
@@ -96,7 +100,25 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.enqueuer = queue.NewEnqueuer(asynqOpt)
 	undo = append(undo, func() { deps.enqueuer.Close() })
 
-	// llmClient, err := llmclient.BuildPrimary(cfg)
+	// Per-tenant LLM cache (shared with the worker's chat runner — separate
+	// process, independent cache). Used by the API's embedding service for
+	// reindex, and stashed on deps for future tenant-scoped flows.
+	llmResolver := llmtenant.NewResolver(llmCredRepo, dsnCipher, cfg)
+	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
+	deps.llmCache = llmtenant.NewClientCache(
+		llmResolver,
+		func(inner interfaces.LLM) interfaces.LLM {
+			return app.NewMeteredLLM(inner, deps.usageSvc)
+		},
+		300, 30*time.Minute,
+	)
+	deps.llmCache.Start(tenCtx)
+	deps.embedCache = llmtenant.NewEmbeddingCache(llmResolver, 100, 30*time.Minute)
+	deps.embedCache.Start(tenCtx)
+	undo = append(undo, func() {
+		deps.embedCache.CloseAll()
+		deps.llmCache.CloseAll()
+	})
 
 	deps.authSvc = app.NewAuthService(companyRepo, userRepo, signer)
 
@@ -107,7 +129,6 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword)
 		metabaseWarehouse = app.NewMetabaseWarehouseSync(mbCli)
 	}
-	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
 	rawLightLLM, err := llmclient.BuildLight(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("light LLM: %w", err)
@@ -119,6 +140,14 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	apiSchemaTool := tools.NewGetSchemaTool(deps.tenant, connRepo)
 	describer := app.NewConnectionDescriber(lightLLMClient, deps.tenant, connRepo)
 	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse, apiSchemaTool, describer)
+
+	// Table-picker embeddings: per-tenant resolution via embedCache.
+	// EmbeddingService resolves the client per ReindexSource call so each
+	// company hits its own provider/key.
+	if cfg.EmbeddingEnabled {
+		tableEmbRepo := pgctl.NewTableEmbeddingRepo(controlDB)
+		deps.embeddingSvc = app.NewEmbeddingService(connRepo, connRepo, tableEmbRepo, apiSchemaTool, deps.embedCache)
+	}
 	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
 	deps.dashboardSvc = app.NewDashboardService(dashboardRepo, mbCli)
 	classifierLLM := lightLLMClient

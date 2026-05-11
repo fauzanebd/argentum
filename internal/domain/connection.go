@@ -25,9 +25,17 @@ type DBConnection struct {
 	DescriptionSource string `json:"description_source"`
 	// MetabaseDatabaseID links this row to /api/database when db_type is
 	// postgres; nil until registration succeeds via Metabase REST API.
-	MetabaseDatabaseID *int      `json:"metabase_database_id,omitempty"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	MetabaseDatabaseID *int `json:"metabase_database_id,omitempty"`
+	// EnableTableEmbedding turns on the embedding-based table picker for
+	// this source. When true and embeddings exist, the chat runner injects
+	// a top-K relevant-table hint into the user's message so the agent can
+	// call get_schema pre-filtered instead of dumping the full catalog.
+	EnableTableEmbedding bool `json:"enable_table_embedding"`
+	// EmbeddingsIndexedAt records when the table_embeddings rows for this
+	// source were last (re)built. Nil means never indexed.
+	EmbeddingsIndexedAt *time.Time `json:"embeddings_indexed_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 // Description sources.

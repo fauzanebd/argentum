@@ -44,6 +44,18 @@ type Config struct {
 	LightLLMModel     string
 	LightLLMBaseURL   string
 
+	// Embedding-based table picker. Opt-in per-source via the
+	// db_connections.enable_table_embedding flag; this group sets the
+	// provider + model + dimensions for the embeddings themselves.
+	EmbeddingEnabled   bool   // master kill switch; per-source toggle still wins
+	EmbeddingProvider  string // currently only "openai"
+	EmbeddingAPIKey    string // falls back to LLMAPIKey when LLMInterface == openai
+	EmbeddingBaseURL   string // optional Azure/proxy host
+	EmbeddingModel     string // default "text-embedding-3-small"
+	EmbeddingDim       int    // default 1536; MUST match the migration's vector(N)
+	EmbeddingTopK      int    // top-K tables injected per source per chat turn
+	EmbeddingBatchSize int    // OpenAI request fan-in (default 96, hard cap 2048)
+
 	// WhatsApp Provider
 	WhatsAppProvider string // "whatsapp_business" or "twilio"
 
@@ -94,6 +106,8 @@ type Config struct {
 	HistoryHydrateLimit int // max prior messages re-loaded into agent memory per turn
 	CacheTTLShort       int // seconds
 	CacheTTLLong        int // seconds
+	MaxQueryRows        int // hard ceiling on rows returned by run_sql per query
+	MaxQueryResultBytes int // hard ceiling on serialized JSON size for a run_sql result
 
 	// Object storage (MinIO / S3-compatible). Used by the generate_document
 	// tool to persist generated PDF/XLSX/CSV files and to issue presigned
@@ -143,6 +157,16 @@ func Load() (*Config, error) {
 		LightLLMAPIKey:    getEnv("LIGHT_LLM_API_KEY", ""),
 		LightLLMModel:     getEnv("LIGHT_LLM_MODEL", "gpt-5-mini"),
 		LightLLMBaseURL:   getEnv("LIGHT_LLM_BASE_URL", "https://openrouter.ai/api/v1"),
+
+		// Embedding-based table picker
+		EmbeddingEnabled:   getEnv("EMBEDDING_ENABLED", "true") == "true",
+		EmbeddingProvider:  getEnv("EMBEDDING_PROVIDER", "openai"),
+		EmbeddingAPIKey:    getEnv("EMBEDDING_API_KEY", ""),
+		EmbeddingBaseURL:   getEnv("EMBEDDING_BASE_URL", ""),
+		EmbeddingModel:     getEnv("EMBEDDING_MODEL", "text-embedding-3-small"),
+		EmbeddingDim:       getEnvAsInt("EMBEDDING_DIM", 1536),
+		EmbeddingTopK:      getEnvAsInt("EMBEDDING_TOPK", 8),
+		EmbeddingBatchSize: getEnvAsInt("EMBEDDING_BATCH_SIZE", 96),
 
 		// WhatsApp Provider
 		WhatsAppProvider: getEnv("WHATSAPP_PROVIDER", "whatsapp_business"),
@@ -194,6 +218,8 @@ func Load() (*Config, error) {
 		HistoryHydrateLimit: getEnvAsInt("HISTORY_HYDRATE_LIMIT", 20),
 		CacheTTLShort:       getEnvAsInt("CACHE_TTL_SHORT", 300),
 		CacheTTLLong:        getEnvAsInt("CACHE_TTL_LONG", 86400),
+		MaxQueryRows:        getEnvAsInt("MAX_QUERY_ROWS", 100),
+		MaxQueryResultBytes: getEnvAsInt("MAX_QUERY_RESULT_BYTES", 200000),
 
 		// Object storage (MinIO / S3-compatible)
 		MinIOEndpoint:          getEnv("MINIO_ENDPOINT", ""),
@@ -233,6 +259,19 @@ func (c *Config) EffectiveLightLLMInterface() string {
 		return s
 	}
 	return strings.TrimSpace(strings.ToLower(c.LightLLMProvider))
+}
+
+// EffectiveEmbeddingAPIKey returns EMBEDDING_API_KEY when set, otherwise
+// LLMAPIKey when the primary LLM is OpenAI (same credentials). Returns ""
+// when no usable key is configured — caller should treat that as "disable".
+func (c *Config) EffectiveEmbeddingAPIKey() string {
+	if k := strings.TrimSpace(c.EmbeddingAPIKey); k != "" {
+		return k
+	}
+	if c.EffectiveLLMInterface() == LLMInterfaceOpenAI {
+		return strings.TrimSpace(c.LLMAPIKey)
+	}
+	return ""
 }
 
 // Validate checks if required configuration is present

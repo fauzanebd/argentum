@@ -256,6 +256,13 @@ func (t *GetSchemaTool) PrefetchSourceCatalog(ctx context.Context, companyID str
 	return t.repo.ListByCompany(ctx, companyID)
 }
 
+// FetchSchema exposes the cached schema fetch for callers outside this
+// package (e.g. the embedding reindexer). Re-uses the same L1/L2 cache the
+// tool uses for chat-time get_schema calls.
+func (t *GetSchemaTool) FetchSchema(ctx context.Context, companyID, sourceID string, force bool) (*db.SchemaMetadata, error) {
+	return t.fetchSchema(ctx, companyID, sourceID, force)
+}
+
 func (t *GetSchemaTool) fetchSchema(ctx context.Context, companyID, sourceID string, force bool) (*db.SchemaMetadata, error) {
 	key := companyID + ":" + sourceID
 	if !force {

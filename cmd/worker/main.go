@@ -33,6 +33,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/llmclient"
+	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/tools"
@@ -64,6 +65,7 @@ func main() {
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	companyRepo := pgctl.NewCompanyRepo(controlDB)
 	scheduledRepo := pgctl.NewScheduledTaskRepo(controlDB)
+	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
 
 	// --- Crypto (DSN decryption for tenant pool) ---
 	dsnCipher, err := crypto.NewFromHex(cfg.DSNEncryptionKeyHex)
@@ -89,16 +91,32 @@ func main() {
 
 	// --- LLM (metered) ---
 	usageSvc := app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
-	rawLLM, err := llmclient.BuildPrimary(cfg)
-	if err != nil {
-		logrus.Fatalf("primary LLM: %v", err)
-	}
-	llmClient := app.NewMeteredLLM(rawLLM, usageSvc)
+
+	// Env-default light LLM is still needed for non-chat-runner consumers
+	// (TopicClassifier, ThreadService rolling summary): those services are
+	// process-wide and don't carry tenant context.
 	rawLightLLM, err := llmclient.BuildLight(cfg)
 	if err != nil {
 		logrus.Fatalf("light LLM: %v", err)
 	}
 	lightLLMClient := app.NewMeteredLLM(rawLightLLM, usageSvc)
+
+	// Per-tenant LLM cache for the chat runner. Primary + light + embedding
+	// each get their own profile resolution per company; missing rows fall
+	// back to env defaults via the resolver.
+	llmResolver := llmtenant.NewResolver(llmCredRepo, dsnCipher, cfg)
+	llmCache := llmtenant.NewClientCache(
+		llmResolver,
+		func(inner interfaces.LLM) interfaces.LLM {
+			return app.NewMeteredLLM(inner, usageSvc)
+		},
+		300, 30*time.Minute,
+	)
+	llmCache.Start(rootCtx)
+	defer llmCache.CloseAll()
+	embedCache := llmtenant.NewEmbeddingCache(llmResolver, 100, 30*time.Minute)
+	embedCache.Start(rootCtx)
+	defer embedCache.CloseAll()
 
 	// --- Agent + tools ---
 	metabaseClient := metabase.NewClient(
@@ -137,7 +155,7 @@ func main() {
 	agentTools := []interfaces.Tool{
 		tools.NewListSourcesTool(connRepo),
 		getSchemaTool,
-		tools.NewRunSQLTool(tenantPool, connRepo, usageSvc),
+		tools.NewRunSQLTool(tenantPool, connRepo, usageSvc, cfg.MaxQueryRows, cfg.MaxQueryResultBytes),
 		tools.NewCreateVisualizationTool(tenantPool, connRepo, metabaseClient, connRepo, usageSvc),
 		tools.NewCreateDashboardTool(metabaseClient, usageSvc, app.NewDashboardService(dashboardRepo, metabaseClient)),
 		tools.NewScheduleTaskTool(scheduledSvc),
@@ -153,53 +171,67 @@ func main() {
 		}).Info("generate_document tool enabled")
 	}
 	mem := buildMemory(cfg)
-	gr := buildGuardrails(cfg, lightLLMClient)
+	// Pre-parsed guardrails template (bound to env light LLM by default).
+	// The agent factory rebinds it to each turn's tenant light LLM via
+	// .WithLLM, avoiding YAML/regex re-parse per chat call.
+	guardrailsTpl := buildGuardrails(cfg, lightLLMClient)
 
-	systemPrompt := buildSystemPrompt()
-	agentOpts := []sdkagent.Option{
-		sdkagent.WithLLM(llmClient),
-		sdkagent.WithTools(agentTools...),
-		sdkagent.WithMemory(mem),
-		sdkagent.WithSystemPrompt(systemPrompt),
-		sdkagent.WithName("Argentum"),
-		sdkagent.WithDescription("Conversational analytics agent for B2B owners."),
-		sdkagent.WithMaxIterations(3),
-		sdkagent.WithRequirePlanApproval(false),
-		sdkagent.WithLLMConfig(interfaces.LLMConfig{Temperature: 0.2}),
-		// Stream content from every iteration immediately. The SDK's default
-		// filtering (filterIntermediateContent) has a bug: when the agent
-		// finishes before maxIterations, content from the final iteration is
-		// captured but never replayed — resulting in empty assistant messages
-		// after tool calls.
-		sdkagent.WithStreamConfig(&interfaces.StreamConfig{
-			IncludeIntermediateMessages: true,
-		}),
-	}
-	// Anthropic prompt caching: cache the system prompt, the tool definitions,
-	// and the rolling conversation prefix so each turn only pays for the new
-	// user message + assistant delta. With ~70k-token schema results in
-	// history, this saves ~90% of input tokens on follow-up turns.
-	if cfg.EffectiveLLMInterface() == config.LLMInterfaceAnthropic {
-		agentOpts = append(agentOpts, sdkagent.WithCacheConfig(interfaces.CacheConfig{
-			CacheSystemMessage: true,
-			CacheTools:         true,
-			CacheConversation:  true,
-			CacheTTL:           "5m",
-		}))
-	}
-	if gr != nil {
-		agentOpts = append(agentOpts, sdkagent.WithGuardrails(gr))
-	}
+	// Agent config file is loaded once at startup; the entry is captured by
+	// the closure.
+	var agentCfgOpt sdkagent.Option
 	if cfg.AgentConfigPath != "" {
 		if configs, err := sdkagent.LoadAgentConfigsFromFile(cfg.AgentConfigPath); err == nil {
 			if agentCfg, ok := configs["analytics_agent"]; ok {
-				agentOpts = append(agentOpts, sdkagent.WithAgentConfig(agentCfg, nil))
+				agentCfgOpt = sdkagent.WithAgentConfig(agentCfg, nil)
 			}
 		}
 	}
-	analyticsAgent, err := sdkagent.NewAgent(agentOpts...)
-	if err != nil {
-		logrus.Fatalf("create agent: %v", err)
+
+	systemPrompt := buildSystemPrompt()
+
+	// AgentFactory builds a fresh sdkagent.Agent per chat turn from the
+	// per-tenant primary + light LLM clients. Tools / memory / system
+	// prompt / streaming config are captured here once; primaryInterface
+	// gates Anthropic-only prompt caching.
+	agentFactory := func(primary, light interfaces.LLM, primaryInterface string) (*sdkagent.Agent, error) {
+		opts := []sdkagent.Option{
+			sdkagent.WithLLM(primary),
+			sdkagent.WithTools(agentTools...),
+			sdkagent.WithMemory(mem),
+			sdkagent.WithSystemPrompt(systemPrompt),
+			sdkagent.WithName("Argentum"),
+			sdkagent.WithDescription("Conversational analytics agent for B2B owners."),
+			sdkagent.WithMaxIterations(3),
+			sdkagent.WithRequirePlanApproval(false),
+			sdkagent.WithLLMConfig(interfaces.LLMConfig{Temperature: 0.2}),
+			// Stream content from every iteration immediately. The SDK's default
+			// filtering (filterIntermediateContent) has a bug: when the agent
+			// finishes before maxIterations, content from the final iteration is
+			// captured but never replayed — resulting in empty assistant messages
+			// after tool calls.
+			sdkagent.WithStreamConfig(&interfaces.StreamConfig{
+				IncludeIntermediateMessages: true,
+			}),
+		}
+		// Anthropic prompt caching: cache the system prompt, the tool definitions,
+		// and the rolling conversation prefix so each turn only pays for the new
+		// user message + assistant delta. With ~70k-token schema results in
+		// history, this saves ~90% of input tokens on follow-up turns.
+		if primaryInterface == config.LLMInterfaceAnthropic {
+			opts = append(opts, sdkagent.WithCacheConfig(interfaces.CacheConfig{
+				CacheSystemMessage: true,
+				CacheTools:         true,
+				CacheConversation:  true,
+				CacheTTL:           "5m",
+			}))
+		}
+		if guardrailsTpl != nil {
+			opts = append(opts, sdkagent.WithGuardrails(guardrailsTpl.WithLLM(light)))
+		}
+		if agentCfgOpt != nil {
+			opts = append(opts, agentCfgOpt)
+		}
+		return sdkagent.NewAgent(opts...)
 	}
 
 	// --- WhatsApp provider (worker sends final replies for WA threads) ---
@@ -218,7 +250,20 @@ func main() {
 		logrus.Fatalf("WhatsApp provider: %v", err)
 	}
 
-	runner := app.NewChatRunner(threadSvc, messageRepo, threadRepo, connRepo, analyticsAgent, bus, waProvider, tenantPool, scheduledSvc, cfg.HistoryHydrateLimit)
+	runner := app.NewChatRunner(threadSvc, messageRepo, threadRepo, connRepo, agentFactory, llmCache, bus, waProvider, tenantPool, scheduledSvc, cfg.HistoryHydrateLimit)
+
+	// Table-picker embeddings: per-tenant embedding cache. Per-source
+	// `enable_table_embedding` still gates injection; the cache only
+	// resolves the client. When neither env nor tenant has a key set, the
+	// cache returns a nil client and the runner silent-skips.
+	if cfg.EmbeddingEnabled {
+		tableEmbRepo := pgctl.NewTableEmbeddingRepo(controlDB)
+		runner = runner.WithTablePicker(tableEmbRepo, embedCache, cfg.EmbeddingTopK)
+		logrus.WithFields(logrus.Fields{
+			"model": cfg.EmbeddingModel,
+			"topk":  cfg.EmbeddingTopK,
+		}).Info("table-picker embeddings enabled (per-tenant cache)")
+	}
 
 	// --- asynq.Server ---
 	srv := asynq.NewServer(asynqOpt, asynq.Config{
@@ -341,7 +386,7 @@ func buildMemory(cfg *config.Config) interfaces.Memory {
 	return memory.NewConversationBuffer(memory.WithMaxSize(20))
 }
 
-func buildGuardrails(cfg *config.Config, llm interfaces.LLM) interfaces.Guardrails {
+func buildGuardrails(cfg *config.Config, llm interfaces.LLM) *guardrails.Analytics {
 	if cfg.GuardrailsConfigPath == "" {
 		return nil
 	}
@@ -397,5 +442,15 @@ CRITICAL GUIDELINES:
    - When returning the dashboard URL to the user, format it as a markdown link with descriptive text, e.g. [Sales Performance Dashboard](url). Never show the raw URL.
    - Time-series charts (line/bar/combo where an axis is date, datetime, month, week, quarter, year, or similar): put earliest periods first and latest last. In SQL, ORDER BY the true time dimension ascending (use the underlying date/timestamp for grouping labels if needed). Never rely on unspecified row order and do not use DESC for the time axis unless the user explicitly asks for newest-first.
 8. NEVER return individual card IDs to the user — always wrap with a dashboard.
-9. Cap result sets to 100 rows unless explicitly asked otherwise (LIMIT 100 in postgres/mysql, TOP 100 in sqlserver).`
+9. NUMBER FORMATTING (especially Rupiah and other IDR-style large currencies):
+   - Use Indonesian magnitude abbreviations when the user writes in Indonesian:
+     * 1.000.000 – 999.999.999 → "Juta"  (divide by 1,000,000, e.g. Rp 66.215.000 → "Rp 66,22 Juta")
+     * 1.000.000.000 – 999.999.999.999 → "Miliar"  (divide by 1,000,000,000, e.g. Rp 2.500.000.000 → "Rp 2,50 Miliar")
+     * 1.000.000.000.000+ → "Triliun"  (divide by 1,000,000,000,000)
+     * Below 1.000.000 → write the full grouped number, e.g. "Rp 850.000"
+   - Decimal separator follows the reply language: Indonesian uses "," (comma) for decimals and "." (dot) for thousands. English uses "." for decimals and "," for thousands. Never mix.
+   - Round to 2 decimal places when using a magnitude suffix.
+   - BEFORE writing a magnitude suffix, verify: count the digits in the raw integer rupiah value. 7 digits = Juta. 10 digits = Miliar. 13 digits = Triliun. If unsure, write the full grouped number instead of guessing a suffix.
+   - When showing a money column inside a table, every row in that column must use the SAME unit and SAME decimal precision. Pick the unit from the largest value in the column.
+10. Cap result sets to 100 rows unless explicitly asked otherwise (LIMIT 100 in postgres/mysql, TOP 100 in sqlserver). The server enforces a hard 100-row cap; if run_sql returns "truncated": true, tell the user the result was truncated and suggest a filter (date range, category, aggregation, etc.) to narrow it before answering from partial data.`
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/fauzanebd/argentum/internal/domain"
 )
@@ -14,16 +15,21 @@ type ConnectionRepo struct{ db *sql.DB }
 func NewConnectionRepo(db *sql.DB) *ConnectionRepo { return &ConnectionRepo{db: db} }
 
 const connColumns = `id, company_id, db_type, label, dsn_encrypted, is_default,
-		description, description_source, metabase_database_id, created_at, updated_at`
+		description, description_source, metabase_database_id,
+		enable_table_embedding, embeddings_indexed_at,
+		created_at, updated_at`
 
 func scanConn(row interface {
 	Scan(dest ...interface{}) error
 }) (*domain.DBConnection, error) {
 	c := &domain.DBConnection{}
 	var mid sql.NullInt64
+	var indexedAt sql.NullTime
 	err := row.Scan(
 		&c.ID, &c.CompanyID, &c.DBType, &c.Label, &c.DSNEncrypted, &c.IsDefault,
-		&c.Description, &c.DescriptionSource, &mid, &c.CreatedAt, &c.UpdatedAt,
+		&c.Description, &c.DescriptionSource, &mid,
+		&c.EnableTableEmbedding, &indexedAt,
+		&c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -31,6 +37,10 @@ func scanConn(row interface {
 	if mid.Valid {
 		v := int(mid.Int64)
 		c.MetabaseDatabaseID = &v
+	}
+	if indexedAt.Valid {
+		t := indexedAt.Time
+		c.EmbeddingsIndexedAt = &t
 	}
 	return c, nil
 }
@@ -126,6 +136,24 @@ func (r *ConnectionRepo) MetabaseDatabaseIDForSource(ctx context.Context, compan
 		return 0, fmt.Errorf("warehouse not synced to Metabase; add or rotate the DSN so registration can run")
 	}
 	return *conn.MetabaseDatabaseID, nil
+}
+
+// SetEmbeddingToggle flips the embedding-based-table-picker feature on or
+// off for a single source. Focused setter so the caller doesn't have to
+// round-trip the encrypted DSN through Update.
+func (r *ConnectionRepo) SetEmbeddingToggle(ctx context.Context, id string, on bool) error {
+	const q = `UPDATE db_connections SET enable_table_embedding = $1, updated_at = now() WHERE id = $2`
+	_, err := r.db.ExecContext(ctx, q, on, id)
+	return err
+}
+
+// MarkEmbeddingsIndexed records the time we last finished a reindex pass
+// for a source. The chat runner doesn't read this directly; it's surfaced
+// via the API so admins can see embedding age.
+func (r *ConnectionRepo) MarkEmbeddingsIndexed(ctx context.Context, id string, at time.Time) error {
+	const q = `UPDATE db_connections SET embeddings_indexed_at = $1, updated_at = now() WHERE id = $2`
+	_, err := r.db.ExecContext(ctx, q, at, id)
+	return err
 }
 
 // SetDefault marks one connection as default and clears the flag on all

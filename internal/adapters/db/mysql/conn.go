@@ -19,7 +19,7 @@ type conn struct {
 func (c *conn) Ping(ctx context.Context) error { return c.sqlDB.PingContext(ctx) }
 func (c *conn) Close() error                   { return c.sqlDB.Close() }
 
-func (c *conn) ExecuteReadOnly(ctx context.Context, query string) (*db.QueryResult, error) {
+func (c *conn) ExecuteReadOnly(ctx context.Context, query string, maxRows int) (*db.QueryResult, error) {
 	tx, err := c.sqlDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
@@ -44,6 +44,10 @@ func (c *conn) ExecuteReadOnly(ctx context.Context, query string) (*db.QueryResu
 
 	result := &db.QueryResult{Columns: cols, Rows: []map[string]interface{}{}}
 	for rows.Next() {
+		if maxRows > 0 && len(result.Rows) >= maxRows {
+			result.Truncated = true
+			break
+		}
 		values := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
 		for i := range values {

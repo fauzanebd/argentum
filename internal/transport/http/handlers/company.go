@@ -16,10 +16,15 @@ import (
 )
 
 // CompanyHandler exposes connection + phone management endpoints.
-type CompanyHandler struct{ svc *app.CompanyService }
+type CompanyHandler struct {
+	svc       *app.CompanyService
+	embedding *app.EmbeddingService
+}
 
-func NewCompanyHandler(svc *app.CompanyService) *CompanyHandler {
-	return &CompanyHandler{svc: svc}
+// NewCompanyHandler wires the company service. embeddingSvc is optional;
+// pass nil to disable the reindex-embeddings endpoint (it will return 503).
+func NewCompanyHandler(svc *app.CompanyService, embeddingSvc *app.EmbeddingService) *CompanyHandler {
+	return &CompanyHandler{svc: svc, embedding: embeddingSvc}
 }
 
 // Register installs the routes. Caller is expected to wrap the group with the
@@ -31,8 +36,11 @@ func (h *CompanyHandler) Register(rg *gin.RouterGroup) {
 	rg.PUT("/connections/:id/dsn", h.updateConnectionDSN)
 	rg.POST("/connections/:id/default", h.setDefault)
 	rg.POST("/connections/:id/regenerate-description", h.regenerateDescription)
+	rg.POST("/connections/:id/reindex-embeddings", h.reindexEmbeddings)
+	rg.POST("/connections/:id/test-rag", h.testRAG)
 	rg.DELETE("/connections/:id", h.deleteConnection)
 	rg.POST("/connections/test", h.testConnection)
+	rg.POST("/connections/:id/test", h.testConnectionByID)
 
 	rg.GET("/phones", h.listPhones)
 	rg.POST("/phones", h.addPhone)
@@ -146,8 +154,9 @@ func (h *CompanyHandler) addConnection(c *gin.Context) {
 }
 
 type updateMetaReq struct {
-	Label       string `json:"label"`
-	Description string `json:"description"`
+	Label                string `json:"label"`
+	Description          string `json:"description"`
+	EnableTableEmbedding *bool  `json:"enable_table_embedding,omitempty"`
 }
 
 func (h *CompanyHandler) updateConnectionMeta(c *gin.Context) {
@@ -167,6 +176,20 @@ func (h *CompanyHandler) updateConnectionMeta(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if req.EnableTableEmbedding != nil {
+		if err := h.svc.SetConnectionEmbeddingToggle(c.Request.Context(), companyID(c), c.Param("id"), *req.EnableTableEmbedding); err != nil {
+			if errors.Is(err, domain.ErrUnauthorized) {
+				c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+				return
+			}
+			if errors.Is(err, domain.ErrNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	c.Status(http.StatusNoContent)
 }
@@ -197,6 +220,74 @@ func (h *CompanyHandler) updateConnectionDSN(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *CompanyHandler) reindexEmbeddings(c *gin.Context) {
+	if h.embedding == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "embedding service is not configured"})
+		return
+	}
+	// Reindex hits an external embedding API once per ~96 tables. Big
+	// schemas (hundreds of tables) can run a couple of minutes, so we cap
+	// the request context generously rather than pacing batches.
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
+	defer cancel()
+	res, err := h.embedding.ReindexSource(ctx, companyID(c), c.Param("id"))
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrUnauthorized):
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		case errors.Is(err, domain.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case errors.Is(err, context.DeadlineExceeded):
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "reindex timed out; try again or shrink the source"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"tables":        res.Tables,
+		"skipped_noise": res.Skipped,
+		"duration_ms":   res.Duration.Milliseconds(),
+		"indexed_at":    res.IndexedAt,
+	})
+}
+
+// testRAG exercises the table-picker path for an ad-hoc query without a chat
+// turn: returns top-K hits, the filtered schema the agent would see, and
+// per-step timings. Useful for verifying a fresh reindex produced useful
+// shortlists before sending real user traffic.
+func (h *CompanyHandler) testRAG(c *gin.Context) {
+	if h.embedding == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "embedding service is not configured"})
+		return
+	}
+	var body struct {
+		Query string `json:"query" binding:"required"`
+		TopK  int    `json:"top_k"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
+	defer cancel()
+	res, err := h.embedding.TestRetrieval(ctx, companyID(c), c.Param("id"), body.Query, body.TopK)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrUnauthorized):
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		case errors.Is(err, domain.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case errors.Is(err, context.DeadlineExceeded):
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "test-rag timed out"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 func (h *CompanyHandler) regenerateDescription(c *gin.Context) {
@@ -258,6 +349,21 @@ func (h *CompanyHandler) testConnection(c *gin.Context) {
 	}
 	if err := h.svc.TestConnection(c.Request.Context(), req.DBType, dsn); err != nil {
 		c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *CompanyHandler) testConnectionByID(c *gin.Context) {
+	if err := h.svc.TestConnectionByID(c.Request.Context(), companyID(c), c.Param("id")); err != nil {
+		switch {
+		case errors.Is(err, domain.ErrUnauthorized):
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		case errors.Is(err, domain.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})

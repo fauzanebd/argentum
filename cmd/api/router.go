@@ -33,7 +33,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	if rateLimiter := middleware.NewRateLimiter(d.rdb, 60, 1.0); rateLimiter != nil {
 		authed.Use(rateLimiter.Middleware())
 	}
-	handlers.NewCompanyHandler(d.companySvc).Register(authed)
+	handlers.NewCompanyHandler(d.companySvc, d.embeddingSvc).Register(authed)
 	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.dashboardSvc).Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
 	handlers.NewConfigHandler(cfg).Register(authed)

@@ -16,10 +16,18 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
+
+// AgentFactory builds a sdkagent.Agent for one chat turn from per-tenant
+// LLM clients. The worker captures tools, memory, system prompt, and
+// guardrails in the closure; callers pass the freshly resolved primary and
+// light LLM clients plus the primary's interface name (so the factory can
+// gate provider-specific options like Anthropic prompt caching).
+type AgentFactory func(primary, light interfaces.LLM, primaryInterface string) (*sdkagent.Agent, error)
 
 // ScheduledRunMarker is the narrow contract ChatRunner uses to close out
 // a scheduled_task_runs row when the agent finishes (or errors). Defined
@@ -38,12 +46,20 @@ type ChatRunner struct {
 	messages     domain.MessageRepository
 	threadRepo   domain.ThreadRepository
 	connections  domain.ConnectionRepository
-	agent        *sdkagent.Agent
+	agentFactory AgentFactory
+	llmCache     *llmtenant.ClientCache
 	bus          EventBus
 	wa           whatsapp.Provider
 	pool         *db.TenantConnPool
 	scheduled    ScheduledRunMarker
 	historyLimit int
+
+	// Embedding-based table picker. Both must be non-nil to inject hints;
+	// otherwise the runner silently skips and the agent falls back to the
+	// regular get_schema flow.
+	embRepo    domain.TableEmbeddingRepository
+	embedCache *llmtenant.EmbeddingCache
+	embTopK    int
 }
 
 // NewChatRunner wires the worker's dependencies. scheduled is optional;
@@ -55,7 +71,8 @@ func NewChatRunner(
 	messages domain.MessageRepository,
 	threadRepo domain.ThreadRepository,
 	connections domain.ConnectionRepository,
-	agent *sdkagent.Agent,
+	agentFactory AgentFactory,
+	llmCache *llmtenant.ClientCache,
 	bus EventBus,
 	wa whatsapp.Provider,
 	pool *db.TenantConnPool,
@@ -70,13 +87,27 @@ func NewChatRunner(
 		messages:     messages,
 		threadRepo:   threadRepo,
 		connections:  connections,
-		agent:        agent,
+		agentFactory: agentFactory,
+		llmCache:     llmCache,
 		bus:          bus,
 		wa:           wa,
 		pool:         pool,
 		scheduled:    scheduled,
 		historyLimit: historyLimit,
 	}
+}
+
+// WithTablePicker enables the embedding-based table-hint injection. Pass
+// a nil repo or cache to leave the feature disabled. topK <= 0 falls back
+// to 8.
+func (r *ChatRunner) WithTablePicker(repo domain.TableEmbeddingRepository, embCache *llmtenant.EmbeddingCache, topK int) *ChatRunner {
+	if topK <= 0 {
+		topK = 8
+	}
+	r.embRepo = repo
+	r.embedCache = embCache
+	r.embTopK = topK
+	return r
 }
 
 // Run processes one chat task end-to-end. Errors returned trigger an
@@ -103,7 +134,24 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		return nil
 	}
 
-	if err := r.hydrateMemory(ctx, p); err != nil {
+	// Resolve the per-tenant LLMs for this turn. Primary is required; light
+	// falls back to primary if resolution fails (preserves today's behavior
+	// where missing LIGHT_LLM_API_KEY means "use primary").
+	primaryLLM, primaryProfile, err := r.llmCache.For(ctx, p.CompanyID, domain.LLMTierPrimary)
+	if err != nil {
+		return r.handleRunError(ctx, p, fmt.Errorf("resolve primary LLM: %w", err))
+	}
+	lightLLM, _, err := r.llmCache.For(ctx, p.CompanyID, domain.LLMTierLight)
+	if err != nil {
+		logrus.WithError(err).Warn("resolve light LLM failed; using primary for guardrails")
+		lightLLM = primaryLLM
+	}
+	agent, err := r.agentFactory(primaryLLM, lightLLM, primaryProfile.Interface)
+	if err != nil {
+		return r.handleRunError(ctx, p, fmt.Errorf("build agent: %w", err))
+	}
+
+	if err := r.hydrateMemory(ctx, agent, p); err != nil {
 		logrus.WithError(err).Warn("memory hydration failed; continuing with empty context")
 	}
 
@@ -119,21 +167,22 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 
 	start := time.Now()
 
-	// Prepend organization, currency, and source-catalog context so the
-	// agent knows who it is assisting, formats monetary values correctly,
-	// and picks the right data source per tool call.
+	// Prepend organization, currency, source-catalog, and (optionally) the
+	// embedding-based table-picker hint. Order matters: the table hint sits
+	// closest to the top so the agent reads it before the source catalog.
 	agentMsg := withCompanyNameContext(p.Message, p.CompanyName)
 	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency)
 	agentMsg = withSourcesContext(agentMsg, sources)
+	agentMsg = r.withRelevantTablesContext(ctx, agentMsg, p.Message, sources)
 
 	// Try streaming first; fall back to blocking Run if the LLM doesn't
 	// support it.
 	var response string
 	var streaming bool
-	if r.agent.GetLLM().SupportsStreaming() {
+	if agent.GetLLM().SupportsStreaming() {
 		sp := p
 		sp.Message = agentMsg
-		if streamResp, err := r.runStream(ctx, sp); err == nil {
+		if streamResp, err := r.runStream(ctx, agent, sp); err == nil {
 			response = streamResp
 			streaming = true
 		} else {
@@ -142,7 +191,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	}
 	if !streaming {
 		var err error
-		response, err = r.agent.Run(ctx, agentMsg)
+		response, err = agent.Run(ctx, agentMsg)
 		if err != nil {
 			return r.handleRunError(ctx, p, err)
 		}
@@ -156,8 +205,8 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 // runStream executes the agent with streaming and fans out delta / thinking /
 // tool_call / tool_result events to the EventBus. It returns the full
 // assembled response text.
-func (r *ChatRunner) runStream(ctx context.Context, p queue.ChatRunPayload) (string, error) {
-	events, err := r.agent.RunStream(ctx, p.Message)
+func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p queue.ChatRunPayload) (string, error) {
+	events, err := agent.RunStream(ctx, p.Message)
 	if err != nil {
 		return "", err
 	}
@@ -319,7 +368,7 @@ func stripMarkdownLinks(s string) string {
 
 // hydrateMemory loads prior turns from Postgres into the agent's memory so
 // the agent has full context even if Redis was empty or reset.
-func (r *ChatRunner) hydrateMemory(ctx context.Context, p queue.ChatRunPayload) error {
+func (r *ChatRunner) hydrateMemory(ctx context.Context, agent *sdkagent.Agent, p queue.ChatRunPayload) error {
 	msgs, err := r.messages.ListByThread(ctx, p.ThreadID, r.historyLimit, 0)
 	if err != nil {
 		return err
@@ -328,7 +377,7 @@ func (r *ChatRunner) hydrateMemory(ctx context.Context, p queue.ChatRunPayload) 
 		return nil
 	}
 
-	mem := r.agent.GetMemory()
+	mem := agent.GetMemory()
 
 	// If the memory already holds messages for this conversation, skip
 	// hydration to avoid duplicates.
@@ -379,6 +428,106 @@ func withCurrencyContext(msg, currency string) string {
 		"[System context: The default currency is %s. Format money accordingly.]\n\n%s",
 		currency, msg,
 	)
+}
+
+// withRelevantTablesContext queries the per-source embedding index for the
+// top-K tables semantically closest to the user's message, then prepends a
+// hint listing them so the agent calls get_schema with a pre-filtered
+// `tables` argument instead of dumping the full catalog. Silent skip when
+// the feature is off, the source has no embeddings, or the embedding API
+// fails — the agent's regular get_schema flow still works.
+func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg, userMsg string, sources []*domain.DBConnection) string {
+	companyID := tenantctx.CompanyID(ctx)
+	if r.embRepo == nil || r.embedCache == nil || len(sources) == 0 {
+		logrus.WithField("company_id", companyID).Debug("table picker: feature off (nil repo/cache or no sources)")
+		return msg
+	}
+	eligible := make([]*domain.DBConnection, 0, len(sources))
+	for _, s := range sources {
+		if s.EnableTableEmbedding {
+			eligible = append(eligible, s)
+		}
+	}
+	if len(eligible) == 0 {
+		logrus.WithField("company_id", companyID).Debug("table picker: no eligible sources (enable_table_embedding=false on all)")
+		return msg
+	}
+
+	embClient, err := r.embedCache.For(ctx, companyID)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID).Warn("table picker: resolve embedding client failed; skipping hint")
+		return msg
+	}
+	if embClient == nil {
+		logrus.WithField("company_id", companyID).Info("table picker: no embedding client for tenant (no key); skipping hint")
+		return msg
+	}
+
+	embedStart := time.Now()
+	vecs, err := embClient.Embed(ctx, []string{userMsg})
+	if err != nil || len(vecs) == 0 {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": companyID,
+			"model":      embClient.Model(),
+		}).Warn("table picker: embed user message failed; skipping hint")
+		return msg
+	}
+	logrus.WithFields(logrus.Fields{
+		"company_id":  companyID,
+		"model":       embClient.Model(),
+		"duration_ms": time.Since(embedStart).Milliseconds(),
+	}).Debug("table picker: user message embedded")
+	qv := vecs[0]
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "[System context: Likely-relevant tables (top-%d semantic match per source):\n", r.embTopK)
+	any := false
+	hintedTotal := 0
+	for _, s := range eligible {
+		n, err := r.embRepo.CountBySource(ctx, s.ID)
+		if err != nil {
+			logrus.WithError(err).WithField("source_id", s.ID).Warn("table picker: CountBySource failed")
+			continue
+		}
+		if n == 0 {
+			logrus.WithField("source_id", s.ID).Warn("table picker: source has no embeddings — run reindex")
+			continue
+		}
+		hits, err := r.embRepo.TopK(ctx, s.ID, qv, r.embTopK)
+		if err != nil {
+			logrus.WithError(err).WithField("source_id", s.ID).Warn("table picker: TopK query failed")
+			continue
+		}
+		if len(hits) == 0 {
+			logrus.WithField("source_id", s.ID).Info("table picker: TopK returned 0 rows")
+			continue
+		}
+		names := make([]string, 0, len(hits))
+		for _, h := range hits {
+			names = append(names, h.TableName)
+		}
+		any = true
+		hintedTotal += len(names)
+		logrus.WithFields(logrus.Fields{
+			"source_id": s.ID,
+			"k":         r.embTopK,
+			"hits":      len(hits),
+			"names":     names,
+		}).Info("table picker: top-k resolved")
+		fmt.Fprintf(&b, " - %s: %s\n", s.ID, strings.Join(names, ", "))
+	}
+	if !any {
+		logrus.WithField("company_id", companyID).Info("table picker: no source produced hits; hint skipped")
+		return msg
+	}
+	b.WriteString("Pass these as the `tables` argument to get_schema for the matching source; only call get_schema unfiltered if the hint clearly misses what the user asked about.]\n\n")
+	b.WriteString(msg)
+	logrus.WithFields(logrus.Fields{
+		"company_id":            companyID,
+		"sources_with_hits":     len(eligible),
+		"total_tables_hinted":   hintedTotal,
+	}).Info("table picker: hint injected")
+	return b.String()
 }
 
 // withSourcesContext prepends the catalog of available data sources so the

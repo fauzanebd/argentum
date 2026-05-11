@@ -120,7 +120,12 @@ func (t *CreateVisualizationTool) Execute(ctx context.Context, args string) (str
 		return "", fmt.Errorf("resolve tenant connection: %w", err)
 	}
 
-	result, err := conn.ExecuteReadOnly(ctx, params.SQL)
+	// Visualization rendering is delegated to Metabase, which re-runs the
+	// query against the same source. Here we only need a handful of rows to
+	// infer the chart type, so cap aggressively to keep worker memory bounded
+	// on huge result sets.
+	const vizSampleRows = 50
+	result, err := conn.ExecuteReadOnly(ctx, params.SQL, vizSampleRows)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute query: %w", err)
 	}

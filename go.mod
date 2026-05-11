@@ -17,6 +17,8 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/minio/minio-go/v7 v7.1.0
+	github.com/openai/openai-go/v2 v2.7.0
+	github.com/pgvector/pgvector-go v0.3.0
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/sirupsen/logrus v1.9.3
@@ -87,7 +89,6 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.4.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/openai/openai-go/v2 v2.7.0 // indirect
 	github.com/pdfcpu/pdfcpu v0.11.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect

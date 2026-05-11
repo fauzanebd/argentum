@@ -21,6 +21,8 @@ type RunSQLTool struct {
 	pool     *db.TenantConnPool
 	repo     domain.ConnectionRepository
 	recorder UsageRecorder
+	maxRows  int
+	maxBytes int
 }
 
 // UsageRecorder is the narrow interface tools depend on for metering. Kept
@@ -41,11 +43,16 @@ func (nopRecorder) RecordMetabaseCard(context.Context, string, string)      {}
 func (nopRecorder) RecordMetabaseDashboard(context.Context, string, string) {}
 func (nopRecorder) RecordDocument(context.Context, string, string, string)  {}
 
-func NewRunSQLTool(pool *db.TenantConnPool, repo domain.ConnectionRepository, recorder UsageRecorder) *RunSQLTool {
+// NewRunSQLTool wires the run_sql tool. maxRows is a hard ceiling on the
+// number of rows returned to the LLM; maxBytes is a secondary cap on the
+// serialized JSON payload (catches wide-column results that fit under
+// maxRows but still blow up context). Non-positive values disable the
+// corresponding cap.
+func NewRunSQLTool(pool *db.TenantConnPool, repo domain.ConnectionRepository, recorder UsageRecorder, maxRows, maxBytes int) *RunSQLTool {
 	if recorder == nil {
 		recorder = nopRecorder{}
 	}
-	return &RunSQLTool{pool: pool, repo: repo, recorder: recorder}
+	return &RunSQLTool{pool: pool, repo: repo, recorder: recorder, maxRows: maxRows, maxBytes: maxBytes}
 }
 
 func (t *RunSQLTool) Name() string { return "run_sql" }
@@ -108,19 +115,45 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 		return "", fmt.Errorf("resolve tenant connection: %w", err)
 	}
 
-	result, err := conn.ExecuteReadOnly(ctx, params.SQL)
+	result, err := conn.ExecuteReadOnly(ctx, params.SQL, t.maxRows)
 	if err != nil {
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
 
 	t.recorder.RecordSQL(ctx, companyID, tenantctx.ThreadID(ctx))
 
-	out, _ := json.Marshal(map[string]interface{}{
-		"source_id": source.ID,
-		"db_type":   source.DBType,
+	payload := buildSQLPayload(source.ID, source.DBType, result)
+	out, _ := json.Marshal(payload)
+
+	// Byte-cap: even within maxRows, very wide columns can blow context.
+	// Drop rows from the tail until the serialized payload fits under
+	// maxBytes, then mark truncated. Re-marshalling per shrink is O(n²) on
+	// row count but maxRows is small (default 100), so this is fine.
+	if t.maxBytes > 0 && len(out) > t.maxBytes {
+		rows := result.Rows
+		for len(rows) > 0 && len(out) > t.maxBytes {
+			rows = rows[:len(rows)-1]
+			result.Rows = rows
+			result.Count = len(rows)
+			result.Truncated = true
+			payload = buildSQLPayload(source.ID, source.DBType, result)
+			out, _ = json.Marshal(payload)
+		}
+	}
+	return string(out), nil
+}
+
+func buildSQLPayload(sourceID, dbType string, result *db.QueryResult) map[string]interface{} {
+	payload := map[string]interface{}{
+		"source_id": sourceID,
+		"db_type":   dbType,
 		"columns":   result.Columns,
 		"rows":      result.Rows,
 		"row_count": result.Count,
-	})
-	return string(out), nil
+		"truncated": result.Truncated,
+	}
+	if result.Truncated {
+		payload["note"] = "Result was truncated to fit context. Tell the user it is partial and suggest a filter (date range, category, aggregation, etc.) to narrow the query."
+	}
+	return payload
 }

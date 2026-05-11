@@ -14,9 +14,29 @@ import (
 	"github.com/fauzanebd/argentum/internal/config"
 )
 
+// Spec is the minimum input Build needs to construct an LLM client. Used by
+// both the env-default builders below and the per-tenant resolver in
+// internal/llmtenant.
+type Spec struct {
+	Interface string // "openai" | "anthropic" | "gemini"
+	APIKey    string
+	Model     string
+	BaseURL   string
+}
+
+// Build constructs an LLM client from a fully-resolved spec.
+func Build(spec Spec) (interfaces.LLM, error) {
+	return build(context.Background(), spec.Interface, spec.APIKey, spec.Model, spec.BaseURL)
+}
+
 // BuildPrimary constructs the main agent LLM per LLM_INTERFACE / LLM_PROVIDER.
 func BuildPrimary(cfg *config.Config) (interfaces.LLM, error) {
-	return build(context.Background(), cfg.EffectiveLLMInterface(), cfg.LLMAPIKey, cfg.LLMModel, cfg.LLMBaseURL)
+	return Build(Spec{
+		Interface: cfg.EffectiveLLMInterface(),
+		APIKey:    cfg.LLMAPIKey,
+		Model:     cfg.LLMModel,
+		BaseURL:   cfg.LLMBaseURL,
+	})
 }
 
 // BuildLight constructs the light LLM for guardrails, classification, and summaries.
@@ -25,7 +45,12 @@ func BuildLight(cfg *config.Config) (interfaces.LLM, error) {
 	if cfg.LightLLMAPIKey == "" {
 		return BuildPrimary(cfg)
 	}
-	return build(context.Background(), cfg.EffectiveLightLLMInterface(), cfg.LightLLMAPIKey, cfg.LightLLMModel, cfg.LightLLMBaseURL)
+	return Build(Spec{
+		Interface: cfg.EffectiveLightLLMInterface(),
+		APIKey:    cfg.LightLLMAPIKey,
+		Model:     cfg.LightLLMModel,
+		BaseURL:   cfg.LightLLMBaseURL,
+	})
 }
 
 // BuildClassifier constructs the topic-classifier LLM. It reuses the light
@@ -45,7 +70,7 @@ func BuildClassifier(cfg *config.Config) (interfaces.LLM, error) {
 		iface = cfg.EffectiveLLMInterface()
 		baseURL = cfg.LLMBaseURL
 	}
-	return build(context.Background(), iface, apiKey, model, baseURL)
+	return Build(Spec{Interface: iface, APIKey: apiKey, Model: model, BaseURL: baseURL})
 }
 
 func build(ctx context.Context, iface, apiKey, model, baseURL string) (interfaces.LLM, error) {

@@ -202,6 +202,30 @@ func (s *CompanyService) UpdateConnectionMeta(ctx context.Context, companyID, co
 	return nil
 }
 
+// connectionEmbeddingToggler is the focused capability we need on the repo
+// to flip the per-source flag without round-tripping the DSN.
+type connectionEmbeddingToggler interface {
+	SetEmbeddingToggle(ctx context.Context, id string, on bool) error
+}
+
+// SetConnectionEmbeddingToggle flips the embedding-based table picker on or
+// off for a source. Validates ownership so a tenant can't toggle another
+// tenant's connection.
+func (s *CompanyService) SetConnectionEmbeddingToggle(ctx context.Context, companyID, connID string, on bool) error {
+	conn, err := s.connections.GetByID(ctx, connID)
+	if err != nil {
+		return err
+	}
+	if conn.CompanyID != companyID {
+		return domain.ErrUnauthorized
+	}
+	toggler, ok := s.connections.(connectionEmbeddingToggler)
+	if !ok {
+		return fmt.Errorf("connection repository does not support embedding toggle")
+	}
+	return toggler.SetEmbeddingToggle(ctx, connID, on)
+}
+
 // RegenerateDescription forces a fresh LLM-generated description on the
 // connection, overwriting any existing manual or auto text. Returns the
 // updated row (DSN scrubbed). Synchronous — blocks until the LLM call is
@@ -282,6 +306,24 @@ func (s *CompanyService) TestConnection(ctx context.Context, dbType, dsn string)
 		return fmt.Errorf("%w: %s", domain.ErrUnsupportedDB, dbType)
 	}
 	return db.PingDSN(ctx, dbType, dsn)
+}
+
+// TestConnectionByID pings a saved connection by decrypting its stored DSN.
+// Used by the dashboard's row-level "Test" button — clients can't resubmit
+// credentials they never received.
+func (s *CompanyService) TestConnectionByID(ctx context.Context, companyID, connID string) error {
+	conn, err := s.connections.GetByID(ctx, connID)
+	if err != nil {
+		return err
+	}
+	if conn.CompanyID != companyID {
+		return domain.ErrUnauthorized
+	}
+	dsn, err := s.dsnCipher.Decrypt(conn.DSNEncrypted)
+	if err != nil {
+		return fmt.Errorf("decrypt dsn: %w", err)
+	}
+	return s.TestConnection(ctx, conn.DBType, dsn)
 }
 
 // AddPhoneNumber adds a number to the company's allowlist.

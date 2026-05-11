@@ -69,6 +69,15 @@ func LoadFromFile(path string, llm interfaces.LLM) (*Analytics, error) {
 	return New(cfg, llm)
 }
 
+// WithLLM returns a shallow copy of the Analytics bound to a different
+// light LLM. Used by the per-turn agent factory to rebind without
+// re-reading YAML or recompiling regex patterns.
+func (a *Analytics) WithLLM(llm interfaces.LLM) *Analytics {
+	cp := *a
+	cp.llm = llm
+	return &cp
+}
+
 // New creates an Analytics guardrails instance from a Config struct.
 func New(cfg Config, llm interfaces.LLM) (*Analytics, error) {
 	compiled := make([]compiledRule, 0, len(cfg.Rules))
@@ -149,7 +158,6 @@ func (a *Analytics) process(ctx context.Context, text string, stage string, user
 					resp, err := a.llm.Generate(ctx, result,
 						interfaces.WithSystemMessage(p.Pattern),
 						interfaces.WithTemperature(0),
-						interfaces.WithStopSequences([]string{"\n"}),
 					)
 					if err == nil && strings.Contains(strings.ToUpper(strings.TrimSpace(resp)), "TRUE") {
 						msg := resolveMessage(cr.rule, userInput, fmt.Sprintf("blocked by semantic guardrail: %s", cr.rule.Name))
@@ -172,7 +180,6 @@ func (a *Analytics) process(ctx context.Context, text string, stage string, user
 					resp, err := a.llm.Generate(ctx, result,
 						interfaces.WithSystemMessage(p.Pattern),
 						interfaces.WithTemperature(0),
-						interfaces.WithStopSequences([]string{"\n"}),
 					)
 					if err != nil {
 						// Fail-closed for topic enforcement: do not admit arbitrary input when the classifier is unavailable.

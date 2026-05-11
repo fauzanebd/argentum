@@ -28,8 +28,10 @@ type Driver interface {
 type Conn interface {
 	// ExecuteReadOnly runs the supplied SQL inside a read-only transaction
 	// with a server-enforced statement timeout. Returns ordered columns +
-	// row maps.
-	ExecuteReadOnly(ctx context.Context, sql string) (*QueryResult, error)
+	// row maps. If maxRows > 0, scanning stops once that many rows have been
+	// collected and QueryResult.Truncated is set to true. A non-positive
+	// maxRows means "no cap" (drivers stream every matching row).
+	ExecuteReadOnly(ctx context.Context, sql string, maxRows int) (*QueryResult, error)
 
 	// ExtractSchema introspects the database's information_schema (or the
 	// driver's equivalent) and returns table + column + relationship metadata
@@ -66,9 +68,10 @@ type Dialect interface {
 // QueryResult is the canonical return type of read-only queries across all
 // drivers.
 type QueryResult struct {
-	Columns []string                 `json:"columns"`
-	Rows    []map[string]interface{} `json:"rows"`
-	Count   int                      `json:"count"`
+	Columns   []string                 `json:"columns"`
+	Rows      []map[string]interface{} `json:"rows"`
+	Count     int                      `json:"count"`
+	Truncated bool                     `json:"truncated,omitempty"`
 }
 
 // SchemaMetadata is the canonical schema-introspection return type across all
