@@ -135,14 +135,14 @@ func Load() (*Config, error) {
 		LLMInterface: getEnv("LLM_INTERFACE", "openai"),
 		LLMProvider:  getEnv("LLM_PROVIDER", "custom"),
 		LLMAPIKey:    getEnv("LLM_API_KEY", ""),
-		LLMModel:     getEnv("LLM_MODEL", "claude-haiku-4-5"),
-		LLMBaseURL:   getEnv("LLM_BASE_URL", ""),
+		LLMModel:     getEnv("LLM_MODEL", "deepseek/deepseek-v3.2"),
+		LLMBaseURL:   getEnv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
 
 		LightLLMInterface: getEnv("LIGHT_LLM_INTERFACE", "openai"),
 		LightLLMProvider:  getEnv("LIGHT_LLM_PROVIDER", "custom"),
 		LightLLMAPIKey:    getEnv("LIGHT_LLM_API_KEY", ""),
 		LightLLMModel:     getEnv("LIGHT_LLM_MODEL", "gpt-5-mini"),
-		LightLLMBaseURL:   getEnv("LIGHT_LLM_BASE_URL", ""),
+		LightLLMBaseURL:   getEnv("LIGHT_LLM_BASE_URL", "https://openrouter.ai/api/v1"),
 
 		// WhatsApp Provider
 		WhatsAppProvider: getEnv("WHATSAPP_PROVIDER", "whatsapp_business"),
