@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
+	"github.com/redis/go-redis/v9"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -18,11 +20,15 @@ import (
 // source_id, it returns the source catalog (id, label, db_type, description)
 // so the agent can choose; with a source_id, it returns that source's full
 // schema. Schemas are cached per (companyID, sourceID) for cacheTTL to avoid
-// hammering information_schema on every call.
+// hammering information_schema on every call. When a Redis client is provided
+// the cache is shared across worker replicas and survives restarts; otherwise
+// it falls back to an in-process map.
 type GetSchemaTool struct {
 	pool     *db.TenantConnPool
 	repo     domain.ConnectionRepository
 	cacheTTL time.Duration
+
+	rdb *redis.Client
 
 	mu    sync.Mutex
 	cache map[string]schemaCacheEntry
@@ -33,6 +39,9 @@ type schemaCacheEntry struct {
 	schema *db.SchemaMetadata
 }
 
+// NewGetSchemaTool builds a tool with an in-memory schema cache only. Prefer
+// NewGetSchemaToolWithRedis in production so the cache survives worker restarts
+// and is shared across replicas.
 func NewGetSchemaTool(pool *db.TenantConnPool, repo domain.ConnectionRepository) *GetSchemaTool {
 	return &GetSchemaTool{
 		pool:     pool,
@@ -40,6 +49,18 @@ func NewGetSchemaTool(pool *db.TenantConnPool, repo domain.ConnectionRepository)
 		cacheTTL: 1 * time.Hour,
 		cache:    make(map[string]schemaCacheEntry),
 	}
+}
+
+// NewGetSchemaToolWithRedis returns a tool that primarily caches schema in
+// Redis (shared, persistent) and uses the in-memory map as a tiny L1.
+func NewGetSchemaToolWithRedis(pool *db.TenantConnPool, repo domain.ConnectionRepository, rdb *redis.Client) *GetSchemaTool {
+	t := NewGetSchemaTool(pool, repo)
+	t.rdb = rdb
+	return t
+}
+
+func schemaCacheKey(companyID, sourceID string) string {
+	return "schema:" + companyID + ":" + sourceID
 }
 
 func (t *GetSchemaTool) Name() string { return "get_schema" }
@@ -125,12 +146,30 @@ func (t *GetSchemaTool) PrefetchSourceCatalog(ctx context.Context, companyID str
 func (t *GetSchemaTool) fetchSchema(ctx context.Context, companyID, sourceID string, force bool) (*db.SchemaMetadata, error) {
 	key := companyID + ":" + sourceID
 	if !force {
+		// L1: in-process map (microsecond hit when the same worker just served this).
 		t.mu.Lock()
 		if e, ok := t.cache[key]; ok && time.Since(e.at) < t.cacheTTL {
 			t.mu.Unlock()
 			return e.schema, nil
 		}
 		t.mu.Unlock()
+
+		// L2: Redis (shared across workers, survives restarts).
+		if t.rdb != nil {
+			if data, err := t.rdb.Get(ctx, schemaCacheKey(companyID, sourceID)).Bytes(); err == nil {
+				var schema db.SchemaMetadata
+				if jerr := json.Unmarshal(data, &schema); jerr == nil {
+					t.mu.Lock()
+					t.cache[key] = schemaCacheEntry{at: time.Now(), schema: &schema}
+					t.mu.Unlock()
+					return &schema, nil
+				} else {
+					logrus.WithError(jerr).Warn("schema redis cache unmarshal failed; refetching")
+				}
+			} else if err != redis.Nil {
+				logrus.WithError(err).Warn("schema redis cache read failed; falling back to introspection")
+			}
+		}
 	}
 
 	conn, err := t.pool.For(ctx, companyID, sourceID)
@@ -145,6 +184,14 @@ func (t *GetSchemaTool) fetchSchema(ctx context.Context, companyID, sourceID str
 	t.mu.Lock()
 	t.cache[key] = schemaCacheEntry{at: time.Now(), schema: schema}
 	t.mu.Unlock()
+
+	if t.rdb != nil {
+		if data, jerr := json.Marshal(schema); jerr == nil {
+			if rerr := t.rdb.Set(ctx, schemaCacheKey(companyID, sourceID), data, t.cacheTTL).Err(); rerr != nil {
+				logrus.WithError(rerr).Warn("schema redis cache write failed")
+			}
+		}
+	}
 	return schema, nil
 }
 
@@ -155,16 +202,38 @@ func (t *GetSchemaTool) Invalidate(companyID, sourceID string) {
 	t.mu.Lock()
 	delete(t.cache, key)
 	t.mu.Unlock()
+	if t.rdb != nil {
+		if err := t.rdb.Del(context.Background(), schemaCacheKey(companyID, sourceID)).Err(); err != nil {
+			logrus.WithError(err).Warn("schema redis cache invalidate failed")
+		}
+	}
 }
 
 // InvalidateAll drops every cached schema for a company.
 func (t *GetSchemaTool) InvalidateAll(companyID string) {
 	prefix := companyID + ":"
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	for k := range t.cache {
 		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
 			delete(t.cache, k)
+		}
+	}
+	t.mu.Unlock()
+	if t.rdb != nil {
+		ctx := context.Background()
+		pattern := "schema:" + companyID + ":*"
+		iter := t.rdb.Scan(ctx, 0, pattern, 100).Iterator()
+		var keys []string
+		for iter.Next(ctx) {
+			keys = append(keys, iter.Val())
+		}
+		if err := iter.Err(); err != nil {
+			logrus.WithError(err).Warn("schema redis cache scan failed")
+		}
+		if len(keys) > 0 {
+			if err := t.rdb.Del(ctx, keys...).Err(); err != nil {
+				logrus.WithError(err).Warn("schema redis cache bulk-invalidate failed")
+			}
 		}
 	}
 }

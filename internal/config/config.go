@@ -91,6 +91,7 @@ type Config struct {
 	// Application Settings
 	MaxQueriesPerMinute int
 	ContextMaxTurns     int
+	HistoryHydrateLimit int // max prior messages re-loaded into agent memory per turn
 	CacheTTLShort       int // seconds
 	CacheTTLLong        int // seconds
 
@@ -132,15 +133,15 @@ func Load() (*Config, error) {
 
 		// LLM
 		LLMInterface: getEnv("LLM_INTERFACE", ""),
-		LLMProvider:  getEnv("LLM_PROVIDER", "openai"),
+		LLMProvider:  getEnv("LLM_PROVIDER", "gemini"),
 		LLMAPIKey:    getEnv("LLM_API_KEY", ""),
-		LLMModel:     getEnv("LLM_MODEL", "gpt-4o-mini"),
+		LLMModel:     getEnv("LLM_MODEL", "gemini-2.5-flash"),
 		LLMBaseURL:   getEnv("LLM_BASE_URL", ""),
 
 		LightLLMInterface: getEnv("LIGHT_LLM_INTERFACE", ""),
-		LightLLMProvider:  getEnv("LIGHT_LLM_PROVIDER", "openai"),
+		LightLLMProvider:  getEnv("LIGHT_LLM_PROVIDER", "gemini"),
 		LightLLMAPIKey:    getEnv("LIGHT_LLM_API_KEY", ""),
-		LightLLMModel:     getEnv("LIGHT_LLM_MODEL", "gpt-4o-mini"),
+		LightLLMModel:     getEnv("LIGHT_LLM_MODEL", "gemini-2.5-flash-lite"),
 		LightLLMBaseURL:   getEnv("LIGHT_LLM_BASE_URL", ""),
 
 		// WhatsApp Provider
@@ -190,6 +191,7 @@ func Load() (*Config, error) {
 		// Application Settings
 		MaxQueriesPerMinute: getEnvAsInt("MAX_QUERIES_PER_MINUTE", 10),
 		ContextMaxTurns:     getEnvAsInt("CONTEXT_MAX_TURNS", 3),
+		HistoryHydrateLimit: getEnvAsInt("HISTORY_HYDRATE_LIMIT", 20),
 		CacheTTLShort:       getEnvAsInt("CACHE_TTL_SHORT", 300),
 		CacheTTLLong:        getEnvAsInt("CACHE_TTL_LONG", 86400),
 

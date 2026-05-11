@@ -105,7 +105,7 @@ func main() {
 		cfg.MetabaseURL, cfg.MetabasePublicURL,
 		cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword,
 	)
-	getSchemaTool := tools.NewGetSchemaTool(tenantPool, connRepo)
+	getSchemaTool := tools.NewGetSchemaToolWithRedis(tenantPool, connRepo, rdb)
 	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
 
@@ -154,7 +154,7 @@ func main() {
 		sdkagent.WithSystemPrompt(systemPrompt),
 		sdkagent.WithName("Argentum"),
 		sdkagent.WithDescription("Conversational analytics agent for B2B owners."),
-		sdkagent.WithMaxIterations(5),
+		sdkagent.WithMaxIterations(3),
 		sdkagent.WithRequirePlanApproval(false),
 		sdkagent.WithLLMConfig(interfaces.LLMConfig{Temperature: 0.2}),
 		// Stream content from every iteration immediately. The SDK's default
@@ -197,7 +197,7 @@ func main() {
 		logrus.Fatalf("WhatsApp provider: %v", err)
 	}
 
-	runner := app.NewChatRunner(threadSvc, messageRepo, threadRepo, connRepo, analyticsAgent, bus, waProvider, tenantPool, scheduledSvc)
+	runner := app.NewChatRunner(threadSvc, messageRepo, threadRepo, connRepo, analyticsAgent, bus, waProvider, tenantPool, scheduledSvc, cfg.HistoryHydrateLimit)
 
 	// --- asynq.Server ---
 	srv := asynq.NewServer(asynqOpt, asynq.Config{

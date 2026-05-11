@@ -34,19 +34,22 @@ type ScheduledRunMarker interface {
 // publishes streaming events through the EventBus, and (for WhatsApp
 // channels) sends the final reply via the WA provider directly.
 type ChatRunner struct {
-	threads     *ThreadService
-	messages    domain.MessageRepository
-	threadRepo  domain.ThreadRepository
-	connections domain.ConnectionRepository
-	agent       *sdkagent.Agent
-	bus         EventBus
-	wa          whatsapp.Provider
-	pool        *db.TenantConnPool
-	scheduled   ScheduledRunMarker
+	threads      *ThreadService
+	messages     domain.MessageRepository
+	threadRepo   domain.ThreadRepository
+	connections  domain.ConnectionRepository
+	agent        *sdkagent.Agent
+	bus          EventBus
+	wa           whatsapp.Provider
+	pool         *db.TenantConnPool
+	scheduled    ScheduledRunMarker
+	historyLimit int
 }
 
 // NewChatRunner wires the worker's dependencies. scheduled is optional;
-// pass nil when no scheduled-task subsystem is configured.
+// pass nil when no scheduled-task subsystem is configured. historyLimit
+// caps how many prior thread messages are re-hydrated into agent memory
+// per turn; <=0 falls back to a safe default.
 func NewChatRunner(
 	threads *ThreadService,
 	messages domain.MessageRepository,
@@ -57,17 +60,22 @@ func NewChatRunner(
 	wa whatsapp.Provider,
 	pool *db.TenantConnPool,
 	scheduled ScheduledRunMarker,
+	historyLimit int,
 ) *ChatRunner {
+	if historyLimit <= 0 {
+		historyLimit = 20
+	}
 	return &ChatRunner{
-		threads:     threads,
-		messages:    messages,
-		threadRepo:  threadRepo,
-		connections: connections,
-		agent:       agent,
-		bus:         bus,
-		wa:          wa,
-		pool:        pool,
-		scheduled:   scheduled,
+		threads:      threads,
+		messages:     messages,
+		threadRepo:   threadRepo,
+		connections:  connections,
+		agent:        agent,
+		bus:          bus,
+		wa:           wa,
+		pool:         pool,
+		scheduled:    scheduled,
+		historyLimit: historyLimit,
 	}
 }
 
@@ -82,6 +90,18 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	}
 	ctx = multitenancy.WithOrgID(ctx, p.CompanyID)
 	ctx = memory.WithConversationID(ctx, p.ThreadID)
+
+	// Cheap small-talk short-circuit: skip the agent (and the light-LLM
+	// guardrail/classifier pipeline behind it) when the message is a
+	// greeting or one-word ack. Saves multiple LLM calls per turn.
+	if reply, ok := trivialReply(p.Message); ok {
+		now := time.Now()
+		_ = r.bus.Publish(p.ThreadID, ChatEvent{
+			JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "started", Timestamp: now,
+		})
+		r.completeWith(ctx, p, reply, 0, 0, 0)
+		return nil
+	}
 
 	if err := r.hydrateMemory(ctx, p); err != nil {
 		logrus.WithError(err).Warn("memory hydration failed; continuing with empty context")
@@ -300,7 +320,7 @@ func stripMarkdownLinks(s string) string {
 // hydrateMemory loads prior turns from Postgres into the agent's memory so
 // the agent has full context even if Redis was empty or reset.
 func (r *ChatRunner) hydrateMemory(ctx context.Context, p queue.ChatRunPayload) error {
-	msgs, err := r.messages.ListByThread(ctx, p.ThreadID, 200, 0)
+	msgs, err := r.messages.ListByThread(ctx, p.ThreadID, r.historyLimit, 0)
 	if err != nil {
 		return err
 	}
@@ -396,4 +416,32 @@ func withSourcesContext(msg string, sources []*domain.DBConnection) string {
 	b.WriteString("]\n\n")
 	b.WriteString(msg)
 	return b.String()
+}
+
+// trivialMessagePattern matches greetings and one-word acks in English and
+// Indonesian. Anchored, case-insensitive, optional punctuation/emoji-free
+// trailing chars. Question marks short-circuit so "hi?" still goes to the
+// agent — though in practice questions are longer.
+var trivialMessagePattern = regexp.MustCompile(
+	`(?i)^\s*(hi|hello|hey|yo|hai|halo|haloo+|p|pagi|selamat pagi|siang|selamat siang|sore|selamat sore|malam|selamat malam|` +
+		`thanks|thank you|thx|ok|okay|okey|noted|sip|oke|baik|terima kasih|makasih|mksh|` +
+		`test|tes|ping|ok thanks|thank you so much)[\s.!,]*$`,
+)
+
+var indonesianTrivialPattern = regexp.MustCompile(
+	`(?i)^\s*(hai|halo|haloo+|p|pagi|selamat pagi|siang|selamat siang|sore|selamat sore|malam|selamat malam|` +
+		`sip|oke|baik|terima kasih|makasih|mksh|tes)[\s.!,]*$`,
+)
+
+// trivialReply returns a canned response when the user message is small-talk
+// (greeting, one-word ack, ping). Skipping the agent on these saves the
+// primary-LLM call plus all light-LLM guardrail/classifier work.
+func trivialReply(msg string) (string, bool) {
+	if !trivialMessagePattern.MatchString(msg) {
+		return "", false
+	}
+	if indonesianTrivialPattern.MatchString(msg) {
+		return "Halo! Ada pertanyaan tentang data atau metrik bisnis yang bisa saya bantu?", true
+	}
+	return "Hi! Ask me a question about your business data or metrics and I'll dig in.", true
 }

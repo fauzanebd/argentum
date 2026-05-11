@@ -39,8 +39,10 @@ var modelPricing = map[string]ModelPricing{
 	"claude-3-opus-20240229":     {InputCostPer1K: 0.015, OutputCostPer1K: 0.075},
 
 	// Gemini — https://ai.google.dev/pricing
-	"gemini-1.5-pro":   {InputCostPer1K: 0.00125, OutputCostPer1K: 0.005},
-	"gemini-1.5-flash": {InputCostPer1K: 0.000075, OutputCostPer1K: 0.0003},
+	"gemini-1.5-pro":        {InputCostPer1K: 0.00125, OutputCostPer1K: 0.005},
+	"gemini-1.5-flash":      {InputCostPer1K: 0.000075, OutputCostPer1K: 0.0003},
+	"gemini-2.5-flash":      {InputCostPer1K: 0.0003, OutputCostPer1K: 0.0025},
+	"gemini-2.5-flash-lite": {InputCostPer1K: 0.0001, OutputCostPer1K: 0.0004},
 }
 
 // lookupModelPricing finds rates for a model. Match is case-insensitive; if
