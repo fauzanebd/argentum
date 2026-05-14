@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
+	"strings"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 
@@ -14,15 +17,19 @@ import (
 // for the underlying client — the agent-sdk doesn't need to know.
 type MeteredLLM struct {
 	inner interfaces.LLM
+	model string // real model string (e.g. "deepseek/deepseek-v3.2"); inner.Name() returns provider tag only.
 	usage *UsageService
 }
 
-// NewMeteredLLM returns an LLM wrapper that records token usage to the
-// supplied service. The company / thread IDs come from tenantctx, which is
-// populated by the chat service before calling Agent.Run.
-func NewMeteredLLM(inner interfaces.LLM, usage *UsageService) *MeteredLLM {
-	return &MeteredLLM{inner: inner, usage: usage}
+// NewMeteredLLM returns an LLM wrapper that records token usage. model is the
+// real model string used for pricing lookup — inner.Name() returns the
+// provider tag ("openai", "anthropic"), not the model.
+func NewMeteredLLM(inner interfaces.LLM, model string, usage *UsageService) *MeteredLLM {
+	return &MeteredLLM{inner: inner, model: strings.TrimSpace(model), usage: usage}
 }
+
+// Model returns the real model string this wrapper bills against.
+func (m *MeteredLLM) Model() string { return m.model }
 
 func (m *MeteredLLM) Generate(ctx context.Context, prompt string, opts ...interfaces.GenerateOption) (string, error) {
 	resp, err := m.inner.GenerateDetailed(ctx, prompt, opts...)
@@ -64,15 +71,16 @@ func (m *MeteredLLM) Name() string             { return m.inner.Name() }
 func (m *MeteredLLM) SupportsStreaming() bool { return m.inner.SupportsStreaming() }
 
 // GenerateStream wraps the inner StreamingLLM and records token usage when the
-// stream emits it in Metadata["usage"] (OpenAI-compatible providers set
-// stream_options.include_usage:true and surface prompt/completion token counts
-// just before the final stop event).
+// stream emits it in Metadata["usage"]. We prepend interfaces.WithReasoning so
+// agent-sdk-go's OpenAI client sets stream_options.include_usage:true even for
+// non-reasoning models — without it, OpenRouter / non-reasoning OpenAI routes
+// emit no usage chunk and we'd record zero tokens for the whole turn.
 func (m *MeteredLLM) GenerateStream(ctx context.Context, prompt string, opts ...interfaces.GenerateOption) (<-chan interfaces.StreamEvent, error) {
 	streamingLLM, ok := m.inner.(interfaces.StreamingLLM)
 	if !ok {
 		return nil, fmt.Errorf("inner LLM '%s' does not support streaming", m.inner.Name())
 	}
-	inner, err := streamingLLM.GenerateStream(ctx, prompt, opts...)
+	inner, err := streamingLLM.GenerateStream(ctx, prompt, withForcedUsage(opts)...)
 	if err != nil {
 		return nil, err
 	}
@@ -86,11 +94,26 @@ func (m *MeteredLLM) GenerateWithToolsStream(ctx context.Context, prompt string,
 	if !ok {
 		return nil, fmt.Errorf("inner LLM '%s' does not support streaming", m.inner.Name())
 	}
-	inner, err := streamingLLM.GenerateWithToolsStream(ctx, prompt, tools, opts...)
+	inner, err := streamingLLM.GenerateWithToolsStream(ctx, prompt, tools, withForcedUsage(opts)...)
 	if err != nil {
 		return nil, err
 	}
 	return m.wrapStream(ctx, inner), nil
+}
+
+// withForcedUsage appends an option that flips LLMConfig.EnableReasoning on,
+// which is the only knob the agent-sdk-go OpenAI client checks (besides the
+// model being a reasoning model) before setting include_usage on the stream
+// request. For non-reasoning models the SDK only logs a debug line — no
+// reasoning_effort is sent because that's gated on isReasoningModel(c.Model).
+func withForcedUsage(opts []interfaces.GenerateOption) []interfaces.GenerateOption {
+	forced := func(o *interfaces.GenerateOptions) {
+		if o.LLMConfig == nil {
+			o.LLMConfig = &interfaces.LLMConfig{}
+		}
+		o.LLMConfig.EnableReasoning = true
+	}
+	return append(opts, forced)
 }
 
 // wrapStream forwards events from inner to out and records the final usage
@@ -100,43 +123,74 @@ func (m *MeteredLLM) wrapStream(ctx context.Context, inner <-chan interfaces.Str
 	out := make(chan interfaces.StreamEvent, 16)
 	go func() {
 		defer close(out)
-		var totalIn, totalOut int
+		var agg interfaces.TokenUsage
 		for evt := range inner {
-			if in, outTok, ok := extractUsage(evt.Metadata); ok {
-				totalIn += in
-				totalOut += outTok
+			if u, ok := extractUsage(evt.Metadata); ok {
+				agg.InputTokens += u.InputTokens
+				agg.OutputTokens += u.OutputTokens
+				agg.CacheCreationInputTokens += u.CacheCreationInputTokens
+				agg.CacheReadInputTokens += u.CacheReadInputTokens
 			}
 			out <- evt
 		}
-		if totalIn > 0 || totalOut > 0 {
-			m.record(ctx, &interfaces.TokenUsage{InputTokens: totalIn, OutputTokens: totalOut})
+		if agg.InputTokens > 0 || agg.OutputTokens > 0 ||
+			agg.CacheCreationInputTokens > 0 || agg.CacheReadInputTokens > 0 {
+			m.record(ctx, &agg)
 		}
 	}()
 	return out
 }
 
-// extractUsage pulls prompt/completion token counts out of a stream event's
-// Metadata["usage"] map. Returns ok=false when usage is absent or malformed.
-func extractUsage(md map[string]interface{}) (in, out int, ok bool) {
+// extractUsage pulls token counts out of a stream event's Metadata["usage"]
+// payload. Returns ok=false when usage is absent. Handles two shapes:
+//   - map[string]interface{} — what agent-sdk-go's OpenAI streaming sets
+//     (keys: prompt_tokens/completion_tokens or input_tokens/output_tokens).
+//   - a typed Go struct — what agent-sdk-go's Anthropic SSE sets directly
+//     (the Anthropic Usage struct includes cache_*_input_tokens fields).
+//
+// The struct case is reflected through JSON so we don't import provider
+// internals.
+func extractUsage(md map[string]interface{}) (interfaces.TokenUsage, bool) {
 	raw, exists := md["usage"]
 	if !exists {
-		return 0, 0, false
+		return interfaces.TokenUsage{}, false
 	}
-	u, isMap := raw.(map[string]interface{})
-	if !isMap {
-		return 0, 0, false
+	if u, ok := raw.(map[string]interface{}); ok {
+		return usageFromMap(u)
 	}
-	in = toInt(u["prompt_tokens"])
-	out = toInt(u["completion_tokens"])
-	if in == 0 && out == 0 {
-		// Some providers only emit input_tokens / output_tokens.
-		in = toInt(u["input_tokens"])
-		out = toInt(u["output_tokens"])
+	// Typed-struct path: round-trip through JSON. Anthropic SDK Usage struct
+	// uses input_tokens / output_tokens / cache_creation_input_tokens /
+	// cache_read_input_tokens JSON tags.
+	if v := reflect.ValueOf(raw); v.IsValid() && (v.Kind() == reflect.Struct ||
+		(v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Struct)) {
+		b, err := json.Marshal(raw)
+		if err != nil {
+			return interfaces.TokenUsage{}, false
+		}
+		var m map[string]interface{}
+		if err := json.Unmarshal(b, &m); err != nil {
+			return interfaces.TokenUsage{}, false
+		}
+		return usageFromMap(m)
 	}
-	if in == 0 && out == 0 {
-		return 0, 0, false
+	return interfaces.TokenUsage{}, false
+}
+
+func usageFromMap(u map[string]interface{}) (interfaces.TokenUsage, bool) {
+	var out interfaces.TokenUsage
+	out.InputTokens = toInt(u["prompt_tokens"])
+	out.OutputTokens = toInt(u["completion_tokens"])
+	if out.InputTokens == 0 && out.OutputTokens == 0 {
+		out.InputTokens = toInt(u["input_tokens"])
+		out.OutputTokens = toInt(u["output_tokens"])
 	}
-	return in, out, true
+	out.CacheCreationInputTokens = toInt(u["cache_creation_input_tokens"])
+	out.CacheReadInputTokens = toInt(u["cache_read_input_tokens"])
+	if out.InputTokens == 0 && out.OutputTokens == 0 &&
+		out.CacheCreationInputTokens == 0 && out.CacheReadInputTokens == 0 {
+		return out, false
+	}
+	return out, true
 }
 
 func toInt(v interface{}) int {
@@ -164,5 +218,11 @@ func (m *MeteredLLM) record(ctx context.Context, usage *interfaces.TokenUsage) {
 		return
 	}
 	threadID := tenantctx.ThreadID(ctx)
-	m.usage.RecordLLM(ctx, companyID, threadID, "", m.inner.Name(), usage.InputTokens, usage.OutputTokens)
+	model := m.model
+	if model == "" {
+		model = m.inner.Name()
+	}
+	m.usage.RecordLLM(ctx, companyID, threadID, "", model,
+		usage.InputTokens, usage.OutputTokens,
+		usage.CacheCreationInputTokens, usage.CacheReadInputTokens)
 }

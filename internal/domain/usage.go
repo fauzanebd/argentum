@@ -21,17 +21,19 @@ const (
 // company. Persisted for usage display today; will back per-call billing in
 // V2.
 type UsageEvent struct {
-	ID           string                 `json:"id"`
-	CompanyID    string                 `json:"company_id"`
-	ThreadID     string                 `json:"thread_id,omitempty"`
-	MessageID    string                 `json:"message_id,omitempty"`
-	EventType    UsageEventType         `json:"event_type"`
-	Model        string                 `json:"model,omitempty"`
-	TokensIn     int                    `json:"tokens_in,omitempty"`
-	TokensOut    int                    `json:"tokens_out,omitempty"`
-	CostMicroUSD int64                  `json:"cost_micro_usd"`
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
-	CreatedAt    time.Time              `json:"created_at"`
+	ID                  string                 `json:"id"`
+	CompanyID           string                 `json:"company_id"`
+	ThreadID            string                 `json:"thread_id,omitempty"`
+	MessageID           string                 `json:"message_id,omitempty"`
+	EventType           UsageEventType         `json:"event_type"`
+	Model               string                 `json:"model,omitempty"`
+	TokensIn            int                    `json:"tokens_in,omitempty"`
+	TokensOut           int                    `json:"tokens_out,omitempty"`
+	CacheCreateTokensIn int                    `json:"cache_create_tokens_in,omitempty"`
+	CacheReadTokensIn   int                    `json:"cache_read_tokens_in,omitempty"`
+	CostMicroUSD        int64                  `json:"cost_micro_usd"`
+	Metadata            map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt           time.Time              `json:"created_at"`
 }
 
 // UsageRepository persists billable events.

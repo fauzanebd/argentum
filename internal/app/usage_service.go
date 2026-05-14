@@ -43,28 +43,41 @@ func NewUsageService(usage domain.UsageRepository, credits domain.CreditsReposit
 	return &UsageService{usage: usage, credits: credits, pricing: pricing}
 }
 
+// Anthropic prompt-caching multipliers vs. the base input rate.
+// Cache writes cost 1.25x normal input; cache reads cost 0.10x.
+// https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing
+const (
+	cacheCreateMultiplier = 1.25
+	cacheReadMultiplier   = 0.10
+)
+
 // RecordLLM records an LLM call. tokensIn / tokensOut may be zero if the
-// provider didn't return usage; cost is zero in that case. Per-model rates
+// provider didn't return usage; cost is zero in that case. cacheCreate and
+// cacheRead are Anthropic-only — zero for other providers. Per-model rates
 // come from modelPricing; unknown models fall back to s.pricing (the flat
 // DefaultPricing rate) so unfamiliar model strings never produce zero-cost
 // rows.
-func (s *UsageService) RecordLLM(ctx context.Context, companyID, threadID, messageID, model string, tokensIn, tokensOut int) {
+func (s *UsageService) RecordLLM(ctx context.Context, companyID, threadID, messageID, model string, tokensIn, tokensOut, cacheCreate, cacheRead int) {
 	inRate := s.pricing.LLMInputCostPer1K
 	outRate := s.pricing.LLMOutputCostPer1K
 	if mp, ok := lookupModelPricing(model); ok {
 		inRate, outRate = mp.InputCostPer1K, mp.OutputCostPer1K
 	}
 	cost := int64((float64(tokensIn)/1000.0)*inRate*1_000_000 +
-		(float64(tokensOut)/1000.0)*outRate*1_000_000)
+		(float64(tokensOut)/1000.0)*outRate*1_000_000 +
+		(float64(cacheCreate)/1000.0)*inRate*cacheCreateMultiplier*1_000_000 +
+		(float64(cacheRead)/1000.0)*inRate*cacheReadMultiplier*1_000_000)
 	s.append(ctx, &domain.UsageEvent{
-		CompanyID:    companyID,
-		ThreadID:     threadID,
-		MessageID:    messageID,
-		EventType:    domain.UsageEventLLMCall,
-		Model:        model,
-		TokensIn:     tokensIn,
-		TokensOut:    tokensOut,
-		CostMicroUSD: cost,
+		CompanyID:           companyID,
+		ThreadID:            threadID,
+		MessageID:           messageID,
+		EventType:           domain.UsageEventLLMCall,
+		Model:               model,
+		TokensIn:            tokensIn,
+		TokensOut:           tokensOut,
+		CacheCreateTokensIn: cacheCreate,
+		CacheReadTokensIn:   cacheRead,
+		CostMicroUSD:        cost,
 	})
 }
 

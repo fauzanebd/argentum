@@ -1,0 +1,3 @@
+ALTER TABLE usage_events
+    ADD COLUMN IF NOT EXISTS cache_create_tokens_in INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS cache_read_tokens_in   INTEGER NOT NULL DEFAULT 0;

@@ -12,10 +12,12 @@ import (
 	"github.com/fauzanebd/argentum/internal/llmclient"
 )
 
-// MeteredWrap wraps a freshly-built LLM with the usage-metering layer.
-// Injected so the cache stays unaware of UsageService internals and tests
-// can pass an identity wrapper.
-type MeteredWrap func(inner interfaces.LLM) interfaces.LLM
+// MeteredWrap wraps a freshly-built LLM with the usage-metering layer. The
+// model string is the resolved per-tenant or env-default model — the metering
+// layer needs it for pricing lookup because inner.Name() returns the provider
+// tag, not the model. Injected so the cache stays unaware of UsageService
+// internals and tests can pass an identity wrapper.
+type MeteredWrap func(inner interfaces.LLM, model string) interfaces.LLM
 
 // ClientCache caches per-tenant LLM clients keyed by (companyID, tier).
 // Mirrors db.TenantConnPool: lazy build, version-based invalidation, idle
@@ -88,7 +90,7 @@ func (c *ClientCache) For(ctx context.Context, companyID string, tier domain.LLM
 	}
 	var wrapped interfaces.LLM = raw
 	if c.wrap != nil {
-		wrapped = c.wrap(raw)
+		wrapped = c.wrap(raw, profile.Model)
 	}
 
 	c.mu.Lock()

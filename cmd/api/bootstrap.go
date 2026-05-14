@@ -107,8 +107,8 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
 	deps.llmCache = llmtenant.NewClientCache(
 		llmResolver,
-		func(inner interfaces.LLM) interfaces.LLM {
-			return app.NewMeteredLLM(inner, deps.usageSvc)
+		func(inner interfaces.LLM, model string) interfaces.LLM {
+			return app.NewMeteredLLM(inner, model, deps.usageSvc)
 		},
 		300, 30*time.Minute,
 	)
@@ -133,7 +133,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	if err != nil {
 		return nil, fmt.Errorf("light LLM: %w", err)
 	}
-	lightLLMClient := app.NewMeteredLLM(rawLightLLM, deps.usageSvc)
+	lightLLMClient := app.NewMeteredLLM(rawLightLLM, cfg.EffectiveLightLLMModel(), deps.usageSvc)
 	// Schema-cache invalidation for the API: chat tools live in the worker
 	// process, so this GetSchemaTool is dedicated to the api's invalidation
 	// hooks (rotate DSN -> drop cache). Each process has its own cache.
@@ -156,7 +156,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		if err != nil {
 			logrus.WithError(err).Warn("classifier LLM build failed; falling back to light LLM")
 		} else {
-			classifierLLM = app.NewMeteredLLM(rawClassifier, deps.usageSvc)
+			classifierLLM = app.NewMeteredLLM(rawClassifier, cfg.EffectiveClassifierModel(), deps.usageSvc)
 		}
 	}
 	classifier := app.NewTopicClassifier(classifierLLM)

@@ -149,14 +149,14 @@ func Load() (*Config, error) {
 		LLMInterface: getEnv("LLM_INTERFACE", "openai"),
 		LLMProvider:  getEnv("LLM_PROVIDER", "custom"),
 		LLMAPIKey:    getEnv("LLM_API_KEY", ""),
-		LLMModel:     getEnv("LLM_MODEL", "deepseek/deepseek-v3.2"),
-		LLMBaseURL:   getEnv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
+		LLMModel:     getEnv("LLM_MODEL", "anthropic/claude-haiku-4.5"),
+		LLMBaseURL:   getEnv("LLM_BASE_URL", ""),
 
 		LightLLMInterface: getEnv("LIGHT_LLM_INTERFACE", "openai"),
 		LightLLMProvider:  getEnv("LIGHT_LLM_PROVIDER", "custom"),
 		LightLLMAPIKey:    getEnv("LIGHT_LLM_API_KEY", ""),
 		LightLLMModel:     getEnv("LIGHT_LLM_MODEL", "gpt-5-mini"),
-		LightLLMBaseURL:   getEnv("LIGHT_LLM_BASE_URL", "https://openrouter.ai/api/v1"),
+		LightLLMBaseURL:   getEnv("LIGHT_LLM_BASE_URL", ""),
 
 		// Embedding-based table picker
 		EmbeddingEnabled:   getEnv("EMBEDDING_ENABLED", "true") == "true",
@@ -259,6 +259,25 @@ func (c *Config) EffectiveLightLLMInterface() string {
 		return s
 	}
 	return strings.TrimSpace(strings.ToLower(c.LightLLMProvider))
+}
+
+// EffectiveLightLLMModel returns LIGHT_LLM_MODEL when set, otherwise falls
+// back to LLM_MODEL. The metering layer needs a real model string for
+// pricing lookup, never empty.
+func (c *Config) EffectiveLightLLMModel() string {
+	if m := strings.TrimSpace(c.LightLLMModel); m != "" {
+		return m
+	}
+	return strings.TrimSpace(c.LLMModel)
+}
+
+// EffectiveClassifierModel returns LLM_CLASSIFIER_MODEL when set, otherwise
+// falls back to LLM_MODEL.
+func (c *Config) EffectiveClassifierModel() string {
+	if m := strings.TrimSpace(c.ClassifierModel); m != "" {
+		return m
+	}
+	return strings.TrimSpace(c.LLMModel)
 }
 
 // EffectiveEmbeddingAPIKey returns EMBEDDING_API_KEY when set, otherwise

@@ -17,15 +17,19 @@ func NewUsageRepo(db *sql.DB) *UsageRepo { return &UsageRepo{db: db} }
 func (r *UsageRepo) Append(ctx context.Context, e *domain.UsageEvent) error {
 	const q = `
 		INSERT INTO usage_events
-			(company_id, thread_id, message_id, event_type, model, tokens_in, tokens_out, cost_micro_usd, metadata)
-		VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, NULLIF($5, ''), $6, $7, $8, $9)
+			(company_id, thread_id, message_id, event_type, model,
+			 tokens_in, tokens_out, cache_create_tokens_in, cache_read_tokens_in,
+			 cost_micro_usd, metadata)
+		VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, NULLIF($5, ''),
+			$6, $7, $8, $9, $10, $11)
 		RETURNING id, created_at
 	`
 	md, _ := json.Marshal(e.Metadata)
 	return r.db.QueryRowContext(ctx, q,
 		e.CompanyID, e.ThreadID, e.MessageID, string(e.EventType),
 		e.Model,
-		e.TokensIn, e.TokensOut, e.CostMicroUSD, jsonbOrNull(md),
+		e.TokensIn, e.TokensOut, e.CacheCreateTokensIn, e.CacheReadTokensIn,
+		e.CostMicroUSD, jsonbOrNull(md),
 	).Scan(&e.ID, &e.CreatedAt)
 }
 
@@ -99,7 +103,8 @@ func (r *UsageRepo) RecentByCompany(ctx context.Context, companyID string, limit
 		SELECT id, company_id,
 			COALESCE(thread_id::text, ''), COALESCE(message_id::text, ''),
 			event_type, COALESCE(model, ''),
-			tokens_in, tokens_out, cost_micro_usd,
+			tokens_in, tokens_out, cache_create_tokens_in, cache_read_tokens_in,
+			cost_micro_usd,
 			COALESCE(metadata::text, ''), created_at
 		FROM usage_events
 		WHERE company_id = $1
@@ -115,7 +120,9 @@ func (r *UsageRepo) RecentByCompany(ctx context.Context, companyID string, limit
 		e := &domain.UsageEvent{}
 		var typ, md string
 		if err := rows.Scan(&e.ID, &e.CompanyID, &e.ThreadID, &e.MessageID,
-			&typ, &e.Model, &e.TokensIn, &e.TokensOut, &e.CostMicroUSD, &md, &e.CreatedAt); err != nil {
+			&typ, &e.Model, &e.TokensIn, &e.TokensOut,
+			&e.CacheCreateTokensIn, &e.CacheReadTokensIn,
+			&e.CostMicroUSD, &md, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		e.EventType = domain.UsageEventType(typ)

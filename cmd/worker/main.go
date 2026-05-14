@@ -99,7 +99,7 @@ func main() {
 	if err != nil {
 		logrus.Fatalf("light LLM: %v", err)
 	}
-	lightLLMClient := app.NewMeteredLLM(rawLightLLM, usageSvc)
+	lightLLMClient := app.NewMeteredLLM(rawLightLLM, cfg.EffectiveLightLLMModel(), usageSvc)
 
 	// Per-tenant LLM cache for the chat runner. Primary + light + embedding
 	// each get their own profile resolution per company; missing rows fall
@@ -107,8 +107,8 @@ func main() {
 	llmResolver := llmtenant.NewResolver(llmCredRepo, dsnCipher, cfg)
 	llmCache := llmtenant.NewClientCache(
 		llmResolver,
-		func(inner interfaces.LLM) interfaces.LLM {
-			return app.NewMeteredLLM(inner, usageSvc)
+		func(inner interfaces.LLM, model string) interfaces.LLM {
+			return app.NewMeteredLLM(inner, model, usageSvc)
 		},
 		300, 30*time.Minute,
 	)
@@ -141,7 +141,7 @@ func main() {
 		if err != nil {
 			logrus.WithError(err).Warn("classifier LLM build failed; falling back to light LLM")
 		} else {
-			classifierLLM = app.NewMeteredLLM(rawClassifier, usageSvc)
+			classifierLLM = app.NewMeteredLLM(rawClassifier, cfg.EffectiveClassifierModel(), usageSvc)
 		}
 	}
 	classifier := app.NewTopicClassifier(classifierLLM)

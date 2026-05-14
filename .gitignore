@@ -38,6 +38,7 @@ Thumbs.db
 # Build artifacts
 /api
 /worker
+/encrypt_secret
 *.o
 *.a
 

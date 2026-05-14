@@ -23,10 +23,10 @@ var modelPricing = map[string]ModelPricing{
 	"gpt-4-turbo": {InputCostPer1K: 0.010, OutputCostPer1K: 0.030},
 
 	// Anthropic — Claude 4.x family. https://www.anthropic.com/pricing
-	"claude-opus-4-7":           {InputCostPer1K: 0.005, OutputCostPer1K: 0.025},
+	"claude-opus-4-7":           {InputCostPer1K: 0.015, OutputCostPer1K: 0.075},
 	"claude-sonnet-4-6":         {InputCostPer1K: 0.003, OutputCostPer1K: 0.015},
-	"claude-opus-4-6":           {InputCostPer1K: 0.005, OutputCostPer1K: 0.025},
-	"claude-opus-4-5":           {InputCostPer1K: 0.005, OutputCostPer1K: 0.025},
+	"claude-opus-4-6":           {InputCostPer1K: 0.015, OutputCostPer1K: 0.075},
+	"claude-opus-4-5":           {InputCostPer1K: 0.015, OutputCostPer1K: 0.075},
 	"claude-haiku-4-5":          {InputCostPer1K: 0.001, OutputCostPer1K: 0.005},
 	"claude-haiku-4-5-20251001": {InputCostPer1K: 0.001, OutputCostPer1K: 0.005},
 	"claude-sonnet-4-5":         {InputCostPer1K: 0.003, OutputCostPer1K: 0.015},
@@ -46,6 +46,11 @@ var modelPricing = map[string]ModelPricing{
 	"gemini-1.5-flash":      {InputCostPer1K: 0.000075, OutputCostPer1K: 0.0003},
 	"gemini-2.5-flash":      {InputCostPer1K: 0.0003, OutputCostPer1K: 0.0025},
 	"gemini-2.5-flash-lite": {InputCostPer1K: 0.0001, OutputCostPer1K: 0.0004},
+
+	// DeepSeek — OpenRouter "Effective Pricing" weighted avg, 2026-05-12.
+	// https://openrouter.ai/deepseek/deepseek-v3.2 — refresh occasionally.
+	"deepseek-v3.2":           {InputCostPer1K: 0.000231, OutputCostPer1K: 0.000451},
+	"deepseek/deepseek-v3.2":  {InputCostPer1K: 0.000231, OutputCostPer1K: 0.000451},
 }
 
 // LookupModelPricing exposes lookupModelPricing for callers outside the app
