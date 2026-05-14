@@ -56,6 +56,7 @@ export function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Sign in to Argentum</CardTitle>
+          <p className="text-xs text-muted-foreground -mt-1">by Smartsoft</p>
           <CardDescription>Welcome back. Enter your credentials below.</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>

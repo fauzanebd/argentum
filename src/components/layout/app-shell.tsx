@@ -97,6 +97,11 @@ function AppSidebar() {
       {/* Footer */}
       <SidebarFooter className="px-2 shrink-0">
         <NavUser />
+        {!isCollapsed && (
+          <p className="px-2 pb-1 text-[10px] text-muted-foreground/70 text-center">
+            by Smartsoft
+          </p>
+        )}
       </SidebarFooter>
     </Sidebar>
   );
