@@ -148,3 +148,67 @@ func (s *UsageService) SummaryForCompany(ctx context.Context, companyID string) 
 func (s *UsageService) CreditsForCompany(ctx context.Context, companyID string) (*domain.CompanyCredits, error) {
 	return s.credits.Get(ctx, companyID)
 }
+
+// parseUsageWindow resolves the from/to query params for audit endpoints.
+// Empty strings default to the last 30 days; "to" defaults to now.
+func parseUsageWindow(fromStr, toStr string) (time.Time, time.Time, error) {
+	to := time.Now().UTC()
+	from := to.AddDate(0, 0, -30)
+	if fromStr != "" {
+		t, err := time.Parse(time.RFC3339, fromStr)
+		if err != nil {
+			return time.Time{}, time.Time{}, err
+		}
+		from = t
+	}
+	if toStr != "" {
+		t, err := time.Parse(time.RFC3339, toStr)
+		if err != nil {
+			return time.Time{}, time.Time{}, err
+		}
+		to = t
+	}
+	return from, to, nil
+}
+
+// SummaryForThread returns event + model breakdown for one thread in the
+// given window. companyID scopes the query so cross-tenant IDs return empty.
+func (s *UsageService) SummaryForThread(ctx context.Context, companyID, threadID, fromStr, toStr string) (*domain.UsageSummary, error) {
+	from, to, err := parseUsageWindow(fromStr, toStr)
+	if err != nil {
+		return nil, err
+	}
+	return s.usage.SummaryByThread(ctx, companyID, threadID, from, to)
+}
+
+// ListThreadsUsage returns one row per thread with totals over the window.
+func (s *UsageService) ListThreadsUsage(ctx context.Context, companyID, fromStr, toStr string, limit, offset int) ([]*domain.ThreadUsageRow, error) {
+	from, to, err := parseUsageWindow(fromStr, toStr)
+	if err != nil {
+		return nil, err
+	}
+	return s.usage.ListThreadUsage(ctx, companyID, from, to, limit, offset)
+}
+
+// EventsForThread returns the raw per-message audit trail for one thread.
+func (s *UsageService) EventsForThread(ctx context.Context, companyID, threadID string, limit, offset int) ([]*domain.UsageEvent, error) {
+	return s.usage.EventsByThread(ctx, companyID, threadID, limit, offset)
+}
+
+// CostByChannel rolls cost up by entry channel for the window.
+func (s *UsageService) CostByChannel(ctx context.Context, companyID, fromStr, toStr string) ([]*domain.ChannelUsageRow, error) {
+	from, to, err := parseUsageWindow(fromStr, toStr)
+	if err != nil {
+		return nil, err
+	}
+	return s.usage.UsageByChannel(ctx, companyID, from, to)
+}
+
+// CostByUser rolls cost up by end-user identity for the window.
+func (s *UsageService) CostByUser(ctx context.Context, companyID, fromStr, toStr string) ([]*domain.UserUsageRow, error) {
+	from, to, err := parseUsageWindow(fromStr, toStr)
+	if err != nil {
+		return nil, err
+	}
+	return s.usage.UsageByUser(ctx, companyID, from, to)
+}

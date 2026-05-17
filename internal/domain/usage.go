@@ -41,6 +41,11 @@ type UsageRepository interface {
 	Append(ctx context.Context, e *UsageEvent) error
 	SummaryByCompany(ctx context.Context, companyID string, from, to time.Time) (*UsageSummary, error)
 	RecentByCompany(ctx context.Context, companyID string, limit int) ([]*UsageEvent, error)
+	SummaryByThread(ctx context.Context, companyID, threadID string, from, to time.Time) (*UsageSummary, error)
+	ListThreadUsage(ctx context.Context, companyID string, from, to time.Time, limit, offset int) ([]*ThreadUsageRow, error)
+	EventsByThread(ctx context.Context, companyID, threadID string, limit, offset int) ([]*UsageEvent, error)
+	UsageByChannel(ctx context.Context, companyID string, from, to time.Time) ([]*ChannelUsageRow, error)
+	UsageByUser(ctx context.Context, companyID string, from, to time.Time) ([]*UserUsageRow, error)
 }
 
 // UsageSummary is an aggregate view returned to the dashboard.
@@ -55,6 +60,44 @@ type UsageSummary struct {
 	CostByModel      map[string]float64         `json:"cost_by_model_usd,omitempty"`
 	TokensInByModel  map[string]int64           `json:"tokens_in_by_model,omitempty"`
 	TokensOutByModel map[string]int64           `json:"tokens_out_by_model,omitempty"`
+}
+
+// ThreadUsageRow is one row in the per-thread usage listing.
+type ThreadUsageRow struct {
+	ThreadID            string    `json:"thread_id"`
+	Channel             Channel   `json:"channel"`
+	Title               string    `json:"title,omitempty"`
+	LastMessageAt       time.Time `json:"last_message_at"`
+	EventCount          int64     `json:"event_count"`
+	TokensIn            int64     `json:"tokens_in"`
+	TokensOut           int64     `json:"tokens_out"`
+	CacheCreateTokensIn int64     `json:"cache_create_tokens_in"`
+	CacheReadTokensIn   int64     `json:"cache_read_tokens_in"`
+	CostUSD             float64   `json:"cost_usd"`
+}
+
+// ChannelUsageRow rolls cost up by entry channel.
+type ChannelUsageRow struct {
+	Channel     Channel `json:"channel"`
+	ThreadCount int64   `json:"thread_count"`
+	EventCount  int64   `json:"event_count"`
+	TokensIn    int64   `json:"tokens_in"`
+	TokensOut   int64   `json:"tokens_out"`
+	CostUSD     float64 `json:"cost_usd"`
+}
+
+// UserUsageRow rolls cost up by end-user identity. UserKey is the first
+// non-empty of user_id / phone_number / discord_user_id / lark_open_id;
+// UserKeyKind labels which column produced it.
+type UserUsageRow struct {
+	Channel     Channel `json:"channel"`
+	UserKey     string  `json:"user_key"`
+	UserKeyKind string  `json:"user_key_kind"`
+	ThreadCount int64   `json:"thread_count"`
+	EventCount  int64   `json:"event_count"`
+	TokensIn    int64   `json:"tokens_in"`
+	TokensOut   int64   `json:"tokens_out"`
+	CostUSD     float64 `json:"cost_usd"`
 }
 
 // CompanyCredits tracks the soft balance for a company.

@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -19,6 +20,11 @@ func NewUsageHandler(svc *app.UsageService) *UsageHandler { return &UsageHandler
 func (h *UsageHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/usage/summary", h.summary)
 	rg.GET("/usage/credits", h.credits)
+	rg.GET("/usage/threads", h.listThreads)
+	rg.GET("/usage/threads/:id", h.threadSummary)
+	rg.GET("/usage/threads/:id/events", h.threadEvents)
+	rg.GET("/usage/by-channel", h.byChannel)
+	rg.GET("/usage/by-user", h.byUser)
 }
 
 func (h *UsageHandler) summary(c *gin.Context) {
@@ -28,6 +34,60 @@ func (h *UsageHandler) summary(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+func (h *UsageHandler) listThreads(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	out, err := h.svc.ListThreadsUsage(c.Request.Context(), companyID(c),
+		c.Query("from"), c.Query("to"), limit, offset)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"threads": out})
+}
+
+func (h *UsageHandler) threadSummary(c *gin.Context) {
+	out, err := h.svc.SummaryForThread(c.Request.Context(), companyID(c),
+		c.Param("id"), c.Query("from"), c.Query("to"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *UsageHandler) threadEvents(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	out, err := h.svc.EventsForThread(c.Request.Context(), companyID(c),
+		c.Param("id"), limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"events": out})
+}
+
+func (h *UsageHandler) byChannel(c *gin.Context) {
+	out, err := h.svc.CostByChannel(c.Request.Context(), companyID(c),
+		c.Query("from"), c.Query("to"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"channels": out})
+}
+
+func (h *UsageHandler) byUser(c *gin.Context) {
+	out, err := h.svc.CostByUser(c.Request.Context(), companyID(c),
+		c.Query("from"), c.Query("to"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"users": out})
 }
 
 func (h *UsageHandler) credits(c *gin.Context) {
