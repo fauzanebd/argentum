@@ -13,6 +13,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { DiscordTab } from "./discord-tab";
+import { LarkTab } from "./lark-tab";
 
 function SlackIcon({ className }: { className?: string }) {
   return (
@@ -84,6 +86,7 @@ type Integration = {
   helpText: string;
   icon: React.ComponentType<{ className?: string }>;
   fields: Field[];
+  live?: boolean;
 };
 
 const integrations: Integration[] = [
@@ -102,26 +105,20 @@ const integrations: Integration[] = [
   {
     id: "discord",
     name: "Discord",
-    description: "Push agent updates to Discord servers and threads.",
+    description: "Chat with the Argentum bot from Discord DMs or @mentions.",
     helpText: "The bot must be invited to the target server.",
     icon: DiscordIcon,
-    fields: [
-      { name: "server", label: "Server ID", placeholder: "123456789012345678" },
-      { name: "token", label: "Bot token", placeholder: "MTAx…", type: "password" },
-      { name: "channel", label: "Default channel ID", placeholder: "123456789012345678" },
-    ],
+    fields: [],
+    live: true,
   },
   {
     id: "lark",
     name: "Lark",
-    description: "Deliver reports and alerts to Lark groups and chats.",
-    helpText: "Create a custom app in Lark Developer Console and grant messaging scopes.",
+    description: "Chat with the Argentum bot via Lark @mentions.",
+    helpText: "Create a custom app in Lark Open Platform and grant messaging scopes.",
     icon: LarkIcon,
-    fields: [
-      { name: "appId", label: "App ID", placeholder: "cli_a1b2c3d4e5f6g7h8" },
-      { name: "appSecret", label: "App secret", placeholder: "•••••••••••••", type: "password" },
-      { name: "chatId", label: "Default chat ID", placeholder: "oc_1a2b3c4d5e6f7g8h" },
-    ],
+    fields: [],
+    live: true,
   },
   {
     id: "telegram",
@@ -160,7 +157,7 @@ export function IntegrationsTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="divide-y divide-border">
-          {integrations.map(({ id, name, description, icon: Icon }) => (
+          {integrations.map(({ id, name, description, icon: Icon, live }) => (
             <div
               key={id}
               className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
@@ -177,7 +174,7 @@ export function IntegrationsTab() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant="secondary">Coming soon</Badge>
+                {!live && <Badge variant="secondary">Coming soon</Badge>}
                 <Button variant="outline" onClick={() => setSelected(id)}>
                   Configure
                 </Button>
@@ -205,6 +202,28 @@ function IntegrationDetail({
       title: "Coming soon",
       description: `${integration.name} integration is in development. We'll let you know when it's ready.`,
     });
+  }
+
+  if (integration.live) {
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
+          <ArrowLeft className="h-4 w-4" />
+          Back to integrations
+        </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md border bg-muted">
+            <Icon className="h-5 w-5 text-foreground" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold">{integration.name}</h2>
+            <p className="text-sm text-muted-foreground">{integration.description}</p>
+          </div>
+        </div>
+        {integration.id === "discord" && <DiscordTab />}
+        {integration.id === "lark" && <LarkTab />}
+      </div>
+    );
   }
 
   return (
