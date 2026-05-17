@@ -14,6 +14,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/llmclient"
+	"github.com/fauzanebd/argentum/internal/transport/eventbus"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/metrics"
@@ -60,6 +61,10 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	usageRepo := pgctl.NewUsageRepo(controlDB)
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
+	discordCredRepo := pgctl.NewCompanyDiscordCredentialRepo(controlDB)
+	allowedDiscordRepo := pgctl.NewAllowedDiscordUserRepo(controlDB)
+	larkCredRepo := pgctl.NewCompanyLarkCredentialRepo(controlDB)
+	allowedLarkRepo := pgctl.NewAllowedLarkUserRepo(controlDB)
 	deps.threadRepo = threadRepo
 	deps.msgRepo = messageRepo
 	deps.userRepo = userRepo
@@ -140,6 +145,13 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	apiSchemaTool := tools.NewGetSchemaTool(deps.tenant, connRepo)
 	describer := app.NewConnectionDescriber(lightLLMClient, deps.tenant, connRepo)
 	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse, apiSchemaTool, describer)
+	if cfg.DiscordEnabled {
+		reloadBus := eventbus.NewRedisBus(rdb)
+		deps.discordSvc = app.NewDiscordService(discordCredRepo, allowedDiscordRepo, dsnCipher, reloadBus)
+	}
+	if cfg.LarkEnabled {
+		deps.larkSvc = app.NewLarkService(larkCredRepo, allowedLarkRepo, dsnCipher)
+	}
 
 	// Table-picker embeddings: per-tenant resolution via embedCache.
 	// EmbeddingService resolves the client per ReindexSource call so each

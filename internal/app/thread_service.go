@@ -83,13 +83,52 @@ func (s *ThreadService) ResolveForPhone(ctx context.Context, companyID, phoneNum
 
 	latest, err := s.threads.LatestForPhone(ctx, companyID, phoneNumber)
 	if errors.Is(err, domain.ErrNotFound) {
-		return s.createThread(ctx, companyID, domain.ChannelWhatsApp, phoneNumber, "", userMessage)
+		return s.createThread(ctx, companyID, domain.ChannelWhatsApp, phoneNumber, "", "", userMessage)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lookup thread: %w", err)
 	}
 
-	return s.continueOrFork(ctx, latest, userMessage, s.idleThreshold, domain.ChannelWhatsApp, phoneNumber, "")
+	return s.continueOrFork(ctx, latest, userMessage, s.idleThreshold, domain.ChannelWhatsApp, phoneNumber, "", "")
+}
+
+// ResolveForDiscordUser picks the thread for an inbound Discord message.
+// Threads are keyed by (companyID, discordUserID); a single user gets one
+// continuous thread regardless of which guild/channel they message from.
+func (s *ThreadService) ResolveForDiscordUser(ctx context.Context, companyID, discordUserID, userMessage string) (*ResolveResult, error) {
+	if companyID == "" || discordUserID == "" {
+		return nil, fmt.Errorf("companyID and discordUserID required")
+	}
+
+	latest, err := s.threads.LatestForDiscordUser(ctx, companyID, discordUserID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return s.createThread(ctx, companyID, domain.ChannelDiscord, "", "", discordUserID, userMessage)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup thread: %w", err)
+	}
+
+	return s.continueOrFork(ctx, latest, userMessage, s.idleThreshold, domain.ChannelDiscord, "", "", discordUserID)
+}
+
+// ResolveForLark picks the thread for an inbound Lark message. Threads are
+// keyed by (companyID, larkThreadKey) with no idle/fork classification: one
+// Lark reply-thread is one persistent agent memory by definition. Missing
+// row → create.
+func (s *ThreadService) ResolveForLark(ctx context.Context, companyID, larkChatID, larkThreadKey, larkOpenID, userMessage string) (*ResolveResult, error) {
+	if companyID == "" || larkThreadKey == "" {
+		return nil, fmt.Errorf("companyID and larkThreadKey required")
+	}
+
+	latest, err := s.threads.LatestForLark(ctx, companyID, larkThreadKey)
+	if errors.Is(err, domain.ErrNotFound) {
+		return s.createLarkThread(ctx, companyID, larkChatID, larkThreadKey, larkOpenID, userMessage)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup thread: %w", err)
+	}
+
+	return &ResolveResult{Thread: latest, IsNew: false}, nil
 }
 
 // ResolveForUser is the old dashboard thread resolver. It is kept for
@@ -105,13 +144,13 @@ func (s *ThreadService) ResolveForUser(ctx context.Context, companyID, userID, u
 
 	latest, err := s.threads.LatestForUser(ctx, companyID, userID)
 	if errors.Is(err, domain.ErrNotFound) {
-		return s.createThread(ctx, companyID, domain.ChannelDashboard, "", userID, userMessage)
+		return s.createThread(ctx, companyID, domain.ChannelDashboard, "", userID, "", userMessage)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lookup thread: %w", err)
 	}
 
-	return s.continueOrFork(ctx, latest, userMessage, s.dashboardIdleTTL, domain.ChannelDashboard, "", userID)
+	return s.continueOrFork(ctx, latest, userMessage, s.dashboardIdleTTL, domain.ChannelDashboard, "", userID, "")
 }
 
 // CreateDashboardThread creates a fresh dashboard thread for the given user.
@@ -120,7 +159,7 @@ func (s *ThreadService) CreateDashboardThread(ctx context.Context, companyID, us
 	if companyID == "" || userID == "" {
 		return nil, fmt.Errorf("companyID and userID required")
 	}
-	res, err := s.createThread(ctx, companyID, domain.ChannelDashboard, "", userID, firstMessage)
+	res, err := s.createThread(ctx, companyID, domain.ChannelDashboard, "", userID, "", firstMessage)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +168,7 @@ func (s *ThreadService) CreateDashboardThread(ctx context.Context, companyID, us
 
 func (s *ThreadService) continueOrFork(
 	ctx context.Context, latest *domain.ConversationThread, userMessage string,
-	threshold time.Duration, channel domain.Channel, phone, userID string,
+	threshold time.Duration, channel domain.Channel, phone, userID, discordUserID string,
 ) (*ResolveResult, error) {
 	idle := time.Since(latest.LastMessageAt)
 	if idle < threshold {
@@ -145,12 +184,12 @@ func (s *ThreadService) continueOrFork(
 	if related {
 		return &ResolveResult{Thread: latest, IsNew: false}, nil
 	}
-	return s.createThread(ctx, latest.CompanyID, channel, phone, userID, userMessage)
+	return s.createThread(ctx, latest.CompanyID, channel, phone, userID, discordUserID, userMessage)
 }
 
 func (s *ThreadService) createThread(
 	ctx context.Context, companyID string, channel domain.Channel,
-	phone, userID, firstMessage string,
+	phone, userID, discordUserID, firstMessage string,
 ) (*ResolveResult, error) {
 	now := time.Now()
 	t := &domain.ConversationThread{
@@ -158,6 +197,26 @@ func (s *ThreadService) createThread(
 		Channel:       channel,
 		PhoneNumber:   phone,
 		UserID:        userID,
+		DiscordUserID: discordUserID,
+		Title:         deriveTitle(firstMessage),
+		LastMessageAt: now,
+	}
+	if err := s.threads.Create(ctx, t); err != nil {
+		return nil, fmt.Errorf("create thread: %w", err)
+	}
+	return &ResolveResult{Thread: t, IsNew: true}, nil
+}
+
+func (s *ThreadService) createLarkThread(
+	ctx context.Context, companyID, larkChatID, larkThreadKey, larkOpenID, firstMessage string,
+) (*ResolveResult, error) {
+	now := time.Now()
+	t := &domain.ConversationThread{
+		CompanyID:     companyID,
+		Channel:       domain.ChannelLark,
+		LarkChatID:    larkChatID,
+		LarkThreadKey: larkThreadKey,
+		LarkOpenID:    larkOpenID,
 		Title:         deriveTitle(firstMessage),
 		LastMessageAt: now,
 	}

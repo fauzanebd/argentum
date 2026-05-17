@@ -72,6 +72,20 @@ type Config struct {
 	TwilioAuthToken  string
 	TwilioFromNumber string
 
+	// Discord
+	// Per-tenant bot tokens are stored encrypted in company_discord_credentials;
+	// this flag is the global kill switch (disable to stop cmd/discord from
+	// opening any sessions and to keep the API webhook returning 503).
+	DiscordEnabled bool
+
+	// Lark (Feishu)
+	// Per-tenant app secrets are stored encrypted in company_lark_credentials.
+	// LarkEnabled gates the API webhook + worker outbound; LarkAPIBaseURL
+	// defaults to the global endpoint and only needs to change for Feishu
+	// (China region) deployments.
+	LarkEnabled    bool
+	LarkAPIBaseURL string
+
 	// Metabase
 	MetabaseURL           string
 	MetabasePublicURL     string
@@ -183,6 +197,11 @@ func Load() (*Config, error) {
 		TwilioAccountSID: getEnv("TWILIO_ACCOUNT_SID", ""),
 		TwilioAuthToken:  getEnv("TWILIO_AUTH_TOKEN", ""),
 		TwilioFromNumber: getEnv("TWILIO_WHATSAPP_NUMBER", "+14155238886"),
+
+		DiscordEnabled: getEnv("DISCORD_ENABLED", "true") == "true",
+
+		LarkEnabled:    getEnv("LARK_ENABLED", "true") == "true",
+		LarkAPIBaseURL: getEnv("LARK_API_BASE_URL", ""),
 
 		// Metabase
 		MetabaseURL:           getEnv("METABASE_URL", "http://localhost:3000"),

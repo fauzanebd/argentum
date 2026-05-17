@@ -222,6 +222,44 @@ services:
         condition: service_started
     networks: [ argentum_network ]
 
+  # Discord gateway process: holds one discordgo session per enabled tenant,
+  # routes inbound DM/mention/reply messages into the chat pipeline, and
+  # delivers worker-produced replies via Redis pub/sub.
+  discord:
+    build:
+      context: .
+      dockerfile: Dockerfile.discord
+    container_name: argentum_discord
+    environment:
+      ENV: ${ENV:-development}
+      LOG_LEVEL: info
+
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-argentum}
+      DB_PASSWORD: ${DB_PASSWORD:-argentum123}
+      DB_NAME: ${DB_NAME:-argentum}
+      DB_SSL_MODE: disable
+
+      REDIS_URL: redis://redis:6379
+      ASYNQ_REDIS_URL: ${ASYNQ_REDIS_URL:-}
+
+      ARGENTUM_JWT_SECRET: ${ARGENTUM_JWT_SECRET}
+      ARGENTUM_DSN_KEY: ${ARGENTUM_DSN_KEY}
+
+      THREAD_IDLE_MINUTES: ${THREAD_IDLE_MINUTES:-30}
+      SUMMARY_EVERY_N_TURNS: ${SUMMARY_EVERY_N_TURNS:-8}
+
+      DISCORD_ENABLED: ${DISCORD_ENABLED:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks: [ argentum_network ]
+
   # Argentum dashboard (Vite dev server in dev profile, static nginx in prod).
   dashboard:
     build:

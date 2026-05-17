@@ -44,10 +44,23 @@ func newRouter(d *apiDeps) *gin.Engine {
 	if d.scheduledSvc != nil {
 		handlers.NewScheduledTasksHandler(d.scheduledSvc).Register(authed)
 	}
+	if d.discordSvc != nil {
+		handlers.NewDiscordHandler(d.discordSvc).Register(authed)
+	}
+	if d.larkSvc != nil {
+		handlers.NewLarkHandler(d.larkSvc).Register(authed)
+	}
 	authed.GET("/threads/:id/stream", ws.NewHandler(d.rdb, d.threadRepo, cfg.CORSOrigins).Stream)
 
+	webhookGroup := r.Group("/webhook")
 	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, cfg.WhatsAppWebhookVerifyToken).
-		Register(r.Group("/webhook"))
+		Register(webhookGroup)
+	if d.discordSvc != nil {
+		handlers.NewDiscordWebhookHandler(d.discordSvc).Register(webhookGroup)
+	}
+	if d.larkSvc != nil {
+		handlers.NewLarkWebhookHandler(d.larkSvc, d.chatEnq).Register(webhookGroup)
+	}
 
 	if cfg.MetabaseURL != "" {
 		mbURL, _ := url.Parse(cfg.MetabaseURL)

@@ -6,8 +6,25 @@ import "time"
 // stream agent results to subscribers. The worker publishes events to the
 // bus; the API process subscribes (today via Redis pub/sub in
 // internal/transport/eventbus) and forwards frames to WebSocket clients.
+//
+// PublishOutbound fans the final assistant message out to a side channel
+// keyed by tenant + delivery channel (e.g. discord). cmd/discord subscribes
+// and writes the message via its own gateway session. Worker uses this for
+// channels that don't share an outbound provider with the worker process.
 type EventBus interface {
 	Publish(threadID string, evt ChatEvent) error
+	PublishOutbound(evt OutboundEvent) error
+}
+
+// OutboundEvent is a final assistant message destined for a channel the
+// worker process can't deliver directly (e.g. Discord, where each tenant
+// has its own gateway session held by cmd/discord).
+type OutboundEvent struct {
+	Channel    string `json:"channel"`     // domain.Channel string ("discord")
+	CompanyID  string `json:"company_id"`
+	ChannelRef string `json:"channel_ref"` // discord_channel_id
+	UserRef    string `json:"user_ref,omitempty"`
+	Content    string `json:"content"`
 }
 
 // ToolCallEvent carries live tool-execution metadata for the dashboard.

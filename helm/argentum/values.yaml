@@ -127,6 +127,41 @@ worker:
   podLabels: {}
 
 # ----------------------------------------------------------------------------
+# Discord deployment (gateway WS per tenant, no HTTP)
+# ----------------------------------------------------------------------------
+discord:
+  enabled: true
+  # Discord gateway sessions are stateful (one WS per tenant). Keep at 1
+  # unless you implement guild-sharding upstream.
+  replicaCount: 1
+  image:
+    repository: argentum-discord
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+  livenessProbe:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - pgrep -f /app/discord
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  strategy:
+    type: Recreate
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+
+# ----------------------------------------------------------------------------
 # Init containers — wait for Postgres + Redis before starting either pod.
 # ----------------------------------------------------------------------------
 initContainers:
@@ -204,6 +239,11 @@ extraEnv:
     value: "/app/migrations/control"
   - name: COOKIE_SECURE
     value: "true"
+  - name: LARK_ENABLED
+    value: "true"
+  # Override only for Feishu (China) deployments. Empty => global endpoint.
+  - name: LARK_API_BASE_URL
+    value: ""
 
 # Extra volumes / mounts (e.g. external CA bundles).
 extraVolumes: []

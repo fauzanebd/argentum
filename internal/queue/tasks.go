@@ -28,17 +28,23 @@ const (
 // triggered by a cron-scheduled task; ChatRunner uses them to update the
 // matching scheduled_task_runs row with the assistant message id.
 type ChatRunPayload struct {
-	CompanyID       string         `json:"company_id"`
-	ThreadID        string         `json:"thread_id"`
-	UserID          string         `json:"user_id,omitempty"`
-	PhoneNumber     string         `json:"phone_number,omitempty"`
-	Channel         domain.Channel `json:"channel"`
-	Message         string         `json:"message"`
-	UserMsgID       string         `json:"user_msg_id"`
-	CompanyName     string         `json:"company_name,omitempty"`
-	DefaultCurrency string         `json:"default_currency,omitempty"` // ISO 4217
-	ScheduledTaskID string         `json:"scheduled_task_id,omitempty"`
-	ScheduledRunID  string         `json:"scheduled_run_id,omitempty"`
+	CompanyID        string         `json:"company_id"`
+	ThreadID         string         `json:"thread_id"`
+	UserID           string         `json:"user_id,omitempty"`
+	PhoneNumber      string         `json:"phone_number,omitempty"`
+	DiscordUserID    string         `json:"discord_user_id,omitempty"`
+	DiscordChannelID string         `json:"discord_channel_id,omitempty"`
+	LarkOpenID       string         `json:"lark_open_id,omitempty"`
+	LarkChatID       string         `json:"lark_chat_id,omitempty"`
+	LarkThreadKey    string         `json:"lark_thread_key,omitempty"`
+	LarkMessageID    string         `json:"lark_message_id,omitempty"` // reply target
+	Channel          domain.Channel `json:"channel"`
+	Message          string         `json:"message"`
+	UserMsgID        string         `json:"user_msg_id"`
+	CompanyName      string         `json:"company_name,omitempty"`
+	DefaultCurrency  string         `json:"default_currency,omitempty"` // ISO 4217
+	ScheduledTaskID  string         `json:"scheduled_task_id,omitempty"`
+	ScheduledRunID   string         `json:"scheduled_run_id,omitempty"`
 }
 
 // ScheduledRunPayload is the body of a `scheduled:run` task. Only the

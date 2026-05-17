@@ -32,6 +32,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/guardrails"
+	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metabase"
@@ -251,6 +252,14 @@ func main() {
 	}
 
 	runner := app.NewChatRunner(threadSvc, messageRepo, threadRepo, connRepo, agentFactory, llmCache, bus, waProvider, tenantPool, scheduledSvc, cfg.HistoryHydrateLimit)
+
+	// Lark outbound: worker calls the Lark Open Platform REST API to post
+	// replies on the bot's behalf. Token caching is per-company, on-demand.
+	if cfg.LarkEnabled {
+		larkCredRepo := pgctl.NewCompanyLarkCredentialRepo(controlDB)
+		larkClient := lark.NewClient(larkCredRepo, dsnCipher, cfg.LarkAPIBaseURL)
+		runner = runner.WithLark(larkClient)
+	}
 
 	// Table-picker embeddings: per-tenant embedding cache. Per-source
 	// `enable_table_embedding` still gates injection; the cache only

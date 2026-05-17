@@ -82,6 +82,20 @@ app.kubernetes.io/component: worker
 app.kubernetes.io/component: worker
 {{- end }}
 
+{{- define "argentum.discord.fullname" -}}
+{{- printf "%s-discord" (include "argentum.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "argentum.discord.labels" -}}
+{{ include "argentum.labels" . }}
+app.kubernetes.io/component: discord
+{{- end }}
+
+{{- define "argentum.discord.selectorLabels" -}}
+{{ include "argentum.selectorLabels" . }}
+app.kubernetes.io/component: discord
+{{- end }}
+
 {{/*
 Service account name.
 */}}

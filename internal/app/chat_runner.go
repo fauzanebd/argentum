@@ -16,6 +16,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
@@ -50,6 +51,7 @@ type ChatRunner struct {
 	llmCache     *llmtenant.ClientCache
 	bus          EventBus
 	wa           whatsapp.Provider
+	larkProv     lark.Provider
 	pool         *db.TenantConnPool
 	scheduled    ScheduledRunMarker
 	historyLimit int
@@ -95,6 +97,14 @@ func NewChatRunner(
 		scheduled:    scheduled,
 		historyLimit: historyLimit,
 	}
+}
+
+// WithLark attaches a Lark outbound provider so the runner can post replies
+// for chat:run tasks on the Lark channel. Returning the receiver mirrors
+// WithTablePicker so the worker can chain configuration on construction.
+func (r *ChatRunner) WithLark(p lark.Provider) *ChatRunner {
+	r.larkProv = p
+	return r
 }
 
 // WithTablePicker enables the embedding-based table-hint injection. Pass
@@ -351,10 +361,34 @@ func (r *ChatRunner) completeWith(
 		logrus.WithError(err).Warn("publish final event")
 	}
 
-	if p.Channel == domain.ChannelWhatsApp && p.PhoneNumber != "" && r.wa != nil {
-		waText := stripMarkdownLinks(response)
-		if err := r.wa.SendMessage(p.PhoneNumber, waText); err != nil {
-			logrus.WithError(err).WithField("phone", p.PhoneNumber).Error("whatsapp send failed")
+	switch p.Channel {
+	case domain.ChannelWhatsApp:
+		if p.PhoneNumber != "" && r.wa != nil {
+			waText := stripMarkdownLinks(response)
+			if err := r.wa.SendMessage(p.PhoneNumber, waText); err != nil {
+				logrus.WithError(err).WithField("phone", p.PhoneNumber).Error("whatsapp send failed")
+			}
+		}
+	case domain.ChannelDiscord:
+		if p.DiscordChannelID != "" && p.CompanyID != "" {
+			if err := r.bus.PublishOutbound(OutboundEvent{
+				Channel:    string(domain.ChannelDiscord),
+				CompanyID:  p.CompanyID,
+				ChannelRef: p.DiscordChannelID,
+				UserRef:    p.DiscordUserID,
+				Content:    response,
+			}); err != nil {
+				logrus.WithError(err).WithField("company_id", p.CompanyID).Error("discord outbound publish failed")
+			}
+		}
+	case domain.ChannelLark:
+		if r.larkProv != nil && p.LarkMessageID != "" && p.CompanyID != "" {
+			if err := r.larkProv.Reply(ctx, p.CompanyID, p.LarkMessageID, response); err != nil {
+				logrus.WithError(err).WithFields(logrus.Fields{
+					"company_id": p.CompanyID,
+					"message_id": p.LarkMessageID,
+				}).Error("lark reply failed")
+			}
 		}
 	}
 }

@@ -32,12 +32,18 @@ func NewChatEnqueuer(threads *ThreadService, messages domain.MessageRepository, 
 // shape consumed by the old ChatService.HandleInput so existing callers
 // (handlers/chat.go, handlers/webhook.go) need only change the method.
 type ChatInput struct {
-	Channel     domain.Channel
-	CompanyID   string
-	UserID      string // dashboard only
-	PhoneNumber string // whatsapp only
-	Message     string
-	ThreadID    string // dashboard only; if set, bypasses resolver
+	Channel          domain.Channel
+	CompanyID        string
+	UserID           string // dashboard only
+	PhoneNumber      string // whatsapp only
+	DiscordUserID    string // discord only
+	DiscordChannelID string // discord only; reply destination
+	LarkOpenID       string // lark only; initiating user's open_id
+	LarkChatID       string // lark only; chat the @mention came from
+	LarkThreadKey    string // lark only; thread lookup key
+	LarkMessageID    string // lark only; reply target (latest inbound message id)
+	Message          string
+	ThreadID         string // dashboard only; if set, bypasses resolver
 }
 
 func (in ChatInput) validate() error {
@@ -55,6 +61,23 @@ func (in ChatInput) validate() error {
 	case domain.ChannelDashboard:
 		if in.UserID == "" {
 			return errors.New("user_id required for dashboard channel")
+		}
+	case domain.ChannelDiscord:
+		if in.DiscordUserID == "" {
+			return errors.New("discord_user_id required for discord channel")
+		}
+		if in.DiscordChannelID == "" {
+			return errors.New("discord_channel_id required for discord channel")
+		}
+	case domain.ChannelLark:
+		if in.LarkOpenID == "" {
+			return errors.New("lark_open_id required for lark channel")
+		}
+		if in.LarkThreadKey == "" {
+			return errors.New("lark_thread_key required for lark channel")
+		}
+		if in.LarkMessageID == "" {
+			return errors.New("lark_message_id required for lark channel")
 		}
 	default:
 		return fmt.Errorf("invalid channel: %q", in.Channel)
@@ -91,6 +114,10 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 	switch in.Channel {
 	case domain.ChannelWhatsApp:
 		resolved, err = s.threads.ResolveForPhone(ctx, in.CompanyID, in.PhoneNumber, in.Message)
+	case domain.ChannelDiscord:
+		resolved, err = s.threads.ResolveForDiscordUser(ctx, in.CompanyID, in.DiscordUserID, in.Message)
+	case domain.ChannelLark:
+		resolved, err = s.threads.ResolveForLark(ctx, in.CompanyID, in.LarkChatID, in.LarkThreadKey, in.LarkOpenID, in.Message)
 	case domain.ChannelDashboard:
 		if in.ThreadID != "" {
 			// Explicit thread selected by the user — bypass resolver.
@@ -131,15 +158,21 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 	}
 
 	taskID, err := s.enqueuer.EnqueueChatRun(ctx, queue.ChatRunPayload{
-		CompanyID:       in.CompanyID,
-		ThreadID:        thread.ID,
-		UserID:          in.UserID,
-		PhoneNumber:     in.PhoneNumber,
-		Channel:         in.Channel,
-		Message:         in.Message,
-		UserMsgID:       userMsg.ID,
-		CompanyName:     companyName,
-		DefaultCurrency: currency,
+		CompanyID:        in.CompanyID,
+		ThreadID:         thread.ID,
+		UserID:           in.UserID,
+		PhoneNumber:      in.PhoneNumber,
+		DiscordUserID:    in.DiscordUserID,
+		DiscordChannelID: in.DiscordChannelID,
+		LarkOpenID:       in.LarkOpenID,
+		LarkChatID:       in.LarkChatID,
+		LarkThreadKey:    in.LarkThreadKey,
+		LarkMessageID:    in.LarkMessageID,
+		Channel:          in.Channel,
+		Message:          in.Message,
+		UserMsgID:        userMsg.ID,
+		CompanyName:      companyName,
+		DefaultCurrency:  currency,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("enqueue chat:run: %w", err)
