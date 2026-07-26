@@ -172,6 +172,9 @@ change no one's workflow. Watchers do.
 | Monorepo migration silently changes Go imports            | Low        | Medium | `T-00b` keeps the module path unchanged, so the acceptance criterion is literally "zero `.go` content diffs in the migration commit" — verifiable with `git diff --stat`. |
 | Week 1 is 13 days of work in a 5-day week                 | **Certain**| Low    | Stated openly in the roll-up rather than hidden. Week 1 will run ~2.5 weeks; everything downstream compounds off it, so it is the wrong place to rush. |
 | Agent-executed work drifts from intent                    | Medium     | Medium | Every ticket carries an explicit verification gate. No ticket is done on inspection alone. |
+| **The agent fabricates numbers under budget exhaustion**  | **Observed** | **Critical** | Confirmed in the `T-00` smoke test: reported `$1,234,567.89` against a true 3.86bn. `T-16` moves earlier, becomes P0, and gains an anti-fabrication guardrail; `T-01`'s golden set is what keeps it fixed. Nothing that acts autonomously (`T-08` watchers, `T-10` actions) should ship before this. |
+| **Spend is invisible on the default provider**            | **Observed** | **High** | Primary-model streaming turns record no usage at all (`Q-12`). New ticket `T-02c` fixes it and blocks `T-03`, whose budget check would otherwise gate on a permanent near-zero. |
+| A local `.env` points at production                       | **Observed** | **High** | The working `.env` had `DB_HOST` on a remote host while looking local; the smoke test nearly wrote test data to it. `.env.example` is now tracked (`Q-10`); add a startup warning when a non-production `ENV` targets a non-local `DB_HOST`. |
 | **Embed auth flaw exposes tenant data**                   | Low        | **Critical** | `T-19` ships before any widget UI exists and is gated on a full forgery matrix: tampered signature, wrong origin, expired token, far-future expiry, revoked key. Constant-time comparison enforced by diff review. Mandatory origin allowlist, wildcard rejected. |
 | Integrators copy an insecure signing shortcut              | Medium     | High   | `T-22` ships complete server-side snippets in four languages. The failure mode is a partial example, so examples are treated as security surface, not documentation. |
 | Widget bundle bloats and the customer's frontend team removes it | Medium | Medium | Hard budgets in `T-21`: loader ≤15 KB gzipped, iframe app ≤80 KB. Preact + `marked`, not React + `react-markdown`. Sizes are a gate item, not an aspiration. |
@@ -187,7 +190,12 @@ each cut is chosen to preserve the dependency chain.
    `T-19` builds on)
 3. `T-17` OTel tracing (keep the Prometheus endpoint fix)
 4. `T-12b` `http_action` (keep `send_message` — it is what makes watchers useful)
-5. `T-16` iteration budget
+5. ~~`T-16` iteration budget~~ — **removed from the cut list.** The `T-00` smoke test
+   showed the 3-iteration cap makes the agent fabricate figures rather than admit it
+   ran out of steps (`Q-5`; reproduction in
+   [`../coverage/environment-notes.md`](../coverage/environment-notes.md) C-1).
+   Shipping watchers or actions on top of an agent that invents numbers would only
+   automate the fabrication.
 6. `T-23` widget config UI (ship the widget with sane hardcoded defaults; the
    dashboard config tab can follow)
 7. `T-22` npm packages and examples — but only down to the vanilla example and

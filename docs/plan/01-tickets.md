@@ -374,8 +374,52 @@ after `make types`. List every mismatch the migration surfaced.
 
 ---
 
+## T-02c · Fix primary-model metering on streaming turns
+**Repo:** BE · **Size:** 1d · **Deps:** T-02 · **Priority:** P0 · **Never cut**
+
+**Finding Q-12, observed live in the `T-00` smoke test.** A full multi-step agent
+turn recorded **zero** usage events for the primary model. The only `llm_call` row
+was `gpt-5-mini` — the light model behind guardrails. Under the current default
+provider, the dominant cost of every chat turn is invisible.
+
+**Must land before `T-03`**, whose budget check would otherwise gate on a number
+that is always near zero — enforcement that silently never triggers is worse than
+no enforcement, because it looks like it works.
+
+**Do:**
+- Confirm the mechanism first. `MeteredLLM.wrapStream`
+  (`internal/app/metering_llm.go:136`) only calls `record()` when the provider put
+  usage in stream event metadata. Determine what `agent-sdk-go` sends for the
+  OpenAI interface — the strong hypothesis is a missing
+  `stream_options: {"include_usage": true}`, but verify before changing anything.
+- Fix at the source if possible (request usage in the stream). If `agent-sdk-go`
+  cannot be made to emit it, fall back to counting tokens locally with a tokenizer
+  and record with a `estimated: true` metadata flag — an approximate cost beats a
+  silent zero.
+- **Add a loud failure mode.** A completed streaming turn that produced no usage
+  event must log at `Warn` with company, model, and interface. Silence is what let
+  this survive; make it noisy.
+- Add a metric: usage-events-per-turn, so a future regression is visible on a
+  dashboard rather than discovered by a smoke test.
+- Regression test: fake LLM emitting a stream *with* usage and one *without*;
+  assert the with-usage case records, and the without-usage case records an
+  estimate and logs a warning.
+
+**Acceptance:**
+- [ ] A streaming turn on an OpenAI-interface provider records a non-zero `llm_call`
+- [ ] A streaming turn on Anthropic still records, including cache tokens (no regression on `74f5419`)
+- [ ] Zero-usage streams warn loudly rather than passing silently
+- [ ] `cost_by_model_usd` shows the primary model after one chat turn
+
+**Gate:** repeat the `T-00` smoke test — signup, connection, one analytical
+question — then paste `/api/usage/summary`. The primary model must appear with
+non-zero tokens. Compare against the pre-fix output recorded in
+`../coverage/environment-notes.md` C-2.
+
+---
+
 ## T-03 · Enforce credits with graceful degradation
-**Repo:** BE, FE · **Size:** 1d · **Deps:** T-02 · **Priority:** P0
+**Repo:** BE, FE · **Size:** 1d · **Deps:** T-02, **T-02c** · **Priority:** P0
 
 **Finding B-1:** `UsageService.append` decrements the balance and ignores the
 result. Nothing checks it. A tenant on platform LLM keys can spend without limit.
@@ -860,21 +904,46 @@ verifying against the secret.
 
 # Week 6 — Shippable
 
-## T-16 · Iteration budget replacing the hard cap
-**Repo:** BE · **Size:** 1.5d · **Deps:** T-17 · **Priority:** P1 · **Cut #5**
+## T-16 · Iteration budget + anti-fabrication
+**Repo:** BE · **Size:** 2d · **Deps:** T-01 · **Priority:** ~~P1~~ **P0** · **No longer cuttable**
 
-**Finding Q-5.** `max_iterations: 3` caps multi-step work. get_schema → run_sql →
-refine → visualize → dashboard already exceeds it.
+**Finding Q-5, escalated to P0 after being observed live.** The 3-iteration cap does
+not merely truncate deep work — it makes the agent **fabricate**. In the `T-00`
+smoke test the agent exhausted its budget on schema lookups plus one date probe,
+never ran the aggregation, and reported *"Total Sales for December 2024:
+$1,234,567.89"* against a true 3,863,405,700.00. Right month, right currency,
+confident prose, invented number. Full reproduction in
+[`../coverage/environment-notes.md`](../coverage/environment-notes.md) C-1.
 
-**Do:** replace the fixed cap with a per-turn budget — max iterations (default 8),
-max tool calls (default 12), max cumulative tokens, wall-clock ceiling. Configurable
-per company. On exhaustion, the agent must produce a **partial answer stating what
-it did not finish**, never a bare error. Emit an `iteration` WS event so the UI can
-show progress. Keep `agents.yaml` and the Go option in sync, or delete the YAML
-value and make Go authoritative — do not leave two sources of truth.
+Moved earlier in the sprint and its dependency changed from `T-17` (tracing) to
+`T-01` (evals) — evals are what prove the fix works; tracing is a nice-to-have here.
 
-**Gate:** eval case requiring 5+ steps completes. Paste before/after. Confirm no
-regression in mean cost per answer.
+**Do:**
+- Replace the fixed cap with a per-turn budget: max iterations (default 8), max tool
+  calls (default 12), max cumulative tokens, wall-clock ceiling. Per-company
+  configurable.
+- **On exhaustion the agent must say what it could not finish.** Inject an explicit
+  final-turn instruction when the budget runs out: state the question, state what
+  was retrieved, state what was not, and ask whether to continue. Never emit a
+  figure that did not come from a tool result.
+- **Add a guardrail rule for numeric fabrication.** Output-scope: if the reply
+  states a specific monetary or metric value and no `run_sql` / `query_metric`
+  result was returned in the turn, block and replace with an honest "I wasn't able
+  to complete the query" message. This is a blunt instrument and will need tuning —
+  but the failure it prevents is the one that loses a customer.
+- Emit an `iteration` WS event so the UI shows progress rather than a silent stall.
+- Keep `agents.yaml` and `WithMaxIterations` in sync, or delete the YAML value and
+  make Go authoritative — do not leave two sources of truth.
+
+**Acceptance:**
+- [ ] A question needing 5+ steps completes
+- [ ] Budget exhaustion produces an explicit incomplete-answer message, never a number
+- [ ] The exact smoke-test question returns the correct order of magnitude, or admits failure
+- [ ] No regression in mean cost per answer
+
+**Gate:** re-run the C-1 reproduction — "What were our total sales last month?"
+against the demo tenant. Paste the reply and the true value side by side. Then the
+full eval set: pass rate up, no cost regression.
 
 ---
 
