@@ -63,18 +63,32 @@ paths. `filter-repo` would fix that but would rewrite every SHA — see the note
 
 ## Remaining steps
 
-### 1. Verify Docker image builds — Docker was not running
+### 1. Docker image builds — ✅ DONE
 
-```bash
-open -a Docker      # then wait for it
-cd /Users/rizkal/Work/smartsoft/argentum-mono
-docker build -f apps/backend/Dockerfile.api     -t argentum-api:local     apps/backend
-docker build -f apps/backend/Dockerfile.worker  -t argentum-worker:local  apps/backend
-docker build -f apps/backend/Dockerfile.discord -t argentum-discord:local apps/backend
+All three images build from the `apps/backend` context and the binaries **run**
+(they fail at config validation with `LLM_API_KEY is required`, which proves the
+binary executes rather than merely existing in the layer):
+
+| Image | Size |
+| ----- | ---- |
+| `argentum-api` | 77 MB |
+| `argentum-worker` | 78 MB |
+| `argentum-discord` | 47 MB |
+
+**Environment finding — docker CLI version skew.** A nix-installed docker CLI
+shadows Docker Desktop's:
+
+```
+/Users/rizkal/.nix-profile/bin/docker   24.0.5  (API 1.43)  ← first on PATH
+/usr/local/bin/docker                   29.1.3
 ```
 
-All three Dockerfiles `COPY . .` relative to their context, so `apps/backend` as
-context should behave exactly as the old repo root did. Unverified until run.
+The daemon requires API ≥ 1.44, so `docker run`, `docker image inspect`, and most
+non-build subcommands fail with *"client version 1.43 is too old"*. `docker build`
+happens to work, which makes this easy to misdiagnose. Fix by putting
+`/usr/local/bin` ahead of `~/.nix-profile/bin` on PATH, or removing docker from the
+nix profile. Until then, use the full path
+`/Applications/Docker.app/Contents/Resources/bin/docker`.
 
 ### 2. Reconfigure Cloudflare Pages — the only step that can break production
 
@@ -101,23 +115,60 @@ Watch for:
 - **Environment variables.** `VITE_*` values are per-project in Pages, unaffected by
   the move — but confirm they are present on the preview deployment.
 
-### 3. Add the remote — needs a decision
+### 3. Push to `fauzanebd/argentum` — remote configured, push pending
 
-`apps/backend/go.mod` says `fauzanebd`; GHCR and CI say `haritsrizkall`. Pick one:
+**Decision: reuse the existing backend repo.** The monorepo HEAD descends from all
+three repo heads, so this is a fast-forward — `origin/main` (`3891579`) is an
+ancestor of HEAD. Nothing on the remote is discarded, and no force is needed.
+
+```
+31 new commits · 359 files changed, +21185 / -397
+```
+
+Reuse also keeps the 19 release tags (so `release.yaml` bumps `v0.10.0` → `v0.11.0`
+rather than restarting), `secrets.PAT`, GHCR package linkage, and issues — and it
+realigns the repo URL with the Go module path `github.com/fauzanebd/argentum`.
 
 ```bash
 cd /Users/rizkal/Work/smartsoft/argentum-mono
-git remote add origin git@github.com:<OWNER>/argentum.git
+git branch -f pre-monorepo origin/main    # safety ref
 git push -u origin main
 ```
 
-The Go module path stays `github.com/fauzanebd/argentum` regardless — see the note
-in the root `README.md`.
+**What the push sets off, by design:**
 
-Then archive the three originals read-only on GitHub rather than deleting them.
-They are the rollback if step 2 goes wrong.
+1. `release.yaml` matches (`apps/backend/**` changed) → auto-tags **`v0.11.0`**.
+2. That tag triggers the `docker` job → builds and pushes `argentum-api`,
+   `argentum-worker`, and `argentum-discord` to GHCR, including `latest`.
+
+The images are verified locally (step 1), and they come from identical Go source —
+but if any cluster pulls `latest` on a rolling deploy, it will pick them up. Decide
+whether that is acceptable before pushing.
+
+#### Three GitHub identities — worth untangling separately
+
+| Account | Role |
+| ------- | ---- |
+| `fauzanebd` | owns `argentum` (backend) and `argentum-dashboard` |
+| `haritsrizkall` | owns `argentum-landing`; also the GHCR image owner and CI username |
+| `rizkalaliamdy` | the account `gh` is authenticated as; owns none of them |
+
+`gh api` reports `push=false, admin=false` on all three for the authenticated
+account, yet commits are authored by `rizkalaliamdy <rizkal@tr8.io>` — so pushes
+evidently go over SSH under different credentials than the `gh` token. Confirm this
+before relying on `gh` for release or CI work.
+
+Argentum is a Smartsoft product living on personal accounts. Transferring to a
+company org is likely right, but do it **after** deploys are verified — a GitHub
+transfer preserves issues, tags, and sets up redirects, so there is no reason to
+debug an ownership change and a Pages reconfiguration at the same time.
 
 ### 4. Swap into place
+
+**Do not archive `argentum-dashboard` or `argentum-landing` until step 2 is done.**
+Cloudflare Pages still builds both frontends from those repos, so they remain the
+production source of truth for the dashboard and landing site until Pages is
+repointed at the monorepo. Archiving them early breaks frontend deploys.
 
 Only after steps 1–3 pass:
 
