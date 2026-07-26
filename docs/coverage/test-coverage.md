@@ -6,10 +6,15 @@ measurement). These are actual results, not estimates.
 
 ## Headline
 
-**3 of 33 Go packages have any test file. The dashboard and landing repos have
-zero tests. CI runs no tests at all.**
+**3 of 35 Go packages have any test file. The dashboard and landing apps have
+zero tests.**
 
 `go vet ./...` is clean.
+
+> **Updated after `T-00b`:** CI previously ran no tests at all. The monorepo
+> migration added `go vet`, `go test -race -count=1`, and a `cmd/discord` build to
+> the pipeline, and replaced the trigger-level `paths:` filter with per-job
+> filtering. `golangci-lint` and the deliberate-break proof remain `T-02`'s job.
 
 ## Go backend — package by package
 
@@ -51,10 +56,17 @@ Ranked by risk — how much damage a silent regression here would do.
 
 | App                   | Test files | Test runner | Type check | Lint         |
 | --------------------- | ---------- | ----------- | ---------- | ------------ |
-| `apps/dashboard`      | 0          | none installed | `tsc -b` runs as part of `pnpm build` | `eslint .` script present |
-| `apps/landing`        | 0          | none installed | `tsc -b` via build | not configured |
+| `apps/dashboard`      | 0          | none installed | `tsc -b` via build | `tsc -b --noEmit` |
+| `apps/landing`        | 0          | none installed | `tsc -b` via build | `tsc -b --noEmit` |
 
-Neither runs in CI.
+> **Found during `T-00b`:** the dashboard's `lint` script called `eslint .`, but
+> **eslint was never in its devDependencies** — `pnpm lint` failed with
+> `command not found`, so it had never run, in CI or locally. It now points at the
+> same `tsc -b --noEmit` typecheck landing uses, which is a real (if narrow)
+> signal. `T-02` installs eslint with a narrow rule set and restores proper
+> linting. Expect a wall of findings on first run; budget triage time.
+
+Both now run in CI via the `web` job.
 
 ## CI gate — what is actually checked
 

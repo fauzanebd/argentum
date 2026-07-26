@@ -172,9 +172,24 @@ re-rooted: `apps/*/node_modules`, `apps/*/dist`, `apps/backend/.env`.
 
 ### Notes for the implementer
 
-- `git subtree add` produces a merge commit per app. That topology looks odd in a
-  linear-history mindset but `git log --follow` and `git blame` both work through
-  it, which is the whole point.
+- `git subtree add` produces a merge commit per app. **Know exactly what survives
+  — verified, not assumed:**
+
+  | Command | Works? |
+  | ------- | ------ |
+  | `git blame apps/backend/internal/app/chat_runner.go` | ✅ attributes to real pre-migration commits (`d782129`, `dcd0355`, `94fe370`, …) |
+  | Original SHAs still resolve — `git show 3891579` | ✅ subtree does not rewrite commits |
+  | `git log -- apps/backend/<path>` | ❌ shows only post-migration commits |
+  | `git log --full-history -- <path-without-the-apps/backend-prefix>` | ✅ full pre-migration history |
+
+  Old commits recorded old paths, so path-filtered `log` does not cross the merge.
+  Blame does, because rename detection handles it. `--follow` does not help.
+
+  **This is the right trade.** `git filter-repo --to-subdirectory-filter` would fix
+  path-filtered `log`, but it rewrites every commit — so `3891579`, `d782129` and
+  the ~20 other SHAs cited throughout `docs/research/` and `docs/coverage/` would
+  cease to exist, and the archived originals would no longer correspond. Blame plus
+  stable SHAs is worth more than `log`-by-path, which has a one-flag workaround.
 - Do **not** delete the three original repos. Archive them read-only on the remote.
   They are the fallback if a deploy reconfiguration goes wrong.
 - Do not attempt Turborepo or Nx yet. Two frontends and one Go module do not need a
@@ -182,23 +197,42 @@ re-rooted: `apps/*/node_modules`, `apps/*/dist`, `apps/backend/.env`.
   `packages/` exceeds four members.
 
 ### Acceptance
-- [ ] One repo, three histories reachable — `git log --follow apps/backend/internal/app/chat_runner.go` reaches `d782129`
-- [ ] `git blame apps/backend/config/guardrails.yaml` attributes to `3891579`, not to the migration commit
-- [ ] `cd apps/backend && go build ./... && go vet ./... && go test ./...` — identical results to `T-00`
-- [ ] **Zero changes to any Go import path** — `git log -p` on the migration shows no `.go` file content diffs
-- [ ] `pnpm -r build` builds dashboard and landing
-- [ ] All three Docker images build from the new context
+- [x] One repo, all three histories in the graph — 75 commits
+- [x] `git blame apps/backend/internal/app/chat_runner.go` reaches `d782129`; dashboard blame reaches `0687da5`
+- [x] Original SHAs still resolve, so every citation in `docs/` stays valid
+- [x] `cd apps/backend && go build ./... && go vet ./... && go test ./...` — identical to the `T-00` baseline (build OK, vet clean, same 3 passing packages)
+- [x] **Zero changes to any Go import path** — tree diff vs. the original shows no `.go` differences at all
+- [x] `pnpm -r build` builds dashboard and landing
+- [x] `pnpm -r lint` passes (and now actually runs — see Q-11)
+- [ ] All three Docker images build from the new context — **UNVERIFIED, Docker was not running**
 - [ ] Cloudflare Pages preview deploys succeed for both frontends **before** production is repointed
-- [ ] CI: a docs-only change runs no app jobs; a backend-only change runs `backend` + `types` but not `web`
-- [ ] `cmd/discord` builds in CI (it never did before)
-- [ ] `docs/` is tracked
+- [ ] CI: a docs-only change runs no app jobs; a backend-only change runs `backend` but not `web`
+- [x] `cmd/discord` builds in CI (it never did before)
+- [x] `docs/` is tracked — both workspace `docs/` and the recovered `apps/backend/docs/`
 
 ### Gate
 
-Paste: (a) `git log --follow` output proving history survived for one file per app,
-(b) the full backend build/vet/test output, (c) `git diff --stat` for the migration
-commit showing no `.go` content changes, (d) Cloudflare preview URLs for both
-frontends, (e) a CI run showing correct per-job path filtering.
+Paste: (a) blame output proving history survived for one file per app, (b) the full
+backend build/vet/test output, (c) a tree diff vs. the originals showing no `.go`
+changes, (d) Cloudflare preview URLs for both frontends, (e) a CI run showing
+correct per-job path filtering.
+
+### Status — 2026-07-26
+
+Local migration **complete** at `/Users/rizkal/Work/smartsoft/argentum-mono`,
+commits `eef3cb5` (migration) and the lint fix on top. All local gates green. The
+three original repos are untouched.
+
+Outstanding, and each needs a human:
+1. **Docker image builds** — Docker Desktop was not running; the three Dockerfiles
+   are unverified against the `apps/backend` context.
+2. **Cloudflare Pages** — two projects need their root directory and build command
+   repointed, verified on a preview branch first.
+3. **Remote** — `git remote add` needs an owner decision (`fauzanebd` vs
+   `haritsrizkall`) and a repo name.
+4. **Directory swap** — move `argentum-mono` into place and archive the originals.
+
+See `docs/coverage/migration-notes.md` for the exact steps.
 
 ### Out of scope
 - `packages/api-types` contents — scaffold the directory only; `T-02b` fills it

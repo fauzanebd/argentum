@@ -63,7 +63,8 @@ docs/
 │   ├── feature-coverage.md       Feature status matrix
 │   ├── test-coverage.md          Measured test state + CI gaps
 │   ├── api-surface.md            Endpoint + tool inventory
-│   └── delivery-log.md           What has been shipped, chronologically
+│   ├── delivery-log.md           What has been shipped, chronologically
+│   └── migration-notes.md        T-00b migration record + remaining steps
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals
 │   ├── 01-tickets.md             Ticket-level, agent-executable units

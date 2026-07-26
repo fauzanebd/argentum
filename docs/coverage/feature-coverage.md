@@ -139,5 +139,5 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Billing / monetization      | ██░░░░░░░░   | Tracks cost, cannot charge or cap it.                         |
 | Platform / agent-callable   | ██░░░░░░░░   | No machine auth, no MCP, no outbound webhooks.               |
 | Embeddability               | ░░░░░░░░░░   | Zero. Argentum lives only in its own dashboard and in chat apps. |
-| Testing / evaluation        | █░░░░░░░░░   | 3/33 packages. No answer-quality measurement at all.          |
+| Testing / evaluation        | █░░░░░░░░░   | 3/35 packages. No answer-quality measurement at all.          |
 | Observability               | ███░░░░░░░   | Logs + counters. No traces, no error tracking, no replay.     |
