@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "//lint": "eslint is not installed — the script has never worked. T-02 adds eslint + a narrow config and restores this.",
+    "lint": "tsc -b --noEmit",
     "preview": "vite preview",
     "deploy": "pnpm build && wrangler pages deploy dist --project-name argentum-dashboard"
   },
@@ -42,11 +43,6 @@
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.23.8",
     "zustand": "^5.0.1"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.19",
