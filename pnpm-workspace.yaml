@@ -1,0 +1,13 @@
+packages:
+  - 'apps/dashboard'
+  - 'apps/landing'
+  - 'apps/widget'
+  - 'packages/*'
+  # Widget example apps are deliberately excluded. They must install standalone,
+  # exactly as a customer's project would (T-22) — pulling them into the
+  # workspace would let them resolve @argentum/widget via a symlink and hide
+  # packaging bugs.
+  - '!apps/widget/examples/**'
+
+onlyBuiltDependencies:
+  - esbuild

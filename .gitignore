@@ -1,0 +1,33 @@
+# Root-level ignores. Each app keeps its own .gitignore for app-specific
+# artifacts — gitignore is hierarchical, so those still apply. This file covers
+# what is shared or what the per-app files missed.
+
+# OS
+.DS_Store
+
+# Editor / tooling
+.idea/
+.vscode/
+*.swp
+
+# Node — belt and braces; per-app .gitignore files also cover these
+node_modules/
+dist/
+.vite/
+
+# TypeScript incremental build state. These were committed in the dashboard
+# before the monorepo migration; they are machine-local build artifacts.
+*.tsbuildinfo
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Go binaries built into the tree by `make build` in apps/backend
+apps/backend/api
+apps/backend/worker
+apps/backend/encrypt_secret
+
+# Local scratch
+*.log

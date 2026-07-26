@@ -1,0 +1,222 @@
+# Sprint 1 — "From Answering to Acting"
+
+**Window:** 8 weeks from kickoff (planning date 2026-07-26)
+**Team:** 1 human (repo owner) + AI agents
+**Theme:** make Argentum agent-native — it notices, it acts, other agents can call
+it, and it drops into any site the customer already runs.
+
+---
+
+## 1. The goal, stated as an outcome
+
+> A company connects Argentum once. From then on, nobody has to remember to ask
+> anything. Argentum watches the numbers that matter, says something in the
+> team's chat when one of them moves, proposes what to do about it, and — with
+> one approval — does it. Other agents can call it for the same answers.
+
+Eight weeks is not enough to fully deliver that. It **is** enough to deliver the
+first honest version of each shift, on rails safe enough to put in front of a
+customer:
+
+| Shift                     | Sprint 1 deliverable                                                        |
+| ------------------------- | --------------------------------------------------------------------------- |
+| **Pull → push**           | Watchers: metric-condition triggers that fire an agent turn into any channel |
+| **Answer → act**          | Action framework with human-in-the-loop approval + two real actions          |
+| **Product → substrate**   | Scoped API keys + an MCP server exposing the agent's tools                   |
+| **Product → everywhere**  | Embeddable chat widget: a script tag or npm component on the customer's own internal site |
+
+Underneath all four: an **eval harness**, an **audit log**, a **metric
+registry**, and **enforced spend limits** — because none of the above is safe to
+ship without them.
+
+## 1a. Why the widget is in scope
+
+The customer already has an internal website — a React admin panel, an ops
+dashboard, an intranet. Today, using Argentum means leaving that site. The widget
+removes that step, and it changes the adoption story in three ways:
+
+- **Distribution.** One script tag reaches everyone who already uses the
+  customer's internal tools. No per-user onboarding, no new bookmark, no training.
+- **Context.** The agent shows up where the work happens, next to the numbers the
+  staff were already looking at.
+- **Stickiness.** A widget embedded in a company's own internal tooling is
+  infrastructure. It does not get churned casually.
+
+It is also the cheapest way to serve a company whose staff will never open a
+second dashboard, and there is no reason to make them.
+
+**Audience is locked: the tenant's own staff on the tenant's own site.** Identity
+comes from the tenant's backend via an HMAC signature; the widget never
+authenticates anonymous visitors. Public-facing embedding is a materially larger
+security problem (anonymous sessions, abuse control, aggressive redaction) and is
+deferred to Sprint 2 — see [`backlog.md`](backlog.md).
+
+**Scope is locked: chat only.** No dashboard rendering, no watcher feed inside
+the widget. Both are additive later against a working embed surface.
+
+## 2. Why this sequence and not another
+
+The dependency chain from [`../research/03-gap-analysis.md`](../research/03-gap-analysis.md):
+
+```
+Week 0   Environment re-warm, then monorepo consolidation      (T-00, T-00b)
+         └─ Re-warm first so a breakage is attributable to drift, not to the move.
+            Consolidate before any feature work, because every ticket after this
+            touches file paths. Never mid-sprint.
+Week 1   Evals + tests + CI gate + generated types + RBAC + credit enforcement
+         └─ You cannot ship autonomy on an unmeasured, unbounded, unaudited system.
+            Also fixes the three P0 security/billing findings, which are cheap now
+            and expensive after you have users.
+Week 2   Metric registry + query_metric tool
+         └─ Watchers need something authoritative to watch. Without this, an alert
+            fires off a number the LLM re-derived, and the first false alarm
+            destroys trust permanently.
+Week 3   Watchers → proactive delivery to any channel
+         └─ THE WEDGE. This is the week that changes how a company works.
+Week 4   Action framework + approval flow + first two actions
+         └─ Needs the audit log (W1) and a trusted trigger source (W3).
+Week 5   API keys + MCP server + outbound webhooks
+         └─ Independent of W3–W4; deliberately later because it is the least
+            risky to cut if weeks 1–4 overrun.
+Week 6   Reasoning depth, observability, hardening, launch prep
+         └─ Raise the 3-iteration ceiling only once tracing exists to see the cost.
+Week 7–8 Embeddable widget: embed auth → widget channel → client → distribution
+         └─ Last because it needs T-13's key primitives, T-05's audit log, and
+            T-03's budget check. Also the safest place to absorb slippage: nothing
+            else depends on it, so it can slide into Sprint 2 without stranding
+            half-finished work elsewhere.
+```
+
+**Why not monetization first?** Billing enforcement (`T-03`) ships in week 1
+because unbounded spend is a live risk. Plans, checkout, and invoicing do not,
+because pricing a product whose main value hasn't shipped yet means repricing it
+two months later.
+
+**Why not more channels first?** Slack and Telegram are additive against an
+existing abstraction — a known, low-risk week whenever a customer needs it. They
+change no one's workflow. Watchers do.
+
+## 3. Scope
+
+### In scope
+
+- **Monorepo consolidation** — three repos into one, history preserved via
+  `git subtree`, `apps/` + `packages/` layout, one path-filtered CI pipeline
+- **Generated TS types** from Go structs, with CI failing on drift
+- Eval harness with a golden question set on the demo tenant
+- Test coverage for all CRITICAL packages + CI gate that actually gates
+- `AdminOnly` applied; team invite endpoint; `/metrics` secured
+- Credit enforcement with graceful degradation
+- Agent action audit log (`agent_actions`)
+- Metric registry: schema, CRUD API, dashboard tab, `list_metrics` + `query_metric` tools
+- Watchers: schema, evaluation loop, breach → agent turn → channel delivery, dashboard UI
+- Action framework: registry, per-company permissions, approval cards, idempotency
+- Two shipped actions: `send_message` (digest/broadcast) and `http_action` (generic authenticated outbound call)
+- API keys: scoped, hashed, revocable, rate-limited per key
+- MCP server (`cmd/mcp`) over the same auth + audit rails
+- Outbound webhooks with HMAC signing and retry
+- Iteration budget replacing the hard 3-iteration cap
+- OTel tracing on turns and tool calls; Prometheus-format `/metrics`
+- Fix PII-redaction over-reach and the system-prompt-leak false positive
+- Embed keys with HMAC identity verification, origin allowlist, and short-lived
+  session tokens
+- `widget` channel + a deliberately minimal `/api/embed/*` surface
+- Widget client as a new workspace member `apps/widget/`: framework-agnostic
+  loader + iframe app, with shared chat components **extracted** into
+  `packages/chat-ui` rather than copied from the dashboard
+- `@argentum/widget` and `@argentum/widget-react` npm packages, versioned CDN
+  build, four example apps, signing snippets in four languages
+- Widget appearance/content configuration in the dashboard with a live preview
+
+### Explicitly out of scope
+
+| Deferred                          | Why                                                                |
+| --------------------------------- | ------------------------------------------------------------------ |
+| Public / anonymous widget mode      | Different security problem entirely: anonymous sessions, abuse control, hard data scoping, aggressive redaction. Sprint 2. |
+| Dashboards or alert feed in the widget | Additive against a working embed surface. Chat first.            |
+| Widget SSO / silent identity        | HMAC identity from the tenant's backend covers the internal-site case. |
+| Plans, checkout, invoicing         | Price after the value ships. `T-03` caps spend in the meantime.     |
+| Slack / Telegram / email channels  | Additive, low-risk, no workflow change. See `backlog.md`.            |
+| New DB drivers (BigQuery etc.)     | Additive against the driver registry. Pull-driven by demand.         |
+| Multi-agent / planner architecture | `T-16` raises the iteration budget; specialist agents need eval data first. |
+| Forecasting / anomaly ML           | Watchers ship with threshold + delta comparators. Statistical anomaly detection is Sprint 2. |
+| SSO / SOC2                         | No enterprise deal is blocked on it yet.                            |
+| Native dashboard embedding         | Metabase share URLs are adequate.                                   |
+| Frontend test framework            | Backend tests first; the dashboard is thin and visually verifiable.  |
+
+## 4. Milestones and exit criteria
+
+| Wk | Milestone                | Exit criteria (all must be demonstrable)                                                                             |
+| -- | ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| 0  | **One tree**             | Single repo, all three histories blameable through the subtree boundary. Zero Go import-path changes in the migration diff. Both Cloudflare Pages previews deploy from the new roots. CI path-filters correctly per job, and `cmd/discord` builds in it for the first time. |
+| 1  | **Safe to change**       | `make eval` prints a score over ≥30 golden questions. CI fails on a failing test. All CRITICAL packages have tests. A Go struct rename without `make types` is a red build. Non-admin cannot rotate a DSN. A tenant at zero credits gets a clear refusal instead of a bill. |
+| 2  | **Authoritative numbers**| A metric is defined once in the UI; asking the same question twice in two threads returns the same number via `query_metric`. Eval score has not regressed. |
+| 3  | **It tells you first**   | A watcher on a demo-tenant metric breaches and a WhatsApp/Discord message arrives, unprompted, containing the number and the agent's explanation. |
+| 4  | **It does things**       | The agent proposes an action, an approval card appears, approving executes it, and `agent_actions` shows who approved what and when. Rejecting does nothing. |
+| 5  | **Other agents call it** | Claude Code, configured with an Argentum API key, retrieves a metric through MCP. The call appears in the audit log attributed to that key. |
+| 6  | **Shippable**            | A 5-step agentic task completes without hitting an iteration cap. A slow turn is decomposable in a trace. Landing-page claims match shipped reality. Eval score ≥ week-1 baseline. |
+| 7  | **Embed rails hold**     | A forged signature, a wrong origin, an expired token, and a revoked key are each rejected with the right status. An embed token cannot reach a single dashboard or admin route. A widget turn streams an answer and shows up in `usage/by-channel` as `widget`. |
+| 8  | **Anyone can install it** | A throwaway React app integrates the widget in under 10 minutes using only the published docs. Loader ≤15 KB gzipped. Theme change in the dashboard appears in that app without touching its code. |
+
+## 5. Risk register
+
+| Risk                                                    | Likelihood | Impact | Mitigation                                                                 |
+| ------------------------------------------------------- | ---------- | ------ | -------------------------------------------------------------------------- |
+| Week 1 foundation work eats week 2                       | **High**   | Medium | `T-01`/`T-02` are hard-capped at 6 working days combined. Ship 30 golden questions, not 100. |
+| Metric registry design churns                             | Medium     | High   | Start with the narrowest useful shape: name, description, source, SQL template, grain. No dimensions/joins in v1. |
+| False-positive watcher alert destroys customer trust      | Medium     | **High** | Every watcher requires a dry-run over trailing data before it can be enabled. Ship a per-watcher cooldown. |
+| Approval flow UX is harder than the backend               | Medium     | Medium | Dashboard-only approval in `T-11`; chat-native approval cards deferred to Sprint 2. |
+| MCP server duplicates the tool layer                      | Low        | Medium | `cmd/mcp` must import `internal/tools`, never reimplement. Reject any PR that copies tool logic. |
+| Nine weeks of environment drift blocks week 1             | **High**   | Low    | `T-00` is a half-day environment re-warm before anything else.               |
+| **Monorepo migration breaks a production deploy**         | Medium     | **High** | Cloudflare Pages is the exposed surface — both frontends deploy from it, and it has bitten this project before (`a715171`→`9e9899f`). `T-00b` requires a passing preview deploy per frontend **before** production is repointed. The three original repos are archived read-only, not deleted, so rollback is repointing a remote. |
+| Monorepo migration silently changes Go imports            | Low        | Medium | `T-00b` keeps the module path unchanged, so the acceptance criterion is literally "zero `.go` content diffs in the migration commit" — verifiable with `git diff --stat`. |
+| Week 1 is 13 days of work in a 5-day week                 | **Certain**| Low    | Stated openly in the roll-up rather than hidden. Week 1 will run ~2.5 weeks; everything downstream compounds off it, so it is the wrong place to rush. |
+| Agent-executed work drifts from intent                    | Medium     | Medium | Every ticket carries an explicit verification gate. No ticket is done on inspection alone. |
+| **Embed auth flaw exposes tenant data**                   | Low        | **Critical** | `T-19` ships before any widget UI exists and is gated on a full forgery matrix: tampered signature, wrong origin, expired token, far-future expiry, revoked key. Constant-time comparison enforced by diff review. Mandatory origin allowlist, wildcard rejected. |
+| Integrators copy an insecure signing shortcut              | Medium     | High   | `T-22` ships complete server-side snippets in four languages. The failure mode is a partial example, so examples are treated as security surface, not documentation. |
+| Widget bundle bloats and the customer's frontend team removes it | Medium | Medium | Hard budgets in `T-21`: loader ≤15 KB gzipped, iframe app ≤80 KB. Preact + `marked`, not React + `react-markdown`. Sizes are a gate item, not an aspiration. |
+| Widget phase slips past week 8                            | Medium     | Low    | Nothing depends on it. It slides to Sprint 2 whole rather than shipping half-integrated. |
+
+## 6. Cut order
+
+If the sprint slips, cut in this order. Do not improvise a different order —
+each cut is chosen to preserve the dependency chain.
+
+1. `T-15` outbound webhooks
+2. `T-14` MCP server (keep `T-13` API keys — they stand alone, and they are what
+   `T-19` builds on)
+3. `T-17` OTel tracing (keep the Prometheus endpoint fix)
+4. `T-12b` `http_action` (keep `send_message` — it is what makes watchers useful)
+5. `T-16` iteration budget
+6. `T-23` widget config UI (ship the widget with sane hardcoded defaults; the
+   dashboard config tab can follow)
+7. `T-22` npm packages and examples — but only down to the vanilla example and
+   the Go + Node signing snippets. **Never ship the widget with no integration
+   docs**; an undocumented embed surface invites the insecure shortcut.
+
+**Never cut:** `T-00b` (monorepo), `T-01` (evals), `T-02` (CI gate), `T-04`
+(RBAC), `T-06`/`T-07` (metric registry), `T-08`/`T-09` (watchers), `T-19` (embed
+auth). Those are the sprint.
+
+`T-00b` is uncuttable for a scheduling reason rather than a product one: it moves
+every file in the workspace, so it is only cheap **before** the sprint. Deferred to
+week 4 it would invalidate every in-flight ticket's paths; deferred past the sprint
+it never happens, and the widget ships duplicating the dashboard's chat components.
+
+**Cut the widget phase whole, never partially.** If weeks 7–8 cannot finish,
+`T-19`→`T-23` move to Sprint 2 together. A shipped embed endpoint with no client,
+or a client with incomplete docs, is worse than nothing: the first is dead attack
+surface, the second gets integrated insecurely.
+
+## 7. Working agreement with AI agents
+
+- Every ticket in [`01-tickets.md`](01-tickets.md) is written as an independently
+  executable unit with its own verification gate.
+- An agent claims one ticket, respects the stated dependencies, and reports in the
+  format in [`../AGENTS.md`](../AGENTS.md) §4.
+- Migrations are serialized — one claimant at a time on the next number.
+- No ticket is complete without pasted command output from its gate.
+- **No agent starts before `T-00b` lands.** It rewrites every path in the
+  workspace; work started against the old layout is work thrown away.
+- After `T-00b`, a ticket spanning backend and frontend is **one commit**. Two
+  commits for one feature is now a review finding, not a necessity.

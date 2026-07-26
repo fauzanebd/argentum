@@ -1,12 +1,17 @@
 name: Release
 
+# Auto-tags the whole monorepo when the backend changes. Scoped explicitly to
+# apps/backend so dashboard, landing, widget, docs, or packages changes do not
+# mint a backend release tag.
+#
+# NOTE: this tag versions the deployed backend images. When packages/widget-*
+# start publishing to npm (T-22), those get independent versions via changesets
+# — do not couple npm package versions to this tag.
 on:
   push:
     branches: [main]
     paths:
-      - '**.go'
-      - 'go.mod'
-      - 'go.sum'
+      - 'apps/backend/**'
       - '.github/workflows/release.yaml'
 
 jobs:

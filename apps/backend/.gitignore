@@ -21,8 +21,10 @@ go.work
 .env
 .env.local
 .env.production
-.env.example
 .env.obsolete
+# .env.example is intentionally TRACKED — it is the template a new machine or
+# contributor needs. It was ignored until the monorepo migration, which is why
+# environment setup had become tribal knowledge.
 
 # IDE
 .idea/
@@ -58,5 +60,8 @@ metabase_data/
 ngrok.yml
 !ngrok.yml.example
 
-# Development Docs
-docs/
+# NOTE: `docs/` used to be ignored here ("Development Docs"). That meant the API
+# reference, the integration guides, and the Postman collection — ~1,100 lines —
+# lived only on one machine and were absent from the remote. They are tracked as
+# of the monorepo migration. Workspace-level docs live in /docs at the repo root;
+# this directory is for backend API reference material.

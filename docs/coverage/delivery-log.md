@@ -1,0 +1,152 @@
+# Delivery Log — What We've Been Doing
+
+Reconstructed from git history across all three repos. Dates are commit dates.
+Merge commits omitted; the eight `bigref`-era merges are folded into their phases.
+
+**Total elapsed:** 2026-04-10 → 2026-05-23 (~6 weeks of active development).
+**Last commit:** 2026-05-23. **Today:** 2026-07-26 — the workspace has been
+quiet for roughly nine weeks. Expect environment drift (dependencies, tokens,
+Metabase version, tenant DSNs) before the next sprint's first change lands.
+
+---
+
+## Phase 0 — Bootstrap (2026-04-10 → 2026-04-23)
+
+`f0b4457` initial phase · `33caf2f` docker compose + module refactor · `9995e96`
+
+First working shape: API + worker split, Docker Compose, Go module layout. Commit
+messages from this phase (`faah`) are placeholders — this was exploratory.
+
+## Phase 1 — The big refactor (2026-05-02 → 2026-05-05)
+
+`d782129` big refactor · `5a1cc6b` checkpoint · `67dca3d` · `f2660cc` company
+name in chat context · `24ff404` agent config + visualization handling ·
+`9ea0007` guardrail topic enforcement
+
+**Where the current architecture came from.** Three PRs off a `bigref` branch
+established the layering that still holds: `domain` / `app` / `adapters` /
+`transport`, `ChatEnqueuer` vs `ChatRunner`, the tool registry, and the YAML
+guardrail engine. Dashboard was rebuilt in parallel (`0687da5` → `a19a75a`),
+ending with real WebSocket lifecycle handling on thread switching.
+
+**Landing page** shipped 2026-04-28 (`7a4f762`) with the scripted chat demo.
+
+## Phase 2 — Ship it (2026-05-07 → 2026-05-09)
+
+`61edb32` ci/cd · `f8daa65` image ci/cd · `9051b29` config defaults · `55749c9`
+LLM client refactor · `0ea75c0` builder → golang:1.26-alpine
+
+Backend: GitHub Actions build + GHCR push on tags.
+Dashboard: Cloudflare Pages deploy, fought and won across four commits
+(`6732259` → `9e9899f`) — pnpm install, SPA fallback, then Pages middleware.
+Mobile chat UI polished in the same pass.
+
+**This is when Argentum became deployable rather than runnable.**
+
+## Phase 3 — Capability expansion (2026-05-09 → 2026-05-10)
+
+The densest week in the project's history. Six substantial features in two days:
+
+| Commit    | Feature                                                                 |
+| --------- | ----------------------------------------------------------------------- |
+| `42391d2` | `generate_document` tool — PDF / XLSX / CSV to MinIO with presigned URLs |
+| `58c1d6f` | SQL Server adapter + Metabase warehouse sync + DSN builder              |
+| `feb7a47` | **Multi-source DB support** with LLM-generated source descriptions      |
+| `8cf653b` | **Cron-scheduled agent tasks** — asynq periodic manager, DB-backed      |
+| `e340831` | Per-model LLM cost calculation                                          |
+| `e70e11b` `0372ac1` `437ce57` | SQL Server reality checks: TLS 1.0, cert trust, no read-only tx option |
+
+Dashboard kept pace: scheduled-tasks UI with cron presets and run history
+(`432d6f0`), integrations tab + toasts (`6fd2217`), env-driven API/WS hosts
+(`f02c954`), React Query cache clearing on logout (`aa5ec80`).
+
+The three SQL Server fix commits are worth noting — they are what real customer
+infrastructure looks like: an IP-addressed server with an old TLS stack and a
+dialect that rejects the read-only transaction option other drivers accept.
+
+## Phase 4 — Cost and context engineering (2026-05-11 → 2026-05-14)
+
+The most technically interesting phase, and the one with the least test coverage.
+
+| Commit    | Change                                                                                          |
+| --------- | ----------------------------------------------------------------------------------------------- |
+| `dcd0355` | Schema retrieval + chat runner refactor                                                          |
+| `f850a88` | Cheaper/smarter LLM defaults, streaming metering, `/api/config/models`                           |
+| `e02dfd4` | **Prompt caching + schema filtering** — the stated goal was cutting Anthropic input tokens        |
+| `a56fd85` | Default LLM → `deepseek/deepseek-v3.2` via OpenRouter                                            |
+| `94fe370` | **Per-tenant LLM credentials + embedding-based table picker** (pgvector, per-source opt-in)      |
+| `74f5419` | **Bill Anthropic prompt-cache tokens** + revert to Anthropic-native defaults                      |
+
+Note the two-day round trip on model defaults: DeepSeek on 05-12, Anthropic-native
+on 05-14. With no eval harness, whether either move improved answer quality is
+still unknown — which is exactly why `T-01` sits at the top of the next sprint.
+
+Dashboard: model display in chat and settings (`917fc1e`), connection test +
+reindex + RAG probe tools (`d11edef`) — the operator tooling for the new
+retrieval layer. Landing rethemed to red/rose (`a1ee7c0`).
+
+## Phase 5 — Channels and accountability (2026-05-17)
+
+| Commit    | Change                                                                        |
+| --------- | ----------------------------------------------------------------------------- |
+| `17f81f5` | **Discord + Lark (Feishu) channels** — 6 migrations, new `cmd/discord` process |
+| `52f2511` | **Per-thread / per-channel / per-user usage audit endpoints**                  |
+
+Dashboard shipped both the same day: live integration settings (`135ca35`) and
+the tabbed usage analytics UI (`0e51718`).
+
+The pairing is telling: channels multiply usage, so cost attribution by channel
+and end-user shipped alongside them rather than after.
+
+## Phase 6 — Guardrail tuning (2026-05-23)
+
+`3891579` fix: stop semantic injection guardrail blocking benign follow-ups
+
+The last commit in the repo. A production false positive: the semantic
+prompt-injection classifier was rejecting ordinary follow-up messages. The fix
+rewrote the classifier prompt to default FALSE and enumerate what is *not*
+injection. Same class of problem as the topic-regex narrowings, same fix shape.
+
+---
+
+## What the history says about how this project is built
+
+**Strengths visible in the log:**
+
+- **Vertical slices.** Every feature lands backend + frontend + migration
+  together. `feb7a47` (multi-source) shipped with its own UI two commits later.
+- **Cost consciousness as a first-class concern.** An entire phase dedicated to
+  input-token reduction, and metering shipped alongside every capability that
+  spends money.
+- **Fast reaction to production reality.** SQL Server TLS, guardrail false
+  positives, Cloudflare Pages quirks — all fixed within a day of discovery.
+- **Comment quality is unusually high.** Non-obvious decisions carry their
+  rationale in the source (why `UsageRecorder` lives in `internal/tools`, why
+  `IncludeIntermediateMessages` is set, which false positive each regex narrowing
+  fixed). This is what makes the codebase agent-friendly.
+
+**Patterns worth changing:**
+
+- **Zero tests accompany any feature commit.** All three existing test files
+  predate or are incidental to the feature work.
+- **Prompt and model changes ship blind.** Six commits changed agent behaviour
+  with no regression signal, including one reversal.
+- **No down migrations after 014.** Only the Discord/Lark batch has them.
+- **`internal/app` grows unchecked** — ~2,900 lines across 18 files, the highest
+  churn and highest risk in the repo, entirely untested.
+
+## Feature velocity, measured
+
+| Phase | Days | Features shipped | Notes                                     |
+| ----- | ---- | ---------------- | ----------------------------------------- |
+| 0     | 13   | 1 (skeleton)     | Exploratory                                |
+| 1     | 4    | Architecture      | The refactor that made everything after possible |
+| 2     | 3    | CI/CD × 2 repos   | Deployability                              |
+| 3     | 2    | 6                | Peak velocity                              |
+| 4     | 4    | 6                | Deepest technical work                     |
+| 5     | 1    | 2 large           | Channels + audit, same day                 |
+| 6     | 1    | 1 fix            | Production response                        |
+
+Sustained rate during active weeks: roughly **1.5 substantial features per
+working day**, backend and frontend together, solo. The next sprint is sized
+against that observed rate — not against an optimistic one.

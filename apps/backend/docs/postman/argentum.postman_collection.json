@@ -1,0 +1,230 @@
+{
+  "info": {
+    "name": "Argentum API",
+    "description": "HTTP endpoints exposed by the Argentum API server (cmd/api/main.go). No auth layer — tenant fixed at startup via TENANT_ID env. Job and WhatsApp routes only registered when ENABLE_WHATSAPP=true.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "argentum-api-collection-v1"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "jobId",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "type": "string"
+    },
+    {
+      "key": "webhookVerifyToken",
+      "value": "your-webhook-verify-token",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Returns server health + tenant identifier. Handler: cmd/api/main.go:116-122. Response: {status, tenant, timestamp}."
+          }
+        },
+        {
+          "name": "Readiness Probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ready",
+              "host": ["{{baseUrl}}"],
+              "path": ["ready"]
+            },
+            "description": "K8s-style readiness probe. Checks source DB, internal DB, RabbitMQ. Handler: cmd/api/main.go:124-143. 200 when ready, 503 otherwise."
+          }
+        },
+        {
+          "name": "Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics"]
+            },
+            "description": "Application metrics snapshot. Handler: cmd/api/main.go:145-148."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics Query",
+      "item": [
+        {
+          "name": "Process Query",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"demo\",\n  \"query\": \"top 5 customers by revenue last month\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/query",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "query"]
+            },
+            "description": "Synchronous analytics endpoint. Natural language query → LLM agent → SQL execution. Handler: cmd/api/main.go:151-180. 60s timeout. Response: AgentResponse {message_id, query, insight, query_result, dashboard_url, follow_up_questions, error}."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Jobs (WhatsApp)",
+      "item": [
+        {
+          "name": "Job Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jobs/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs", "stats"]
+            },
+            "description": "Aggregate job statistics. Handler: cmd/api/main.go:248-250. Only registered when ENABLE_WHATSAPP=true."
+          }
+        },
+        {
+          "name": "Get Job By ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs", "{{jobId}}"]
+            },
+            "description": "Retrieve job status + progress. Handler: cmd/api/main.go:238-246. 404 if not found. Set jobId collection variable to a real UUID."
+          }
+        }
+      ]
+    },
+    {
+      "name": "WhatsApp Webhook",
+      "item": [
+        {
+          "name": "Webhook Verification (GET)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/webhook/whatsapp?hub.mode=subscribe&hub.verify_token={{webhookVerifyToken}}&hub.challenge=12345",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhook", "whatsapp"],
+              "query": [
+                {"key": "hub.mode", "value": "subscribe"},
+                {"key": "hub.verify_token", "value": "{{webhookVerifyToken}}"},
+                {"key": "hub.challenge", "value": "12345"}
+              ]
+            },
+            "description": "WhatsApp Business webhook verification. Handler: cmd/api/main.go:252-261. Returns hub.challenge value as plain text on success. 403 if token mismatch."
+          }
+        },
+        {
+          "name": "Webhook Message - WhatsApp Business",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Hub-Signature-256",
+                "value": "sha256=REPLACE_WITH_HMAC_SHA256_OF_BODY",
+                "description": "HMAC-SHA256 of request body using WHATSAPP_APP_SECRET"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [\n    {\n      \"id\": \"BUSINESS_ACCOUNT_ID\",\n      \"changes\": [\n        {\n          \"field\": \"messages\",\n          \"value\": {\n            \"messaging_product\": \"whatsapp\",\n            \"metadata\": {\n              \"display_phone_number\": \"15551234567\",\n              \"phone_number_id\": \"PHONE_NUMBER_ID\"\n            },\n            \"contacts\": [\n              {\n                \"profile\": {\"name\": \"Test User\"},\n                \"wa_id\": \"15551234567\"\n              }\n            ],\n            \"messages\": [\n              {\n                \"from\": \"15551234567\",\n                \"id\": \"wamid.TEST\",\n                \"timestamp\": \"1700000000\",\n                \"type\": \"text\",\n                \"text\": {\"body\": \"hello argentum\"}\n              }\n            ]\n          }\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhook/whatsapp",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhook", "whatsapp"]
+            },
+            "description": "Inbound WhatsApp Business message. Handler: cmd/api/main.go:263-347. Verifies X-Hub-Signature-256, queues async job to RabbitMQ. Response: {status, job_id, timestamp}."
+          }
+        },
+        {
+          "name": "Webhook Message - Twilio",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              },
+              {
+                "key": "X-Twilio-Signature",
+                "value": "REPLACE_WITH_TWILIO_HMAC_SIGNATURE",
+                "description": "HMAC validation using TWILIO_AUTH_TOKEN"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key": "From", "value": "whatsapp:+15551234567"},
+                {"key": "Body", "value": "hello argentum"},
+                {"key": "MessageSid", "value": "SM00000000000000000000000000000000"},
+                {"key": "AccountSid", "value": "AC00000000000000000000000000000000"},
+                {"key": "To", "value": "whatsapp:+14155238886"}
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhook/whatsapp",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhook", "whatsapp"]
+            },
+            "description": "Inbound Twilio WhatsApp message. Handler: cmd/api/main.go:263-347. Form-urlencoded payload. Empty 200 response on accept."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Metabase Proxy",
+      "item": [
+        {
+          "name": "Metabase Health (proxied)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metabase/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["metabase", "api", "health"]
+            },
+            "description": "Reverse proxy to Metabase (http://metabase:3000). Handler: cmd/api/main.go:185-195. Any HTTP method + path under /metabase/* forwarded transparently."
+          }
+        }
+      ]
+    }
+  ]
+}
