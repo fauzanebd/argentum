@@ -4,6 +4,7 @@ go 1.26.1
 
 require (
 	github.com/Ingenimax/agent-sdk-go v0.2.56
+	github.com/bwmarrin/discordgo v0.29.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -21,6 +22,7 @@ require (
 	github.com/pgvector/pgvector-go v0.3.0
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/rs/zerolog v1.34.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/xuri/excelize/v2 v2.10.1
 	golang.org/x/crypto v0.50.0
@@ -40,7 +42,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.47.1 // indirect
 	github.com/aws/smithy-go v1.24.0 // indirect
 	github.com/boombuler/barcode v1.1.0 // indirect
-	github.com/bwmarrin/discordgo v0.29.0 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
@@ -100,7 +101,6 @@ require (
 	github.com/richardlehane/mscfb v1.0.6 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/rs/xid v1.6.0 // indirect
-	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect

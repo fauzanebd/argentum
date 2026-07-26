@@ -195,12 +195,53 @@ happens to work, which makes it easy to misdiagnose.
 Fix: put `/usr/local/bin` ahead of `~/.nix-profile/bin`, or remove docker from the
 nix profile.
 
-### E-4 · Local Metabase has no admin account
+### E-4 · Local Metabase has no admin account — **resolved 2026-07-27**
 
 The freshly created `argentum_metabase` container has not been through onboarding,
 so Metabase-dependent tools cannot authenticate locally. Run
 `apps/backend/scripts/setup_metabase.sh`, or document that chart/dashboard flows
 require a one-time manual Metabase setup.
+
+Resolved during `T-01`, because the eval set's three chart/dashboard cases
+cannot run without it:
+
+```bash
+METABASE_URL=http://localhost:3000 DB_HOST=postgres_demo DB_PORT=5432 \
+DB_NAME=demo_analytics DB_USER=demo DB_PASSWORD=demo \
+bash scripts/setup_metabase.sh
+```
+
+`DB_HOST` here is the compose service name — Metabase reaches the demo database
+over the `argentum_network` bridge, not over the host port mapping. The
+admin credentials come from `METABASE_ADMIN_EMAIL` / `METABASE_ADMIN_PASSWORD`
+in `.env`, which is what `internal/metabase` authenticates with; using the
+script's defaults instead would leave the agent unable to log in.
+
+### E-5 · Demo `dim_date` labels are space-padded — **fixed 2026-07-27**
+
+Found by the first `T-01` eval run, not by inspection.
+
+`migrations/demo_tenant/002_seed_data_dim.sql` seeded `month_name` with
+`TO_CHAR(d, 'Month')`, which pads to nine characters. The stored value was
+`'December '`, so the obvious filter an agent writes —
+
+```sql
+where dd.year = 2024 and dd.month_number = 12 and dd.month_name = 'December'
+```
+
+— matched **zero rows** against a table that plainly holds December data.
+`day_name` had the same problem.
+
+What made it worth chasing is what the agent did next: given an empty result,
+it reported *"Total Sales for December 2024: IDR 1,488,000"* — a second
+fabrication, from a different mechanism than `C-1`. The November case, asked
+the same way, produced an honest "no sales transactions recorded for November
+2024". Same model, same prompt, same empty result, opposite behaviours.
+
+Fixed in three places: `TRIM(...)` in `002` for fresh volumes,
+`006_trim_dim_date_labels.sql` for databases already seeded, and an `UPDATE`
+applied to the running container. Verified: the query above now returns
+`3863405700.00`.
 
 ---
 

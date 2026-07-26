@@ -1294,6 +1294,20 @@ Moved earlier in the sprint and its dependency changed from `T-17` (tracing) to
   result was returned in the turn, block and replace with an honest "I wasn't able
   to complete the query" message. This is a blunt instrument and will need tuning —
   but the failure it prevents is the one that loses a customer.
+- **Cover the empty-result path, not only budget exhaustion.** `T-01`'s first
+  eval run found a second fabrication mechanism: given a query that succeeded
+  but matched zero rows, the agent reported *"Total Sales for December 2024:
+  IDR 1,488,000"* — a figure with no origin in the data. Asked the same way
+  about November it answered honestly instead. Same model, same prompt, same
+  empty result, opposite behaviours, so this is not fixed by the iteration
+  budget alone. A returned-but-empty result must produce "no rows matched",
+  never a number. Reproduction in
+  [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md).
+- **The gate case already exists.** `dashboard-two-cards` in the golden set is
+  the deterministic reproduction of the cap: the agent spends all three
+  iterations on `get_schema`, `get_schema`, `create_visualization` and then
+  describes a dashboard it never created. When this ticket lands, `make eval`
+  should read 31/31 with no change to the golden set.
 - Emit an `iteration` WS event so the UI shows progress rather than a silent stall.
 - Keep `agents.yaml` and `WithMaxIterations` in sync, or delete the YAML value and
   make Go authoritative — do not leave two sources of truth.
@@ -1301,7 +1315,9 @@ Moved earlier in the sprint and its dependency changed from `T-17` (tracing) to
 **Acceptance:**
 - [ ] A question needing 5+ steps completes
 - [ ] Budget exhaustion produces an explicit incomplete-answer message, never a number
+- [ ] A query that returns zero rows produces "no rows matched", never a number
 - [ ] The exact smoke-test question returns the correct order of magnitude, or admits failure
+- [ ] `make eval` reads 31/31 — `dashboard-two-cards` is the case that fails today
 - [ ] No regression in mean cost per answer
 
 **Gate:** re-run the C-1 reproduction — "What were our total sales last month?"

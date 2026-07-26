@@ -16,17 +16,30 @@ zero tests.**
 > the pipeline, and replaced the trigger-level `paths:` filter with per-job
 > filtering. `golangci-lint` and the deliberate-break proof remain `T-02`'s job.
 
+> **Updated after `T-01`:** two more packages have tests —
+> `internal/report/format` and `internal/eval` — taking it to 5 of 37. The risk
+> ranking below is unchanged; `T-02` still owns every CRITICAL package.
+>
+> `T-01` also added a kind of coverage this document did not previously
+> account for. `go test` proves the code does what it was written to do.
+> `make eval` proves the **agent answers correctly**, which no unit test can
+> reach: the failure it exists to catch — a confident, well-formatted, invented
+> number — is a perfectly healthy code path. Baseline in
+> [`eval-baseline.md`](eval-baseline.md).
+
 ## Go backend — package by package
 
-### Packages with tests (3)
+### Packages with tests (5)
 
 | Package                        | Test file(s)                                       | What it covers                       |
 | ------------------------------ | -------------------------------------------------- | ------------------------------------ |
 | `internal/llmclient`           | `factory_test.go`                                  | LLM client construction per interface |
 | `internal/metabase`            | `postgres_dsn_test.go`, `sqlserver_dsn_test.go`     | DSN string building for Metabase sync |
 | `internal/tools/document`      | `render_test.go`                                    | PDF / XLSX / CSV rendering            |
+| `internal/report/format`       | `parse_test.go`                                     | Number parsing in both locales, magnitude suffixes (Juta/Miliar/Triliun, K/M/B), and the comparator that must reject the C-1 fabrication at every tolerance |
+| `internal/eval`                | `score_test.go`, `case_test.go`                     | Scoring per assertion kind, the Indonesian/English heuristic, and a validity + category-coverage check over the shipped golden set |
 
-All three pass: `ok` in 0.45–1.0s.
+All five pass.
 
 ### Packages with no tests (30)
 

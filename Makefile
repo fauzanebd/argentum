@@ -80,8 +80,11 @@ check: vet test build ## Everything CI runs, locally
 
 .PHONY: eval
 eval: ## Score the agent against the golden question set (T-01)
-	@test -d $(BACKEND)/testdata/eval || { echo "eval harness not built yet — see docs/plan/01-tickets.md T-01"; exit 1; }
-	cd $(BACKEND) && go run ./cmd/eval -set testdata/eval/golden.yaml
+	cd $(BACKEND) && go run ./cmd/eval -set testdata/eval/golden.yaml $(EVAL_ARGS)
+
+.PHONY: eval-dry
+eval-dry: ## Validate the golden set and seed the eval tenant without calling the LLM
+	cd $(BACKEND) && go run ./cmd/eval -set testdata/eval/golden.yaml -dry-run
 
 .PHONY: types
 types: ## Regenerate packages/api-types from Go structs (T-02b)

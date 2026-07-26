@@ -102,10 +102,54 @@ and end-user shipped alongside them rather than after.
 
 `3891579` fix: stop semantic injection guardrail blocking benign follow-ups
 
-The last commit in the repo. A production false positive: the semantic
-prompt-injection classifier was rejecting ordinary follow-up messages. The fix
-rewrote the classifier prompt to default FALSE and enumerate what is *not*
-injection. Same class of problem as the topic-regex narrowings, same fix shape.
+The last commit before the nine-week pause. A production false positive: the
+semantic prompt-injection classifier was rejecting ordinary follow-up messages.
+The fix rewrote the classifier prompt to default FALSE and enumerate what is
+*not* injection. Same class of problem as the topic-regex narrowings, same fix
+shape.
+
+---
+
+# Sprint 1
+
+## Phase 0 — Re-warm and consolidate (2026-07-26)
+
+`T-00` environment re-warm · `T-00b` monorepo consolidation
+
+Three repos became one with history preserved through `git subtree`, zero Go
+import-path changes, and a single path-filtered CI pipeline that runs tests for
+the first time. Records in [`migration-notes.md`](migration-notes.md).
+
+The re-warm smoke test found more than drift: the agent fabricated a sales
+figure under budget exhaustion (`C-1`) and the primary model recorded no usage
+at all (`C-2`). Both went into the plan as tickets rather than into a backlog —
+see [`environment-notes.md`](environment-notes.md).
+
+## Phase 1 — Measurement (2026-07-27 → )
+
+`T-01` eval harness
+
+The first regression signal this project has ever had for agent behaviour.
+Thirty-one golden questions against the demo tenant, run through the real
+`ChatRunner` — same agent factory, tools, guardrails and system prompt as the
+worker, which is why `internal/bootstrap` exists now: the worker's wiring came
+out of `cmd/worker/main.go` so a second process could reuse it instead of
+copying it.
+
+Two things worth noting about the first run, because they are the argument for
+the ticket:
+
+- It found a **demo-data landmine** nobody had noticed in three months
+  (`E-5`): `dim_date.month_name` was space-padded, so correct SQL returned
+  nothing. Given that empty result the agent invented a total — a second
+  fabrication mechanism, distinct from `C-1`.
+- It found **three defective test cases of its own**, which is the normal cost
+  of a first golden set and worth stating plainly: one question was ambiguous
+  only in theory, one asserted a refusal's exact wording rather than its shape,
+  and one had a second defensible answer. All three were fixed by tightening
+  the case, not by loosening the check.
+
+Baseline and per-category scores: [`eval-baseline.md`](eval-baseline.md).
 
 ---
 

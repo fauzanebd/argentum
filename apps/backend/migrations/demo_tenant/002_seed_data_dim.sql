@@ -8,12 +8,18 @@ INSERT INTO dim_date (full_date, day_of_week, day_name, day_of_month, day_of_yea
 SELECT 
     d::date as full_date,
     EXTRACT(DOW FROM d)::integer as day_of_week,
-    TO_CHAR(d, 'Day') as day_name,
+    -- TRIM matters: TO_CHAR pads 'Day' and 'Month' to nine characters, so the
+    -- seeded values were 'Monday   ' and 'December '. Every natural filter an
+    -- agent writes — month_name = 'December' — then matches zero rows against
+    -- a table that plainly has December data. The T-01 eval run caught it: the
+    -- agent wrote correct SQL, got an empty result, and reported an invented
+    -- total. The fabrication is T-16's problem; the landmine was ours.
+    TRIM(TO_CHAR(d, 'Day')) as day_name,
     EXTRACT(DAY FROM d)::integer as day_of_month,
     EXTRACT(DOY FROM d)::integer as day_of_year,
     EXTRACT(WEEK FROM d)::integer as week_of_year,
     EXTRACT(MONTH FROM d)::integer as month_number,
-    TO_CHAR(d, 'Month') as month_name,
+    TRIM(TO_CHAR(d, 'Month')) as month_name,
     EXTRACT(QUARTER FROM d)::integer as quarter,
     EXTRACT(YEAR FROM d)::integer as year,
     EXTRACT(QUARTER FROM d)::integer as fiscal_quarter,

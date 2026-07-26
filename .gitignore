@@ -27,7 +27,13 @@ dist/
 # Go binaries built into the tree by `make build` in apps/backend
 apps/backend/api
 apps/backend/worker
+apps/backend/discord
+apps/backend/eval
 apps/backend/encrypt_secret
+
+# Eval reports are per-run artefacts; the committed baseline lives in
+# docs/coverage/eval-baseline.md
+apps/backend/eval-report*.json
 
 # Local scratch
 *.log
