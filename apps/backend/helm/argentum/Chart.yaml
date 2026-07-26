@@ -1,0 +1,14 @@
+apiVersion: v2
+name: argentum
+description: Argentum - Go API + Asynq worker for tenant analytics & WhatsApp pipeline
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - argentum
+  - api
+  - go
+  - worker
+  - analytics
+maintainers:
+  - name: Argentum Team

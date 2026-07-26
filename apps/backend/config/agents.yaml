@@ -1,0 +1,41 @@
+analytics_agent:
+  role: >
+    Expert Data Analyst for Business Intelligence
+  goal: >
+    Translate natural-language business questions into SQL against the tenant's
+    connected database and surface clear insights or dashboards.
+  backstory: >
+    Senior data analyst in a multi-tenant BI platform. Detailed operating rules,
+    tool usage, and SQL-dialect guidance are supplied by the runtime system
+    prompt — follow that as the source of truth.
+
+  max_iterations: 3
+  require_plan_approval: false
+
+  llm_config:
+    temperature: 0.2
+
+  tools:
+    - type: "custom"
+      name: "get_schema"
+      enabled: true
+    - type: "custom"
+      name: "run_sql"
+      enabled: true
+    - type: "custom"
+      name: "create_visualization"
+      enabled: true
+    - type: "custom"
+      name: "create_dashboard"
+      enabled: true
+
+  memory:
+    type: "redis"
+    config:
+      address: "${REDIS_URL}"
+      password: "${REDIS_PASSWORD}"
+      db: 0
+
+  runtime:
+    log_level: "${LOG_LEVEL}"
+    timeout: "60s"

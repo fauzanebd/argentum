@@ -1,0 +1,202 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
+
+	"github.com/fauzanebd/argentum/internal/adapters/db"
+	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
+	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/auth"
+	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/crypto"
+	"github.com/fauzanebd/argentum/internal/llmclient"
+	"github.com/fauzanebd/argentum/internal/transport/eventbus"
+	"github.com/fauzanebd/argentum/internal/llmtenant"
+	"github.com/fauzanebd/argentum/internal/metabase"
+	"github.com/fauzanebd/argentum/internal/metrics"
+	"github.com/fauzanebd/argentum/internal/migrate"
+	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/tools"
+	"github.com/fauzanebd/argentum/internal/whatsapp"
+	"github.com/sirupsen/logrus"
+)
+
+// bootstrap wires control-plane DB, tenant pool, Redis, queue, services, and WhatsApp.
+// On failure, partial resources are torn down before returning.
+func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) {
+	deps := &apiDeps{cfg: cfg}
+	var undo []func()
+	rollback := func() {
+		for i := len(undo) - 1; i >= 0; i-- {
+			undo[i]()
+		}
+	}
+	defer func() {
+		if err != nil {
+			rollback()
+		}
+	}()
+
+	if err := migrate.Up(cfg.DatabaseURL(), cfg.ControlMigrationsDir); err != nil {
+		return nil, fmt.Errorf("control migrations: %w", err)
+	}
+
+	controlDB, err := pgctl.New(cfg.DatabaseURL())
+	if err != nil {
+		return nil, fmt.Errorf("control DB: %w", err)
+	}
+	deps.controlDB = controlDB
+	undo = append(undo, func() { controlDB.Close() })
+
+	companyRepo := pgctl.NewCompanyRepo(controlDB)
+	userRepo := pgctl.NewUserRepo(controlDB)
+	connRepo := pgctl.NewConnectionRepo(controlDB)
+	phoneRepo := pgctl.NewPhoneRepo(controlDB)
+	threadRepo := pgctl.NewThreadRepo(controlDB)
+	messageRepo := pgctl.NewMessageRepo(controlDB)
+	usageRepo := pgctl.NewUsageRepo(controlDB)
+	creditsRepo := pgctl.NewCreditsRepo(controlDB)
+	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
+	discordCredRepo := pgctl.NewCompanyDiscordCredentialRepo(controlDB)
+	allowedDiscordRepo := pgctl.NewAllowedDiscordUserRepo(controlDB)
+	larkCredRepo := pgctl.NewCompanyLarkCredentialRepo(controlDB)
+	allowedLarkRepo := pgctl.NewAllowedLarkUserRepo(controlDB)
+	deps.threadRepo = threadRepo
+	deps.msgRepo = messageRepo
+	deps.userRepo = userRepo
+	deps.companyRepo = companyRepo
+
+	dsnCipher, err := crypto.NewFromHex(cfg.DSNEncryptionKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("DSN cipher: %w", err)
+	}
+
+	signer, err := auth.NewTokenSigner(cfg.JWTSecret, 15*time.Minute, 7*24*time.Hour)
+	if err != nil {
+		return nil, fmt.Errorf("JWT signer: %w", err)
+	}
+	deps.signer = signer
+
+	resolver := pgctl.NewConnectionResolver(connRepo, dsnCipher)
+	deps.tenant = db.NewTenantConnPool(resolver, 200, 30*time.Minute)
+	tenCtx, cancelTen := context.WithCancel(ctx)
+	deps.cancelTen = cancelTen
+	deps.tenant.Start(tenCtx)
+	undo = append(undo, func() {
+		deps.tenant.CloseAll()
+		cancelTen()
+	})
+
+	rdb := buildRedisClient(cfg)
+	if rdb == nil {
+		return nil, fmt.Errorf("redis client is required (REDIS_URL)")
+	}
+	deps.rdb = rdb
+	undo = append(undo, func() { rdb.Close() })
+
+	asynqOpt, err := queue.BuildRedisOpt(cfg.ResolvedAsynqRedisURL(), cfg.RedisPassword)
+	if err != nil {
+		return nil, fmt.Errorf("asynq redis opt: %w", err)
+	}
+	deps.enqueuer = queue.NewEnqueuer(asynqOpt)
+	undo = append(undo, func() { deps.enqueuer.Close() })
+
+	// Per-tenant LLM cache (shared with the worker's chat runner — separate
+	// process, independent cache). Used by the API's embedding service for
+	// reindex, and stashed on deps for future tenant-scoped flows.
+	llmResolver := llmtenant.NewResolver(llmCredRepo, dsnCipher, cfg)
+	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
+	deps.llmCache = llmtenant.NewClientCache(
+		llmResolver,
+		func(inner interfaces.LLM, model string) interfaces.LLM {
+			return app.NewMeteredLLM(inner, model, deps.usageSvc)
+		},
+		300, 30*time.Minute,
+	)
+	deps.llmCache.Start(tenCtx)
+	deps.embedCache = llmtenant.NewEmbeddingCache(llmResolver, 100, 30*time.Minute)
+	deps.embedCache.Start(tenCtx)
+	undo = append(undo, func() {
+		deps.embedCache.CloseAll()
+		deps.llmCache.CloseAll()
+	})
+
+	deps.authSvc = app.NewAuthService(companyRepo, userRepo, signer)
+
+	var mbCli *metabase.Client
+	var metabaseWarehouse *app.MetabaseWarehouseSync
+	if cfg.MetabaseURL != "" && cfg.MetabaseAdminEmail != "" && cfg.MetabaseAdminPassword != "" {
+		mbCli = metabase.NewClient(cfg.MetabaseURL, cfg.MetabasePublicURL,
+			cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword)
+		metabaseWarehouse = app.NewMetabaseWarehouseSync(mbCli)
+	}
+	rawLightLLM, err := llmclient.BuildLight(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("light LLM: %w", err)
+	}
+	lightLLMClient := app.NewMeteredLLM(rawLightLLM, cfg.EffectiveLightLLMModel(), deps.usageSvc)
+	// Schema-cache invalidation for the API: chat tools live in the worker
+	// process, so this GetSchemaTool is dedicated to the api's invalidation
+	// hooks (rotate DSN -> drop cache). Each process has its own cache.
+	apiSchemaTool := tools.NewGetSchemaTool(deps.tenant, connRepo)
+	describer := app.NewConnectionDescriber(lightLLMClient, deps.tenant, connRepo)
+	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse, apiSchemaTool, describer)
+	if cfg.DiscordEnabled {
+		reloadBus := eventbus.NewRedisBus(rdb)
+		deps.discordSvc = app.NewDiscordService(discordCredRepo, allowedDiscordRepo, dsnCipher, reloadBus)
+	}
+	if cfg.LarkEnabled {
+		deps.larkSvc = app.NewLarkService(larkCredRepo, allowedLarkRepo, dsnCipher)
+	}
+
+	// Table-picker embeddings: per-tenant resolution via embedCache.
+	// EmbeddingService resolves the client per ReindexSource call so each
+	// company hits its own provider/key.
+	if cfg.EmbeddingEnabled {
+		tableEmbRepo := pgctl.NewTableEmbeddingRepo(controlDB)
+		deps.embeddingSvc = app.NewEmbeddingService(connRepo, connRepo, tableEmbRepo, apiSchemaTool, deps.embedCache)
+	}
+	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
+	deps.dashboardSvc = app.NewDashboardService(dashboardRepo, mbCli)
+	classifierLLM := lightLLMClient
+	if cfg.ClassifierModel != "" {
+		rawClassifier, err := llmclient.BuildClassifier(cfg)
+		if err != nil {
+			logrus.WithError(err).Warn("classifier LLM build failed; falling back to light LLM")
+		} else {
+			classifierLLM = app.NewMeteredLLM(rawClassifier, cfg.EffectiveClassifierModel(), deps.usageSvc)
+		}
+	}
+	classifier := app.NewTopicClassifier(classifierLLM)
+	threadSvc := app.NewThreadService(threadRepo, messageRepo, classifier, lightLLMClient,
+		app.ThreadServiceConfig{
+			IdleMinutes:        cfg.ThreadIdleMinutes,
+			SummaryEveryNTurns: cfg.SummaryEveryNTurns,
+		})
+	deps.chatEnq = app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, deps.enqueuer)
+	scheduledRepo := pgctl.NewScheduledTaskRepo(controlDB)
+	deps.scheduledSvc = app.NewScheduledTaskService(scheduledRepo, threadSvc, companyRepo, deps.enqueuer)
+
+	waProvider, err := whatsapp.NewProvider(whatsapp.Config{
+		Provider:           cfg.WhatsAppProvider,
+		APIVersion:         cfg.WhatsAppAPIVersion,
+		PhoneNumberID:      cfg.WhatsAppPhoneNumberID,
+		AccessToken:        cfg.WhatsAppAccessToken,
+		AppSecret:          cfg.WhatsAppAppSecret,
+		WebhookVerifyToken: cfg.WhatsAppWebhookVerifyToken,
+		TwilioAccountSID:   cfg.TwilioAccountSID,
+		TwilioAuthToken:    cfg.TwilioAuthToken,
+		TwilioFromNumber:   cfg.TwilioFromNumber,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("WhatsApp provider: %w", err)
+	}
+	deps.wa = waProvider
+
+	deps.metrics = metrics.NewCollector()
+	return deps, nil
+}
