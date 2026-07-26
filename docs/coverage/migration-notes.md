@@ -115,7 +115,48 @@ Watch for:
 - **Environment variables.** `VITE_*` values are per-project in Pages, unaffected by
   the move — but confirm they are present on the preview deployment.
 
-### 3. Push to `fauzanebd/argentum` — remote configured, push pending
+### 3. Push to `fauzanebd/argentum` — ✅ DONE
+
+Pushed `3891579..2f56e39` as a fast-forward, plus the CI fix below. `pre-monorepo`
+exists on the remote as a named ref at the old `main` (`3891579`).
+
+Results:
+
+| Run | Outcome |
+| --- | ------- |
+| `Release` on main | Auto-tagged **`v0.10.1`** — bumped from `v0.10.0`, so tag continuity survived the migration |
+| `CI` on main | ✅ Detect changes / Backend / Web all green; docker correctly skipped (not a tag) |
+| `CI` on tag `v0.10.1` | ✅ Backend green, Web skipped, all three images built and pushed |
+
+#### Bug found and fixed: tag pushes stopped publishing images
+
+The first `v0.10.1` tag run skipped **every** job. On a tag push
+`dorny/paths-filter` has no base ref to diff against, so it reported no changes;
+the `backend` job's `if` evaluated false and skipped; and because `docker` lists
+`backend` in `needs`, **a skipped dependency skipped the docker job too**. The
+release completed with no images — silently.
+
+Fixed by making the backend job unconditional for tags, so tests still gate
+publishing and the dependency resolves:
+
+```yaml
+if: needs.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/v')
+```
+
+Verified by deleting and re-cutting `v0.10.1`: Backend green, all three images
+published. **This is the failure mode to watch for whenever a job gains a
+`needs:` on a path-filtered job** — the skip cascades silently rather than failing.
+
+#### Follow-up: `argentum-discord` is a new GHCR package
+
+It has never been published before (the pre-monorepo CI never built `cmd/discord`).
+New GHCR packages default to **private** and have no linked repository, so a
+cluster pulling it will fail on auth until its visibility and image pull secret are
+configured — unlike `argentum-api` and `argentum-worker`, which are already set up.
+
+---
+
+### Original push plan (kept for reference)
 
 **Decision: reuse the existing backend repo.** The monorepo HEAD descends from all
 three repo heads, so this is a fast-forward — `origin/main` (`3891579`) is an
