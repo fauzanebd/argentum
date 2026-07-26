@@ -8,6 +8,58 @@ has one.
 
 ## Sprint 2 candidates (high confidence)
 
+### The whole widget phase (T-19 → T-23)
+**Why deferred:** Not a change of mind about the widget — a scheduling
+consequence. The report track (`T-R1`→`T-R5`, 10d) was inserted on 2026-07-27 and
+the sprint cannot hold both. The widget phase is the designated slack because
+nothing depends on it and it slides whole. `T-19` (embed auth) becomes the first
+ticket of Sprint 2 and stays never-cut there.
+**Trigger:** Sprint 1 closes.
+**Estimate:** 11.5d, unchanged — the tickets need no rewriting.
+
+### Scheduled branded report delivery
+A scheduled task or a watcher produces the branded PDF or deck and delivers it to
+a channel — "the weekly review deck lands in Lark every Monday at 07:00". This is
+the report system and the push shift compounding, and it is the cheapest strong
+demo the product will have.
+**Why deferred:** needs `T-08` (watchers) and `T-12a` (`send_message` with
+`attach_document_id`, which already takes one) both in production. After that it
+is wiring, not building.
+**Trigger:** watchers running in production for any customer.
+**Estimate:** 1.5d.
+
+### DOCX / Word output
+**Why deferred:** PDF covers "send it", PPTX covers "present it". Word is for a
+document the recipient edits, which is a different job and a different renderer.
+**Trigger:** a customer whose process requires editing the report before it goes
+out — common in finance and legal, so expect it eventually.
+**Estimate:** 2.5d, and much less if `T-R4`'s OOXML templating generalises.
+
+### Natively editable charts in PPTX
+Charts ship as images in `T-R3`. Native OOXML chart parts stay editable inside
+PowerPoint (double-click, change the data).
+**Why deferred:** roughly 5× the XML work for a capability only some recipients
+want.
+**Trigger:** a customer asking to change chart data inside the deck we sent.
+**Estimate:** 3d.
+
+### Report template gallery
+Named, reusable layouts ("board update", "monthly review", "invoice") the agent
+picks from, rather than composing every document from primitives.
+**Why deferred:** needs real usage data about which shapes repeat. Guessing them
+now produces templates nobody selects.
+**Trigger:** the same document structure being composed three times across
+tenants — visible in the `generate_document` audit rows after `T-05`.
+**Estimate:** 2d.
+
+### Headless-Chromium document rendering
+The escape hatch if maroto's grid genuinely cannot express a required layout.
+Renders HTML with the dashboard's real CSS for perfect fidelity.
+**Why deferred / mostly rejected:** ~300 MB browser layer in the worker image, a
+sandbox to secure, ~1s per document.
+**Trigger:** a specific layout the grid cannot express — not "this is taking
+longer than expected".
+**Estimate:** 3d, plus permanent operational cost.
 ### Public / anonymous widget mode
 **Why deferred:** Sprint 1's widget (T-19→T-23) serves the tenant's **own staff**,
 with identity asserted by the tenant's backend via HMAC. Serving anonymous
@@ -204,6 +256,7 @@ BYO-LLM already cover the usual "our data can't leave" objection.
 | Build orchestrator (Turborepo / Nx) with remote caching | — | 1d | `packages/` exceeds ~4 members, or CI wall-clock becomes annoying. `pnpm -r` + the Makefile is enough below that. |
 | Generated TS types for the `/api/embed` contract | — | 0.5h | `T-02b` covers the dashboard API; extend it when `T-19`/`T-20` add embed types |
 | Frontend tests for `packages/chat-ui` | — | 1d | Shared by dashboard **and** widget after `T-21`, so a regression there breaks two consumers — the strongest case for the first Vitest setup |
+| Self-host Space Grotesk in the dashboard instead of the Google Fonts CDN | — | 0.5h | `T-R1` vendors the TTFs for the backend anyway, so the files are already in the repo — the dashboard is then one `@font-face` block away from dropping a third-party request |
 | Error tracking (Sentry) both repos | O-4 | 0.5d | First user-reported bug you cannot reproduce |
 | Onboarding checklist incl. "enable table embeddings" | P-4 | 1.5d | Signup-to-first-answer conversion looking bad |
 | `DefaultPricing` still labelled "approximates GPT-4o" | B-4 | 0.5h | Any time — misleading comment on live billing code |

@@ -26,6 +26,7 @@ language.
 | `apps/landing/`         | Marketing site                            | React 18, Vite, Tailwind       |
 | `apps/widget/`          | **Planned** (T-21) — embeddable chat widget for customers' own internal sites | Preact, iframe, npm + CDN |
 | `packages/api-types/`   | **Planned** (T-02b) — TS types generated from Go structs | TypeScript      |
+| `packages/design-tokens/` | **Planned** (T-R1) — one token source generating the dashboard's CSS variables and the backend's Go report theme | JSON + codegen |
 | `packages/chat-ui/`     | **Planned** (T-21) — chat components shared by dashboard + widget | Preact/React |
 
 Consolidated from three separate repos in `T-00b`, with history preserved via

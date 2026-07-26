@@ -22,10 +22,43 @@ Claim your number, do not renumber, and always write both `.up.sql` and
 | T-04   | `027_user_invites` |
 | T-19   | `028_embed_keys` |
 | T-20   | `029_thread_embed` |
+| T-R5   | `030_report_branding` |
 
 ---
 
-# Week 1 — Safe to change
+## Execution order (revised 2026-07-27)
+
+Week headings below are **thematic groupings, not the running order**. Two things
+changed after they were written: the `T-00` smoke test found the agent fabricating
+numbers (`../coverage/environment-notes.md` C-1) and recording no usage for the
+primary model (C-2), and the repo owner inserted the report track. This table is
+the authoritative order.
+
+| Phase | Tickets | Days | Why here |
+| ----- | ------- | ---- | -------- |
+| 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
+| 1 — trust the numbers | `T-01`, `T-02c`, `T-16` | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. |
+| 1a — worth forwarding | `T-R1`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. |
+| 1b — safe to change | `T-02`, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. |
+| 2→6 | unchanged | — | Metric registry → watchers → actions → API/MCP → hardening. |
+| 7–8 | `T-19`→`T-23` | 11.5 | **Expected to move to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
+
+Two dependency notes for phase 1:
+
+- `T-02c` carries `Deps: T-02`. That is ordering convenience, not a real
+  dependency — its regression test is a fake LLM emitting a stream with and
+  without usage, which needs none of `T-02`'s coverage sweep. It runs in phase 1.
+- `T-16` is filed under week 6 below and stays there physically. It **runs in
+  phase 1**, after `T-01`, because nothing that acts on its own (`T-08` watchers,
+  `T-10` actions) should ship on top of an agent that invents figures.
+
+---
+
+# Week 0 — Re-warm and consolidate
+
+**Status: complete (2026-07-26).** Records in
+[`../coverage/environment-notes.md`](../coverage/environment-notes.md) and
+[`../coverage/migration-notes.md`](../coverage/migration-notes.md).
 
 ## T-00 · Environment re-warm
 **Repo:** BE, FE · **Size:** 0.5d · **Deps:** none · **Priority:** P0
@@ -242,6 +275,333 @@ See `docs/coverage/migration-notes.md` for the exact steps.
 
 ---
 
+# Week 1a — Reports that look enterprise
+
+**Priority insert, added 2026-07-27 at the repo owner's request.** Runs ahead of
+the remaining foundation work (`T-02`, `T-02b`, `T-03`, `T-04`, `T-05`), and
+after `T-00b` for the same reason as everything else: the monorepo moves every
+path, and this track creates a new shared package plus files in two apps.
+
+**Amended after the `T-00` smoke test.** The insert originally ran immediately
+after the re-warm. Phase 1 (`T-01`, `T-02c`, `T-16`) now goes first: the smoke
+test caught the agent inventing a sales figure under budget exhaustion, and a
+branded, board-ready document carrying an invented number is a worse artefact
+than an unbranded one carrying a real one. Six days ahead of this track, not a
+demotion of it.
+
+## Why this is here
+
+`generate_document` already produces PDF, XLSX and CSV
+(`internal/tools/document/`), and the PDF is a stock maroto document: default
+Helvetica, no cover, no header, no footer, no page numbers, no logo, no charts,
+no locale-aware number formatting, tables with no rules or alignment. Column
+widths come from `splitGrid` dividing 12 evenly.
+
+That artifact is the one thing a customer forwards to someone who never logs in.
+It is the product's most-shared surface and currently the least designed one. A
+correct number in an unbranded document reads as a prototype.
+
+The track also compounds with the rest of the sprint: once watchers (`T-08`) and
+`send_message` (`T-12a`) exist, "a branded weekly deck lands in Lark every Monday"
+is a configuration, not a feature.
+
+## Decisions (locked — do not re-litigate inside the tickets)
+
+1. **Renderer stays maroto (v2.4.0) in Go. Headless Chromium is rejected.**
+   Rendering HTML with the dashboard's real CSS would give perfect fidelity and
+   costs a ~300 MB Chromium layer in the worker image, a browser sandbox to
+   secure, and roughly a second per document. Tokens shared through codegen get
+   most of the fidelity for none of that. **Revisit trigger:** a layout the grid
+   genuinely cannot express — not "this took longer than expected".
+2. **One spec, many formats.** PDF and PPTX render from the same `Spec`. A deck
+   is not a second content model; it is a second projection. Anything that
+   requires per-format authoring is a design mistake in the spec.
+3. **Design tokens are generated, never hand-copied.** One `tokens.json`
+   produces the dashboard's CSS variables and the backend's Go theme. CI fails on
+   drift, exactly like `T-02b` does for API types.
+4. **PPTX is hand-rolled OOXML from committed templates.** `unioffice` is
+   commercially licensed and its open fork is unmaintained. A `.pptx` is a zip of
+   XML; with a fixed layout set, `text/template` + `archive/zip` is smaller,
+   deterministic, and has no license exposure.
+5. **Charts are rendered as images, in Go.** Same image goes into the PDF and the
+   deck. Natively editable OOXML charts are deferred — see `backlog.md`.
+
+---
+
+## T-R1 · Report design tokens + theme package
+**Repo:** PKG, FE, BE · **Size:** 1.5d · **Deps:** T-00b · **Priority:** P0 · **Never cut**
+
+The plumbing that makes "same design system" true by construction instead of by
+discipline.
+
+**Do:**
+- `packages/design-tokens/tokens.json` — canonical source. Seed it from the
+  values already in `apps/dashboard/src/index.css`, converted to hex:
+
+  | Token | Value | Role |
+  | ----- | ----- | ---- |
+  | `color.background` | `#F5F5F0` | page cream |
+  | `color.surface` | `#FFFFFF` | cards, table bands |
+  | `color.primary` | `#F25C5C` | accent, rules, chart series 1 |
+  | `color.foreground` | `#0A0A0A` | body text |
+  | `color.muted` | `#6B6B6B` | captions, footers, axis labels |
+  | `color.border` | `#E2E2DC` | hairlines, table rules |
+  | `radius.base` | `12px` (0.75rem) | cards, callouts |
+  | `font.display` | Space Grotesk | titles, headings |
+  | `font.body` | Space Grotesk | body |
+
+  Plus a type scale (display 24 / h1 16 / h2 13 / body 10 / caption 8 pt in
+  print units), a spacing scale in mm, and the categorical chart palette from
+  `T-R3`.
+- Two generators, run by `make tokens`:
+  - `→ apps/dashboard/src/tokens.generated.css` — the shadcn HSL custom
+    properties. `index.css` imports it; the hand-written `:root` block for the
+    tokens listed above is deleted, not left as a duplicate.
+  - `→ apps/backend/internal/report/theme/tokens_gen.go` — typed Go constants
+    (`theme.ColorPrimary`, `theme.FontDisplay`, `theme.TypeScale.H1`, …).
+- Generated output is **committed**. CI job `tokens`: run `make tokens`, then
+  `git diff --exit-code packages/design-tokens apps/dashboard/src/tokens.generated.css apps/backend/internal/report/theme`.
+  Follow the pattern `T-02b` establishes for API types — same job shape, same
+  failure mode.
+- **Vendor the fonts.** The dashboard pulls Space Grotesk from the Google Fonts
+  CDN; a Go renderer cannot. Commit the Space Grotesk TTFs (Regular, Medium,
+  Bold) under `internal/report/theme/fonts/` with their **OFL license file**,
+  embed with `go:embed`, and register them with maroto's font repository at
+  renderer construction. Fail loudly at startup if a face is missing — a silent
+  fallback to Helvetica is exactly the regression this track exists to remove.
+- `internal/report/theme` also exposes the derived print constants: A4, 18 mm
+  margins, table row heights, hairline width.
+
+**Notes for the implementer:**
+- Dark mode is out of scope. Documents are printed and forwarded; they are
+  light-only, and the dark palette has no meaning on paper.
+- Do not let the generator emit Tailwind classes. It emits variables and Go
+  constants; the consumers decide how to use them.
+
+**Acceptance:**
+- [ ] `make tokens` regenerates both outputs; a hand edit to either is reverted by it
+- [ ] CI fails when `tokens.json` changes without regeneration — prove it, then revert
+- [ ] Dashboard renders identically before and after the CSS migration (visual diff on two screens)
+- [ ] Backend registers all three font faces; a deliberately removed TTF fails at startup, not at render time
+- [ ] License file committed alongside the fonts
+
+**Gate:** paste the CI failure from a deliberate token change, then the pass after
+`make tokens`. Plus before/after dashboard screenshots showing no visual change.
+
+---
+
+## T-R2 · PDF renderer v2 — enterprise document layout
+**Repo:** BE · **Size:** 3d · **Deps:** T-R1 · **Priority:** P0 · **Never cut**
+
+Rewrite `internal/tools/document/render_pdf.go` into `internal/report/pdf/`
+against the theme package. This is the ticket that changes what the customer
+sees.
+
+**Spec v2** — additive, in `internal/report/spec/`. `spec_version: 2` opts in;
+absent or `1` renders through a shim so existing eval cases and any prompt in the
+wild keep working:
+
+| Section | Payload | Renders as |
+| ------- | ------- | ---------- |
+| `cover` | `{title, subtitle, period, prepared_for, prepared_by, confidentiality}` | Full cover page |
+| `heading` | `{text, level: 1\|2}` | Numbered section heading with a primary-colour rule |
+| `paragraph` | `{text}` | Justified body copy |
+| `kpi_row` | `{items:[{label, value, delta_pct, direction, fmt}]}` | 2–4 KPI cards, delta arrow coloured by `higher_is_better` |
+| `table` | `{columns:[{label, fmt, align, width_weight}], rows, total_row}` | Ruled table, zebra bands, repeating header |
+| `callout` | `{tone: info\|warn\|good, title, text}` | Tinted rounded box |
+| `key_value` | `{items:[{k,v}]}` | Two-column label/value block |
+| `chart` | see `T-R3` | Chart image, captioned |
+| `footnote` | `{text}` | Small muted text, source/methodology line |
+| `page_break` | — | Hard break |
+
+**Do:**
+- **Cover page:** tenant logo (from `T-R5`; Argentum mark until then), document
+  title, period covered, generated-at, prepared-by, confidentiality label.
+- **Running header** from page 2: small logo left, document title right,
+  hairline rule under. **Footer:** `Page N of M`, generated-at, confidentiality
+  label. maroto v2.4.0 has `RegisterHeader`/`RegisterFooter` and page numbering
+  — verify both against the pinned version before designing around them; if the
+  page **total** is not available, render twice and inject it on the second pass
+  rather than shipping "Page 3" with no denominator.
+- **Typed cells.** A cell becomes `{v, fmt}` where `fmt` ∈
+  `text|number|currency|percent|date`, with a column-level default. The
+  **renderer** formats and aligns — numerics right-aligned, decimals consistent
+  down a column, currency symbol from company settings. Plain strings still
+  accepted and rendered as `text`. This is most of what separates a professional
+  table from a dumped one, and it removes a job the LLM was doing inconsistently.
+- **Locale-aware formatting** in `internal/report/format`, `id` and `en`:
+  `Rp 1.234.567` / `$1,234,567`, magnitude words (Juta / Miliar / Triliun) above
+  a configurable threshold, `27 Juli 2026` / `27 July 2026`. Share this package
+  with the eval harness's numeric comparator (`T-01`) — one parser, one
+  formatter, no second opinion about what "1,2 Juta" means.
+- **Column widths from content, not `splitGrid`.** Weight by header length and a
+  sample of cell widths, clamp to min/max, then normalise to the 12-column grid.
+  An 8-column table with one long text column currently renders unreadably.
+- **Table paging:** header row repeats on every page; never leave a header row
+  alone at the bottom of a page; never break a `kpi_row` or `callout` across pages.
+- **PDF metadata:** title, author (company legal name), subject, creator
+  `Argentum`, creation date. Plus `generated_at` accepted as an explicit spec
+  field so golden tests are byte-stable.
+- Delete the old `render_pdf.go` once `render_test.go`'s cases pass against the
+  new path. Do not leave two renderers.
+
+**Acceptance:**
+- [ ] Cover, running header, footer with `Page N of M` all render
+- [ ] A 200-row table pages correctly with a repeating header and no orphaned header
+- [ ] Numeric columns right-aligned with consistent decimals; `id` locale renders rupiah correctly
+- [ ] v1 specs still render (shim proven by the existing tests, unmodified)
+- [ ] Two runs with the same spec and a fixed `generated_at` produce identical bytes
+- [ ] `pdfcpu validate` passes on every fixture (pdfcpu is already an indirect dep)
+- [ ] No Helvetica anywhere in the output — fonts are the embedded faces
+
+**Gate:** render four fixtures — monthly sales report, invoice, KPI summary,
+200-row export — and attach a PNG of page 1 and one interior page of each. Paste
+`pdfcpu validate` output and the byte-identical rerun hash.
+
+---
+
+## T-R3 · Chart images for documents and decks
+**Repo:** BE · **Size:** 1.5d · **Deps:** T-R2 · **Priority:** P1 · **Cut: types only, never the ticket**
+
+A report without a chart is a table with a cover page.
+
+**Do:**
+- `internal/report/chart` — pure-Go PNG rendering, no CGO, no headless browser.
+  Evaluate `github.com/go-analyze/charts` first (maintained successor to
+  `vicanso/go-charts`, echarts-style API, themeable, PNG + SVG); fall back to
+  `github.com/wcharczuk/go-chart/v2` if it cannot express the set below. State
+  which you picked and why in the report.
+- Types: `line` (time series), `bar`, `grouped_bar`, `stacked_bar`, `pie`,
+  `donut`, `sparkline` (for KPI cards).
+- **Categorical palette lives in `tokens.json`** (`T-R1`), anchored on the brand
+  red `#F25C5C` and extended with hues that stay distinguishable under
+  deuteranopia and in greyscale — enterprise reports get printed in black and
+  white more often than anyone admits. Verify both, state the method.
+- Render at 3× and downscale, so a chart is sharp at print resolution rather
+  than a blurry screen-DPI bitmap.
+- Axis labels, tick values, and legends format through
+  `internal/report/format` from `T-R2` — the axis and the table beneath it must
+  agree on what a rupiah looks like.
+- Explicit **no-data** and **single-point** states. A silently empty chart area
+  is worse than a "no data for this period" caption.
+- Cap series (default 8) and categories (default 40); above that, render top-N
+  plus an "other" bucket and say so in the caption.
+- `chart` section payload: `{chart_type, title, caption, categories, series:[{name, values}], y_fmt, stacked, height_mm}`.
+
+**Acceptance:**
+- [ ] All seven types render from a fixture spec
+- [ ] Same chart embedded in a PDF and a PPTX is the same image, generated once
+- [ ] Palette verified colourblind-safe and greyscale-distinguishable — method stated
+- [ ] Empty and single-point series render their explicit state, not a blank box
+- [ ] Deterministic output: same input → same PNG bytes
+
+**Gate:** a contact sheet PNG showing all seven types with the brand palette, plus
+the greyscale conversion of the same sheet.
+
+---
+
+## T-R4 · PPTX deck renderer
+**Repo:** BE · **Size:** 2.5d · **Deps:** T-R2, T-R3 · **Priority:** P0 · **Never cut**
+**New format:** `pptx`
+
+Same spec, projected onto slides. A deck is what gets presented in the meeting
+the PDF was attached to.
+
+**Do:**
+- `internal/report/pptx` — build the OOXML package directly: `archive/zip` +
+  `text/template` over committed part templates (`[Content_Types].xml`,
+  `_rels/`, `ppt/presentation.xml`, slide masters, layouts, `ppt/media/`).
+  16:9, 12192000 × 6858000 EMU.
+- Layout set, mapped from spec sections:
+
+  | Spec | Slide |
+  | ---- | ----- |
+  | `cover` | Title slide — logo, title, period, prepared-for |
+  | `heading` level 1 | Section divider |
+  | `kpi_row` | KPI slide, 2–4 stat tiles |
+  | `chart` | Chart slide, title + caption |
+  | `table` | Table slide; over ~12 rows, continue onto `(cont.)` slides |
+  | `paragraph` / `callout` | Bullet or callout slide, chunked to fit |
+  | end of deck | Closing slide with the confidentiality label |
+- **Narrative goes in speaker notes.** The agent's prose explanation belongs in
+  `notesSlide`, not crammed onto the slide. This is the single change that makes
+  a generated deck feel authored rather than dumped.
+- Text fitting is estimated, not measured — no layout engine here. Budget
+  characters per layout from the type scale, and overflow to a continuation
+  slide. Silent clipping is a bug; a `(cont.)` slide is not.
+- Fonts by name (`Space Grotesk`) with a declared fallback chain, since the
+  recipient's machine may not have it. Do **not** attempt OOXML font embedding —
+  it only works in PowerPoint on Windows and doubles the file size.
+- `domain.DocumentFormat`: add `DocumentFormatPPTX`, extension `pptx`,
+  content type
+  `application/vnd.openxmlformats-officedocument.presentationml.presentation`.
+  Update `Valid()`, `Extension()`, `ContentType()`, the tool's `format` enum, the
+  `Spec.Validate()` switch, and the tool description's format-picking guidance
+  ("pptx for anything that will be presented — reviews, board updates, weekly
+  readouts").
+- CI smoke test: `libreoffice --headless --convert-to pdf` on every fixture deck.
+  A deck that LibreOffice refuses is a deck PowerPoint may also refuse.
+
+**Acceptance:**
+- [ ] A deck opens cleanly in **PowerPoint, Keynote, Google Slides, and LibreOffice** — state versions tested
+- [ ] Same spec renders as both PDF and PPTX with no format-specific authoring
+- [ ] Speaker notes carry the narrative
+- [ ] Long tables continue across slides; nothing is silently clipped
+- [ ] Charts appear at slide resolution without visible artefacts
+- [ ] Zip is deterministic (fixed entry order, fixed timestamps)
+
+**Gate:** one deck rendered from the monthly-sales fixture, with screenshots from
+all four applications and the LibreOffice conversion output.
+
+---
+
+## T-R5 · Tenant report branding + dashboard configuration
+**Repo:** BE, FE · **Size:** 1.5d · **Deps:** T-R2, T-04 · **Priority:** P1 · **Cut #6**
+**Migration:** `030_report_branding`
+
+Argentum's palette is the default. A customer sending a report to *their* board
+wants their own mark on it.
+
+**Do:**
+- Migration `030_report_branding`: `companies.report_branding jsonb` —
+  `{logo_key, primary_color, footer_text, legal_name, locale, confidentiality_label, show_argentum_credit}`.
+  Empty means Argentum defaults; the renderer must never require a branding row
+  to exist.
+- Logo upload to the existing MinIO/S3 service under
+  `branding/{company_id}/logo.{ext}` — reuse `storage.UploadKey`. PNG or JPEG,
+  ≤512 KB, ≤2000 px on the long edge, re-encoded server-side (this strips EXIF
+  and neutralises a malformed-image payload in one step). Not SVG: an SVG in a
+  document renderer is a script-injection surface for no benefit here.
+- **Validate `primary_color` for contrast** — reject anything below 3:1 against
+  white, with a message naming the measured ratio. A customer picking pale
+  yellow produces an unreadable report and blames the product.
+- `GET|PUT /api/reports/branding`, admin-only via `T-04`'s `AdminOnly()`.
+- `POST /api/reports/preview` → renders a fixed sample report with the submitted
+  branding and returns the PDF. Dashboard shows it in an `<iframe>`; no PDF.js
+  dependency, no second rendering path.
+- FE: Settings → **Reports** tab. Logo upload with preview, colour picker with
+  the live contrast readout, footer text, legal name, default locale,
+  confidentiality label, and the live preview pane.
+- Renderer resolves branding once per document and falls back per field, not
+  per object — a tenant with a logo but no custom colour gets their logo and
+  Argentum's red.
+
+**Acceptance:**
+- [ ] Branding change appears in the next generated PDF and PPTX with no redeploy
+- [ ] A low-contrast colour is rejected with the measured ratio in the message
+- [ ] Oversized or non-image upload rejected; uploaded images are re-encoded
+- [ ] A company with no branding row renders the Argentum default, never an error
+- [ ] Non-admin gets 403 on both routes
+- [ ] `pnpm build` clean
+
+**Gate:** screenshots of the Reports tab, the live preview, and the same report
+generated from chat afterwards carrying the branding. Plus the rejection message
+for a low-contrast colour.
+
+---
+
+# Week 1 — Safe to change
+
 ## T-01 · Eval harness
 **Repo:** BE · **Size:** 3d · **Deps:** T-00 · **Priority:** P0 · **Never cut**
 
@@ -277,6 +637,9 @@ The system has no way to know whether a prompt or model change helped. Build one
 **Notes for the implementer:**
 - Numeric comparison must tolerate formatting: strip currency symbols, magnitude
   suffixes (Juta/Miliar/Triliun/K/M/B), and thousands separators before parsing.
+  **Put that parser in `internal/report/format`, not `internal/eval`.** `T-R2`
+  extends the same package with the formatting direction — one package, built
+  from the eval side first because phase 1 now runs before phase 1a.
 - Language check: assert the reply's language matches `lang`. A cheap
   heuristic (Indonesian stopword ratio) beats an LLM judge for this and costs nothing.
 - Guardrail cases assert the refusal *message*, not just non-answering.
@@ -1327,8 +1690,16 @@ T-00 ──► T-00b ─┬─► T-01 ─────────────�
                 │         │            └──────────► T-20 (audit)      │
                 │         ├─► T-06 ──► T-07                           │
                 │         └─► T-07b                                   │
-                └─► T-17 (independent) ──► T-16 (cut #5)              │
+                └─► T-17 (independent)                                │
 T-18 depends on everything through week 6 ────────────────────────────┘
+
+T-01 ──► T-16   (dep changed from T-17 to T-01; runs in phase 1, no longer cuttable)
+T-02 ──► T-02c  (ordering only — see the execution-order note; runs in phase 1)
+
+Report track (phase 1a):
+
+T-00b ──► T-R1 ──► T-R2 ─┬─► T-R3 ──► T-R4
+                         └─► T-R5  (also needs T-04 for admin gating)
 ```
 
 `T-00b` gates everything — it moves every file, so no other ticket may start
@@ -1337,32 +1708,70 @@ for admin gating. `T-20` needs `T-05` (audit) and `T-03` (budget check). Nothing
 weeks 7–8 blocks anything in weeks 1–6, so the widget phase can slip without
 damaging the rest.
 
+The report track touches only `packages/design-tokens`, `internal/report/`, the
+`generate_document` tool contract, and one dashboard settings tab. It shares no
+file with `T-01`–`T-05` except `tokens.generated.css`, so the tracks could
+interleave — but they are the same one person, so in practice phase 1 runs, then
+1a, then 1b.
+
+**One consequence of putting `T-01` ahead of the report track.** The plan as
+written on 2026-07-27 had `T-R2` build `internal/report/format` (locale-aware
+number parsing and formatting — rupiah, Juta/Miliar/Triliun) and `T-01`'s numeric
+comparator import it. Reversing the order reverses that: **`T-01` creates
+`internal/report/format` with the parsing direction, `T-R2` extends it with the
+formatting direction.** One package either way. A second parser in
+`internal/eval` is a review finding, not a shortcut.
+
+`T-R5` still depends on `T-04` (admin gating), which now lands *after* the report
+track in phase 1b. Build `T-R5`'s routes behind the existing admin check and
+swap to `AdminOnly()` when `T-04` lands — or run `T-R5` last, after phase 1b, as
+the roll-up assumes. It is cut #6 anyway.
+
 ## Effort roll-up
 
-| Week | Tickets                                        | Days  |
-| ---- | ---------------------------------------------- | ----- |
-| 1    | T-00, T-00b, T-01, T-02, T-02b, T-03, T-04, T-05 | 13.0 |
-| 2    | T-06, T-07, T-07b                              | 5.0   |
-| 3    | T-08, T-09                                     | 5.0   |
-| 4    | T-10, T-11, T-12a, T-12b                       | 6.5   |
-| 5    | T-13, T-14, T-15                               | 6.0   |
-| 6    | T-16, T-17, T-18                               | 5.0   |
-| 7–8  | T-19, T-20, T-21, T-22, T-23                   | 11.5  |
-|      | **Total**                                      | **52.0** |
+| Phase | Tickets                                       | Days  |
+| ----- | --------------------------------------------- | ----- |
+| 0 ✅   | T-00, T-00b                                   | 2.0   |
+| 1     | T-01, T-02c, T-16                             | 6.0   |
+| 1a    | T-R1, T-R2, T-R3, T-R4, T-R5                  | 10.0  |
+| 1b    | T-02, T-02b, T-03, T-04, T-05                 | 8.0   |
+| 2     | T-06, T-07, T-07b                             | 5.0   |
+| 3     | T-08, T-09                                    | 5.0   |
+| 4     | T-10, T-11, T-12a, T-12b                      | 6.5   |
+| 5     | T-13, T-14, T-15                              | 6.0   |
+| 6     | T-17, T-18                                    | 3.0   |
+| 7–8   | T-19, T-20, T-21, T-22, T-23                  | 11.5  |
+|       | **Total**                                     | **63.0** |
 
-52 estimated days against 40 working days in eight weeks. **The overage is
-deliberate** and is what the cut order in
-[`00-sprint-overview.md`](00-sprint-overview.md) §6 exists for. Cutting T-15,
-T-14, T-12b, and T-16 brings it to 42.5 — still 2.5 over, so expect week 1 to
-spill into week 2. That is acceptable: week 1 is foundation work and everything
-downstream compounds off it.
+63 estimated days against 40 working days in eight weeks, of which 2.0 are spent.
+**The overage is deliberate** and is what the cut order in
+[`00-sprint-overview.md`](00-sprint-overview.md) §6 exists for — but the report
+track added 10 days to a plan that was already 12 over, and no ordering of cuts
+makes 63 fit into 40.
 
-**Week 1 is now 13 days of work in a 5-day week.** It will take closer to two and
-a half weeks, and the plan should be read that way rather than pretending
-otherwise. `T-00b` and `T-02b` are the additions — both pay for themselves inside
-the sprint, because every subsequent ticket that touches two apps becomes one
-commit instead of two, and every API-contract change gets checked by CI instead of
-by a user.
+The arithmetic, stated plainly:
+
+| Scenario | Days | Fits 40? |
+| -------- | ---- | -------- |
+| Everything | 63.0 | No |
+| Cut T-15, T-14, T-12b, T-R5, T-R3 partly (cuts #1–#7) | 54.5 | No |
+| …and slide the widget phase (T-19→T-23) whole to Sprint 2 | 43.0 | Within 3 days |
+
+**So the report track and the widget phase cannot both ship in Sprint 1.** The
+widget is the one to move: nothing depends on it, it slides whole without
+stranding half-finished work, and weeks 7–8 were always the designated slack.
+Cutting into phases 1–6 instead would mean cutting the foundation the watchers
+depend on, which is the one thing this plan has been ordered to avoid.
+
+Note what that trades away: the widget and MCP were the "make Argentum reachable
+from outside its dashboard" bet. The report track is a different bet — **make
+what Argentum hands you good enough to forward to someone who will never log in**.
+Both are adoption arguments; the report one is cheaper, ships against an existing
+tool, and needs no integration work from the customer.
+
+**Phases 1 + 1a + 1b are 24 days of work.** They will take closer to five weeks
+than one, and the plan should be read that way rather than pretending otherwise.
+`T-16` is no longer in week 6 and no longer cuttable — the smoke test moved it.
 
 Note the trade this represents: **the widget (T-19→T-23) and the MCP server
 (T-14) are the same strategic bet — make Argentum reachable from outside its own

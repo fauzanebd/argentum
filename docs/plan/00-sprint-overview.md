@@ -24,10 +24,19 @@ customer:
 | **Answer → act**          | Action framework with human-in-the-loop approval + two real actions          |
 | **Product → substrate**   | Scoped API keys + an MCP server exposing the agent's tools                   |
 | **Product → everywhere**  | Embeddable chat widget: a script tag or npm component on the customer's own internal site |
+| **Answer → deliverable**  | Enterprise report system: branded PDF **and** PowerPoint from one spec, on the dashboard's design system |
 
-Underneath all four: an **eval harness**, an **audit log**, a **metric
+Underneath all five: an **eval harness**, an **audit log**, a **metric
 registry**, and **enforced spend limits** — because none of the above is safe to
 ship without them.
+
+**And underneath those: an agent that does not invent numbers.** The `T-00` smoke
+test caught it reporting `$1,234,567.89` against a true 3,863,405,700 after
+exhausting its 3-iteration budget
+([`../coverage/environment-notes.md`](../coverage/environment-notes.md) C-1).
+Everything above automates whatever the agent says. That fix (`T-16`) and the
+metering fix (`T-02c`) run first, ahead of the report track and ahead of the rest
+of the foundation work.
 
 ## 1a. Why the widget is in scope
 
@@ -54,19 +63,64 @@ deferred to Sprint 2 — see [`backlog.md`](backlog.md).
 **Scope is locked: chat only.** No dashboard rendering, no watcher feed inside
 the widget. Both are additive later against a working embed surface.
 
+## 1b. Why the report system is in scope
+
+**Added 2026-07-27 at the repo owner's request.**
+
+`generate_document` already ships PDF, XLSX and CSV. The PDF is a stock maroto
+document: default Helvetica, no cover, no header or footer, no page numbers, no
+logo, no charts, no locale-aware numbers, and tables whose columns are the
+12-unit grid divided evenly regardless of content.
+
+That artifact is the one thing that leaves the product. Nobody forwards a chat
+thread; they forward the file. It is simultaneously the most-shared surface and
+the least designed one, and a correct number inside an unbranded document reads
+as a prototype.
+
+PowerPoint is in scope alongside PDF because the two are the same work once the
+spec is right. A deck is a projection of the same content model, not a second
+content model — and a deck is what gets shown in the meeting the PDF was
+attached to. Building the spec for one format and retrofitting the other later
+costs more than building both against it now.
+
+It also compounds with the rest of the sprint: once watchers (`T-08`) and
+`send_message` (`T-12a`) exist, "a branded weekly deck lands in Lark every
+Monday morning" is configuration rather than a feature.
+
+**The cost is honest and it is large:** 10 days, which does not fit. See §6 and
+the effort roll-up in [`01-tickets.md`](01-tickets.md) — the widget phase moves
+to Sprint 2 to pay for it.
+
+**It runs second, not first.** The owner's insert put it immediately after the
+re-warm; the `T-00` smoke test then found the agent fabricating figures. A
+beautifully branded document containing an invented number is a worse product
+than an ugly one containing a real number, so `T-01`/`T-02c`/`T-16` go ahead of
+it. That is six days, not a re-prioritisation of the track itself.
+
 ## 2. Why this sequence and not another
 
 The dependency chain from [`../research/03-gap-analysis.md`](../research/03-gap-analysis.md):
 
 ```
-Week 0   Environment re-warm, then monorepo consolidation      (T-00, T-00b)
+Phase 0  Environment re-warm, then monorepo consolidation      (T-00, T-00b) ✅
          └─ Re-warm first so a breakage is attributable to drift, not to the move.
             Consolidate before any feature work, because every ticket after this
-            touches file paths. Never mid-sprint.
-Week 1   Evals + tests + CI gate + generated types + RBAC + credit enforcement
+            touches file paths. Never mid-sprint. Both landed 2026-07-26.
+Phase 1  Evals, then the two observed P0s                (T-01, T-02c, T-16)
+         └─ The smoke test found the agent fabricating a figure under budget
+            exhaustion and recording zero usage for the primary model. Evals come
+            first because they are what proves the other two fixed anything, and
+            because every downstream week automates whatever the agent says.
+Phase 1a Report system: design tokens → PDF v2 → charts → PPTX → tenant branding
+         └─ Owner-set priority, inserted 2026-07-27. The artifact that leaves the
+            building. After T-00b because it creates a new shared package and
+            touches two apps; after phase 1 because a branded document with an
+            invented number in it is the worse failure.
+Phase 1b Tests + CI gate + generated types + RBAC + credit enforcement
          └─ You cannot ship autonomy on an unmeasured, unbounded, unaudited system.
             Also fixes the three P0 security/billing findings, which are cheap now
-            and expensive after you have users.
+            and expensive after you have users. T-03 waits on T-02c: a budget
+            check gating on an always-zero number is worse than none.
 Week 2   Metric registry + query_metric tool
          └─ Watchers need something authoritative to watch. Without this, an alert
             fires off a number the LLM re-derived, and the first false alarm
@@ -103,6 +157,21 @@ change no one's workflow. Watchers do.
 - **Monorepo consolidation** — three repos into one, history preserved via
   `git subtree`, `apps/` + `packages/` layout, one path-filtered CI pipeline
 - **Generated TS types** from Go structs, with CI failing on drift
+- **Shared design tokens** (`packages/design-tokens`) generating both the
+  dashboard's CSS variables and the backend's Go report theme, CI-checked for drift
+- **PDF renderer v2** — cover page, running header/footer with page numbers,
+  vendored Space Grotesk, content-weighted column widths, typed and
+  locale-formatted cells, KPI cards, callouts, table paging
+- **Chart images** rendered in Go — line, bar, grouped/stacked bar, pie, donut,
+  sparkline — one image shared by the PDF and the deck
+- **PPTX deck renderer** from the same spec, with the narrative in speaker notes
+- **Per-tenant report branding** (logo, colour, footer, legal name,
+  confidentiality label) with a live preview in the dashboard
+- **Anti-fabrication**: iteration budget replacing the hard cap, an explicit
+  incomplete-answer path on exhaustion, and a guardrail rule against stating a
+  figure no tool returned
+- **Primary-model metering** on streaming turns, with a loud warning when a turn
+  records no usage at all
 - Eval harness with a golden question set on the demo tenant
 - Test coverage for all CRITICAL packages + CI gate that actually gates
 - `AdminOnly` applied; team invite endpoint; `/metrics` secured
@@ -132,6 +201,11 @@ change no one's workflow. Watchers do.
 
 | Deferred                          | Why                                                                |
 | --------------------------------- | ------------------------------------------------------------------ |
+| **The whole widget phase (T-19→T-23)** | Moved to Sprint 2 to pay for the report track. Nothing depends on it; it slides whole. See §6. |
+| DOCX / Word output                 | PDF covers "send it", PPTX covers "present it". Word is for documents the recipient edits — a different job. |
+| Natively editable OOXML charts     | Charts ship as images. Editable chart XML is ~5× the work and only matters when someone wants to change the data inside PowerPoint. |
+| Headless-Chromium document rendering | Perfect CSS fidelity, but a ~300 MB browser in the worker image, a sandbox to secure, and ~1s per document. Generated tokens get most of the fidelity for none of that. |
+| Report template gallery / WYSIWYG builder | The agent composes the spec. A template designer is a product of its own. |
 | Public / anonymous widget mode      | Different security problem entirely: anonymous sessions, abuse control, hard data scoping, aggressive redaction. Sprint 2. |
 | Dashboards or alert feed in the widget | Additive against a working embed surface. Chat first.            |
 | Widget SSO / silent identity        | HMAC identity from the tenant's backend covers the internal-site case. |
@@ -146,10 +220,12 @@ change no one's workflow. Watchers do.
 
 ## 4. Milestones and exit criteria
 
-| Wk | Milestone                | Exit criteria (all must be demonstrable)                                                                             |
+| Phase | Milestone             | Exit criteria (all must be demonstrable)                                                                             |
 | -- | ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| 0  | **One tree**             | Single repo, all three histories blameable through the subtree boundary. Zero Go import-path changes in the migration diff. Both Cloudflare Pages previews deploy from the new roots. CI path-filters correctly per job, and `cmd/discord` builds in it for the first time. |
-| 1  | **Safe to change**       | `make eval` prints a score over ≥30 golden questions. CI fails on a failing test. All CRITICAL packages have tests. A Go struct rename without `make types` is a red build. Non-admin cannot rotate a DSN. A tenant at zero credits gets a clear refusal instead of a bill. |
+| 0 ✅ | **One tree**            | Single repo, all three histories blameable through the subtree boundary. Zero Go import-path changes in the migration diff. Both Cloudflare Pages previews deploy from the new roots. CI path-filters correctly per job, and `cmd/discord` builds in it for the first time. |
+| 1  | **It admits what it doesn't know** | `make eval` prints a score over ≥30 golden questions. The exact C-1 question — "What were our total sales last month?" — returns the right order of magnitude or an explicit "I could not complete this", and never an invented figure. `/api/usage/summary` shows the primary model with non-zero tokens after one chat turn. |
+| 1a | **Worth forwarding**     | The same monthly-sales spec renders as (a) a branded PDF with a cover, a running header, `Page N of M`, a chart, right-aligned rupiah, and a repeating table header across 200 rows, and (b) a PPTX deck that opens cleanly in PowerPoint, Keynote, Google Slides, and LibreOffice with the narrative in speaker notes. Both derive their colours, type scale, and fonts from the same generated tokens as the dashboard, and CI fails if the two drift. A tenant logo and colour set in Settings → Reports appear in the next generated file with no redeploy. |
+| 1b | **Safe to change**       | CI fails on a failing test. All CRITICAL packages have tests. A Go struct rename without `make types` is a red build. Non-admin cannot rotate a DSN. A tenant at zero credits gets a clear refusal instead of a bill. |
 | 2  | **Authoritative numbers**| A metric is defined once in the UI; asking the same question twice in two threads returns the same number via `query_metric`. Eval score has not regressed. |
 | 3  | **It tells you first**   | A watcher on a demo-tenant metric breaches and a WhatsApp/Discord message arrives, unprompted, containing the number and the agent's explanation. |
 | 4  | **It does things**       | The agent proposes an action, an approval card appears, approving executes it, and `agent_actions` shows who approved what and when. Rejecting does nothing. |
@@ -170,8 +246,14 @@ change no one's workflow. Watchers do.
 | Nine weeks of environment drift blocks week 1             | **High**   | Low    | `T-00` is a half-day environment re-warm before anything else.               |
 | **Monorepo migration breaks a production deploy**         | Medium     | **High** | Cloudflare Pages is the exposed surface — both frontends deploy from it, and it has bitten this project before (`a715171`→`9e9899f`). `T-00b` requires a passing preview deploy per frontend **before** production is repointed. The three original repos are archived read-only, not deleted, so rollback is repointing a remote. |
 | Monorepo migration silently changes Go imports            | Low        | Medium | `T-00b` keeps the module path unchanged, so the acceptance criterion is literally "zero `.go` content diffs in the migration commit" — verifiable with `git diff --stat`. |
-| Week 1 is 13 days of work in a 5-day week                 | **Certain**| Low    | Stated openly in the roll-up rather than hidden. Week 1 will run ~2.5 weeks; everything downstream compounds off it, so it is the wrong place to rush. |
+| Phases 1 + 1a + 1b are 24 days of work                    | **Certain**| Low    | Stated openly in the roll-up rather than hidden. They will run ~5 weeks; everything downstream compounds off them, so it is the wrong place to rush. |
 | Agent-executed work drifts from intent                    | Medium     | Medium | Every ticket carries an explicit verification gate. No ticket is done on inspection alone. |
+| **Report track becomes an open-ended design exercise**    | **High**   | High   | "Enterprise-grade" has no exit condition, so `T-R2`/`T-R4` are gated on a **fixed fixture set** — monthly sales report, invoice, KPI summary, 200-row export — and on the four-application PPTX compatibility check. When the fixtures render correctly the ticket is done. Polish beyond that is a Sprint 2 item, not a reason to keep the ticket open. |
+| PPTX renders differently in Keynote / Google Slides       | **High**   | Medium | Hand-rolled OOXML gets read by four different implementations. `T-R4`'s gate requires opening a real deck in all four; the CI smoke test converts every fixture through headless LibreOffice, which is the strictest of them. Stick to the committed layout set — an ad-hoc slide shape is where compatibility breaks. |
+| Chart palette illegible in print or to colourblind readers | Medium    | Medium | Enterprise reports get printed in black and white more often than anyone admits. `T-R3` requires the categorical palette to be verified both under deuteranopia simulation and in greyscale, with the method stated in the gate. |
+| Text overflows a slide and is silently clipped            | Medium     | Medium | PPTX has no layout engine to ask, so `T-R4` estimates character budgets per layout and overflows to a `(cont.)` slide. Silent clipping is an explicit acceptance failure. |
+| Tokens drift back apart by hand-editing                   | Medium     | Medium | The generated CSS and Go files are committed and `git diff --exit-code` in CI, the same mechanism `T-02b` uses for API types. The hand-written `:root` block is deleted, not left beside the generated one. |
+| **A branded report carries a fabricated number**          | **High if unfixed** | **Critical** | The exact reason the report track runs *after* phase 1. A stock-Helvetica PDF with a wrong figure is embarrassing; a branded, logo'd, board-ready one with a wrong figure is a lie with letterhead. `T-16` lands first, and `T-R2`'s fixtures render from real query results, never from LLM-narrated figures. |
 | **The agent fabricates numbers under budget exhaustion**  | **Observed** | **Critical** | Confirmed in the `T-00` smoke test: reported `$1,234,567.89` against a true 3.86bn. `T-16` moves earlier, becomes P0, and gains an anti-fabrication guardrail; `T-01`'s golden set is what keeps it fixed. Nothing that acts autonomously (`T-08` watchers, `T-10` actions) should ship before this. |
 | **Spend is invisible on the default provider**            | **Observed** | **High** | Primary-model streaming turns record no usage at all (`Q-12`). New ticket `T-02c` fixes it and blocks `T-03`, whose budget check would otherwise gate on a permanent near-zero. |
 | A local `.env` points at production                       | **Observed** | **High** | The working `.env` had `DB_HOST` on a remote host while looking local; the smoke test nearly wrote test data to it. `.env.example` is now tracked (`Q-10`); add a startup warning when a non-production `ENV` targets a non-local `DB_HOST`. |
@@ -196,15 +278,30 @@ each cut is chosen to preserve the dependency chain.
    [`../coverage/environment-notes.md`](../coverage/environment-notes.md) C-1).
    Shipping watchers or actions on top of an agent that invents numbers would only
    automate the fabrication.
-6. `T-23` widget config UI (ship the widget with sane hardcoded defaults; the
+6. `T-R5` tenant report branding UI — ship reports on Argentum's own defaults and
+   let per-tenant branding follow. The renderer must already treat branding as
+   optional, so this cut costs nothing structurally.
+7. `T-R3` chart types beyond line and bar. **Never cut charts entirely** — a
+   report with no chart is a table with a cover page, which is not what was asked
+   for.
+8. `T-23` widget config UI (ship the widget with sane hardcoded defaults; the
    dashboard config tab can follow)
-7. `T-22` npm packages and examples — but only down to the vanilla example and
+9. `T-22` npm packages and examples — but only down to the vanilla example and
    the Go + Node signing snippets. **Never ship the widget with no integration
    docs**; an undocumented embed surface invites the insecure shortcut.
 
-**Never cut:** `T-00b` (monorepo), `T-01` (evals), `T-02` (CI gate), `T-04`
-(RBAC), `T-06`/`T-07` (metric registry), `T-08`/`T-09` (watchers), `T-19` (embed
-auth). Those are the sprint.
+**Never cut:** `T-00b` (monorepo), `T-01` (evals), `T-02c` (metering), `T-16`
+(anti-fabrication), `T-R1`/`T-R2` (tokens + PDF v2), `T-R4` (PPTX), `T-02` (CI
+gate), `T-04` (RBAC), `T-06`/`T-07` (metric registry), `T-08`/`T-09` (watchers),
+`T-19` (embed auth). Those are the sprint.
+
+**The 63-day problem.** Cuts #1–#7 bring 63 down to ~54.5 against 40 working
+days, of which 2 are already spent. That still does not fit, and no further cut
+inside phases 1–6 is available without removing the foundation the watchers stand
+on. **The widget phase (`T-19`→`T-23`, 11.5d) moves to Sprint 2 whole**, which
+lands the sprint at ~43. This is the cut this section was written for: nothing
+depends on the widget, and moving it whole strands no half-finished work. `T-19`
+stays on the never-cut list for Sprint 2, where it becomes the first ticket.
 
 `T-00b` is uncuttable for a scheduling reason rather than a product one: it moves
 every file in the workspace, so it is only cheap **before** the sprint. Deferred to
