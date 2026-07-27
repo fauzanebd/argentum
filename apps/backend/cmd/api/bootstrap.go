@@ -197,6 +197,8 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	}
 	deps.wa = waProvider
 
-	deps.metrics = metrics.NewCollector()
+	// Shared with app.MeteredLLM, which is too deep in the call graph to be
+	// handed a collector, so /metrics reports streaming-metering health too.
+	deps.metrics = metrics.Default()
 	return deps, nil
 }

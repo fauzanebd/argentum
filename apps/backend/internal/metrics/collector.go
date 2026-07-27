@@ -22,6 +22,14 @@ type Collector struct {
 	llmTokensOutTotal int64
 	llmCostTotalMicro uint64 // Store as micro-dollars for atomic ops
 
+	// Streaming-turn metering health (T-02c). A turn that reports no usage at
+	// all is an unbilled turn — finding C-2 was exactly that, invisible for
+	// nine weeks. Counting it makes a regression a number rather than a
+	// discovery during a smoke test.
+	llmStreamTurnsTotal       int64
+	llmStreamTurnsNoUsage     int64
+	llmStreamUsageEventsTotal int64
+
 	// Cache metrics
 	cacheHits   int64
 	cacheMisses int64
@@ -46,6 +54,15 @@ func NewCollector() *Collector {
 	}
 }
 
+// defaultCollector is the process-wide collector used by code too deep in the
+// call graph to be handed one — currently app.MeteredLLM. cmd/api serves it at
+// /metrics; the worker increments its own copy, which stays process-local
+// until T-17 gives the worker an exporter.
+var defaultCollector = NewCollector()
+
+// Default returns the process-wide collector. Never nil.
+func Default() *Collector { return defaultCollector }
+
 // RecordQuery records a query execution
 func (c *Collector) RecordQuery(duration time.Duration, cached, failed bool) {
 	atomic.AddInt64(&c.queriesTotal, 1)
@@ -68,6 +85,19 @@ func (c *Collector) RecordLLMRequest(tokensIn, tokensOut int, cost float64) {
 	// Convert cost to micro-dollars and add atomically
 	costMicro := uint64(cost * 1000000)
 	atomic.AddUint64(&c.llmCostTotalMicro, costMicro)
+}
+
+// RecordLLMStreamTurn records the completion of one streaming LLM turn and how
+// many provider usage reports it produced. usageEvents == 0 means the turn was
+// unbilled: that is the C-2 failure mode, and it is what
+// llm.stream_turns_without_usage counts.
+func (c *Collector) RecordLLMStreamTurn(usageEvents int) {
+	atomic.AddInt64(&c.llmStreamTurnsTotal, 1)
+	if usageEvents <= 0 {
+		atomic.AddInt64(&c.llmStreamTurnsNoUsage, 1)
+		return
+	}
+	atomic.AddInt64(&c.llmStreamUsageEventsTotal, int64(usageEvents))
 }
 
 // RecordCacheHit records a cache hit
@@ -140,10 +170,13 @@ func (c *Collector) GetSnapshot() MetricsSnapshot {
 		},
 
 		LLM: LLMMetrics{
-			RequestsTotal:  atomic.LoadInt64(&c.llmRequestsTotal),
-			TokensInTotal:  atomic.LoadInt64(&c.llmTokensInTotal),
-			TokensOutTotal: atomic.LoadInt64(&c.llmTokensOutTotal),
-			CostTotal:      float64(atomic.LoadUint64(&c.llmCostTotalMicro)) / 1000000,
+			RequestsTotal:           atomic.LoadInt64(&c.llmRequestsTotal),
+			TokensInTotal:           atomic.LoadInt64(&c.llmTokensInTotal),
+			TokensOutTotal:          atomic.LoadInt64(&c.llmTokensOutTotal),
+			CostTotal:               float64(atomic.LoadUint64(&c.llmCostTotalMicro)) / 1000000,
+			StreamTurnsTotal:        atomic.LoadInt64(&c.llmStreamTurnsTotal),
+			StreamTurnsWithoutUsage: atomic.LoadInt64(&c.llmStreamTurnsNoUsage),
+			StreamUsageEventsTotal:  atomic.LoadInt64(&c.llmStreamUsageEventsTotal),
 		},
 
 		Cache: CacheMetrics{
@@ -177,6 +210,9 @@ func (c *Collector) Reset() {
 	atomic.StoreInt64(&c.llmTokensInTotal, 0)
 	atomic.StoreInt64(&c.llmTokensOutTotal, 0)
 	atomic.StoreUint64(&c.llmCostTotalMicro, 0)
+	atomic.StoreInt64(&c.llmStreamTurnsTotal, 0)
+	atomic.StoreInt64(&c.llmStreamTurnsNoUsage, 0)
+	atomic.StoreInt64(&c.llmStreamUsageEventsTotal, 0)
 	atomic.StoreInt64(&c.cacheHits, 0)
 	atomic.StoreInt64(&c.cacheMisses, 0)
 	atomic.StoreInt64(&c.jobsCreated, 0)
@@ -215,6 +251,11 @@ type LLMMetrics struct {
 	TokensInTotal  int64   `json:"tokens_in_total"`
 	TokensOutTotal int64   `json:"tokens_out_total"`
 	CostTotal      float64 `json:"cost_total_usd"`
+	// StreamTurnsWithoutUsage > 0 means turns are being served unbilled —
+	// alert on it. See Collector.RecordLLMStreamTurn.
+	StreamTurnsTotal        int64 `json:"stream_turns_total"`
+	StreamTurnsWithoutUsage int64 `json:"stream_turns_without_usage"`
+	StreamUsageEventsTotal  int64 `json:"stream_usage_events_total"`
 }
 
 // CacheMetrics contains cache performance metrics

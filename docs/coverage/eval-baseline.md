@@ -154,6 +154,18 @@ ran every one of these turns and recorded **zero** usage events — finding
 `llm_call`, and it is `gpt-5-mini`. Treat the cost column as a lower bound
 until `T-02c` lands; it is roughly the cheapest part of each turn.
 
+> **Superseded 2026-07-27 — `T-02c` landed.** Re-running the single case
+> `december-2024-sales` on the fixed build reports **6017 in / 631 out,
+> $0.002388** where the baseline's per-case mean was 444 / 107 / $0.000809. The
+> primary model now shows up as its own `llm_call` row (5542 in, 539 out, 2752
+> of them cache reads) alongside the light model's 475 / 92.
+>
+> So the baseline's **pass rate stands at 96.8% — nothing about scoring
+> changed** — but its token and cost aggregates understate reality by roughly
+> an order of magnitude. Do not compare a post-`T-02c` cost figure against them;
+> the next full run replaces the numbers, and that run belongs to whichever
+> ticket next needs a fresh baseline (`T-16`), not to a re-run for its own sake.
+
 **Latency is honest but unflattering.** 25s mean, 51s worst. Part is the
 provider; part is that the agent creates Metabase cards for questions that only
 asked for a number. Ten of the thirty-one cases called `create_visualization`,

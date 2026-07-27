@@ -37,7 +37,7 @@ the authoritative order.
 | Phase | Tickets | Days | Why here |
 | ----- | ------- | ---- | -------- |
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
-| 1 — trust the numbers | ~~`T-01`~~, `T-02c`, `T-16` | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **`T-01` landed 2026-07-27 — baseline 96.8%, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md).** |
+| 1 — trust the numbers | ~~`T-01`~~, ~~`T-02c`~~, `T-16` | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **`T-01` landed 2026-07-27 — baseline 96.8%, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` landed 2026-07-27 — primary-model turns are billed; `T-03` is unblocked.** |
 | 1a — worth forwarding | `T-R1`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. |
 | 1b — safe to change | `T-02`, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. |
 | 2→6 | unchanged | — | Metric registry → watchers → actions → API/MCP → hardening. |
@@ -769,15 +769,48 @@ no enforcement, because it looks like it works.
   estimate and logs a warning.
 
 **Acceptance:**
-- [ ] A streaming turn on an OpenAI-interface provider records a non-zero `llm_call`
-- [ ] A streaming turn on Anthropic still records, including cache tokens (no regression on `74f5419`)
-- [ ] Zero-usage streams warn loudly rather than passing silently
-- [ ] `cost_by_model_usd` shows the primary model after one chat turn
+- [x] A streaming turn on an OpenAI-interface provider records a non-zero `llm_call`
+- [~] A streaming turn on Anthropic still records, including cache tokens (no regression on `74f5419`) — **unit-tested, not live-tested: no Anthropic-native credentials on this machine**
+- [x] Zero-usage streams warn loudly rather than passing silently
+- [x] `cost_by_model_usd` shows the primary model after one chat turn
 
 **Gate:** repeat the `T-00` smoke test — signup, connection, one analytical
 question — then paste `/api/usage/summary`. The primary model must appear with
 non-zero tokens. Compare against the pre-fix output recorded in
 `../coverage/environment-notes.md` C-2.
+
+### Status — landed 2026-07-27
+
+**The hypothesis in "Do" was wrong, and the wrongness is the finding.**
+`include_usage` was already being requested — `withForcedUsage` has set
+`EnableReasoning` since `74f5419`, which is the flag agent-sdk-go's OpenAI
+client checks. The provider sent usage on every turn. agent-sdk-go forwards it
+into a `StreamEvent` **only** in `GenerateStream`
+(`pkg/llm/openai/streaming.go:212`), the no-tools path; the tool-calling path
+every agent turn uses sets `IncludeUsage: true` per iteration (line 361) and
+then never reads `chunk.Usage`.
+
+Fix: `internal/llmusage` taps usage out of the SSE body via an
+`http.RoundTripper` installed on the OpenAI-interface client, keyed to a
+collector in the request context. Exact provider numbers, every tool-calling
+iteration included — so the tokenizer-estimate fallback this ticket allowed was
+not needed and no `estimated: true` flag exists. Anthropic keeps metering from
+stream metadata, which takes priority whenever present.
+
+Gate output (post-fix `/api/usage/summary`, versus C-2's pre-fix JSON) is in
+[`../coverage/environment-notes.md`](../coverage/environment-notes.md) C-2 under
+"Resolved". Before: one `llm_call`, `gpt-5-mini` only. After:
+`deepseek/deepseek-v3.2` at 5232 in / 579 out, 3840 of them cache reads.
+
+Two things a reader should know:
+
+- **The `T-01` baseline's cost and token aggregates are now known to be
+  light-model-only** and understate a turn by roughly 10x. Pass rate is
+  unaffected. Noted in [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md).
+- **The new metric is process-local.** `llm.stream_turns_without_usage` is
+  served on the API's `/metrics`, but agent turns run in the worker, which has
+  no HTTP surface. Until `T-17` gives it one, the warning log is the operational
+  signal and the counter is a unit-testable invariant.
 
 ---
 

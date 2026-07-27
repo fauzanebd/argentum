@@ -9,9 +9,12 @@ import (
 	"github.com/Ingenimax/agent-sdk-go/pkg/llm/anthropic"
 	"github.com/Ingenimax/agent-sdk-go/pkg/llm/gemini"
 	"github.com/Ingenimax/agent-sdk-go/pkg/llm/openai"
+	oaisdk "github.com/openai/openai-go/v2"
+	"github.com/openai/openai-go/v2/option"
 	"google.golang.org/genai"
 
 	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/llmusage"
 )
 
 // Spec is the minimum input Build needs to construct an LLM client. Used by
@@ -117,8 +120,48 @@ func build(ctx context.Context, iface, apiKey, model, baseURL string) (interface
 		if baseURL != "" {
 			opts = append(opts, openai.WithBaseURL(baseURL))
 		}
-		return openai.NewClient(apiKey, opts...), nil
+		client := openai.NewClient(apiKey, opts...)
+		installUsageTap(client, apiKey, baseURL)
+		return client, nil
 	}
+}
+
+// defaultOpenAIBaseURL mirrors agent-sdk-go's own default; installUsageTap has
+// to rebuild the services, and rebuilding them without a base URL would
+// silently repoint a gateway-configured client at api.openai.com.
+const defaultOpenAIBaseURL = "https://api.openai.com/v1"
+
+// installUsageTap replaces the SDK's HTTP client with one that reads token
+// usage off the SSE wire (internal/llmusage).
+//
+// Finding C-2: agent-sdk-go's OpenAI client asks for
+// stream_options.include_usage and then drops the usage chunk in
+// GenerateWithToolsStream — the path every agent turn takes — so streaming
+// turns recorded zero tokens for the primary model. The provider does send the
+// numbers; only the SDK's plumbing loses them. Reading the response body is
+// cheaper and more accurate than forking the SDK or estimating with a local
+// tokenizer, and it covers every iteration of the tool-calling loop.
+//
+// The tap only acts when app.MeteredLLM has put a collector in the request
+// context and the response is text/event-stream, so non-streaming calls keep
+// being metered from the SDK's own LLMResponse.Usage with no double counting.
+func installUsageTap(c *openai.OpenAIClient, apiKey, baseURL string) {
+	if c == nil {
+		return
+	}
+	url := strings.TrimSpace(baseURL)
+	if url == "" {
+		url = defaultOpenAIBaseURL
+	}
+	httpClient := llmusage.NewClient(nil)
+	reqOpts := []option.RequestOption{
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(url),
+		option.WithHTTPClient(httpClient),
+	}
+	c.Client = oaisdk.NewClient(reqOpts...)
+	c.ChatService = oaisdk.NewChatService(reqOpts...)
+	c.ResponseService = oaisdk.NewClient(reqOpts...)
 }
 
 // normalizeAnthropicBaseURL fixes LLM_BASE_URL for agent-sdk-go's Anthropic client, which always

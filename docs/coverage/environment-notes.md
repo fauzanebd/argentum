@@ -136,6 +136,43 @@ cannot enforce a budget you are not measuring. With the current default provider
 the dominant cost of every chat turn is invisible. Fix before `T-03`, because
 `T-03`'s budget check would otherwise gate on a number that is always near zero.
 
+#### Resolved 2026-07-27 by `T-02c` — and the hypothesis was wrong
+
+`include_usage` **was** being requested. `MeteredLLM.withForcedUsage` has set
+`EnableReasoning` since `74f5419`, and that is the only flag agent-sdk-go's
+OpenAI client checks before setting `stream_options.include_usage` for a
+non-reasoning model. The provider was sending the usage chunk all along.
+
+The SDK throws it away. In `pkg/llm/openai/streaming.go`, usage is forwarded
+into a `StreamEvent` at line 212 — inside `GenerateStream`, the **no-tools**
+path. `GenerateWithToolsStream`, which is the path every agent turn takes
+(`agent.RunStream` → `streaming.go:358`), sets `IncludeUsage: true` on each
+iteration's request at line 361 and then never reads `chunk.Usage` at all. So
+`wrapStream` had nothing to aggregate, and the zero-check silently swallowed it.
+
+Fixed by reading the usage off the wire instead of forking the SDK:
+`internal/llmusage` installs an `http.RoundTripper` on the OpenAI-interface
+client that parses `usage` out of the SSE body and reports it to a collector
+carried in the request context. Anthropic is untouched — it still meters from
+stream event metadata, which wins whenever present, so `74f5419`'s cache
+billing cannot be double-counted. A turn where neither source reports anything
+now logs at `Warn` and increments `llm.stream_turns_without_usage`.
+
+Same smoke test, after the fix — signup, demo DSN, one analytical question:
+
+```json
+{ "total_cost_usd": 0.002378,
+  "total_tokens_in": 5616, "total_tokens_out": 691,
+  "event_counts": { "llm_call": 2, "sql_query": 1 },
+  "cost_by_model_usd": { "deepseek/deepseek-v3.2": 0.001558,
+                         "gpt-5-mini": 0.00032 },
+  "tokens_in_by_model": { "deepseek/deepseek-v3.2": 5232, "gpt-5-mini": 384 } }
+```
+
+The primary model appears with 5232 in / 579 out, and 3840 of those input
+tokens were cache reads the tap picked out of `prompt_tokens_details` — priced
+at 0.10x instead of full rate.
+
 ---
 
 ## Environment findings

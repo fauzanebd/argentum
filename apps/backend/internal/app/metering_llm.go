@@ -8,7 +8,10 @@ import (
 	"strings"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
+	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/llmusage"
+	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
@@ -75,30 +78,37 @@ func (m *MeteredLLM) SupportsStreaming() bool { return m.inner.SupportsStreaming
 // agent-sdk-go's OpenAI client sets stream_options.include_usage:true even for
 // non-reasoning models — without it, OpenRouter / non-reasoning OpenAI routes
 // emit no usage chunk and we'd record zero tokens for the whole turn.
+//
+// The context also carries a llmusage.Collector, which is how the HTTP-level
+// tap in internal/llmusage reports usage the SDK requested but never forwarded
+// — see the wrapStream comment and finding C-2.
 func (m *MeteredLLM) GenerateStream(ctx context.Context, prompt string, opts ...interfaces.GenerateOption) (<-chan interfaces.StreamEvent, error) {
 	streamingLLM, ok := m.inner.(interfaces.StreamingLLM)
 	if !ok {
 		return nil, fmt.Errorf("inner LLM '%s' does not support streaming", m.inner.Name())
 	}
+	ctx, tap := llmusage.WithCollector(ctx)
 	inner, err := streamingLLM.GenerateStream(ctx, prompt, withForcedUsage(opts)...)
 	if err != nil {
 		return nil, err
 	}
-	return m.wrapStream(ctx, inner), nil
+	return m.wrapStream(ctx, inner, tap), nil
 }
 
 // GenerateWithToolsStream wraps the inner StreamingLLM the same way as
-// GenerateStream.
+// GenerateStream. This is the path every agent turn takes, and the one where
+// agent-sdk-go drops the provider's usage chunk — see wrapStream.
 func (m *MeteredLLM) GenerateWithToolsStream(ctx context.Context, prompt string, tools []interfaces.Tool, opts ...interfaces.GenerateOption) (<-chan interfaces.StreamEvent, error) {
 	streamingLLM, ok := m.inner.(interfaces.StreamingLLM)
 	if !ok {
 		return nil, fmt.Errorf("inner LLM '%s' does not support streaming", m.inner.Name())
 	}
+	ctx, tap := llmusage.WithCollector(ctx)
 	inner, err := streamingLLM.GenerateWithToolsStream(ctx, prompt, tools, withForcedUsage(opts)...)
 	if err != nil {
 		return nil, err
 	}
-	return m.wrapStream(ctx, inner), nil
+	return m.wrapStream(ctx, inner, tap), nil
 }
 
 // withForcedUsage appends an option that flips LLMConfig.EnableReasoning on,
@@ -119,7 +129,22 @@ func withForcedUsage(opts []interfaces.GenerateOption) []interfaces.GenerateOpti
 // wrapStream forwards events from inner to out and records the final usage
 // once the stream closes. Usage is accumulated across all chunks because
 // providers may emit it in pieces (tool-call iterations each emit their own).
-func (m *MeteredLLM) wrapStream(ctx context.Context, inner <-chan interfaces.StreamEvent) <-chan interfaces.StreamEvent {
+//
+// Two sources, in priority order:
+//
+//  1. Stream event metadata. Anthropic's SSE client populates it (including
+//     cache_creation/cache_read), which is what commit 74f5419 bills on.
+//  2. The HTTP tap (internal/llmusage). agent-sdk-go's OpenAI client requests
+//     include_usage but only forwards the usage chunk from its no-tools
+//     GenerateStream path; GenerateWithToolsStream — every agent turn —
+//     silently discards it, which is finding C-2: a full multi-step turn
+//     recorded zero usage for the primary model.
+//
+// Metadata wins when present so the Anthropic path is byte-for-byte unchanged.
+// Neither source producing anything is a billing hole, not a curiosity: it is
+// logged at Warn and counted, because silence is exactly what let C-2 survive
+// to production.
+func (m *MeteredLLM) wrapStream(ctx context.Context, inner <-chan interfaces.StreamEvent, tap *llmusage.Collector) <-chan interfaces.StreamEvent {
 	out := make(chan interfaces.StreamEvent, 16)
 	go func() {
 		defer close(out)
@@ -133,10 +158,31 @@ func (m *MeteredLLM) wrapStream(ctx context.Context, inner <-chan interfaces.Str
 			}
 			out <- evt
 		}
-		if agg.InputTokens > 0 || agg.OutputTokens > 0 ||
-			agg.CacheCreationInputTokens > 0 || agg.CacheReadInputTokens > 0 {
+		fromMetadata := agg.InputTokens > 0 || agg.OutputTokens > 0 ||
+			agg.CacheCreationInputTokens > 0 || agg.CacheReadInputTokens > 0
+		if fromMetadata {
+			metrics.Default().RecordLLMStreamTurn(1)
 			m.record(ctx, &agg)
+			return
 		}
+		tapped, events := tap.Snapshot()
+		if events > 0 {
+			metrics.Default().RecordLLMStreamTurn(events)
+			m.record(ctx, &interfaces.TokenUsage{
+				InputTokens:              tapped.InputTokens,
+				OutputTokens:             tapped.OutputTokens,
+				CacheCreationInputTokens: tapped.CacheCreationInputTokens,
+				CacheReadInputTokens:     tapped.CacheReadInputTokens,
+			})
+			return
+		}
+		metrics.Default().RecordLLMStreamTurn(0)
+		logrus.WithFields(logrus.Fields{
+			"company_id": tenantctx.CompanyID(ctx),
+			"thread_id":  tenantctx.ThreadID(ctx),
+			"model":      m.model,
+			"provider":   m.inner.Name(),
+		}).Warn("streaming turn completed with no usage reported by provider or HTTP tap — this turn is unbilled")
 	}()
 	return out
 }

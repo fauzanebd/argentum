@@ -151,6 +151,24 @@ the ticket:
 
 Baseline and per-category scores: [`eval-baseline.md`](eval-baseline.md).
 
+`T-02c` primary-model metering
+
+The `C-2` fix, and a reminder that a plausible mechanism is not a verified one.
+The ticket's hypothesis — that `stream_options.include_usage` was never
+requested — was wrong: it had been requested since `74f5419`. agent-sdk-go asks
+the provider for usage on every tool-calling iteration and then reads
+`chunk.Usage` in only one of its two streaming methods, the one the agent never
+calls. Nine weeks of turns were billed at the guardrail model's rate because a
+zero-check swallowed the gap without a word.
+
+The fix reads usage off the SSE wire (`internal/llmusage`) rather than forking
+the SDK, so the numbers are the provider's own, cache reads included, across
+every iteration. Anthropic's path is untouched and still takes priority.
+
+Two consequences worth carrying forward: `T-03`'s budget check now has a real
+number to gate on, and the `T-01` baseline's cost figures are retroactively
+known to be a lower bound — pass rate unaffected.
+
 ---
 
 ## What the history says about how this project is built
