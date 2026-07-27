@@ -9,7 +9,13 @@ analytics_agent:
     tool usage, and SQL-dialect guidance are supplied by the runtime system
     prompt — follow that as the source of truth.
 
-  max_iterations: 3
+  # max_iterations deliberately absent. It used to be set here AND in
+  # internal/bootstrap, where this file won because WithAgentConfig is applied
+  # last — so the Go value was decorative and the real cap was 3 (finding Q-5,
+  # the cap that made the agent fabricate figures). The whole turn budget now
+  # lives in internal/agentbudget, configured by AGENT_MAX_* env vars. Do not
+  # reintroduce the key: a safety limit with two sources of truth ends up being
+  # whichever one nobody is reading.
   require_plan_approval: false
 
   llm_config:

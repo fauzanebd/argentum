@@ -38,6 +38,14 @@ func main() {
 		outPath     = flag.String("out", "", "write the full JSON report here")
 		only        = flag.String("only", "", "comma-separated case ids or categories to run")
 		demoDSN     = flag.String("demo-dsn", "postgres://demo:demo@localhost:5433/demo_analytics?sslmode=disable", "DSN of the demo tenant database to seed")
+		// Metabase runs inside compose and cannot resolve the host-side
+		// address this process uses, so the DSN it is registered with needs a
+		// different host:port. Without this the registration is rejected and
+		// every create_visualization call fails — which is what the three
+		// chart_dashboard cases had been quietly measuring. Set empty to
+		// register the DSN unchanged.
+		metabaseHost = flag.String("metabase-db-host", "postgres_demo:5432",
+			"host:port Metabase should use to reach the demo database")
 		timeout     = flag.Duration("case-timeout", 3*time.Minute, "per-case timeout")
 		dryRun      = flag.Bool("dry-run", false, "validate the set and the tenant, then exit without calling the LLM")
 		allowRemote = flag.Bool("allow-remote-db", false, "permit running against a non-local control database")
@@ -100,7 +108,7 @@ func main() {
 	}
 	defer stack.Close()
 
-	tenant, err := eval.EnsureTenant(ctx, stack, *demoDSN)
+	tenant, err := eval.EnsureTenant(ctx, stack, *demoDSN, *metabaseHost)
 	if err != nil {
 		fatalf("seed eval tenant: %v", err)
 	}

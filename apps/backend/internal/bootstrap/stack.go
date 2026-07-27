@@ -34,6 +34,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
+	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
@@ -70,9 +71,15 @@ type Stack struct {
 
 	ThreadSvc    *app.ThreadService
 	ScheduledSvc *app.ScheduledTaskService
+	// MetabaseSync registers a tenant DSN as a Metabase database. Exposed
+	// because a source created outside the HTTP API — the eval harness seeds
+	// its own — is invisible to Metabase until this runs, and every
+	// create_visualization call against it fails.
+	MetabaseSync *app.MetabaseWarehouseSync
 
 	Tools        []interfaces.Tool
 	AgentFactory app.AgentFactory
+	Budget       agentbudget.Budget
 
 	tableEmbeddings domain.TableEmbeddingRepository
 	scheduledEnq    *queue.Enqueuer
@@ -171,6 +178,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		cfg.MetabaseURL, cfg.MetabasePublicURL,
 		cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword,
 	)
+	s.MetabaseSync = app.NewMetabaseWarehouseSync(metabaseClient)
 	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
 
@@ -192,6 +200,18 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 			"endpoint": cfg.MinIOEndpoint,
 		}).Info("generate_document tool enabled")
 	}
+
+	// Every tool runs behind the per-turn budget guard (T-16). Wrapping here
+	// rather than at each construction site means a tool added later cannot
+	// forget to be bounded: s.Tools is the registry, and nothing reaches the
+	// agent except through it.
+	s.Budget = agentbudget.Budget{
+		MaxIterations: cfg.AgentMaxIterations,
+		MaxToolCalls:  cfg.AgentMaxToolCalls,
+		MaxTokens:     cfg.AgentMaxTurnTokens,
+		Wall:          time.Duration(cfg.AgentTurnBudgetSecs) * time.Second,
+	}.Normalize()
+	s.Tools = agentbudget.GuardAll(s.Tools)
 
 	mem := buildMemory(cfg)
 	guardrailsTpl := buildGuardrails(cfg, lightLLMClient)
@@ -220,7 +240,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 			sdkagent.WithSystemPrompt(systemPrompt),
 			sdkagent.WithName("Argentum"),
 			sdkagent.WithDescription("Conversational analytics agent for B2B owners."),
-			sdkagent.WithMaxIterations(3),
+			sdkagent.WithMaxIterations(s.Budget.MaxIterations),
 			sdkagent.WithRequirePlanApproval(false),
 			sdkagent.WithLLMConfig(interfaces.LLMConfig{Temperature: 0.2}),
 			// Stream content from every iteration immediately. The SDK's default
@@ -269,7 +289,7 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 		s.ThreadSvc, s.Messages, s.Threads, s.Connections,
 		s.AgentFactory, s.LLMCache, bus, wa, s.TenantPool,
 		s.ScheduledSvc, s.Cfg.HistoryHydrateLimit,
-	)
+	).WithBudget(func(context.Context, string) agentbudget.Budget { return s.Budget })
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)
 		logrus.WithFields(logrus.Fields{

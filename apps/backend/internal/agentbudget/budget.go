@@ -1,0 +1,381 @@
+// Package agentbudget bounds what one agent turn may spend, and records what
+// that turn actually retrieved.
+//
+// Why it exists (ticket T-16, findings C-1 and E-5). The agent used to run
+// under a hard 3-iteration cap. Running out was not handled: agent-sdk-go's
+// response to an exhausted cap is one more model call carrying the message
+// "Please provide your final response based on the information available"
+// — with nothing said about what to do when the information available is
+// nothing. The model filled the gap. The T-00 smoke test caught it reporting
+// "$1,234,567.89" against a true 3,863,405,700, and the first eval run caught
+// it reporting "IDR 1,488,000" from a query that matched zero rows.
+//
+// Raising the cap alone moves the cliff without removing it, so this package
+// does three things instead:
+//
+//  1. Spends a budget across four dimensions — iterations, tool calls,
+//     cumulative tokens, wall clock — rather than one counter.
+//  2. Tells the model in-band when the budget is gone and what to do next.
+//     The message arrives as a tool result, which the model reads, rather
+//     than as an error, which it never sees.
+//  3. Records the turn's evidence — which data tools ran, how many rows came
+//     back — which is what the reply is judged against before it is sent
+//     (guardrails.CheckFabrication).
+//
+// Enforcement points differ per dimension, and the difference matters:
+//
+//   - Tool calls and wall clock are checked in this package, on every tool
+//     call, on every provider.
+//   - Tokens and iterations are read from the internal/llmusage HTTP tap,
+//     which exists only on the OpenAI-interface path (the default, and the
+//     one C-1 was observed on). On the Anthropic path both are inert and the
+//     SDK's own iteration cap is the backstop — see iterationsUsed.
+package agentbudget
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/fauzanebd/argentum/internal/llmusage"
+)
+
+// Budget is the per-turn ceiling. Zero on any field disables that dimension.
+type Budget struct {
+	// MaxIterations is the tool-calling round trip ceiling handed to the SDK.
+	// This package refuses tools during the final permitted iteration so the
+	// model writes its answer knowing it ran out, instead of the SDK asking
+	// for one blind.
+	MaxIterations int
+	// MaxToolCalls caps tool executions across the whole turn. It is the
+	// dimension that binds when a model loops several tools per iteration.
+	MaxToolCalls int
+	// MaxTokens caps cumulative provider-reported tokens for the turn
+	// (input + output + cache). Runaway protection, not a cost target.
+	MaxTokens int
+	// Wall caps elapsed time from the first tool call.
+	Wall time.Duration
+}
+
+// Default is the shipped budget. Eight iterations replaces the 3-iteration
+// cap of finding Q-5; twelve tool calls allows a schema lookup, a probe and
+// an aggregation per source across a three-source tenant without the model
+// having to ration itself.
+func Default() Budget {
+	return Budget{
+		MaxIterations: 8,
+		MaxToolCalls:  12,
+		MaxTokens:     200_000,
+		Wall:          150 * time.Second,
+	}
+}
+
+// Normalize replaces non-positive fields with the shipped defaults so a
+// half-filled config cannot silently disable a dimension.
+func (b Budget) Normalize() Budget {
+	d := Default()
+	if b.MaxIterations <= 0 {
+		b.MaxIterations = d.MaxIterations
+	}
+	if b.MaxToolCalls <= 0 {
+		b.MaxToolCalls = d.MaxToolCalls
+	}
+	if b.MaxTokens <= 0 {
+		b.MaxTokens = d.MaxTokens
+	}
+	if b.Wall <= 0 {
+		b.Wall = d.Wall
+	}
+	return b
+}
+
+// dataTools are the tools whose results are evidence for a stated figure.
+// A reply containing a number that none of these produced in this turn is
+// the failure mode this whole package exists to catch. query_metric joins
+// the list when T-07 lands.
+var dataTools = map[string]bool{
+	"run_sql":      true,
+	"query_metric": true,
+}
+
+// IsDataTool reports whether a tool's result can ground a figure in a reply.
+func IsDataTool(name string) bool { return dataTools[name] }
+
+// Tracker is the per-turn state. One is created per chat turn and carried in
+// the context, so both the tool guard and the metering layer can reach it.
+// Safe for concurrent use: a provider may execute several tool calls from one
+// iteration.
+type Tracker struct {
+	budget Budget
+	start  time.Time
+
+	mu           sync.Mutex
+	toolCalls    int
+	dataCalls    int
+	dataRows     int
+	emptyResults int
+	toolErrors   int
+	exhausted    bool
+	reason       string
+	tools        []string
+}
+
+// New returns a tracker for one turn. The wall clock starts now: a turn that
+// spends 60s inside the table-picker embedding call has genuinely spent it.
+func New(b Budget) *Tracker {
+	return &Tracker{budget: b.Normalize(), start: time.Now()}
+}
+
+type trackerKey struct{}
+
+// WithTracker carries t on ctx for the duration of one turn.
+func WithTracker(ctx context.Context, t *Tracker) context.Context {
+	return context.WithValue(ctx, trackerKey{}, t)
+}
+
+// FromContext returns the turn's tracker, or nil when none was installed.
+// Every method below is nil-safe so callers outside a chat turn (the
+// connection describer, the reindex path) need no special case.
+func FromContext(ctx context.Context) *Tracker {
+	t, _ := ctx.Value(trackerKey{}).(*Tracker)
+	return t
+}
+
+// Snapshot is what the turn spent and what it retrieved. Copied out under
+// the lock so callers can log or score it without holding one.
+type Snapshot struct {
+	ToolCalls    int
+	DataCalls    int
+	DataRows     int
+	EmptyResults int
+	ToolErrors   int
+	Exhausted    bool
+	Reason       string
+	Tools        []string
+	Elapsed      time.Duration
+}
+
+// Snapshot returns the current state of the turn.
+func (t *Tracker) Snapshot() Snapshot {
+	if t == nil {
+		return Snapshot{}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	tools := make([]string, len(t.tools))
+	copy(tools, t.tools)
+	return Snapshot{
+		ToolCalls:    t.toolCalls,
+		DataCalls:    t.dataCalls,
+		DataRows:     t.dataRows,
+		EmptyResults: t.emptyResults,
+		ToolErrors:   t.toolErrors,
+		Exhausted:    t.exhausted,
+		Reason:       t.reason,
+		Tools:        tools,
+		Elapsed:      time.Since(t.start),
+	}
+}
+
+// Budget returns the ceiling this turn runs under.
+func (t *Tracker) Budget() Budget {
+	if t == nil {
+		return Default()
+	}
+	return t.budget
+}
+
+// Begin is called before a tool executes. When it returns blocked, the guard
+// must NOT run the tool: it returns refusal as the tool's result instead, and
+// that text is the model's instruction for how to finish honestly.
+//
+// Once any dimension trips the turn stays exhausted. A model that keeps
+// calling tools after being told to stop gets the same answer each time,
+// which is cheaper and more legible than re-deciding per call.
+func (t *Tracker) Begin(ctx context.Context, tool string) (refusal string, blocked bool) {
+	if t == nil {
+		return "", false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.exhausted {
+		return t.refusalLocked(), true
+	}
+	switch {
+	case t.toolCalls >= t.budget.MaxToolCalls:
+		t.exhaustLocked(fmt.Sprintf("tool-call budget spent (%d of %d)",
+			t.toolCalls, t.budget.MaxToolCalls))
+	case time.Since(t.start) >= t.budget.Wall:
+		t.exhaustLocked(fmt.Sprintf("time budget spent (%s of %s)",
+			time.Since(t.start).Round(time.Second), t.budget.Wall))
+	case tokensUsed(ctx) >= t.budget.MaxTokens && t.budget.MaxTokens > 0:
+		t.exhaustLocked(fmt.Sprintf("token budget spent (%d of %d)",
+			tokensUsed(ctx), t.budget.MaxTokens))
+	case t.budget.MaxIterations > 1 && iterationsUsed(ctx) >= t.budget.MaxIterations-1:
+		// The final permitted iteration is reserved for the answer. Letting
+		// tools run here spends it, and the SDK then asks for a final
+		// response with no instruction attached — the exact sequence that
+		// produced C-1.
+		t.exhaustLocked(fmt.Sprintf("iteration budget spent (%d of %d)",
+			iterationsUsed(ctx)+1, t.budget.MaxIterations))
+	}
+	if t.exhausted {
+		return t.refusalLocked(), true
+	}
+
+	t.toolCalls++
+	t.tools = append(t.tools, tool)
+	if dataTools[tool] {
+		t.dataCalls++
+	}
+	return "", false
+}
+
+// Observe records what a tool returned. Only data-tool results carry
+// evidence, but errors from any tool are counted so the incomplete-answer
+// message can say what went wrong.
+func (t *Tracker) Observe(tool, result string, err error) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if err != nil {
+		t.toolErrors++
+		return
+	}
+	if !dataTools[tool] {
+		return
+	}
+	n, ok := rowCount(result)
+	if !ok {
+		return
+	}
+	if n == 0 {
+		t.emptyResults++
+		return
+	}
+	t.dataRows += n
+}
+
+// Exhaust trips the budget from outside the tool path — the chat runner uses
+// it when the turn's context deadline fires.
+func (t *Tracker) Exhaust(reason string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.exhaustLocked(reason)
+}
+
+func (t *Tracker) exhaustLocked(reason string) {
+	if t.exhausted {
+		return
+	}
+	t.exhausted = true
+	t.reason = reason
+}
+
+// FinalInstruction is what the model is told when the budget runs out. It is
+// deliberately specific about the shape of an acceptable answer: the failure
+// being prevented is not "the model kept going", it is "the model produced a
+// confident figure it never retrieved".
+const FinalInstruction = "Your budget for this turn is spent. Do not call any more tools. " +
+	"Write your final reply now using ONLY results you already received in this turn: " +
+	"restate what the user asked, REPORT THE ACTUAL FIGURES any tool already returned to " +
+	"you — those numbers are yours to give and the user is waiting for them, do not " +
+	"withhold them or offer to present them later — then state plainly what you could not " +
+	"retrieve and why, and ask whether to continue. " +
+	"Do NOT state any monetary amount, total, count or metric value that did not come " +
+	"from a tool result in this turn — say you could not complete that part instead."
+
+// refusalLocked is the tool result a blocked call returns. JSON because every
+// other tool in the registry returns JSON, and a model that has been reading
+// structured results all turn should not have to switch parsers at the end.
+func (t *Tracker) refusalLocked() string {
+	payload := map[string]interface{}{
+		"budget_exhausted": true,
+		"reason":           t.reason,
+		"retrieved_so_far": t.retrievedLocked(),
+		"instruction":      FinalInstruction,
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return FinalInstruction
+	}
+	return string(out)
+}
+
+// retrievedLocked summarises the turn's evidence in one line so the model can
+// quote it back accurately rather than guessing at what it has.
+func (t *Tracker) retrievedLocked() string {
+	if t.toolCalls == 0 {
+		return "nothing — no tool completed in this turn"
+	}
+	parts := []string{fmt.Sprintf("%d tool call(s): %s", t.toolCalls, strings.Join(t.tools, ", "))}
+	switch {
+	case t.dataCalls == 0:
+		parts = append(parts, "no query was run, so no figures were retrieved")
+	case t.dataRows == 0:
+		parts = append(parts, "every query returned zero rows, so no figures were retrieved")
+	default:
+		parts = append(parts, fmt.Sprintf("%d row(s) returned across %d quer(y/ies)", t.dataRows, t.dataCalls))
+	}
+	if t.toolErrors > 0 {
+		parts = append(parts, fmt.Sprintf("%d tool call(s) failed", t.toolErrors))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// rowCount pulls row_count out of a data tool's JSON result. ok is false when
+// the result is not JSON or carries no row_count — an unparseable result is
+// not evidence of zero rows, and treating it as such would block honest
+// replies.
+func rowCount(result string) (int, bool) {
+	var payload struct {
+		RowCount *int `json:"row_count"`
+	}
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		return 0, false
+	}
+	if payload.RowCount == nil {
+		return 0, false
+	}
+	return *payload.RowCount, true
+}
+
+// tokensUsed reads the turn's provider-reported token total off the HTTP tap
+// installed by app.MeteredLLM. Returns 0 when there is no tap, which leaves
+// the dimension inert rather than tripping it.
+func tokensUsed(ctx context.Context) int {
+	c := llmusage.CollectorFrom(ctx)
+	if c == nil {
+		return 0
+	}
+	u, _ := c.Snapshot()
+	return u.InputTokens + u.OutputTokens + u.CacheCreationInputTokens + u.CacheReadInputTokens
+}
+
+// iterationsUsed counts completed tool-calling iterations for this turn.
+//
+// There is no iteration counter to ask: the loop lives inside the provider
+// client and the tools it calls are handed no iteration number. What the tap
+// does see is one HTTP response per iteration, each carrying its own usage
+// report — so the count of usage reports is the count of completed
+// iterations. Zero when there is no tap (the Anthropic path, which reports
+// usage through stream metadata instead), and the dimension is then inert:
+// the SDK's own WithMaxIterations remains the backstop there.
+func iterationsUsed(ctx context.Context) int {
+	c := llmusage.CollectorFrom(ctx)
+	if c == nil {
+		return 0
+	}
+	_, events := c.Snapshot()
+	return events
+}

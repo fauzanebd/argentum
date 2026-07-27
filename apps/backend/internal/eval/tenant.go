@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -42,7 +43,7 @@ const (
 // whether it asks instead of guessing — and that behaviour cannot be
 // measured against a tenant with one source, because the system prompt
 // explicitly says not to ask when only one exists.
-func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN string) (Tenant, error) {
+func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN, metabaseHostPort string) (Tenant, error) {
 	users := pgctl.NewUserRepo(stack.ControlDB)
 
 	company, err := stack.Companies.GetBySlug(ctx, tenantSlug)
@@ -84,7 +85,7 @@ func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN string) (
 		return Tenant{}, fmt.Errorf("lookup user: %w", err)
 	}
 
-	if err := ensureSources(ctx, stack, company.ID, demoDSN); err != nil {
+	if err := ensureSources(ctx, stack, company.ID, demoDSN, metabaseHostPort); err != nil {
 		return Tenant{}, err
 	}
 
@@ -96,7 +97,7 @@ func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN string) (
 	}, nil
 }
 
-func ensureSources(ctx context.Context, stack *bootstrap.Stack, companyID, demoDSN string) error {
+func ensureSources(ctx context.Context, stack *bootstrap.Stack, companyID, demoDSN, metabaseHostPort string) error {
 	existing, err := stack.Connections.ListByCompany(ctx, companyID)
 	if err != nil {
 		return fmt.Errorf("list sources: %w", err)
@@ -124,6 +125,49 @@ func ensureSources(ctx context.Context, stack *bootstrap.Stack, companyID, demoD
 		if err := createSource(ctx, stack, companyID, secondSourceLabel, secondSourceDesc, peopleDSN, false); err != nil {
 			return err
 		}
+	}
+	return syncToMetabase(ctx, stack, companyID, metabaseHostPort)
+}
+
+// syncToMetabase registers every source of the eval tenant as a Metabase
+// database, which is what create_visualization needs and what creating a
+// source through this file — rather than through the HTTP API — skips.
+//
+// Found while gating T-16: every chart case had been failing with "warehouse
+// not synced to Metabase", so the three chart_dashboard cases were scoring
+// the agent's reaction to a broken tool rather than its ability to build a
+// dashboard. Idempotent — sources that already carry an ID are left alone,
+// and a Metabase that is down costs three cases, not the run.
+func syncToMetabase(ctx context.Context, stack *bootstrap.Stack, companyID, metabaseHostPort string) error {
+	if stack.MetabaseSync == nil {
+		logrus.Warn("eval: no Metabase client configured; chart_dashboard cases will fail")
+		return nil
+	}
+	sources, err := stack.Connections.ListByCompany(ctx, companyID)
+	if err != nil {
+		return fmt.Errorf("list sources for metabase sync: %w", err)
+	}
+	for _, conn := range sources {
+		if conn.MetabaseDatabaseID != nil && *conn.MetabaseDatabaseID != 0 {
+			continue
+		}
+		dsn, err := stack.DSNCipher.Decrypt(conn.DSNEncrypted)
+		if err != nil {
+			logrus.WithError(err).WithField("label", conn.Label).Warn("eval: decrypt DSN for metabase sync")
+			continue
+		}
+		id, err := stack.MetabaseSync.SyncCompanyDatabase(ctx, conn, swapHostPort(dsn, metabaseHostPort))
+		if err != nil {
+			logrus.WithError(err).WithField("label", conn.Label).
+				Warn("eval: metabase warehouse sync failed; create_visualization will fail for this source")
+			continue
+		}
+		conn.MetabaseDatabaseID = &id
+		if err := stack.Connections.Update(ctx, conn); err != nil {
+			return fmt.Errorf("persist metabase id for %s: %w", conn.Label, err)
+		}
+		logrus.WithFields(logrus.Fields{"label": conn.Label, "metabase_database_id": id}).
+			Info("eval: source registered with Metabase")
 	}
 	return nil
 }
@@ -188,6 +232,26 @@ func ensurePeopleDatabase(demoDSN string) (string, error) {
 		return "", fmt.Errorf("seed %s: %w", secondSourceDB, err)
 	}
 	return peopleDSN, nil
+}
+
+// swapHostPort replaces host:port in a postgres URL, leaving credentials,
+// database and query string alone.
+//
+// Needed because Metabase and this process reach the demo database by
+// different names. The harness runs on the host and connects to
+// localhost:5433; Metabase runs inside compose and must be handed
+// postgres_demo:5432, or it rejects the registration with "check your host
+// settings" and every chart case fails on a tool that never worked.
+func swapHostPort(dsn, hostPort string) string {
+	if hostPort == "" {
+		return dsn
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	u.Host = hostPort
+	return u.String()
 }
 
 // swapDatabase replaces the database name in a postgres URL.

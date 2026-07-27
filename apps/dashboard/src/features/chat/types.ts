@@ -33,7 +33,15 @@ export interface ToolCallEventData {
 export interface ChatEvent {
   job_id: string;
   thread_id: string;
-  type: "started" | "delta" | "thinking" | "tool_call" | "tool_result" | "final" | "error";
+  type:
+    | "started"
+    | "delta"
+    | "thinking"
+    | "tool_call"
+    | "tool_result"
+    | "iteration"
+    | "final"
+    | "error";
   content?: string;
   thinking_step?: string;
   tool_call?: ToolCallEventData;

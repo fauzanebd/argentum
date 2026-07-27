@@ -37,7 +37,7 @@ the authoritative order.
 | Phase | Tickets | Days | Why here |
 | ----- | ------- | ---- | -------- |
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
-| 1 — trust the numbers | ~~`T-01`~~, ~~`T-02c`~~, `T-16` | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **`T-01` landed 2026-07-27 — baseline 96.8%, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` landed 2026-07-27 — primary-model turns are billed; `T-03` is unblocked.** |
+| 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
 | 1a — worth forwarding | `T-R1`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. |
 | 1b — safe to change | `T-02`, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. |
 | 2→6 | unchanged | — | Metric registry → watchers → actions → API/MCP → hardening. |
@@ -1002,12 +1002,29 @@ rate **and** the token delta — this should reduce mean input tokens measurably
 ---
 
 ## T-07b · Fix guardrail over-reach
-**Repo:** BE · **Size:** 0.5d · **Deps:** T-02 · **Priority:** P1
+**Repo:** BE · **Size:** ~~0.5d~~ **1d** · **Deps:** T-02 · **Priority:** P1
 
 **Findings Q-4, Q-6.** Redaction rules break legitimate BI output; the
 system-prompt-leak rule false-positives on "what can you do?".
 
+**Plus a finding from `T-16` that reframes the whole ticket: the output rules
+have never run.** agent-sdk-go calls `Guardrails.ProcessOutput` in exactly one
+place — `pkg/agent/agent.go:1315`, on the blocking path. The streaming path
+applies `ProcessInput` only, and every chat turn streams. So `redact_nik`,
+`redact_emails`, `redact_phone_numbers` and `block_system_prompt_leak` are
+configured, tested by eye, and dead. Narrowing a rule that never fires is
+worthless until the rule fires, so this ticket now starts by making output
+rules run on the streaming path — the same seam `ChatRunner.rejectFabrication`
+uses (T-16) — and only then narrows them. Budget +0.5d.
+
+Two consequences worth carrying into the work: Q-4 and Q-6 were reported from
+*reading* the rules, so their real-world blast radius is unmeasured; and
+switching the rules on is a behaviour change on every turn, which needs a
+`make eval` run on both sides of it.
+
 **Do:**
+- Apply output-scope guardrails on the streaming path, then verify with a case
+  that a redaction actually fires end to end.
 - Narrow `redact_nik`: require NIK context nearby (`nik`, `ktp`, `no. identitas`)
   rather than matching any 16-digit run — it currently blanks order IDs and
   account numbers.
@@ -1020,10 +1037,12 @@ system-prompt-leak rule false-positives on "what can you do?".
 - Every change needs a golden case in the T-02 guardrail suite, both directions.
 
 **Acceptance:**
+- [ ] An output-scope rule demonstrably fires on a streaming turn
 - [ ] "list top 10 customers with their emails" returns emails under `contact_ok`
 - [ ] Under `strict`, it still redacts
 - [ ] A 16-digit order ID survives; a labelled NIK is still redacted
 - [ ] "What can you do?" answers normally
+- [ ] `make eval` before and after switching output rules on: no regression
 
 **Gate:** guardrail golden suite green, with the four new cases visible in output.
 
@@ -1300,8 +1319,8 @@ verifying against the secret.
 
 # Week 6 — Shippable
 
-## T-16 · Iteration budget + anti-fabrication
-**Repo:** BE · **Size:** 2d · **Deps:** T-01 · **Priority:** ~~P1~~ **P0** · **No longer cuttable**
+## ~~T-16~~ · Iteration budget + anti-fabrication — **DONE 2026-07-27**
+**Repo:** BE + FE · **Size:** 2d · **Deps:** T-01 · **Priority:** ~~P1~~ **P0** · **No longer cuttable**
 
 **Finding Q-5, escalated to P0 after being observed live.** The 3-iteration cap does
 not merely truncate deep work — it makes the agent **fabricate**. In the `T-00`
@@ -1345,17 +1364,104 @@ Moved earlier in the sprint and its dependency changed from `T-17` (tracing) to
 - Keep `agents.yaml` and `WithMaxIterations` in sync, or delete the YAML value and
   make Go authoritative — do not leave two sources of truth.
 
+### Delivered 2026-07-27
+
+`internal/agentbudget` is the new package. Four dimensions per turn — 8
+iterations, 12 tool calls, 200k tokens, 150s — all `AGENT_MAX_*` configurable,
+all `Normalize()`d so a half-filled config cannot disable one silently.
+
+**How it is enforced matters more than the numbers.** Every tool is wrapped by
+`agentbudget.Guard`, and the tool boundary is the only point inside
+agent-sdk-go's tool-calling loop this codebase owns. When the budget is gone
+the guard refuses the call and returns the instruction *as the tool's result* —
+which the model reads. The old cap was invisible to it: the SDK just asked for
+"your final response based on the information available", and it obliged with a
+figure.
+
+Enforcement is not uniform, and the ticket should not pretend it is. Tool calls
+and wall clock are checked here on every provider. Tokens and iterations are
+read off the `internal/llmusage` HTTP tap — one usage report per iteration is
+the only iteration counter that exists — so on the Anthropic path both are
+inert and the SDK's own cap is the backstop. `T-17`'s tracing is where that
+gets closed properly.
+
+Three things the ticket did not ask for but the work required:
+
+- **`config/agents.yaml` was the real cap.** `max_iterations: 3` there beat
+  `WithMaxIterations(3)` in Go, because `WithAgentConfig` is applied last. The
+  key is deleted; Go is authoritative.
+- **The output rule could not be a YAML rule.** agent-sdk-go calls
+  `ProcessOutput` only on its blocking path, so no `scope: output` rule has
+  ever run on a streaming turn — every turn streams. Recorded as a finding
+  against `T-07b`, which now owns switching them on. The fabrication check
+  lives in `ChatRunner.rejectFabrication` instead, where it also gets the turn
+  evidence a regex cannot have.
+- **`create_visualization` had never worked for the eval tenant** (`E-6`): the
+  harness seeds sources without registering them in Metabase, so the gate case
+  could not have passed at any budget. Fixed in the harness.
+
+**Per-company configuration is a seam, not a feature.** `app.BudgetResolver`
+is threaded through and bootstrap installs one returning process defaults.
+There is no table behind it: this ticket was allocated no migration number, and
+the sprint's numbers are pre-assigned per ticket. Whoever needs per-company
+budgets first adds the column and replaces one line.
+
 **Acceptance:**
-- [ ] A question needing 5+ steps completes
-- [ ] Budget exhaustion produces an explicit incomplete-answer message, never a number
-- [ ] A query that returns zero rows produces "no rows matched", never a number
-- [ ] The exact smoke-test question returns the correct order of magnitude, or admits failure
-- [ ] `make eval` reads 31/31 — `dashboard-two-cards` is the case that fails today
-- [ ] No regression in mean cost per answer
+- [x] A question needing 5+ steps completes — the `C-1` question now runs 7 tool calls
+- [x] Budget exhaustion produces an explicit incomplete-answer message, never a number
+- [x] A query that returns zero rows produces "no rows matched", never a number — `no-data-marketing-spend`, a new golden case, exhausted its budget and still stated no figure
+- [x] The exact smoke-test question returns the correct order of magnitude, or admits failure — it returns the exact figure
+- [x] ~~`make eval` reads 31/31~~ **32/33 (97.0%)**, above the 96.8% baseline. `dashboard-two-cards` passes. The set is 33 cases, not 31: two defective cases were fixed and two added — itemised in [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). One case fails, `ambiguous-headcount`, and it is a real behaviour change (below), not a flake.
+- [ ] **No regression in mean cost per answer — not met.** $0.004237 vs $0.002388, the only comparable measured figure (one case re-run after `T-02c`; the baseline's own $0.000809 excluded the primary model entirely). The cause is work, not waste: turns that used to stop after three iterations now finish. Some of it *is* waste — the agent still builds charts nobody asked for — and that is now measurable rather than suspected.
 
 **Gate:** re-run the C-1 reproduction — "What were our total sales last month?"
 against the demo tenant. Paste the reply and the true value side by side. Then the
 full eval set: pass rate up, no cost regression.
+
+**Gate result 2026-07-27.**
+
+```
+$ DB_HOST=localhost DB_PORT=5432 DB_USER=metabase DB_NAME=argentum \
+  REDIS_URL=localhost:6385 METABASE_URL=http://localhost:3000 \
+  METABASE_PUBLIC_URL=http://localhost:3000 make eval
+
+PASS RATE:  97.0%  (32/33)
+mean in:    3882 tokens      mean out:   1014 tokens
+mean lat:   31395 ms         mean cost:  $0.004237
+total cost: $0.139819        duration:   17m16s
+
+  chart_dashboard 100.0% (3/3)   grouping_topn 100.0% (4/4)
+  guardrail       100.0% (6/6)   indonesian    100.0% (5/5)
+  multi_source     66.7% (2/3)   simple_aggregate 100.0% (6/6)
+  time_window     100.0% (6/6)
+
+  ambiguous-headcount [multi_source]
+    ✗ called run_sql and should not have
+```
+
+C-1 reproduction, side by side:
+
+| | |
+| --- | --- |
+| **True value** | `select sum(f.sales_amount) … where d.year=2024 and d.month_number=12` → **3,863,405,700.00** |
+| **T-00 smoke test** | "Total Sales for December 2024: **$1,234,567.89**" |
+| **After T-16** | "**Total Sales:** IDR **3,863,405,700** · **Transaction Count:** 310 … However, I was unable to create the final dashboard due to budget constraints. Would you like me to proceed …" |
+
+Exact figure, and the turn that ran out of room says so instead of inventing
+the rest.
+
+**The one failure is worth the ticket's last paragraph.**
+`ambiguous-headcount` asserts the agent asks which source "how many records in
+total?" means. It now queries both and adds them. It failed on all three
+post-`T-16` runs and passed on the baseline, so this is caused by the budget:
+under a 3-iteration cap the agent could not afford to survey two sources, and
+"ask first" was being enforced by poverty rather than judgement. The system
+prompt says both "combine across sources" (guideline 3) and "ask when
+ambiguous" (guideline 4); this ticket sharpened 4 to say which wins and the
+model ignored it. Left failing deliberately: whether Argentum should ask or
+answer here is a product decision, and widening the assertion to make a run
+green is the one thing [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md)
+forbids.
 
 ---
 

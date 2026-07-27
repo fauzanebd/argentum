@@ -155,5 +155,18 @@ func buildSQLPayload(sourceID, dbType string, result *db.QueryResult) map[string
 	if result.Truncated {
 		payload["note"] = "Result was truncated to fit context. Tell the user it is partial and suggest a filter (date range, category, aggregation, etc.) to narrow the query."
 	}
+	// A successful query that matched nothing is the second fabrication
+	// mechanism T-16 exists to close: the first eval run caught the agent
+	// answering "Total Sales for December 2024: IDR 1,488,000" off a
+	// zero-row result, a figure with no origin in the data. The empty set
+	// alone was not enough of a signal — asked the same way about November
+	// it answered honestly — so the result now says in words what it means.
+	if result.Count == 0 && !result.Truncated {
+		payload["note"] = "The query succeeded but matched ZERO rows. There is no figure in this result. " +
+			"Tell the user no data matched, and say what you filtered on so they can correct it. " +
+			"Do NOT state a total, count or amount — there isn't one. If you suspect the filter is " +
+			"wrong (a label that does not match exactly, a date range outside the data), say so and " +
+			"offer to check the available values."
+	}
 	return payload
 }

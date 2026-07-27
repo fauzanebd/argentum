@@ -123,6 +123,16 @@ type Config struct {
 	MaxQueryRows        int // hard ceiling on rows returned by run_sql per query
 	MaxQueryResultBytes int // hard ceiling on serialized JSON size for a run_sql result
 
+	// Per-turn agent budget (T-16). Replaces the hard 3-iteration cap that
+	// made the agent fabricate a figure rather than admit it ran out of
+	// steps (finding C-1). Go is authoritative for all four: config/agents.yaml
+	// no longer carries max_iterations, because two sources of truth for a
+	// safety limit is how the limit ends up being the wrong one.
+	AgentMaxIterations  int // tool-calling round trips per turn
+	AgentMaxToolCalls   int // tool executions per turn
+	AgentMaxTurnTokens  int // cumulative provider-reported tokens per turn
+	AgentTurnBudgetSecs int // wall-clock ceiling per turn
+
 	// Object storage (MinIO / S3-compatible). Used by the generate_document
 	// tool to persist generated PDF/XLSX/CSV files and to issue presigned
 	// download URLs.
@@ -239,6 +249,12 @@ func Load() (*Config, error) {
 		CacheTTLLong:        getEnvAsInt("CACHE_TTL_LONG", 86400),
 		MaxQueryRows:        getEnvAsInt("MAX_QUERY_ROWS", 100),
 		MaxQueryResultBytes: getEnvAsInt("MAX_QUERY_RESULT_BYTES", 200000),
+
+		// Per-turn agent budget
+		AgentMaxIterations:  getEnvAsInt("AGENT_MAX_ITERATIONS", 8),
+		AgentMaxToolCalls:   getEnvAsInt("AGENT_MAX_TOOL_CALLS", 12),
+		AgentMaxTurnTokens:  getEnvAsInt("AGENT_MAX_TURN_TOKENS", 200000),
+		AgentTurnBudgetSecs: getEnvAsInt("AGENT_TURN_BUDGET_SECS", 150),
 
 		// Object storage (MinIO / S3-compatible)
 		MinIOEndpoint:          getEnv("MINIO_ENDPOINT", ""),

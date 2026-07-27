@@ -101,6 +101,15 @@ type Expect struct {
 	// least one executed statement.
 	SQLMatches []string `yaml:"sql_matches,omitempty"`
 
+	// NoFigure fails the case if the reply states a monetary or magnitude
+	// figure at all. It exists for the questions whose only correct answer
+	// is "there is no number" — a query that matched nothing, a turn that
+	// ran out of budget — where no list of forbidden phrases can cover what
+	// the agent might invent. Judged by the same rule that blocks the reply
+	// in production (guardrails.StatesFigure), so the set and the guardrail
+	// cannot drift apart on what counts as a figure.
+	NoFigure bool `yaml:"no_figure,omitempty"`
+
 	// MustCall / MustNotCall apply to every kind.
 	MustCall    []string `yaml:"must_call,omitempty"`
 	MustNotCall []string `yaml:"must_not_call,omitempty"`
@@ -156,7 +165,8 @@ func (s *Set) Validate() error {
 			}
 		case KindContains, KindRefusal:
 			if len(c.Expect.Contains) == 0 && len(c.Expect.NotContains) == 0 &&
-				len(c.Expect.MustCall) == 0 && len(c.Expect.MustNotCall) == 0 {
+				len(c.Expect.MustCall) == 0 && len(c.Expect.MustNotCall) == 0 &&
+				!c.Expect.NoFigure {
 				return fmt.Errorf("case %q: kind %q asserts nothing", c.ID, c.Expect.Kind)
 			}
 		case KindSQLShape:

@@ -59,6 +59,10 @@ export function ChatPage() {
     content: string;
     thinking?: string;
     toolCalls?: Array<{ name: string; payload: unknown }>;
+    /** Tool-calling round the agent is on, and how many it may spend. A
+     *  multi-step turn can go quiet for tens of seconds between deltas; this
+     *  is what distinguishes "still working" from "stalled". */
+    iteration?: { current: number; max: number };
   } | null>(null);
 
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +162,16 @@ export function ChatPage() {
           ? { ...prev, thinking: evt.thinking_step }
           : { jobId: evt.job_id, content: "", thinking: evt.thinking_step },
       );
+    } else if (evt.type === "iteration") {
+      const current = Number(evt.metadata?.iteration ?? 0);
+      const max = Number(evt.metadata?.max_iterations ?? 0);
+      if (current > 0) {
+        setLiveAssistant((prev) =>
+          prev && prev.jobId === evt.job_id
+            ? { ...prev, iteration: { current, max } }
+            : { jobId: evt.job_id, content: "", iteration: { current, max } },
+        );
+      }
     } else if (evt.type === "tool_call" || evt.type === "tool_result") {
       setLiveAssistant((prev) => {
         if (!prev) return { jobId: evt.job_id, content: "" };
@@ -316,6 +330,7 @@ export function ChatPage() {
                   content={liveAssistant.content}
                   thinking={liveAssistant.thinking}
                   toolCalls={liveAssistant.toolCalls}
+                  iteration={liveAssistant.iteration}
                 />
               )}
             </div>
@@ -453,11 +468,19 @@ function PendingBubble({
   content,
   thinking,
   toolCalls,
+  iteration,
 }: {
   content: string;
   thinking?: string;
   toolCalls?: Array<{ name: string; payload: unknown }>;
+  iteration?: { current: number; max: number };
 }) {
+  const progress =
+    iteration && iteration.current > 1
+      ? iteration.max > 0
+        ? `Step ${iteration.current} of ${iteration.max}…`
+        : `Step ${iteration.current}…`
+      : "Thinking…";
   return (
     <div className="flex gap-3 items-end">
       <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0 bg-muted text-muted-foreground border border-border text-[11px] font-bold">
@@ -467,13 +490,13 @@ function PendingBubble({
         <div className="text-sm text-foreground space-y-2">
           {thinking && (
             <div className="text-xs text-muted-foreground italic border-l-2 border-primary/40 pl-2">
-              Thinking… {thinking}
+              {progress} {thinking}
             </div>
           )}
           {content && <MarkdownRenderer content={content} />}
           {!content && !thinking && (
             <span className="text-muted-foreground italic text-xs">
-              Thinking…
+              {progress}
             </span>
           )}
           {toolCalls && toolCalls.length > 0 && (

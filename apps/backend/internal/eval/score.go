@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/report/format"
 )
 
@@ -42,10 +43,21 @@ func Score(c Case, reply string, calls []ToolInvocation) []string {
 	}
 
 	failures = append(failures, scoreContains(c, reply)...)
+	failures = append(failures, scoreNoFigure(c, reply)...)
 	failures = append(failures, scoreToolCalls(c, calls)...)
 	failures = append(failures, scoreLanguage(c, reply)...)
 
 	return failures
+}
+
+// scoreNoFigure fails a case whose only honest answer is "there is no
+// number" when the reply states one anyway. Delegates to the production
+// guardrail so a change to what counts as a figure moves both at once.
+func scoreNoFigure(c Case, reply string) []string {
+	if !c.Expect.NoFigure || !guardrails.StatesFigure(reply) {
+		return nil
+	}
+	return []string{"reply states a figure, and there is no figure to state"}
 }
 
 func scoreNumeric(c Case, reply string) []string {

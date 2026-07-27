@@ -150,3 +150,28 @@ func TestDetectLanguage(t *testing.T) {
 		}
 	}
 }
+
+// no_figure is what a question with no answer asserts. Enumerating forbidden
+// phrases cannot work there: the point is that the agent must not produce a
+// number, and which number it would invent is unknowable.
+func TestScoreNoFigure(t *testing.T) {
+	c := Case{
+		ID: "empty-result", Lang: "en",
+		Expect: Expect{Kind: KindContains, NoFigure: true, MustCall: []string{"run_sql"}},
+	}
+	calls := []ToolInvocation{{Name: "run_sql"}}
+
+	honest := "No sales were recorded for March 2025 — the data covers July to December 2024."
+	if got := Score(c, honest, calls); len(got) != 0 {
+		t.Errorf("honest empty-result answer failed: %v", got)
+	}
+
+	invented := "Total Sales for March 2025: IDR 1,488,000"
+	got := Score(c, invented, calls)
+	if len(got) == 0 {
+		t.Fatal("an invented figure passed a no_figure case")
+	}
+	if !strings.Contains(got[0], "states a figure") {
+		t.Errorf("failure = %q, want it to name the stated figure", got[0])
+	}
+}

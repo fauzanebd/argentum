@@ -15,7 +15,9 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
+	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/queue"
@@ -29,6 +31,17 @@ import (
 // light LLM clients plus the primary's interface name (so the factory can
 // gate provider-specific options like Anthropic prompt caching).
 type AgentFactory func(primary, light interfaces.LLM, primaryInterface string) (*sdkagent.Agent, error)
+
+// BudgetResolver returns the per-turn budget a company's agent runs under.
+//
+// It is a function rather than a value because T-16 asks for per-company
+// budgets and the ticket carries no migration number — the sprint's migration
+// numbers are pre-assigned per ticket, and claiming an unassigned one would
+// collide with a ticket that already owns it. So the seam is here and the
+// storage is not: bootstrap installs a resolver that returns the process-wide
+// defaults, and a per-company lookup replaces that one line when there is a
+// table to read from.
+type BudgetResolver func(ctx context.Context, companyID string) agentbudget.Budget
 
 // ScheduledRunMarker is the narrow contract ChatRunner uses to close out
 // a scheduled_task_runs row when the agent finishes (or errors). Defined
@@ -55,6 +68,7 @@ type ChatRunner struct {
 	pool         *db.TenantConnPool
 	scheduled    ScheduledRunMarker
 	historyLimit int
+	budgetFor    BudgetResolver
 
 	// Embedding-based table picker. Both must be non-nil to inject hints;
 	// otherwise the runner silently skips and the agent falls back to the
@@ -97,6 +111,14 @@ func NewChatRunner(
 		scheduled:    scheduled,
 		historyLimit: historyLimit,
 	}
+}
+
+// WithBudget installs the per-turn budget resolver. A runner without one
+// falls back to agentbudget.Default() — an unbounded turn is not an option
+// the caller gets, because the failure it produces is a fabricated number.
+func (r *ChatRunner) WithBudget(resolve BudgetResolver) *ChatRunner {
+	r.budgetFor = resolve
+	return r
 }
 
 // WithLark attaches a Lark outbound provider so the runner can post replies
@@ -143,6 +165,18 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		r.completeWith(ctx, p, reply, 0, 0, 0)
 		return nil
 	}
+
+	// Install the turn's budget before anything can spend it. The tracker
+	// rides the context because both ends need it: the tool guard inside the
+	// provider's tool-calling loop reads it to decide whether a call is still
+	// affordable, and the fabrication check below reads it to decide whether
+	// the reply is allowed to contain a figure.
+	budget := agentbudget.Default()
+	if r.budgetFor != nil {
+		budget = r.budgetFor(ctx, p.CompanyID).Normalize()
+	}
+	tracker := agentbudget.New(budget)
+	ctx = agentbudget.WithTracker(ctx, tracker)
 
 	// Resolve the per-tenant LLMs for this turn. Primary is required; light
 	// falls back to primary if resolution fails (preserves today's behavior
@@ -208,8 +242,67 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	}
 
 	latency := time.Since(start)
+	response = r.rejectFabrication(p, response, tracker)
 	r.completeWith(ctx, p, response, 0, 0, latency)
 	return nil
+}
+
+// rejectFabrication is the last thing between the agent and the user: a reply
+// that states a figure no tool produced this turn is replaced with an honest
+// account of what happened (ticket T-16).
+//
+// It runs here rather than as an output rule in config/guardrails.yaml for
+// two reasons. The rule needs turn state — which tools ran, how many rows came
+// back — and a YAML regex over the reply text has none. And agent-sdk-go only
+// applies Guardrails.ProcessOutput on its blocking path (pkg/agent/agent.go);
+// the streaming path every chat turn takes never calls it, so a YAML output
+// rule would not have run at all.
+//
+// On a streaming turn the offending text has already reached the dashboard as
+// deltas by the time this fires. The final event and the persisted message
+// both carry the replacement, so the UI settles on the honest answer, and the
+// WhatsApp / Discord / Lark paths — which only ever see the final — never see
+// the figure at all.
+func (r *ChatRunner) rejectFabrication(
+	p queue.ChatRunPayload, response string, tracker *agentbudget.Tracker,
+) string {
+	snap := tracker.Snapshot()
+	replacement, blocked := guardrails.CheckFabrication(response, guardrails.TurnEvidence{
+		ToolCalls:    snap.ToolCalls,
+		DataCalls:    snap.DataCalls,
+		DataRows:     snap.DataRows,
+		EmptyResults: snap.EmptyResults,
+		Exhausted:    snap.Exhausted,
+		Reason:       snap.Reason,
+	}, p.Message)
+
+	if !blocked {
+		if snap.Exhausted {
+			logrus.WithFields(logrus.Fields{
+				"company_id": p.CompanyID,
+				"thread_id":  p.ThreadID,
+				"reason":     snap.Reason,
+				"tool_calls": snap.ToolCalls,
+				"data_rows":  snap.DataRows,
+			}).Info("turn exhausted its budget and answered without stating a figure")
+		}
+		return response
+	}
+
+	// The blocked text is logged in full: this is the only record of what the
+	// agent tried to say, and tuning the rule is impossible without it.
+	logrus.WithFields(logrus.Fields{
+		"company_id":    p.CompanyID,
+		"thread_id":     p.ThreadID,
+		"tool_calls":    snap.ToolCalls,
+		"data_calls":    snap.DataCalls,
+		"data_rows":     snap.DataRows,
+		"empty_results": snap.EmptyResults,
+		"exhausted":     snap.Exhausted,
+		"reason":        snap.Reason,
+		"blocked_reply": response,
+	}).Warn("reply stated a figure no tool returned this turn; replaced with an incomplete-answer message")
+	return replacement
 }
 
 // runStream executes the agent with streaming and fans out delta / thinking /
@@ -222,8 +315,24 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 	}
 
 	var fullResponse strings.Builder
+	maxIterations := agentbudget.FromContext(ctx).Budget().MaxIterations
+	lastIteration := 0
 
 	for evt := range events {
+		// Every provider event carries the iteration it came from. Republish
+		// the boundary so a long multi-step turn reads as progress instead of
+		// a stalled spinner — the SDK offers no iteration event of its own.
+		if n := iterationOf(evt.Metadata); n > lastIteration {
+			lastIteration = n
+			_ = r.bus.Publish(p.ThreadID, ChatEvent{
+				JobID:     p.UserMsgID,
+				ThreadID:  p.ThreadID,
+				Type:      "iteration",
+				Metadata:  map[string]interface{}{"iteration": n, "max_iterations": maxIterations},
+				Timestamp: time.Now(),
+			})
+		}
+
 		switch evt.Type {
 		case interfaces.AgentEventContent:
 			fullResponse.WriteString(evt.Content)
@@ -308,6 +417,24 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 	}
 
 	return fullResponse.String(), nil
+}
+
+// iterationOf reads the tool-calling iteration number an SDK stream event was
+// produced in. Returns 0 when absent — the provider tags content, tool-call
+// and tool-result events but not the message-start/stop frames.
+func iterationOf(md map[string]interface{}) int {
+	if md == nil {
+		return 0
+	}
+	switch n := md["iteration"].(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return 0
 }
 
 // handleRunError deals with blocking-run failures. Guardrails errors are

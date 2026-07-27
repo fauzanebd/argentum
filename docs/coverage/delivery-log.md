@@ -125,7 +125,7 @@ figure under budget exhaustion (`C-1`) and the primary model recorded no usage
 at all (`C-2`). Both went into the plan as tickets rather than into a backlog —
 see [`environment-notes.md`](environment-notes.md).
 
-## Phase 1 — Measurement (2026-07-27 → )
+## Phase 1 — Measurement and trust (2026-07-27) ✅
 
 `T-01` eval harness
 
@@ -168,6 +168,59 @@ every iteration. Anthropic's path is untouched and still takes priority.
 Two consequences worth carrying forward: `T-03`'s budget check now has a real
 number to gate on, and the `T-01` baseline's cost figures are retroactively
 known to be a lower bound — pass rate unaffected.
+
+`T-16` iteration budget + anti-fabrication
+
+The `C-1` fix, and the ticket that closes phase 1. Asked the question that
+started all of this — "What were our total sales last month?" — the agent now
+answers **IDR 3,863,405,700**, which is the true figure, having first said
+what it retrieved.
+
+The ticket was written as "raise the cap". The cap turned out to be three
+problems wearing one coat:
+
+- **The cap the code set was not the cap that ran.** `WithMaxIterations(3)` in
+  Go and `max_iterations: 3` in `config/agents.yaml` both existed, and the YAML
+  won, because `WithAgentConfig` is applied last in the option list. Anyone
+  who had "fixed" this in Go would have changed nothing.
+- **The agent never saw the cap.** agent-sdk-go's response to exhaustion is one
+  more model call carrying "provide your final response based on the
+  information available". Nothing in that says what to do when the information
+  available is nothing. So the fix is not a bigger number, it is a message the
+  model actually receives: every tool now runs behind a guard
+  (`internal/agentbudget`) that, once the budget is gone, refuses the call and
+  returns the incomplete-answer instruction *as the tool's result*. The tool
+  boundary is the only point inside the provider's loop this codebase owns.
+- **Exhaustion was never the only route.** `E-5` had already caught a second
+  mechanism — a query that succeeded and matched nothing, answered with
+  "IDR 1,488,000". A zero-row `run_sql` result now says in words that there is
+  no figure in it. And a reply that states one anyway, in a turn where no data
+  tool returned a row, is replaced before it is sent.
+
+That last check could not go where the ticket said. `T-16` asked for an output
+rule in `config/guardrails.yaml`; **agent-sdk-go only applies output guardrails
+on its blocking path**, and every chat turn streams. So every `scope: output`
+rule in that file — PII redaction included — has never executed in production.
+Recorded against `T-07b`, which now owns switching them on; the fabrication
+check lives in `ChatRunner` instead, where it also gets the turn evidence a
+regex could not have.
+
+The eval harness earned its keep twice more. It caught that
+`create_visualization` had **never worked for the eval tenant** (`E-6`: sources
+seeded outside the HTTP API are never registered with Metabase), which means
+the three chart cases had been scoring the agent's reaction to a broken tool —
+and the gate case could not have passed at any budget. And it caught what a
+bigger budget costs, in a way that reading the diff would not: with room to
+work, the agent uses it, including on work nobody asked for.
+
+The set now reads **97.0% (32/33)**, up from 96.8%, at roughly double the cost
+per answer — a regression the ticket's acceptance list forbade and this log
+does not hide. Turns that used to stop after three iterations now run five to
+seven tool calls and finish the job. One case fails, `ambiguous-headcount`, and
+it is left failing on purpose: with room to work the agent surveys both sources
+instead of asking which one is meant, and whether that is wrong is a product
+decision rather than a bug. Numbers and analysis:
+[`eval-baseline.md`](eval-baseline.md).
 
 ---
 

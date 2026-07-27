@@ -95,6 +95,56 @@ Model in use for this run: `deepseek/deepseek-v3.2` via OpenRouter, from `.env` 
 not the code default (`anthropic/claude-haiku-4.5`). Whether the fabrication is
 model-specific is unknown and is precisely what `T-01`'s baseline must pin down.
 
+#### Resolved 2026-07-27 by `T-16` — and the cap was never the only mechanism
+
+Three things had to change, because the fabrication had three routes to the
+user and closing one only moved it to the next.
+
+**1. The cap became a budget, and running out is now something the model is
+told.** Iterations went from a hard 3 to a per-turn budget of 8 iterations /
+12 tool calls / 200k tokens / 150s (`internal/agentbudget`, all four
+configurable via `AGENT_MAX_*`). The dimension that matters is not the number:
+it is that exhaustion now *speaks*. Every tool runs behind a guard that, once
+the budget is gone, refuses the call and returns an instruction in its place —
+say what you retrieved, say what you did not, ask whether to continue, and
+state no figure that did not come from a tool result. The model reads that,
+because it arrives as a tool result. It never saw the old cap at all: the SDK
+simply asked it for "your final response based on the information available"
+and it complied by inventing one.
+
+**2. `config/agents.yaml` was the real cap all along.** `WithMaxIterations(3)`
+in Go and `max_iterations: 3` in the YAML both existed, and the YAML won —
+`WithAgentConfig` is applied last in the option list, so the Go value was
+decorative. The key is now deleted and Go is authoritative. Two sources of
+truth for a safety limit means the limit is whichever one nobody is reading.
+
+**3. An output check the streaming path actually runs.** `T-16` calls for a
+guardrail rule against stating a figure no tool returned. It could not be a
+rule in `config/guardrails.yaml`, for two reasons — one of them a finding in
+its own right:
+
+> **agent-sdk-go applies output guardrails only on its blocking path.**
+> `Guardrails.ProcessOutput` is called once in the SDK, at
+> `pkg/agent/agent.go:1315`, inside `runWithoutExecutionPlanWithToolsTracked`.
+> The streaming path (`pkg/agent/streaming.go`) applies `ProcessInput` and
+> never calls `ProcessOutput`. Every dashboard, WhatsApp, Discord and Lark
+> turn streams. **So every `scope: output` rule in `config/guardrails.yaml` —
+> PII redaction included — has never run in production.** `T-07b` owns that
+> gap now; `T-16` only routes around it.
+
+The check therefore lives in `ChatRunner.rejectFabrication`, which also gives
+it what a YAML regex cannot have: the turn's evidence. It replaces the reply
+when the text states a monetary or magnitude figure **and** no data tool
+returned a single row this turn **and** the turn either ran a tool or ran out
+of budget. That last clause is what keeps follow-up turns ("show that in
+millions") working.
+
+**4. The empty-result path, which the cap fix would not have touched at all.**
+A `run_sql` result with `row_count: 0` now carries a note saying in words that
+there is no figure in it and not to state one. That is finding `E-5`'s second
+fabrication — the query succeeded, matched nothing, and the agent reported
+"IDR 1,488,000" anyway.
+
 ### C-2 · Primary-model usage was not metered at all
 
 `GET /api/usage/summary` after a full multi-step turn plus two more turns:
@@ -279,6 +329,47 @@ Fixed in three places: `TRIM(...)` in `002` for fresh volumes,
 `006_trim_dim_date_labels.sql` for databases already seeded, and an `UPDATE`
 applied to the running container. Verified: the query above now returns
 `3863405700.00`.
+
+### E-6 · The eval tenant's sources were never registered with Metabase — **fixed 2026-07-27**
+
+Found while gating `T-16`, and it invalidates part of the `T-01` baseline.
+
+`create_visualization` resolves a Metabase database id from
+`db_connections.metabase_database_id`. That column is populated by
+`CompanyService.CreateConnection`, which runs `MetabaseWarehouseSync` after
+inserting the row — the HTTP path. The eval harness seeds its sources by
+calling the repository directly, so it skipped the sync, and every source in
+the control DB carried a NULL:
+
+```
+ Argentum Eval | Demo Retail |
+ Argentum Eval | Demo People |
+ Smoke Test Co | Demo Retail |
+```
+
+Every `create_visualization` call in every eval run has therefore failed with
+`warehouse not synced to Metabase; add or rotate the DSN so registration can
+run`. The three `chart_dashboard` cases were measuring how the agent reacts to
+a broken tool. `dashboard-two-cards` could not have passed at any iteration
+budget, which nearly cost `T-16` a correct verdict on its own gate case.
+
+Two fixes, both in the harness:
+
+1. `eval.EnsureTenant` now syncs any source with a NULL id and persists the
+   result. Idempotent, and a Metabase that is down costs three cases, not the
+   run.
+2. A `-metabase-db-host` flag (default `postgres_demo:5432`). Metabase runs
+   inside compose and cannot resolve the `localhost:5433` the harness itself
+   connects on; handed the harness's own DSN it rejects the registration with
+   *"check your host settings"*. This is the same host-vs-service-name split
+   `E-4`'s setup script documents.
+
+Verified: `Demo Retail → 3`, `Demo People → 4`, and `dashboard-two-cards`
+passes.
+
+Worth noting what this does **not** fix: `Smoke Test Co` and any tenant
+created outside the API keeps its NULL. If a future ticket finds
+`create_visualization` broken for a hand-seeded tenant, this is why.
 
 ---
 

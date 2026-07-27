@@ -27,9 +27,22 @@ zero tests.**
 > number — is a perfectly healthy code path. Baseline in
 > [`eval-baseline.md`](eval-baseline.md).
 
+> **Updated after `T-02c` and `T-16` (2026-07-27):** **10 of 41 packages have
+> tests** (`go list ./...`, denominator includes the four `cmd/` packages and
+> `scripts/encrypt_secret`, which earlier counts here excluded — the ratio moved
+> less than it looks). `T-02c` added `internal/app` and `internal/llmusage`;
+> `T-16` added `internal/agentbudget`, `internal/guardrails` and
+> `internal/tools`.
+>
+> Two of those are CRITICAL packages, so the risk table below overstates the
+> gap for `internal/app` and `internal/guardrails` — but only just. `T-02c`
+> tests `MeteredLLM` streaming usage and nothing else in a 2,900-line package;
+> `T-16` tests the fabrication rule and nothing else in the guardrail engine.
+> Both remain `T-02`'s to finish.
+
 ## Go backend — package by package
 
-### Packages with tests (5)
+### Packages with tests (10)
 
 | Package                        | Test file(s)                                       | What it covers                       |
 | ------------------------------ | -------------------------------------------------- | ------------------------------------ |
@@ -38,23 +51,28 @@ zero tests.**
 | `internal/tools/document`      | `render_test.go`                                    | PDF / XLSX / CSV rendering            |
 | `internal/report/format`       | `parse_test.go`                                     | Number parsing in both locales, magnitude suffixes (Juta/Miliar/Triliun, K/M/B), and the comparator that must reject the C-1 fabrication at every tolerance |
 | `internal/eval`                | `score_test.go`, `case_test.go`                     | Scoring per assertion kind, the Indonesian/English heuristic, and a validity + category-coverage check over the shipped golden set |
+| `internal/app`                 | `metering_llm_test.go`                              | `MeteredLLM` streaming usage: metadata path, HTTP-tap fallback, and the unbilled-turn warning (`T-02c`) |
+| `internal/llmusage`            | `transport_test.go`                                 | SSE usage parsing and cache-token normalisation (`T-02c`) |
+| `internal/agentbudget`         | `budget_test.go`                                    | Budget dimensions, the refusal payload, sticky exhaustion, and what counts as evidence of retrieved data (`T-16`) |
+| `internal/guardrails`          | `fabrication_test.go`                               | What counts as a stated figure — both observed fabrications must trip it, refusals and years must not — and the replacement message's cause and language (`T-16`) |
+| `internal/tools`               | `run_sql_test.go`                                   | The zero-row and truncation notes on a `run_sql` payload (`T-16`) |
 
-All five pass.
+All ten pass.
 
-### Packages with no tests (30)
+### Packages with no tests (31)
 
 Ranked by risk — how much damage a silent regression here would do.
 
 | Risk     | Package                                | Why it matters                                                                                        |
 | -------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **CRITICAL** | `internal/app`                     | ~2,900 lines. `ChatRunner`, `ThreadService` (fork heuristics), `UsageService` (pricing math), `ScheduledTaskService` (cron validation), `MeteredLLM`. Every recent bug-fix commit touched this package. |
-| **CRITICAL** | `internal/guardrails`              | The security boundary. Six of the last twenty commits tuned guardrail behaviour with no regression signal — a re-narrowed regex could silently unblock prompt injection or block legitimate BI questions. |
+| **CRITICAL** | `internal/app` *(partial)*         | ~3,000 lines. `MeteredLLM` is covered; `ChatRunner`, `ThreadService` (fork heuristics), `UsageService` (pricing math) and `ScheduledTaskService` (cron validation) are not. Every recent bug-fix commit touched this package. |
+| **CRITICAL** | `internal/guardrails` *(partial)*  | The security boundary. The T-16 fabrication rule is covered; the YAML rule engine is not. Six of the last twenty commits tuned guardrail behaviour with no regression signal — a re-narrowed regex could silently unblock prompt injection or block legitimate BI questions. And per `T-16`'s finding, the output rules have never executed at all (see `T-07b`). |
 | **CRITICAL** | `internal/crypto`                  | AES-256-GCM DSN cipher. A round-trip bug corrupts every stored connection.                              |
 | **CRITICAL** | `internal/tenantctx`               | The tenant-isolation primitive. An empty-company-ID path is a cross-tenant leak.                        |
 | **HIGH** | `internal/auth`                        | Argon2id hashing + JWT signing/verification, including the `?at=` query-param path.                     |
 | **HIGH** | `internal/adapters/db` (+3 drivers)    | Read-only transaction enforcement, statement timeouts, row capping. The last line of defence on tenant data. |
 | **HIGH** | `internal/adapters/postgres`           | 19 repository files. Every one is a place a missing `company_id` predicate could leak data.             |
-| **HIGH** | `internal/tools`                       | 7 agent tools, ~1,200 lines. `run_sql` byte-cap trimming loop, `get_schema` filtering, source resolution. |
+| **HIGH** | `internal/tools` *(partial)*           | 7 agent tools, ~1,200 lines. The `run_sql` result notes are covered; the byte-cap trimming loop, `get_schema` filtering and source resolution are not. |
 | **MEDIUM** | `internal/config`                    | 494 lines of env parsing, ~75 vars, plus 7 `Effective*()` fallback accessors and `WorkerQueueMap()` CSV parsing. Pure functions — trivially testable, currently untested. |
 | **MEDIUM** | `internal/queue`                     | Task contracts, asynq option building, periodic config provider.                                        |
 | **MEDIUM** | `internal/transport/http/middleware` | Auth, CORS, rate limit. Includes the unwired `AdminOnly()`.                                             |
