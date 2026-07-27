@@ -25,6 +25,7 @@ package pdf
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/johnfercher/maroto/v2"
@@ -40,6 +41,7 @@ import (
 	"github.com/johnfercher/maroto/v2/pkg/core"
 	"github.com/johnfercher/maroto/v2/pkg/core/entity"
 	"github.com/johnfercher/maroto/v2/pkg/props"
+	"github.com/phpdave11/gofpdf"
 
 	"github.com/fauzanebd/argentum/internal/report/format"
 	"github.com/fauzanebd/argentum/internal/report/spec"
@@ -186,8 +188,30 @@ func newRenderer(doc *spec.Document, opts Options) (*renderer, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.m = maroto.New(cfg)
+	r.m = newMaroto(cfg, r.genAt)
 	return r, nil
+}
+
+// docMu serialises the construction of a maroto document, and only that.
+var docMu sync.Mutex
+
+// newMaroto builds the document with both of its timestamps pinned.
+//
+// maroto's config carries a creation date and nothing else, and gofpdf writes
+// /ModDate from the wall clock — so two renders of the same spec produced
+// identical files whenever they fell inside one second and differing files
+// whenever they straddled one. Six local runs said the output was reproducible;
+// CI said it was not, twice, and CI was right.
+//
+// gofpdf's only lever for the modification date is a package-level default that
+// each new Fpdf copies at construction, and maroto constructs its Fpdf inside
+// New. So the global is set and the document built under one lock. It is held
+// for the length of a constructor.
+func newMaroto(cfg *entity.Config, modified time.Time) core.Maroto {
+	docMu.Lock()
+	defer docMu.Unlock()
+	gofpdf.SetDefaultModificationDate(modified)
+	return maroto.New(cfg)
 }
 
 func (r *renderer) config() (*entity.Config, error) {

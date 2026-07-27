@@ -90,13 +90,31 @@ v1_legacy.json:      skipped — no generated_at, so bytes are not reproducible 
 --- PASS: TestDeterministicBytes (0.08s)
 ```
 
-Two things had to be true for this. `generated_at` is a spec field, so the
-creation date in the trailer is the spec's and not the clock's. And
-`gofpdf.SetDefaultCatalogSort(true)` is set in the `pdf` package's `init` —
-gofpdf writes its font catalogue in Go map order, so the same spec rendered
-twice produced the same pages with the font objects numbered differently. It is
-a package-level global and there is no other way to reach it: maroto builds its
-`Fpdf` internally.
+Three things had to be true for this, and the third was found by CI after the
+first two had been called done.
+
+`generated_at` is a spec field, so the creation date in the trailer is the
+spec's and not the clock's. `gofpdf.SetDefaultCatalogSort(true)` is set in the
+`pdf` package's `init` — gofpdf writes its font catalogue in Go map order, so
+the same spec rendered twice produced the same pages with the font objects
+numbered differently.
+
+**And `/ModDate` is pinned too.** gofpdf writes a modification date as well as a
+creation date, from the wall clock, and maroto's config has no field for it. So
+two renders of one spec were identical whenever they fell inside the same second
+and differed whenever they straddled one. Six local runs said reproducible; the
+first CI run said otherwise on two of four fixtures, and CI was right. The fix
+is the same shape as the catalog-sort one — `SetDefaultModificationDate` is a
+package-level default each new `Fpdf` copies at construction — so the global is
+set and the document built under one lock, held for the length of a constructor.
+
+The test no longer relies on the two renders happening to straddle a second: it
+asserts both `/CreationDate` and `/ModDate` are literally the spec's
+`generated_at`. Comparing two renders would have caught this only by luck, which
+is exactly what it did.
+
+`v1_legacy.json` is skipped by that test and should be: with no `generated_at`
+it stamps `time.Now()`, and a v1 spec has no field to pin it with.
 
 ### 200 rows, header repeated, no orphans
 

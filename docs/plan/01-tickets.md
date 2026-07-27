@@ -499,10 +499,15 @@ carrying forward:
   second gofpdf document that draws nothing, built the way maroto builds its
   own, and transcribes maroto's unexported line-breaking function. An
   approximation here is a row that clips its own text.
-- **Byte-stability needed a global.** gofpdf writes its font catalogue in Go map
-  order; the same spec rendered twice produced identical pages with the font
-  objects renumbered. `gofpdf.SetDefaultCatalogSort(true)` in the package's
-  `init` is the only way to reach a document maroto constructs internally.
+- **Byte-stability needed two globals, and CI found the second one.** gofpdf
+  writes its font catalogue in Go map order, so the same spec rendered twice
+  produced identical pages with the font objects renumbered —
+  `gofpdf.SetDefaultCatalogSort(true)`. It also writes `/ModDate` from the wall
+  clock, which maroto's config cannot set, so two renders matched inside a
+  second and differed across one. Six local runs passed; the first CI run failed
+  on two of four fixtures. The test now asserts both timestamps equal
+  `generated_at` rather than comparing two renders and hoping they straddle a
+  second.
 - **The 200-row fixture found four layout bugs the other three could not** —
   unbreakable tokens overflowing their column, a stride sampler that measured
   the wrong rows, a grid distribution biased against wide columns, and rounding

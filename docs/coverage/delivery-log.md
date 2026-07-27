@@ -288,11 +288,14 @@ Three things this ticket found:
   string. The eval comparator (`T-01`) and the report renderer disagreeing about
   what a number is, in the single package built to stop exactly that. A
   round-trip test over every locale × currency × compact combination now pins it.
-- **Byte-stability needed a global in a dependency.** gofpdf writes its font
-  catalogue in Go map order, so the same spec rendered twice produced identical
-  pages with the font objects renumbered.  `SetDefaultCatalogSort(true)` is
-  gofpdf's own switch for this and the only way to reach a document maroto
-  builds internally.
+- **Byte-stability needed two globals in a dependency, and CI found the
+  second.** gofpdf writes its font catalogue in Go map order, so the same spec
+  rendered twice produced identical pages with the font objects renumbered. It
+  also writes `/ModDate` from the wall clock, which maroto cannot set — so the
+  output was reproducible within a second and not across one. Six local runs
+  said it was fixed; the first CI run said otherwise. The lesson is in the test,
+  not the fix: comparing two renders catches a clock only if the pair straddles
+  a tick, so it now asserts both timestamps against `generated_at` directly.
 
 Record, gate output and known limits: [`report-rendering.md`](report-rendering.md).
 

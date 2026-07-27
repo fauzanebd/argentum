@@ -135,6 +135,20 @@ func TestDeterministicBytes(t *testing.T) {
 			if !bytes.Equal(first, second) {
 				t.Fatalf("bytes differ between runs: %s vs %s", sum(first), sum(second))
 			}
+
+			// Comparing two renders only catches a wall-clock timestamp when
+			// the pair happens to straddle a second, which is how /ModDate
+			// survived six local runs and failed twice in CI. Both timestamps
+			// are asserted directly instead: gofpdf writes them as
+			// D:YYYYMMDDhhmmss, and both must be the spec's generated_at.
+			when, _ := doc.Generated()
+			stamp := when.UTC().Format("20060102150405")
+			for _, key := range []string{"/CreationDate", "/ModDate"} {
+				want := []byte(key + " (D:" + stamp + ")")
+				if !bytes.Contains(first, want) {
+					t.Errorf("%s is not pinned to generated_at; want %q", key, want)
+				}
+			}
 			t.Logf("%s: %d bytes, sha256 %s (identical across two runs)", name, len(first), sum(first))
 		})
 	}
