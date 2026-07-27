@@ -114,11 +114,15 @@ Phase 1  Evals, then the two observed P0s                (T-01, T-02c, T-16) ✅
             All three landed 2026-07-27. Asked the C-1 question, the agent now
             answers IDR 3,863,405,700 — the true value — and states what it
             retrieved before stating it.
-Phase 1a Report system: design tokens → PDF v2 → charts → PPTX → tenant branding
+Phase 1a Report system: design tokens ✅ → PDF v2 → charts → PPTX → tenant branding
          └─ Owner-set priority, inserted 2026-07-27. The artifact that leaves the
             building. After T-00b because it creates a new shared package and
             touches two apps; after phase 1 because a branded document with an
             invented number in it is the worse failure.
+            T-R1 landed 2026-07-27: one tokens.json generates the dashboard's CSS
+            variables and the backend's Go report theme, CI fails on drift, and
+            Space Grotesk is embedded in every PDF instead of Helvetica.
+            See coverage/design-tokens.md.
 Phase 1b Tests + CI gate + generated types + RBAC + credit enforcement
          └─ You cannot ship autonomy on an unmeasured, unbounded, unaudited system.
             Also fixes the three P0 security/billing findings, which are cheap now
@@ -255,7 +259,7 @@ change no one's workflow. Watchers do.
 | PPTX renders differently in Keynote / Google Slides       | **High**   | Medium | Hand-rolled OOXML gets read by four different implementations. `T-R4`'s gate requires opening a real deck in all four; the CI smoke test converts every fixture through headless LibreOffice, which is the strictest of them. Stick to the committed layout set — an ad-hoc slide shape is where compatibility breaks. |
 | Chart palette illegible in print or to colourblind readers | Medium    | Medium | Enterprise reports get printed in black and white more often than anyone admits. `T-R3` requires the categorical palette to be verified both under deuteranopia simulation and in greyscale, with the method stated in the gate. |
 | Text overflows a slide and is silently clipped            | Medium     | Medium | PPTX has no layout engine to ask, so `T-R4` estimates character budgets per layout and overflows to a `(cont.)` slide. Silent clipping is an explicit acceptance failure. |
-| Tokens drift back apart by hand-editing                   | Medium     | Medium | The generated CSS and Go files are committed and `git diff --exit-code` in CI, the same mechanism `T-02b` uses for API types. The hand-written `:root` block is deleted, not left beside the generated one. |
+| ~~Tokens drift back apart by hand-editing~~ **Closed 2026-07-27** | Medium | Medium | `T-R1` landed with two independent guards: the `tokens` CI job regenerates and runs `git diff --exit-code`, and `go test` compares `tokens_gen.go` against `tokens.json` directly, so a hand edit fails even when the tokens job does not trigger. The hand-written `:root` block was deleted, not left beside the generated one. The migration also showed the risk was already real: the old HSL values had drifted from the hex their own comments named. |
 | **A branded report carries a fabricated number**          | **High if unfixed** | **Critical** | The exact reason the report track runs *after* phase 1. A stock-Helvetica PDF with a wrong figure is embarrassing; a branded, logo'd, board-ready one with a wrong figure is a lie with letterhead. `T-16` lands first, and `T-R2`'s fixtures render from real query results, never from LLM-narrated figures. |
 | ~~**The agent fabricates numbers under budget exhaustion**~~ **Closed 2026-07-27** | **Observed** | **Critical** | `T-16` landed: a four-dimension turn budget, an exhaustion message the model actually receives (as a tool result, because it never saw the old cap), an output check that replaces a reply stating a figure no tool returned, and a zero-row `run_sql` note for the second mechanism `E-5` found. `T-01`'s golden set is what keeps it fixed. Residual risk is now the reverse one, below. |
 | A reply is blocked for a figure it legitimately holds | Medium | Medium | The new output check is blunt by design and could suppress a correct answer — the failure mode of every guardrail this project has had to narrow. It is scoped as tightly as the evidence allows (it fires only when no data tool returned a row) and every block is logged at Warn **with the full blocked reply**, because tuning it is impossible without the text. If false positives appear, narrow it against a golden case, not by eye. |

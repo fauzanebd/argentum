@@ -3,6 +3,8 @@ package document
 import (
 	"bytes"
 	"testing"
+
+	"github.com/fauzanebd/argentum/internal/report/theme"
 )
 
 func TestRenderCSV(t *testing.T) {
@@ -112,6 +114,39 @@ func TestRenderPDF_sections(t *testing.T) {
 	}
 	if !bytes.HasPrefix(out, []byte("%PDF-")) {
 		t.Fatalf("bad pdf magic: %q", out[:8])
+	}
+}
+
+// The renderer's fonts come from internal/report/theme (T-R1). A PDF that names
+// Helvetica is one where the embedded faces failed to register and maroto fell
+// back to a core font — silently, which is why this asserts on the bytes rather
+// than trusting construction to have worked.
+//
+// gofpdf writes the registered family key as the BaseFont name, so the string
+// to look for is theme.FontBody ("space-grotesk"), not the file name.
+func TestRenderPDF_embedsThemeFonts(t *testing.T) {
+	spec := &Spec{
+		Format: "pdf",
+		Title:  "Font check",
+		Content: Content{
+			Sections: []Section{{Type: "paragraph", Text: "Sales grew 12% in May."}},
+		},
+	}
+	out, err := RenderPDF(spec)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !bytes.Contains(out, []byte(theme.FontBody)) {
+		t.Errorf("rendered PDF does not name the %q family", theme.FontBody)
+	}
+	// /FontFile2 is the embedded TrueType program. Without it the reader would
+	// substitute whatever it has locally, which on a customer's machine is not
+	// Space Grotesk.
+	if !bytes.Contains(out, []byte("/FontFile2")) {
+		t.Error("rendered PDF references fonts without embedding them")
+	}
+	if bytes.Contains(out, []byte("Helvetica")) {
+		t.Error("rendered PDF names Helvetica: the theme fonts did not take effect")
 	}
 }
 

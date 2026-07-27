@@ -222,6 +222,35 @@ instead of asking which one is meant, and whether that is wrong is a product
 decision rather than a bug. Numbers and analysis:
 [`eval-baseline.md`](eval-baseline.md).
 
+## Phase 1a — Worth forwarding (2026-07-27, in progress)
+
+`T-R1` design tokens + theme package
+
+The first shared thing between the dashboard and the backend that is shared *by
+construction*. One `tokens.json` generates `apps/dashboard/src/tokens.generated.css`
+and `apps/backend/internal/report/theme/tokens_gen.go`; both outputs are
+committed, and CI regenerates and diffs them.
+
+Two findings worth keeping:
+
+- **The dashboard's palette had drifted from its own comments.**
+  `--background: 60 7% 96%` renders `#F6F6F4`, beside a comment reading
+  `#F5F5F0 cream`. Same for the brand red (`#F35858` rendered, `#F25C5C`
+  claimed) and the border. Nothing was broken — the values are within 4/255 —
+  but for three months the design system existed twice, and the two copies had
+  already begun to disagree. That is the argument for this ticket in one line.
+- **A generated `:root` cannot sit in the same file as a layered `.dark`.**
+  Unlayered declarations beat layered ones regardless of specificity, so the
+  first working version of this change would have silently disabled dark mode.
+  Caught before commit; the fix and the reason are in `index.css`.
+
+Space Grotesk is now embedded in every PDF (three faces, six registrations, OFL
+licence committed), which takes a document from 1.6 KB to 34.5 KB and takes the
+renderer off Helvetica for the first time. A missing face is a compile error; a
+corrupt one stops the worker at boot rather than a customer's document at render.
+
+Record: [`design-tokens.md`](design-tokens.md).
+
 ---
 
 ## What the history says about how this project is built

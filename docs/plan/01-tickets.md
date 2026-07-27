@@ -38,7 +38,7 @@ the authoritative order.
 | ----- | ------- | ---- | -------- |
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
-| 1a — worth forwarding | `T-R1`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. |
+| 1a — worth forwarding | ~~`T-R1`~~, `T-R2`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` landed 2026-07-27** — one `tokens.json` now generates the dashboard's CSS variables and the backend's Go report theme, with a CI drift gate and Space Grotesk embedded in every PDF: [`../coverage/design-tokens.md`](../coverage/design-tokens.md). |
 | 1b — safe to change | `T-02`, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. |
 | 2→6 | unchanged | — | Metric registry → watchers → actions → API/MCP → hardening. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Expected to move to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
@@ -328,11 +328,14 @@ is a configuration, not a feature.
 
 ---
 
-## T-R1 · Report design tokens + theme package
+## ~~T-R1~~ · Report design tokens + theme package — **DONE 2026-07-27**
 **Repo:** PKG, FE, BE · **Size:** 1.5d · **Deps:** T-00b · **Priority:** P0 · **Never cut**
 
 The plumbing that makes "same design system" true by construction instead of by
 discipline.
+
+**Landed.** Record, with every gate pasted:
+[`../coverage/design-tokens.md`](../coverage/design-tokens.md).
 
 **Do:**
 - `packages/design-tokens/tokens.json` — canonical source. Seed it from the
@@ -379,14 +382,34 @@ discipline.
   constants; the consumers decide how to use them.
 
 **Acceptance:**
-- [ ] `make tokens` regenerates both outputs; a hand edit to either is reverted by it
-- [ ] CI fails when `tokens.json` changes without regeneration — prove it, then revert
-- [ ] Dashboard renders identically before and after the CSS migration (visual diff on two screens)
-- [ ] Backend registers all three font faces; a deliberately removed TTF fails at startup, not at render time
-- [ ] License file committed alongside the fonts
+- [x] `make tokens` regenerates both outputs; a hand edit to either is reverted by it — and `go test` fails on the hand edit before that, because `TestGeneratedTokensMatchSource` reads `tokens.json`
+- [x] CI fails when `tokens.json` changes without regeneration — proved with `color.primary` → `#0000FF`, exit 1, then clean after `make tokens`
+- [ ] ~~Dashboard renders identically before and after the CSS migration (visual diff on two screens)~~ **Substituted, see below.** Every one of the 27 light variables was compared numerically: 19 are bit-identical, 8 move by ≤ 4/255 because the old hand-written HSL was a rounded approximation of the brand hex the comment beside it named. Screenshots could not be captured — headless Chrome on this machine is intercepted by something outside this repo (`curl` reaches the dev server; Chrome gets an "Authentication Required — Hamilton portal" page, with a clean profile too).
+- [x] Backend registers all three font faces (six registrations: two families × normal/bold, plus italic aliases because Space Grotesk has none and gofpdf errors on an unregistered style); a deliberately removed TTF fails **at compile time**, which is louder than the startup check asked for. `theme.VerifyFonts()` in `bootstrap.New` covers what `go:embed` cannot see — a file that exists but is not a font.
+- [x] License file committed alongside the fonts
 
 **Gate:** paste the CI failure from a deliberate token change, then the pass after
 `make tokens`. Plus before/after dashboard screenshots showing no visual change.
+
+**Gate met**, except the screenshots — all of it in
+[`../coverage/design-tokens.md`](../coverage/design-tokens.md). Worth carrying
+forward:
+
+- **The whole light palette moved into `tokens.json`, not just the nine listed
+  tokens.** A generated `:root` beside a hand-written one keeps the duplication
+  this ticket exists to remove. shadcn's *variable names* stay in the CSS
+  generator, where a consumer's naming belongs.
+- **`.dark` had to leave `@layer base`.** Unlayered beats layered regardless of
+  specificity, so a layered `.dark` under an unlayered generated `:root` would
+  have silently disabled dark mode. Both are unlayered now.
+- **A themed PDF is 34.5 KB where the stock one was 1.6 KB** — six embedded
+  faces. That is the cost of a document that renders the same on a machine that
+  has never heard of Space Grotesk, and it is why `T-R2`'s renderer should not
+  embed more families than it uses.
+- **`T-R3` inherits an unverified palette.** Eight colours on a CIE L\* ladder
+  (min pairwise gap 6.5 L\*, method recorded in `tokens.json`), but the
+  colour-vision simulation and greyscale contact sheet are still that ticket's
+  gate item.
 
 ---
 

@@ -28,6 +28,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       web: ${{ steps.filter.outputs.web }}
+      tokens: ${{ steps.filter.outputs.tokens }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -36,6 +37,15 @@ jobs:
           filters: |
             backend:
               - 'apps/backend/**'
+              - '.github/workflows/ci.yaml'
+            # Both generated outputs are listed, not just the source: the point
+            # of the tokens job is to catch a hand edit to a generated file as
+            # well as a tokens.json change that was never regenerated.
+            tokens:
+              - 'packages/design-tokens/**'
+              - 'apps/dashboard/src/tokens.generated.css'
+              - 'apps/backend/internal/report/theme/**'
+              - 'Makefile'
               - '.github/workflows/ci.yaml'
             web:
               - 'apps/dashboard/**'
@@ -83,6 +93,43 @@ jobs:
           go build -o /tmp/api     ./cmd/api
           go build -o /tmp/worker  ./cmd/worker
           go build -o /tmp/discord ./cmd/discord
+
+  tokens:
+    name: Design tokens
+    needs: changes
+    if: needs.changes.outputs.tokens == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The generators have no dependencies on purpose, so this job installs
+      # nothing: node runs them, and Go is here only for the gofmt check inside
+      # `make tokens`.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: apps/backend/go.sum
+
+      - name: Regenerate design tokens
+        run: make tokens
+
+      # Same shape as the API-type drift gate in T-02b: generated files are
+      # committed, so a diff here means the committed output disagrees with
+      # tokens.json — either it was hand-edited or it was never regenerated.
+      - name: Fail on drift
+        run: |
+          git --no-pager diff --exit-code -- \
+            packages/design-tokens \
+            apps/dashboard/src/tokens.generated.css \
+            apps/backend/internal/report/theme \
+          || {
+            echo "::error::Generated design tokens are stale. Run 'make tokens' and commit the result."
+            exit 1
+          }
 
   web:
     name: Web

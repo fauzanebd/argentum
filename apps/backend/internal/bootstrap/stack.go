@@ -44,6 +44,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/report/theme"
 	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
@@ -90,6 +91,15 @@ type Stack struct {
 // tenant pool and the LLM caches; cancel it before calling Close.
 func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s := &Stack{Cfg: cfg}
+
+	// Report fonts are checked here, before anything can render, because a
+	// broken face must stop a boot rather than surface hours later as a
+	// customer's failed document (T-R1). The faces are embedded, so this can
+	// only fail on a corrupt file — which is exactly the case a compile-time
+	// check cannot see.
+	if err := theme.VerifyFonts(); err != nil {
+		return nil, fmt.Errorf("report theme: %w", err)
+	}
 
 	controlDB, err := pgctl.New(cfg.DatabaseURL())
 	if err != nil {

@@ -10,13 +10,22 @@ import (
 	"github.com/johnfercher/maroto/v2/pkg/consts/fontstyle"
 	"github.com/johnfercher/maroto/v2/pkg/core"
 	"github.com/johnfercher/maroto/v2/pkg/props"
+
+	"github.com/fauzanebd/argentum/internal/report/theme"
 )
 
 // Maroto's grid is 12 columns wide.
 const gridCols = 12
 
 func RenderPDF(spec *Spec) ([]byte, error) {
-	m := maroto.New()
+	// A4, the theme's margins, and Space Grotesk as the default face (T-R1).
+	// The section sizes below are still literals; T-R2 rewrites this renderer
+	// against theme.TypeScale along with the cover, header and footer.
+	cfg, err := theme.MarotoConfig()
+	if err != nil {
+		return nil, fmt.Errorf("pdf: theme: %w", err)
+	}
+	m := maroto.New(cfg)
 
 	if spec.Title != "" {
 		m.AddRow(14, col.New(gridCols).Add(

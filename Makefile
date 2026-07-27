@@ -92,6 +92,24 @@ types: ## Regenerate packages/api-types from Go structs (T-02b)
 	@exit 1
 
 # ---------------------------------------------------------------------------
+# Design system
+# ---------------------------------------------------------------------------
+
+.PHONY: tokens
+tokens: ## Regenerate the dashboard CSS variables and the Go report theme (T-R1)
+	node packages/design-tokens/scripts/generate.mjs
+	@unformatted=$$(cd $(BACKEND) && gofmt -l internal/report/theme); \
+	if [ -n "$$unformatted" ]; then \
+		echo "generated Go is not gofmt-clean: $$unformatted"; \
+		echo "fix packages/design-tokens/scripts/gen-go.mjs, not the output"; \
+		exit 1; \
+	fi
+
+.PHONY: tokens-check
+tokens-check: ## Verify the generated token files match tokens.json, writing nothing
+	node packages/design-tokens/scripts/generate.mjs --check
+
+# ---------------------------------------------------------------------------
 # Housekeeping
 # ---------------------------------------------------------------------------
 
