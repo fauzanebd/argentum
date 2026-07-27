@@ -1,170 +1,189 @@
 package document
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 
-	"github.com/johnfercher/maroto/v2"
-	"github.com/johnfercher/maroto/v2/pkg/components/col"
-	"github.com/johnfercher/maroto/v2/pkg/components/text"
-	"github.com/johnfercher/maroto/v2/pkg/consts/align"
-	"github.com/johnfercher/maroto/v2/pkg/consts/fontstyle"
-	"github.com/johnfercher/maroto/v2/pkg/core"
-	"github.com/johnfercher/maroto/v2/pkg/props"
-
-	"github.com/fauzanebd/argentum/internal/report/theme"
+	"github.com/fauzanebd/argentum/internal/report/pdf"
+	"github.com/fauzanebd/argentum/internal/report/spec"
 )
 
-// Maroto's grid is 12 columns wide.
-const gridCols = 12
+// The PDF renderer that used to live here — a bold title, a bold row per
+// heading, and a table whose columns were the 12-unit grid divided evenly —
+// was replaced by internal/report/pdf in T-R2. What is left is the two
+// conversions between this package's v1 types and the spec the renderers read.
+//
+// v1 is not a separate rendering path: spec.Column and spec.Cell unmarshal
+// from both the v1 and v2 JSON shapes, so a v1 document is a v2 document whose
+// cells are all text. What v1 does *not* get is the chrome — no cover, no
+// running header, no numbered headings — because a spec that has been
+// producing a plain document for three months should not start producing a
+// different one because the backend was upgraded. Opting in is one field:
+// spec_version: 2.
 
-func RenderPDF(spec *Spec) ([]byte, error) {
-	// A4, the theme's margins, and Space Grotesk as the default face (T-R1).
-	// The section sizes below are still literals; T-R2 rewrites this renderer
-	// against theme.TypeScale along with the cover, header and footer.
-	cfg, err := theme.MarotoConfig()
-	if err != nil {
-		return nil, fmt.Errorf("pdf: theme: %w", err)
-	}
-	m := maroto.New(cfg)
-
-	if spec.Title != "" {
-		m.AddRow(14, col.New(gridCols).Add(
-			text.New(spec.Title, props.Text{
-				Size:  16,
-				Style: fontstyle.Bold,
-				Align: align.Left,
-				Top:   2,
-			}),
-		))
-		spacer(m, 2)
-	}
-
-	if len(spec.Content.Sections) > 0 {
-		for _, sec := range spec.Content.Sections {
-			if err := renderSection(m, sec); err != nil {
-				return nil, err
-			}
-		}
-	} else if t := spec.Content.Table; t != nil {
-		renderTable(m, t.Columns, t.Rows)
-	} else {
-		return nil, fmt.Errorf("pdf: content.sections or content.table required")
-	}
-
-	doc, err := m.Generate()
-	if err != nil {
-		return nil, fmt.Errorf("pdf: generate: %w", err)
-	}
-	return doc.GetBytes(), nil
+// RenderPDF renders a v1 spec.
+func RenderPDF(s *Spec) ([]byte, error) {
+	return pdf.Render(ToReportSpec(s), pdf.Options{})
 }
 
-func renderSection(m core.Maroto, sec Section) error {
-	switch sec.Type {
-	case "heading":
-		m.AddRow(10, col.New(gridCols).Add(
-			text.New(sec.Text, props.Text{
-				Size:  13,
-				Style: fontstyle.Bold,
-				Top:   2,
-			}),
-		))
-	case "paragraph":
-		m.AddAutoRow(col.New(gridCols).Add(
-			text.New(sec.Text, props.Text{
-				Size: 10,
-				Top:  1,
-			}),
-		))
-	case "key_value":
-		renderKeyValue(m, sec.Items)
-	case "table":
-		renderTable(m, sec.Columns, sec.Rows)
-	case "spacer":
-		size := sec.Size
-		if size <= 0 {
-			size = 4
-		}
-		spacer(m, size)
-	default:
-		return fmt.Errorf("pdf: unknown section type %q", sec.Type)
-	}
-	return nil
-}
-
-func renderKeyValue(m core.Maroto, items []KV) {
-	for _, kv := range items {
-		m.AddRow(6,
-			col.New(4).Add(text.New(kv.K, props.Text{
-				Size:  10,
-				Style: fontstyle.Bold,
-				Top:   1,
-			})),
-			col.New(8).Add(text.New(kv.V, props.Text{
-				Size: 10,
-				Top:  1,
-			})),
-		)
-	}
-}
-
-func renderTable(m core.Maroto, columns []string, rows [][]string) {
-	if len(columns) == 0 {
-		return
-	}
-	cols := splitGrid(len(columns))
-	n := len(cols) // capped at 12 inside splitGrid
-
-	headerCells := make([]core.Col, 0, n)
-	for i := 0; i < n; i++ {
-		headerCells = append(headerCells, col.New(cols[i]).Add(
-			text.New(columns[i], props.Text{
-				Size:  10,
-				Style: fontstyle.Bold,
-				Align: align.Left,
-				Top:   2,
-			}),
-		))
-	}
-	m.AddRow(8, headerCells...)
-
-	for _, r := range rows {
-		cells := make([]core.Col, 0, n)
-		for i := 0; i < n; i++ {
-			val := ""
-			if i < len(r) {
-				val = r[i]
-			}
-			cells = append(cells, col.New(cols[i]).Add(
-				text.New(val, props.Text{
-					Size: 9,
-					Top:  2,
-				}),
-			))
-		}
-		m.AddRow(7, cells...)
-	}
-}
-
-// splitGrid distributes the 12-col grid across n columns. The last column
-// absorbs the remainder so the row always sums to 12. For n > 12 we cap
-// at 12 (the renderer skips extra columns); the LLM is told to keep
-// tables under ~8 columns for readability anyway.
-func splitGrid(n int) []int {
-	if n <= 0 {
+// ToReportSpec converts the v1 tool types into the renderer's spec. Every cell
+// becomes a text cell, which is exactly what v1 meant: the model had already
+// formatted everything itself.
+func ToReportSpec(s *Spec) *spec.Document {
+	if s == nil {
 		return nil
 	}
-	if n > gridCols {
-		n = gridCols
+	doc := &spec.Document{
+		Format:   s.Format,
+		Filename: s.Filename,
+		Title:    s.Title,
 	}
-	base := gridCols / n
-	out := make([]int, n)
-	for i := range out {
-		out[i] = base
+	if t := s.Content.Table; t != nil {
+		doc.Content.Table = &spec.Table{
+			Columns: toColumns(t.Columns),
+			Rows:    toRows(t.Rows),
+		}
 	}
-	out[n-1] += gridCols - base*n
+	for _, sec := range s.Content.Sections {
+		out := spec.Section{
+			Type:    sec.Type,
+			Text:    sec.Text,
+			Columns: toColumns(sec.Columns),
+			Rows:    toRows(sec.Rows),
+			Size:    sec.Size,
+		}
+		for _, kv := range sec.Items {
+			out.Items = append(out.Items, spec.Item{K: kv.K, V: kv.V})
+		}
+		doc.Content.Sections = append(doc.Content.Sections, out)
+	}
+	for _, sh := range s.Content.Sheets {
+		doc.Content.Sheets = append(doc.Content.Sheets, spec.Sheet{
+			Name:    sh.Name,
+			Columns: toColumns(sh.Columns),
+			Rows:    toRows(sh.Rows),
+		})
+	}
+	return doc
+}
+
+// FromReportSpec flattens a spec back into the v1 types the XLSX and CSV
+// renderers take.
+//
+// Cells are stringified raw — no thousands separators, no currency symbols.
+// A spreadsheet and a CSV are read by machines at least as often as by people,
+// and "1.234.567,89" in a cell someone wants to sum is worse than useless.
+// The PDF is where the formatting belongs, and that path does not come
+// through here.
+func FromReportSpec(doc *spec.Document) *Spec {
+	if doc == nil {
+		return nil
+	}
+	out := &Spec{
+		Format:   doc.Format,
+		Filename: doc.Filename,
+		Title:    doc.Title,
+	}
+	if t := doc.Content.Table; t != nil {
+		out.Content.Table = &Table{
+			Columns: fromColumns(t.Columns),
+			Rows:    fromRows(t.Rows, t.TotalRow),
+		}
+	}
+	for _, sh := range doc.Content.Sheets {
+		out.Content.Sheets = append(out.Content.Sheets, Sheet{
+			Name:    sh.Name,
+			Columns: fromColumns(sh.Columns),
+			Rows:    fromRows(sh.Rows, nil),
+		})
+	}
+	for _, sec := range doc.Content.Sections {
+		v1 := Section{
+			Type:    sec.Type,
+			Text:    sec.Text,
+			Columns: fromColumns(sec.Columns),
+			Rows:    fromRows(sec.Rows, sec.TotalRow),
+			Size:    sec.Size,
+		}
+		for _, item := range sec.Items {
+			v1.Items = append(v1.Items, KV{K: item.KeyText(), V: rawCell(item.ValueCell())})
+		}
+		out.Content.Sections = append(out.Content.Sections, v1)
+	}
 	return out
 }
 
-func spacer(m core.Maroto, height float64) {
-	m.AddRow(height, col.New(gridCols).Add(text.New("", props.Text{Size: 1})))
+func toColumns(labels []string) []spec.Column {
+	if len(labels) == 0 {
+		return nil
+	}
+	out := make([]spec.Column, len(labels))
+	for i, l := range labels {
+		out[i] = spec.Column{Label: l}
+	}
+	return out
+}
+
+func toRows(rows [][]string) [][]spec.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]spec.Cell, len(rows))
+	for i, row := range rows {
+		cells := make([]spec.Cell, len(row))
+		for j, v := range row {
+			cells[j] = spec.Cell{V: v}
+		}
+		out[i] = cells
+	}
+	return out
+}
+
+func fromColumns(cols []spec.Column) []string {
+	if len(cols) == 0 {
+		return nil
+	}
+	out := make([]string, len(cols))
+	for i, c := range cols {
+		out[i] = c.Label
+	}
+	return out
+}
+
+func fromRows(rows [][]spec.Cell, total []spec.Cell) [][]string {
+	out := make([][]string, 0, len(rows)+1)
+	for _, row := range rows {
+		cells := make([]string, len(row))
+		for j, c := range row {
+			cells[j] = rawCell(c)
+		}
+		out = append(out, cells)
+	}
+	if len(total) > 0 {
+		cells := make([]string, len(total))
+		for j, c := range total {
+			cells[j] = rawCell(c)
+		}
+		out = append(out, cells)
+	}
+	return out
+}
+
+// rawCell stringifies a cell without formatting it.
+func rawCell(c spec.Cell) string {
+	switch v := c.V.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case json.Number:
+		return v.String()
+	case bool:
+		return strconv.FormatBool(v)
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	default:
+		return fmt.Sprint(v)
+	}
 }

@@ -46,7 +46,7 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Schema introspection            | ✅     | Optionally pre-filtered to named tables                             |
 | Metabase card creation          | ✅     | Returns `dashboard_cards` for direct hand-off                       |
 | Metabase dashboard creation     | ✅     | Card IDs never surfaced to users; always wrapped                    |
-| Document generation             | ✅     | PDF / XLSX / CSV → S3, presigned URL. Registers only if MinIO set   |
+| Document generation             | ✅     | PDF / XLSX / CSV → S3, presigned URL. Registers only if MinIO set. PDF rebuilt in `T-R2`: cover, running header, `Page N of M`, numbered sections, KPI cards, callouts, typed and locale-formatted cells, content-weighted columns — charts and PPTX are `T-R3`/`T-R4` |
 | Scheduled agent tasks           | ✅     | Cron + timezone, DB-backed periodic manager, 30s sync, run history  |
 | Embedding table picker (RAG)    | ✅     | Per-source opt-in, top-K hint injection, silent-fail                |
 | Anthropic prompt caching        | ✅     | System + tools + conversation prefix, 5m TTL, cache tokens billed   |

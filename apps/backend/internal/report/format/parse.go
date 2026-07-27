@@ -106,7 +106,8 @@ var currencyPrefixes = []string{"IDR", "USD", "EUR", "SGD", "MYR", "Rp.", "Rp", 
 // 3 million; the % branch must not, because there is no word boundary
 // between '%' and the space after it.
 var numberPattern = regexp.MustCompile(
-	`(?i)(IDR|USD|EUR|SGD|MYR|Rp\.?|RM|US\$|S\$|\$|€|£|¥)?\s?` + // currency
+	`(?i)-?\s?` + // a minus may sit in front of the symbol: -$1,234.00
+		`(IDR|USD|EUR|SGD|MYR|Rp\.?|RM|US\$|S\$|\$|€|£|¥)?\s?` + // currency
 		`(-?\d[\d.,]*\d|-?\d)` + // digits with separators
 		`(?:\s?(%|(?:ribu|rb|juta|jt|miliar|milyar|miliyar|triliun|trilyun|thousand|millions|million|billions|billion|trillion|mn|bn|tn|k|m|b|t)\b))?`,
 )
@@ -158,6 +159,16 @@ func parseOne(s string, strict bool) (Number, bool) {
 
 	var n Number
 	rest := strings.TrimSpace(s)
+
+	// A minus in front of the currency symbol. "-$1,234.00" and "-Rp 1.234"
+	// are what every renderer writes, including this package's own — the
+	// alternative, "$-1,234.00", is not written by anyone. The sign is taken
+	// off here and put back on the value at the end, so the separator logic
+	// below never has to think about it.
+	negative := strings.HasPrefix(rest, "-")
+	if negative {
+		rest = strings.TrimSpace(rest[1:])
+	}
 
 	// Currency prefix.
 	for _, c := range currencyPrefixes {
@@ -212,6 +223,9 @@ func parseOne(s string, strict bool) (Number, bool) {
 	}
 
 	n.Value = v * n.Magnitude
+	if negative {
+		n.Value = -n.Value
+	}
 	n.Raw = strings.TrimSpace(s)
 	return n, true
 }

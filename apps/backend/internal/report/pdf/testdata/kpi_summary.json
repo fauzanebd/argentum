@@ -1,0 +1,103 @@
+{
+  "spec_version": 2,
+  "format": "pdf",
+  "filename": "kpi-summary-q2-2026.pdf",
+  "title": "Q2 2026 KPI Summary",
+  "locale": "en",
+  "currency": "USD",
+  "generated_at": "2026-07-27T09:30:00Z",
+  "meta": {
+    "author": "Meridian Logistics Pte Ltd",
+    "subject": "Quarterly operating metrics"
+  },
+  "content": {
+    "sections": [
+      {
+        "type": "cover",
+        "text": "Q2 2026 KPI Summary",
+        "subtitle": "Operating metrics for the quarter ended 30 June 2026",
+        "period": "APRIL – JUNE 2026",
+        "prepared_for": "Operating Committee",
+        "prepared_by": "Meridian Logistics Pte Ltd",
+        "confidentiality": "Confidential"
+      },
+      {
+        "type": "heading",
+        "level": 1,
+        "text": "Commercial"
+      },
+      {
+        "type": "kpi_row",
+        "items": [
+          { "label": "Net revenue", "value": 14280000, "fmt": "currency", "delta_pct": 9.2 },
+          { "label": "Gross margin", "value": 38.4, "fmt": "percent", "delta_pct": 1.1 },
+          { "label": "New accounts", "value": 62, "fmt": "number", "delta_pct": -14.0 }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "text": "Revenue grew 9.2% against Q1 on flat headcount, and gross margin recovered the point lost to fuel surcharges in the first quarter. New account acquisition fell 14%, which is the quarter's one clearly negative signal: the pipeline built in Q1 converted, and nothing replaced it."
+      },
+      {
+        "type": "heading",
+        "level": 1,
+        "text": "Operations"
+      },
+      {
+        "type": "kpi_row",
+        "items": [
+          { "label": "On-time delivery", "value": 96.8, "fmt": "percent", "delta_pct": 0.4 },
+          { "label": "Cost per shipment", "value": 41.35, "fmt": "currency", "delta_pct": -2.8, "higher_is_better": false },
+          { "label": "Damage rate", "value": 0.42, "fmt": "percent", "delta_pct": 0.09, "higher_is_better": false },
+          { "label": "Shipments", "value": 345280, "fmt": "number", "delta_pct": 6.7 }
+        ]
+      },
+      {
+        "type": "callout",
+        "tone": "good",
+        "title": "Cost per shipment down for a third consecutive quarter",
+        "text": "The Jurong consolidation hub is now carrying 31% of volume and is the whole of the improvement. The remaining lanes are unchanged."
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "text": "Damage rate"
+      },
+      {
+        "type": "paragraph",
+        "text": "Damage climbed nine basis points to 0.42%, concentrated in the two weeks following the warehouse-management system upgrade in May. The rate returned to trend in June and no structural cause was identified."
+      },
+      {
+        "type": "heading",
+        "level": 1,
+        "text": "People"
+      },
+      {
+        "type": "kpi_row",
+        "items": [
+          { "label": "Headcount", "value": 1284, "fmt": "number", "delta_pct": 0.3 },
+          { "label": "Voluntary attrition", "value": 11.2, "fmt": "percent", "delta_pct": -1.8, "higher_is_better": false }
+        ]
+      },
+      {
+        "type": "key_value",
+        "items": [
+          { "k": "Reporting period", "v": "1 April 2026 – 30 June 2026" },
+          { "k": "Source systems", "v": "NetSuite (finance), Manhattan WMS (operations), Workday (people)" },
+          { "k": "Prepared by", "v": "Business Intelligence" },
+          { "k": "Next review", "v": "2026-10-15" }
+        ]
+      },
+      {
+        "type": "callout",
+        "tone": "warn",
+        "title": "New account acquisition",
+        "text": "Sixty-two new accounts is the lowest quarterly figure since Q3 2024. Treat the revenue growth above as a lagging indicator until the pipeline recovers."
+      },
+      {
+        "type": "footnote",
+        "text": "Deltas compare against Q1 2026 unless stated otherwise. Percentage metrics show the change in percentage points, not the relative change."
+      }
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "format": "pdf",
+  "title": "Invoice #1234",
+  "content": {
+    "sections": [
+      {
+        "type": "key_value",
+        "items": [
+          { "k": "Date", "v": "2026-05-09" },
+          { "k": "Customer", "v": "Foo Inc." }
+        ]
+      },
+      { "type": "spacer", "size": 4 },
+      { "type": "heading", "text": "Line Items" },
+      {
+        "type": "table",
+        "columns": ["Item", "Qty", "Price"],
+        "rows": [
+          ["Widget", "3", "$9.99"],
+          ["Gadget", "1", "$199.00"]
+        ]
+      },
+      { "type": "paragraph", "text": "Thank you for your business." }
+    ]
+  }
+}

@@ -38,6 +38,34 @@ func (c Color) Hex() string {
 	})
 }
 
+// Mix blends towards other by t (0 keeps c, 1 returns other).
+//
+// Derived colour rather than a token: a callout's tint is a function of its
+// tone, and adding "primary at 8%" to tokens.json would put a rendering
+// decision in the file the dashboard also reads.
+func (c Color) Mix(other Color, t float64) Color {
+	if t <= 0 {
+		return c
+	}
+	if t >= 1 {
+		return other
+	}
+	blend := func(a, b uint8) uint8 {
+		return uint8(float64(a) + (float64(b)-float64(a))*t + 0.5)
+	}
+	return Color{
+		R: blend(c.R, other.R),
+		G: blend(c.G, other.G),
+		B: blend(c.B, other.B),
+	}
+}
+
+// Tint is Mix towards white: the fill under a callout or a KPI card, light
+// enough that body text on top of it still clears contrast on a laser printer.
+func (c Color) Tint(t float64) Color {
+	return c.Mix(Color{R: 0xFF, G: 0xFF, B: 0xFF}, t)
+}
+
 // TypeScaleTokens is the print type scale, in points.
 type TypeScaleTokens struct {
 	Display float64
@@ -78,6 +106,20 @@ func (p PageTokens) ContentWidth() float64 { return p.Width - 2*p.Margin }
 func (p PageTokens) ContentHeight() float64 {
 	return p.Height - 2*p.Margin - p.HeaderHeight - p.FooterHeight
 }
+
+// GridCols is the number of columns maroto divides the content width into.
+//
+// maroto defaults to 12, which is a layout grid rather than a measuring stick:
+// an 8-column table can only be 1-1-1-1-2-2-2-2 units wide, so the one column
+// holding a product name gets the same 26mm as the one holding "Qty". 120 is
+// the same grid at ten times the resolution — a column can be 7.5% of the
+// width or 12.5%, and the content-weighted widths T-R2 computes survive the
+// rounding to integers.
+//
+// It is not a token: nothing on the dashboard has a 120-column grid, and a
+// value that means something in exactly one renderer belongs beside that
+// renderer's other geometry.
+const GridCols = 120
 
 // SeriesColor returns the palette entry for a zero-based chart series index,
 // wrapping when a chart has more series than the palette has rungs. Wrapping is

@@ -133,8 +133,15 @@ Not HTTP-reachable. Registered in `cmd/worker/main.go:156`.
 | `run_sql`              | `sql`, `source_id?`                               | `sql_query`        | always                    |
 | `create_visualization` | SQL + chart spec + `source_id?`                   | `metabase_card`    | always                    |
 | `create_dashboard`     | `cards[]` or `card_ids[]`                         | `metabase_dashboard` | always                  |
-| `generate_document`    | format + structured spec                          | `document_generated` | only if `MINIO_ENDPOINT` |
+| `generate_document`    | `format`, `content`, `spec_version?`, `locale?`, `currency?`, `meta?` | `document_generated` | only if `MINIO_ENDPOINT` |
 | `schedule_task`        | `name`, `prompt`, `cron_expression`, `timezone`   | —                  | always                    |
+
+`generate_document`'s parameters grew in `T-R2`. The contract is additive:
+`spec_version: 2` opts a PDF into the branded layout, and `locale` / `currency`
+/ `meta` are optional overrides of the company defaults. A call written against
+the old shape renders exactly as it did before — the v1 and v2 JSON shapes
+unmarshal into the same Go types. See
+[`report-rendering.md`](report-rendering.md).
 
 ## Documentation status
 

@@ -1,0 +1,2084 @@
+{
+ "spec_version": 2,
+ "format": "pdf",
+ "filename": "ekspor-pesanan-2026.pdf",
+ "title": "Ekspor Pesanan 2026",
+ "locale": "id",
+ "currency": "IDR",
+ "generated_at": "2026-07-27T09:30:00Z",
+ "meta": {
+  "author": "PT Sinar Abadi Nusantara",
+  "subject": "Ekspor 200 baris pesanan"
+ },
+ "content": {
+  "sections": [
+   {
+    "type": "cover",
+    "text": "Ekspor Pesanan",
+    "subtitle": "Dua ratus pesanan pertama tahun berjalan, lengkap dengan pelanggan, kanal, dan nilai transaksi",
+    "period": "TAHUN BERJALAN 2026",
+    "prepared_for": "Tim Operasional",
+    "prepared_by": "PT Sinar Abadi Nusantara",
+    "confidentiality": "Rahasia — Internal"
+   },
+   {
+    "type": "paragraph",
+    "text": "Tabel di bawah memuat dua ratus baris pesanan. Tabel ini ada untuk menguji penomoran halaman, pengulangan baris judul di setiap halaman, dan konsistensi desimal pada kolom angka sepanjang beberapa halaman."
+   },
+   {
+    "type": "table",
+    "caption": "Rincian pesanan",
+    "columns": [
+     {
+      "label": "Tanggal",
+      "fmt": "date"
+     },
+     {
+      "label": "No. Pesanan",
+      "fmt": "text"
+     },
+     {
+      "label": "Pelanggan",
+      "fmt": "text"
+     },
+     {
+      "label": "Produk",
+      "fmt": "text"
+     },
+     {
+      "label": "Kanal",
+      "fmt": "text"
+     },
+     {
+      "label": "Qty",
+      "fmt": "number"
+     },
+     {
+      "label": "Harga Satuan",
+      "fmt": "currency"
+     },
+     {
+      "label": "Jumlah",
+      "fmt": "currency"
+     }
+    ],
+    "rows": [
+     [
+      "2026-01-01",
+      "SO-2026-4100",
+      "PT Sinar Abadi Nusantara",
+      "Kabel Data 5 Meter",
+      "Reseller",
+      11,
+      88000,
+      968000
+     ],
+     [
+      "2026-01-02",
+      "SO-2026-4101",
+      "CV Mitra Jaya",
+      "Layanan Instalasi",
+      "Marketplace",
+      21,
+      300000,
+      6300000
+     ],
+     [
+      "2026-01-03",
+      "SO-2026-4102",
+      "PT Sinar Abadi Nusantara",
+      "Layanan Instalasi",
+      "Marketplace",
+      3,
+      152000,
+      456000
+     ],
+     [
+      "2026-01-04",
+      "SO-2026-4103",
+      "Toko Sumber Rejeki",
+      "Paket Langganan Bulanan",
+      "Retail",
+      3,
+      125000,
+      375000
+     ],
+     [
+      "2026-01-05",
+      "SO-2026-4104",
+      "PT Global Trans Indonesia",
+      "Paket Langganan Bulanan",
+      "Direct",
+      9,
+      99000,
+      891000
+     ],
+     [
+      "2026-01-06",
+      "SO-2026-4105",
+      "PT Global Trans Indonesia",
+      "Paket Langganan Bulanan",
+      "Marketplace",
+      8,
+      88000,
+      704000
+     ],
+     [
+      "2026-01-07",
+      "SO-2026-4106",
+      "PT Karya Anugerah Sentosa",
+      "Layanan Instalasi",
+      "Retail",
+      15,
+      400000,
+      6000000
+     ],
+     [
+      "2026-01-08",
+      "SO-2026-4107",
+      "UD Cahaya Timur",
+      "Kabel Data 5 Meter",
+      "Reseller",
+      11,
+      336000,
+      3696000
+     ],
+     [
+      "2026-01-09",
+      "SO-2026-4108",
+      "CV Mitra Jaya",
+      "Perpanjangan Garansi 12 Bulan",
+      "Marketplace",
+      17,
+      73000,
+      1241000
+     ],
+     [
+      "2026-01-10",
+      "SO-2026-4109",
+      "Toko Sumber Rejeki",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      6,
+      102000,
+      612000
+     ],
+     [
+      "2026-01-11",
+      "SO-2026-4110",
+      "Toko Sumber Rejeki",
+      "Perpanjangan Garansi 12 Bulan",
+      "Reseller",
+      12,
+      417000,
+      5004000
+     ],
+     [
+      "2026-01-12",
+      "SO-2026-4111",
+      "PT Nusantara Digital Mandiri",
+      "Perangkat Sensor Suhu",
+      "Retail",
+      9,
+      368000,
+      3312000
+     ],
+     [
+      "2026-01-13",
+      "SO-2026-4112",
+      "CV Amanah Sejahtera",
+      "Kabel Data 5 Meter",
+      "Reseller",
+      15,
+      92000,
+      1380000
+     ],
+     [
+      "2026-01-14",
+      "SO-2026-4113",
+      "PT Karya Anugerah Sentosa",
+      "Perangkat Sensor Suhu",
+      "Retail",
+      5,
+      348000,
+      1740000
+     ],
+     [
+      "2026-01-15",
+      "SO-2026-4114",
+      "Warung Berkah",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      9,
+      352000,
+      3168000
+     ],
+     [
+      "2026-01-16",
+      "SO-2026-4115",
+      "PT Bumi Persada Logistik",
+      "Layanan Instalasi",
+      "Reseller",
+      19,
+      391000,
+      7429000
+     ],
+     [
+      "2026-01-17",
+      "SO-2026-4116",
+      "PT Sinar Abadi Nusantara",
+      "Layanan Instalasi",
+      "Direct",
+      14,
+      50000,
+      700000
+     ],
+     [
+      "2026-01-18",
+      "SO-2026-4117",
+      "CV Mitra Jaya",
+      "Perpanjangan Garansi 12 Bulan",
+      "Reseller",
+      20,
+      215000,
+      4300000
+     ],
+     [
+      "2026-01-19",
+      "SO-2026-4118",
+      "Toko Sumber Rejeki",
+      "Paket Langganan Bulanan",
+      "Direct",
+      10,
+      77000,
+      770000
+     ],
+     [
+      "2026-01-20",
+      "SO-2026-4119",
+      "CV Amanah Sejahtera",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      19,
+      356000,
+      6764000
+     ],
+     [
+      "2026-01-21",
+      "SO-2026-4120",
+      "Toko Sumber Rejeki",
+      "Kabel Data 5 Meter",
+      "Retail",
+      17,
+      214000,
+      3638000
+     ],
+     [
+      "2026-01-22",
+      "SO-2026-4121",
+      "PT Bumi Persada Logistik",
+      "Perpanjangan Garansi 12 Bulan",
+      "Retail",
+      23,
+      269000,
+      6187000
+     ],
+     [
+      "2026-01-23",
+      "SO-2026-4122",
+      "PT Nusantara Digital Mandiri",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      10,
+      138000,
+      1380000
+     ],
+     [
+      "2026-01-24",
+      "SO-2026-4123",
+      "PT Nusantara Digital Mandiri",
+      "Modul Konektivitas LTE",
+      "Direct",
+      14,
+      423000,
+      5922000
+     ],
+     [
+      "2026-01-25",
+      "SO-2026-4124",
+      "PT Bumi Persada Logistik",
+      "Layanan Instalasi",
+      "Retail",
+      1,
+      72000,
+      72000
+     ],
+     [
+      "2026-01-26",
+      "SO-2026-4125",
+      "PT Sinar Abadi Nusantara",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      9,
+      277000,
+      2493000
+     ],
+     [
+      "2026-01-27",
+      "SO-2026-4126",
+      "Warung Berkah",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      12,
+      280000,
+      3360000
+     ],
+     [
+      "2026-01-28",
+      "SO-2026-4127",
+      "PT Global Trans Indonesia",
+      "Paket Langganan Bulanan",
+      "Direct",
+      11,
+      73000,
+      803000
+     ],
+     [
+      "2026-02-01",
+      "SO-2026-4128",
+      "PT Nusantara Digital Mandiri",
+      "Paket Langganan Bulanan",
+      "Direct",
+      9,
+      230000,
+      2070000
+     ],
+     [
+      "2026-02-02",
+      "SO-2026-4129",
+      "UD Cahaya Timur",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      11,
+      277000,
+      3047000
+     ],
+     [
+      "2026-02-03",
+      "SO-2026-4130",
+      "CV Mitra Jaya",
+      "Layanan Instalasi",
+      "Direct",
+      23,
+      353000,
+      8119000
+     ],
+     [
+      "2026-02-04",
+      "SO-2026-4131",
+      "PT Global Trans Indonesia",
+      "Paket Langganan Bulanan",
+      "Direct",
+      15,
+      249000,
+      3735000
+     ],
+     [
+      "2026-02-05",
+      "SO-2026-4132",
+      "PT Bumi Persada Logistik",
+      "Layanan Instalasi",
+      "Direct",
+      11,
+      424000,
+      4664000
+     ],
+     [
+      "2026-02-06",
+      "SO-2026-4133",
+      "CV Mitra Jaya",
+      "Layanan Instalasi",
+      "Reseller",
+      17,
+      219000,
+      3723000
+     ],
+     [
+      "2026-02-07",
+      "SO-2026-4134",
+      "CV Amanah Sejahtera",
+      "Kabel Data 5 Meter",
+      "Reseller",
+      22,
+      206000,
+      4532000
+     ],
+     [
+      "2026-02-08",
+      "SO-2026-4135",
+      "PT Sinar Abadi Nusantara",
+      "Perpanjangan Garansi 12 Bulan",
+      "Marketplace",
+      18,
+      137000,
+      2466000
+     ],
+     [
+      "2026-02-09",
+      "SO-2026-4136",
+      "Warung Berkah",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      20,
+      272000,
+      5440000
+     ],
+     [
+      "2026-02-10",
+      "SO-2026-4137",
+      "Toko Sumber Rejeki",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      1,
+      342000,
+      342000
+     ],
+     [
+      "2026-02-11",
+      "SO-2026-4138",
+      "PT Nusantara Digital Mandiri",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      10,
+      303000,
+      3030000
+     ],
+     [
+      "2026-02-12",
+      "SO-2026-4139",
+      "Toko Sumber Rejeki",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      9,
+      37000,
+      333000
+     ],
+     [
+      "2026-02-13",
+      "SO-2026-4140",
+      "PT Nusantara Digital Mandiri",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      1,
+      92000,
+      92000
+     ],
+     [
+      "2026-02-14",
+      "SO-2026-4141",
+      "PT Global Trans Indonesia",
+      "Kabel Data 5 Meter",
+      "Direct",
+      13,
+      165000,
+      2145000
+     ],
+     [
+      "2026-02-15",
+      "SO-2026-4142",
+      "PT Bumi Persada Logistik",
+      "Kabel Data 5 Meter",
+      "Retail",
+      21,
+      331000,
+      6951000
+     ],
+     [
+      "2026-02-16",
+      "SO-2026-4143",
+      "Warung Berkah",
+      "Layanan Instalasi",
+      "Retail",
+      3,
+      413000,
+      1239000
+     ],
+     [
+      "2026-02-17",
+      "SO-2026-4144",
+      "PT Global Trans Indonesia",
+      "Modul Konektivitas LTE",
+      "Retail",
+      6,
+      305000,
+      1830000
+     ],
+     [
+      "2026-02-18",
+      "SO-2026-4145",
+      "PT Bumi Persada Logistik",
+      "Kabel Data 5 Meter",
+      "Retail",
+      13,
+      360000,
+      4680000
+     ],
+     [
+      "2026-02-19",
+      "SO-2026-4146",
+      "CV Amanah Sejahtera",
+      "Perpanjangan Garansi 12 Bulan",
+      "Retail",
+      24,
+      319000,
+      7656000
+     ],
+     [
+      "2026-02-20",
+      "SO-2026-4147",
+      "PT Sinar Abadi Nusantara",
+      "Paket Langganan Bulanan",
+      "Retail",
+      7,
+      319000,
+      2233000
+     ],
+     [
+      "2026-02-21",
+      "SO-2026-4148",
+      "PT Global Trans Indonesia",
+      "Kabel Data 5 Meter",
+      "Direct",
+      10,
+      61000,
+      610000
+     ],
+     [
+      "2026-02-22",
+      "SO-2026-4149",
+      "PT Nusantara Digital Mandiri",
+      "Kabel Data 5 Meter",
+      "Reseller",
+      14,
+      185000,
+      2590000
+     ],
+     [
+      "2026-02-23",
+      "SO-2026-4150",
+      "PT Nusantara Digital Mandiri",
+      "Paket Langganan Bulanan",
+      "Reseller",
+      6,
+      229000,
+      1374000
+     ],
+     [
+      "2026-02-24",
+      "SO-2026-4151",
+      "PT Sinar Abadi Nusantara",
+      "Layanan Instalasi",
+      "Marketplace",
+      18,
+      32000,
+      576000
+     ],
+     [
+      "2026-02-25",
+      "SO-2026-4152",
+      "PT Nusantara Digital Mandiri",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      15,
+      25000,
+      375000
+     ],
+     [
+      "2026-02-26",
+      "SO-2026-4153",
+      "PT Sinar Abadi Nusantara",
+      "Modul Konektivitas LTE",
+      "Marketplace",
+      22,
+      46000,
+      1012000
+     ],
+     [
+      "2026-02-27",
+      "SO-2026-4154",
+      "PT Bumi Persada Logistik",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      21,
+      335000,
+      7035000
+     ],
+     [
+      "2026-02-28",
+      "SO-2026-4155",
+      "PT Karya Anugerah Sentosa",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      20,
+      134000,
+      2680000
+     ],
+     [
+      "2026-03-01",
+      "SO-2026-4156",
+      "Warung Berkah",
+      "Layanan Instalasi",
+      "Reseller",
+      1,
+      301000,
+      301000
+     ],
+     [
+      "2026-03-02",
+      "SO-2026-4157",
+      "PT Nusantara Digital Mandiri",
+      "Paket Langganan Bulanan",
+      "Reseller",
+      13,
+      179000,
+      2327000
+     ],
+     [
+      "2026-03-03",
+      "SO-2026-4158",
+      "PT Bumi Persada Logistik",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      9,
+      206000,
+      1854000
+     ],
+     [
+      "2026-03-04",
+      "SO-2026-4159",
+      "CV Amanah Sejahtera",
+      "Paket Langganan Bulanan",
+      "Retail",
+      8,
+      424000,
+      3392000
+     ],
+     [
+      "2026-03-05",
+      "SO-2026-4160",
+      "PT Sinar Abadi Nusantara",
+      "Layanan Instalasi",
+      "Reseller",
+      1,
+      241000,
+      241000
+     ],
+     [
+      "2026-03-06",
+      "SO-2026-4161",
+      "CV Mitra Jaya",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      24,
+      165000,
+      3960000
+     ],
+     [
+      "2026-03-07",
+      "SO-2026-4162",
+      "UD Cahaya Timur",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      10,
+      226000,
+      2260000
+     ],
+     [
+      "2026-03-08",
+      "SO-2026-4163",
+      "Toko Sumber Rejeki",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      21,
+      242000,
+      5082000
+     ],
+     [
+      "2026-03-09",
+      "SO-2026-4164",
+      "CV Mitra Jaya",
+      "Perangkat Sensor Suhu",
+      "Retail",
+      9,
+      362000,
+      3258000
+     ],
+     [
+      "2026-03-10",
+      "SO-2026-4165",
+      "PT Global Trans Indonesia",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      21,
+      224000,
+      4704000
+     ],
+     [
+      "2026-03-11",
+      "SO-2026-4166",
+      "Warung Berkah",
+      "Perpanjangan Garansi 12 Bulan",
+      "Retail",
+      24,
+      32000,
+      768000
+     ],
+     [
+      "2026-03-12",
+      "SO-2026-4167",
+      "CV Mitra Jaya",
+      "Paket Langganan Bulanan",
+      "Marketplace",
+      8,
+      422000,
+      3376000
+     ],
+     [
+      "2026-03-13",
+      "SO-2026-4168",
+      "PT Karya Anugerah Sentosa",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      4,
+      155000,
+      620000
+     ],
+     [
+      "2026-03-14",
+      "SO-2026-4169",
+      "PT Sinar Abadi Nusantara",
+      "Modul Konektivitas LTE",
+      "Marketplace",
+      2,
+      184000,
+      368000
+     ],
+     [
+      "2026-03-15",
+      "SO-2026-4170",
+      "Toko Sumber Rejeki",
+      "Layanan Instalasi",
+      "Reseller",
+      10,
+      76000,
+      760000
+     ],
+     [
+      "2026-03-16",
+      "SO-2026-4171",
+      "Toko Sumber Rejeki",
+      "Layanan Instalasi",
+      "Direct",
+      14,
+      295000,
+      4130000
+     ],
+     [
+      "2026-03-17",
+      "SO-2026-4172",
+      "CV Mitra Jaya",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      11,
+      151000,
+      1661000
+     ],
+     [
+      "2026-03-18",
+      "SO-2026-4173",
+      "PT Nusantara Digital Mandiri",
+      "Perpanjangan Garansi 12 Bulan",
+      "Marketplace",
+      15,
+      227000,
+      3405000
+     ],
+     [
+      "2026-03-19",
+      "SO-2026-4174",
+      "PT Bumi Persada Logistik",
+      "Perpanjangan Garansi 12 Bulan",
+      "Retail",
+      13,
+      215000,
+      2795000
+     ],
+     [
+      "2026-03-20",
+      "SO-2026-4175",
+      "PT Bumi Persada Logistik",
+      "Layanan Instalasi",
+      "Retail",
+      15,
+      375000,
+      5625000
+     ],
+     [
+      "2026-03-21",
+      "SO-2026-4176",
+      "CV Amanah Sejahtera",
+      "Paket Langganan Bulanan",
+      "Reseller",
+      6,
+      222000,
+      1332000
+     ],
+     [
+      "2026-03-22",
+      "SO-2026-4177",
+      "PT Nusantara Digital Mandiri",
+      "Layanan Instalasi",
+      "Direct",
+      22,
+      257000,
+      5654000
+     ],
+     [
+      "2026-03-23",
+      "SO-2026-4178",
+      "PT Nusantara Digital Mandiri",
+      "Kabel Data 5 Meter",
+      "Retail",
+      13,
+      141000,
+      1833000
+     ],
+     [
+      "2026-03-24",
+      "SO-2026-4179",
+      "Warung Berkah",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      6,
+      390000,
+      2340000
+     ],
+     [
+      "2026-03-25",
+      "SO-2026-4180",
+      "CV Mitra Jaya",
+      "Paket Langganan Bulanan",
+      "Direct",
+      6,
+      114000,
+      684000
+     ],
+     [
+      "2026-03-26",
+      "SO-2026-4181",
+      "CV Amanah Sejahtera",
+      "Perpanjangan Garansi 12 Bulan",
+      "Marketplace",
+      3,
+      245000,
+      735000
+     ],
+     [
+      "2026-03-27",
+      "SO-2026-4182",
+      "PT Sinar Abadi Nusantara",
+      "Layanan Instalasi",
+      "Retail",
+      14,
+      389000,
+      5446000
+     ],
+     [
+      "2026-03-28",
+      "SO-2026-4183",
+      "Warung Berkah",
+      "Perpanjangan Garansi 12 Bulan",
+      "Marketplace",
+      22,
+      329000,
+      7238000
+     ],
+     [
+      "2026-04-01",
+      "SO-2026-4184",
+      "PT Sinar Abadi Nusantara",
+      "Layanan Instalasi",
+      "Retail",
+      17,
+      386000,
+      6562000
+     ],
+     [
+      "2026-04-02",
+      "SO-2026-4185",
+      "PT Sinar Abadi Nusantara",
+      "Modul Konektivitas LTE",
+      "Retail",
+      12,
+      216000,
+      2592000
+     ],
+     [
+      "2026-04-03",
+      "SO-2026-4186",
+      "PT Sinar Abadi Nusantara",
+      "Kabel Data 5 Meter",
+      "Direct",
+      22,
+      240000,
+      5280000
+     ],
+     [
+      "2026-04-04",
+      "SO-2026-4187",
+      "PT Karya Anugerah Sentosa",
+      "Modul Konektivitas LTE",
+      "Marketplace",
+      17,
+      172000,
+      2924000
+     ],
+     [
+      "2026-04-05",
+      "SO-2026-4188",
+      "PT Nusantara Digital Mandiri",
+      "Perpanjangan Garansi 12 Bulan",
+      "Reseller",
+      14,
+      126000,
+      1764000
+     ],
+     [
+      "2026-04-06",
+      "SO-2026-4189",
+      "Warung Berkah",
+      "Paket Langganan Bulanan",
+      "Direct",
+      13,
+      375000,
+      4875000
+     ],
+     [
+      "2026-04-07",
+      "SO-2026-4190",
+      "PT Sinar Abadi Nusantara",
+      "Kabel Data 5 Meter",
+      "Direct",
+      5,
+      29000,
+      145000
+     ],
+     [
+      "2026-04-08",
+      "SO-2026-4191",
+      "PT Sinar Abadi Nusantara",
+      "Perpanjangan Garansi 12 Bulan",
+      "Marketplace",
+      14,
+      370000,
+      5180000
+     ],
+     [
+      "2026-04-09",
+      "SO-2026-4192",
+      "CV Mitra Jaya",
+      "Perpanjangan Garansi 12 Bulan",
+      "Retail",
+      22,
+      95000,
+      2090000
+     ],
+     [
+      "2026-04-10",
+      "SO-2026-4193",
+      "PT Nusantara Digital Mandiri",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      15,
+      75000,
+      1125000
+     ],
+     [
+      "2026-04-11",
+      "SO-2026-4194",
+      "UD Cahaya Timur",
+      "Kabel Data 5 Meter",
+      "Direct",
+      9,
+      169000,
+      1521000
+     ],
+     [
+      "2026-04-12",
+      "SO-2026-4195",
+      "UD Cahaya Timur",
+      "Kabel Data 5 Meter",
+      "Retail",
+      20,
+      307000,
+      6140000
+     ],
+     [
+      "2026-04-13",
+      "SO-2026-4196",
+      "PT Karya Anugerah Sentosa",
+      "Kabel Data 5 Meter",
+      "Retail",
+      2,
+      384000,
+      768000
+     ],
+     [
+      "2026-04-14",
+      "SO-2026-4197",
+      "PT Sinar Abadi Nusantara",
+      "Paket Langganan Bulanan",
+      "Retail",
+      13,
+      361000,
+      4693000
+     ],
+     [
+      "2026-04-15",
+      "SO-2026-4198",
+      "CV Mitra Jaya",
+      "Layanan Instalasi",
+      "Marketplace",
+      24,
+      125000,
+      3000000
+     ],
+     [
+      "2026-04-16",
+      "SO-2026-4199",
+      "Warung Berkah",
+      "Modul Konektivitas LTE",
+      "Retail",
+      4,
+      107000,
+      428000
+     ],
+     [
+      "2026-04-17",
+      "SO-2026-4200",
+      "PT Nusantara Digital Mandiri",
+      "Perpanjangan Garansi 12 Bulan",
+      "Retail",
+      1,
+      75000,
+      75000
+     ],
+     [
+      "2026-04-18",
+      "SO-2026-4201",
+      "CV Mitra Jaya",
+      "Kabel Data 5 Meter",
+      "Reseller",
+      22,
+      87000,
+      1914000
+     ],
+     [
+      "2026-04-19",
+      "SO-2026-4202",
+      "CV Mitra Jaya",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      24,
+      189000,
+      4536000
+     ],
+     [
+      "2026-04-20",
+      "SO-2026-4203",
+      "PT Sinar Abadi Nusantara",
+      "Paket Langganan Bulanan",
+      "Direct",
+      7,
+      142000,
+      994000
+     ],
+     [
+      "2026-04-21",
+      "SO-2026-4204",
+      "CV Amanah Sejahtera",
+      "Layanan Instalasi",
+      "Marketplace",
+      1,
+      314000,
+      314000
+     ],
+     [
+      "2026-04-22",
+      "SO-2026-4205",
+      "CV Amanah Sejahtera",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      10,
+      324000,
+      3240000
+     ],
+     [
+      "2026-04-23",
+      "SO-2026-4206",
+      "PT Nusantara Digital Mandiri",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      15,
+      100000,
+      1500000
+     ],
+     [
+      "2026-04-24",
+      "SO-2026-4207",
+      "CV Mitra Jaya",
+      "Perpanjangan Garansi 12 Bulan",
+      "Marketplace",
+      10,
+      261000,
+      2610000
+     ],
+     [
+      "2026-04-25",
+      "SO-2026-4208",
+      "CV Mitra Jaya",
+      "Perpanjangan Garansi 12 Bulan",
+      "Retail",
+      24,
+      404000,
+      9696000
+     ],
+     [
+      "2026-04-26",
+      "SO-2026-4209",
+      "CV Mitra Jaya",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      21,
+      286000,
+      6006000
+     ],
+     [
+      "2026-04-27",
+      "SO-2026-4210",
+      "Warung Berkah",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      16,
+      327000,
+      5232000
+     ],
+     [
+      "2026-04-28",
+      "SO-2026-4211",
+      "PT Bumi Persada Logistik",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      13,
+      181000,
+      2353000
+     ],
+     [
+      "2026-05-01",
+      "SO-2026-4212",
+      "PT Nusantara Digital Mandiri",
+      "Layanan Instalasi",
+      "Marketplace",
+      9,
+      173000,
+      1557000
+     ],
+     [
+      "2026-05-02",
+      "SO-2026-4213",
+      "PT Nusantara Digital Mandiri",
+      "Kabel Data 5 Meter",
+      "Reseller",
+      14,
+      376000,
+      5264000
+     ],
+     [
+      "2026-05-03",
+      "SO-2026-4214",
+      "Warung Berkah",
+      "Paket Langganan Bulanan",
+      "Direct",
+      22,
+      305000,
+      6710000
+     ],
+     [
+      "2026-05-04",
+      "SO-2026-4215",
+      "PT Bumi Persada Logistik",
+      "Modul Konektivitas LTE",
+      "Marketplace",
+      12,
+      76000,
+      912000
+     ],
+     [
+      "2026-05-05",
+      "SO-2026-4216",
+      "PT Nusantara Digital Mandiri",
+      "Perangkat Sensor Suhu",
+      "Reseller",
+      8,
+      269000,
+      2152000
+     ],
+     [
+      "2026-05-06",
+      "SO-2026-4217",
+      "UD Cahaya Timur",
+      "Kabel Data 5 Meter",
+      "Retail",
+      12,
+      25000,
+      300000
+     ],
+     [
+      "2026-05-07",
+      "SO-2026-4218",
+      "CV Amanah Sejahtera",
+      "Modul Konektivitas LTE",
+      "Direct",
+      24,
+      273000,
+      6552000
+     ],
+     [
+      "2026-05-08",
+      "SO-2026-4219",
+      "CV Mitra Jaya",
+      "Perangkat Sensor Suhu",
+      "Direct",
+      2,
+      72000,
+      144000
+     ],
+     [
+      "2026-05-09",
+      "SO-2026-4220",
+      "PT Bumi Persada Logistik",
+      "Modul Konektivitas LTE",
+      "Marketplace",
+      21,
+      329000,
+      6909000
+     ],
+     [
+      "2026-05-10",
+      "SO-2026-4221",
+      "PT Karya Anugerah Sentosa",
+      "Perangkat Sensor Suhu",
+      "Retail",
+      15,
+      285000,
+      4275000
+     ],
+     [
+      "2026-05-11",
+      "SO-2026-4222",
+      "PT Bumi Persada Logistik",
+      "Layanan Instalasi",
+      "Marketplace",
+      19,
+      169000,
+      3211000
+     ],
+     [
+      "2026-05-12",
+      "SO-2026-4223",
+      "PT Bumi Persada Logistik",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      16,
+      420000,
+      6720000
+     ],
+     [
+      "2026-05-13",
+      "SO-2026-4224",
+      "PT Bumi Persada Logistik",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      15,
+      109000,
+      1635000
+     ],
+     [
+      "2026-05-14",
+      "SO-2026-4225",
+      "Warung Berkah",
+      "Paket Langganan Bulanan",
+      "Direct",
+      1,
+      390000,
+      390000
+     ],
+     [
+      "2026-05-15",
+      "SO-2026-4226",
+      "Toko Sumber Rejeki",
+      "Modul Konektivitas LTE",
+      "Direct",
+      23,
+      396000,
+      9108000
+     ],
+     [
+      "2026-05-16",
+      "SO-2026-4227",
+      "CV Amanah Sejahtera",
+      "Modul Konektivitas LTE",
+      "Retail",
+      6,
+      393000,
+      2358000
+     ],
+     [
+      "2026-05-17",
+      "SO-2026-4228",
+      "PT Nusantara Digital Mandiri",
+      "Kabel Data 5 Meter",
+      "Direct",
+      21,
+      77000,
+      1617000
+     ],
+     [
+      "2026-05-18",
+      "SO-2026-4229",
+      "PT Sinar Abadi Nusantara",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      11,
+      333000,
+      3663000
+     ],
+     [
+      "2026-05-19",
+      "SO-2026-4230",
+      "UD Cahaya Timur",
+      "Kabel Data 5 Meter",
+      "Retail",
+      23,
+      154000,
+      3542000
+     ],
+     [
+      "2026-05-20",
+      "SO-2026-4231",
+      "PT Global Trans Indonesia",
+      "Modul Konektivitas LTE",
+      "Direct",
+      10,
+      63000,
+      630000
+     ],
+     [
+      "2026-05-21",
+      "SO-2026-4232",
+      "PT Nusantara Digital Mandiri",
+      "Modul Konektivitas LTE",
+      "Direct",
+      1,
+      226000,
+      226000
+     ],
+     [
+      "2026-05-22",
+      "SO-2026-4233",
+      "UD Cahaya Timur",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      15,
+      338000,
+      5070000
+     ],
+     [
+      "2026-05-23",
+      "SO-2026-4234",
+      "PT Global Trans Indonesia",
+      "Kabel Data 5 Meter",
+      "Retail",
+      12,
+      84000,
+      1008000
+     ],
+     [
+      "2026-05-24",
+      "SO-2026-4235",
+      "PT Nusantara Digital Mandiri",
+      "Paket Langganan Bulanan",
+      "Reseller",
+      19,
+      358000,
+      6802000
+     ],
+     [
+      "2026-05-25",
+      "SO-2026-4236",
+      "PT Karya Anugerah Sentosa",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      13,
+      358000,
+      4654000
+     ],
+     [
+      "2026-05-26",
+      "SO-2026-4237",
+      "CV Mitra Jaya",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      7,
+      375000,
+      2625000
+     ],
+     [
+      "2026-05-27",
+      "SO-2026-4238",
+      "PT Global Trans Indonesia",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      14,
+      228000,
+      3192000
+     ],
+     [
+      "2026-05-28",
+      "SO-2026-4239",
+      "Toko Sumber Rejeki",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      12,
+      311000,
+      3732000
+     ],
+     [
+      "2026-06-01",
+      "SO-2026-4240",
+      "PT Nusantara Digital Mandiri",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      12,
+      187000,
+      2244000
+     ],
+     [
+      "2026-06-02",
+      "SO-2026-4241",
+      "PT Global Trans Indonesia",
+      "Modul Konektivitas LTE",
+      "Direct",
+      22,
+      359000,
+      7898000
+     ],
+     [
+      "2026-06-03",
+      "SO-2026-4242",
+      "PT Sinar Abadi Nusantara",
+      "Perpanjangan Garansi 12 Bulan",
+      "Retail",
+      23,
+      292000,
+      6716000
+     ],
+     [
+      "2026-06-04",
+      "SO-2026-4243",
+      "PT Global Trans Indonesia",
+      "Layanan Instalasi",
+      "Retail",
+      23,
+      300000,
+      6900000
+     ],
+     [
+      "2026-06-05",
+      "SO-2026-4244",
+      "UD Cahaya Timur",
+      "Layanan Instalasi",
+      "Reseller",
+      1,
+      314000,
+      314000
+     ],
+     [
+      "2026-06-06",
+      "SO-2026-4245",
+      "UD Cahaya Timur",
+      "Paket Langganan Bulanan",
+      "Direct",
+      19,
+      283000,
+      5377000
+     ],
+     [
+      "2026-06-07",
+      "SO-2026-4246",
+      "PT Karya Anugerah Sentosa",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      6,
+      160000,
+      960000
+     ],
+     [
+      "2026-06-08",
+      "SO-2026-4247",
+      "PT Karya Anugerah Sentosa",
+      "Modul Konektivitas LTE",
+      "Retail",
+      7,
+      45000,
+      315000
+     ],
+     [
+      "2026-06-09",
+      "SO-2026-4248",
+      "PT Bumi Persada Logistik",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      15,
+      113000,
+      1695000
+     ],
+     [
+      "2026-06-10",
+      "SO-2026-4249",
+      "PT Bumi Persada Logistik",
+      "Paket Langganan Bulanan",
+      "Direct",
+      8,
+      33000,
+      264000
+     ],
+     [
+      "2026-06-11",
+      "SO-2026-4250",
+      "PT Karya Anugerah Sentosa",
+      "Perangkat Sensor Suhu",
+      "Reseller",
+      16,
+      167000,
+      2672000
+     ],
+     [
+      "2026-06-12",
+      "SO-2026-4251",
+      "PT Bumi Persada Logistik",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      5,
+      419000,
+      2095000
+     ],
+     [
+      "2026-06-13",
+      "SO-2026-4252",
+      "PT Nusantara Digital Mandiri",
+      "Perangkat Sensor Suhu",
+      "Retail",
+      2,
+      185000,
+      370000
+     ],
+     [
+      "2026-06-14",
+      "SO-2026-4253",
+      "UD Cahaya Timur",
+      "Perpanjangan Garansi 12 Bulan",
+      "Retail",
+      1,
+      380000,
+      380000
+     ],
+     [
+      "2026-06-15",
+      "SO-2026-4254",
+      "PT Nusantara Digital Mandiri",
+      "Modul Konektivitas LTE",
+      "Marketplace",
+      14,
+      290000,
+      4060000
+     ],
+     [
+      "2026-06-16",
+      "SO-2026-4255",
+      "PT Nusantara Digital Mandiri",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      20,
+      255000,
+      5100000
+     ],
+     [
+      "2026-06-17",
+      "SO-2026-4256",
+      "CV Mitra Jaya",
+      "Kabel Data 5 Meter",
+      "Marketplace",
+      19,
+      104000,
+      1976000
+     ],
+     [
+      "2026-06-18",
+      "SO-2026-4257",
+      "Warung Berkah",
+      "Kabel Data 5 Meter",
+      "Reseller",
+      7,
+      81000,
+      567000
+     ],
+     [
+      "2026-06-19",
+      "SO-2026-4258",
+      "UD Cahaya Timur",
+      "Paket Langganan Bulanan",
+      "Direct",
+      5,
+      360000,
+      1800000
+     ],
+     [
+      "2026-06-20",
+      "SO-2026-4259",
+      "PT Bumi Persada Logistik",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      5,
+      402000,
+      2010000
+     ],
+     [
+      "2026-06-21",
+      "SO-2026-4260",
+      "PT Sinar Abadi Nusantara",
+      "Modul Konektivitas LTE",
+      "Direct",
+      24,
+      43000,
+      1032000
+     ],
+     [
+      "2026-06-22",
+      "SO-2026-4261",
+      "PT Sinar Abadi Nusantara",
+      "Perpanjangan Garansi 12 Bulan",
+      "Reseller",
+      10,
+      144000,
+      1440000
+     ],
+     [
+      "2026-06-23",
+      "SO-2026-4262",
+      "PT Global Trans Indonesia",
+      "Perangkat Sensor Suhu",
+      "Direct",
+      20,
+      361000,
+      7220000
+     ],
+     [
+      "2026-06-24",
+      "SO-2026-4263",
+      "PT Sinar Abadi Nusantara",
+      "Paket Langganan Bulanan",
+      "Direct",
+      10,
+      397000,
+      3970000
+     ],
+     [
+      "2026-06-25",
+      "SO-2026-4264",
+      "PT Nusantara Digital Mandiri",
+      "Kabel Data 5 Meter",
+      "Retail",
+      2,
+      309000,
+      618000
+     ],
+     [
+      "2026-06-26",
+      "SO-2026-4265",
+      "CV Amanah Sejahtera",
+      "Layanan Instalasi",
+      "Marketplace",
+      1,
+      209000,
+      209000
+     ],
+     [
+      "2026-06-27",
+      "SO-2026-4266",
+      "PT Sinar Abadi Nusantara",
+      "Paket Langganan Bulanan",
+      "Reseller",
+      11,
+      89000,
+      979000
+     ],
+     [
+      "2026-06-28",
+      "SO-2026-4267",
+      "PT Global Trans Indonesia",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      21,
+      44000,
+      924000
+     ],
+     [
+      "2026-07-01",
+      "SO-2026-4268",
+      "PT Sinar Abadi Nusantara",
+      "Perpanjangan Garansi 12 Bulan",
+      "Retail",
+      14,
+      118000,
+      1652000
+     ],
+     [
+      "2026-07-02",
+      "SO-2026-4269",
+      "PT Global Trans Indonesia",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      24,
+      179000,
+      4296000
+     ],
+     [
+      "2026-07-03",
+      "SO-2026-4270",
+      "CV Mitra Jaya",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      4,
+      86000,
+      344000
+     ],
+     [
+      "2026-07-04",
+      "SO-2026-4271",
+      "PT Bumi Persada Logistik",
+      "Kabel Data 5 Meter",
+      "Direct",
+      1,
+      396000,
+      396000
+     ],
+     [
+      "2026-07-05",
+      "SO-2026-4272",
+      "PT Karya Anugerah Sentosa",
+      "Perangkat Sensor Suhu",
+      "Retail",
+      8,
+      402000,
+      3216000
+     ],
+     [
+      "2026-07-06",
+      "SO-2026-4273",
+      "PT Sinar Abadi Nusantara",
+      "Kabel Data 5 Meter",
+      "Direct",
+      2,
+      68000,
+      136000
+     ],
+     [
+      "2026-07-07",
+      "SO-2026-4274",
+      "UD Cahaya Timur",
+      "Perangkat Sensor Suhu",
+      "Direct",
+      11,
+      397000,
+      4367000
+     ],
+     [
+      "2026-07-08",
+      "SO-2026-4275",
+      "CV Amanah Sejahtera",
+      "Layanan Instalasi",
+      "Reseller",
+      16,
+      50000,
+      800000
+     ],
+     [
+      "2026-07-09",
+      "SO-2026-4276",
+      "PT Global Trans Indonesia",
+      "Layanan Instalasi",
+      "Marketplace",
+      11,
+      396000,
+      4356000
+     ],
+     [
+      "2026-07-10",
+      "SO-2026-4277",
+      "PT Nusantara Digital Mandiri",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      6,
+      308000,
+      1848000
+     ],
+     [
+      "2026-07-11",
+      "SO-2026-4278",
+      "Toko Sumber Rejeki",
+      "Perangkat Sensor Suhu",
+      "Reseller",
+      1,
+      199000,
+      199000
+     ],
+     [
+      "2026-07-12",
+      "SO-2026-4279",
+      "PT Karya Anugerah Sentosa",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      20,
+      58000,
+      1160000
+     ],
+     [
+      "2026-07-13",
+      "SO-2026-4280",
+      "Toko Sumber Rejeki",
+      "Paket Langganan Bulanan",
+      "Direct",
+      15,
+      70000,
+      1050000
+     ],
+     [
+      "2026-07-14",
+      "SO-2026-4281",
+      "UD Cahaya Timur",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      9,
+      311000,
+      2799000
+     ],
+     [
+      "2026-07-15",
+      "SO-2026-4282",
+      "CV Mitra Jaya",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      11,
+      53000,
+      583000
+     ],
+     [
+      "2026-07-16",
+      "SO-2026-4283",
+      "CV Amanah Sejahtera",
+      "Kabel Data 5 Meter",
+      "Reseller",
+      1,
+      229000,
+      229000
+     ],
+     [
+      "2026-07-17",
+      "SO-2026-4284",
+      "PT Global Trans Indonesia",
+      "Perpanjangan Garansi 12 Bulan",
+      "Reseller",
+      22,
+      361000,
+      7942000
+     ],
+     [
+      "2026-07-18",
+      "SO-2026-4285",
+      "PT Global Trans Indonesia",
+      "Perangkat Sensor Suhu",
+      "Marketplace",
+      5,
+      148000,
+      740000
+     ],
+     [
+      "2026-07-19",
+      "SO-2026-4286",
+      "CV Mitra Jaya",
+      "Perangkat Sensor Suhu",
+      "Reseller",
+      21,
+      60000,
+      1260000
+     ],
+     [
+      "2026-07-20",
+      "SO-2026-4287",
+      "PT Nusantara Digital Mandiri",
+      "Kabel Data 5 Meter",
+      "Direct",
+      24,
+      155000,
+      3720000
+     ],
+     [
+      "2026-07-21",
+      "SO-2026-4288",
+      "PT Nusantara Digital Mandiri",
+      "Modul Konektivitas LTE",
+      "Retail",
+      22,
+      352000,
+      7744000
+     ],
+     [
+      "2026-07-22",
+      "SO-2026-4289",
+      "PT Global Trans Indonesia",
+      "Layanan Instalasi",
+      "Direct",
+      19,
+      135000,
+      2565000
+     ],
+     [
+      "2026-07-23",
+      "SO-2026-4290",
+      "PT Global Trans Indonesia",
+      "Perpanjangan Garansi 12 Bulan",
+      "Reseller",
+      22,
+      148000,
+      3256000
+     ],
+     [
+      "2026-07-24",
+      "SO-2026-4291",
+      "PT Karya Anugerah Sentosa",
+      "Paket Langganan Bulanan",
+      "Retail",
+      1,
+      237000,
+      237000
+     ],
+     [
+      "2026-07-25",
+      "SO-2026-4292",
+      "PT Karya Anugerah Sentosa",
+      "Layanan Instalasi",
+      "Retail",
+      24,
+      391000,
+      9384000
+     ],
+     [
+      "2026-07-26",
+      "SO-2026-4293",
+      "UD Cahaya Timur",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      11,
+      286000,
+      3146000
+     ],
+     [
+      "2026-07-27",
+      "SO-2026-4294",
+      "PT Global Trans Indonesia",
+      "Perpanjangan Garansi 12 Bulan",
+      "Direct",
+      20,
+      269000,
+      5380000
+     ],
+     [
+      "2026-07-28",
+      "SO-2026-4295",
+      "PT Nusantara Digital Mandiri",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      5,
+      89000,
+      445000
+     ],
+     [
+      "2026-08-01",
+      "SO-2026-4296",
+      "PT Sinar Abadi Nusantara",
+      "Perangkat Sensor Suhu",
+      "Reseller",
+      12,
+      358000,
+      4296000
+     ],
+     [
+      "2026-08-02",
+      "SO-2026-4297",
+      "CV Mitra Jaya",
+      "Kabel Data 5 Meter",
+      "Direct",
+      5,
+      415000,
+      2075000
+     ],
+     [
+      "2026-08-03",
+      "SO-2026-4298",
+      "PT Sinar Abadi Nusantara",
+      "Modul Konektivitas LTE",
+      "Reseller",
+      21,
+      118000,
+      2478000
+     ],
+     [
+      "2026-08-04",
+      "SO-2026-4299",
+      "CV Amanah Sejahtera",
+      "Perangkat Sensor Suhu",
+      "Retail",
+      19,
+      423000,
+      8037000
+     ]
+    ],
+    "total_row": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "Total",
+     583149000
+    ]
+   },
+   {
+    "type": "footnote",
+    "text": "Sumber: tabel fact_orders. Nilai transaksi belum termasuk pajak."
+   }
+  ]
+ }
+}

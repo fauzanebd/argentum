@@ -40,26 +40,47 @@ zero tests.**
 > `T-16` tests the fabrication rule and nothing else in the guardrail engine.
 > Both remain `T-02`'s to finish.
 
+> **Updated after `T-R2` (2026-07-27):** **12 of 44 packages have tests.**
+> `internal/report/pdf` and `internal/report/spec` are new (the first arrives
+> covered, the second is exercised through the renderer's fixtures);
+> `internal/report/format` and `internal/tools/document` grew a second test file
+> each. The count also picks up `internal/report/theme`, which `T-R1` added and
+> did not record here — measured with `go list ./...`, not counted by hand.
+>
+> The new coverage is a different shape from the rest of this table and worth
+> naming, because `T-R3` and `T-R4` will need the same trick. A rendered PDF
+> encodes its text as subset glyph ids, so nothing downstream — not grep, not
+> pdfcpu — can read a heading back out of one. The layout assertions instead
+> walk maroto's component tree through an unexported `build()` that lays the
+> document out without generating it, which is how "the running header is on
+> every page except the cover" and "the table header repeats and is never
+> orphaned" are tested at all rather than by eye.
+>
+> What that still cannot see is whether a page is *ugly*. `pdftoppm` on the
+> written fixtures is the manual half of the gate and has no substitute.
+
 ## Go backend — package by package
 
-### Packages with tests (10)
+### Packages with tests (12)
 
 | Package                        | Test file(s)                                       | What it covers                       |
 | ------------------------------ | -------------------------------------------------- | ------------------------------------ |
 | `internal/llmclient`           | `factory_test.go`                                  | LLM client construction per interface |
 | `internal/metabase`            | `postgres_dsn_test.go`, `sqlserver_dsn_test.go`     | DSN string building for Metabase sync |
-| `internal/tools/document`      | `render_test.go`                                    | PDF / XLSX / CSV rendering            |
-| `internal/report/format`       | `parse_test.go`                                     | Number parsing in both locales, magnitude suffixes (Juta/Miliar/Triliun, K/M/B), and the comparator that must reject the C-1 fabrication at every tolerance |
+| `internal/tools/document`      | `render_test.go`, `convert_test.go`                 | PDF / XLSX / CSV rendering, and the two conversions between the tool's v1 types and the renderer spec — including that XLSX and CSV cells stay raw, because nobody sums a column of "Rp 1.234.567,00" (`T-R2`) |
+| `internal/report/format`       | `parse_test.go`, `format_test.go`                   | Number parsing in both locales, magnitude suffixes (Juta/Miliar/Triliun, K/M/B), and the comparator that must reject the C-1 fabrication at every tolerance. `T-R2` added the writing direction — currency conventions, percent precision, compaction, dates, column type inference — and a round-trip over every locale × currency × compact combination, which is the assertion that keeps the eval comparator and the renderer agreeing about what a number is |
+| `internal/report/pdf`          | `render_test.go`                                    | Four fixtures plus a v1 spec: `pdfcpu` validation, byte-identical reruns, embedded faces with no Helvetica, a clean cover with the header running from page 2, a 200-row table whose header repeats without orphans, locale-formatted cells, and content-weighted column widths (`T-R2`) |
 | `internal/eval`                | `score_test.go`, `case_test.go`                     | Scoring per assertion kind, the Indonesian/English heuristic, and a validity + category-coverage check over the shipped golden set |
 | `internal/app`                 | `metering_llm_test.go`                              | `MeteredLLM` streaming usage: metadata path, HTTP-tap fallback, and the unbilled-turn warning (`T-02c`) |
 | `internal/llmusage`            | `transport_test.go`                                 | SSE usage parsing and cache-token normalisation (`T-02c`) |
 | `internal/agentbudget`         | `budget_test.go`                                    | Budget dimensions, the refusal payload, sticky exhaustion, and what counts as evidence of retrieved data (`T-16`) |
 | `internal/guardrails`          | `fabrication_test.go`                               | What counts as a stated figure — both observed fabrications must trip it, refusals and years must not — and the replacement message's cause and language (`T-16`) |
 | `internal/tools`               | `run_sql_test.go`                                   | The zero-row and truncation notes on a `run_sql` payload (`T-16`) |
+| `internal/report/theme`        | `theme_test.go`                                     | The generated tokens match `tokens.json`, so a hand edit to `tokens_gen.go` fails `go test` before it reaches the `tokens` CI job (`T-R1`) |
 
-All ten pass.
+All twelve pass.
 
-### Packages with no tests (31)
+### Packages with no tests (32)
 
 Ranked by risk — how much damage a silent regression here would do.
 

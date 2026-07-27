@@ -204,7 +204,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		logrus.WithError(err).Warn("storage disabled; generate_document tool will not be registered")
 	} else if storageSvc != nil {
 		presignTTL := time.Duration(cfg.DocumentPresignTTLSecs) * time.Second
-		s.Tools = append(s.Tools, tools.NewGenerateDocumentTool(storageSvc, documentRepo, s.UsageSvc, presignTTL))
+		s.Tools = append(s.Tools, tools.NewGenerateDocumentTool(storageSvc, documentRepo, s.Companies, s.UsageSvc, presignTTL))
 		logrus.WithFields(logrus.Fields{
 			"bucket":   cfg.MinIOBucket,
 			"endpoint": cfg.MinIOEndpoint,

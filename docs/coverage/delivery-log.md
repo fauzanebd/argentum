@@ -251,6 +251,51 @@ corrupt one stops the worker at boot rather than a customer's document at render
 
 Record: [`design-tokens.md`](design-tokens.md).
 
+`T-R2` PDF renderer v2
+
+The ticket the report track exists for. `generate_document` still produces the
+same three formats from the same tool call; what changed is that a PDF now has a
+cover, a running header, `Page N of M` in the document's own language, numbered
+sections, KPI cards, callouts, and tables whose columns are measured against
+their content instead of being the 12-unit grid divided evenly.
+
+The part worth stating plainly is what moved, not what was added. **Formatting
+left the model.** A v2 table cell carries a value and a type — `3863405700`,
+`currency` — and the renderer decides that it reads `Rp 3.863.405.700`, with the
+same separators and the same decimal count as every other cell in its column,
+whatever the model felt like that turn. That is most of the difference between a
+table that looks designed and one that looks dumped, and it removes a job the
+model was doing inconsistently.
+
+Compatibility is not a shim. `spec.Column` and `spec.Cell` unmarshal from both
+the v1 and v2 JSON shapes, so a v1 payload *is* a v2 document whose cells are
+all text; `spec_version: 2` only decides whether the renderer offers the chrome.
+`internal/tools/document/render_test.go` is unchanged and passes against the new
+renderer, which was the ticket's own definition of the shim working.
+
+Three things this ticket found:
+
+- **The 200-row export fixture paid for itself four times.** Unbreakable tokens
+  drawn over the column to their right, a stride sampler that measured every
+  k-th row and missed a whole category of value, a grid distribution biased
+  against wide columns, and integer rounding that clipped cells by under a
+  millimetre. None of the other three fixtures would have surfaced any of them,
+  and the export's own hand-rolled random data was correlated in a way that had
+  nearly hidden the second.
+- **`internal/report/format` was wrong in the one way it is not allowed to be.**
+  `Parse` could not read back `-Rp 1.234` — the minus sits in front of the
+  currency symbol and the parser only stripped symbols from the front of the
+  string. The eval comparator (`T-01`) and the report renderer disagreeing about
+  what a number is, in the single package built to stop exactly that. A
+  round-trip test over every locale × currency × compact combination now pins it.
+- **Byte-stability needed a global in a dependency.** gofpdf writes its font
+  catalogue in Go map order, so the same spec rendered twice produced identical
+  pages with the font objects renumbered.  `SetDefaultCatalogSort(true)` is
+  gofpdf's own switch for this and the only way to reach a document maroto
+  builds internally.
+
+Record, gate output and known limits: [`report-rendering.md`](report-rendering.md).
+
 ---
 
 ## What the history says about how this project is built

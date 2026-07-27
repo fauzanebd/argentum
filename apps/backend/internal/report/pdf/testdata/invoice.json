@@ -1,0 +1,60 @@
+{
+  "spec_version": 2,
+  "format": "pdf",
+  "filename": "invoice-2026-0417.pdf",
+  "title": "Invoice 2026-0417",
+  "locale": "en",
+  "currency": "USD",
+  "generated_at": "2026-07-27T09:30:00Z",
+  "meta": {
+    "author": "Argentum Analytics Pte Ltd",
+    "subject": "Invoice 2026-0417 — Meridian Logistics"
+  },
+  "content": {
+    "sections": [
+      {
+        "type": "heading",
+        "level": 1,
+        "text": "Invoice 2026-0417"
+      },
+      {
+        "type": "key_value",
+        "items": [
+          { "k": "Billed to", "v": "Meridian Logistics Pte Ltd, 8 Marina View #22-01, Asia Square Tower 2, Singapore 018961" },
+          { "k": "Invoice date", "v": "2026-07-27" },
+          { "k": "Due date", "v": "2026-08-26" },
+          { "k": "Payment terms", "v": "Net 30" },
+          { "k": "Purchase order", "v": "MLG-PO-88214" }
+        ]
+      },
+      {
+        "type": "table",
+        "columns": [
+          { "label": "Description", "fmt": "text", "width_weight": 3.2 },
+          { "label": "Period", "fmt": "text" },
+          { "label": "Qty", "fmt": "number" },
+          { "label": "Unit price", "fmt": "currency" },
+          { "label": "Amount", "fmt": "currency" }
+        ],
+        "rows": [
+          ["Argentum platform subscription — Business tier", "Jul 2026", 1, 2400, 2400],
+          ["Additional data source connections beyond the three included in the tier", "Jul 2026", 4, 180, 720],
+          ["Scheduled report delivery add-on", "Jul 2026", 1, 240, 240],
+          ["Onboarding and schema mapping, professional services", "Jun–Jul 2026", 12, 145, 1740],
+          ["Priority support retainer", "Jul 2026", 1, 500, 500]
+        ],
+        "total_row": ["Total due", "", "", "", 5600]
+      },
+      {
+        "type": "callout",
+        "tone": "info",
+        "title": "Payment instructions",
+        "text": "Transfer to Argentum Analytics Pte Ltd, DBS Bank Singapore, account 072-901188-4, SWIFT DBSSSGSG. Quote invoice number 2026-0417 in the reference field. Late payment beyond the due date accrues interest at 1.5% per month."
+      },
+      {
+        "type": "footnote",
+        "text": "This invoice is issued electronically and is valid without signature. GST is not chargeable — Argentum Analytics Pte Ltd is not GST-registered."
+      }
+    ]
+  }
+}

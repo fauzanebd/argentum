@@ -1,0 +1,106 @@
+{
+  "spec_version": 2,
+  "format": "pdf",
+  "filename": "laporan-penjualan-2026.pdf",
+  "title": "Laporan Penjualan Bulanan",
+  "locale": "id",
+  "currency": "IDR",
+  "generated_at": "2026-07-27T09:30:00Z",
+  "meta": {
+    "author": "PT Sinar Abadi Nusantara",
+    "subject": "Ringkasan penjualan Januari–Desember 2026",
+    "keywords": "penjualan, bulanan, laporan"
+  },
+  "content": {
+    "sections": [
+      {
+        "type": "cover",
+        "text": "Laporan Penjualan Bulanan",
+        "subtitle": "Ringkasan pendapatan, transaksi, dan nilai pesanan rata-rata per bulan",
+        "period": "JANUARI – DESEMBER 2026",
+        "prepared_for": "Dewan Direksi",
+        "prepared_by": "PT Sinar Abadi Nusantara",
+        "confidentiality": "Rahasia — Internal"
+      },
+      {
+        "type": "heading",
+        "level": 1,
+        "text": "Ringkasan Eksekutif"
+      },
+      {
+        "type": "kpi_row",
+        "items": [
+          { "label": "Total Pendapatan", "value": 3863405700, "fmt": "currency", "delta_pct": 12.4 },
+          { "label": "Jumlah Transaksi", "value": 48219, "fmt": "number", "delta_pct": 8.1 },
+          { "label": "Nilai Pesanan Rata-rata", "value": 80122, "fmt": "currency", "delta_pct": 4.0 },
+          { "label": "Tingkat Pembatalan", "value": 3.4, "fmt": "percent", "delta_pct": 0.6, "higher_is_better": false }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "text": "Pendapatan tahun berjalan mencapai Rp 3,86 miliar, naik 12,4% dibanding periode yang sama tahun lalu. Pertumbuhan terkuat terjadi pada kuartal kedua, dipicu kampanye Ramadan yang menaikkan jumlah transaksi sebesar 21% pada bulan Maret dan April. Nilai pesanan rata-rata tumbuh lebih lambat daripada volume, yang menunjukkan bahwa pertumbuhan datang dari pelanggan baru dengan keranjang belanja lebih kecil, bukan dari kenaikan belanja pelanggan lama."
+      },
+      {
+        "type": "callout",
+        "tone": "warn",
+        "title": "Tingkat pembatalan naik 0,6 poin",
+        "text": "Kenaikan terkonsentrasi pada kanal marketplace di bulan September dan Oktober. Angka ini perlu ditelusuri sebelum target kuartal keempat ditetapkan."
+      },
+      {
+        "type": "heading",
+        "level": 1,
+        "text": "Rincian Bulanan"
+      },
+      {
+        "type": "table",
+        "caption": "Pendapatan, transaksi, dan nilai pesanan rata-rata per bulan",
+        "columns": [
+          { "label": "Bulan", "fmt": "text" },
+          { "label": "Pendapatan", "fmt": "currency" },
+          { "label": "Transaksi", "fmt": "number" },
+          { "label": "Nilai Rata-rata", "fmt": "currency" },
+          { "label": "Pertumbuhan", "fmt": "percent" }
+        ],
+        "rows": [
+          ["Januari", 268431200, 3612, 74316, 3.1],
+          ["Februari", 251902800, 3388, 74352, -6.2],
+          ["Maret", 342118900, 4471, 76519, 35.8],
+          ["April", 358774100, 4602, 77960, 4.9],
+          ["Mei", 311204600, 4015, 77510, -13.3],
+          ["Juni", 296880400, 3844, 77231, -4.6],
+          ["Juli", 318442700, 4090, 77859, 7.3],
+          ["Agustus", 329105300, 4188, 78583, 3.3],
+          ["September", 341776200, 4301, 79465, 3.8],
+          ["Oktober", 358990100, 4436, 80926, 5.0],
+          ["November", 331218400, 4051, 81762, -7.7],
+          ["Desember", 354556000, 4221, 83998, 7.1]
+        ],
+        "total_row": ["Total", 3863405700, 48219, 80122, 12.4]
+      },
+      {
+        "type": "footnote",
+        "text": "Sumber: tabel fact_sales pada sumber data Penjualan, difilter pada status = 'completed'. Pertumbuhan dihitung terhadap bulan sebelumnya; baris total dihitung terhadap tahun sebelumnya."
+      },
+      {
+        "type": "heading",
+        "level": 1,
+        "text": "Catatan Metodologi"
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "text": "Perlakuan pesanan yang dibatalkan"
+      },
+      {
+        "type": "paragraph",
+        "text": "Pesanan yang dibatalkan dikeluarkan dari pendapatan namun tetap dihitung dalam tingkat pembatalan. Pengembalian dana yang diproses setelah akhir bulan dicatat pada bulan pesanan dibuat, bukan bulan pengembalian, sehingga angka bulan berjalan dapat berubah hingga tiga puluh hari."
+      },
+      {
+        "type": "callout",
+        "tone": "good",
+        "title": "Rekonsiliasi selesai",
+        "text": "Seluruh angka pada laporan ini telah dicocokkan dengan buku besar per 26 Juli 2026."
+      }
+    ]
+  }
+}

@@ -38,7 +38,7 @@ the authoritative order.
 | ----- | ------- | ---- | -------- |
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
-| 1a — worth forwarding | ~~`T-R1`~~, `T-R2`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` landed 2026-07-27** — one `tokens.json` now generates the dashboard's CSS variables and the backend's Go report theme, with a CI drift gate and Space Grotesk embedded in every PDF: [`../coverage/design-tokens.md`](../coverage/design-tokens.md). |
+| 1a — worth forwarding | ~~`T-R1`~~, ~~`T-R2`~~, `T-R3`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). |
 | 1b — safe to change | `T-02`, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. |
 | 2→6 | unchanged | — | Metric registry → watchers → actions → API/MCP → hardening. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Expected to move to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
@@ -469,17 +469,60 @@ wild keep working:
   new path. Do not leave two renderers.
 
 **Acceptance:**
-- [ ] Cover, running header, footer with `Page N of M` all render
-- [ ] A 200-row table pages correctly with a repeating header and no orphaned header
-- [ ] Numeric columns right-aligned with consistent decimals; `id` locale renders rupiah correctly
-- [ ] v1 specs still render (shim proven by the existing tests, unmodified)
-- [ ] Two runs with the same spec and a fixed `generated_at` produce identical bytes
-- [ ] `pdfcpu validate` passes on every fixture (pdfcpu is already an indirect dep)
-- [ ] No Helvetica anywhere in the output — fonts are the embedded faces
+- [x] Cover, running header, footer with `Page N of M` all render — and in the document's locale: an `id` report says `Halaman 2 dari 17`
+- [x] A 200-row table pages correctly with a repeating header and no orphaned header — 17 pages, header on 16 (page 1 is the cover), asserted structurally
+- [x] Numeric columns right-aligned with consistent decimals; `id` locale renders rupiah correctly
+- [x] v1 specs still render (shim proven by the existing tests, unmodified) — `internal/tools/document/render_test.go` is byte-for-byte unchanged and passes against the new renderer
+- [x] Two runs with the same spec and a fixed `generated_at` produce identical bytes — needed `gofpdf.SetDefaultCatalogSort(true)`, see below
+- [x] `pdfcpu validate` passes on every fixture — in-process via `pdfcpu/pkg/api`, relaxed mode, which is what the CLI defaults to
+- [x] No Helvetica anywhere in the output — fonts are the embedded faces
 
 **Gate:** render four fixtures — monthly sales report, invoice, KPI summary,
 200-row export — and attach a PNG of page 1 and one interior page of each. Paste
 `pdfcpu validate` output and the byte-identical rerun hash.
+
+**Gate met 2026-07-27.** Output, page counts and hashes in
+[`../coverage/report-rendering.md`](../coverage/report-rendering.md). Worth
+carrying forward:
+
+- **The v1 shim is two `UnmarshalJSON` methods, not a translation layer.**
+  `spec.Column` and `spec.Cell` each accept the v1 and v2 shapes, so a v1
+  payload *is* a v2 document whose cells are all text. `spec_version` only
+  decides what the renderer offers — a spec that has been producing a plain
+  document for three months keeps producing one.
+- **The cover's clean page is an ordering constraint, not a flag.** maroto's
+  `RegisterHeader` adds header rows to whichever page is current, so there is no
+  "from page 2". The cover is drawn, the page is flushed with an empty
+  `AddPages`, then the footer and header are registered — footer first, because
+  `RegisterHeader`'s fit check reads the footer height.
+- **Layout needs text metrics before maroto exists.** `measure.go` keeps a
+  second gofpdf document that draws nothing, built the way maroto builds its
+  own, and transcribes maroto's unexported line-breaking function. An
+  approximation here is a row that clips its own text.
+- **Byte-stability needed a global.** gofpdf writes its font catalogue in Go map
+  order; the same spec rendered twice produced identical pages with the font
+  objects renumbered. `gofpdf.SetDefaultCatalogSort(true)` in the package's
+  `init` is the only way to reach a document maroto constructs internally.
+- **The 200-row fixture found four layout bugs the other three could not** —
+  unbreakable tokens overflowing their column, a stride sampler that measured
+  the wrong rows, a grid distribution biased against wide columns, and rounding
+  that clipped cells by under a millimetre. All four are recorded with their
+  causes in the coverage note. It also found that the fixture's own hand-rolled
+  LCG produced correlated data, which had nearly masked the second one.
+- **`internal/report/format` was wrong in both directions and neither would have
+  shown up in a document.** Compact form honoured rupiah's zero decimal places
+  and rendered 3,863,405,700 as `Rp 4 Miliar`; `Parse` could not read the
+  `-Rp 1.234` the formatter had just written, because the minus sits in front of
+  the symbol. The second one is precisely the failure the shared package exists
+  to prevent — `T-01`'s comparator and this renderer disagreeing about what a
+  number is — and it was there from the first commit of the formatting
+  direction. A round-trip test over every locale × currency × compact
+  combination now pins it.
+- **Eight columns of long text do not fit on A4 and the renderer does not
+  pretend.** Numbers, dates and unbreakable keys are served first and stay
+  intact; prose columns truncate visibly. `T-R4` inherits the same problem with
+  less room, so the character-budget approach in that ticket should start from
+  `fitText` rather than from scratch.
 
 ---
 

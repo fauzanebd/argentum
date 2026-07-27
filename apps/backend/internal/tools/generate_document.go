@@ -14,6 +14,8 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/report/pdf"
+	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/fauzanebd/argentum/internal/tools/document"
 )
@@ -27,6 +29,7 @@ import (
 type GenerateDocumentTool struct {
 	storage    *storage.StorageService
 	repo       domain.DocumentRepository
+	companies  domain.CompanyRepository
 	recorder   UsageRecorder
 	presignTTL time.Duration
 }
@@ -34,6 +37,7 @@ type GenerateDocumentTool struct {
 func NewGenerateDocumentTool(
 	st *storage.StorageService,
 	repo domain.DocumentRepository,
+	companies domain.CompanyRepository,
 	recorder UsageRecorder,
 	presignTTL time.Duration,
 ) *GenerateDocumentTool {
@@ -46,6 +50,7 @@ func NewGenerateDocumentTool(
 	return &GenerateDocumentTool{
 		storage:    st,
 		repo:       repo,
+		companies:  companies,
 		recorder:   recorder,
 		presignTTL: presignTTL,
 	}
@@ -58,18 +63,31 @@ func (t *GenerateDocumentTool) Description() string {
 Generate a downloadable document (PDF, XLSX, or CSV) from a structured spec and return a presigned download URL. Generic-purpose: use for invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports — anything the user wants to download as a file.
 
 Pick the format that matches the request:
-- "pdf"  for invoices, agreements, narrative documents, anything print-ready (use content.sections; optionally a single content.table).
+- "pdf"  for invoices, agreements, reports, anything print-ready (use content.sections; optionally a single content.table).
 - "xlsx" for spreadsheets (use content.table for a single sheet, content.sheets for multi-sheet).
 - "csv"  for raw tabular data (must use content.table).
 
-content.sections is an ordered list. Each section has a "type":
-- "heading"     {text}                       → section title
-- "paragraph"   {text}                       → wrapped paragraph
-- "key_value"   {items:[{k,v}, ...]}         → label/value rows (great for invoice / agreement headers)
-- "table"       {columns:[...], rows:[[...]]} → bordered table
-- "spacer"      {size}                       → vertical gap in mm
+SET "spec_version": 2 FOR ANY PDF. It turns on the branded layout: cover page, running header, "Page N of M" footer, numbered headings, KPI cards, and typed table cells. Without it you get a plain document.
 
-Always pass row cells as strings; format numbers/dates yourself before calling. Keep tables under ~8 columns for readability in PDF.
+content.sections is an ordered list. Each section has a "type":
+- "cover"      {text, subtitle, period, prepared_for, prepared_by, confidentiality} → full cover page. One per document, first in the list.
+- "heading"    {text, level: 1|2}            → numbered section heading
+- "paragraph"  {text}                        → justified body copy
+- "kpi_row"    {items:[{label, value, delta_pct, higher_is_better}, ...]} → 2-4 headline-number cards. delta_pct is a percentage (12.5 = +12.5%). Set higher_is_better:false for metrics where a rise is bad (churn, cost).
+- "table"      {columns:[...], rows:[[...]], total_row:[...], caption} → ruled table with zebra bands
+- "callout"    {tone: info|warn|good, title, text} → tinted box for a caveat or a headline finding
+- "key_value"  {items:[{k,v}, ...]}          → label/value rows (invoice and agreement headers)
+- "footnote"   {text}                        → small muted source/methodology line
+- "page_break" {}                            → start a new page
+
+TABLE CELLS: pass raw values and let the renderer format them. A column may declare its type once:
+  "columns": [{"label":"Month","fmt":"date"}, {"label":"Revenue","fmt":"currency"}, {"label":"Growth","fmt":"percent"}]
+  "rows": [["2026-05-01", 3863405700, 12.5], ...]
+fmt is one of text|number|currency|percent|date. A single cell can override with {"v": 1234, "fmt": "currency"}.
+DO NOT pre-format numbers into strings like "Rp 3.863.405.700" or "12.5%" — the renderer applies the tenant's currency, separators and decimal places, and does it consistently down the whole column. Pass 3863405700 and 12.5.
+Set "locale": "id" or "en" and "currency" (ISO 4217, e.g. "IDR") when the document's language or currency differs from the company default.
+
+Keep tables under ~8 columns; wider than that does not read on A4.
 
 Returns JSON with download_url (presigned, expires after ~1 hour). Embed the URL as a markdown link, e.g. [Download invoice.pdf](url). Never show the raw URL alone.`)
 }
@@ -97,6 +115,28 @@ func (t *GenerateDocumentTool) Parameters() map[string]interfaces.ParameterSpec 
 			Description: "Document body. One of: {table:{columns,rows}}, {sections:[...]}, or {sheets:[{name,columns,rows}, ...]}. See tool description for shapes.",
 			Required:    true,
 		},
+		"spec_version": {
+			Type:        "integer",
+			Description: "Set to 2 for any PDF: enables the branded layout (cover, running header, page numbers, KPI cards, typed table cells). Omit for the plain legacy layout.",
+			Required:    false,
+			Enum:        []interface{}{1, 2},
+		},
+		"locale": {
+			Type:        "string",
+			Description: "Number, date and currency conventions: \"id\" (1.234.567,89 · Rp · 27 Juli 2026) or \"en\" (1,234,567.89 · $ · 27 July 2026). Defaults to the company's currency convention.",
+			Required:    false,
+			Enum:        []interface{}{"id", "en"},
+		},
+		"currency": {
+			Type:        "string",
+			Description: "ISO 4217 code for currency-formatted cells, e.g. IDR or USD. Defaults to the company's configured currency.",
+			Required:    false,
+		},
+		"meta": {
+			Type:        "object",
+			Description: "PDF document properties: {author, subject, keywords}. Optional — author defaults to the company name.",
+			Required:    false,
+		},
 	}
 }
 
@@ -105,12 +145,15 @@ func (t *GenerateDocumentTool) Run(ctx context.Context, input string) (string, e
 }
 
 func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string, error) {
-	var spec document.Spec
-	if err := json.Unmarshal([]byte(args), &spec); err != nil {
+	// One decode for both spec versions: spec.Column and spec.Cell unmarshal
+	// from the v1 shapes as well as the v2 ones, so there is no branch here
+	// and no second parser to keep in step with the first.
+	var input spec.Document
+	if err := json.Unmarshal([]byte(args), &input); err != nil {
 		return "", fmt.Errorf("parse parameters: %w", err)
 	}
-	spec.Format = strings.ToLower(strings.TrimSpace(spec.Format))
-	if err := spec.Validate(); err != nil {
+	input.Normalize()
+	if err := input.Validate(); err != nil {
 		return "", err
 	}
 
@@ -123,8 +166,8 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 		return "", fmt.Errorf("no thread in context: cannot generate document")
 	}
 
-	format := domain.DocumentFormat(spec.Format)
-	data, err := renderForFormat(&spec)
+	format := domain.DocumentFormat(input.Format)
+	data, err := t.render(ctx, &input, companyID)
 	if err != nil {
 		return "", err
 	}
@@ -134,7 +177,7 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 	// no orphan DB row.
 	docID := uuid.New().String()
 	storageKey := fmt.Sprintf("documents/%s/%s/%s.%s", companyID, threadID, docID, format.Extension())
-	filename := normalizeFilename(spec.Filename, spec.Title, format)
+	filename := normalizeFilename(input.Filename, input.Title, format)
 
 	if _, err := t.storage.UploadKey(ctx, storageKey, bytes.NewReader(data), format.ContentType()); err != nil {
 		return "", fmt.Errorf("upload document: %w", err)
@@ -153,7 +196,7 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 		return "", fmt.Errorf("persist document: %w", err)
 	}
 
-	t.recorder.RecordDocument(ctx, companyID, threadID, spec.Format)
+	t.recorder.RecordDocument(ctx, companyID, threadID, input.Format)
 
 	expiresAt := time.Now().Add(t.presignTTL)
 	signed, err := t.storage.PresignKey(ctx, storageKey, t.presignTTL)
@@ -165,13 +208,13 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 		"company_id":  companyID,
 		"thread_id":   threadID,
 		"document_id": doc.ID,
-		"format":      spec.Format,
+		"format":      input.Format,
 		"size":        doc.SizeBytes,
 	}).Info("Generated document")
 
 	out, _ := json.Marshal(map[string]interface{}{
 		"document_id":  doc.ID,
-		"format":       spec.Format,
+		"format":       input.Format,
 		"filename":     filename,
 		"download_url": signed,
 		"expires_at":   expiresAt.UTC().Format(time.RFC3339),
@@ -181,16 +224,43 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 	return string(out), nil
 }
 
-func renderForFormat(spec *document.Spec) ([]byte, error) {
-	switch spec.Format {
+// render dispatches to the format's renderer.
+//
+// The PDF path is the only one that reads company settings. A spreadsheet and
+// a CSV are data, and a tenant's currency symbol pasted into a cell someone
+// wants to sum is a formatting decision made in the wrong place.
+func (t *GenerateDocumentTool) render(ctx context.Context, doc *spec.Document, companyID string) ([]byte, error) {
+	switch doc.Format {
 	case "pdf":
-		return document.RenderPDF(spec)
+		return pdf.Render(doc, t.pdfOptions(ctx, companyID))
 	case "xlsx":
-		return document.RenderXLSX(spec)
+		return document.RenderXLSX(document.FromReportSpec(doc))
 	case "csv":
-		return document.RenderCSV(spec)
+		return document.RenderCSV(document.FromReportSpec(doc))
 	}
-	return nil, fmt.Errorf("unsupported format %q", spec.Format)
+	return nil, fmt.Errorf("unsupported format %q", doc.Format)
+}
+
+// pdfOptions fills in what the model does not know: the tenant's legal name
+// and its default currency. A failed lookup is logged and not fatal — a
+// document with Argentum's own mark on it beats an error where a report was
+// asked for, and T-R5 is what turns this into real branding.
+func (t *GenerateDocumentTool) pdfOptions(ctx context.Context, companyID string) pdf.Options {
+	opts := pdf.Options{}
+	if t.companies == nil {
+		return opts
+	}
+	company, err := t.companies.GetByID(ctx, companyID)
+	if err != nil || company == nil {
+		if err != nil {
+			logrus.WithError(err).WithField("company_id", companyID).
+				Warn("generate_document: company lookup failed; rendering with defaults")
+		}
+		return opts
+	}
+	opts.Brand.Name = company.Name
+	opts.Currency = company.DefaultCurrency
+	return opts
 }
 
 func normalizeFilename(suggested, title string, format domain.DocumentFormat) string {

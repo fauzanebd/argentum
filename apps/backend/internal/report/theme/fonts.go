@@ -115,13 +115,16 @@ func CustomFonts() ([]*entity.CustomFont, error) {
 	return fonts, nil
 }
 
-// MarotoConfig is the document baseline every PDF renders against: A4, the
-// theme's margins, the embedded family as the default font, and body text at
-// the type scale's body size in the theme's foreground colour.
+// ConfigBuilder is the document baseline every PDF renders against: A4, the
+// theme's margins, the embedded family as the default font, body text at the
+// type scale's body size in the theme's foreground colour, and the fine grid.
 //
-// Anything a renderer does not override comes from here, so a section that
-// forgets to name a size or a colour still lands inside the design system.
-func MarotoConfig() (*entity.Config, error) {
+// It returns the builder rather than the built config because the parts a
+// document differs on — its title, its author, its page-number pattern, when
+// it was generated — are the renderer's business and not the design system's.
+// Anything the renderer does not add comes from here, so a section that forgets
+// to name a size or a colour still lands inside the design system.
+func ConfigBuilder() (config.Builder, error) {
 	fonts, err := CustomFonts()
 	if err != nil {
 		return nil, err
@@ -132,12 +135,21 @@ func MarotoConfig() (*entity.Config, error) {
 		WithRightMargin(Page.Margin).
 		WithTopMargin(Page.Margin).
 		WithBottomMargin(Page.Margin).
+		WithMaxGridSize(GridCols).
 		WithCustomFonts(fonts).
 		WithDefaultFont(&props.Font{
 			Family: FontBody,
 			Style:  fontstyle.Normal,
 			Size:   TypeScale.Body,
 			Color:  ColorForeground.Props(),
-		}).
-		Build(), nil
+		}), nil
+}
+
+// MarotoConfig is ConfigBuilder built, for callers with nothing to add.
+func MarotoConfig() (*entity.Config, error) {
+	b, err := ConfigBuilder()
+	if err != nil {
+		return nil, err
+	}
+	return b.Build(), nil
 }
