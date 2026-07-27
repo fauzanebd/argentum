@@ -65,6 +65,8 @@ docs/
 │   ├── test-coverage.md          Measured test state + CI gaps
 │   ├── api-surface.md            Endpoint + tool inventory
 │   ├── delivery-log.md           What has been shipped, chronologically
+│   ├── eval-baseline.md          Agent answer quality: the number to beat
+│   ├── environment-notes.md      T-00 smoke test + local environment findings
 │   └── migration-notes.md        T-00b migration record + remaining steps
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals

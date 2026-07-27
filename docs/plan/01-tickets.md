@@ -37,7 +37,7 @@ the authoritative order.
 | Phase | Tickets | Days | Why here |
 | ----- | ------- | ---- | -------- |
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
-| 1 — trust the numbers | `T-01`, `T-02c`, `T-16` | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. |
+| 1 — trust the numbers | ~~`T-01`~~, `T-02c`, `T-16` | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **`T-01` landed 2026-07-27 — baseline 96.8%, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md).** |
 | 1a — worth forwarding | `T-R1`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. |
 | 1b — safe to change | `T-02`, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. |
 | 2→6 | unchanged | — | Metric registry → watchers → actions → API/MCP → hardening. |

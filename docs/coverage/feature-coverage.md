@@ -139,5 +139,5 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Billing / monetization      | ██░░░░░░░░   | Tracks cost, cannot charge or cap it.                         |
 | Platform / agent-callable   | ██░░░░░░░░   | No machine auth, no MCP, no outbound webhooks.               |
 | Embeddability               | ░░░░░░░░░░   | Zero. Argentum lives only in its own dashboard and in chat apps. |
-| Testing / evaluation        | █░░░░░░░░░   | 3/35 packages. No answer-quality measurement at all.          |
+| Testing / evaluation        | ███░░░░░░░   | 5/37 packages, still zero on every CRITICAL one (`T-02`). But answer quality is now measured: `make eval` scores 31 golden questions through the real agent — baseline 96.8%, see [`eval-baseline.md`](eval-baseline.md). |
 | Observability               | ███░░░░░░░   | Logs + counters. No traces, no error tracking, no replay.     |

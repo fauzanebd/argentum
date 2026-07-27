@@ -83,7 +83,8 @@ go run ./cmd/api & go run ./cmd/worker &
 - [ ] Malformed arguments degrade instead of erroring
 - [ ] Missing tenant context is rejected
 - [ ] Usage event recorded, if it costs money
-- [ ] Once T-01 exists: `make eval` — pass rate did not drop
+- [ ] `make eval` — pass rate did not drop below the baseline in
+      [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md)
 
 ### Changed the system prompt or `agents.yaml`
 
@@ -93,10 +94,23 @@ Prompt changes are the highest-variance edits in this codebase. Six historical
 commits changed agent behaviour with no measurement, including one model-default
 reversal. Do not add to that list.
 
-- [ ] Eval pass rate ≥ previous
+As of `T-01` this is a real command, not an aspiration:
+
+```bash
+DB_HOST=localhost DB_PORT=5432 DB_USER=metabase DB_NAME=argentum \
+REDIS_URL=localhost:6385 METABASE_URL=http://localhost:3000 \
+METABASE_PUBLIC_URL=http://localhost:3000 make eval
+```
+
+It takes ~13 minutes and ~$0.03. `cmd/eval` refuses to run against a non-local
+`DB_HOST` (finding `E-2`) — it writes real rows into the control DB. Use
+`-only <category>` while iterating and the full set before you commit.
+
+- [ ] Eval pass rate ≥ the committed baseline (**96.8%**, 30/31, 2026-07-27)
 - [ ] Mean tokens in/out did not increase materially without a stated reason
 - [ ] Indonesian cases still reply in Indonesian
 - [ ] Rupiah magnitude formatting still correct
+- [ ] `eval-baseline.md` updated with the new number, date and model
 
 ### Changed `config/guardrails.yaml`
 
