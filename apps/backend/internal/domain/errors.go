@@ -23,4 +23,10 @@ var (
 	// ErrLastAdmin guards the one state a company cannot recover from through
 	// the UI: nobody left who can invite or promote anyone.
 	ErrLastAdmin = errors.New("cannot remove the last admin")
+
+	// ErrInsufficientCredits is returned instead of starting a turn the
+	// tenant cannot pay for (T-03). It is distinct from ErrUnauthorized
+	// because it maps to 402 rather than 403, and because every channel
+	// answers it with a plain sentence rather than a rejection.
+	ErrInsufficientCredits = errors.New("insufficient credits")
 )

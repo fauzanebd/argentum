@@ -51,7 +51,7 @@ are what this document is for.
 | GET    | `/api/threads/:id`               | JWT  | Thread detail                           |
 | DELETE | `/api/threads/:id`               | JWT  | Delete thread                           |
 | GET    | `/api/threads/:id/messages`      | JWT  | History                                 |
-| POST   | `/api/chat`                      | JWT  | Enqueue a turn (async)                  |
+| POST   | `/api/chat`                      | JWT  | Enqueue a turn (async). **402** when the tenant is out of credit; `budget_warning` on the 202 when close to it (`T-03`) |
 | GET    | `/api/threads/:id/stream`        | JWT  | **WebSocket**; accepts token via `?at=` |
 
 ## Connections
@@ -125,7 +125,7 @@ are what this document is for.
 | Method | Path                                  | Auth | Notes                        |
 | ------ | ------------------------------------- | ---- | ---------------------------- |
 | GET    | `/api/usage/summary`                  | JWT  | Current-month rollup          |
-| GET    | `/api/usage/credits`                  | JWT  | Soft balance (not enforced)    |
+| GET    | `/api/usage/credits`                  | JWT  | Balance + grant. **Enforced** since `T-03` |
 | GET    | `/api/usage/threads`                  | JWT  | Per-thread rows, windowed      |
 | GET    | `/api/usage/threads/:id`              | JWT  | One thread's breakdown         |
 | GET    | `/api/usage/threads/:id/events`       | JWT  | Raw event audit trail          |

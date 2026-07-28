@@ -32,11 +32,17 @@ var DefaultPricing = Pricing{
 	DocumentCost:          0.001,
 }
 
-// UsageService persists usage events and produces summaries.
+// UsageService persists usage events and produces summaries. Credit
+// enforcement (T-03) is opt-in through WithCredits — the zero value records
+// and decrements exactly as it did before, and refuses nothing.
 type UsageService struct {
 	usage   domain.UsageRepository
 	credits domain.CreditsRepository
 	pricing Pricing
+
+	credit      CreditPolicy
+	llmCreds    domain.CompanyLLMCredentialRepository
+	budgetCache BudgetCache
 }
 
 func NewUsageService(usage domain.UsageRepository, credits domain.CreditsRepository, pricing Pricing) *UsageService {

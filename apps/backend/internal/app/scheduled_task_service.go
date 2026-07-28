@@ -9,6 +9,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -44,6 +45,17 @@ type ScheduledTaskService struct {
 	threads   *ThreadService
 	companies domain.CompanyRepository
 	enqueuer  *queue.Enqueuer
+	budget    BudgetChecker
+}
+
+// WithBudget gates each fire on the tenant's credit balance. This is a second
+// integration point for T-03 and not a duplicate of ChatEnqueuer's: a cron
+// tick never passes through ChatEnqueuer, and an unattended schedule on an
+// exhausted tenant is precisely the unbounded spend the ticket exists to
+// stop — nobody is watching it to notice the refusal.
+func (s *ScheduledTaskService) WithBudget(b BudgetChecker) *ScheduledTaskService {
+	s.budget = b
+	return s
 }
 
 func NewScheduledTaskService(
@@ -251,6 +263,21 @@ func (s *ScheduledTaskService) HandleFire(ctx context.Context, taskID string) er
 	}
 	if err := s.repo.AppendRun(ctx, run); err != nil {
 		return fmt.Errorf("open run: %w", err)
+	}
+
+	// After the run row exists, so the refusal is visible in the task's run
+	// history — a schedule that silently stops firing is indistinguishable
+	// from one that broke — and before the user message, so a refused tick
+	// does not append a prompt nobody will ever answer.
+	if s.budget != nil {
+		st, err := s.budget.CheckBudget(ctx, t.CompanyID)
+		if err != nil {
+			logrus.WithError(err).WithField("company_id", t.CompanyID).
+				Warn("scheduled fire: budget check failed; running the task")
+		} else if st.Blocked() {
+			s.failRun(ctx, run, errors.New(CreditsExhaustedMessage))
+			return nil // recorded on the run; an asynq retry would only refuse again
+		}
 	}
 
 	userMsg, err := s.threads.AppendUserMessage(ctx, t.ThreadID, t.Prompt)

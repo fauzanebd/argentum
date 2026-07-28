@@ -19,6 +19,15 @@ type ChatEnqueuer struct {
 	messages  domain.MessageRepository
 	companies domain.CompanyRepository
 	enqueuer  *queue.Enqueuer
+	budget    BudgetChecker
+}
+
+// BudgetChecker is the narrow contract ChatEnqueuer uses to refuse a turn a
+// tenant cannot pay for. Declared here rather than taken as *UsageService so
+// the refusal path is testable without a usage repository, and so nothing
+// else about metering leaks into the enqueue path.
+type BudgetChecker interface {
+	CheckBudget(ctx context.Context, companyID string) (BudgetState, error)
 }
 
 // NewChatEnqueuer wires the dependencies. messages is unused today (kept
@@ -26,6 +35,15 @@ type ChatEnqueuer struct {
 // required for ResolveForPhone / ResolveForUser + AppendUserMessage.
 func NewChatEnqueuer(threads *ThreadService, messages domain.MessageRepository, companies domain.CompanyRepository, enqueuer *queue.Enqueuer) *ChatEnqueuer {
 	return &ChatEnqueuer{threads: threads, messages: messages, companies: companies, enqueuer: enqueuer}
+}
+
+// WithBudget gates every enqueued turn on the tenant's credit balance. The
+// kill switch lives inside the checker (CreditPolicy.Enforce) rather than
+// here, so that a future caller — the /v1 API in T-A1 — cannot get a
+// different answer by wiring itself differently.
+func (s *ChatEnqueuer) WithBudget(b BudgetChecker) *ChatEnqueuer {
+	s.budget = b
+	return s
 }
 
 // ChatInput is the unified input shape across channels. It mirrors the
@@ -92,6 +110,11 @@ type EnqueueResult struct {
 	Thread      *domain.ConversationThread
 	IsNewThread bool
 	UserMsgID   string
+	// BudgetWarning is set only when the turn ran but the tenant is near the
+	// end of their credit. Nil is the ordinary case, which keeps the field
+	// absent from the JSON response rather than shipping a "not warning"
+	// object on every send.
+	BudgetWarning *BudgetState
 }
 
 // CreateDashboardThread creates a fresh empty dashboard thread for the
@@ -108,8 +131,16 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		return nil, err
 	}
 
+	// Before the thread is resolved, not just before the task is enqueued: a
+	// refused turn must not leave a new thread and an orphan user message
+	// behind, which is what a company at zero credits would otherwise
+	// accumulate one per attempt.
+	budget, err := s.checkBudget(ctx, in.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+
 	var resolved *ResolveResult
-	var err error
 
 	switch in.Channel {
 	case domain.ChannelWhatsApp:
@@ -178,10 +209,32 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		return nil, fmt.Errorf("enqueue chat:run: %w", err)
 	}
 
-	return &EnqueueResult{
+	out := &EnqueueResult{
 		TaskID:      taskID,
 		Thread:      thread,
 		IsNewThread: resolved.IsNew,
 		UserMsgID:   userMsg.ID,
-	}, nil
+	}
+	if budget.Verdict == BudgetWarning {
+		warning := budget
+		out.BudgetWarning = &warning
+	}
+	return out, nil
+}
+
+// checkBudget returns the tenant's spend position, or ErrInsufficientCredits
+// wrapped with the message the caller should show. Callers distinguish it
+// with errors.Is and answer in whatever way their channel can.
+func (s *ChatEnqueuer) checkBudget(ctx context.Context, companyID string) (BudgetState, error) {
+	if s.budget == nil {
+		return budgetOK, nil
+	}
+	st, err := s.budget.CheckBudget(ctx, companyID)
+	if err != nil {
+		return budgetOK, fmt.Errorf("check budget: %w", err)
+	}
+	if st.Blocked() {
+		return st, fmt.Errorf("%w: %s", domain.ErrInsufficientCredits, CreditsExhaustedMessage)
+	}
+	return st, nil
 }

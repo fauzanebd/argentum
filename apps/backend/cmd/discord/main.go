@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/signal"
 	"strings"
@@ -52,7 +53,8 @@ func main() {
 	threadRepo := pgctl.NewThreadRepo(controlDB)
 	messageRepo := pgctl.NewMessageRepo(controlDB)
 	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
-	_ = llmCredRepo // kept here so ChatEnqueuer wiring stays consistent with cmd/api
+	usageRepo := pgctl.NewUsageRepo(controlDB)
+	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	discordCredRepo := pgctl.NewCompanyDiscordCredentialRepo(controlDB)
 	allowedUsersRepo := pgctl.NewAllowedDiscordUserRepo(controlDB)
 
@@ -86,7 +88,18 @@ func main() {
 		IdleMinutes:        cfg.ThreadIdleMinutes,
 		SummaryEveryNTurns: cfg.SummaryEveryNTurns,
 	})
-	chatEnq := app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, enq)
+	// This process never runs the agent, so its UsageService exists only to
+	// answer CheckBudget — records are written by the worker. It is built
+	// from the same config as the other two so a Discord user hits the same
+	// wall a dashboard user does (T-03).
+	usageSvc := app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing).
+		WithCredits(app.CreditPolicy{
+			Enforce:       cfg.CreditsEnforcementEnabled,
+			WarnPct:       cfg.CreditsWarningThresholdPct,
+			GrantMicroUSD: cfg.CreditsDefaultGrantMicroUSD(),
+		}, llmCredRepo, app.NewRedisBudgetCache(rdb))
+	chatEnq := app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, enq).
+		WithBudget(usageSvc)
 
 	// --- Discord session manager ---
 	rootCtx, cancelRoot := context.WithCancel(context.Background())
@@ -156,6 +169,15 @@ func (d *dispatcher) Dispatch(ctx context.Context, in discord.InboundMessage) er
 		DiscordChannelID: in.ChannelID,
 		Message:          in.Content,
 	})
+	// A tenant out of credit gets the sentence, not a dropped message. The
+	// error is swallowed after sending because returning it would surface in
+	// the gateway log as a failure, and nothing failed.
+	if errors.Is(err, domain.ErrInsufficientCredits) {
+		if d.sender != nil {
+			_ = d.sender.Send(in.CompanyID, in.ChannelID, app.CreditsExhaustedMessage)
+		}
+		return nil
+	}
 	return err
 }
 

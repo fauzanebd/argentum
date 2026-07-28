@@ -593,6 +593,68 @@ whose reserved number was already spent.
 
 Record, gate output and the limits: [`agent-audit.md`](agent-audit.md).
 
+`T-03` credit enforcement
+
+The balance was decremented and never read. This ticket reads it — before the
+thread is resolved, on every channel, and on every scheduled fire.
+
+The decisions worth carrying forward:
+
+- **The ticket as written was a global outage, and saying so was the work.**
+  Nothing in this system has ever *credited* a company. `company_credits` rows
+  are minted by one writer, `Decrement`, which upserts a negative balance; the
+  grant column defaults to 0 and no code path has ever set it. "Refuse at ≤ 0"
+  against that state refuses every tenant that has ever run a turn, and every
+  tenant that has not has no row at all. So `T-03` ships the starting grant it
+  needs to mean anything — which is also the only possible denominator for the
+  ticket's own "<20% remaining".
+- **The grant is provisioned in Go, not backfilled by a migration.** A SQL
+  backfill freezes the number into an applied migration, and an operator
+  changing `CREDITS_DEFAULT_GRANT_USD` afterwards has two sources of truth that
+  disagree — with the frozen one winning for every company that already
+  existed. It also means this is the first ticket in four that did not have to
+  discover its reserved migration number was already spent.
+- **The check runs before the thread is resolved.** Refusing after
+  `CreateDashboardThread` leaves a thread and an orphan user message per
+  attempt, so a tenant at zero accumulates debris in proportion to how often
+  they retry. The live gate shows threads and messages both unchanged across a
+  refused turn — something the ticket did not ask for.
+- **"Has a primary LLM row" had to be narrowed to "has one carrying a key".**
+  `llmtenant.Resolver.merge` only swaps the API key when `APIKeyEncrypted` is
+  non-empty, so a row overriding just the model still spends the platform key.
+  Read literally, the ticket let any tenant opt out of billing by pinning a
+  model name. Proven live by nulling the key on one row and watching the same
+  company flip 202 → 402.
+- **A second integration point, for the same reason `T-05` needed one.** A
+  cron tick never passes through `ChatEnqueuer`. An unattended schedule on an
+  exhausted tenant is exactly the unbounded spend the ticket exists to stop,
+  because nobody is watching it to notice. The refusal is written onto the run
+  row, because a schedule that silently stops firing is indistinguishable from
+  one that broke.
+- **One refusal sentence shared by four channels**, and the chat channels
+  answer 200 — WhatsApp and Lark retry a non-2xx, and retrying a refusal
+  delivers it several times. The API process grew a Lark client to say it,
+  because until now every Lark reply was written by the worker *after* the
+  agent ran, and a refusal happens before there is anything to enqueue.
+
+The frontend defect the gate caught is the one worth remembering: `/chat` and
+`/chat/$threadId` are two routes rendering the same component, so the send that
+returns a warning also navigates — unmounting one and mounting the other, and
+resetting every `useState` in the file. The first send of a session is exactly
+the case that loses its banner, and exactly the case a near-empty account is in.
+It was found only because the screenshot came back without a banner the API had
+demonstrably returned. This is the third consecutive ticket where the live half
+of the gate found something no unit test could.
+
+A second one worth recording because it wasted a cycle: `pkill` on a `go run`
+wrapper does not kill the child it spawned, so a restarted API silently failed
+to bind and two observations were made against the previous process — with the
+opposite config. `Listening on :8080` in the log is not proof; the *absence* of
+`bind: address already in use` under it is.
+
+Record, gate output and the limits:
+[`credit-enforcement.md`](credit-enforcement.md).
+
 ---
 
 ## What the history says about how this project is built

@@ -8,13 +8,20 @@ import {
 } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Send, Loader2 } from "lucide-react";
+import { Send, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
-import type { Thread, Message, ChatEvent } from "./types";
+import { microToUsd } from "@/features/usage/types";
+import type {
+  Thread,
+  Message,
+  ChatEvent,
+  BudgetWarning,
+  SendMessageResponse,
+} from "./types";
 import { useModels } from "@/lib/use-models";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
@@ -69,6 +76,33 @@ export function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+
+  /**
+   * The credit warning lives in the query cache, not in component state.
+   * `/chat` and `/chat/$threadId` are two routes rendering this same
+   * component, so the very send that produces a warning also navigates —
+   * unmounting one route and mounting the other, which resets every useState
+   * in the file. The first send of a session is exactly the case that would
+   * silently lose its banner. The QueryClient sits above the router, so it
+   * survives; `queryFn` returning null is what the cache holds until a send
+   * writes a real one.
+   *
+   * Dismissing is not sticky on purpose: the banner returns on the next send
+   * that is still near the limit, which is the only moment it is worth
+   * anything.
+   */
+  const { data: budgetWarning = null } = useQuery<BudgetWarning | null>({
+    queryKey: ["budget-warning"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+  const setBudgetWarning = useCallback(
+    (w: BudgetWarning | null) => qc.setQueryData(["budget-warning"], w),
+    [qc],
+  );
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finalReceivedRef = useRef(false);
@@ -214,14 +248,12 @@ export function ChatPage() {
     const targetThreadId = activeThreadId;
 
     try {
-      const res = await api.post<{
-        thread_id: string;
-        is_new_thread: boolean;
-        user_msg_id: string;
-      }>("/chat", {
+      const res = await api.post<SendMessageResponse>("/chat", {
         message: text,
         thread_id: targetThreadId ?? undefined,
       });
+
+      setBudgetWarning(res.data.budget_warning ?? null);
 
       const newThreadId = res.data.thread_id;
       const userMsgId = res.data.user_msg_id;
@@ -299,6 +331,13 @@ export function ChatPage() {
                 inventory, or trends.
               </p>
             </div>
+            {budgetWarning && (
+              <BudgetWarningBanner
+                warning={budgetWarning}
+                onDismiss={() => setBudgetWarning(null)}
+                className="w-full"
+              />
+            )}
             {/* Composer */}
             <ChatComposer
               value={input}
@@ -336,6 +375,13 @@ export function ChatPage() {
               )}
             </div>
           </div>
+          {budgetWarning && (
+            <BudgetWarningBanner
+              warning={budgetWarning}
+              onDismiss={() => setBudgetWarning(null)}
+              className="mx-3 sm:mx-4 mb-2 shrink-0"
+            />
+          )}
           {error && (
             <div className="px-6 py-2 text-sm text-destructive bg-destructive/5 rounded-lg mx-3 sm:mx-4 mb-2 shrink-0">
               {error}
@@ -351,6 +397,50 @@ export function ChatPage() {
         </>
       )}
     </section>
+  );
+}
+
+/* ── Credit warning banner ───────────────────────────────────────────── */
+/** Shown when the workspace is close to the end of its credit grant. The turn
+ *  already ran — this is a heads-up, not a refusal, so it is styled as a
+ *  notice rather than with the destructive palette the error strip uses. */
+function BudgetWarningBanner({
+  warning,
+  onDismiss,
+  className,
+}: {
+  warning: BudgetWarning;
+  onDismiss: () => void;
+  className?: string;
+}) {
+  const balance = microToUsd(warning.balance_micro_usd);
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm",
+        className,
+      )}
+    >
+      <div className="flex-1 min-w-0">
+        <span className="font-medium">
+          {warning.remaining_pct}% of your Argentum credit is left
+        </span>
+        <span className="text-muted-foreground">
+          {" "}
+          — ${balance.toFixed(2)} remaining. Top up before it runs out to keep
+          chat, scheduled reports and the API working.
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss credit warning"
+        className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <X className="size-4" />
+      </button>
+    </div>
   );
 }
 

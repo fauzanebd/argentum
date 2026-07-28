@@ -48,7 +48,7 @@ priority on 2026-07-28. This table is the authoritative order.
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
 | 1a — **done** | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, ~~`T-R4`~~, ~~`T-R5`~~ | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). **`T-R4` landed 2026-07-28** — the same spec projected onto slides, narrative in the speaker notes ([`../coverage/report-deck.md`](../coverage/report-deck.md)). **`T-R5` landed 2026-07-28** — tenant logo, accent, locale and footer on both formats, with a live preview rendered by the renderer itself and a contrast floor a pale brand colour cannot pass ([`../coverage/report-branding.md`](../coverage/report-branding.md)). |
-| 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, ~~`T-05`~~, `T-02b`, `T-03` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). **`T-05` landed 2026-07-28**: one append-only row per tool call, written by a decorator over the whole registry rather than per tool, plus a row for a turn a guardrail stopped — which needed a second integration point, because a guardrail stops a turn before any tool runs ([`../coverage/agent-audit.md`](../coverage/agent-audit.md)). |
+| 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, ~~`T-05`~~, ~~`T-03`~~, `T-02b` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). **`T-05` landed 2026-07-28**: one append-only row per tool call, written by a decorator over the whole registry rather than per tool, plus a row for a turn a guardrail stopped — which needed a second integration point, because a guardrail stops a turn before any tool runs ([`../coverage/agent-audit.md`](../coverage/agent-audit.md)). **`T-03` landed 2026-07-28**: the balance is checked before a turn is queued on every channel and on every scheduled fire, a tenant on their own key is never blocked, and the ticket had to grow a starting grant — because nothing had ever credited a company, so enforcing it as written would have refused every tenant at once ([`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md)). |
 | 1c — callable | `T-13`, `T-A1`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moves here from week 5 — it is the prerequisite, not a week-5 nicety. |
 | 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Moved to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
@@ -71,10 +71,11 @@ Three ordering notes for 1a → 1b → 1c, decided 2026-07-28:
 - **`T-R5` dragged phase 1b forward whether or not the API existed.** It deps
   `T-04`, which deps `T-02`. So 4.5 days of "phase 1b" work was already embedded
   inside "finish the report track". The running order is therefore
-  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → ~~`T-R5`~~ → ~~`T-05`~~ → `T-03` → `T-13` → `T-A1`…,
-  not three clean blocks. **The report track is complete, and so is the audit
-  log `T-A1` needs a row to write into.** **Next up: `T-03`** — credit
-  enforcement, the last of `T-A1`'s three dependencies after `T-13`.
+  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → ~~`T-R5`~~ → ~~`T-05`~~ → ~~`T-03`~~ → `T-13` → `T-A1`…,
+  not three clean blocks. **The report track is complete, the audit log `T-A1`
+  needs a row to write into exists, and the spend ceiling a leaked key would
+  otherwise run past is enforced.** **Next up: `T-13`** — scoped API keys, the
+  last thing standing between here and `T-A1`.
 - **`T-13` is no longer a week-5 ticket.** Scoped API keys are the only machine
   authentication this product has, and every `/v1` route is behind them. It runs
   immediately before `T-A1`.
@@ -1500,37 +1501,28 @@ Two things a reader should know:
 
 ---
 
-## T-03 · Enforce credits with graceful degradation
+## ~~T-03~~ · Enforce credits with graceful degradation — **DONE 2026-07-28**
 **Repo:** BE, FE · **Size:** 1d · **Deps:** T-02, **T-02c** · **Priority:** P0
+**Migration:** none — the grant is provisioned in Go, see the record
 
-**Finding B-1:** `UsageService.append` decrements the balance and ignores the
-result. Nothing checks it. A tenant on platform LLM keys can spend without limit.
+**Shipped.** Record, gate output and known limits:
+[`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md).
 
-**Do:**
-- `UsageService.CheckBudget(ctx, companyID) (BudgetState, error)` returning
-  `BudgetOK` / `BudgetWarning` (<20% remaining) / `BudgetExhausted` (≤0).
-- Check in `ChatEnqueuer` **before** enqueueing, not in the worker — fail fast
-  and don't pay for a task that gets refused.
-- `BudgetExhausted` → `HTTP 402` with a clear message; on WhatsApp/Discord/Lark,
-  a plain-language reply, not a stack trace.
-- **Never block a tenant using their own LLM key.** If
-  `company_llm_credentials` has a primary row, skip the check — they pay their
-  provider directly.
-- `BudgetWarning` → include a `budget_warning` field in the chat response; FE
-  shows a dismissible banner.
-- Redis-cache the balance for 60s so the check doesn't add a query per turn.
-- Config: `CREDITS_ENFORCEMENT_ENABLED` (default `true`),
-  `CREDITS_WARNING_THRESHOLD_PCT` (default `20`).
+Three deviations from the text below, all recorded:
 
-**Acceptance:**
-- [ ] Tenant at zero balance gets 402 with an actionable message, no LLM call made
-- [ ] Tenant with own LLM credentials is never blocked
-- [ ] Warning banner appears below the threshold
-- [ ] Kill switch restores today's behaviour
-
-**Gate:** integration test — seed a company with 0 credits, POST `/api/chat`,
-assert 402 **and** assert zero new `usage_events` rows. Repeat with a BYO-LLM
-company and assert 200.
+- **The ticket as written was a global outage.** Nothing in Argentum has ever
+  credited a company — `company_credits` rows are minted only by `Decrement`,
+  with a negative balance — so "refuse at ≤ 0" refuses every tenant on the day
+  it ships. `T-03` therefore also ships the grant
+  (`CREDITS_DEFAULT_GRANT_USD`, default `$25`), provisioned on first check.
+  It is also the only possible denominator for this ticket's own "<20%
+  remaining".
+- **"Has a primary row" was narrowed to "has a primary row carrying a key".**
+  A row overriding only the model still spends the platform key, so the
+  literal reading let any tenant opt out of billing by pinning a model name.
+- **A second integration point.** A cron tick never passes through
+  `ChatEnqueuer`, and an unattended schedule on an exhausted tenant is the
+  unbounded spend this ticket exists to stop.
 
 ---
 

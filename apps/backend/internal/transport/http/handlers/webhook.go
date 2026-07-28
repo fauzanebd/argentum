@@ -114,6 +114,14 @@ func (h *WebhookHandler) receive(c *gin.Context) {
 		PhoneNumber: msg.PhoneNumber,
 		Message:     msg.Body,
 	}); err != nil {
+		// 200 with a spoken refusal, not 500: WhatsApp retries a non-2xx, and
+		// retrying a turn the tenant cannot pay for delivers the same sentence
+		// several times.
+		if errors.Is(err, domain.ErrInsufficientCredits) {
+			_ = h.wa.SendMessage(msg.PhoneNumber, app.CreditsExhaustedMessage)
+			c.Status(http.StatusOK)
+			return
+		}
 		logrus.WithError(err).Error("chat enqueue failed")
 		c.Status(http.StatusInternalServerError)
 		return

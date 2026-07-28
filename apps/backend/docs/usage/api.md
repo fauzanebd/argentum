@@ -84,7 +84,7 @@ per-channel views over the same period.
 
 `GET /usage/credits`
 
-Current soft credit balance for the company.
+Current credit balance for the company.
 
 **Response**
 ```json
@@ -97,6 +97,48 @@ Current soft credit balance for the company.
 ```
 
 Divide `balance_micro_usd` by 1,000,000 to get USD.
+
+#### The balance is enforced (T-03)
+
+It is no longer only a report. Before a chat turn is queued — on the
+dashboard, on WhatsApp, on Discord, on Lark, and on each firing of a scheduled
+task — the balance is checked, and a company at or below zero is refused
+before any model call is made.
+
+| Condition | What happens |
+|-----------|--------------|
+| Balance above the warning line | The turn runs. |
+| Balance below `CREDITS_WARNING_THRESHOLD_PCT` of the grant (default 20%) | The turn runs, and `POST /api/chat` returns a `budget_warning` object alongside the usual fields. |
+| Balance at or below zero | `POST /api/chat` returns **402 Payment Required** with `{"error": "…"}`. The chat channels reply with the same sentence. A scheduled run is recorded as failed with that message. |
+| The company has its own primary LLM key in `company_llm_credentials` | Never refused, whatever the balance says — they pay their provider directly. A row that only overrides the model or base URL does **not** count, because that traffic still spends the platform key. |
+
+`budget_warning` mirrors the state the check produced:
+
+```json
+{
+  "budget_warning": {
+    "verdict": "warning",
+    "balance_micro_usd": 4000000,
+    "grant_micro_usd": 25000000,
+    "remaining_pct": 16,
+    "byo_llm": false
+  }
+}
+```
+
+The field is **absent** on an ordinary turn — do not branch on
+`verdict === "ok"`, branch on the field being present.
+
+**Where the grant comes from.** A company with no grant is provisioned
+`CREDITS_DEFAULT_GRANT_USD` (default `$25`) the first time its balance is
+checked. Nothing else in the system credits a company, so before this the
+balance of every tenant that had ever run a turn was negative.
+
+**Operator settings:** `CREDITS_ENFORCEMENT_ENABLED` (default `true`, and the
+kill switch), `CREDITS_WARNING_THRESHOLD_PCT` (default `20`),
+`CREDITS_DEFAULT_GRANT_USD` (default `25`). The verdict is cached in Redis for
+60 seconds, so a balance change takes up to a minute to be observed — in both
+directions.
 
 ---
 

@@ -12,6 +12,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/auth"
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/queue"
@@ -45,6 +46,9 @@ type apiDeps struct {
 	discordSvc   *app.DiscordService
 	larkSvc      *app.LarkService
 	brandingSvc  *branding.Service
+	// larkReplier lets the webhook answer a turn it refuses before enqueueing
+	// (T-03). Nil when Lark is disabled.
+	larkReplier lark.Provider
 
 	wa whatsapp.Provider
 

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -120,13 +121,24 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 		ThreadID:  req.ThreadID,
 	})
 	if err != nil {
+		// 402 rather than 400: the request was well-formed and the caller can
+		// fix this, which is exactly what Payment Required means. T-A1's
+		// error envelope reuses this status for the same condition.
+		if errors.Is(err, domain.ErrInsufficientCredits) {
+			c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditsExhaustedMessage})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusAccepted, gin.H{
+	out := gin.H{
 		"task_id":       res.TaskID,
 		"thread_id":     res.Thread.ID,
 		"is_new_thread": res.IsNewThread,
 		"user_msg_id":   res.UserMsgID,
-	})
+	}
+	if res.BudgetWarning != nil {
+		out["budget_warning"] = res.BudgetWarning
+	}
+	c.JSON(http.StatusAccepted, out)
 }

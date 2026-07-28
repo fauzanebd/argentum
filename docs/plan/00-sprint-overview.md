@@ -197,11 +197,13 @@ Phase 1a Report system: design tokens ✅ → PDF v2 ✅ → charts ✅ → PPTX
             PowerPoint / Keynote / Google Slides half of the gate is still
             outstanding and is recorded as such.
             See coverage/report-deck.md.
-Phase 1b Tests ✅ + CI gate ✅ + RBAC ✅ + audit log ✅ + generated types + credit enforcement
+Phase 1b Tests ✅ + CI gate ✅ + RBAC ✅ + audit log ✅ + credit enforcement ✅ + generated types
          └─ You cannot ship autonomy on an unmeasured, unbounded, unaudited system.
             Also fixes the three P0 security/billing findings, which are cheap now
-            and expensive after you have users. T-03 waits on T-02c: a budget
-            check gating on an always-zero number is worse than none.
+            and expensive after you have users. T-03 waited on T-02c: a budget
+            check gating on an always-zero number is worse than none — and it
+            then found a second always-zero number, the grant nothing had ever
+            written. See coverage/credit-enforcement.md.
             Now also the gate on phase 1c: an API key is a credential a script
             holds, so RBAC, the audit log and the budget check stop being
             hygiene and start being the difference between a product and an
@@ -351,7 +353,7 @@ change no one's workflow. Watchers do.
 | 0 ✅ | **One tree**            | Single repo, all three histories blameable through the subtree boundary. Zero Go import-path changes in the migration diff. Both Cloudflare Pages previews deploy from the new roots. CI path-filters correctly per job, and `cmd/discord` builds in it for the first time. |
 | 1 ✅ | **It admits what it doesn't know** | `make eval` prints a score over ≥30 golden questions. The exact C-1 question — "What were our total sales last month?" — returns the right order of magnitude or an explicit "I could not complete this", and never an invented figure. `/api/usage/summary` shows the primary model with non-zero tokens after one chat turn. **Met 2026-07-27.** The C-1 question returns the exact figure; a turn that runs out now says so in the reply ("the budget was exhausted before I could get the final sum") instead of inventing one. |
 | 1a | **Worth forwarding**     | The same monthly-sales spec renders as (a) a branded PDF with a cover, a running header, `Page N of M`, a chart, right-aligned rupiah, and a repeating table header across 200 rows, and (b) a PPTX deck that opens cleanly in PowerPoint, Keynote, Google Slides, and LibreOffice with the narrative in speaker notes. Both derive their colours, type scale, and fonts from the same generated tokens as the dashboard, and CI fails if the two drift. A tenant logo and colour set in Settings → Reports appear in the next generated file with no redeploy. **PDF half met in full 2026-07-28:** cover, running header, `Page N of M`, right-aligned rupiah, a header repeating across 17 pages of a 200-row table, byte-identical between runs, and — since `T-R3` — a chart, on the same generated tokens as the dashboard and on a palette now gated against deuteranopia and greyscale. **Deck half met 2026-07-28 except the four-application check:** the identical fixture — same file, only `format` changed — renders as 11 slides with the narrative in speaker notes, byte-identical between runs, and LibreOffice 7.4.7.2 converts all five fixtures in CI. PowerPoint, Keynote and Google Slides cannot be driven from a headless runner; that check is outstanding and named in `coverage/report-deck.md`. Tenant branding is `T-R5`. |
-| 1b | **Safe to change**       | CI fails on a failing test. All CRITICAL packages have tests. A Go struct rename without `make types` is a red build. Non-admin cannot rotate a DSN. A tenant at zero credits gets a clear refusal instead of a bill. **Half met 2026-07-28 by `T-02`:** all CRITICAL packages have tests (21 of 49 packages, up from 16), CI runs `go vet`, `golangci-lint` and `go test -race` and the tree is clean under all three, and a deliberate break was shown to fail the suite locally — the CI-run proof needs a push and is recorded as outstanding. **`T-04` closed the RBAC half 2026-07-28** — non-admin cannot rotate a DSN, proven against a live API. **`T-05` closed the audit half 2026-07-28** — every tool call, and every guardrail-stopped turn, leaves an append-only row scoped to its tenant. `T-02b` (type drift) and `T-03` (credits) are the rest. |
+| 1b | **Safe to change**       | CI fails on a failing test. All CRITICAL packages have tests. A Go struct rename without `make types` is a red build. Non-admin cannot rotate a DSN. A tenant at zero credits gets a clear refusal instead of a bill. **Half met 2026-07-28 by `T-02`:** all CRITICAL packages have tests (21 of 49 packages, up from 16), CI runs `go vet`, `golangci-lint` and `go test -race` and the tree is clean under all three, and a deliberate break was shown to fail the suite locally — the CI-run proof needs a push and is recorded as outstanding. **`T-04` closed the RBAC half 2026-07-28** — non-admin cannot rotate a DSN, proven against a live API. **`T-05` closed the audit half 2026-07-28** — every tool call, and every guardrail-stopped turn, leaves an append-only row scoped to its tenant. **`T-03` closed the credits half 2026-07-28** — a tenant at zero gets a 402 and a plain sentence on every channel, with zero `usage_events` written, and a tenant on their own key is never blocked; it also had to ship the starting grant, because until now nothing had ever credited a company and "refuse at zero" would have refused everyone ([`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md)). `T-02b` (type drift) is the rest. |
 | 1c | **Anyone can call it**   | A throwaway Node script holding an API key writes a branded PDF to disk in under 10 minutes, using only the published quickstart and no help from us. The same key streams a chat answer over SSE, and is rejected by every `/api` dashboard route. A retried request with the same `Idempotency-Key` bills once. Adding a `/v1` route without an OpenAPI entry is a red build. |
 | 2  | **Authoritative numbers**| A metric is defined once in the UI; asking the same question twice in two threads returns the same number via `query_metric`. Eval score has not regressed. |
 | 3  | **It tells you first**   | A watcher on a demo-tenant metric breaches and a WhatsApp/Discord message arrives, unprompted, containing the number and the agent's explanation. |
@@ -446,8 +448,8 @@ them:
 
 | What | Days | Cumulative |
 | ---- | ---- | ---------- |
-| Finish the report track (~~`T-R3`~~ ✅, ~~`T-R4`~~ ✅, `T-R5`) | 1.5 | 1.5 |
-| Foundation (~~`T-02`~~ ✅, `T-02b`, `T-03`, `T-04`, `T-05`) | 5.0 | 6.5 |
+| Finish the report track (~~`T-R3`~~ ✅, ~~`T-R4`~~ ✅, ~~`T-R5`~~ ✅) | 1.5 | 1.5 |
+| Foundation (~~`T-02`~~ ✅, ~~`T-04`~~ ✅, ~~`T-05`~~ ✅, ~~`T-03`~~ ✅, `T-02b`) | 5.0 | 6.5 |
 | **The API track (`T-13`, `T-A1`→`T-A5`)** | 12.5 | **19.0** |
 | Remaining budget | | **26.0** |
 

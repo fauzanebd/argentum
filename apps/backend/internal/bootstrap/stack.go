@@ -141,7 +141,12 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	}
 	s.onClose(func() { _ = s.Redis.Close() })
 
-	s.UsageSvc = app.NewUsageService(s.Usage, creditsRepo, app.DefaultPricing)
+	s.UsageSvc = app.NewUsageService(s.Usage, creditsRepo, app.DefaultPricing).
+		WithCredits(app.CreditPolicy{
+			Enforce:       cfg.CreditsEnforcementEnabled,
+			WarnPct:       cfg.CreditsWarningThresholdPct,
+			GrantMicroUSD: cfg.CreditsDefaultGrantMicroUSD(),
+		}, llmCredRepo, app.NewRedisBudgetCache(s.Redis))
 
 	// Env-default light LLM for the process-wide consumers (topic
 	// classifier, rolling thread summary) that carry no tenant context.
@@ -189,7 +194,10 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 			IdleMinutes:        cfg.ThreadIdleMinutes,
 			SummaryEveryNTurns: cfg.SummaryEveryNTurns,
 		})
-	s.ScheduledSvc = app.NewScheduledTaskService(s.ScheduledRepo, s.ThreadSvc, s.Companies, s.scheduledEnq)
+	// This is the construction the worker fires schedules through, so this
+	// WithBudget is the one that actually refuses an unattended tick (T-03).
+	s.ScheduledSvc = app.NewScheduledTaskService(s.ScheduledRepo, s.ThreadSvc, s.Companies, s.scheduledEnq).
+		WithBudget(s.UsageSvc)
 
 	metabaseClient := metabase.NewClient(
 		cfg.MetabaseURL, cfg.MetabasePublicURL,

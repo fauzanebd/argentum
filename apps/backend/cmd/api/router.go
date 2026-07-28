@@ -66,7 +66,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 		handlers.NewDiscordWebhookHandler(d.discordSvc).Register(webhookGroup)
 	}
 	if d.larkSvc != nil {
-		handlers.NewLarkWebhookHandler(d.larkSvc, d.chatEnq).Register(webhookGroup)
+		handlers.NewLarkWebhookHandler(d.larkSvc, d.chatEnq).
+			WithReplier(d.larkReplier).
+			Register(webhookGroup)
 	}
 
 	if cfg.MetabaseURL != "" {

@@ -137,6 +137,15 @@ type Config struct {
 	AgentMaxTurnTokens  int // cumulative provider-reported tokens per turn
 	AgentTurnBudgetSecs int // wall-clock ceiling per turn
 
+	// Credit enforcement (T-03). Finding B-1: the balance was decremented and
+	// never read. CreditsEnforcementEnabled is the kill switch that restores
+	// that behaviour; the grant exists because nothing else in the system has
+	// ever credited a company, so without it "balance <= 0" is true for every
+	// tenant on the day enforcement is switched on.
+	CreditsEnforcementEnabled  bool
+	CreditsWarningThresholdPct int     // remaining % of the grant that triggers a warning
+	CreditsDefaultGrantUSD     float64 // provisioned once per company, in dollars
+
 	// Object storage (MinIO / S3-compatible). Used by the generate_document
 	// tool to persist generated PDF/XLSX/CSV files and to issue presigned
 	// download URLs.
@@ -260,6 +269,11 @@ func Load() (*Config, error) {
 		AgentMaxTurnTokens:  getEnvAsInt("AGENT_MAX_TURN_TOKENS", 200000),
 		AgentTurnBudgetSecs: getEnvAsInt("AGENT_TURN_BUDGET_SECS", 150),
 
+		// Credit enforcement
+		CreditsEnforcementEnabled:  getEnv("CREDITS_ENFORCEMENT_ENABLED", "true") == "true",
+		CreditsWarningThresholdPct: getEnvAsInt("CREDITS_WARNING_THRESHOLD_PCT", 20),
+		CreditsDefaultGrantUSD:     getEnvAsFloat("CREDITS_DEFAULT_GRANT_USD", 25),
+
 		// Object storage (MinIO / S3-compatible)
 		MinIOEndpoint:          getEnv("MINIO_ENDPOINT", ""),
 		MinIOAccessKeyID:       getEnv("MINIO_ACCESS_KEY", ""),
@@ -330,6 +344,19 @@ func (c *Config) EffectiveEmbeddingAPIKey() string {
 		return strings.TrimSpace(c.LLMAPIKey)
 	}
 	return ""
+}
+
+// CreditsDefaultGrantMicroUSD converts the operator-facing dollar amount to
+// the micro-USD unit every balance in the control plane is stored in. It is
+// the only place that conversion happens, because a factor of a million
+// applied twice is a grant nobody notices is wrong until it runs out.
+// Negative input floors at zero rather than erroring — a grant is a ceiling
+// on generosity, not a debt.
+func (c *Config) CreditsDefaultGrantMicroUSD() int64 {
+	if c.CreditsDefaultGrantUSD <= 0 {
+		return 0
+	}
+	return int64(c.CreditsDefaultGrantUSD * 1_000_000)
 }
 
 // Validate checks if required configuration is present
@@ -479,6 +506,15 @@ func getEnvAsInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intVal, err := strconv.Atoi(value); err == nil {
 			return intVal
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsFloat(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if f, err := strconv.ParseFloat(value, 64); err == nil {
+			return f
 		}
 	}
 	return defaultValue

@@ -27,10 +27,20 @@ import (
 type LarkWebhookHandler struct {
 	larkSvc *app.LarkService
 	chatEnq *app.ChatEnqueuer
+	replier lark.Provider
 }
 
 func NewLarkWebhookHandler(larkSvc *app.LarkService, chatEnq *app.ChatEnqueuer) *LarkWebhookHandler {
 	return &LarkWebhookHandler{larkSvc: larkSvc, chatEnq: chatEnq}
+}
+
+// WithReplier gives the API process an outbound Lark client. Until T-03 it
+// had none — every reply is written by the worker after the agent runs — but
+// a refusal happens before there is anything to enqueue, so the only process
+// that can speak it is this one.
+func (h *LarkWebhookHandler) WithReplier(p lark.Provider) *LarkWebhookHandler {
+	h.replier = p
+	return h
 }
 
 func (h *LarkWebhookHandler) Register(rg *gin.RouterGroup) {
@@ -176,6 +186,18 @@ func (h *LarkWebhookHandler) events(c *gin.Context) {
 		LarkMessageID: ev.Message.MessageID,
 		Message:       text,
 	}); err != nil {
+		if errors.Is(err, domain.ErrInsufficientCredits) {
+			if h.replier != nil {
+				if rerr := h.replier.Reply(c.Request.Context(), cred.CompanyID, ev.Message.MessageID, app.CreditsExhaustedMessage); rerr != nil {
+					logrus.WithError(rerr).WithField("company_id", cred.CompanyID).
+						Warn("lark webhook: could not deliver the credit refusal")
+				}
+			}
+			// 200 either way — Lark retries a non-2xx, and the tenant's
+			// position will not have changed by the retry.
+			c.Status(http.StatusOK)
+			return
+		}
 		logrus.WithError(err).WithField("app_id", appID).Error("lark webhook: enqueue failed")
 		c.Status(http.StatusInternalServerError)
 		return

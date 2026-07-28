@@ -88,7 +88,7 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Usage metering                 | ✅     | LLM (incl. cache tokens), SQL, cards, dashboards, documents        |
 | Usage audit endpoints          | ✅     | By company / thread / channel / end-user, arbitrary window         |
 | Per-message cost attribution   | ❌     | `messages.tokens_*` always 0; `usage_events.message_id` always ""  |
-| Credit balance                 | 🟡     | Tracked and decremented, **never enforced** — no spend ceiling      |
+| Credit balance                 | 🟡     | `T-03`: enforced before every turn on every channel and every scheduled fire; BYO-key tenants exempt ([`credit-enforcement.md`](credit-enforcement.md)). **No way to top up but SQL** |
 | Plans / quotas / payment       | ❌     | No tiers, no Stripe/Xendit, no invoicing                            |
 | Self-serve onboarding          | 🟡     | Signup → add connection works; no guided setup, no embedding prompt |
 

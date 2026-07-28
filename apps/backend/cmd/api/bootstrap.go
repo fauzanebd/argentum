@@ -15,6 +15,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
+	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metabase"
@@ -115,7 +116,12 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// process, independent cache). Used by the API's embedding service for
 	// reindex, and stashed on deps for future tenant-scoped flows.
 	llmResolver := llmtenant.NewResolver(llmCredRepo, dsnCipher, cfg)
-	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing)
+	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing).
+		WithCredits(app.CreditPolicy{
+			Enforce:       cfg.CreditsEnforcementEnabled,
+			WarnPct:       cfg.CreditsWarningThresholdPct,
+			GrantMicroUSD: cfg.CreditsDefaultGrantMicroUSD(),
+		}, llmCredRepo, app.NewRedisBudgetCache(rdb))
 	deps.llmCache = llmtenant.NewClientCache(
 		llmResolver,
 		func(inner interfaces.LLM, model string) interfaces.LLM {
@@ -157,6 +163,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	}
 	if cfg.LarkEnabled {
 		deps.larkSvc = app.NewLarkService(larkCredRepo, allowedLarkRepo, dsnCipher)
+		deps.larkReplier = lark.NewClient(larkCredRepo, dsnCipher, cfg.LarkAPIBaseURL)
 	}
 
 	// Table-picker embeddings: per-tenant resolution via embedCache.
@@ -183,9 +190,14 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			IdleMinutes:        cfg.ThreadIdleMinutes,
 			SummaryEveryNTurns: cfg.SummaryEveryNTurns,
 		})
-	deps.chatEnq = app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, deps.enqueuer)
+	deps.chatEnq = app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, deps.enqueuer).
+		WithBudget(deps.usageSvc)
 	scheduledRepo := pgctl.NewScheduledTaskRepo(controlDB)
-	deps.scheduledSvc = app.NewScheduledTaskService(scheduledRepo, threadSvc, companyRepo, deps.enqueuer)
+	// The API process only creates and edits schedules — the worker fires
+	// them — but the service is the same type, and wiring it here keeps the
+	// two constructions from drifting into different enforcement.
+	deps.scheduledSvc = app.NewScheduledTaskService(scheduledRepo, threadSvc, companyRepo, deps.enqueuer).
+		WithBudget(deps.usageSvc)
 
 	waProvider, err := whatsapp.NewProvider(whatsapp.Config{
 		Provider:           cfg.WhatsAppProvider,
