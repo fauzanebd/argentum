@@ -18,11 +18,11 @@ func RequestLogging() gin.HandlerFunc {
 		latency := time.Since(start)
 
 		fields := logrus.Fields{
-			"method":      c.Request.Method,
-			"path":        c.Request.URL.Path,
-			"status":      c.Writer.Status(),
-			"latency_ms":  latency.Milliseconds(),
-			"client_ip":   c.ClientIP(),
+			"method":     c.Request.Method,
+			"path":       c.Request.URL.Path,
+			"status":     c.Writer.Status(),
+			"latency_ms": latency.Milliseconds(),
+			"client_ip":  c.ClientIP(),
 		}
 		if v, ok := c.Get("company_id"); ok {
 			if s, _ := v.(string); s != "" {

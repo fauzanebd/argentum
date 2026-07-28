@@ -20,7 +20,7 @@ type EventBus interface {
 // worker process can't deliver directly (e.g. Discord, where each tenant
 // has its own gateway session held by cmd/discord).
 type OutboundEvent struct {
-	Channel    string `json:"channel"`     // domain.Channel string ("discord")
+	Channel    string `json:"channel"` // domain.Channel string ("discord")
 	CompanyID  string `json:"company_id"`
 	ChannelRef string `json:"channel_ref"` // discord_channel_id
 	UserRef    string `json:"user_ref,omitempty"`

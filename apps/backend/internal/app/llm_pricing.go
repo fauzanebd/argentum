@@ -49,8 +49,8 @@ var modelPricing = map[string]ModelPricing{
 
 	// DeepSeek — OpenRouter "Effective Pricing" weighted avg, 2026-05-12.
 	// https://openrouter.ai/deepseek/deepseek-v3.2 — refresh occasionally.
-	"deepseek-v3.2":           {InputCostPer1K: 0.000231, OutputCostPer1K: 0.000451},
-	"deepseek/deepseek-v3.2":  {InputCostPer1K: 0.000231, OutputCostPer1K: 0.000451},
+	"deepseek-v3.2":          {InputCostPer1K: 0.000231, OutputCostPer1K: 0.000451},
+	"deepseek/deepseek-v3.2": {InputCostPer1K: 0.000231, OutputCostPer1K: 0.000451},
 }
 
 // LookupModelPricing exposes lookupModelPricing for callers outside the app

@@ -26,12 +26,12 @@ func (h *ConfigHandler) Register(rg *gin.RouterGroup) {
 }
 
 type modelInfo struct {
-	Role          string  `json:"role"`
-	Model         string  `json:"model"`
-	Interface     string  `json:"interface"`
-	InputPer1KUSD float64 `json:"input_per_1k_usd"`
+	Role           string  `json:"role"`
+	Model          string  `json:"model"`
+	Interface      string  `json:"interface"`
+	InputPer1KUSD  float64 `json:"input_per_1k_usd"`
 	OutputPer1KUSD float64 `json:"output_per_1k_usd"`
-	PricingKnown  bool    `json:"pricing_known"`
+	PricingKnown   bool    `json:"pricing_known"`
 }
 
 // models returns the resolved model used for each agent role plus the per-1K

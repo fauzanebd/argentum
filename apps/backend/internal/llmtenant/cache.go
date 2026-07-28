@@ -88,7 +88,7 @@ func (c *ClientCache) For(ctx context.Context, companyID string, tier domain.LLM
 	if err != nil {
 		return nil, nil, err
 	}
-	var wrapped interfaces.LLM = raw
+	wrapped := raw
 	if c.wrap != nil {
 		wrapped = c.wrap(raw, profile.Model)
 	}

@@ -57,10 +57,10 @@ func AdminOnly() gin.HandlerFunc {
 }
 
 // extractToken reads the access token from, in order:
-//   1. The Authorization "Bearer …" header (default for fetch/axios calls).
-//   2. The `?at=` query parameter (used by the WebSocket endpoint where the
-//      browser cannot set a custom header on the upgrade request).
-//   3. The `at` cookie (legacy fallback; not currently set by the dashboard).
+//  1. The Authorization "Bearer …" header (default for fetch/axios calls).
+//  2. The `?at=` query parameter (used by the WebSocket endpoint where the
+//     browser cannot set a custom header on the upgrade request).
+//  3. The `at` cookie (legacy fallback; not currently set by the dashboard).
 func extractToken(c *gin.Context) string {
 	h := c.GetHeader("Authorization")
 	if strings.HasPrefix(h, "Bearer ") {

@@ -70,7 +70,7 @@ func (m *MeteredLLM) GenerateWithToolsDetailed(ctx context.Context, prompt strin
 	return resp, nil
 }
 
-func (m *MeteredLLM) Name() string             { return m.inner.Name() }
+func (m *MeteredLLM) Name() string            { return m.inner.Name() }
 func (m *MeteredLLM) SupportsStreaming() bool { return m.inner.SupportsStreaming() }
 
 // GenerateStream wraps the inner StreamingLLM and records token usage when the
@@ -208,7 +208,7 @@ func extractUsage(md map[string]interface{}) (interfaces.TokenUsage, bool) {
 	// uses input_tokens / output_tokens / cache_creation_input_tokens /
 	// cache_read_input_tokens JSON tags.
 	if v := reflect.ValueOf(raw); v.IsValid() && (v.Kind() == reflect.Struct ||
-		(v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Struct)) {
+		(v.Kind() == reflect.Pointer && v.Elem().Kind() == reflect.Struct)) {
 		b, err := json.Marshal(raw)
 		if err != nil {
 			return interfaces.TokenUsage{}, false

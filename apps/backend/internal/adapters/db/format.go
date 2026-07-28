@@ -16,13 +16,13 @@ func FormatSchemaForPrompt(s *SchemaMetadata) string {
 	var sb strings.Builder
 	sb.WriteString("Database Schema:\n\n")
 	for _, t := range s.Tables {
-		sb.WriteString(fmt.Sprintf("Table: %s", t.Name))
+		fmt.Fprintf(&sb, "Table: %s", t.Name)
 		if t.Description != "" {
 			sb.WriteString(" - " + t.Description)
 		}
 		sb.WriteString("\n")
 		for _, c := range t.Columns {
-			sb.WriteString(fmt.Sprintf("  • %s (%s)", c.Name, c.Type))
+			fmt.Fprintf(&sb, "  • %s (%s)", c.Name, c.Type)
 			if c.Description != "" {
 				sb.WriteString(": " + c.Description)
 			}
@@ -30,7 +30,7 @@ func FormatSchemaForPrompt(s *SchemaMetadata) string {
 				sb.WriteString(" [PK]")
 			}
 			if c.IsForeignKey {
-				sb.WriteString(fmt.Sprintf(" → %s.%s", c.ForeignKeyTable, c.ForeignKeyColumn))
+				fmt.Fprintf(&sb, " → %s.%s", c.ForeignKeyTable, c.ForeignKeyColumn)
 			}
 			sb.WriteString("\n")
 		}
@@ -39,8 +39,8 @@ func FormatSchemaForPrompt(s *SchemaMetadata) string {
 	if len(s.Relationships) > 0 {
 		sb.WriteString("Relationships:\n")
 		for _, r := range s.Relationships {
-			sb.WriteString(fmt.Sprintf("  • %s.%s → %s.%s\n",
-				r.FromTable, r.FromColumn, r.ToTable, r.ToColumn))
+			fmt.Fprintf(&sb, "  • %s.%s → %s.%s\n",
+				r.FromTable, r.FromColumn, r.ToTable, r.ToColumn)
 		}
 	}
 	return sb.String()

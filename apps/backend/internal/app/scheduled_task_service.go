@@ -13,6 +13,16 @@ import (
 	"strings"
 	"time"
 
+	// Embed the IANA timezone database in the binary. normalizeTimezone and
+	// nextFire both go through time.LoadLocation, which otherwise reads
+	// /usr/share/zoneinfo — a directory the deployed images do not have:
+	// Dockerfile.{api,worker,discord} run on `alpine:latest` with only
+	// ca-certificates installed. Without this, every scheduled task with a
+	// non-UTC timezone is rejected at creation with "invalid timezone" and
+	// every existing one loses its next-run time, while the same code works
+	// on any developer machine. Found writing T-02's cron tests.
+	_ "time/tzdata"
+
 	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
 
@@ -392,4 +402,3 @@ func truncateErr(s string) string {
 	}
 	return s
 }
-

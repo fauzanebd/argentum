@@ -24,12 +24,12 @@ type ConversationThread struct {
 	ID            string    `json:"id"`
 	CompanyID     string    `json:"company_id"`
 	Channel       Channel   `json:"channel"`
-	PhoneNumber   string    `json:"phone_number,omitempty"`     // empty for dashboard/discord/lark threads
-	UserID        string    `json:"user_id,omitempty"`          // empty for WA/discord/lark threads from non-account holders
-	DiscordUserID string    `json:"discord_user_id,omitempty"`  // empty for non-discord threads
-	LarkChatID    string    `json:"lark_chat_id,omitempty"`     // empty for non-lark threads
-	LarkThreadKey string    `json:"lark_thread_key,omitempty"`  // empty for non-lark threads
-	LarkOpenID    string    `json:"lark_open_id,omitempty"`     // initiating user's open_id; empty for non-lark threads
+	PhoneNumber   string    `json:"phone_number,omitempty"`    // empty for dashboard/discord/lark threads
+	UserID        string    `json:"user_id,omitempty"`         // empty for WA/discord/lark threads from non-account holders
+	DiscordUserID string    `json:"discord_user_id,omitempty"` // empty for non-discord threads
+	LarkChatID    string    `json:"lark_chat_id,omitempty"`    // empty for non-lark threads
+	LarkThreadKey string    `json:"lark_thread_key,omitempty"` // empty for non-lark threads
+	LarkOpenID    string    `json:"lark_open_id,omitempty"`    // initiating user's open_id; empty for non-lark threads
 	Title         string    `json:"title"`
 	Summary       string    `json:"summary,omitempty"`
 	LastMessageAt time.Time `json:"last_message_at"`

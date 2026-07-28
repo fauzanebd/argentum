@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { useThemeStore } from "@/store/theme";
+import { apiErrorMessage } from "@/lib/api-error";
 
 const schema = z.object({
   email: z.string().email(),
@@ -36,8 +37,8 @@ export function LoginPage() {
       const res = await api.post("/auth/login", values);
       setSession(res.data.access_token, res.data.user);
       navigate({ to: "/chat" });
-    } catch (e: any) {
-      setError(e?.response?.data?.error || "Login failed");
+    } catch (e: unknown) {
+      setError(apiErrorMessage(e, "Login failed"));
     }
   }
 

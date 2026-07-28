@@ -42,8 +42,7 @@ func (h *ChatHandler) listThreads(c *gin.Context) {
 }
 
 func (h *ChatHandler) createThread(c *gin.Context) {
-	uid, _ := c.Get("user_id")
-	thread, err := h.chat.CreateDashboardThread(c.Request.Context(), companyID(c), uid.(string))
+	thread, err := h.chat.CreateDashboardThread(c.Request.Context(), companyID(c), userID(c))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -113,11 +112,10 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	uid, _ := c.Get("user_id")
 	res, err := h.chat.Enqueue(c.Request.Context(), app.ChatInput{
 		Channel:   domain.ChannelDashboard,
 		CompanyID: companyID(c),
-		UserID:    uid.(string),
+		UserID:    userID(c),
 		Message:   req.Message,
 		ThreadID:  req.ThreadID,
 	})

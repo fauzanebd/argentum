@@ -14,13 +14,13 @@ import (
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/llmclient"
-	"github.com/fauzanebd/argentum/internal/transport/eventbus"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/migrate"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/tools"
+	"github.com/fauzanebd/argentum/internal/transport/eventbus"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 	"github.com/sirupsen/logrus"
 )
@@ -96,14 +96,14 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		return nil, fmt.Errorf("redis client is required (REDIS_URL)")
 	}
 	deps.rdb = rdb
-	undo = append(undo, func() { rdb.Close() })
+	undo = append(undo, func() { _ = rdb.Close() })
 
 	asynqOpt, err := queue.BuildRedisOpt(cfg.ResolvedAsynqRedisURL(), cfg.RedisPassword)
 	if err != nil {
 		return nil, fmt.Errorf("asynq redis opt: %w", err)
 	}
 	deps.enqueuer = queue.NewEnqueuer(asynqOpt)
-	undo = append(undo, func() { deps.enqueuer.Close() })
+	undo = append(undo, func() { _ = deps.enqueuer.Close() })
 
 	// Per-tenant LLM cache (shared with the worker's chat runner — separate
 	// process, independent cache). Used by the API's embedding service for

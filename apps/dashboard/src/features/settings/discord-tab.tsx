@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { apiErrorMessage } from "@/lib/api-error";
 
 interface DiscordConfig {
   configured: boolean;
@@ -85,8 +86,8 @@ export function DiscordTab() {
       setBotToken("");
       qc.invalidateQueries({ queryKey: ["discord", "config"] });
       toast({ title: "Discord saved", description: "Configuration updated." });
-    } catch (e: any) {
-      setError(e?.response?.data?.error || e.message);
+    } catch (e: unknown) {
+      setError(apiErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -104,10 +105,10 @@ export function DiscordTab() {
       setGuildId("");
       setEnabled(true);
       toast({ title: "Discord removed" });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         title: "Remove failed",
-        description: e?.response?.data?.error || e.message,
+        description: apiErrorMessage(e),
         variant: "destructive",
       });
     }
@@ -123,8 +124,8 @@ export function DiscordTab() {
       setUserId("");
       setUserLabel("");
       qc.invalidateQueries({ queryKey: ["discord", "users"] });
-    } catch (e: any) {
-      setUserError(e?.response?.data?.error || e.message);
+    } catch (e: unknown) {
+      setUserError(apiErrorMessage(e));
     }
   }
 

@@ -21,9 +21,9 @@ type Claims struct {
 
 // TokenSigner issues and verifies HS256-signed JWTs.
 type TokenSigner struct {
-	secret         []byte
-	accessTTL      time.Duration
-	refreshTTL     time.Duration
+	secret     []byte
+	accessTTL  time.Duration
+	refreshTTL time.Duration
 }
 
 // NewTokenSigner constructs a signer. accessTTL is typically 15 min;

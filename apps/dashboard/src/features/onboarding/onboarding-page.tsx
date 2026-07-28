@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { CheckCircle2, XCircle } from "lucide-react";
+import { apiErrorMessage } from "@/lib/api-error";
 
 const schema = z.object({
   db_type: z.string().min(1, "Pick a database type"),
@@ -106,9 +107,9 @@ export function OnboardingPage() {
         setTestStatus("error");
         setTestError(res.data.error || "Connection test failed");
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       setTestStatus("error");
-      setTestError(e?.response?.data?.error || e.message);
+      setTestError(apiErrorMessage(e));
     }
   }
 

@@ -684,9 +684,9 @@ func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg, userMsg
 	b.WriteString("Pass these as the `tables` argument to get_schema for the matching source; only call get_schema unfiltered if the hint clearly misses what the user asked about.]\n\n")
 	b.WriteString(msg)
 	logrus.WithFields(logrus.Fields{
-		"company_id":            companyID,
-		"sources_with_hits":     len(eligible),
-		"total_tables_hinted":   hintedTotal,
+		"company_id":          companyID,
+		"sources_with_hits":   len(eligible),
+		"total_tables_hinted": hintedTotal,
 	}).Info("table picker: hint injected")
 	return b.String()
 }

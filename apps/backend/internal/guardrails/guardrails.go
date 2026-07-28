@@ -1,3 +1,6 @@
+// Package guardrails is the input/output policy layer for the analytics
+// agent: a YAML rule set of regex and LLM-classifier patterns that blocks,
+// requires or redacts, plus the T-16 fabrication check that runs outside it.
 package guardrails
 
 import (

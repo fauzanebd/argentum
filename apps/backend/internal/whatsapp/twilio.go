@@ -132,10 +132,7 @@ func (c *TwilioClient) ParseWebhook(body []byte) (*models.Message, error) {
 
 	if err := json.Unmarshal(body, &jsonPayload); err == nil && jsonPayload.SID != "" {
 		// Remove whatsapp: prefix if present
-		from := jsonPayload.From
-		if strings.HasPrefix(from, "whatsapp:") {
-			from = from[9:]
-		}
+		from := strings.TrimPrefix(jsonPayload.From, "whatsapp:")
 
 		msg = models.Message{
 			ID:          jsonPayload.SID,
@@ -153,10 +150,7 @@ func (c *TwilioClient) ParseWebhook(body []byte) (*models.Message, error) {
 		return nil, fmt.Errorf("failed to parse webhook payload: %w", err)
 	}
 
-	from := values.Get("From")
-	if strings.HasPrefix(from, "whatsapp:") {
-		from = from[9:]
-	}
+	from := strings.TrimPrefix(values.Get("From"), "whatsapp:")
 
 	msg = models.Message{
 		ID:          values.Get("MessageSid"),

@@ -42,7 +42,7 @@ priority on 2026-07-28. This table is the authoritative order.
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
 | 1a — worth forwarding | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, `T-R4`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). |
-| 1b — safe to change | `T-02`, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. |
+| 1b — safe to change | ~~`T-02`~~, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). |
 | 1c — callable | `T-13`, `T-A1`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moves here from week 5 — it is the prerequisite, not a week-5 nicety. |
 | 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Moved to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
@@ -1245,8 +1245,41 @@ The system has no way to know whether a prompt or model change helped. Build one
 
 ---
 
-## T-02 · Test coverage for CRITICAL packages + real CI gate
-**Repo:** BE · **Size:** 3d · **Deps:** none (parallel with T-01) · **Priority:** P0 · **Never cut**
+## ~~T-02~~ · Test coverage for CRITICAL packages + real CI gate — **DONE 2026-07-28**
+**Repo:** BE, FE · **Size:** 3d · **Deps:** none (parallel with T-01) · **Priority:** P0 · **Never cut**
+
+**Shipped.** Record, with the gate output:
+[`../coverage/test-coverage.md`](../coverage/test-coverage.md).
+**21 of 49 packages have tests** (was 16 of 49), every CRITICAL package is
+covered, `go test -race` is green and `golangci-lint` reports 0 issues against
+a config the tree failed in 50 places on the first run.
+
+Four things came out of it that the ticket did not anticipate:
+
+- **Non-UTC scheduled tasks cannot work in the deployed images.**
+  `time.LoadLocation` reads `/usr/share/zoneinfo`, which `alpine:latest` does
+  not ship and nothing installed; no file imported `time/tzdata`. So
+  `normalizeTimezone("Asia/Jakarta")` succeeds on every developer machine and
+  fails in production. One blank import in `internal/app` fixes it, and the
+  test that guards it sets `ZONEINFO` to a path that does not exist so it
+  cannot pass by accident.
+- **Two unchecked type assertions in the chat handler**, found by turning on
+  errcheck's `check-type-assertions`: `uid.(string)` on a value only
+  `middleware.Auth` sets, so a route wired without it panics instead of
+  returning 401.
+- **`redact_nik` can never fire.** Sixteen consecutive digits are also a
+  separator-less credit-card number, and `redact_credit_cards` is declared
+  first. The golden suite records this as a shadowing rather than covering the
+  rule with a case that would have asserted the wrong one. Two smaller
+  redaction edges and one topic-gate false positive ("margins are collapsing")
+  are pinned the same way. All belong to `T-07b`.
+- **The PPTX determinism test was flaky and had never been seen to be.**
+  `v1_legacy.json` carries no `generated_at`, so it rendered with the wall
+  clock; the test rendered twice and compared, which only fails when the pair
+  straddles a second. Under `-race` it does. The PDF's equivalent test had
+  already been taught this lesson in `T-R2` and skips unstamped fixtures; the
+  deck's now pins the clock instead, so `v1_legacy` is covered rather than
+  excluded.
 
 **Tests to write** (see `../coverage/test-coverage.md` for the risk ranking):
 
@@ -1263,23 +1296,46 @@ The system has no way to know whether a prompt or model change helped. Build one
 | `internal/tools` | `run_sql` byte-cap trimming loop (wide rows shrink and set `truncated`); `ResolveSource` with 0 / 1 / many sources and an explicit `source_id`; empty-company-ID rejection |
 
 **CI changes** in `.github/workflows/ci.yaml`:
-- `GO_VERSION` → `'1.26'` (matches `go.mod`, stops the silent toolchain download)
-- add `go vet ./...`
-- add `go test -race -count=1 ./...`
-- add `go build -o discord ./cmd/discord` — currently never compiled in CI
-- add `golangci-lint run` with a committed `.golangci.yml` (start narrow:
-  `errcheck`, `govet`, `staticcheck`, `ineffassign`, `unused`)
-- add a frontend job: `pnpm install --frozen-lockfile && pnpm build && pnpm lint`
-- **remove the `paths:` filter** — it currently means non-Go changes skip CI entirely
+- ~~`GO_VERSION` → `'1.26'`~~ ✅ `T-00b`
+- ~~add `go vet ./...`~~ ✅ `T-00b`
+- ~~add `go test -race -count=1 ./...`~~ ✅ `T-00b`
+- ~~add `go build -o discord ./cmd/discord`~~ ✅ `T-00b`
+- ~~add `golangci-lint run` with a committed `.golangci.yml`~~ ✅ — five
+  linters as specified, plus a gofmt check that comes free with the v2
+  `formatters` block. Config at `apps/backend/.golangci.yml`, run through
+  `golangci/golangci-lint-action@v8` pinned to v2.12.
+- ~~add a frontend job~~ ✅ `T-00b` (`web`), which now actually lints: the
+  dashboard's `lint` script is `tsc -b --noEmit && eslint .` with eslint 9 and
+  a flat config installed by this ticket.
+- ~~**remove the `paths:` filter**~~ ✅ `T-00b`
+
+Also: `make lint` (Go + web) and `make check` (vet + lint + test + build) at the
+repo root, so the gate is one command locally.
 
 **Acceptance:**
-- [ ] Every CRITICAL package from the coverage doc has tests
-- [ ] Guardrail golden suite covers every rule, both directions
-- [ ] CI fails when a test fails (prove it: push a deliberately broken test, observe red, revert)
-- [ ] `cmd/discord` builds in CI
+- [x] Every CRITICAL package from the coverage doc has tests — `internal/crypto`,
+      `internal/tenantctx`, `internal/guardrails` and the three `internal/app`
+      services named above, plus the HIGH/MEDIUM ones the ticket listed
+      (`internal/auth`, `internal/config`, `internal/tools`) and the middleware
+      that enforces token type
+- [x] Guardrail golden suite covers every rule, both directions — enforced by
+      `TestEveryRuleHasGoldenCases`, which fails when a rule is added without
+      cases or covered in only one direction. `redact_nik` is the one exception
+      and it is explicit: the rule cannot fire, and a named test asserts the
+      shadowing rather than faking coverage.
+- [ ] CI fails when a test fails (prove it: push a deliberately broken test,
+      observe red, revert) — **proved locally, not yet in CI.** The break was
+      made in `internal/crypto/dsn_test.go` (invert the round-trip assertion),
+      `go test -race -count=1 ./internal/crypto/` failed on five subtests, and
+      the revert returned exit 0. Pushing a branch is the repo owner's call, so
+      the CI-run half of this item is outstanding.
+- [x] `cmd/discord` builds in CI — since `T-00b`; unchanged here
 
 **Gate:** `go test -race ./... 2>&1 | tail -40` — paste it. Plus the CI run URL
 showing red on the deliberate break and green after revert.
+
+**Gate met except the CI run URL**, which needs a push. Output in
+[`../coverage/test-coverage.md`](../coverage/test-coverage.md).
 
 ---
 

@@ -66,7 +66,7 @@ func main() {
 	if rdb == nil {
 		logrus.Fatal("redis client is required (REDIS_URL)")
 	}
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 	bus := eventbus.NewRedisBus(rdb)
 	_ = bus // not used directly; cmd/api owns the reload publisher
 
@@ -76,7 +76,7 @@ func main() {
 		logrus.Fatalf("asynq redis opt: %v", err)
 	}
 	enq := queue.NewEnqueuer(asynqOpt)
-	defer enq.Close()
+	defer func() { _ = enq.Close() }()
 
 	// Discord threads don't run the topic classifier or rolling summary at
 	// resolve time (idle threshold gating is still in place — failure to

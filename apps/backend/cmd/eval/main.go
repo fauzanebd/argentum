@@ -33,11 +33,11 @@ import (
 
 func main() {
 	var (
-		setPath     = flag.String("set", "testdata/eval/golden.yaml", "path to the golden question set")
-		model       = flag.String("model", "", "override LLM_MODEL for this run")
-		outPath     = flag.String("out", "", "write the full JSON report here")
-		only        = flag.String("only", "", "comma-separated case ids or categories to run")
-		demoDSN     = flag.String("demo-dsn", "postgres://demo:demo@localhost:5433/demo_analytics?sslmode=disable", "DSN of the demo tenant database to seed")
+		setPath = flag.String("set", "testdata/eval/golden.yaml", "path to the golden question set")
+		model   = flag.String("model", "", "override LLM_MODEL for this run")
+		outPath = flag.String("out", "", "write the full JSON report here")
+		only    = flag.String("only", "", "comma-separated case ids or categories to run")
+		demoDSN = flag.String("demo-dsn", "postgres://demo:demo@localhost:5433/demo_analytics?sslmode=disable", "DSN of the demo tenant database to seed")
 		// Metabase runs inside compose and cannot resolve the host-side
 		// address this process uses, so the DSN it is registered with needs a
 		// different host:port. Without this the registration is rejected and

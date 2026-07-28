@@ -57,7 +57,7 @@ func PingDSN(ctx context.Context, dbType, dsn string) error {
 	if err != nil {
 		return fmt.Errorf("open: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := conn.Ping(ctx); err != nil {
 		return fmt.Errorf("ping: %w", err)
 	}

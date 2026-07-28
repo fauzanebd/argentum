@@ -351,6 +351,73 @@ done.
 
 Record, gate output and known limits: [`report-deck.md`](report-deck.md).
 
+## Phase 1b — Safe to change (2026-07-28, in progress)
+
+`T-02` test coverage + a CI gate that gates
+
+The first ticket in this project whose deliverable is a *floor* rather than a
+feature. Twenty-one of forty-nine packages now have tests, every package the
+coverage doc ranked CRITICAL among them, and `golangci-lint` reports zero
+issues against a five-linter config that the tree failed in fifty places when
+it was first pointed at it.
+
+The part worth stating is what the tests found, because a test suite that finds
+nothing on the way in is a suite that was written to pass:
+
+- **Scheduled tasks with a non-UTC timezone have never been able to work in
+  production.** `normalizeTimezone` and `nextFire` both call
+  `time.LoadLocation`, which reads `/usr/share/zoneinfo`.
+  `Dockerfile.{api,worker,discord}` all run `alpine:latest` with
+  `ca-certificates` and nothing else, and no file imported `time/tzdata`. So
+  `Asia/Jakarta` — the timezone this product's customers actually use —
+  resolves on every developer machine and fails in the deployed image. The fix
+  is one blank import; the reason it went unnoticed for three months is that
+  the failure is invisible everywhere except the one place it matters.
+- **Two unchecked type assertions in the chat handler.** `uid.(string)` on a
+  value only `middleware.Auth` sets: a route wired without that middleware
+  panics rather than returning 401. Found by turning on a single errcheck
+  option, which is the argument for the linter in one line.
+- **`redact_nik` is dead.** A NIK is sixteen consecutive digits, and so is a
+  credit-card number typed without separators; `redact_credit_cards` is
+  declared first and the engine returns after the first match. The golden suite
+  could not give that rule an honest must-block case, so it records the
+  shadowing in a named test instead. Same treatment for a topic-gate false
+  positive ("margins are collapsing" reads as a P&L question) and two phone
+  redaction edges. `T-07b` owns all four.
+- **The PPTX determinism test was flaky, and had been since it was written.**
+  `v1_legacy.json` carries no `generated_at`, so it rendered with the wall
+  clock; the test rendered twice and compared, which only fails when the pair
+  straddles a second — and under `-race`, where the pair takes forty seconds,
+  it does. This is precisely the lesson `T-R2` wrote down for the PDF and the
+  deck's test had not learned: comparing two renders catches a clock only by
+  luck. It now pins the clock, so the v1 fixture is covered rather than
+  skipped.
+
+Two things about the shape of the suite are worth carrying forward. The
+guardrail golden set runs against **`config/guardrails.yaml` itself**, not a
+copy, because that file is the one whose regexes keep getting narrowed —
+six of the twenty commits before this sprint tuned one with no regression
+signal at all. And `TestEveryRuleHasGoldenCases` fails when a rule is added
+without cases, which is what makes it a gate rather than a snapshot.
+
+On the frontend, `pnpm lint` runs eslint for the first time in the project's
+history — the script had called it since the beginning, but eslint was never in
+`devDependencies`, so it had failed with `command not found` in CI and locally
+alike. First run: 36 problems. Most of them turned out to be one bug wearing
+twenty hats: every catch clause read `e?.response?.data?.error || e.message`
+with `e` typed `any`, and a thrown non-Error has no `message`, so those paths
+put the literal string "undefined" in a toast. They now share one narrowing
+helper. Zero errors remain; six warnings do, and they are real, so they are not
+suppressed.
+
+**One acceptance item is not met.** The ticket asks for a CI run showing red on
+a deliberately broken test and green after the revert. The break was made and
+reverted locally — `go test -race` failed on five subtests and then returned
+exit 0 — but the CI half needs a push, which is the repo owner's call.
+
+Record, gate output and the full lint triage:
+[`test-coverage.md`](test-coverage.md).
+
 ---
 
 ## What the history says about how this project is built

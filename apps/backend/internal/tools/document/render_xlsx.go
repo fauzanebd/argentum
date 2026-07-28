@@ -9,7 +9,7 @@ import (
 
 func RenderXLSX(spec *Spec) ([]byte, error) {
 	f := excelize.NewFile()
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// excelize starts with a sheet called "Sheet1". Track whether we've
 	// reused it yet so multi-sheet specs don't leave a stray empty sheet.

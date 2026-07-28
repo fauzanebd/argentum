@@ -22,6 +22,7 @@ import { useThemeStore } from "@/store/theme";
 import { api } from "@/lib/api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { apiErrorStatus } from "@/lib/api-error";
 
 export function NavUser() {
   const { isMobile } = useSidebar();
@@ -44,8 +45,8 @@ export function NavUser() {
           };
         }>("/users/me");
         return res.data.user;
-      } catch (err: any) {
-        if (err?.response?.status === 404) {
+      } catch (err: unknown) {
+        if (apiErrorStatus(err) === 404) {
           return null;
         }
         throw err;

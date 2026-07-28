@@ -1,3 +1,6 @@
+// Package metabase talks to the Metabase REST API — registering a tenant
+// database, creating cards and dashboards — and builds the driver-specific
+// DSNs those calls need.
 package metabase
 
 import (

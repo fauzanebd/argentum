@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2 } from "lucide-react";
 import { useModels } from "@/lib/use-models";
+import { apiErrorMessage } from "@/lib/api-error";
 
 export function GeneralTab() {
   const [currency, setCurrency] = useState("USD");
@@ -33,8 +34,8 @@ export function GeneralTab() {
       await api.put("/settings", { default_currency: currency });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch (e: any) {
-      setError(e?.response?.data?.error || e.message);
+    } catch (e: unknown) {
+      setError(apiErrorMessage(e));
     } finally {
       setSaving(false);
     }

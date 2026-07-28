@@ -1,3 +1,7 @@
+// Package tools implements the agent's tool surface: read-only SQL, schema
+// retrieval, source resolution, Metabase cards and dashboards, document
+// generation and scheduled tasks. Every tool resolves its tenant from
+// tenantctx rather than from its arguments.
 package tools
 
 import (
@@ -122,25 +126,37 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 
 	t.recorder.RecordSQL(ctx, companyID, tenantctx.ThreadID(ctx))
 
-	payload := buildSQLPayload(source.ID, source.DBType, result)
-	out, _ := json.Marshal(payload)
+	return string(marshalSQLResult(source.ID, source.DBType, result, t.maxBytes)), nil
+}
 
-	// Byte-cap: even within maxRows, very wide columns can blow context.
-	// Drop rows from the tail until the serialized payload fits under
-	// maxBytes, then mark truncated. Re-marshalling per shrink is O(n²) on
-	// row count but maxRows is small (default 100), so this is fine.
-	if t.maxBytes > 0 && len(out) > t.maxBytes {
-		rows := result.Rows
-		for len(rows) > 0 && len(out) > t.maxBytes {
-			rows = rows[:len(rows)-1]
-			result.Rows = rows
-			result.Count = len(rows)
-			result.Truncated = true
-			payload = buildSQLPayload(source.ID, source.DBType, result)
-			out, _ = json.Marshal(payload)
-		}
+// marshalSQLResult serialises a query result for the model, dropping rows from
+// the tail until the payload fits under maxBytes. Even within maxRows, very
+// wide columns can blow the context window. A non-positive maxBytes disables
+// the cap.
+//
+// Re-marshalling per shrink is O(n²) in row count, but maxRows is small
+// (default 100), so this is fine.
+//
+// Split out of Execute so the trimming loop is reachable without a live tenant
+// connection: it is the branch that decides how much of a result the model
+// ever sees.
+func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes int) []byte {
+	payload := buildSQLPayload(sourceID, dbType, result)
+	out, _ := json.Marshal(payload)
+	if maxBytes <= 0 || len(out) <= maxBytes {
+		return out
 	}
-	return string(out), nil
+
+	rows := result.Rows
+	for len(rows) > 0 && len(out) > maxBytes {
+		rows = rows[:len(rows)-1]
+		result.Rows = rows
+		result.Count = len(rows)
+		result.Truncated = true
+		payload = buildSQLPayload(sourceID, dbType, result)
+		out, _ = json.Marshal(payload)
+	}
+	return out
 }
 
 func buildSQLPayload(sourceID, dbType string, result *db.QueryResult) map[string]interface{} {

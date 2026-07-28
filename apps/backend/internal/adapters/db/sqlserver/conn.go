@@ -150,8 +150,8 @@ func (c *conn) columns(ctx context.Context, table string) ([]db.ColumnInfo, erro
 	var out []db.ColumnInfo
 	for rows.Next() {
 		var (
-			col              db.ColumnInfo
-			nullable, isPK   int
+			col            db.ColumnInfo
+			nullable, isPK int
 		)
 		if err := rows.Scan(&col.Name, &col.Type, &nullable, &col.Description, &isPK); err != nil {
 			continue

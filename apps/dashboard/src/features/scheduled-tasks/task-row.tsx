@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { ScheduledTask } from "./types";
+import { apiErrorMessage } from "@/lib/api-error";
 
 function humanCron(expr: string): string {
   try {
@@ -48,12 +49,12 @@ export function TaskRow({
     onMutate: (next) => {
       setEnabled(next);
     },
-    onError: (e: any, _vars, _ctx) => {
+    onError: (e: unknown) => {
       setEnabled(task.enabled);
       toast({
         variant: "destructive",
         title: "Could not update task",
-        description: e?.response?.data?.error || e.message,
+        description: apiErrorMessage(e),
       });
     },
     onSuccess: () => {
@@ -67,11 +68,11 @@ export function TaskRow({
       await api.delete(`/scheduled-tasks/${task.id}`);
       qc.invalidateQueries({ queryKey: ["scheduled-tasks"] });
       toast({ title: "Task deleted" });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         variant: "destructive",
         title: "Delete failed",
-        description: e?.response?.data?.error || e.message,
+        description: apiErrorMessage(e),
       });
     }
   }

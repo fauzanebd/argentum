@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
 
 interface Phone {
   company_id: string;
@@ -32,8 +33,8 @@ export function PhonesTab() {
       setPhone("");
       setLabel("");
       qc.invalidateQueries({ queryKey: ["phones"] });
-    } catch (e: any) {
-      setError(e?.response?.data?.error || e.message);
+    } catch (e: unknown) {
+      setError(apiErrorMessage(e));
     }
   }
 

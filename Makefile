@@ -67,12 +67,24 @@ build: ## Build every binary and every workspace package
 	cd $(BACKEND) && go build ./...
 	pnpm -r build
 
-.PHONY: lint
-lint: ## Lint every workspace app (dashboard=eslint, landing=tsc --noEmit)
+.PHONY: lint-go
+lint-go: ## golangci-lint the backend (config: apps/backend/.golangci.yml)
+	@command -v golangci-lint >/dev/null 2>&1 || { \
+		echo "golangci-lint is not installed — CI runs it, or:"; \
+		echo "  brew install golangci-lint    # or see https://golangci-lint.run/welcome/install/"; \
+		exit 1; \
+	}
+	cd $(BACKEND) && golangci-lint run ./...
+
+.PHONY: lint-web
+lint-web: ## Lint every workspace app (dashboard=tsc + eslint, landing=tsc --noEmit)
 	pnpm -r lint
 
+.PHONY: lint
+lint: lint-go lint-web ## Lint the backend and every workspace app
+
 .PHONY: check
-check: vet test build ## Everything CI runs, locally
+check: vet lint test build ## Everything CI runs, locally
 
 # ---------------------------------------------------------------------------
 # Agent quality

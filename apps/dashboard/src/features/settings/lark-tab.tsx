@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { apiErrorMessage } from "@/lib/api-error";
 
 interface LarkConfig {
   configured: boolean;
@@ -89,8 +90,8 @@ export function LarkTab() {
       setAppSecret("");
       qc.invalidateQueries({ queryKey: ["lark", "config"] });
       toast({ title: "Lark saved", description: "Configuration updated." });
-    } catch (e: any) {
-      setError(e?.response?.data?.error || e.message);
+    } catch (e: unknown) {
+      setError(apiErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -109,10 +110,10 @@ export function LarkTab() {
       setBotOpenId("");
       setEnabled(true);
       toast({ title: "Lark removed" });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         title: "Remove failed",
-        description: e?.response?.data?.error || e.message,
+        description: apiErrorMessage(e),
         variant: "destructive",
       });
     }
@@ -128,8 +129,8 @@ export function LarkTab() {
       setOpenId("");
       setUserLabel("");
       qc.invalidateQueries({ queryKey: ["lark", "users"] });
-    } catch (e: any) {
-      setUserError(e?.response?.data?.error || e.message);
+    } catch (e: unknown) {
+      setUserError(apiErrorMessage(e));
     }
   }
 

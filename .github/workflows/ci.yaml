@@ -92,6 +92,17 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # golangci-lint also runs govet, so the step above is strictly redundant.
+      # It stays because it is two seconds and it fails with a plain compiler
+      # message; a vet finding should not arrive dressed as a lint finding.
+      # The config is apps/backend/.golangci.yml — five linters plus a gofmt
+      # check, deliberately narrow (T-02).
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12
+          working-directory: apps/backend
+
       - name: Test
         run: go test -race -count=1 ./...
 

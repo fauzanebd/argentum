@@ -20,6 +20,7 @@ import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { formatLatencySeconds, formatMessageTimestamp } from "./format";
+import { apiErrorMessage } from "@/lib/api-error";
 
 export function ChatPage() {
   const params = useParams({ strict: false }) as { threadId?: string };
@@ -210,7 +211,7 @@ export function ChatPage() {
     setError(null);
     setSending(true);
 
-    let targetThreadId = activeThreadId;
+    const targetThreadId = activeThreadId;
 
     try {
       const res = await api.post<{
@@ -247,8 +248,8 @@ export function ChatPage() {
       if (res.data.is_new_thread) {
         startPolling(newThreadId);
       }
-    } catch (e: any) {
-      setError(e?.response?.data?.error || "Send failed");
+    } catch (e: unknown) {
+      setError(apiErrorMessage(e, "Send failed"));
     } finally {
       setSending(false);
     }

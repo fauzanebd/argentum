@@ -59,10 +59,10 @@ func (d *apiDeps) cleanup() {
 		d.llmCache.CloseAll()
 	}
 	if d.enqueuer != nil {
-		d.enqueuer.Close()
+		_ = d.enqueuer.Close()
 	}
 	if d.rdb != nil {
-		d.rdb.Close()
+		_ = d.rdb.Close()
 	}
 	if d.tenant != nil {
 		d.tenant.CloseAll()

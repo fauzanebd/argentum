@@ -1,3 +1,7 @@
+// Package config loads every runtime setting from the environment, applies
+// the documented defaults, and validates the combinations that cannot be
+// caught later — an unknown LLM interface, a missing secret, a WhatsApp
+// provider without its credentials.
 package config
 
 import (

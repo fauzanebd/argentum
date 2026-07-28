@@ -11,8 +11,8 @@ import (
 
 // DashboardService manages persisted Metabase dashboards.
 type DashboardService struct {
-	repo   domain.DashboardRepository
-	mb     *metabase.Client
+	repo domain.DashboardRepository
+	mb   *metabase.Client
 }
 
 func NewDashboardService(repo domain.DashboardRepository, mb *metabase.Client) *DashboardService {

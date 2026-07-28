@@ -1,3 +1,6 @@
+// Package llmclient constructs an agent-sdk-go LLM for a given wire protocol
+// (openai, anthropic, gemini), model and base URL. It is the only place that
+// knows which SDK client a provider string maps to.
 package llmclient
 
 import (

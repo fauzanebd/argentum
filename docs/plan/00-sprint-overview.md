@@ -197,7 +197,7 @@ Phase 1a Report system: design tokens ✅ → PDF v2 ✅ → charts ✅ → PPTX
             PowerPoint / Keynote / Google Slides half of the gate is still
             outstanding and is recorded as such.
             See coverage/report-deck.md.
-Phase 1b Tests + CI gate + generated types + RBAC + credit enforcement
+Phase 1b Tests ✅ + CI gate ✅ + generated types + RBAC + credit enforcement
          └─ You cannot ship autonomy on an unmeasured, unbounded, unaudited system.
             Also fixes the three P0 security/billing findings, which are cheap now
             and expensive after you have users. T-03 waits on T-02c: a budget
@@ -206,6 +206,14 @@ Phase 1b Tests + CI gate + generated types + RBAC + credit enforcement
             holds, so RBAC, the audit log and the budget check stop being
             hygiene and start being the difference between a product and an
             incident.
+            T-02 landed 2026-07-28: 21 of 49 packages have tests, every CRITICAL
+            one among them, golangci-lint runs in CI at zero issues, and the
+            dashboard is linted for the first time. It found that scheduled
+            tasks with a non-UTC timezone cannot work in the deployed images —
+            alpine has no zoneinfo and nothing imported time/tzdata — plus two
+            unchecked type assertions, a guardrail rule that can never fire, and
+            a flaky determinism test in the deck renderer.
+            See coverage/test-coverage.md.
 Phase 1c API keys → /v1 foundation → reports over HTTP → chat over HTTP → SDKs
          └─ Owner-set highest priority, inserted 2026-07-28. Argentum stops being
             a destination and becomes a component of the customer's own product.
@@ -332,7 +340,7 @@ change no one's workflow. Watchers do.
 | 0 ✅ | **One tree**            | Single repo, all three histories blameable through the subtree boundary. Zero Go import-path changes in the migration diff. Both Cloudflare Pages previews deploy from the new roots. CI path-filters correctly per job, and `cmd/discord` builds in it for the first time. |
 | 1 ✅ | **It admits what it doesn't know** | `make eval` prints a score over ≥30 golden questions. The exact C-1 question — "What were our total sales last month?" — returns the right order of magnitude or an explicit "I could not complete this", and never an invented figure. `/api/usage/summary` shows the primary model with non-zero tokens after one chat turn. **Met 2026-07-27.** The C-1 question returns the exact figure; a turn that runs out now says so in the reply ("the budget was exhausted before I could get the final sum") instead of inventing one. |
 | 1a | **Worth forwarding**     | The same monthly-sales spec renders as (a) a branded PDF with a cover, a running header, `Page N of M`, a chart, right-aligned rupiah, and a repeating table header across 200 rows, and (b) a PPTX deck that opens cleanly in PowerPoint, Keynote, Google Slides, and LibreOffice with the narrative in speaker notes. Both derive their colours, type scale, and fonts from the same generated tokens as the dashboard, and CI fails if the two drift. A tenant logo and colour set in Settings → Reports appear in the next generated file with no redeploy. **PDF half met in full 2026-07-28:** cover, running header, `Page N of M`, right-aligned rupiah, a header repeating across 17 pages of a 200-row table, byte-identical between runs, and — since `T-R3` — a chart, on the same generated tokens as the dashboard and on a palette now gated against deuteranopia and greyscale. **Deck half met 2026-07-28 except the four-application check:** the identical fixture — same file, only `format` changed — renders as 11 slides with the narrative in speaker notes, byte-identical between runs, and LibreOffice 7.4.7.2 converts all five fixtures in CI. PowerPoint, Keynote and Google Slides cannot be driven from a headless runner; that check is outstanding and named in `coverage/report-deck.md`. Tenant branding is `T-R5`. |
-| 1b | **Safe to change**       | CI fails on a failing test. All CRITICAL packages have tests. A Go struct rename without `make types` is a red build. Non-admin cannot rotate a DSN. A tenant at zero credits gets a clear refusal instead of a bill. |
+| 1b | **Safe to change**       | CI fails on a failing test. All CRITICAL packages have tests. A Go struct rename without `make types` is a red build. Non-admin cannot rotate a DSN. A tenant at zero credits gets a clear refusal instead of a bill. **Half met 2026-07-28 by `T-02`:** all CRITICAL packages have tests (21 of 49 packages, up from 16), CI runs `go vet`, `golangci-lint` and `go test -race` and the tree is clean under all three, and a deliberate break was shown to fail the suite locally — the CI-run proof needs a push and is recorded as outstanding. `T-02b` (type drift), `T-04` (RBAC) and `T-03` (credits) are the rest. |
 | 1c | **Anyone can call it**   | A throwaway Node script holding an API key writes a branded PDF to disk in under 10 minutes, using only the published quickstart and no help from us. The same key streams a chat answer over SSE, and is rejected by every `/api` dashboard route. A retried request with the same `Idempotency-Key` bills once. Adding a `/v1` route without an OpenAPI entry is a red build. |
 | 2  | **Authoritative numbers**| A metric is defined once in the UI; asking the same question twice in two threads returns the same number via `query_metric`. Eval score has not regressed. |
 | 3  | **It tells you first**   | A watcher on a demo-tenant metric breaches and a WhatsApp/Discord message arrives, unprompted, containing the number and the agent's explanation. |
@@ -366,6 +374,7 @@ change no one's workflow. Watchers do.
 | A reply is blocked for a figure it legitimately holds | Medium | Medium | The new output check is blunt by design and could suppress a correct answer — the failure mode of every guardrail this project has had to narrow. It is scoped as tightly as the evidence allows (it fires only when no data tool returned a row) and every block is logged at Warn **with the full blocked reply**, because tuning it is impossible without the text. If false positives appear, narrow it against a golden case, not by eye. |
 | **Spend is invisible on the default provider**            | **Observed** | **High** | Primary-model streaming turns record no usage at all (`Q-12`). New ticket `T-02c` fixes it and blocks `T-03`, whose budget check would otherwise gate on a permanent near-zero. |
 | A local `.env` points at production                       | **Observed** | **High** | The working `.env` had `DB_HOST` on a remote host while looking local; the smoke test nearly wrote test data to it. `.env.example` is now tracked (`Q-10`); add a startup warning when a non-production `ENV` targets a non-local `DB_HOST`. |
+| ~~**Code works locally and fails only in the container**~~ **Closed 2026-07-28** | **Observed** | **High** | `T-02`'s cron tests found that `time.LoadLocation` reads `/usr/share/zoneinfo`, which `alpine:latest` does not ship and nothing installed — so every scheduled task with a non-UTC timezone was rejected in production and worked on every developer machine. This is the general class, not the instance: the deployed images are near-empty and anything the standard library reads off the host filesystem is a candidate. The instance is fixed by a `time/tzdata` blank import with a test that removes the host lookup; the class is mitigated by the same rule the fix follows — depend on what is compiled in, not on what the base image happens to carry. |
 | **A leaked API key spends a tenant's credits**             | Medium     | **High** | A key sits in someone else's CI config, and a `for` loop over `POST /v1/reports` is an unbounded LLM bill. Four layers, none optional: `T-03`'s budget check inside the `/v1` chain returning a typed 402, per-key rate limits on a separate bucket, Argon2id hashing with the plaintext shown exactly once (`T-13`), and per-key usage visible to the tenant (`T-A5`) so they notice before we do. |
 | **`/v1` freezes a shape we regret**                       | **High**   | Medium | A public contract is a promise, and the first customer writing against it makes it permanent. Mitigation is scope, not process: ship the narrowest surface that does the job, keep `/api` unversioned so first-party dashboard churn never touches `/v1`, and state the additive-only policy in `T-A1` before the first key is issued. |
 | **An untrusted spec takes down the renderer**             | Medium     | High   | A spec arriving over HTTP is untrusted in a way the agent's own spec never was. maroto will attempt to lay out 500 000 rows. `T-A2` caps rows, columns and string lengths and rejects **before** rendering; a sync render over 20s becomes a 202. |
@@ -427,9 +436,17 @@ them:
 | What | Days | Cumulative |
 | ---- | ---- | ---------- |
 | Finish the report track (~~`T-R3`~~ ✅, ~~`T-R4`~~ ✅, `T-R5`) | 1.5 | 1.5 |
-| Foundation (`T-02`, `T-02b`, `T-03`, `T-04`, `T-05`) | 8.0 | 9.5 |
-| **The API track (`T-13`, `T-A1`→`T-A5`)** | 12.5 | **22.0** |
+| Foundation (~~`T-02`~~ ✅, `T-02b`, `T-03`, `T-04`, `T-05`) | 5.0 | 6.5 |
+| **The API track (`T-13`, `T-A1`→`T-A5`)** | 12.5 | **19.0** |
 | Remaining budget | | **26.0** |
+
+**Updated 2026-07-28 after `T-02`.** Three of the foundation's eight days are
+spent, so the slack across the three phases is now 7.0 days rather than 4.0.
+That is the most comfortable this plan has been since the first priority
+insert, and it is worth naming why it should not be spent: the API track's
+2.5-day estimate for `T-A1` covers an error envelope, an idempotency contract
+and a pagination style that all become permanent the first time a customer
+writes against them.
 
 **Sprint 1 is now: finish the report system, build the foundation, ship the API.**
 It fits — with 4.0 days of slack across three phases after `T-R4` landed on

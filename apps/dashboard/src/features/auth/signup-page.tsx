@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+import { apiErrorMessage } from "@/lib/api-error";
 
 const schema = z.object({
   company_name: z.string().min(2, "Company name is required"),
@@ -34,8 +35,8 @@ export function SignupPage() {
       const res = await api.post("/auth/signup", values);
       setSession(res.data.access_token, res.data.user);
       navigate({ to: "/onboarding" });
-    } catch (e: any) {
-      setError(e?.response?.data?.error || "Signup failed");
+    } catch (e: unknown) {
+      setError(apiErrorMessage(e, "Signup failed"));
     }
   }
 

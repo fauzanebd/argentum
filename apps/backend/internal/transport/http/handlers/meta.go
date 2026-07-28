@@ -20,7 +20,7 @@ func (h *MetaHandler) Register(rg *gin.RouterGroup) {
 
 func (h *MetaHandler) supportedDBs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"supported": db.Supported,
+		"supported":  db.Supported,
 		"registered": db.Registered(),
 	})
 }

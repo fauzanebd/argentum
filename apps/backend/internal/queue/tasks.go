@@ -3,9 +3,9 @@
 // Tasks today:
 //   - `chat:run`           — process one user message through the agent.
 //   - `scheduled:run`      — fired by asynq.PeriodicTaskManager for each
-//                            cron tick of an enabled scheduled_tasks row;
-//                            the worker resolves the task and re-enqueues
-//                            a `chat:run` against the dedicated thread.
+//     cron tick of an enabled scheduled_tasks row;
+//     the worker resolves the task and re-enqueues
+//     a `chat:run` against the dedicated thread.
 //
 // Payloads are JSON-marshalled into the asynq task body.
 package queue
@@ -15,7 +15,7 @@ import "github.com/fauzanebd/argentum/internal/domain"
 // Task type constants. These are the values asynq uses to dispatch tasks
 // to handlers; keep them stable across deploys.
 const (
-	TypeChatRun         = "chat:run"
+	TypeChatRun          = "chat:run"
 	TypeScheduledTaskRun = "scheduled:run"
 )
 

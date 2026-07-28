@@ -1,3 +1,6 @@
+// Package whatsapp implements the two WhatsApp transports the product
+// supports — the Meta Business API and Twilio — behind one sender interface,
+// selected by WHATSAPP_PROVIDER.
 package whatsapp
 
 import (

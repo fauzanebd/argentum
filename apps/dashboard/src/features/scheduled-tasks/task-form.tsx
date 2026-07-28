@@ -24,6 +24,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { CRON_PRESETS, defaultTimezone } from "./cron-presets";
 import type { ScheduledTask } from "./types";
+import { apiErrorMessage } from "@/lib/api-error";
 
 const CUSTOM_PRESET = "__custom__";
 
@@ -44,8 +45,12 @@ export function TaskForm() {
         ok: true,
         text: cronstrue.toString(cron, { use24HourTimeFormat: true }),
       };
-    } catch (e: any) {
-      return { ok: false, text: typeof e === "string" ? e : e?.message ?? "Invalid cron." };
+    } catch (e: unknown) {
+      // cronstrue throws a bare string, not an Error. Handle both rather than
+      // reaching for `.message` on a value the compiler cannot vouch for.
+      const text =
+        typeof e === "string" ? e : e instanceof Error ? e.message : "Invalid cron.";
+      return { ok: false, text };
     }
   }, [cron]);
 
@@ -84,8 +89,8 @@ export function TaskForm() {
         title: "Task scheduled",
         description: `${res.data.name} — ${cronPreview.text}`,
       });
-    } catch (e: any) {
-      setError(e?.response?.data?.error || e.message);
+    } catch (e: unknown) {
+      setError(apiErrorMessage(e));
     } finally {
       setSubmitting(false);
     }

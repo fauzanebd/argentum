@@ -1,3 +1,5 @@
+// Package cache wraps the Redis client used for short-lived query results
+// and schema snapshots. TTLs come from CACHE_TTL_SHORT / CACHE_TTL_LONG.
 package cache
 
 import (

@@ -17,6 +17,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { toast } from "@/hooks/use-toast";
+import { apiErrorMessage } from "@/lib/api-error";
 
 interface Connection {
   id: string;
@@ -130,8 +131,8 @@ export function ConnectionsTab() {
     try {
       const res = await api.post("/connections/test", payload());
       setTestResult(res.data.ok ? "ok" : res.data.error || "Failed");
-    } catch (e: any) {
-      setTestResult(e?.response?.data?.error || e.message);
+    } catch (e: unknown) {
+      setTestResult(apiErrorMessage(e));
     } finally {
       setTesting(false);
     }
@@ -150,8 +151,8 @@ export function ConnectionsTab() {
       setDbname("");
       setTestResult(null);
       qc.invalidateQueries({ queryKey: ["connections"] });
-    } catch (e: any) {
-      setError(e?.response?.data?.error || e.message);
+    } catch (e: unknown) {
+      setError(apiErrorMessage(e));
     }
   }
 
@@ -179,11 +180,11 @@ export function ConnectionsTab() {
           description: res.data.error || "Unknown error",
         });
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         variant: "destructive",
         title: "Connection failed",
-        description: e?.response?.data?.error || e.message,
+        description: apiErrorMessage(e),
       });
     } finally {
       setTestingId(null);
@@ -202,11 +203,11 @@ export function ConnectionsTab() {
         title: "Embeddings reindexed",
         description: `${res.data.tables} tables indexed.`,
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         variant: "destructive",
         title: "Reindex failed",
-        description: e?.response?.data?.error || e.message,
+        description: apiErrorMessage(e),
       });
     } finally {
       setReindexingId(null);
@@ -236,8 +237,8 @@ export function ConnectionsTab() {
         { timeout: 60000 },
       );
       setRagResult(res.data);
-    } catch (e: any) {
-      const msg = e?.response?.data?.error || e.message;
+    } catch (e: unknown) {
+      const msg = apiErrorMessage(e);
       setRagError(msg);
       toast({ variant: "destructive", title: "RAG test failed", description: msg });
     } finally {
@@ -258,11 +259,11 @@ export function ConnectionsTab() {
         title: "Description updated",
         description: res.data.description || `Synced ${res.data.label ?? "connection"}.`,
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         variant: "destructive",
         title: "Sync failed",
-        description: e?.response?.data?.error || e.message,
+        description: apiErrorMessage(e),
       });
     } finally {
       setSyncingId(null);

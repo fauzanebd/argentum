@@ -142,7 +142,7 @@ func TestDetectLanguage(t *testing.T) {
 	cases := map[string]string{
 		"Total sales for December 2024 were 3.86 billion, and that is the highest month in your data.": "en",
 		"Total penjualan pada bulan Desember 2024 adalah 3,86 miliar dan ini yang tertinggi.":          "id",
-		"Rp 3.863.405.700":                                                                            "",
+		"Rp 3.863.405.700": "",
 	}
 	for text, want := range cases {
 		if got := DetectLanguage(text); got != want {

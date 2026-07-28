@@ -1,3 +1,5 @@
+// Package metrics exposes the Prometheus-format counters and histograms the
+// API serves at /metrics: turn latency, tool-call outcomes and queue depth.
 package metrics
 
 import (

@@ -48,8 +48,8 @@ type CompanyService struct {
 	dsnCipher   *crypto.DSNCipher
 	pool        *db.TenantConnPool
 	mb          *MetabaseWarehouseSync
-	schemaTool  *tools.GetSchemaTool   // optional; nil in tests
-	describer   *ConnectionDescriber   // optional; nil disables LLM autogen
+	schemaTool  *tools.GetSchemaTool // optional; nil in tests
+	describer   *ConnectionDescriber // optional; nil disables LLM autogen
 }
 
 func NewCompanyService(

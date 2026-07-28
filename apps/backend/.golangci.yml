@@ -1,0 +1,74 @@
+# Deliberately narrow. This repo has never had a linter, so a maximal ruleset
+# would produce a wall of findings nobody triages and a gate everyone learns to
+# ignore. These five are the ones whose findings are almost always real bugs
+# rather than style opinions; widening happens when the tree is clean and stays
+# clean, not before.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck # an ignored error is how a failed write becomes a silent success
+    - govet # already run separately; here so a finding fails one job, not two
+    - staticcheck # the one that catches real logic mistakes
+    - ineffassign # an assignment nobody reads is usually a forgotten branch
+    - unused # dead code after nine weeks of drift and a monorepo migration
+
+  settings:
+    errcheck:
+      # Deliberate fire-and-forget calls in this codebase are written as
+      # `_ = f()`, so blank assignments stay excluded. Type assertions are
+      # NOT: `v.(string)` without the comma-ok form panics, and this setting
+      # is what found the two in the chat handler that would have turned a
+      # route wired without middleware.Auth into a 500.
+      check-blank: false
+      check-type-assertions: true
+      # Teardown whose failure the caller cannot act on. A `defer db.Close()`
+      # that returns an error at the end of a request has nothing left to do
+      # with it, and wrapping every one in a logging closure is noise that
+      # makes the real findings harder to see. Read-path Close is different
+      # from write-path Close — none of these are buffered writers, where a
+      # dropped error loses data.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*database/sql.Tx).Rollback
+        - (*database/sql.Rows).Close
+        - (*database/sql.Stmt).Close
+        - (*database/sql.DB).Close
+        - (*github.com/gorilla/websocket.Conn).Close
+        - (*github.com/gorilla/websocket.Conn).SetReadDeadline
+        - (*github.com/gorilla/websocket.Conn).SetWriteDeadline
+        - (*github.com/redis/go-redis/v9.PubSub).Close
+        - (*github.com/redis/go-redis/v9.Client).Close
+        - (*github.com/hibiken/asynq.Client).Close
+
+    staticcheck:
+      checks:
+        - all
+        # ST1005 wants lower-case error strings, which is right until the
+        # first word is a product name: "Metabase resolver not configured"
+        # should not become "metabase …".
+        - -ST1005
+        # QF1008 wants g.Tool.Name() written as g.Name(). The explicit
+        # embedded field is how the budget guard says "this call goes to the
+        # wrapped tool", which is the whole point of that type.
+        - -QF1008
+
+  exclusions:
+    generated: lax
+    rules:
+      # Generated from packages/design-tokens/tokens.json by `make tokens`.
+      # Findings here have to be fixed in the generator, not the output.
+      - path: internal/report/theme/tokens_gen\.go
+        linters: [unused, staticcheck]
+      # Tests legitimately ignore errors from helpers whose failure the
+      # assertion below already catches.
+      - path: _test\.go
+        linters: [errcheck]
+
+formatters:
+  enable:
+    - gofmt

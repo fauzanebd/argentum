@@ -58,14 +58,14 @@ type MessageReceiveEvent struct {
 
 // Mention is one @mention inside a message.
 type Mention struct {
-	Key       string `json:"key"`
-	ID        struct {
+	Key string `json:"key"`
+	ID  struct {
 		OpenID  string `json:"open_id"`
 		UnionID string `json:"union_id"`
 		UserID  string `json:"user_id"`
 	} `json:"id"`
-	Name       string `json:"name"`
-	TenantKey  string `json:"tenant_key"`
+	Name      string `json:"name"`
+	TenantKey string `json:"tenant_key"`
 }
 
 // TextContent is the unmarshal target for message_type=="text" content

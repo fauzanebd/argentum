@@ -59,9 +59,67 @@ zero tests.**
 > What that still cannot see is whether a page is *ugly*. `pdftoppm` on the
 > written fixtures is the manual half of the gate and has no substitute.
 
+> **Updated after `T-02` (2026-07-28):** **21 of 49 packages have tests**, and
+> every package this document ranked CRITICAL now has them. The three
+> HIGH/MEDIUM packages named in the ticket — `internal/auth`, `internal/config`,
+> and the middleware that enforces token type — are covered too. `go test -race`
+> is green and `golangci-lint` reports **0 issues** against a five-linter config
+> that the tree previously failed in 50 places.
+>
+> The gate is now real in both directions: CI runs `go vet`, `golangci-lint`
+> (including a gofmt check), `go test -race -count=1`, and builds all three
+> binaries; the dashboard runs `tsc -b --noEmit && eslint .` with eslint
+> actually installed for the first time.
+>
+> Three things this ticket found that no amount of reading would have:
+>
+> - **Scheduled tasks with a non-UTC timezone cannot work in production.**
+>   `normalizeTimezone` and `nextFire` both call `time.LoadLocation`, which
+>   reads `/usr/share/zoneinfo` — a directory `alpine:latest` does not have, and
+>   the API, worker and Discord images are all bare alpine plus
+>   `ca-certificates`. Nothing imported `time/tzdata`, so every non-UTC zone
+>   works on a developer machine and fails in the deployed image. `internal/app`
+>   now blank-imports `time/tzdata`, and `TestTimezoneDatabaseIsAvailableWithoutTheHostFilesystem`
+>   points `ZONEINFO` at nothing so the test would fail if the import were
+>   removed.
+> - **Two unchecked type assertions in the chat handler.** `uid.(string)` on a
+>   value only `middleware.Auth` sets: a route wired without it panics rather
+>   than 401s. Both now go through a `userID(c)` helper alongside the existing
+>   `companyID(c)`. Found by turning on errcheck's `check-type-assertions`.
+> - **`redact_nik` can never fire.** A NIK is sixteen consecutive digits and so
+>   is a credit-card number without separators, and `redact_credit_cards` is
+>   declared first. Pinned in a named test rather than covered with a case that
+>   would have quietly asserted the wrong rule. Two smaller redaction edges are
+>   pinned the same way. All three belong to `T-07b`.
+>
+> Details, including the guardrail golden set's shape, are in the sections
+> below.
+
 ## Go backend — package by package
 
-### Packages with tests (12)
+### Packages with tests (21)
+
+`T-02` added five packages and grew three that already had tests. The other
+four new entries since this table last said twelve — `internal/report/chart`,
+`layout`, `measure` and `pptx` — arrived with `T-R3` and `T-R4` and are
+recorded in [`report-charts.md`](report-charts.md) and
+[`report-deck.md`](report-deck.md).
+
+| Package | Test file(s) | What it covers |
+| ------- | ------------ | -------------- |
+| `internal/crypto` | `dsn_test.go` | AES-256-GCM round-trip over five DSN shapes, key-length and hex validation, a fresh nonce per seal, decryption under the wrong key, and ten malformed payloads that must error rather than panic — including the two lengths that would slice out of range without the guard (`T-02`) |
+| `internal/tenantctx` | `tenant_test.go` | Every getter returns `""` unset; the three keys are distinct types so one setter cannot overwrite another; a derived context cannot write back into its parent, which is what keeps one queued task's tenant out of the next one's (`T-02`) |
+| `internal/config` | `config_test.go` | All seven fallback accessors including the one that refuses to lend an Anthropic key to an OpenAI embeddings call, `WorkerQueueMap` over thirteen inputs (none of which may yield an empty map — that is a worker consuming nothing), `DatabaseURL` round-tripped through `net/url` with eight password shapes, `redisDialAddr` for URI/bare/IPv6/malformed, and the provider-scoped WhatsApp validation (`T-02`) |
+| `internal/auth` | `password_test.go`, `jwt_test.go` | Argon2id round-trip and per-call salting, eleven malformed stored hashes, verification against parameters read back out of the stored string; JWT issue/verify, the secret-length floor, an expired token, a foreign signature, an `alg=none` forgery, and seven malformed tokens (`T-02`) |
+| `internal/transport/http/middleware` | `auth_test.go` | A refresh token is rejected on an access route — through the header, the `?at=` query parameter the WebSocket upgrade needs, and the cookie; the fallback precedence between the three; `AdminOnly` per role, including that it denies when `Auth` never ran (`T-02`) |
+| `internal/app` | `metering_llm_test.go`, `usage_pricing_test.go`, `thread_service_test.go`, `scheduled_cron_test.go` | `MeteredLLM` streaming usage (`T-02c`), plus: `RecordLLM` cost arithmetic with the 1.25×/0.10× cache multipliers and the unknown-model fallback that stops a new model string billing zero; the `continueOrFork` decision table in all eight of its states; `validateCron` / `normalizeTimezone` / `nextFire` including both DST transitions (`T-02`) |
+| `internal/guardrails` | `fabrication_test.go`, `golden_test.go` | The `T-16` fabrication rule, plus a golden suite over the **shipped** `config/guardrails.yaml`: every rule with must-block and must-pass cases, a coverage test that fails when a rule is added without them, the documented false positives ("create a dashboard", "update me on sales", "integer target", benign follow-ups), scope separation, and the opposite failure directions of the two LLM patterns (`T-02`) |
+| `internal/tools` | `run_sql_test.go`, `run_sql_bytecap_test.go`, `source_resolve_test.go` | The `run_sql` result notes (`T-16`), plus the byte-cap trimming loop — wide rows shrink from the tail, the count matches what was sent, a single oversized row does not become a false "matched zero rows" — and `ResolveSource` with 0/1/many sources, an explicit id, a cross-tenant id, and the empty-company rejection that happens before the repository is touched (`T-02`) |
+
+The twelve that came before:
+
+| Package                        | Test file(s)                                       | What it covers                       |
+| ------------------------------ | -------------------------------------------------- | ------------------------------------ |
 
 | Package                        | Test file(s)                                       | What it covers                       |
 | ------------------------------ | -------------------------------------------------- | ------------------------------------ |
@@ -78,25 +136,26 @@ zero tests.**
 | `internal/tools`               | `run_sql_test.go`                                   | The zero-row and truncation notes on a `run_sql` payload (`T-16`) |
 | `internal/report/theme`        | `theme_test.go`                                     | The generated tokens match `tokens.json`, so a hand edit to `tokens_gen.go` fails `go test` before it reaches the `tokens` CI job (`T-R1`) |
 
-All twelve pass.
+All twenty-one pass, under `-race`.
 
-### Packages with no tests (32)
+### Packages with no tests (28)
 
-Ranked by risk — how much damage a silent regression here would do.
+Ranked by risk — how much damage a silent regression here would do. **Every
+CRITICAL row is now closed**; what is left is `T-02`'s Sprint 2 successor.
 
 | Risk     | Package                                | Why it matters                                                                                        |
 | -------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **CRITICAL** | `internal/app` *(partial)*         | ~3,000 lines. `MeteredLLM` is covered; `ChatRunner`, `ThreadService` (fork heuristics), `UsageService` (pricing math) and `ScheduledTaskService` (cron validation) are not. Every recent bug-fix commit touched this package. |
-| **CRITICAL** | `internal/guardrails` *(partial)*  | The security boundary. The T-16 fabrication rule is covered; the YAML rule engine is not. Six of the last twenty commits tuned guardrail behaviour with no regression signal — a re-narrowed regex could silently unblock prompt injection or block legitimate BI questions. And per `T-16`'s finding, the output rules have never executed at all (see `T-07b`). |
-| **CRITICAL** | `internal/crypto`                  | AES-256-GCM DSN cipher. A round-trip bug corrupts every stored connection.                              |
-| **CRITICAL** | `internal/tenantctx`               | The tenant-isolation primitive. An empty-company-ID path is a cross-tenant leak.                        |
-| **HIGH** | `internal/auth`                        | Argon2id hashing + JWT signing/verification, including the `?at=` query-param path.                     |
-| **HIGH** | `internal/adapters/db` (+3 drivers)    | Read-only transaction enforcement, statement timeouts, row capping. The last line of defence on tenant data. |
-| **HIGH** | `internal/adapters/postgres`           | 19 repository files. Every one is a place a missing `company_id` predicate could leak data.             |
-| **HIGH** | `internal/tools` *(partial)*           | 7 agent tools, ~1,200 lines. The `run_sql` result notes are covered; the byte-cap trimming loop, `get_schema` filtering and source resolution are not. |
-| **MEDIUM** | `internal/config`                    | 494 lines of env parsing, ~75 vars, plus 7 `Effective*()` fallback accessors and `WorkerQueueMap()` CSV parsing. Pure functions — trivially testable, currently untested. |
+| ~~**CRITICAL**~~ ✅ | `internal/app`              | Closed by `T-02` for the three named services (pricing, fork heuristics, cron). `ChatRunner` itself is still uncovered by unit tests — it is the one component the eval harness exercises end-to-end instead, which is the more honest signal for it. |
+| ~~**CRITICAL**~~ ✅ | `internal/guardrails`       | Closed by `T-02`'s golden suite over the shipped YAML. The output rules still never execute in production (`T-07b` owns that), and the suite says so rather than implying otherwise. |
+| ~~**CRITICAL**~~ ✅ | `internal/crypto`           | Closed by `T-02`.                                                                                      |
+| ~~**CRITICAL**~~ ✅ | `internal/tenantctx`        | Closed by `T-02`.                                                                                      |
+| ~~**HIGH**~~ ✅ | `internal/auth`                 | Closed by `T-02`.                                                                                      |
+| **HIGH** | `internal/adapters/db` (+3 drivers)    | Read-only transaction enforcement, statement timeouts, row capping. The last line of defence on tenant data. **Needs a live database**, which is why it did not fit a unit-test ticket: the assertions worth having are "a mutation inside the read-only tx is rejected by the server", and a fake proves nothing about that. Sprint 2, with a container. |
+| **HIGH** | `internal/adapters/postgres`           | 19 repository files. Every one is a place a missing `company_id` predicate could leak data. Same constraint: the bug this would catch is in the SQL, so the test needs a real server. |
+| ~~**HIGH**~~ ◐ | `internal/tools`                | The byte-cap loop, source resolution and the result notes are covered by `T-02`. `get_schema` filtering and the three Metabase-backed tools are not. |
+| ~~**MEDIUM**~~ ✅ | `internal/config`             | Closed by `T-02`.                                                                                      |
 | **MEDIUM** | `internal/queue`                     | Task contracts, asynq option building, periodic config provider.                                        |
-| **MEDIUM** | `internal/transport/http/middleware` | Auth, CORS, rate limit. Includes the unwired `AdminOnly()`.                                             |
+| ~~**MEDIUM**~~ ◐ | `internal/transport/http/middleware` | Auth and `AdminOnly` are covered by `T-02`, including the token-type check and all three token sources. CORS and the rate limiter are not. |
 | **MEDIUM** | `internal/llmtenant`                 | Per-tenant client caches with TTL eviction. Concurrency-sensitive.                                      |
 | **MEDIUM** | `internal/embedding`                 | Batch fan-in, dimension handling.                                                                       |
 | **LOW**  | `internal/whatsapp`, `internal/discord`, `internal/lark` | External-API adapters; need HTTP-level fakes to test meaningfully.                        |
@@ -104,43 +163,138 @@ Ranked by risk — how much damage a silent regression here would do.
 | **LOW**  | `internal/cache`, `internal/metrics`, `internal/migrate`, `internal/transport/eventbus`, `internal/transport/ws`, `internal/adapters/storage`, `internal/domain`, `pkg/models` | Thin or declarative.                        |
 | **N/A**  | `cmd/api`, `cmd/worker`, `cmd/discord`, `scripts/encrypt_secret` | Wiring. Cover via integration tests, not unit tests.                     |
 
+### What `T-02` deliberately did not test, and why
+
+- **`ChatRunner`.** ~700 lines whose interesting behaviour is "what the agent
+  does with a tool result". A unit test there asserts the wiring; `make eval`
+  asserts the outcome. The eval harness is the coverage for this file and
+  saying otherwise would overstate what a mock-heavy test would prove.
+- **Anything needing a live Postgres.** The read-only transaction enforcement
+  and the `company_id` predicates are the two highest-risk untested areas left,
+  and both are only meaningfully testable against a real server. That is a
+  container in CI, which is a ticket, not a step.
+- **The dashboard's runtime behaviour.** No test framework is installed and the
+  ticket did not add one. What it added is a linter that runs — the app now
+  goes through `tsc -b --noEmit && eslint .` — which is a narrower claim than
+  "the dashboard is tested" and is the true one.
+
+### The guardrail golden suite
+
+`internal/guardrails/golden_test.go` runs against `config/guardrails.yaml`
+itself, not a fixture, because the file that ships is the file whose regexes
+keep getting narrowed. Its shape:
+
+- One `goldenRule` entry per rule, carrying must-block inputs, must-pass
+  inputs, and the stub classifier verdicts its cases run under. The verdicts
+  matter: the topic rule's cases run with the LLM saying **FALSE** so only the
+  regexes can admit a message — with the classifier admitting everything, a
+  broken regex looks fine.
+- `TestEveryRuleHasGoldenCases` fails when a rule exists in the YAML with no
+  cases, when a rule is covered in only one direction, and when a golden entry
+  names a rule that no longer exists. That is what makes it a gate rather than
+  a snapshot.
+- The two injection rules deliberately share a refusal message, so a block is
+  attributed by running the same input under both classifier verdicts rather
+  than by matching text.
+- Known gaps are pinned in named tests (`TestKnownTopicGateFalsePositives`,
+  `TestKnownRedactionEdges`, `TestRedactNIKIsShadowedByTheCreditCardRule`)
+  rather than smoothed over. Each fails when the underlying rule is fixed,
+  which is the point: the fix closes a test instead of being invisible.
+
 ## Frontend
 
 | App                   | Test files | Test runner | Type check | Lint         |
 | --------------------- | ---------- | ----------- | ---------- | ------------ |
-| `apps/dashboard`      | 0          | none installed | `tsc -b` via build | `tsc -b --noEmit` |
+| `apps/dashboard`      | 0          | none installed | `tsc -b` via build | **`tsc -b --noEmit && eslint .`** |
 | `apps/landing`        | 0          | none installed | `tsc -b` via build | `tsc -b --noEmit` |
 
 > **Found during `T-00b`:** the dashboard's `lint` script called `eslint .`, but
 > **eslint was never in its devDependencies** — `pnpm lint` failed with
-> `command not found`, so it had never run, in CI or locally. It now points at the
-> same `tsc -b --noEmit` typecheck landing uses, which is a real (if narrow)
-> signal. `T-02` installs eslint with a narrow rule set and restores proper
-> linting. Expect a wall of findings on first run; budget triage time.
+> `command not found`, so it had never run, in CI or locally. It was pointed at
+> the same `tsc -b --noEmit` typecheck landing uses as a stopgap.
+>
+> **Closed by `T-02` (2026-07-28).** eslint 9 is installed with a flat config
+> (`apps/dashboard/eslint.config.js`): the JS and TypeScript recommended sets
+> plus `react-hooks` and `react-refresh`, no stylistic rules. The typecheck is
+> kept in front of it rather than replaced, because the two catch different
+> things.
+>
+> First run: **36 problems, 30 errors.** Now **0 errors, 6 warnings**. The
+> triage is worth recording because most of it was one bug wearing twenty hats:
+> every catch clause in the app read `e?.response?.data?.error || e.message`
+> with `e` typed `any`, and a thrown non-Error has no `message`, so those paths
+> rendered the literal string `undefined` in a toast. They now share
+> `src/lib/api-error.ts` — `apiErrorMessage` narrows instead of asserting and
+> always returns something readable, and `apiErrorStatus` exists so the one
+> place that branches on 404 can tell a real 404 from a dropped connection.
+>
+> The six remaining warnings are two `react-hooks/exhaustive-deps` findings in
+> the chat and onboarding pages and four `react-refresh` fast-refresh notes in
+> shadcn components. They are warnings, so the gate passes; they are real, so
+> they are not suppressed.
+>
+> `apps/landing` stays on the typecheck. It has no state, no hooks and no data
+> fetching, so a linter would be checking a static page's import order.
 
 Both now run in CI via the `web` job.
 
 ## CI gate — what is actually checked
 
-`.github/workflows/ci.yaml`:
+`.github/workflows/ci.yaml`, after `T-00b` and `T-02`:
 
-```
-build:  go mod download
-        go build -o api    ./cmd/api
-        go build -o worker ./cmd/worker
-docker: (tags only) build+push argentum-api, argentum-worker to GHCR
-```
+| Job | Fires on | Runs |
+| --- | -------- | ---- |
+| `backend` | `apps/backend/**`, or any tag push | `go vet ./...`, **`golangci-lint run`**, `go test -race -count=1 ./...`, build api + worker + discord |
+| `tokens` | `packages/design-tokens/**`, either generated output, `Makefile` | `make tokens`, `make palette`, then `git diff --exit-code` on the generated files |
+| `deck` | `apps/backend/internal/report/**` | Converts every fixture deck through headless LibreOffice |
+| `web` | `apps/{dashboard,landing,widget}/**`, `packages/**` | `pnpm -r build`, `pnpm -r lint` (dashboard: `tsc` + eslint) |
+| `docker` | tags `v*.*.*` | Build + push three GHCR images from the `apps/backend` context |
 
-Missing from CI:
+Now checked, and previously not:
 
-- ❌ `go test ./...`
-- ❌ `go test -race`
-- ❌ `go vet ./...`
-- ❌ any linter (`golangci-lint`)
-- ❌ `go build ./cmd/discord` — the Discord gateway is **never compiled in CI**
-- ❌ frontend `tsc` / `pnpm build` / `eslint`
+- ✅ `go test -race -count=1 ./...` (`T-00b`)
+- ✅ `go vet ./...` (`T-00b`)
+- ✅ `golangci-lint run` — errcheck, govet, staticcheck, ineffassign, unused,
+  plus a gofmt check (`T-02`)
+- ✅ `go build ./cmd/discord` (`T-00b`)
+- ✅ frontend `pnpm build` and a `pnpm lint` that runs eslint (`T-00b`, `T-02`)
+
+Still missing:
+
 - ❌ migration up/down round-trip check
-- ❌ any answer-quality evaluation
+- ❌ any answer-quality evaluation in CI — `make eval` costs real tokens and
+  needs a live tenant, so it stays a local/manual gate for now
+- ❌ a live-database job for `internal/adapters/*`
+
+### The linter config
+
+`apps/backend/.golangci.yml` enables five linters and nothing else. The tree
+failed it in **50 places** on the first run; it now reports **0 issues**. What
+that triage produced:
+
+| Finding | Count | Resolution |
+| ------- | ----- | ---------- |
+| `defer x.Close()` and deadline setters | 38 → 0 | Most are excluded by name — teardown whose error the caller cannot act on, and none of them buffered writers. Eight that the exclusion list could not match cleanly are now written `_ = x.Close()`, which says the same thing at the call site. |
+| Unchecked type assertion | 2 | **Real.** `uid.(string)` in the chat handler, fixed with a `userID(c)` helper. Found only because the config turns `check-type-assertions` on. |
+| Unchecked `json.Unmarshal` | 2 | **Real.** `create_dashboard` silently accepted a wrongly-shaped `name` and then told the model the parameter was missing — advice it could not act on. It now says what was wrong. |
+| `fmt.Fprintf` over `WriteString(Sprintf(…))` | 3 | Applied. |
+| `strings.TrimPrefix` over an if/slice | 2 | Applied. |
+| A literal U+0008 backspace in a PPTX test fixture | 1 | **Worth having found.** An invisible control character sitting in a string the deck renderer places on a slide. |
+| Deprecated `reflect.Ptr` | 1 | Applied. |
+| Dead `const mmPerPoint` | 1 | Left behind when `T-R4` extracted `internal/report/measure`. Deleted. |
+| Missing package comments | 8 | Written. `ST1000` stays on, so the next new package needs one. |
+| `ST1005` (capitalised error strings) | 2 | Disabled with a reason: the first word is "Metabase". |
+| `QF1008` (drop the embedded field from a selector) | 1 | Disabled with a reason: `g.Tool.Name()` is how the budget guard says it delegates. |
+
+Widening the linter set happens when the tree has stayed clean for a while,
+not now — a gate that produces findings nobody triages is a gate everyone
+learns to ignore.
+
+**Reading the diff:** seventeen Go files were not gofmt-clean before this
+ticket, so `gofmt -w` touched twenty files in total. Every one of those is
+whitespace only — `git diff -w` reports `0+/0-` for all of them — so a reviewer
+can skip them and read the rest. The files with real changes are the twelve new
+test files, `.golangci.yml`, and the nine sources named in the table above.
 
 Also: `GO_VERSION: '1.25'` in CI vs. `go 1.26.1` in `go.mod`. This only works
 because `GOTOOLCHAIN=auto` downloads 1.26 on every run — wasted minutes and a
@@ -174,20 +328,120 @@ currently unknowable.
 Set deliberately low and reachable. Coverage percentage is a poor goal; these are
 about *which* code is protected.
 
-| Milestone | Target                                                                                          |
-| --------- | ----------------------------------------------------------------------------------------------- |
-| Sprint 1  | Every CRITICAL package has tests. CI runs `test -race` + `vet` + `golangci-lint` + frontend build. `cmd/discord` builds in CI. |
-| Sprint 1  | Guardrails golden-case suite: every rule has ≥1 must-block and ≥1 must-pass case, including the false positives the comments describe. |
-| Sprint 1  | Eval harness with ≥30 golden questions on the demo tenant, scored, runnable offline, one command. |
-| Sprint 2  | HIGH packages covered. Migration up/down round-trip in CI.                                        |
-| Sprint 2  | Eval set ≥100 questions, with a per-commit score recorded so regressions are visible.            |
+| Milestone | Target                                                                                          | State |
+| --------- | ----------------------------------------------------------------------------------------------- | ----- |
+| Sprint 1  | Every CRITICAL package has tests. CI runs `test -race` + `vet` + `golangci-lint` + frontend build. `cmd/discord` builds in CI. | ✅ `T-00b` + `T-02` |
+| Sprint 1  | Guardrails golden-case suite: every rule has ≥1 must-block and ≥1 must-pass case, including the false positives the comments describe. | ✅ `T-02`, with `redact_nik` covered by a test proving it is currently unreachable rather than by a case that would have asserted the wrong rule |
+| Sprint 1  | Eval harness with ≥30 golden questions on the demo tenant, scored, runnable offline, one command. | ✅ `T-01` |
+| Sprint 2  | HIGH packages covered. Migration up/down round-trip in CI.                                        | Open. Both need a database container in CI. |
+| Sprint 2  | Eval set ≥100 questions, with a per-commit score recorded so regressions are visible.            | Open. |
+
+## Gate output — `T-02`, 2026-07-28
+
+`go vet ./... && golangci-lint run ./... && go test -race -count=1 ./...` — all
+three exit 0. The last 41 lines of the test run:
+
+```
+?   	github.com/fauzanebd/argentum/internal/adapters/postgres	[no test files]
+?   	github.com/fauzanebd/argentum/internal/adapters/storage	[no test files]
+ok  	github.com/fauzanebd/argentum/internal/agentbudget	1.387s
+ok  	github.com/fauzanebd/argentum/internal/app	1.651s
+ok  	github.com/fauzanebd/argentum/internal/auth	22.253s
+?   	github.com/fauzanebd/argentum/internal/bootstrap	[no test files]
+?   	github.com/fauzanebd/argentum/internal/cache	[no test files]
+ok  	github.com/fauzanebd/argentum/internal/config	1.306s
+ok  	github.com/fauzanebd/argentum/internal/crypto	1.860s
+?   	github.com/fauzanebd/argentum/internal/discord	[no test files]
+?   	github.com/fauzanebd/argentum/internal/domain	[no test files]
+?   	github.com/fauzanebd/argentum/internal/embedding	[no test files]
+ok  	github.com/fauzanebd/argentum/internal/eval	2.485s
+ok  	github.com/fauzanebd/argentum/internal/guardrails	6.113s
+?   	github.com/fauzanebd/argentum/internal/lark	[no test files]
+ok  	github.com/fauzanebd/argentum/internal/llmclient	3.263s
+?   	github.com/fauzanebd/argentum/internal/llmtenant	[no test files]
+ok  	github.com/fauzanebd/argentum/internal/llmusage	3.848s
+ok  	github.com/fauzanebd/argentum/internal/metabase	2.963s
+?   	github.com/fauzanebd/argentum/internal/metrics	[no test files]
+?   	github.com/fauzanebd/argentum/internal/migrate	[no test files]
+?   	github.com/fauzanebd/argentum/internal/queue	[no test files]
+ok  	github.com/fauzanebd/argentum/internal/report/chart	108.611s
+ok  	github.com/fauzanebd/argentum/internal/report/format	2.684s
+?   	github.com/fauzanebd/argentum/internal/report/labels	[no test files]
+ok  	github.com/fauzanebd/argentum/internal/report/layout	3.062s
+ok  	github.com/fauzanebd/argentum/internal/report/measure	3.116s
+ok  	github.com/fauzanebd/argentum/internal/report/pdf	65.573s
+ok  	github.com/fauzanebd/argentum/internal/report/pptx	161.230s
+?   	github.com/fauzanebd/argentum/internal/report/spec	[no test files]
+ok  	github.com/fauzanebd/argentum/internal/report/theme	3.062s
+ok  	github.com/fauzanebd/argentum/internal/tenantctx	3.057s
+ok  	github.com/fauzanebd/argentum/internal/tools	3.163s
+ok  	github.com/fauzanebd/argentum/internal/tools/document	3.557s
+?   	github.com/fauzanebd/argentum/internal/transport/eventbus	[no test files]
+?   	github.com/fauzanebd/argentum/internal/transport/http/handlers	[no test files]
+ok  	github.com/fauzanebd/argentum/internal/transport/http/middleware	2.529s
+?   	github.com/fauzanebd/argentum/internal/transport/ws	[no test files]
+?   	github.com/fauzanebd/argentum/internal/whatsapp	[no test files]
+?   	github.com/fauzanebd/argentum/pkg/models	[no test files]
+?   	github.com/fauzanebd/argentum/scripts/encrypt_secret	[no test files]
+```
+
+21 `ok`, 28 `[no test files]`, 0 `FAIL`, 49 packages.
+
+`golangci-lint run ./...`:
+
+```
+0 issues.
+```
+
+**CI fails when a test fails — proved locally.** The round-trip assertion in
+`internal/crypto/dsn_test.go` was inverted (`got != tc.plain` → `got ==`) and
+the suite went red on five subtests:
+
+```
+--- FAIL: TestEncryptDecryptRoundTrip (0.00s)
+    --- FAIL: TestEncryptDecryptRoundTrip/empty
+    --- FAIL: TestEncryptDecryptRoundTrip/postgres_dsn
+    --- FAIL: TestEncryptDecryptRoundTrip/sqlserver_dsn
+    --- FAIL: TestEncryptDecryptRoundTrip/unicode
+    --- FAIL: TestEncryptDecryptRoundTrip/long
+        dsn_test.go:103: DELIBERATE BREAK: round-trip = "…", want "…"
+FAIL	github.com/fauzanebd/argentum/internal/crypto	0.545s
+```
+
+After the revert: `ok  github.com/fauzanebd/argentum/internal/crypto  1.983s`,
+exit 0.
+
+**Outstanding:** the ticket asks for a CI run URL showing the same red/green
+pair on the remote. That needs a push, which is the repo owner's call, so it is
+recorded here as not done rather than counted as met.
+
+### Dashboard
+
+```
+$ pnpm --filter dashboard lint      # tsc -b --noEmit && eslint .
+✖ 6 problems (0 errors, 6 warnings)
+
+$ pnpm --filter dashboard build
+✓ 2473 modules transformed.
+dist/assets/index-*.css   65.36 kB │ gzip:  11.05 kB
+dist/assets/index-*.js   901.96 kB │ gzip: 275.87 kB
+✓ built in 3.84s
+```
 
 ## Reproducing these numbers
 
 ```bash
 cd apps/backend
 go vet ./... && echo "vet clean"
-go test ./... 2>&1 | tee /tmp/test.txt
+golangci-lint run ./...                 # 0 issues as of T-02
+go test -race -count=1 ./... 2>&1 | tee /tmp/test.txt
 grep -c "no test files" /tmp/test.txt   # untested packages
 grep -c "^ok"          /tmp/test.txt    # packages with passing tests
+go list ./... | wc -l                   # denominator
+```
+
+Or, from the repo root, the whole gate in one command:
+
+```bash
+make check     # vet + lint + test -race + build (Go and every workspace app)
 ```

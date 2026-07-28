@@ -56,6 +56,17 @@ func companyID(c *gin.Context) string {
 	return s
 }
 
+// userID is companyID's counterpart. Both read values that middleware.Auth
+// sets, and both use the comma-ok form: a bare `v.(string)` panics on any
+// route reachable without Auth in front of it, turning a routing mistake into
+// a 500 and a stack trace in the log rather than an empty tenant the handler
+// can reject.
+func userID(c *gin.Context) string {
+	v, _ := c.Get("user_id")
+	s, _ := v.(string)
+	return s
+}
+
 // buildDSN constructs a driver-specific DSN from discrete fields.
 // If raw is non-empty it is returned as-is (advanced mode).
 func buildDSN(dbType, raw, host, port, user, pass, dbname string) (string, error) {
@@ -415,7 +426,7 @@ func (h *CompanyHandler) getSettings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"default_currency":    company.DefaultCurrency,
+		"default_currency":     company.DefaultCurrency,
 		"supported_currencies": app.SupportedCurrencies(),
 	})
 }

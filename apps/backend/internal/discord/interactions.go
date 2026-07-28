@@ -49,6 +49,6 @@ const (
 
 // Response type constants.
 const (
-	InteractionResponsePong                    = 1
+	InteractionResponsePong                     = 1
 	InteractionResponseChannelMessageWithSource = 4
 )

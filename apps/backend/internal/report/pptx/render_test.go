@@ -58,9 +58,26 @@ func loadFixture(t *testing.T, name string) *spec.Document {
 	return &doc
 }
 
+// fixtureNow pins the clock for every fixture render.
+//
+// Four of the five fixtures carry their own `generated_at`; `v1_legacy.json`
+// does not, and spec.Document.Generated falls back to time.Now() for a spec
+// without one. Rendering it through a bare Options{} therefore stamped the zip
+// entries and the core properties with the wall clock, and
+// TestDeterministicBytes — which renders twice and compares — passed or failed
+// depending on whether the two renders straddled a second. It did straddle one
+// under `-race`, where the pair takes tens of seconds.
+//
+// This is the same trap T-R2 recorded for the PDF and it is worth restating,
+// because the PPTX renderer's determinism is real: comparing two renders
+// catches a clock only if the pair happens to straddle a tick, so the clock has
+// to be pinned rather than raced. TestNowPinsAnUnstampedSpec covers Options.Now
+// on its own.
+var fixtureNow = time.Date(2026, 7, 28, 8, 0, 0, 0, time.UTC)
+
 func renderFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	out, err := Render(loadFixture(t, name), Options{})
+	out, err := Render(loadFixture(t, name), Options{Now: fixtureNow})
 	if err != nil {
 		t.Fatalf("render %s: %v", name, err)
 	}
@@ -605,7 +622,7 @@ func TestControlCharactersDoNotBreakThePackage(t *testing.T) {
 		GeneratedAt: "2026-07-28T08:00:00Z",
 		Content: spec.Content{Sections: []spec.Section{
 			{Type: spec.SectionHeading, Level: 1, Text: "Findings <&> \"quoted\""},
-			{Type: spec.SectionParagraph, Text: "Revenue rose 12% against a plan of 9%. Margin held."},
+			{Type: spec.SectionParagraph, Text: "Revenue rose 12%  against a plan of 9%. Margin held."},
 		}},
 	}
 	out, err := Render(doc, Options{})

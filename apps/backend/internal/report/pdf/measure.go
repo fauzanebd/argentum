@@ -32,10 +32,6 @@ func textWidth(s string, family string, style fontstyle.Type, size float64) floa
 	return measure.Width(s, family, measure.Style(style), size)
 }
 
-// mmPerPoint converts a type size to a line height, matching maroto's font
-// provider — see measure.MMPerPoint for why it is not 1.2× leading.
-const mmPerPoint = measure.MMPerPoint
-
 // lineHeight is the height of one line of text at a given point size, in mm.
 func lineHeight(sizePt float64) float64 { return measure.LineHeightMM(sizePt) }
 

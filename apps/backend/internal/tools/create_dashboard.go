@@ -82,10 +82,15 @@ func (t *CreateDashboardTool) Execute(ctx context.Context, args string) (string,
 		return "", fmt.Errorf("failed to parse parameters: %w", err)
 	}
 
-	// Extract name
+	// Extract name. A model that sends `{"name": {"text": "Sales"}}` used to
+	// land here as an empty string and get told the parameter was missing,
+	// which is advice it cannot act on — it did supply one, in the wrong
+	// shape. Say what was wrong instead.
 	var name string
 	if v, ok := raw["name"]; ok {
-		json.Unmarshal(v, &name)
+		if err := json.Unmarshal(v, &name); err != nil {
+			return "", fmt.Errorf("name must be a string, got %s", v)
+		}
 	}
 	if name == "" {
 		return "", fmt.Errorf("name parameter is required")
@@ -94,7 +99,9 @@ func (t *CreateDashboardTool) Execute(ctx context.Context, args string) (string,
 	// Extract description (optional)
 	var description string
 	if v, ok := raw["description"]; ok {
-		json.Unmarshal(v, &description)
+		if err := json.Unmarshal(v, &description); err != nil {
+			return "", fmt.Errorf("description must be a string, got %s", v)
+		}
 	}
 
 	// Extract cards — support multiple formats the LLM might use

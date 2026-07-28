@@ -6,11 +6,12 @@ import {
   FileText,
   Loader2,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import cronstrue from "cronstrue";
 import { cn } from "@/lib/utils";
 
-const TOOL_META: Record<string, { icon: any; label: string }> = {
+const TOOL_META: Record<string, { icon: LucideIcon; label: string }> = {
   run_sql: { icon: Database, label: "SQL query" },
   get_schema: { icon: FileText, label: "Schema lookup" },
   create_visualization: { icon: BarChart3, label: "Chart" },

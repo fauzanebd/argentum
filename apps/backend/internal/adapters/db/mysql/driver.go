@@ -23,7 +23,7 @@ type driver struct {
 	dialect dialect
 }
 
-func (d *driver) Type() string         { return db.MySQL }
+func (d *driver) Type() string        { return db.MySQL }
 func (d *driver) Dialect() db.Dialect { return d.dialect }
 
 func (d *driver) Open(ctx context.Context, dsn string) (db.Conn, error) {
