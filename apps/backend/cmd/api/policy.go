@@ -64,6 +64,20 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/settings": domain.RoleMember,
 	"PUT /api/settings": domain.RoleAdmin,
 
+	// Report branding (T-R5). Read is admin rather than member, unlike the
+	// other settings reads: this is the one panel where the *read* is the
+	// interesting operation. GET returns nothing a member needs — no report
+	// route consults branding on the member's behalf — while the preview it
+	// feeds renders a full document, and every write beside it is admin. A
+	// read a member cannot act on is a button that answers 403.
+	"GET /api/reports/branding":       domain.RoleAdmin,
+	"PUT /api/reports/branding":       domain.RoleAdmin,
+	"POST /api/reports/branding/logo": domain.RoleAdmin,
+	// The preview renders a fixed sample with caller-supplied branding: no
+	// tenant data, but a full PDF render per call, which is a cost a member
+	// should not be able to spend in a loop.
+	"POST /api/reports/preview": domain.RoleAdmin,
+
 	// Chat.
 	"GET /api/threads":              domain.RoleMember,
 	"POST /api/threads":             domain.RoleMember,

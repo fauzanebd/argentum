@@ -34,6 +34,12 @@ type Set struct {
 	// Notes titles the speaker-notes block when the renderer has to introduce
 	// it, e.g. the source line under a table.
 	Source string
+
+	// Credit is the mark a tenant with their own logo can switch off (T-R5).
+	// It is one line in the footer rather than anything larger: on a document
+	// a customer forwards to their board, our name is a provenance note, not a
+	// co-signature.
+	Credit string
 }
 
 func For(loc format.Locale) Set {
@@ -45,6 +51,7 @@ func For(loc format.Locale) Set {
 			PageNumber:  "Halaman {current} dari {total}",
 			Continued:   "(lanjutan)",
 			Source:      "Sumber",
+			Credit:      "Dibuat dengan Argentum",
 		}
 	}
 	return Set{
@@ -54,5 +61,6 @@ func For(loc format.Locale) Set {
 		PageNumber:  "Page {current} of {total}",
 		Continued:   "(cont.)",
 		Source:      "Source",
+		Credit:      "Made with Argentum",
 	}
 }

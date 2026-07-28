@@ -13,7 +13,9 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
+	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/report/brand"
 	"github.com/fauzanebd/argentum/internal/report/pdf"
 	"github.com/fauzanebd/argentum/internal/report/pptx"
 	"github.com/fauzanebd/argentum/internal/report/spec"
@@ -31,6 +33,7 @@ type GenerateDocumentTool struct {
 	storage    *storage.StorageService
 	repo       domain.DocumentRepository
 	companies  domain.CompanyRepository
+	branding   *branding.Service
 	recorder   UsageRecorder
 	presignTTL time.Duration
 }
@@ -39,6 +42,7 @@ func NewGenerateDocumentTool(
 	st *storage.StorageService,
 	repo domain.DocumentRepository,
 	companies domain.CompanyRepository,
+	brandingSvc *branding.Service,
 	recorder UsageRecorder,
 	presignTTL time.Duration,
 ) *GenerateDocumentTool {
@@ -52,6 +56,7 @@ func NewGenerateDocumentTool(
 		storage:    st,
 		repo:       repo,
 		companies:  companies,
+		branding:   brandingSvc,
 		recorder:   recorder,
 		presignTTL: presignTTL,
 	}
@@ -263,13 +268,12 @@ func (t *GenerateDocumentTool) render(ctx context.Context, doc *spec.Document, c
 	return nil, fmt.Errorf("unsupported format %q", doc.Format)
 }
 
-// branding fills in what the model does not know: the tenant's legal name and
-// its default currency. A failed lookup is logged and not fatal — a document
-// with Argentum's own mark on it beats an error where a report was asked for,
-// and T-R5 is what turns this into real branding.
-func (t *GenerateDocumentTool) branding(ctx context.Context, companyID string) (name, currency string) {
+// currencyFor is the tenant's default currency, used when the spec names none.
+// A failed lookup is logged and not fatal: a document with bare numbers beats
+// an error where a report was asked for.
+func (t *GenerateDocumentTool) currencyFor(ctx context.Context, companyID string) string {
 	if t.companies == nil {
-		return "", ""
+		return ""
 	}
 	company, err := t.companies.GetByID(ctx, companyID)
 	if err != nil || company == nil {
@@ -277,23 +281,62 @@ func (t *GenerateDocumentTool) branding(ctx context.Context, companyID string) (
 			logrus.WithError(err).WithField("company_id", companyID).
 				Warn("generate_document: company lookup failed; rendering with defaults")
 		}
-		return "", ""
+		return ""
 	}
-	return company.Name, company.DefaultCurrency
+	return company.DefaultCurrency
+}
+
+// brandFor resolves the tenant's report branding — logo, accent, footer line,
+// locale (T-R5). It goes through the same branding.Service the dashboard's
+// preview does, which is what makes "what I approved is what my customer
+// receives" true rather than intended.
+//
+// A tool with no branding service (a stack built before this wiring, or a
+// deployment without object storage) resolves to Argentum's defaults, which is
+// what every document looked like before this existed.
+func (t *GenerateDocumentTool) brandFor(ctx context.Context, companyID string) brand.Config {
+	if t.branding == nil {
+		return brand.Resolve(brand.Input{
+			CompanyName: t.companyName(ctx, companyID),
+			ShowCredit:  true,
+		})
+	}
+	return t.branding.Resolve(ctx, companyID, func(err error) {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("generate_document: branding partially unresolved; rendering the rest")
+	})
+}
+
+func (t *GenerateDocumentTool) companyName(ctx context.Context, companyID string) string {
+	if t.companies == nil {
+		return ""
+	}
+	company, err := t.companies.GetByID(ctx, companyID)
+	if err != nil || company == nil {
+		return ""
+	}
+	return company.Name
 }
 
 func (t *GenerateDocumentTool) pdfOptions(ctx context.Context, companyID string) pdf.Options {
-	name, currency := t.branding(ctx, companyID)
-	return pdf.Options{Brand: pdf.Brand{Name: name}, Currency: currency}
+	cfg := t.brandFor(ctx, companyID)
+	return pdf.Options{
+		Brand:    cfg.PDF(),
+		Currency: t.currencyFor(ctx, companyID),
+		Locale:   cfg.Locale,
+	}
 }
 
 // pptxOptions is pdfOptions for the deck. The two Options types are separate
-// because the renderers are, and identical field for field because the
-// branding is one set of facts about a tenant — T-R5 fills one source and both
-// read it.
+// because the renderers are, and they read one resolved branding so a report
+// and the deck attached to it cannot disagree about whose document it is.
 func (t *GenerateDocumentTool) pptxOptions(ctx context.Context, companyID string) pptx.Options {
-	name, currency := t.branding(ctx, companyID)
-	return pptx.Options{Brand: pptx.Brand{Name: name}, Currency: currency}
+	cfg := t.brandFor(ctx, companyID)
+	return pptx.Options{
+		Brand:    cfg.PPTX(),
+		Currency: t.currencyFor(ctx, companyID),
+		Locale:   cfg.Locale,
+	}
 }
 
 func normalizeFilename(suggested, title string, format domain.DocumentFormat) string {

@@ -72,7 +72,8 @@ docs/
 │   ├── report-rendering.md       T-R2 PDF renderer v2 record
 │   ├── report-charts.md          T-R3 chart images, palette and CVD gate
 │   ├── report-deck.md            T-R4 PPTX deck renderer record
-│   └── rbac.md                   T-04 route policy, team invites, account lifecycle
+│   ├── rbac.md                   T-04 route policy, team invites, account lifecycle
+│   └── report-branding.md        T-R5 tenant logo, accent, contrast floor, preview
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals
 │   ├── 01-tickets.md             Ticket-level, agent-executable units

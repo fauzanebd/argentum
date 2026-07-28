@@ -16,13 +16,15 @@ All paths below are relative to `apps/backend/` unless shown otherwise.
 ls apps/backend/migrations/control/ | tail -3
 ```
 
-Last applied is `021_user_invites` (`T-04`). Sprint 1 pre-assigned 021–026 in
+Last applied is `022_report_branding` (`T-R5`). Sprint 1 pre-assigned numbers in
 [`../../plan/01-tickets.md`](../../plan/01-tickets.md) — check that table before
-claiming, and note that the pre-assignment has already shifted once: `T-04` was
-filed as `027` and landed as `021`, because **golang-migrate only applies
-versions above the schema's current one.** Claiming a number far ahead of the
-last applied one strands everything between. Always take the next free number,
-whatever the ticket says.
+claiming, and note that the pre-assignment has now shifted **twice**: `T-04` was
+filed as `027` and landed as `021`, `T-R5` was filed as `030` and landed as
+`022`, because **golang-migrate only applies versions above the schema's current
+one.** Claiming a number far ahead of the last applied one strands everything
+between. Always take the next free number, whatever the ticket says — and edit
+the ticket table when you do, which is what keeps the next agent from being the
+third to learn this.
 
 **Only one agent may hold a number at a time.** Two migrations with the same
 number desync every environment, and the fix is manual.

@@ -137,13 +137,16 @@ zero tests.**
 
 ## Go backend — package by package
 
-### Packages with tests (21)
+### Packages with tests (23)
 
-`T-02` added five packages and grew three that already had tests. The other
-four new entries since this table last said twelve — `internal/report/chart`,
+`T-02` added five packages and grew three that already had tests. Four of the
+other new entries since this table last said twelve — `internal/report/chart`,
 `layout`, `measure` and `pptx` — arrived with `T-R3` and `T-R4` and are
 recorded in [`report-charts.md`](report-charts.md) and
-[`report-deck.md`](report-deck.md).
+[`report-deck.md`](report-deck.md). The last two, `internal/branding` and
+`internal/report/brand`, arrived with `T-R5`
+([`report-branding.md`](report-branding.md)), which also added branding tests to
+`internal/report/{theme,pdf,pptx}`.
 
 | Package | Test file(s) | What it covers |
 | ------- | ------------ | -------------- |
@@ -155,6 +158,8 @@ recorded in [`report-charts.md`](report-charts.md) and
 | `internal/app` | `metering_llm_test.go`, `usage_pricing_test.go`, `thread_service_test.go`, `scheduled_cron_test.go` | `MeteredLLM` streaming usage (`T-02c`), plus: `RecordLLM` cost arithmetic with the 1.25×/0.10× cache multipliers and the unknown-model fallback that stops a new model string billing zero; the `continueOrFork` decision table in all eight of its states; `validateCron` / `normalizeTimezone` / `nextFire` including both DST transitions (`T-02`) |
 | `internal/guardrails` | `fabrication_test.go`, `golden_test.go` | The `T-16` fabrication rule, plus a golden suite over the **shipped** `config/guardrails.yaml`: every rule with must-block and must-pass cases, a coverage test that fails when a rule is added without them, the documented false positives ("create a dashboard", "update me on sales", "integer target", benign follow-ups), scope separation, and the opposite failure directions of the two LLM patterns (`T-02`) |
 | `internal/tools` | `run_sql_test.go`, `run_sql_bytecap_test.go`, `source_resolve_test.go` | The `run_sql` result notes (`T-16`), plus the byte-cap trimming loop — wide rows shrink from the tail, the count matches what was sent, a single oversized row does not become a false "matched zero rows" — and `ResolveSource` with 0/1/many sources, an explicit id, a cross-tenant id, and the empty-company rejection that happens before the repository is touched (`T-02`) |
+| `internal/branding` | `service_test.go` | The contrast floor with its measured ratio in the message, the locale and length rules, normalisation before storage, logo re-encoding (JPEG→PNG, oversize scaled on both axes, SVG/HTML/truncated/empty refused, >512 KB refused), and that resolution is never fatal — broken bucket, broken row, broken company lookup and a nil service each fall back to Argentum's defaults (`T-R5`) |
+| `internal/report/brand` | `brand_test.go` | Per-field fallback (a logo without a colour keeps the brand red), legal name over company name, an unparseable stored colour falling back rather than failing, the `ShowCredit`→`HideCredit` inversion surviving both projections, and the PDF and PPTX projections agreeing field for field while owning separate colour pointers (`T-R5`) |
 
 The twelve that came before:
 

@@ -485,6 +485,60 @@ to leave it applied. `docs/agents/playbooks/add-migration.md` and
 
 Record, gate output and the limits: [`rbac.md`](rbac.md).
 
+`T-R5` tenant report branding
+
+The ticket that finishes the report track, and the first one where the customer
+— not the operator, not the agent — decides what the artifact looks like. A logo,
+an accent, a legal name, a document language, a confidentiality label, a footer
+line, and whether our own name appears on the page at all.
+
+The interesting decisions were about where a tenant's colour is *not* allowed to
+reach:
+
+- **Not into the chart palette.** `T-R3` verified those eight colours as a set —
+  separable under simulated deuteranopia and in greyscale, gated by
+  `make palette`. Substituting one tenant colour into that set voids the
+  verification and nothing fails; the report simply becomes unreadable for part
+  of its audience, on paper, months later. So the accent takes the rules, the
+  headings, the cover and the wordmark, and the series ramp stays ours. The
+  Reports tab explains that beside the colour picker rather than leaving a
+  customer to notice their chart did not change.
+- **Not below 3:1 against white.** A pale brand colour is rejected with the
+  measured ratio in the message — `1.23:1 … needs at least 3.0:1` — because
+  "too light" sends someone back to their brand book with nothing to act on. The
+  floor is 3:1 rather than 4.5:1 on purpose: the accent is drawn as large text
+  and as rules, which is exactly where WCAG puts that line, and a stricter rule
+  would reject colours that read perfectly at the size they are drawn.
+- **Not unchanged onto the deck's dark slides.** A navy that is right on paper
+  can vanish on a near-black cover. Rejecting it would be fixing the wrong end,
+  so the deck lifts it towards white only as far as legibility requires, only on
+  the three dark slide kinds, and leaves a colour that already passes alone.
+
+Two smaller things worth carrying. The logo does **not** go on the deck's cover:
+a logo arrives as one file, almost always dark ink on transparency, and asking a
+tenant for a second light-on-dark variant to solve a problem only one format has
+is a worse trade than putting the mark on the light slides' footer — as one
+shared media part, because 50 slides × 40 KB of identical bytes is a real cost.
+And the preview and the real document go through **one** resolver, differing only
+in whether the branding record came from the database or the request body; a
+preview produced by a second code path is a preview that can be right while the
+document is wrong.
+
+The migration landed as `022`, not the ticket's `030`, for the reason `021`
+carries. The ticket table now says explicitly that reserved numbers are not
+binding — it has been wrong twice, and the second time was predictable from the
+first.
+
+**The gate also closed an item `T-R1` left open.** That ticket recorded that
+dashboard screenshots could not be captured because Chrome was being intercepted
+on this machine. It is not: something unrelated was already listening on the port
+MinIO was first published to, which produced two confident wrong diagnoses in a
+row during this run before it was found. Headless Chrome over the DevTools
+protocol works, and the Reports tab, the live preview and the rejection message
+are all in the record.
+
+Record, gate output and the limits: [`report-branding.md`](report-branding.md).
+
 ---
 
 ## What the history says about how this project is built

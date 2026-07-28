@@ -49,9 +49,11 @@ import (
 	"github.com/fauzanebd/argentum/internal/report/theme"
 )
 
-// Brand is the per-tenant identity on a document. T-R5 fills it from company
-// settings; until then the zero value renders Argentum's own mark, which is
-// why every field is optional and none of them is consulted twice.
+// Brand is the per-tenant identity on a document, filled from company settings
+// by T-R5 (internal/report/brand resolves the record into it). The zero value
+// renders Argentum's own mark, which is why every field is optional: a company
+// that has never opened Settings → Reports gets exactly the document it got
+// before branding existed.
 type Brand struct {
 	// Name is the legal entity the document belongs to. It goes on the cover
 	// as "Prepared by" when the spec does not say, and into the PDF's Author
@@ -62,6 +64,22 @@ type Brand struct {
 	// wordmark. PNG only: JPEG artefacts around a logo's edges are exactly
 	// where they are most visible.
 	LogoPNG []byte
+
+	// Primary replaces the brand red on rules, the cover's period line and the
+	// wordmark. nil means the token, which is what keeps every existing caller
+	// — including internal/tools/document's v1 path — rendering unchanged.
+	//
+	// Chart series are deliberately not derived from it: the palette is
+	// verified for greyscale and colour-vision separability (T-R3, `make
+	// palette`), and a tenant colour dropped into series 1 would void that
+	// verification silently. A branded document therefore has the tenant's
+	// rules and Argentum's series colours, which is the trade the gate forces.
+	Primary *theme.Color
+
+	// HideCredit removes the "Made with Argentum" mark from the footer. It is
+	// negative so that the zero Brand carries the credit — the flag is a
+	// tenant opting out, not a caller opting in.
+	HideCredit bool
 
 	// Confidentiality is the default label for documents that do not set one
 	// ("Internal", "Confidential"). Empty means no label anywhere.
@@ -352,6 +370,17 @@ func colWidth(units int) float64 {
 	return contentWidth() * float64(units) / float64(theme.GridCols)
 }
 
+// accent is the tenant's primary colour, or the brand red when there is none.
+// Every rule and every piece of brand-coloured text in this renderer goes
+// through it — a site that reads theme.ColorPrimary directly is a site a
+// tenant's branding silently does not reach.
+func (r *renderer) accent() theme.Color {
+	if c := r.opts.Brand.Primary; c != nil {
+		return *c
+	}
+	return theme.ColorPrimary
+}
+
 // brandMark draws the tenant logo when there is one and the Argentum wordmark
 // when there is not. Both are the same call site so a document never has a
 // hole where an identity should be.
@@ -374,7 +403,7 @@ func (r *renderer) brandMark(units int, height float64, size float64) core.Col {
 			Family: theme.FontDisplay,
 			Style:  fontstyle.Bold,
 			Size:   size,
-			Color:  theme.ColorPrimary.Props(),
+			Color:  r.accent().Props(),
 			Align:  align.Left,
 			Top:    (height - lineHeight(size)) / 2,
 		}),
@@ -431,6 +460,13 @@ func (r *renderer) footerRows() []core.Row {
 		}
 	}
 	right := r.words.Generated + " " + format.DateTime(r.genAt, r.fmt)
+	// The credit rides on the timestamp line rather than taking a line of its
+	// own: a tenant who has uploaded their logo has removed every other
+	// Argentum mark from the page, and answering that with a new footer row
+	// would be taking back what the upload gave.
+	if !r.opts.Brand.HideCredit {
+		right = r.words.Credit + " · " + right
+	}
 
 	caption := props.Text{
 		Family: theme.FontBody,

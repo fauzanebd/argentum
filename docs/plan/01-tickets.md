@@ -7,24 +7,30 @@ Each ticket is an independently executable unit. Format is defined in
 `LP` = `apps/landing/`, `WID` = `apps/widget/`, `PKG` = `packages/`.
 Single monorepo as of `T-00b` — a ticket spanning BE and FE is **one commit**.
 
-**Migration numbers are pre-assigned.** The last applied migration is `020`.
-Claim your number, do not renumber, and always write both `.up.sql` and
-`.down.sql`.
+**Migration numbers are pre-assigned — but the assignment is not binding, and
+twice now it has been wrong.** golang-migrate only applies versions *above* the
+schema's current one, so a number reserved for a ticket that has not landed yet
+can never be applied once a later ticket ships below it. **Take the next free
+number when you land, and update this table.** Always write both `.up.sql` and
+`.down.sql`. The playbook is
+[`../agents/playbooks/add-migration.md`](../agents/playbooks/add-migration.md).
 
-| Ticket | Migration |
-| ------ | --------- |
-| T-05   | `021_agent_actions` |
-| T-06   | `022_metric_definitions` |
-| T-08   | `023_watchers` |
-| T-10   | `024_actions` |
-| T-13   | `025_api_keys` |
-| T-15   | `026_outbound_webhooks` |
-| T-04   | `027_user_invites` |
-| T-19   | `028_embed_keys` |
-| T-20   | `029_thread_embed` |
-| T-R5   | `030_report_branding` |
-| T-A1   | `031_api_channel` |
-| T-A2   | `032_documents_api` |
+The last applied migration is **`022`**.
+
+| Ticket | Migration | Status |
+| ------ | --------- | ------ |
+| T-04   | `021_user_invites` | **applied** (filed as 027) |
+| T-R5   | `022_report_branding` | **applied** (filed as 030) |
+| T-05   | `023_agent_actions` | next free numbers from here |
+| T-06   | `024_metric_definitions` | |
+| T-08   | `025_watchers` | |
+| T-10   | `026_actions` | |
+| T-13   | `027_api_keys` | |
+| T-15   | `028_outbound_webhooks` | |
+| T-19   | `029_embed_keys` | |
+| T-20   | `030_thread_embed` | |
+| T-A1   | `031_api_channel` | |
+| T-A2   | `032_documents_api` | |
 
 ---
 
@@ -41,7 +47,7 @@ priority on 2026-07-28. This table is the authoritative order.
 | ----- | ------- | ---- | -------- |
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
-| 1a — worth forwarding | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, `T-R4`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). |
+| 1a — **done** | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, ~~`T-R4`~~, ~~`T-R5`~~ | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). **`T-R4` landed 2026-07-28** — the same spec projected onto slides, narrative in the speaker notes ([`../coverage/report-deck.md`](../coverage/report-deck.md)). **`T-R5` landed 2026-07-28** — tenant logo, accent, locale and footer on both formats, with a live preview rendered by the renderer itself and a contrast floor a pale brand colour cannot pass ([`../coverage/report-branding.md`](../coverage/report-branding.md)). |
 | 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, `T-02b`, `T-03`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). |
 | 1c — callable | `T-13`, `T-A1`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moves here from week 5 — it is the prerequisite, not a week-5 nicety. |
 | 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
@@ -62,12 +68,12 @@ Three ordering notes for 1a → 1b → 1c, decided 2026-07-28:
   `T-R5`, 4.0 days left of 5.5. `T-A2` sells "ask our API for a PDF or an Excel file"; that pitch is
   materially better when the PDF has a chart and the deck exists, and `T-R4`
   is what puts `pptx` in `/v1/reports`'s format enum at all.
-- **`T-R5` drags phase 1b forward whether or not the API exists.** It deps `T-04`,
-  which deps `T-02`. So 4.5 days of "phase 1b" work is already embedded inside
-  "finish the report track". The running order is therefore
-  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → `T-R5` → `T-05` → `T-03` → `T-13` → `T-A1`…,
-  not three clean blocks. **Next up: `T-R5`** — tenant report branding, now
-  unblocked.
+- **`T-R5` dragged phase 1b forward whether or not the API existed.** It deps
+  `T-04`, which deps `T-02`. So 4.5 days of "phase 1b" work was already embedded
+  inside "finish the report track". The running order is therefore
+  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → ~~`T-R5`~~ → `T-05` → `T-03` → `T-13` → `T-A1`…,
+  not three clean blocks. **The report track is complete.** **Next up: `T-05`**
+  — the agent-action audit log, which `T-A1` needs a row to write into.
 - **`T-13` is no longer a week-5 ticket.** Scoped API keys are the only machine
   authentication this product has, and every `/v1` route is behind them. It runs
   immediately before `T-A1`.
@@ -675,9 +681,33 @@ ticket.
 
 ---
 
-## T-R5 · Tenant report branding + dashboard configuration
+## ~~T-R5~~ · Tenant report branding + dashboard configuration — **DONE 2026-07-28**
 **Repo:** BE, FE · **Size:** 1.5d · **Deps:** T-R2, T-04 · **Priority:** P1 · **Cut #6**
-**Migration:** `030_report_branding`
+**Migration:** ~~`030_report_branding`~~ → landed as **`022_report_branding`**
+
+**Shipped.** Record, with every gate artifact:
+[`../coverage/report-branding.md`](../coverage/report-branding.md).
+
+Three things came out of it that the ticket did not settle:
+
+- **Chart series are deliberately *not* recoloured from the tenant accent.**
+  `T-R3` verified the categorical palette as a set — separability under
+  simulated deuteranopia and in greyscale, gated by `make palette`. One
+  tenant-supplied colour in that set voids the verification with nothing
+  failing. The accent reaches rules, headings, the cover and the wordmark; the
+  Reports tab says so beside the colour picker.
+- **The deck lightens a dark accent rather than rejecting it.** Its cover,
+  dividers and closing slide are near-black, and a navy validated against paper
+  can vanish on them. `theme.Readable` lifts it for those three slide kinds only,
+  and leaves a colour that already passes untouched.
+- **The logo is not on the deck's cover.** A logo arrives as one file, usually
+  dark ink on transparency. It goes in the footer strip of the light slides, as
+  one shared media part; the cover carries the tenant's name in their accent.
+
+The screenshots this gate asked for also **close `T-R1`'s open item**: Chrome is
+not being intercepted here in the way that ticket concluded. The interference was
+a port collision with an unrelated local server, and headless Chrome driven over
+the DevTools protocol works.
 
 Argentum's palette is the default. A customer sending a report to *their* board
 wants their own mark on it.
@@ -707,16 +737,23 @@ wants their own mark on it.
   Argentum's red.
 
 **Acceptance:**
-- [ ] Branding change appears in the next generated PDF and PPTX with no redeploy
-- [ ] A low-contrast colour is rejected with the measured ratio in the message
-- [ ] Oversized or non-image upload rejected; uploaded images are re-encoded
-- [ ] A company with no branding row renders the Argentum default, never an error
-- [ ] Non-admin gets 403 on both routes
-- [ ] `pnpm build` clean
+- [x] Branding change appears in the next generated PDF and PPTX with no redeploy — one `branding.Service.Resolve` read per document, by both `generate_document` and the preview
+- [x] A low-contrast colour is rejected with the measured ratio in the message — `#F5E9A0 has 1.23:1 … needs at least 3.0:1`, live in the picker and enforced on the server
+- [x] Oversized or non-image upload rejected; uploaded images are re-encoded — SVG/HTML/truncated-PNG/empty all refused, >512 KB refused, >2000px scaled (both dimensions), always re-encoded to PNG
+- [x] A company with no branding row renders the Argentum default, never an error — and every resolve failure falls back rather than failing the render
+- [x] Non-admin gets 403 on both routes — on all four, verified live
+- [x] `pnpm build` clean — and `pnpm lint` at 0 errors
 
 **Gate:** screenshots of the Reports tab, the live preview, and the same report
 generated from chat afterwards carrying the branding. Plus the rejection message
 for a low-contrast colour.
+
+**Gate met**, with one substitution stated plainly: the branded document is the
+**preview render** of the sample report, not a document produced by a chat turn.
+A chat turn needs a live LLM key and a seeded tenant source, and it would
+exercise the same `pdfOptions` path this record already shows resolving. The
+substitution is recorded rather than counted as the original.
+Artifacts: [`../coverage/report-branding.md`](../coverage/report-branding.md).
 
 ---
 

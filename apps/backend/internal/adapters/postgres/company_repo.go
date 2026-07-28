@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -58,4 +59,51 @@ func (r *CompanyRepo) Update(ctx context.Context, c *domain.Company) error {
 	const q = `UPDATE companies SET name = $1, slug = $2, default_currency = $3 WHERE id = $4`
 	_, err := r.db.ExecContext(ctx, q, c.Name, c.Slug, c.DefaultCurrency, c.ID)
 	return err
+}
+
+// GetBranding reads the report branding record. A company that has never
+// configured one has `{}` in the column (migration 022's default), which
+// unmarshals into the zero value — so this returns a usable branding and never
+// a nil pointer for a company that exists.
+func (r *CompanyRepo) GetBranding(ctx context.Context, companyID string) (*domain.ReportBranding, error) {
+	const q = `SELECT report_branding FROM companies WHERE id = $1`
+	var raw []byte
+	if err := r.db.QueryRowContext(ctx, q, companyID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	b := &domain.ReportBranding{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, b); err != nil {
+			// A branding row that will not parse must not take the document
+			// down with it: the renderer's whole contract is that branding is
+			// optional. Report it so it can be fixed, and render Argentum's
+			// defaults meanwhile.
+			return nil, fmt.Errorf("decode report_branding for company %s: %w", companyID, err)
+		}
+	}
+	return b, nil
+}
+
+// SaveBranding writes the whole record. It touches one column, so it does not
+// race the name/slug/currency writes going through Update.
+func (r *CompanyRepo) SaveBranding(ctx context.Context, companyID string, b *domain.ReportBranding) error {
+	if b == nil {
+		b = &domain.ReportBranding{}
+	}
+	raw, err := json.Marshal(b)
+	if err != nil {
+		return fmt.Errorf("encode report_branding: %w", err)
+	}
+	const q = `UPDATE companies SET report_branding = $1 WHERE id = $2`
+	res, err := r.db.ExecContext(ctx, q, raw, companyID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }

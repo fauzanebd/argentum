@@ -4,7 +4,8 @@ Complete route inventory extracted from handler `Register()` functions,
 2026-07-26. 61 HTTP routes + 1 WebSocket + 1 reverse proxy + 7 agent tools.
 
 **Re-counted from the router itself after `T-04` (2026-07-28): 70 HTTP routes +
-1 WebSocket + 1 reverse proxy** (`gin.Engine.Routes()`, counting the proxy's
+1 WebSocket + 1 reverse proxy**, and **74 after `T-R5`** added the four report
+branding routes (`gin.Engine.Routes()`, counting the proxy's
 nine methods as one). `T-04` added six of those — two public invite routes and
 four team routes. The rest of the gap is a hand-count that had drifted; the
 number above is left as written because the tables below, not the headline,
@@ -89,6 +90,15 @@ are what this document is for.
 | POST   | `/api/users/invite`     | JWT+ | Creates a pending user + a single-use token. **The plaintext token is returned once and never readable again** — there is no mail transport yet |
 | PATCH  | `/api/users/:id`        | JWT+ | Change role; 409 on the last admin            |
 | DELETE | `/api/users/:id`        | JWT+ | Deactivate a member, or delete a pending one (frees the globally unique email); 409 on the last admin |
+
+## Report branding (`T-R5`)
+
+| Method | Path                              | Auth | Notes                                        |
+| ------ | --------------------------------- | ---- | -------------------------------------------- |
+| GET    | `/api/reports/branding`           | JWT+ | The record, plus the defaults a blank field falls back to and the limits the form should enforce. Admin even for the read — it returns nothing a member can act on |
+| PUT    | `/api/reports/branding`           | JWT+ | 400 with the measured contrast ratio when the accent is too pale for paper |
+| POST   | `/api/reports/branding/logo`      | JWT+ | multipart `logo`; PNG/JPEG ≤512 KB, re-encoded to PNG, returns the key only — it does **not** save the record |
+| POST   | `/api/reports/preview`            | JWT+ | Renders a fixed sample with the branding in the body, or with the stored record when the body is empty. Returns `application/pdf` for an `<iframe>` |
 
 ## Dashboards and scheduled tasks
 

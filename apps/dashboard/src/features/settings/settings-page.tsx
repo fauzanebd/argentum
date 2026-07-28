@@ -5,6 +5,7 @@ import { ConnectionsTab } from "./connections-tab";
 import { PhonesTab } from "./phones-tab";
 import { IntegrationsTab } from "./integrations-tab";
 import { TeamTab } from "./team-tab";
+import { ReportsTab } from "./reports-tab";
 import { AboutTab } from "./about-tab";
 import { AdminGate } from "@/components/layout/admin-gate";
 import { useIsAdmin } from "@/store/auth";
@@ -14,14 +15,16 @@ export function SettingsPage() {
   const [tab, setTab] = useState("general");
   const isAdmin = useIsAdmin();
 
-  // Team is hidden rather than read-only: every route behind it is admin-only,
-  // so a member would see an empty panel and a 403. The other panels have
-  // member-readable GETs, so they render disabled instead.
+  // Team and Reports are hidden rather than read-only: every route behind them
+  // is admin-only, including the GET, so a member would see an empty panel and
+  // a 403. The other panels have member-readable GETs, so they render disabled
+  // instead.
   const tabs = [
     { id: "general", label: "General" },
     { id: "connections", label: "Databases" },
     { id: "phones", label: "Phone numbers" },
     { id: "integrations", label: "Integrations" },
+    ...(isAdmin ? [{ id: "reports", label: "Reports" }] : []),
     ...(isAdmin ? [{ id: "team", label: "Team" }] : []),
     { id: "about", label: "About" },
   ];
@@ -70,6 +73,11 @@ export function SettingsPage() {
               <IntegrationsTab />
             </AdminGate>
           </Tabs.Content>
+          {isAdmin && (
+            <Tabs.Content value="reports">
+              <ReportsTab />
+            </Tabs.Content>
+          )}
           {isAdmin && (
             <Tabs.Content value="team">
               <TeamTab />

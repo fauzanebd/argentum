@@ -115,6 +115,28 @@ func (s *StorageService) GeneratePresignedURL(ctx context.Context, storedURL str
 	return signed.String(), nil
 }
 
+// DownloadKey reads an object back into memory.
+//
+// Every caller so far is the report renderer fetching a tenant logo, which is
+// capped at half a megabyte on the way in — so this returns bytes rather than
+// a ReadCloser. A caller that needs to stream something large should add a
+// method rather than growing this one, because a []byte return is a promise
+// about size that a stream is not.
+func (s *StorageService) DownloadKey(ctx context.Context, key string) ([]byte, error) {
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("storage: get %q: %w", key, err)
+	}
+	defer func() { _ = obj.Close() }()
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		// minio-go defers the request until first read, so a missing object
+		// surfaces here rather than from GetObject.
+		return nil, fmt.Errorf("storage: read %q: %w", key, err)
+	}
+	return data, nil
+}
+
 // PresignKey is a convenience for callers that already hold the key.
 func (s *StorageService) PresignKey(ctx context.Context, key string, expiry time.Duration) (string, error) {
 	signed, err := s.client.PresignedGetObject(ctx, s.bucket, key, expiry, nil)

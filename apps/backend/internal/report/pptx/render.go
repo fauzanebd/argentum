@@ -29,7 +29,9 @@
 package pptx
 
 import (
+	"bytes"
 	"fmt"
+	"image/png"
 	"strings"
 	"time"
 
@@ -47,10 +49,30 @@ type Brand struct {
 	// Author property.
 	Name string
 
-	// LogoPNG is reserved for T-R5. The deck draws the wordmark until then; a
-	// logo on the dark cover needs a light-on-dark variant, which is a question
-	// for the branding ticket rather than for this one.
+	// LogoPNG is the tenant's mark, drawn in the footer strip of every content
+	// slide.
+	//
+	// Not on the cover, which is the obvious place and the wrong one: the
+	// cover, the dividers and the closing slide are near-black, and a logo is
+	// supplied as one file — almost always dark ink on transparency, which is
+	// invisible there. Asking a tenant for a second light-on-dark file to
+	// solve a problem only the deck has is a worse trade than putting the mark
+	// where the background is the paper colour it was designed for. The cover
+	// carries the tenant's name in their own accent instead.
 	LogoPNG []byte
+
+	// Primary replaces the brand red on rules, the cover wordmark and the
+	// period line. nil means the token. On the dark slides it is lightened
+	// only as far as legibility requires — see renderer.accentOn.
+	//
+	// Chart series are not derived from it, for the reason pdf.Brand gives:
+	// the palette's colour-vision and greyscale separability is verified as a
+	// set (T-R3), and one tenant-supplied colour in it voids that silently.
+	Primary *theme.Color
+
+	// HideCredit removes the "Made with Argentum" mark from the footer strip.
+	// Negative so the zero Brand carries the credit.
+	HideCredit bool
 
 	// Confidentiality is the default label for decks that do not set one.
 	Confidentiality string
@@ -96,6 +118,13 @@ type renderer struct {
 	title  string
 	confid string
 	genAt  time.Time
+
+	// logoAspect is the uploaded mark's width ÷ height, measured once from the
+	// PNG header. The footer places it by height, so without this a tall logo
+	// and a wide one would both be drawn in the same box and one of them would
+	// be squashed. Zero means there is no usable logo — a file that does not
+	// decode is dropped rather than failing the deck.
+	logoAspect float64
 
 	sections []spec.Section
 	slides   []slide
@@ -154,7 +183,33 @@ func newRenderer(doc *spec.Document, opts Options) (*renderer, error) {
 	if c := doc.Cover(); c != nil && strings.TrimSpace(c.Confidentiality) != "" {
 		r.confid = strings.TrimSpace(c.Confidentiality)
 	}
+
+	if len(opts.Brand.LogoPNG) > 0 {
+		if cfg, err := png.DecodeConfig(bytes.NewReader(opts.Brand.LogoPNG)); err == nil && cfg.Height > 0 {
+			r.logoAspect = float64(cfg.Width) / float64(cfg.Height)
+		}
+	}
 	return r, nil
+}
+
+// accent is the tenant's colour, or the brand red. Every rule on a light slide
+// draws through it.
+func (r *renderer) accent() theme.Color {
+	if c := r.opts.Brand.Primary; c != nil {
+		return *c
+	}
+	return theme.ColorPrimary
+}
+
+// accentOn is accent adjusted for the surface it lands on. The cover, dividers
+// and closing slide are near-black, and a tenant's accent is validated against
+// *paper* — 3:1 on white says nothing about 3:1 on #0A0A0A. Rejecting a navy
+// that is perfect in the PDF because the deck has a dark cover would be the
+// wrong end to fix it: the deck lightens the hue for those three slides
+// instead, and only as far as legibility requires, so a colour that already
+// works is untouched.
+func (r *renderer) accentOn(bg theme.Color) theme.Color {
+	return theme.Readable(r.accent(), bg, theme.White, theme.MinBrandContrast)
 }
 
 func (r *renderer) run() ([]byte, error) {
@@ -242,6 +297,14 @@ func (r *renderer) pack() ([]byte, error) {
 	slideRelIDs := make([]string, 0, len(r.slides))
 	imageIndex := 0
 
+	// The logo is one media part referenced from every content slide's rels,
+	// not one part per slide: a 40 KB mark on a 50-slide export would
+	// otherwise be 2 MB of identical bytes.
+	logo := r.logoAspect > 0 && len(r.opts.Brand.LogoPNG) > 0
+	if logo {
+		p.add("ppt/media/logo.png", r.opts.Brand.LogoPNG)
+	}
+
 	for i, s := range r.slides {
 		n := i + 1
 		slideName := fmt.Sprintf("ppt/slides/slide%d.xml", n)
@@ -261,7 +324,15 @@ func (r *renderer) pack() ([]byte, error) {
 			rels = append(rels, rel{imageRel, relTypeImage, "../media/" + imageName})
 		}
 
-		p.addXML(slideName, r.slideXML(s, n, imageRel))
+		// Only the light slides carry the mark; the cover, dividers and
+		// closing slide are dark and have no footer strip to put it in.
+		logoRel := ""
+		if logo && s.kind != kindCover && s.kind != kindDivider && s.kind != kindClosing {
+			logoRel = fmt.Sprintf("rId%d", len(rels)+1)
+			rels = append(rels, rel{logoRel, relTypeImage, "../media/logo.png"})
+		}
+
+		p.addXML(slideName, r.slideXML(s, n, imageRel, logoRel))
 		p.override("/"+slideName, "application/vnd.openxmlformats-officedocument.presentationml.slide+xml")
 		p.addXML(fmt.Sprintf("ppt/slides/_rels/slide%d.xml.rels", n), relsXML(rels))
 

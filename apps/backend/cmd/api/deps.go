@@ -10,6 +10,7 @@ import (
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
+	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metrics"
@@ -42,6 +43,7 @@ type apiDeps struct {
 	scheduledSvc *app.ScheduledTaskService
 	discordSvc   *app.DiscordService
 	larkSvc      *app.LarkService
+	brandingSvc  *branding.Service
 
 	wa whatsapp.Provider
 

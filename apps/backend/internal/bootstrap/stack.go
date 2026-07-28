@@ -36,6 +36,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -112,7 +113,11 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.Threads = pgctl.NewThreadRepo(controlDB)
 	s.Messages = pgctl.NewMessageRepo(controlDB)
 	s.Usage = pgctl.NewUsageRepo(controlDB)
-	s.Companies = pgctl.NewCompanyRepo(controlDB)
+	// Kept concretely as well as behind the interface: the branding record
+	// lives on the company row, and domain.CompanyRepository deliberately does
+	// not carry it (see domain.BrandingRepository for why).
+	companyRepo := pgctl.NewCompanyRepo(controlDB)
+	s.Companies = companyRepo
 	s.ScheduledRepo = pgctl.NewScheduledTaskRepo(controlDB)
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
@@ -204,7 +209,12 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		logrus.WithError(err).Warn("storage disabled; generate_document tool will not be registered")
 	} else if storageSvc != nil {
 		presignTTL := time.Duration(cfg.DocumentPresignTTLSecs) * time.Second
-		s.Tools = append(s.Tools, tools.NewGenerateDocumentTool(storageSvc, documentRepo, s.Companies, s.UsageSvc, presignTTL))
+		// The branding service reads the same bucket it writes logos to, and
+		// the same company row the API's Reports tab writes (T-R5). One
+		// resolver, so a document generated from chat carries exactly what the
+		// preview showed.
+		brandingSvc := branding.NewService(companyRepo, storageSvc, s.Companies)
+		s.Tools = append(s.Tools, tools.NewGenerateDocumentTool(storageSvc, documentRepo, s.Companies, brandingSvc, s.UsageSvc, presignTTL))
 		logrus.WithFields(logrus.Fields{
 			"bucket":   cfg.MinIOBucket,
 			"endpoint": cfg.MinIOEndpoint,

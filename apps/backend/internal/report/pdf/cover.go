@@ -113,7 +113,7 @@ func (r *renderer) coverTop(sec spec.Section) *rowList {
 		l.text(period, props.Text{
 			Family: theme.FontMedium,
 			Size:   theme.TypeScale.Caption,
-			Color:  theme.ColorPrimary.Props(),
+			Color:  r.accent().Props(),
 			Align:  align.Left,
 		}, contentWidth())
 		l.space(theme.Spacing.XS)
@@ -145,7 +145,7 @@ func (r *renderer) coverTop(sec spec.Section) *rowList {
 	l.space(theme.Spacing.MD)
 	l.add(3,
 		line.NewCol(30, props.Line{
-			Color:       theme.ColorPrimary.Props(),
+			Color:       r.accent().Props(),
 			Thickness:   1.2,
 			SizePercent: 100,
 		}),

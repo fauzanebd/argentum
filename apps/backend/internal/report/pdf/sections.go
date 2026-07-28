@@ -93,7 +93,7 @@ func (r *renderer) renderHeading(sec spec.Section, next *spec.Section) {
 		l.space(theme.Spacing.XS)
 		l.add(2.5,
 			line.NewCol(24, props.Line{
-				Color:       theme.ColorPrimary.Props(),
+				Color:       r.accent().Props(),
 				Thickness:   0.8,
 				SizePercent: 100,
 			}),

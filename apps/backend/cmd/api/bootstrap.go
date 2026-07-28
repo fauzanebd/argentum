@@ -9,8 +9,10 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
+	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
+	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/llmclient"
@@ -197,6 +199,28 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		return nil, fmt.Errorf("WhatsApp provider: %w", err)
 	}
 	deps.wa = waProvider
+
+	// Report branding (T-R5). The logo lives in the same bucket the generated
+	// documents do, so the API needs the storage client the worker already
+	// builds — without MINIO_ENDPOINT the service still answers, minus the
+	// logo: a tenant can set a colour and a footer line on a deployment with
+	// no object storage at all.
+	var logoStore branding.ObjectStore
+	if cfg.MinIOEndpoint != "" {
+		st, err := storage.NewStorageService(&storage.MinIOConfig{
+			Endpoint:        cfg.MinIOEndpoint,
+			AccessKeyID:     cfg.MinIOAccessKeyID,
+			SecretAccessKey: cfg.MinIOSecretAccessKey,
+			Bucket:          cfg.MinIOBucket,
+			UseSSL:          cfg.MinIOUseSSL,
+		})
+		if err != nil {
+			logrus.WithError(err).Warn("object storage unavailable; report logo upload is disabled")
+		} else {
+			logoStore = st
+		}
+	}
+	deps.brandingSvc = branding.NewService(companyRepo, logoStore, companyRepo)
 
 	// Shared with app.MeteredLLM, which is too deep in the call graph to be
 	// handed a collector, so /metrics reports streaming-metering health too.

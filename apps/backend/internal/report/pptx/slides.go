@@ -19,8 +19,9 @@ import (
 // every slide has its own background is a deck assembled from templates.
 
 // slideXML writes one slide. imageRel is the relationship id of the chart image
-// declared in this slide's own rels part, empty when the slide has no picture.
-func (r *renderer) slideXML(s slide, number int, imageRel string) string {
+// declared in this slide's own rels part, empty when the slide has no picture;
+// logoRel is the same for the tenant's mark in the footer strip.
+func (r *renderer) slideXML(s slide, number int, imageRel, logoRel string) string {
 	b := newBldr()
 
 	dark := s.kind == kindCover || s.kind == kindDivider || s.kind == kindClosing
@@ -39,23 +40,23 @@ func (r *renderer) slideXML(s slide, number int, imageRel string) string {
 	case kindKPI:
 		r.drawTitle(b, s)
 		r.drawKPI(b, s)
-		r.drawFooter(b, s, number)
+		r.drawFooter(b, s, number, logoRel)
 	case kindChart:
 		r.drawTitle(b, s)
 		r.drawChart(b, s, imageRel)
-		r.drawFooter(b, s, number)
+		r.drawFooter(b, s, number, logoRel)
 	case kindTable:
 		r.drawTitle(b, s)
 		r.drawTable(b, s)
-		r.drawFooter(b, s, number)
+		r.drawFooter(b, s, number, logoRel)
 	case kindFacts:
 		r.drawTitle(b, s)
 		r.drawFacts(b, s)
-		r.drawFooter(b, s, number)
+		r.drawFooter(b, s, number, logoRel)
 	case kindBullets:
 		r.drawTitle(b, s)
 		r.drawBullets(b, s)
-		r.drawFooter(b, s, number)
+		r.drawFooter(b, s, number, logoRel)
 	}
 
 	return fmt.Sprintf(`<p:sld xmlns:a="%s" xmlns:r="%s" xmlns:p="%s">`+
@@ -88,12 +89,23 @@ func (r *renderer) drawTitle(b *bldr, s slide) {
 		paras: []para{simplePara(title, deckType.H1, true, theme.ColorForeground, alignLeft)},
 	})
 	b.rect(marginX, marginTop+titleBand+theme.Spacing.XS, titleRuleWidth, titleRuleThickness,
-		theme.ColorPrimary, 0, nil)
+		r.accent(), 0, nil)
 }
 
-// drawFooter is the strip at the foot of a content slide: the confidentiality
-// label on the left, the slide number on the right.
-func (r *renderer) drawFooter(b *bldr, s slide, number int) {
+// logoBand is the drawn height of the tenant's mark in the footer strip. The
+// strip is footerBand tall and the mark sits inside it, so this is smaller: a
+// logo that fills the strip touches the hairline above it and the slide edge
+// below.
+const logoBand = 5.0
+
+// logoMaxWidth caps how far a very wide mark may run into the footer text. A
+// wordmark logo can be 8:1, and without a cap it would take a third of the
+// strip and push the confidentiality label off it.
+const logoMaxWidth = 32.0
+
+// drawFooter is the strip at the foot of a content slide: the tenant's mark and
+// the confidentiality label on the left, the slide number on the right.
+func (r *renderer) drawFooter(b *bldr, s slide, number int, logoRel string) {
 	left := strings.TrimSpace(r.confid)
 	if note := strings.TrimSpace(r.opts.Brand.FooterNote); note != "" {
 		if left != "" {
@@ -105,14 +117,36 @@ func (r *renderer) drawFooter(b *bldr, s slide, number int) {
 	if left == "" {
 		left = strings.TrimSpace(r.opts.Brand.Name)
 	}
+	if !r.opts.Brand.HideCredit {
+		if left != "" {
+			left += " · " + r.words.Credit
+		} else {
+			left = r.words.Credit
+		}
+	}
 
 	b.rect(marginX, footerTop(), contentWidth(), theme.Page.Hairline, theme.ColorBorder, 0, nil)
 
-	if left != "" {
+	textX := marginX
+	textWidth := contentWidth() * 0.7
+	if logoRel != "" && r.logoAspect > 0 {
+		w, h := logoBand*r.logoAspect, logoBand
+		if w > logoMaxWidth {
+			// Clamping the width has to shrink the height with it. Capping one
+			// dimension alone is exactly how a wordmark ends up squashed, and
+			// a distorted logo is worse than no logo.
+			w, h = logoMaxWidth, logoMaxWidth/r.logoAspect
+		}
+		b.picture(logoRel, marginX, footerTop()+theme.Spacing.XS, w, h, "Logo")
+		textX += w + theme.Spacing.SM
+		textWidth -= w + theme.Spacing.SM
+	}
+
+	if left != "" && textWidth > 0 {
 		b.text(textBox{
-			x: marginX, y: footerTop() + theme.Spacing.XS, w: contentWidth() * 0.7, h: footerBand,
+			x: textX, y: footerTop() + theme.Spacing.XS, w: textWidth, h: footerBand,
 			name: "Footer",
-			paras: []para{simplePara(fitLines(left, theme.FontBody, measure.Regular, deckType.Caption, contentWidth()*0.7, 1),
+			paras: []para{simplePara(fitLines(left, theme.FontBody, measure.Regular, deckType.Caption, textWidth, 1),
 				deckType.Caption, false, theme.ColorMuted, alignLeft)},
 		})
 	}
@@ -176,7 +210,7 @@ func (r *renderer) drawCover(b *bldr, s slide) {
 	if name := firstNonEmpty(r.opts.Brand.Name, "Argentum"); name != "" {
 		b.text(textBox{
 			x: marginX, y: coverBrandTop, w: contentWidth(), h: 14, name: "Brand",
-			paras: []para{simplePara(name, deckType.H2, true, theme.ColorPrimary, alignLeft)},
+			paras: []para{simplePara(name, deckType.H2, true, r.accentOn(theme.ColorForeground), alignLeft)},
 		})
 	}
 
@@ -184,7 +218,7 @@ func (r *renderer) drawCover(b *bldr, s slide) {
 		b.text(textBox{
 			x: marginX, y: coverPeriodTop, w: contentWidth(), h: 10, name: "Period",
 			paras: []para{simplePara(strings.ToUpper(s.period), deckType.Caption, false,
-				theme.ColorPrimary, alignLeft)},
+				r.accentOn(theme.ColorForeground), alignLeft)},
 		})
 	}
 
@@ -207,7 +241,8 @@ func (r *renderer) drawCover(b *bldr, s slide) {
 		y += coverSubtitleBand
 	}
 
-	b.rect(marginX, y+coverBandGap, titleRuleWidth*1.4, titleRuleThickness*1.5, theme.ColorPrimary, 0, nil)
+	b.rect(marginX, y+coverBandGap, titleRuleWidth*1.4, titleRuleThickness*1.5,
+		r.accentOn(theme.ColorForeground), 0, nil)
 
 	r.drawFactStrip(b, s, slideHeightMM-marginBottom-coverFactsHeight)
 }
@@ -247,7 +282,8 @@ func (r *renderer) drawDivider(b *bldr, s slide) {
 	title := fitLines(s.title, theme.FontBody, measure.Bold, deckType.Display, contentWidth(), coverTitleMaxLines)
 	y := (slideHeightMM - coverTitleBand) / 2
 
-	b.rect(marginX, y-theme.Spacing.LG, titleRuleWidth, titleRuleThickness*1.5, theme.ColorPrimary, 0, nil)
+	b.rect(marginX, y-theme.Spacing.LG, titleRuleWidth, titleRuleThickness*1.5,
+		r.accentOn(theme.ColorForeground), 0, nil)
 	b.text(textBox{
 		x: marginX, y: y, w: contentWidth(), h: coverTitleBand,
 		anchor: "ctr", autofit: true, name: "Section Title",
@@ -263,7 +299,8 @@ func (r *renderer) drawClosing(b *bldr, s slide) {
 		deckType.H1, contentWidth(), 2)
 	y := slideHeightMM/2 - closingTitleBand
 
-	b.rect(marginX, y-theme.Spacing.LG, titleRuleWidth, titleRuleThickness*1.5, theme.ColorPrimary, 0, nil)
+	b.rect(marginX, y-theme.Spacing.LG, titleRuleWidth, titleRuleThickness*1.5,
+		r.accentOn(theme.ColorForeground), 0, nil)
 	b.text(textBox{
 		x: marginX, y: y, w: contentWidth(), h: closingTitleBand,
 		anchor: "ctr", autofit: true, name: "Closing Title",
