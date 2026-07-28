@@ -166,7 +166,7 @@ Phase 1  Evals, then the two observed P0s                (T-01, T-02c, T-16) ✅
             All three landed 2026-07-27. Asked the C-1 question, the agent now
             answers IDR 3,863,405,700 — the true value — and states what it
             retrieved before stating it.
-Phase 1a Report system: design tokens ✅ → PDF v2 ✅ → charts ✅ → PPTX → tenant branding
+Phase 1a Report system: design tokens ✅ → PDF v2 ✅ → charts ✅ → PPTX ✅ → tenant branding
          └─ Owner-set priority, inserted 2026-07-27. The artifact that leaves the
             building. After T-00b because it creates a new shared package and
             touches two apps; after phase 1 because a branded document with an
@@ -187,6 +187,16 @@ Phase 1a Report system: design tokens ✅ → PDF v2 ✅ → charts ✅ → PPTX
             green ΔE 5.0 from the brand red under deuteranopia and it is now an
             azure; `make palette` is that gate and CI runs it.
             See coverage/report-charts.md.
+            T-R4 landed 2026-07-28: the same spec renders as a 16:9 deck, with
+            the model's prose in the speaker notes and its lead sentence as the
+            bullet. The OOXML is written by hand, so the deck is byte-identical
+            between runs by construction. Three packages came out of the PDF
+            renderer — measure, layout, labels — so the two renderers cannot
+            disagree about how wide a column is or what "Prepared for" is in
+            Indonesian. LibreOffice converts every fixture in CI; the
+            PowerPoint / Keynote / Google Slides half of the gate is still
+            outstanding and is recorded as such.
+            See coverage/report-deck.md.
 Phase 1b Tests + CI gate + generated types + RBAC + credit enforcement
          └─ You cannot ship autonomy on an unmeasured, unbounded, unaudited system.
             Also fixes the three P0 security/billing findings, which are cheap now
@@ -321,7 +331,7 @@ change no one's workflow. Watchers do.
 | -- | ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
 | 0 ✅ | **One tree**            | Single repo, all three histories blameable through the subtree boundary. Zero Go import-path changes in the migration diff. Both Cloudflare Pages previews deploy from the new roots. CI path-filters correctly per job, and `cmd/discord` builds in it for the first time. |
 | 1 ✅ | **It admits what it doesn't know** | `make eval` prints a score over ≥30 golden questions. The exact C-1 question — "What were our total sales last month?" — returns the right order of magnitude or an explicit "I could not complete this", and never an invented figure. `/api/usage/summary` shows the primary model with non-zero tokens after one chat turn. **Met 2026-07-27.** The C-1 question returns the exact figure; a turn that runs out now says so in the reply ("the budget was exhausted before I could get the final sum") instead of inventing one. |
-| 1a | **Worth forwarding**     | The same monthly-sales spec renders as (a) a branded PDF with a cover, a running header, `Page N of M`, a chart, right-aligned rupiah, and a repeating table header across 200 rows, and (b) a PPTX deck that opens cleanly in PowerPoint, Keynote, Google Slides, and LibreOffice with the narrative in speaker notes. Both derive their colours, type scale, and fonts from the same generated tokens as the dashboard, and CI fails if the two drift. A tenant logo and colour set in Settings → Reports appear in the next generated file with no redeploy. **PDF half met in full 2026-07-28:** cover, running header, `Page N of M`, right-aligned rupiah, a header repeating across 17 pages of a 200-row table, byte-identical between runs, and — since `T-R3` — a chart, on the same generated tokens as the dashboard and on a palette now gated against deuteranopia and greyscale. The deck and the tenant branding are `T-R4`/`T-R5`. |
+| 1a | **Worth forwarding**     | The same monthly-sales spec renders as (a) a branded PDF with a cover, a running header, `Page N of M`, a chart, right-aligned rupiah, and a repeating table header across 200 rows, and (b) a PPTX deck that opens cleanly in PowerPoint, Keynote, Google Slides, and LibreOffice with the narrative in speaker notes. Both derive their colours, type scale, and fonts from the same generated tokens as the dashboard, and CI fails if the two drift. A tenant logo and colour set in Settings → Reports appear in the next generated file with no redeploy. **PDF half met in full 2026-07-28:** cover, running header, `Page N of M`, right-aligned rupiah, a header repeating across 17 pages of a 200-row table, byte-identical between runs, and — since `T-R3` — a chart, on the same generated tokens as the dashboard and on a palette now gated against deuteranopia and greyscale. **Deck half met 2026-07-28 except the four-application check:** the identical fixture — same file, only `format` changed — renders as 11 slides with the narrative in speaker notes, byte-identical between runs, and LibreOffice 7.4.7.2 converts all five fixtures in CI. PowerPoint, Keynote and Google Slides cannot be driven from a headless runner; that check is outstanding and named in `coverage/report-deck.md`. Tenant branding is `T-R5`. |
 | 1b | **Safe to change**       | CI fails on a failing test. All CRITICAL packages have tests. A Go struct rename without `make types` is a red build. Non-admin cannot rotate a DSN. A tenant at zero credits gets a clear refusal instead of a bill. |
 | 1c | **Anyone can call it**   | A throwaway Node script holding an API key writes a branded PDF to disk in under 10 minutes, using only the published quickstart and no help from us. The same key streams a chat answer over SSE, and is rejected by every `/api` dashboard route. A retried request with the same `Idempotency-Key` bills once. Adding a `/v1` route without an OpenAPI entry is a red build. |
 | 2  | **Authoritative numbers**| A metric is defined once in the UI; asking the same question twice in two threads returns the same number via `query_metric`. Eval score has not regressed. |
@@ -347,9 +357,9 @@ change no one's workflow. Watchers do.
 | Phases 1 + 1a + 1b are 24 days of work                    | **Certain**| Low    | Stated openly in the roll-up rather than hidden. They will run ~5 weeks; everything downstream compounds off them, so it is the wrong place to rush. |
 | Agent-executed work drifts from intent                    | Medium     | Medium | Every ticket carries an explicit verification gate. No ticket is done on inspection alone. |
 | **Report track becomes an open-ended design exercise**    | **High**   | High   | "Enterprise-grade" has no exit condition, so `T-R2`/`T-R4` are gated on a **fixed fixture set** — monthly sales report, invoice, KPI summary, 200-row export — and on the four-application PPTX compatibility check. When the fixtures render correctly the ticket is done. Polish beyond that is a Sprint 2 item, not a reason to keep the ticket open. **Held for `T-R2` (2026-07-27):** it shipped against the fixture set and stopped. The eight-column export is left cramped rather than redesigned, recorded as a known limit. `T-R4` still carries the risk. |
-| PPTX renders differently in Keynote / Google Slides       | **High**   | Medium | Hand-rolled OOXML gets read by four different implementations. `T-R4`'s gate requires opening a real deck in all four; the CI smoke test converts every fixture through headless LibreOffice, which is the strictest of them. Stick to the committed layout set — an ad-hoc slide shape is where compatibility breaks. |
+| PPTX renders differently in Keynote / Google Slides       | **High**   | Medium | Hand-rolled OOXML gets read by four different implementations. **Partly retired 2026-07-28, and partly still open.** `T-R4` shipped against the failure mode rather than against the applications: no inherited placeholders, one blank layout, no table styles, every fill and rule explicit, fonts named with a substitution class — so there is nothing left for the three renderers to interpret differently. The CI job converts every fixture through headless LibreOffice, the strictest of the four, and all five pass. What is *not* done is opening a deck in the other three, because they cannot be driven headlessly; that acceptance item is outstanding and is stated in `coverage/report-deck.md` rather than quietly counted as met. |
 | ~~Chart palette illegible in print or to colourblind readers~~ **Closed 2026-07-28** | **Observed** | Medium | It was not a risk, it was a defect already in the tree. `T-R3`'s verifier found series 8's green at ΔE 5.0 from the brand red under simulated deuteranopia — two series a red-green-deficient reader cannot separate at the width of a chart line — and a sweep found no green at any lightness that clears both floors against this palette. The eighth series is now an azure. The method (Brettel/Viénot LMS simulation + CIE76 for colour vision, CIE L\* for greyscale) is stated in `tokens.json` and enforced by `make palette` in the tokens CI job, so the residual risk — a future palette edit — now fails a build instead of shipping. |
-| Text overflows a slide and is silently clipped            | Medium     | Medium | PPTX has no layout engine to ask, so `T-R4` estimates character budgets per layout and overflows to a `(cont.)` slide. Silent clipping is an explicit acceptance failure. |
+| ~~Text overflows a slide and is silently clipped~~ **Closed 2026-07-28** | **Observed** | Medium | `T-R4` measures rather than budgeting characters: every block goes through `internal/report/measure` against 94% of its real box before it is placed, overflows to a `(cont.)` slide, and declares `normAutofit` on top of that. The first LibreOffice conversion proved the risk was real and not hypothetical — a one-line subtitle estimate came back on two lines with the brand rule drawn through it — so the cover, divider and closing slides were rebuilt on a fixed vertical grid whose bands do not move when an estimate is a line out. A test asserts every placed string against its box. |
 | ~~Tokens drift back apart by hand-editing~~ **Closed 2026-07-27** | Medium | Medium | `T-R1` landed with two independent guards: the `tokens` CI job regenerates and runs `git diff --exit-code`, and `go test` compares `tokens_gen.go` against `tokens.json` directly, so a hand edit fails even when the tokens job does not trigger. The hand-written `:root` block was deleted, not left beside the generated one. The migration also showed the risk was already real: the old HSL values had drifted from the hex their own comments named. |
 | **A branded report carries a fabricated number**          | **High if unfixed** | **Critical** | The exact reason the report track runs *after* phase 1. A stock-Helvetica PDF with a wrong figure is embarrassing; a branded, logo'd, board-ready one with a wrong figure is a lie with letterhead. `T-16` lands first, and `T-R2`'s fixtures render from real query results, never from LLM-narrated figures. **`T-R2` narrowed this further:** v2 cells carry raw values and the renderer formats them, so the model no longer retypes a figure on its way into a document — one fewer place for a digit to change. |
 | ~~**The agent fabricates numbers under budget exhaustion**~~ **Closed 2026-07-27** | **Observed** | **Critical** | `T-16` landed: a four-dimension turn budget, an exhaustion message the model actually receives (as a tool result, because it never saw the old cap), an output check that replaces a reply stating a figure no tool returned, and a zero-row `run_sql` note for the second mechanism `E-5` found. `T-01`'s golden set is what keeps it fixed. Residual risk is now the reverse one, below. |
@@ -416,15 +426,15 @@ them:
 
 | What | Days | Cumulative |
 | ---- | ---- | ---------- |
-| Finish the report track (~~`T-R3`~~ ✅, `T-R4`, `T-R5`) | 4.0 | 4.0 |
-| Foundation (`T-02`, `T-02b`, `T-03`, `T-04`, `T-05`) | 8.0 | 12.0 |
-| **The API track (`T-13`, `T-A1`→`T-A5`)** | 12.5 | **24.5** |
+| Finish the report track (~~`T-R3`~~ ✅, ~~`T-R4`~~ ✅, `T-R5`) | 1.5 | 1.5 |
+| Foundation (`T-02`, `T-02b`, `T-03`, `T-04`, `T-05`) | 8.0 | 9.5 |
+| **The API track (`T-13`, `T-A1`→`T-A5`)** | 12.5 | **22.0** |
 | Remaining budget | | **26.0** |
 
 **Sprint 1 is now: finish the report system, build the foundation, ship the API.**
-It fits — with 1.5 days of slack across three phases, which is to say it fits on
-paper and not in practice against a plan that has already absorbed two priority
-inserts. What pays for it is phases 2–6 — the metric registry,
+It fits — with 4.0 days of slack across three phases after `T-R4` landed on
+2026-07-28, which is more comfortable than the 1.5 this table showed a day
+earlier but is still a plan that has already absorbed two priority inserts. What pays for it is phases 2–6 — the metric registry,
 **watchers**, actions, MCP and hardening, 23.5 days — moving to Sprint 2
 alongside the widget phase.
 

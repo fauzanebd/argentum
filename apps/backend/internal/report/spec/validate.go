@@ -38,9 +38,9 @@ func (d *Document) Normalize() {
 // Validate gives early, actionable errors before a renderer is reached.
 func (d *Document) Validate() error {
 	switch d.Format {
-	case "pdf", "xlsx", "csv":
+	case "pdf", "xlsx", "csv", "pptx":
 	default:
-		return fmt.Errorf("format must be one of pdf|xlsx|csv (got %q)", d.Format)
+		return fmt.Errorf("format must be one of pdf|xlsx|csv|pptx (got %q)", d.Format)
 	}
 
 	switch d.Format {
@@ -55,9 +55,13 @@ func (d *Document) Validate() error {
 		if d.Content.Table == nil && len(d.Content.Sheets) == 0 {
 			return fmt.Errorf("xlsx requires content.table or content.sheets")
 		}
-	case "pdf":
+	case "pdf", "pptx":
+		// A deck reads the same content tree as a document: the sections are
+		// the same sections, projected onto slides instead of onto pages. That
+		// is the whole point of the format — nothing about a report has to be
+		// authored twice — so there is nothing extra to require here.
 		if len(d.Content.Sections) == 0 && d.Content.Table == nil {
-			return fmt.Errorf("pdf requires content.sections or content.table")
+			return fmt.Errorf("%s requires content.sections or content.table", d.Format)
 		}
 	}
 

@@ -44,6 +44,7 @@ import (
 	"github.com/phpdave11/gofpdf"
 
 	"github.com/fauzanebd/argentum/internal/report/format"
+	"github.com/fauzanebd/argentum/internal/report/labels"
 	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/report/theme"
 )
@@ -105,7 +106,7 @@ type renderer struct {
 	opts Options
 
 	fmt      format.Options
-	labels   labels
+	words    labels.Set
 	title    string
 	confid   string
 	genAt    time.Time
@@ -142,7 +143,7 @@ func newRenderer(doc *spec.Document, opts Options) (*renderer, error) {
 		Currency: strings.ToUpper(strings.TrimSpace(currency)),
 		Decimals: format.AutoDecimals,
 	}
-	r.labels = labelsFor(loc)
+	r.words = labels.For(loc)
 
 	r.title = strings.TrimSpace(doc.Title)
 	r.sections = doc.Content.Sections
@@ -248,7 +249,7 @@ func (r *renderer) config() (*entity.Config, error) {
 
 	if r.doc.V2() {
 		b = b.WithPageNumber(props.PageNumber{
-			Pattern: r.labels.pageNumber,
+			Pattern: r.words.PageNumber,
 			Place:   props.Bottom,
 			Family:  theme.FontBody,
 			Style:   fontstyle.Normal,
@@ -429,7 +430,7 @@ func (r *renderer) footerRows() []core.Row {
 			left = note
 		}
 	}
-	right := r.labels.generated + " " + format.DateTime(r.genAt, r.fmt)
+	right := r.words.Generated + " " + format.DateTime(r.genAt, r.fmt)
 
 	caption := props.Text{
 		Family: theme.FontBody,

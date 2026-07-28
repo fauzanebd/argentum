@@ -299,6 +299,58 @@ Three things this ticket found:
 
 Record, gate output and known limits: [`report-rendering.md`](report-rendering.md).
 
+`T-R4` PPTX deck renderer
+
+The same spec, projected onto slides. No new content model, no second authoring
+path: the deck's own tests read the PDF renderer's fixtures out of
+`../pdf/testdata` and change one field. That is the acceptance criterion written
+as a file path rather than as a promise — a copy of the fixtures in the deck's
+package would let the two drift the first time somebody tuned a deck by editing
+one, and the test would still pass while the claim stopped being true.
+
+The change that makes it feel authored is where the prose goes. A paragraph the
+model wrote lands whole in the speaker notes and contributes only its lead
+sentence to the slide. The presenter has something to say and the audience has
+something readable from the back of the room, out of the same text that would
+otherwise have been a wall of 18pt.
+
+The OOXML is hand-rolled — `archive/zip` plus string templates over the parts —
+because no Go library writes PresentationML. The cost is `parts.go`. The return
+is that two renders of one spec are byte-identical *by construction*, a property
+`T-R2` had to fight gofpdf for across two CI rounds.
+
+Three things this ticket found:
+
+- **The first LibreOffice conversion found three defects the tests could not.**
+  A cover subtitle the estimate put on one line came back on two with the brand
+  rule drawn through it; a spec with no headings produced untitled slides with
+  nowhere for the `(cont.)` marker to go; an invoice's billing address was
+  truncated to one line. All three were obvious in the rendered page and
+  invisible in the XML, which is the argument for the conversion being a CI job
+  rather than a checklist item. The subtitle fix is the general one: the cover
+  no longer chains offsets off estimated heights, because with a substituted
+  font an estimate being one line out is a certainty over enough documents.
+- **Three packages had to come out of the PDF renderer first.** `measure`,
+  `layout` and `labels` — the text metrics, the column solver and the five words
+  a renderer chooses. Two copies of any of them would have meant the same table
+  proportioned differently in the report and the deck attached to it. The PDF's
+  own tests pass against the extracted packages untouched, which is what makes
+  the extraction reviewable rather than a rewrite.
+- **`chart.maxWidthMM` was a page-shaped constant.** It capped charts at 200mm,
+  sized for A4's 174mm measure, so a chart asked for across a 290.7mm slide
+  silently got a 200mm image stretched to fit — a 138 DPI chart on a projector,
+  which is exactly what that ticket's acceptance criterion rules out. A cap that
+  guards against an absurd caller has to move with the widest caller, not stay
+  at the narrowest.
+
+**One acceptance item is not met.** The gate asks for a deck opened in
+PowerPoint, Keynote, Google Slides and LibreOffice. Only LibreOffice has been
+run — the other three are desktop and browser applications that cannot be driven
+from this environment. It is recorded as outstanding rather than counted as
+done.
+
+Record, gate output and known limits: [`report-deck.md`](report-deck.md).
+
 ---
 
 ## What the history says about how this project is built

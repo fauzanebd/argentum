@@ -15,6 +15,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/report/pdf"
+	"github.com/fauzanebd/argentum/internal/report/pptx"
 	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/fauzanebd/argentum/internal/tools/document"
@@ -60,14 +61,17 @@ func (t *GenerateDocumentTool) Name() string { return "generate_document" }
 
 func (t *GenerateDocumentTool) Description() string {
 	return strings.TrimSpace(`
-Generate a downloadable document (PDF, XLSX, or CSV) from a structured spec and return a presigned download URL. Generic-purpose: use for invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports — anything the user wants to download as a file.
+Generate a downloadable document (PDF, PPTX, XLSX, or CSV) from a structured spec and return a presigned download URL. Generic-purpose: use for invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports, slide decks — anything the user wants to download as a file.
 
 Pick the format that matches the request:
-- "pdf"  for invoices, agreements, reports, anything print-ready (use content.sections; optionally a single content.table).
+- "pdf"  for invoices, agreements, reports, anything print-ready or meant to be forwarded (use content.sections; optionally a single content.table).
+- "pptx" for anything that will be presented — reviews, board updates, weekly readouts, "walk me through it", "for the meeting". Same content.sections as a PDF; the renderer projects them onto slides.
 - "xlsx" for spreadsheets (use content.table for a single sheet, content.sheets for multi-sheet).
 - "csv"  for raw tabular data (must use content.table).
 
-SET "spec_version": 2 FOR ANY PDF. It turns on the branded layout: cover page, running header, "Page N of M" footer, numbered headings, KPI cards, and typed table cells. Without it you get a plain document.
+SET "spec_version": 2 FOR ANY PDF OR PPTX. It turns on the branded layout: cover page, running header, "Page N of M" footer, numbered headings, KPI cards, and typed table cells. Without it you get a plain document.
+
+WRITING FOR A DECK: author it exactly as you would a PDF — do not shorten the prose, and do not split content into "slide" sections. The renderer decides where the slides break. Each "paragraph" becomes a slide's speaker notes with its opening sentence as the bullet, so a full explanatory paragraph produces a better deck than a terse one. A table longer than ~12 rows continues onto further slides automatically.
 
 content.sections is an ordered list. Each section has a "type":
 - "cover"      {text, subtitle, period, prepared_for, prepared_by, confidentiality} → full cover page. One per document, first in the list.
@@ -112,9 +116,9 @@ func (t *GenerateDocumentTool) Parameters() map[string]interfaces.ParameterSpec 
 	return map[string]interfaces.ParameterSpec{
 		"format": {
 			Type:        "string",
-			Description: "Output format: pdf, xlsx, or csv.",
+			Description: "Output format: pdf, pptx, xlsx, or csv. Use pptx for anything that will be presented.",
 			Required:    true,
-			Enum:        []interface{}{"pdf", "xlsx", "csv"},
+			Enum:        []interface{}{"pdf", "pptx", "xlsx", "csv"},
 		},
 		"filename": {
 			Type:        "string",
@@ -133,7 +137,7 @@ func (t *GenerateDocumentTool) Parameters() map[string]interfaces.ParameterSpec 
 		},
 		"spec_version": {
 			Type:        "integer",
-			Description: "Set to 2 for any PDF: enables the branded layout (cover, running header, page numbers, KPI cards, typed table cells). Omit for the plain legacy layout.",
+			Description: "Set to 2 for any PDF or PPTX: enables the branded layout (cover, running header, page numbers, KPI cards, typed table cells). Omit for the plain legacy layout.",
 			Required:    false,
 			Enum:        []interface{}{1, 2},
 		},
@@ -242,13 +246,15 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 
 // render dispatches to the format's renderer.
 //
-// The PDF path is the only one that reads company settings. A spreadsheet and
-// a CSV are data, and a tenant's currency symbol pasted into a cell someone
-// wants to sum is a formatting decision made in the wrong place.
+// The PDF and PPTX paths are the only ones that read company settings. A
+// spreadsheet and a CSV are data, and a tenant's currency symbol pasted into a
+// cell someone wants to sum is a formatting decision made in the wrong place.
 func (t *GenerateDocumentTool) render(ctx context.Context, doc *spec.Document, companyID string) ([]byte, error) {
 	switch doc.Format {
 	case "pdf":
 		return pdf.Render(doc, t.pdfOptions(ctx, companyID))
+	case "pptx":
+		return pptx.Render(doc, t.pptxOptions(ctx, companyID))
 	case "xlsx":
 		return document.RenderXLSX(document.FromReportSpec(doc))
 	case "csv":
@@ -257,14 +263,13 @@ func (t *GenerateDocumentTool) render(ctx context.Context, doc *spec.Document, c
 	return nil, fmt.Errorf("unsupported format %q", doc.Format)
 }
 
-// pdfOptions fills in what the model does not know: the tenant's legal name
-// and its default currency. A failed lookup is logged and not fatal — a
-// document with Argentum's own mark on it beats an error where a report was
-// asked for, and T-R5 is what turns this into real branding.
-func (t *GenerateDocumentTool) pdfOptions(ctx context.Context, companyID string) pdf.Options {
-	opts := pdf.Options{}
+// branding fills in what the model does not know: the tenant's legal name and
+// its default currency. A failed lookup is logged and not fatal — a document
+// with Argentum's own mark on it beats an error where a report was asked for,
+// and T-R5 is what turns this into real branding.
+func (t *GenerateDocumentTool) branding(ctx context.Context, companyID string) (name, currency string) {
 	if t.companies == nil {
-		return opts
+		return "", ""
 	}
 	company, err := t.companies.GetByID(ctx, companyID)
 	if err != nil || company == nil {
@@ -272,11 +277,23 @@ func (t *GenerateDocumentTool) pdfOptions(ctx context.Context, companyID string)
 			logrus.WithError(err).WithField("company_id", companyID).
 				Warn("generate_document: company lookup failed; rendering with defaults")
 		}
-		return opts
+		return "", ""
 	}
-	opts.Brand.Name = company.Name
-	opts.Currency = company.DefaultCurrency
-	return opts
+	return company.Name, company.DefaultCurrency
+}
+
+func (t *GenerateDocumentTool) pdfOptions(ctx context.Context, companyID string) pdf.Options {
+	name, currency := t.branding(ctx, companyID)
+	return pdf.Options{Brand: pdf.Brand{Name: name}, Currency: currency}
+}
+
+// pptxOptions is pdfOptions for the deck. The two Options types are separate
+// because the renderers are, and identical field for field because the
+// branding is one set of facts about a tenant — T-R5 fills one source and both
+// read it.
+func (t *GenerateDocumentTool) pptxOptions(ctx context.Context, companyID string) pptx.Options {
+	name, currency := t.branding(ctx, companyID)
+	return pptx.Options{Brand: pptx.Brand{Name: name}, Currency: currency}
 }
 
 func normalizeFilename(suggested, title string, format domain.DocumentFormat) string {

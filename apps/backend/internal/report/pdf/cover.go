@@ -159,12 +159,12 @@ func (r *renderer) coverBottom(sec spec.Section) *rowList {
 
 	facts := make([][2]string, 0, 3)
 	if v := strings.TrimSpace(sec.PreparedFor); v != "" {
-		facts = append(facts, [2]string{r.labels.preparedFor, v})
+		facts = append(facts, [2]string{r.words.PreparedFor, v})
 	}
 	if preparedBy != "" {
-		facts = append(facts, [2]string{r.labels.preparedBy, preparedBy})
+		facts = append(facts, [2]string{r.words.PreparedBy, preparedBy})
 	}
-	facts = append(facts, [2]string{r.labels.generated, format.DateTime(r.genAt, r.fmt)})
+	facts = append(facts, [2]string{r.words.Generated, format.DateTime(r.genAt, r.fmt)})
 
 	labelProps := props.Text{
 		Family: theme.FontBody,

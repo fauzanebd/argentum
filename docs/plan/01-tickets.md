@@ -659,15 +659,18 @@ the PDF was attached to.
   A deck that LibreOffice refuses is a deck PowerPoint may also refuse.
 
 **Acceptance:**
-- [ ] A deck opens cleanly in **PowerPoint, Keynote, Google Slides, and LibreOffice** — state versions tested
-- [ ] Same spec renders as both PDF and PPTX with no format-specific authoring
-- [ ] Speaker notes carry the narrative
-- [ ] Long tables continue across slides; nothing is silently clipped
-- [ ] Charts appear at slide resolution without visible artefacts
-- [ ] Zip is deterministic (fixed entry order, fixed timestamps)
+- [x] ~~A deck opens cleanly in **PowerPoint, Keynote, Google Slides, and LibreOffice**~~ — **partly.** LibreOffice 7.4.7.2 converts all five fixtures, in CI and locally. The other three cannot be driven from a headless environment and have **not** been opened. See `coverage/report-deck.md` § Not yet verified.
+- [x] Same spec renders as both PDF and PPTX with no format-specific authoring — the deck's tests read `../pdf/testdata/*.json` and change only `format`
+- [x] Speaker notes carry the narrative — the paragraph lands whole in `notesSlide`, its lead sentence on the slide; asserted in both directions
+- [x] Long tables continue across slides; nothing is silently clipped — 200 rows across 50 table slides, all 200 present, total row on the last only; every placed string asserted against its box
+- [x] Charts appear at slide resolution without visible artefacts — rasterised at the 290.7mm slide measure, which needed `chart.maxWidthMM` raised from its A4-shaped 200
+- [x] Zip is deterministic (fixed entry order, fixed timestamps)
 
 **Gate:** one deck rendered from the monthly-sales fixture, with screenshots from
 all four applications and the LibreOffice conversion output.
+**Met for LibreOffice** (output in `coverage/report-deck.md`); the three
+remaining applications are outstanding and are the only open item on this
+ticket.
 
 ---
 

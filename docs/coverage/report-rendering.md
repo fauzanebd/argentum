@@ -153,12 +153,20 @@ empty `AddPages(page.New())`, and only then are the footer and header registered
 
 **Every measurement comes from a second gofpdf document that draws nothing.**
 maroto's text provider is internal and only exists once `Generate()` is running,
-by which time every layout decision has been made. `internal/report/pdf/measure.go`
+by which time every layout decision has been made. `internal/report/measure`
 constructs an `Fpdf` exactly the way maroto constructs its own — millimetres, A4,
 the same embedded faces — so `GetStringWidth` returns the number the real
 renderer will use. The line-breaking function is transcribed from maroto's
 unexported one for the same reason: if this package counts two lines where maroto
 draws three, the third is drawn on top of the next row.
+
+> Moved out of this package by `T-R4` (2026-07-28), along with the column solver
+> (`internal/report/layout`) and the renderer's own vocabulary
+> (`internal/report/labels`). The deck renderer needs the same answers, and two
+> measurers would eventually give two — proportioning the same table one way in
+> the report and another way in the deck attached to it. `internal/report/pdf/measure.go`
+> is now the maroto-shaped wrapper over them; this package's behaviour and its
+> tests are unchanged. See [`report-deck.md`](report-deck.md).
 
 **Paragraphs are emitted one line at a time.** maroto cannot split a row, so a
 paragraph emitted as one row either fits on the page or moves to the next one

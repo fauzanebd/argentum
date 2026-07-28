@@ -11,11 +11,12 @@ const (
 	DocumentFormatPDF  DocumentFormat = "pdf"
 	DocumentFormatXLSX DocumentFormat = "xlsx"
 	DocumentFormatCSV  DocumentFormat = "csv"
+	DocumentFormatPPTX DocumentFormat = "pptx"
 )
 
 func (f DocumentFormat) Valid() bool {
 	switch f {
-	case DocumentFormatPDF, DocumentFormatXLSX, DocumentFormatCSV:
+	case DocumentFormatPDF, DocumentFormatXLSX, DocumentFormatCSV, DocumentFormatPPTX:
 		return true
 	}
 	return false
@@ -29,6 +30,8 @@ func (f DocumentFormat) Extension() string {
 		return "xlsx"
 	case DocumentFormatCSV:
 		return "csv"
+	case DocumentFormatPPTX:
+		return "pptx"
 	}
 	return ""
 }
@@ -41,6 +44,8 @@ func (f DocumentFormat) ContentType() string {
 		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 	case DocumentFormatCSV:
 		return "text/csv; charset=utf-8"
+	case DocumentFormatPPTX:
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 	}
 	return "application/octet-stream"
 }

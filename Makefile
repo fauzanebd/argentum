@@ -114,6 +114,27 @@ palette: ## Verify the chart palette in greyscale and under simulated CVD (T-R3)
 	node packages/design-tokens/scripts/palette.mjs --check
 
 # ---------------------------------------------------------------------------
+# Report artifacts
+# ---------------------------------------------------------------------------
+
+DECK_OUT ?= /tmp/argentum-decks
+
+.PHONY: decks
+decks: ## Render the fixture decks for the four-application check (T-R4)
+	cd $(BACKEND) && ARGENTUM_DECK_OUT=$(DECK_OUT) go test -count=1 -v -run TestWriteDecks ./internal/report/pptx/
+	@echo "open $(DECK_OUT) in PowerPoint, Keynote, Google Slides and LibreOffice"
+
+.PHONY: decks-check
+decks-check: ## Convert every fixture deck through headless LibreOffice (T-R4)
+	@command -v soffice >/dev/null 2>&1 || { \
+		echo "libreoffice is not installed — CI runs this, or:"; \
+		echo "  docker run --rm -v \$$PWD:/w -w /w debian:bookworm-slim \\"; \
+		echo "    bash -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends libreoffice-impress && soffice --headless --convert-to pdf *.pptx'"; \
+		exit 1; \
+	}
+	cd $(BACKEND) && go test -count=1 -v -run TestLibreOfficeConverts ./internal/report/pptx/
+
+# ---------------------------------------------------------------------------
 # Housekeeping
 # ---------------------------------------------------------------------------
 

@@ -29,6 +29,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       web: ${{ steps.filter.outputs.web }}
       tokens: ${{ steps.filter.outputs.tokens }}
+      report: ${{ steps.filter.outputs.report }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -46,6 +47,14 @@ jobs:
               - 'apps/dashboard/src/tokens.generated.css'
               - 'apps/backend/internal/report/theme/**'
               - 'Makefile'
+              - '.github/workflows/ci.yaml'
+            # The deck smoke test installs LibreOffice, which costs about a
+            # minute. It is worth that on a change to the renderers and nothing
+            # at all on a change anywhere else, so it gets its own filter rather
+            # than riding along in the backend job.
+            report:
+              - 'apps/backend/internal/report/**'
+              - 'apps/backend/internal/tools/generate_document.go'
               - '.github/workflows/ci.yaml'
             web:
               - 'apps/dashboard/**'
@@ -137,6 +146,36 @@ jobs:
             echo "::error::Generated design tokens are stale. Run 'make tokens' and commit the result."
             exit 1
           }
+
+  deck:
+    name: Deck compatibility
+    needs: changes
+    if: needs.changes.outputs.report == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: apps/backend/go.sum
+
+      # LibreOffice is the strictest of the four applications T-R4 targets about
+      # malformed OOXML: a deck it refuses is a deck PowerPoint may also refuse,
+      # and unlike the other three it can be asked in a headless runner. The
+      # fonts are here so the conversion substitutes a real face rather than
+      # falling back to whatever a bare container has, which is how a "passing"
+      # conversion can still be a blank page.
+      - name: Install LibreOffice
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libreoffice-impress fonts-liberation
+
+      - name: Convert every fixture deck
+        run: go test -count=1 -v -run 'TestLibreOfficeConverts' ./internal/report/pptx/
 
   web:
     name: Web

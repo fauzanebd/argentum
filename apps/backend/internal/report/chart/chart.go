@@ -63,12 +63,21 @@ const (
 // rather than free because Options comes from a model-authored spec: a chart
 // asking for 400mm on a 297mm page is a chart nobody sees, and the memory to
 // rasterise it at 3× is real.
+//
+// maxWidthMM covers the widest measure any renderer draws on, which is no
+// longer A4. It was 200 — the page's 174mm content width with room to spare —
+// until the deck renderer (T-R4) asked for a chart across a 16:9 slide, 290.7mm
+// of measure, and silently got a 200mm image stretched to fit: a 138 DPI chart
+// on a projector, which is exactly the artefacting that ticket's acceptance
+// criterion rules out. The cap is a guard against a caller asking for something
+// absurd, not a statement about the page size, so it moves with the widest
+// caller rather than staying at the narrowest.
 const (
 	defaultHeightMM   = 68
 	sparklineHeightMM = 16
 	minHeightMM       = 20
 	maxHeightMM       = 130
-	maxWidthMM        = 200
+	maxWidthMM        = 300
 )
 
 // Options is everything the renderer needs that the spec does not carry.
