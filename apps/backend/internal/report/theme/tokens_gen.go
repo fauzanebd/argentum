@@ -40,6 +40,16 @@ var (
 
 	// ColorDestructiveForeground — Text on a destructive fill.
 	ColorDestructiveForeground = Color{R: 0xFF, G: 0xFF, B: 0xFF} // #FFFFFF
+
+	// ColorPositive — Good news: a delta moving the way the reader wants, a `good`
+	// callout.
+	ColorPositive = Color{R: 0x3F, G: 0x7A, B: 0x46} // #3F7A46
+
+	// ColorWarning — A caveat that is not an error: a `warn` callout.
+	ColorWarning = Color{R: 0xB0, G: 0x7A, B: 0x16} // #B07A16
+
+	// ColorInfo — Neutral emphasis: an `info` callout, the default tone.
+	ColorInfo = Color{R: 0x1C, G: 0x3A, B: 0x62} // #1C3A62
 )
 
 // Font families as registered with maroto. See fonts.go for the faces.
@@ -135,5 +145,5 @@ var ChartPalette = []Color{
 	{R: 0x77, G: 0x4C, B: 0x96}, // #774C96 · series 5 — purple · L* 40.1
 	{R: 0xCA, G: 0xCC, B: 0xD1}, // #CACCD1 · series 6 — grey · L* 82.0
 	{R: 0x71, G: 0x3F, B: 0x1C}, // #713F1C · series 7 — brown · L* 32.1
-	{R: 0x75, G: 0xAF, B: 0x4B}, // #75AF4B · series 8 — green · L* 65.7
+	{R: 0x5C, G: 0xA8, B: 0xE0}, // #5CA8E0 · series 8 — azure · L* 66.3
 }

@@ -8,6 +8,17 @@ has one.
 
 ## Sprint 2 candidates (high confidence)
 
+### Phases 2–6: metric registry, watchers, actions, MCP, hardening (T-06 → T-18)
+**Why deferred:** Scheduling, again, and this one is expensive. The API track
+(`T-A1`→`T-A5`, 10.5d plus the foundation it forces earlier) was made the
+sprint's highest priority on 2026-07-28. Against 27.5 remaining working days, the
+report track + foundation + API track is 26.0. Phases 2–6 are 23.5 and do not fit.
+**This includes `T-08` watchers — the shift this sprint was originally named
+for.** `00-sprint-overview.md` §6 carries the full arithmetic and the argument.
+**Trigger:** Sprint 1 closes. Sprint 2 opens with `T-19` and `T-08`, both
+never-cut, before anything new is considered.
+**Estimate:** 23.5d, unchanged — the tickets need no rewriting.
+
 ### The whole widget phase (T-19 → T-23)
 **Why deferred:** Not a change of mind about the widget — a scheduling
 consequence. The report track (`T-R1`→`T-R5`, 10d) was inserted on 2026-07-27 and
@@ -16,6 +27,11 @@ nothing depends on it and it slides whole. `T-19` (embed auth) becomes the first
 ticket of Sprint 2 and stays never-cut there.
 **Trigger:** Sprint 1 closes.
 **Estimate:** 11.5d, unchanged — the tickets need no rewriting.
+**Note added 2026-07-28:** the API track (`T-A1`→`T-A5`) covers the
+server-to-server half of "reachable from outside the dashboard" and does not
+substitute for this. The widget serves humans in the tenant's UI; the API serves
+the tenant's backend. `T-19` still builds on `T-13`, which now lands in Sprint 1
+regardless, so this phase starts cheaper than it was scoped.
 
 ### Scheduled branded report delivery
 A scheduled task or a watcher produces the branded PDF or deck and delivers it to
@@ -206,15 +222,13 @@ SMB segment, so watch for it.
 **Note:** overlaps with "Dashboards inside the widget" above. Do that one first —
 it is narrower and the embed auth already exists after T-19.
 
-### Client SDKs for the API (JS / Python / Go)
-**Why deferred:** T-13 (API keys) and T-14 (MCP) make the API reachable; typed
-client libraries are convenience on top. `@argentum/widget` from T-22 covers the
-browser case that actually blocks adoption.
-**Trigger:** a customer writing their own integration and complaining about
-hand-rolling HTTP calls.
-**Estimate:** 2d for JS, 2d each for Python and Go. Generate from an OpenAPI spec
-rather than hand-writing — which means writing the OpenAPI spec first (1.5d) and
-that is worth doing regardless.
+### ~~Client SDKs for the API (JS / Python / Go)~~ — **pulled into Sprint 1 as `T-A4`, 2026-07-28**
+The trigger fired early: the repo owner made a tenant-callable API the sprint's
+highest priority. Node and Python ship in `T-A4`, generated from the OpenAPI spec
+this entry already concluded had to come first. **Go stays deferred** — the demand
+is Node and Python, and a third generated client with no consumer is inventory.
+**Trigger for the Go client:** a customer integrating from Go.
+**Estimate:** 1d once `T-A4`'s spec exists.
 
 ---
 

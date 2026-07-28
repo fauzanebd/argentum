@@ -250,9 +250,12 @@ description asks for under eight.
 costs about 12mm of the measure, which in a wide table is taken from the column
 beside it.
 
-**`chart` sections are rejected, not dropped.** `T-R3` owns them. A report whose
+**~~`chart` sections are rejected, not dropped.~~ Closed 2026-07-28 by `T-R3`.**
+A chart section now renders an image with its title and caption set in the
+document's own type. A malformed chart is still rejected with an instruction
+rather than dropped, for the reason this entry originally gave: a report whose
 narrative refers to a figure that silently did not render is worse than an error
-the model can act on, so `Validate` returns an instruction instead.
+the model can act on. See [`report-charts.md`](report-charts.md).
 
 **Branding is a struct with nothing in it.** `pdf.Options.Brand` carries a name,
 a PNG logo, a confidentiality label and a footer note; the tool fills the name

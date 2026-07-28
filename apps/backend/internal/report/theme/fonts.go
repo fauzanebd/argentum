@@ -99,6 +99,26 @@ func verifyFace(f face) error {
 	return nil
 }
 
+// FontBytes returns the TrueType bytes for a family's upright face.
+//
+// It exists for the chart renderer, which draws through a different library
+// with a different font registry and therefore cannot take maroto's
+// entity.CustomFont. Handing out the bytes keeps the embed directives — and the
+// licence file beside them — in one package: a second copy of Space Grotesk
+// vendored next to the chart code is how a document ends up with two fonts that
+// are nearly the same.
+func FontBytes(family string) ([]byte, error) {
+	for _, f := range faces() {
+		if f.family == family && f.style == fontstyle.Normal {
+			if err := verifyFace(f); err != nil {
+				return nil, err
+			}
+			return f.bytes, nil
+		}
+	}
+	return nil, fmt.Errorf("theme: no upright face registered for family %q", family)
+}
+
 // CustomFonts returns the faces in the form maroto's config takes.
 func CustomFonts() ([]*entity.CustomFont, error) {
 	if err := VerifyFonts(); err != nil {

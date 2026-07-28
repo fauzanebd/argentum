@@ -74,13 +74,122 @@ export function hslToHex({ h, s, l }) {
  * `pnpm --filter @argentum/design-tokens run palette` prints the spread.
  */
 export function lStar(hex) {
+  return hexToLab(hex).L;
+}
+
+/** sRGB channel (0..255) → linear-light (0..1). */
+function toLinear(v) {
+  const c = v / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+/** Linear-light (0..1) → sRGB channel (0..255), clamped to the gamut. */
+function fromLinear(c) {
+  const v = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  return Math.min(255, Math.max(0, v * 255));
+}
+
+/**
+ * Hex → CIE L*a*b* under D65, the white point sRGB is defined against.
+ *
+ * Lab rather than RGB because "are these two colours distinguishable" is a
+ * question about perception, and RGB distance answers a question about voltage.
+ */
+export function hexToLab(hex) {
   const { r, g, b } = hexToRgb(hex);
-  const lin = (v) => {
-    const c = v / 255;
-    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  };
-  const y = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-  return y <= 216 / 24389 ? y * 24389 / 27 : Math.cbrt(y) * 116 - 16;
+  const [rl, gl, bl] = [toLinear(r), toLinear(g), toLinear(b)];
+
+  // sRGB → XYZ (D65), then normalised by the D65 white point.
+  const x = (0.4124564 * rl + 0.3575761 * gl + 0.1804375 * bl) / 0.95047;
+  const y = 0.2126729 * rl + 0.7151522 * gl + 0.072175 * bl;
+  const z = (0.0193339 * rl + 0.119192 * gl + 0.9503041 * bl) / 1.08883;
+
+  const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : (t * 24389 / 27 + 16) / 116);
+  const [fx, fy, fz] = [f(x), f(y), f(z)];
+  return { L: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+}
+
+/**
+ * CIE76 ΔE*ab between two colours: the straight-line distance in Lab.
+ *
+ * CIE76 and not CIEDE2000, which is more faithful and roughly sixty lines of
+ * arithmetic with no reference implementation to check it against in a package
+ * that deliberately has no dependencies. The two disagree most where CIE76
+ * *over*-states a difference (saturated blues), so a palette that clears a
+ * generous CIE76 threshold clears the CIEDE2000 one it is standing in for.
+ * ~2.3 is the just-noticeable difference; the thresholds in palette.mjs are an
+ * order of magnitude above it, which is the margin that makes the cruder metric
+ * safe to use here.
+ */
+export function deltaE76(hexA, hexB) {
+  const a = hexToLab(hexA);
+  const b = hexToLab(hexB);
+  return Math.hypot(a.L - b.L, a.a - b.a, a.b - b.b);
+}
+
+// Brettel/Viénot/Mollon (1999) dichromat simulation, in the LMS cone space.
+//
+// The three matrices below are the published sRGB-linear ↔ LMS pair and the
+// projection that collapses one cone response onto the plane the other two
+// span. Deuteranopia (no M cone) is the common form and the one T-R3's gate
+// names; protanopia (no L cone) is simulated too because it is three numbers
+// and because a red/green palette that survives one and not the other has not
+// been verified, it has been sampled.
+const RGB_TO_LMS = [
+  [17.8824, 43.5161, 4.11935],
+  [3.45565, 27.1554, 3.86714],
+  [0.0299566, 0.184309, 1.46709],
+];
+
+const LMS_TO_RGB = [
+  [0.080944, -0.130504, 0.116721],
+  [-0.0102485, 0.0540194, -0.113615],
+  [-0.000365294, -0.00412163, 0.693513],
+];
+
+const CVD = {
+  // M is reconstructed from L and S: the deuteranope's confusion line.
+  deuteranopia: [
+    [1, 0, 0],
+    [0.494207, 0, 1.24827],
+    [0, 0, 1],
+  ],
+  // L is reconstructed from M and S.
+  protanopia: [
+    [0, 2.02344, -2.52581],
+    [0, 1, 0],
+    [0, 0, 1],
+  ],
+};
+
+function apply(matrix, [x, y, z]) {
+  return matrix.map((row) => row[0] * x + row[1] * y + row[2] * z);
+}
+
+/**
+ * Simulates how a dichromat sees a colour. `type` is "deuteranopia" or
+ * "protanopia".
+ *
+ * The result is what the *simulation* renders, not what the viewer experiences
+ * — nobody can know that. What it is good for is the comparison this package
+ * needs: two colours that map to the same simulated colour are two colours that
+ * viewer cannot tell apart.
+ */
+export function simulate(hex, type) {
+  const matrix = CVD[type];
+  if (!matrix) throw new Error(`unknown colour-vision type: ${JSON.stringify(type)}`);
+  const { r, g, b } = hexToRgb(hex);
+  const lms = apply(RGB_TO_LMS, [toLinear(r), toLinear(g), toLinear(b)]);
+  const [rl, gl, bl] = apply(LMS_TO_RGB, apply(matrix, lms));
+  return rgbToHex({ r: fromLinear(rl), g: fromLinear(gl), b: fromLinear(bl) });
+}
+
+/** Hex → the greyscale a monochrome printer produces: L* re-encoded as sRGB. */
+export function greyscale(hex) {
+  const { L } = hexToLab(hex);
+  const y = L > 8 ? Math.pow((L + 16) / 116, 3) : (L * 27) / 24389;
+  const v = fromLinear(y);
+  return rgbToHex({ r: v, g: v, b: v });
 }
 
 function round1(n) {

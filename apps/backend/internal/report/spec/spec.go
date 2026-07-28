@@ -53,6 +53,43 @@ const (
 	ToneGood = "good"
 )
 
+// Chart types. These are the `chart.type` values the model writes.
+const (
+	ChartLine       = "line"
+	ChartBar        = "bar"
+	ChartGroupedBar = "grouped_bar"
+	ChartStackedBar = "stacked_bar"
+	ChartPie        = "pie"
+	ChartDonut      = "donut"
+	ChartSparkline  = "sparkline"
+)
+
+// ChartTypes is the closed set, in the order the tool description lists them.
+var ChartTypes = []string{
+	ChartLine, ChartBar, ChartGroupedBar, ChartStackedBar,
+	ChartPie, ChartDonut, ChartSparkline,
+}
+
+// Categorical reports whether a chart type reads its x-positions as unordered
+// buckets rather than as a sequence. It is what decides whether folding the
+// small categories into an "Other" bucket is a summary or a lie: the smallest
+// twelve product lines are legitimately "other products", while the smallest
+// twelve days of a month are not "other days".
+func Categorical(chartType string) bool {
+	switch chartType {
+	case ChartBar, ChartGroupedBar, ChartStackedBar, ChartPie, ChartDonut:
+		return true
+	default:
+		return false
+	}
+}
+
+// SingleSeries reports whether a chart type plots exactly one series, with the
+// categories as its slices.
+func SingleSeries(chartType string) bool {
+	return chartType == ChartPie || chartType == ChartDonut
+}
+
 // Document is the whole input: one file, one format, one content tree.
 type Document struct {
 	// SpecVersion is 2 for the enterprise layout, absent or 1 for the
@@ -218,9 +255,13 @@ type Sheet struct {
 	Rows    [][]Cell `json:"rows"`
 }
 
-// Chart is the payload T-R3 renders. Declared here so the spec type does not
-// change when the renderer arrives; until then Validate rejects the section
-// rather than dropping it silently.
+// Chart is the payload the chart renderer draws. The section around it carries
+// the caption, because a caption is a caption whether it sits under a chart or
+// under a table.
+//
+// There is no `stacked` flag: stacking is a chart type. A flag would make
+// {type: "pie", stacked: true} expressible, and every such combination is a
+// validation rule that has to be written, tested and explained to the model.
 type Chart struct {
 	Type   string    `json:"type,omitempty"` // line|bar|grouped_bar|stacked_bar|pie|donut|sparkline
 	Title  string    `json:"title,omitempty"`
@@ -228,13 +269,26 @@ type Chart struct {
 	Series []Series  `json:"series,omitempty"`
 	Fmt    string    `json:"fmt,omitempty"`
 	YAxis  *AxisSpec `json:"y_axis,omitempty"`
+
+	// HeightMM is the drawn height on the page. Zero takes the renderer's
+	// default, which is what the model should almost always leave it at — the
+	// width is the measure and the height is a proportion of it, and a model
+	// asked for a number in millimetres will pick one that makes the aspect
+	// ratio wrong.
+	HeightMM float64 `json:"height_mm,omitempty"`
 }
 
+// Series is one plotted population. For a pie or a donut only the first series
+// is drawn, because a pie of two series is two pies.
 type Series struct {
 	Name   string    `json:"name,omitempty"`
 	Values []float64 `json:"values,omitempty"`
 }
 
+// AxisSpec pins the value axis. Min matters more than it looks: a bar chart
+// whose axis starts at 94% of the smallest bar shows a 3% movement as a
+// doubling, which is the most common way a correct number is used to say
+// something false.
 type AxisSpec struct {
 	Label string   `json:"label,omitempty"`
 	Min   *float64 `json:"min,omitempty"`

@@ -10,8 +10,8 @@ import (
 // turn, so an error that names the alternatives is a repair instruction.
 var knownSections = []string{
 	SectionCover, SectionHeading, SectionParagraph, SectionKPIRow,
-	SectionTable, SectionCallout, SectionKeyValue, SectionFootnote,
-	SectionPageBreak, SectionSpacer,
+	SectionTable, SectionChart, SectionCallout, SectionKeyValue,
+	SectionFootnote, SectionPageBreak, SectionSpacer,
 }
 
 // Normalize lower-cases and trims the free-text discriminators before
@@ -25,6 +25,13 @@ func (d *Document) Normalize() {
 		s := &d.Content.Sections[i]
 		s.Type = strings.ToLower(strings.TrimSpace(s.Type))
 		s.Tone = strings.ToLower(strings.TrimSpace(s.Tone))
+		if s.Chart != nil {
+			// "Grouped Bar" and "grouped-bar" are both things a model writes
+			// when the schema says grouped_bar, and neither is a reason to
+			// refuse a chart.
+			t := strings.ToLower(strings.TrimSpace(s.Chart.Type))
+			s.Chart.Type = strings.ReplaceAll(strings.ReplaceAll(t, " ", "_"), "-", "_")
+		}
 	}
 }
 
@@ -117,16 +124,65 @@ func (s Section) validate() error {
 			return fmt.Errorf("table requires columns")
 		}
 	case SectionChart:
-		// T-R3 owns this. Rejecting is better than dropping: a report the
-		// model believes has a chart in it, silently rendered without one, is
-		// a document whose narrative refers to a figure that is not there.
-		return fmt.Errorf("chart sections are not supported by this renderer yet; " +
-			"describe the trend in a paragraph or render the numbers as a table")
+		if s.Chart == nil {
+			return fmt.Errorf("chart requires a chart object: {\"type\": \"chart\", \"chart\": {\"type\": \"%s\", ...}}", ChartLine)
+		}
+		return s.Chart.Validate()
 	case SectionPageBreak, SectionSpacer:
 	case "":
 		return fmt.Errorf("section requires a type (one of %s)", strings.Join(knownSections, "|"))
 	default:
 		return fmt.Errorf("unknown section type %q (want one of %s)", s.Type, strings.Join(knownSections, "|"))
+	}
+	return nil
+}
+
+// Validate checks the chart payload before a renderer is reached.
+//
+// It is stricter than the rest of this file, and deliberately so. Everywhere
+// else a malformed field degrades — a cell that will not parse prints as text,
+// a KPI written with the wrong key names still renders. A chart cannot degrade:
+// a series with three values against five labels is not a chart missing two
+// points, it is a chart whose points are against the wrong labels, and it will
+// draw without complaint. The reader has no way to see that it is wrong.
+func (c *Chart) Validate() error {
+	found := false
+	for _, t := range ChartTypes {
+		if c.Type == t {
+			found = true
+			break
+		}
+	}
+	if !found {
+		if c.Type == "" {
+			return fmt.Errorf("chart requires a type (one of %s)", strings.Join(ChartTypes, "|"))
+		}
+		return fmt.Errorf("unknown chart type %q (want one of %s)", c.Type, strings.Join(ChartTypes, "|"))
+	}
+
+	if len(c.Series) == 0 {
+		return fmt.Errorf("%s chart requires series: [{\"name\": \"Revenue\", \"values\": [1, 2, 3]}]", c.Type)
+	}
+	// A sparkline is a shape, not a plot: it has no axis, so it has nothing to
+	// label. Every other type puts the labels on an axis a reader reads.
+	if len(c.Labels) == 0 && c.Type != ChartSparkline {
+		return fmt.Errorf("%s chart requires labels, one per value", c.Type)
+	}
+	for i, s := range c.Series {
+		if len(s.Values) == 0 {
+			return fmt.Errorf("chart.series[%d] (%q) has no values", i, s.Name)
+		}
+		if len(c.Labels) > 0 && len(s.Values) != len(c.Labels) {
+			return fmt.Errorf("chart.series[%d] (%q) has %d values against %d labels; they must be one to one",
+				i, s.Name, len(s.Values), len(c.Labels))
+		}
+	}
+	if SingleSeries(c.Type) && len(c.Series) > 1 {
+		return fmt.Errorf("a %s chart draws one series (got %d); use grouped_bar to compare several",
+			c.Type, len(c.Series))
+	}
+	if c.YAxis != nil && c.YAxis.Min != nil && c.YAxis.Max != nil && *c.YAxis.Min >= *c.YAxis.Max {
+		return fmt.Errorf("chart.y_axis.min (%v) must be below max (%v)", *c.YAxis.Min, *c.YAxis.Max)
 	}
 	return nil
 }

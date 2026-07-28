@@ -46,6 +46,8 @@ func (r *renderer) renderSection(sec spec.Section, next *spec.Section) error {
 		r.renderCallout(sec)
 	case spec.SectionTable:
 		return r.renderTable(sec.Table())
+	case spec.SectionChart:
+		return r.renderChart(sec)
 	case spec.SectionPageBreak:
 		r.breakPage()
 	case spec.SectionSpacer:
@@ -132,6 +134,10 @@ func followHeight(next *spec.Section) float64 {
 		return kpiCardHeight + theme.Spacing.SM
 	case spec.SectionTable:
 		return theme.Page.TableHeaderHeight + theme.Page.TableRowHeight
+	case spec.SectionChart:
+		// A chart is indivisible, so the whole of it has to fit beside its
+		// heading — unlike a table, it cannot start here and continue overleaf.
+		return chartHeightOf(next) + 2*theme.Spacing.SM
 	case spec.SectionCallout:
 		return 2*theme.Spacing.SM + 2*body
 	case spec.SectionHeading, spec.SectionPageBreak:
@@ -366,7 +372,7 @@ func (r *renderer) kpiCard(item spec.Item, units int) core.Col {
 	if item.DeltaPct != nil {
 		deltaColor := theme.ColorDestructive
 		if item.GoodDirection() {
-			deltaColor = theme.ChartPalette[7] // green
+			deltaColor = theme.ColorPositive
 		}
 		// ↑ and ↓ rather than ▲ and ▼: Space Grotesk has the arrows and not
 		// the triangles, and a missing glyph renders as nothing at all.
@@ -392,17 +398,23 @@ func (r *renderer) kpiCard(item spec.Item, units int) core.Col {
 	return col.New(units).Add(components...)
 }
 
-// toneColor maps a callout tone to a palette entry. The tones deliberately do
+// toneColor maps a callout tone to a semantic colour. The tones deliberately do
 // not all resolve to the brand red: a warning and a good-news box that are the
 // same colour communicate nothing.
+//
+// These come from the semantic tokens rather than from ChartPalette, which is
+// where they used to be indexed from. A categorical ramp is ordered by
+// separability, not by meaning, so `ChartPalette[7]` meant "good" only for as
+// long as the eighth series happened to be green — which T-R3 ended when the
+// colour-vision gate replaced it with an azure.
 func toneColor(tone string) theme.Color {
 	switch tone {
 	case spec.ToneWarn:
-		return theme.ChartPalette[2] // amber
+		return theme.ColorWarning
 	case spec.ToneGood:
-		return theme.ChartPalette[7] // green
+		return theme.ColorPositive
 	default:
-		return theme.ChartPalette[1] // navy
+		return theme.ColorInfo
 	}
 }
 

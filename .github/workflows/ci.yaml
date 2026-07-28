@@ -117,6 +117,13 @@ jobs:
       - name: Regenerate design tokens
         run: make tokens
 
+      # A palette edit that reads fine on a monitor can be unreadable to a
+      # red-green-deficient reader or on a monochrome printer, and neither
+      # failure shows up in a diff. This is the gate that saw the original
+      # series-8 green sitting ΔE 5.0 from the brand red under deuteranopia.
+      - name: Verify the chart palette
+        run: make palette
+
       # Same shape as the API-type drift gate in T-02b: generated files are
       # committed, so a diff here means the committed output disagrees with
       # tokens.json — either it was hand-edited or it was never regenerated.

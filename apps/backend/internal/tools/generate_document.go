@@ -75,10 +75,26 @@ content.sections is an ordered list. Each section has a "type":
 - "paragraph"  {text}                        → justified body copy
 - "kpi_row"    {items:[{label, value, delta_pct, higher_is_better}, ...]} → 2-4 headline-number cards. delta_pct is a percentage (12.5 = +12.5%). Set higher_is_better:false for metrics where a rise is bad (churn, cost).
 - "table"      {columns:[...], rows:[[...]], total_row:[...], caption} → ruled table with zebra bands
+- "chart"      {chart:{...}, caption}        → a chart image. See CHARTS below.
 - "callout"    {tone: info|warn|good, title, text} → tinted box for a caveat or a headline finding
 - "key_value"  {items:[{k,v}, ...]}          → label/value rows (invoice and agreement headers)
 - "footnote"   {text}                        → small muted source/methodology line
 - "page_break" {}                            → start a new page
+
+CHARTS: put a chart above the table it summarises. A report with a trend in it and no chart is a table with a cover page.
+  {"type":"chart","caption":"Source: fact_sales.","chart":{
+     "type":"bar","title":"Revenue by month","fmt":"currency",
+     "labels":["Jan","Feb","Mar"],
+     "series":[{"name":"Direct","values":[412000000,448000000,391000000]}]}}
+chart.type is one of:
+- "line"         a measure over time. Several series compare trends.
+- "bar"          one measure across categories or periods.
+- "grouped_bar"  two to four series compared category by category.
+- "stacked_bar"  parts that add up to a total per category.
+- "pie" / "donut" one series' share of a whole. Up to ~6 slices; beyond that use a bar.
+- "sparkline"    a bare trend line with no axes, for a KPI card.
+RULES: every series needs one value per label — a mismatch is rejected, not padded. Pass raw numbers, never pre-formatted strings; "fmt" (text|number|currency|percent) formats the axis and the labels in the document's locale. Only "sparkline" may omit labels. A pie or donut takes exactly one series, with "labels" naming the slices. Set "height_mm" only when you have a reason; the default is proportioned for the page.
+Series are capped at 8 and categories at 40; above that the renderer keeps the largest and says so in the caption. A chart with no data renders a "no data" panel rather than a blank space.
 
 TABLE CELLS: pass raw values and let the renderer format them. A column may declare its type once:
   "columns": [{"label":"Month","fmt":"date"}, {"label":"Revenue","fmt":"currency"}, {"label":"Growth","fmt":"percent"}]

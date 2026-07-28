@@ -23,25 +23,29 @@ Claim your number, do not renumber, and always write both `.up.sql` and
 | T-19   | `028_embed_keys` |
 | T-20   | `029_thread_embed` |
 | T-R5   | `030_report_branding` |
+| T-A1   | `031_api_channel` |
+| T-A2   | `032_documents_api` |
 
 ---
 
-## Execution order (revised 2026-07-27)
+## Execution order (revised 2026-07-28)
 
-Week headings below are **thematic groupings, not the running order**. Two things
-changed after they were written: the `T-00` smoke test found the agent fabricating
-numbers (`../coverage/environment-notes.md` C-1) and recording no usage for the
-primary model (C-2), and the repo owner inserted the report track. This table is
-the authoritative order.
+Week headings below are **thematic groupings, not the running order**. Three
+things changed after they were written: the `T-00` smoke test found the agent
+fabricating numbers (`../coverage/environment-notes.md` C-1) and recording no
+usage for the primary model (C-2); the repo owner inserted the report track on
+2026-07-27; and the owner made the tenant-facing API the sprint's highest
+priority on 2026-07-28. This table is the authoritative order.
 
 | Phase | Tickets | Days | Why here |
 | ----- | ------- | ---- | -------- |
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
-| 1a — worth forwarding | ~~`T-R1`~~, ~~`T-R2`~~, `T-R3`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). |
-| 1b — safe to change | `T-02`, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. |
-| 2→6 | unchanged | — | Metric registry → watchers → actions → API/MCP → hardening. |
-| 7–8 | `T-19`→`T-23` | 11.5 | **Expected to move to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
+| 1a — worth forwarding | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, `T-R4`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). |
+| 1b — safe to change | `T-02`, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. |
+| 1c — callable | `T-13`, `T-A1`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moves here from week 5 — it is the prerequisite, not a week-5 nicety. |
+| 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
+| 7–8 | `T-19`→`T-23` | 11.5 | **Moved to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
 
 Two dependency notes for phase 1:
 
@@ -51,6 +55,21 @@ Two dependency notes for phase 1:
 - `T-16` is filed under week 6 below and stays there physically. It **runs in
   phase 1**, after `T-01`, because nothing that acts on its own (`T-08` watchers,
   `T-10` actions) should ship on top of an agent that invents figures.
+
+Three ordering notes for 1a → 1b → 1c, decided 2026-07-28:
+
+- **The report track finishes first** (owner's call). `T-R3` ✅ → `T-R4` →
+  `T-R5`, 4.0 days left of 5.5. `T-A2` sells "ask our API for a PDF or an Excel file"; that pitch is
+  materially better when the PDF has a chart and the deck exists, and `T-R4`
+  is what puts `pptx` in `/v1/reports`'s format enum at all.
+- **`T-R5` drags phase 1b forward whether or not the API exists.** It deps `T-04`,
+  which deps `T-02`. So 4.5 days of "phase 1b" work is already embedded inside
+  "finish the report track". The running order is therefore
+  ~~`T-R3`~~ → `T-R4` → `T-02` → `T-04` → `T-R5` → `T-05` → `T-03` → `T-13` → `T-A1`…,
+  not three clean blocks.
+- **`T-13` is no longer a week-5 ticket.** Scoped API keys are the only machine
+  authentication this product has, and every `/v1` route is behind them. It runs
+  immediately before `T-A1`.
 
 ---
 
@@ -409,7 +428,10 @@ forward:
 - **`T-R3` inherits an unverified palette.** Eight colours on a CIE L\* ladder
   (min pairwise gap 6.5 L\*, method recorded in `tokens.json`), but the
   colour-vision simulation and greyscale contact sheet are still that ticket's
-  gate item.
+  gate item. **It was right to flag: `T-R3` ran the simulation and the palette
+  failed it.** Series 8's green sat ΔE 5.0 from the brand red under
+  deuteranopia; it is now `#5CA8E0` and `make palette` is a CI gate. The ladder's
+  tightest greyscale pair is 6.8 L\* after the change.
 
 ---
 
@@ -531,8 +553,30 @@ carrying forward:
 
 ---
 
-## T-R3 · Chart images for documents and decks
+## ~~T-R3~~ · Chart images for documents and decks — **DONE 2026-07-28**
 **Repo:** BE · **Size:** 1.5d · **Deps:** T-R2 · **Priority:** P1 · **Cut: types only, never the ticket**
+
+**Shipped.** Record: [`../coverage/report-charts.md`](../coverage/report-charts.md).
+Gate artifacts: [`../coverage/assets/chart-contact-sheet.png`](../coverage/assets/chart-contact-sheet.png)
+and [`../coverage/assets/chart-contact-sheet-greyscale.png`](../coverage/assets/chart-contact-sheet-greyscale.png).
+
+Three things came out of it that the ticket did not anticipate:
+
+- **The palette failed its own gate.** Writing the verifier the ticket asked for
+  found series 8's green sitting ΔE 5.0 from the brand red under deuteranopia,
+  and no green at any lightness clears both floors against this palette. It is
+  now `#5CA8E0` azure. `make palette` is the gate, and CI runs it.
+- **Semantic colour left the series ramp.** `ChartPalette[7] // green` was the
+  colour of a good KPI delta and would have turned blue with the palette. Three
+  print-scoped tokens — `positive`, `warning`, `info` — now carry meaning, and
+  the categorical ramp carries only separability.
+- **The category cap does not apply to line charts,** which is a deliberate
+  departure from the ticket. Bucketing the smallest points of a time series puts
+  an invented point on a real timeline; the reasoning is in the record.
+
+Also: bar charts are forced to a zero baseline, and chart titles and captions are
+document text rather than pixels — which is what lets `T-R4` set the same words
+at slide scale over the identical image.
 
 A report without a chart is a table with a cover page.
 
@@ -560,14 +604,15 @@ A report without a chart is a table with a cover page.
 - `chart` section payload: `{chart_type, title, caption, categories, series:[{name, values}], y_fmt, stacked, height_mm}`.
 
 **Acceptance:**
-- [ ] All seven types render from a fixture spec
-- [ ] Same chart embedded in a PDF and a PPTX is the same image, generated once
-- [ ] Palette verified colourblind-safe and greyscale-distinguishable — method stated
-- [ ] Empty and single-point series render their explicit state, not a blank box
-- [ ] Deterministic output: same input → same PNG bytes
+- [x] All seven types render from a fixture spec
+- [x] Same chart embedded in a PDF and a PPTX is the same image, generated once — `chart.Render` is the single producer and is deterministic; the PDF consumes it now and `T-R4` consumes the same bytes
+- [x] Palette verified colourblind-safe and greyscale-distinguishable — method stated, gated in CI, and it failed first (see the record)
+- [x] Empty and single-point series render their explicit state, not a blank box
+- [x] Deterministic output: same input → same PNG bytes
 
 **Gate:** a contact sheet PNG showing all seven types with the brand palette, plus
-the greyscale conversion of the same sheet.
+the greyscale conversion of the same sheet. **Both committed under
+`docs/coverage/assets/`, regenerated by `TestContactSheet`.**
 
 ---
 
@@ -668,6 +713,478 @@ wants their own mark on it.
 **Gate:** screenshots of the Reports tab, the live preview, and the same report
 generated from chat afterwards carrying the branding. Plus the rejection message
 for a low-contrast colour.
+
+---
+
+# Week 1c — Callable: the tenant-facing API
+
+**Priority insert, added 2026-07-28 at the repo owner's request, and the highest
+priority item in the sprint.** Runs after the report track (`T-R3`→`T-R5`) and
+after the foundation it cannot ship without (`T-02`, `T-04`, `T-05`, `T-03`,
+`T-13`).
+
+## Why this is here
+
+The customer already has an application. Today the only way a report leaves
+Argentum is a human opening the dashboard, asking in chat, and clicking a link.
+That makes Argentum a destination. An API makes it a component: their nightly job
+asks for the monthly deck, their admin panel grows a "Download report" button,
+their internal tool asks a question inline and renders the answer in their own UI.
+
+This is the same strategic bet as the widget and MCP — make Argentum reachable
+from outside its own dashboard — aimed at a different consumer. The widget puts
+our UI inside their page and needs their frontend team. **The API puts our output
+inside their product and needs only a backend developer with a key.** For the
+thing the owner actually asked for — "get a generated report (PDF or Excel) from
+Argentum" — the request originates on a server, not in a browser, so this is the
+surface that fits it.
+
+`api-surface.md` observation 3 states the blocker plainly: **no machine
+authentication exists.** All 61 routes require a human-session JWT. Nothing can
+integrate with Argentum today at all.
+
+## Decisions (locked — do not re-litigate inside the tickets)
+
+1. **`/v1` is a separate namespace from `/api`, with a separate contract.**
+   `/api/*` is the dashboard's private surface: JWT, unversioned, free to change
+   whenever the dashboard changes. `/v1/*` is a public promise: API key,
+   additive-only, breaking changes require `/v2`. A dashboard JWT must not
+   authenticate a `/v1` route and an API key must not authenticate an `/api`
+   route — not as a policy, as middleware.
+2. **Reports get two doors, not one endpoint with a mode flag.**
+   `POST /v1/reports/render` takes a spec and returns a file: no LLM, no thread,
+   sub-second, cost of a render. `POST /v1/reports` takes a prompt and runs a real
+   agent turn: seconds to minutes, bills tokens, can fail in ways a renderer
+   cannot. Different latency, different cost, different failure modes, different
+   error handling in the caller. One endpoint doing both would need a flag that
+   changes everything about the response, which is two endpoints wearing a coat.
+3. **Streaming is SSE, not WebSocket.** The consumer is a server. Every HTTP
+   library, proxy and load balancer handles SSE; a WebSocket client in a backend
+   is an extra dependency and a reconnect state machine the integrator has to
+   write. The dashboard keeps its WebSocket — this adds a second reader of the
+   same Redis pubsub, not a second event pipeline.
+4. **No second implementation of anything.** `/v1` handlers call
+   `internal/tools/document` and `internal/app`. Same hard rule `T-14` carries for
+   MCP: any divergence between the API surface and the agent surface is a bug, and
+   a PR that copies renderer or tool logic is rejected.
+5. **The OpenAPI spec is the contract, and CI enforces it both ways.** A route
+   without a spec entry fails the build; a spec entry without a route fails the
+   build. Exactly the guard shape `T-R1` used for token drift — which has already
+   caught a real drift in this repo, so it is a proven mechanism here rather than
+   a hopeful one.
+
+---
+
+## T-A1 · `/v1` foundation: envelope, auth, idempotency, limits, `api` channel
+**Repo:** BE · **Size:** 2.5d · **Deps:** T-13, T-05, T-03 · **Priority:** P0 · **Never cut**
+**Migration:** `031_api_channel`
+
+### Why
+
+Everything else in this track is a route. This is the shape every route shares,
+and it is the part that cannot be retrofitted: an error format, an idempotency
+contract and a pagination style become permanent the first time a customer writes
+code against them. Get it wrong and the fix is `/v2`.
+
+It also owns the `api` channel, which is **not** where the first draft of this
+plan put it. `T-A3` (chat) obviously needs a channel, but so does `T-A2`'s
+agentic report door — it runs a real turn through `ChatEnqueuer`, and a turn
+needs a `domain.Channel`. Leaving the channel in `T-A3` while scheduling `T-A2`
+first is a dependency inversion that would have surfaced as a compile error on
+day one of the flagship ticket. Both consumers need it, so it lands here.
+
+### Do
+
+- `cmd/api/router.go`: `v1 := r.Group("/v1")` with `middleware.APIKeyAuth()`
+  (from `T-13`), `middleware.RequestID()`, and a per-key rate limiter. **Never**
+  `middleware.Auth`.
+- Error envelope in `internal/transport/http/apierr`:
+  ```json
+  {"error":{"type":"invalid_request","code":"spec_too_large",
+            "message":"…","param":"rows","request_id":"req_…"}}
+  ```
+  `type` ∈ `invalid_request | authentication | permission | not_found |
+  rate_limit | budget_exhausted | server`, mapped to status codes in one table.
+  Every `/v1` handler returns through it. A raw `gin.H{"error": err.Error()}`
+  inside `/v1` is a review finding — it leaks internals and it is unparseable by
+  a client.
+- `X-Request-Id` on every response, generated when the caller sends none, carried
+  into the log fields and into the `T-05` audit row. A support conversation starts
+  with a request id, so a request id has to resolve to a row.
+- **Idempotency.** `Idempotency-Key` required on `POST /v1/reports`,
+  `POST /v1/reports/render` and `POST /v1/chat`, accepted everywhere else. Redis
+  `idem:{company_id}:{key}` for 24h. **The same key with a different request body
+  returns 409** — the case that catches a broken retry loop before it bills twice.
+  Three sub-cases the naive "store the response body" design gets wrong, all of
+  which occur in this API:
+  - **Never store the payload.** `POST /v1/reports/render` with
+    `Accept: application/pdf` returns megabytes; caching that per key for 24h
+    turns Redis into a document store. The record holds the **document id and
+    status**; a replay re-reads from object storage and re-presigns, then returns
+    the identical logical response.
+  - **A streamed response cannot be replayed from a record.** A replayed
+    `POST /v1/chat` with `Accept: text/event-stream` attaches to the existing
+    turn's pubsub channel and replays persisted events; if the turn has already
+    finished it returns the `final` event alone.
+  - **A replay while the original is still in flight** returns
+    `409 request_in_flight` with the `thread_id`/`report_id`, not a duplicate
+    turn. This is the common case — it is what a client timeout plus a retry
+    looks like.
+- Cursor pagination everywhere a list is returned:
+  `{"data":[…],"has_more":true,"next_cursor":"…"}`, cursor an opaque base64 of
+  `(created_at, id)`. Never offset: rows arrive while a caller pages.
+- `RateLimit-Limit` / `RateLimit-Remaining` / `RateLimit-Reset` on every response;
+  429 carries `Retry-After`. Separate Redis bucket from the user limiter.
+- `GET /v1/me` — company id and name, key name, scopes, rate limit, credit
+  balance, API version. The first call an integrator makes and the one paste that
+  makes a support question answerable.
+- Config: `API_V1_ENABLED` (kill switch), `API_V1_RATE_PER_MIN` (default 120),
+  `API_V1_SYNC_TIMEOUT_SECONDS` (default 120), `API_V1_MAX_BODY_BYTES`
+  (default 1 MiB).
+- **CORS: `/v1` emits no permissive CORS headers.** An API key in a browser is a
+  leaked API key. The browser path is `T-19`'s embed key, and conflating them is
+  how a secret ends up in a bundle.
+- **`domain.ChannelAPI Channel = "api"`** and migration `031_api_channel`, both
+  needed by `T-A2` and `T-A3`:
+  - `conversation_threads.api_user_ref text`, unique index on
+    `(company_id, api_user_ref, id)`.
+  - `api_user_ref` added to the `by-user` rollup at
+    `internal/adapters/postgres/usage_repo.go:331` as a **fifth** `user_key_kind`
+    — the query coalesces `user_id / phone_number / discord_user_id /
+    lark_open_id` today and the `CASE` at line 346 must gain the matching arm.
+  - `ThreadRepository.LatestForAPIUser(ctx, companyID, apiUserRef)` alongside the
+    four `LatestFor…` methods already on the interface
+    (`internal/domain/thread.go:41`), plus `APIUserRef` on
+    `domain.ConversationThread`.
+  - Follow [`../agents/playbooks/add-channel.md`](../agents/playbooks/add-channel.md)
+    and **grep every switch on `Channel`**: `ChatRunner.completeWith` (no outbound
+    provider — delivery is the HTTP response, a deliberate no-op **with a comment
+    saying so**), the usage-by-channel SQL, the dashboard's channel labels.
+
+### Notes for the implementer
+
+- Reuse `middleware.NewRateLimiter`'s shape (`internal/transport/http/middleware/ratelimit.go`);
+  do not build a second limiter. Separate bucket, same mechanism.
+- `T-03`'s budget check belongs in the `/v1` chain and must surface as a typed
+  402 `budget_exhausted`, not a 500. A programmatic caller retries a 500.
+- Scopes come from `T-13`. This ticket adds `write:reports` and `read:documents`
+  to that list — deny by default, as `T-13` already specifies.
+
+### Acceptance
+
+- [ ] A dashboard JWT on any `/v1` route returns 401; an API key on any `/api` route returns 401
+- [ ] A replayed `Idempotency-Key` returns the same logical response with `Idempotent-Replay: true`, and exactly one document/turn exists afterwards
+- [ ] A replay of a still-running request returns `409 request_in_flight`, not a second turn
+- [ ] No idempotency record in Redis exceeds 4 KiB, including after a 10 MB PDF render
+- [ ] The same key with a changed body returns 409
+- [ ] A turn started through `/v1` shows `channel=api` in `/api/usage/by-channel`, and `ChatRunner.completeWith` does not attempt an outbound send
+- [ ] Every `/v1` error response matches the envelope — no bare `{"error":"…"}` anywhere under `/v1`
+- [ ] A 429 carries `Retry-After` and all three `RateLimit-*` headers
+- [ ] `API_V1_ENABLED=false` → 503 on every `/v1` route, including `/v1/me`
+- [ ] The `request_id` in a response body appears in the audit row for that call
+
+### Gate
+
+`curl` transcript covering all seven cases above, plus a grep over the `/v1`
+handlers showing zero direct `gin.H{"error"` sites.
+
+### Out of scope
+
+- OAuth or per-end-user tokens — API keys are company-scoped machine credentials
+- `/v2` planning, deprecation tooling, sunset headers
+- Public API docs site (`T-A4`)
+
+---
+
+## T-A2 · Reports over the API
+**Repo:** BE · **Size:** 2.5d · **Deps:** T-A1, T-R2 (`pptx` needs T-R4) · **Priority:** P0 · **Never cut**
+**Migration:** `032_documents_api`
+
+### Why
+
+The thing the owner asked for on 2026-07-28: a tenant's app asks Argentum for a
+PDF or an Excel file and gets one. It is also the cheapest integration this
+product will ever sell — no chat UI to build, no streaming to handle, one POST
+and a file — which makes it the right flagship for the track.
+
+### Do
+
+**Two doors, per locked decision 2:**
+
+| Route | Input | LLM? | Latency | Bills |
+| ----- | ----- | ---- | ------- | ----- |
+| `POST /v1/reports/render` | a report spec | no | sub-second | `document_generated` |
+| `POST /v1/reports` | a prompt | yes | seconds–minutes | tokens + `document_generated` |
+
+- **`POST /v1/reports/render`** — body is the same `spec.Document` the
+  `generate_document` tool accepts (`spec_version: 2`, `format: pdf|xlsx|csv|pptx`).
+  `Accept: application/json` returns the document object with a presigned
+  `download_url`; `Accept: application/pdf` (or the format's content type) returns
+  the bytes inline. Deterministic, no thread, no agent.
+- **`POST /v1/reports`** — `{prompt, format, user_ref?, callback_url?, locale?,
+  currency?, meta?}` → 202 with a report object at `status=queued`. Runs a real
+  turn through `ChatEnqueuer` on `domain.ChannelAPI` (from `T-A1`) with a
+  directive to finish by calling `generate_document`. Three ways to collect the
+  result, because integrators differ: poll `GET /v1/reports/:id`, stream
+  `GET /v1/reports/:id/events` (SSE), or receive the signed `callback_url`.
+  **The SSE bridge for this endpoint ships here, not in `T-A3`** — `T-A3` may
+  land after this ticket, and a flagship that cannot stream progress on a
+  two-minute operation is a flagship people poll in a `while` loop.
+- `GET /v1/documents` (cursor-paginated, filterable by `format` and date),
+  `GET /v1/documents/:id`, `GET /v1/documents/:id/content`.
+  **`:id` re-presigns on every call.** A presigned URL expires; an integrator who
+  stored one must be able to get a fresh link without paying to regenerate the
+  document. `/content` streams the object rather than 302-ing, so a server-side
+  client that does not follow redirects still works.
+- Migration `032_documents_api`:
+  - `ALTER TABLE documents ALTER COLUMN thread_id DROP NOT NULL` — the
+    **`/render` door** has no thread. The FK and its `ON DELETE CASCADE` stay,
+    because the agent path and the **agentic door** both still have one.
+    `source` and `thread_id` are independent: `source=api` with a non-null
+    `thread_id` is the normal shape for `POST /v1/reports`.
+  - `ADD COLUMN source TEXT NOT NULL DEFAULT 'agent'` (`agent | api`)
+  - `ADD COLUMN api_key_id UUID REFERENCES api_keys(id) ON DELETE SET NULL`
+  - `CREATE INDEX idx_documents_company_created ON documents(company_id, created_at DESC)`
+    — what the list route pages on.
+  - **The down migration must delete rows with a null `thread_id` first**, or
+    `SET NOT NULL` fails. Say so in a comment in the file.
+- Storage key: `generate_document.go:179` embeds `thread_id`, which the `/render`
+  door does not have. Use `documents/{company_id}/api/{document_id}.{ext}` when
+  there is no thread and leave the existing threaded key untouched otherwise —
+  one branch, not a new scheme for everything.
+- Signed callback delivery in `internal/webhookout`: HMAC-SHA256 over the raw
+  body, `Argentum-Signature: t=…,v1=…`, asynq-backed with exponential retry and a
+  delivery log. **`T-15` subscribes watcher events to this package rather than
+  building a second sender.**
+- Limits: `API_V1_MAX_SPEC_ROWS` (default 50 000), `API_V1_MAX_SPEC_COLS`
+  (default 40), `API_V1_SYNC_RENDER_TIMEOUT` (default 20s — over it, return 202
+  and finish async).
+
+### Notes for the implementer
+
+- **Do not write a second renderer.** `RenderPDF` / `RenderXLSX` / `RenderCSV` are
+  already pure `(*Spec) ([]byte, error)`. The tool's only extra work is upload +
+  metadata + metering. Factor that into `internal/app/document_service.go` and
+  have both `GenerateDocumentTool` and the `/v1` handler call it.
+- `generate_document.go:164` hard-requires `tenantctx.ThreadID`. That check moves
+  into the service's **agent** path, not the shared one.
+- A spec arriving over HTTP is untrusted in a way the agent's own spec never was.
+  Cap rows, columns and string lengths and reject **before** rendering — maroto
+  will cheerfully attempt to lay out 500 000 rows and take the worker with it.
+- `T-R2` made cells carry a value and a type so the renderer decides formatting.
+  Keep that property in the API contract: the caller sends `3863405700` +
+  `currency`, not `"Rp 3.863.405.700"`. It is the same reason the model stopped
+  formatting, and it applies harder to a third party.
+
+### Acceptance
+
+- [ ] `POST /v1/reports/render` with the `monthly_sales.json` fixture returns a PDF byte-identical to what `go test ./internal/report/pdf` renders
+- [ ] The same fixture at `format: xlsx` opens in Excel; at `pptx` opens in PowerPoint (after `T-R4`)
+- [ ] `POST /v1/reports` with a prompt against the demo tenant produces a document whose figures match a direct `run_sql`
+- [ ] A `/render` document row has `source=api`, a **null** `thread_id`, and the generating `api_key_id`
+- [ ] An agentic-door document row has `source=api`, a **non-null** `thread_id` on an `api`-channel thread, and the same `api_key_id`
+- [ ] `GET /v1/documents/:id` an hour after creation still returns a working `download_url`
+- [ ] A spec over the row cap is rejected with `invalid_request` **before** any rendering starts
+- [ ] A callback body verifies against the secret; a tampered body does not
+- [ ] A key without `write:reports` gets 403 on both doors
+- [ ] `migrate down` succeeds against a database holding both an agent document and an API document
+
+### Gate
+
+`curl` transcript: render → download → re-fetch after the first presign expires.
+Then the agentic door end to end with the signed callback received and verified.
+Then `migrate up` / `migrate down` output against a database with both row kinds.
+
+### Out of scope
+
+- Report templates or a saved-spec library (`backlog.md`)
+- Scheduled report delivery — that is watchers + `send_message`, already in `backlog.md`
+- Document retention/expiry policy (note the column, do not build the sweeper)
+
+---
+
+## T-A3 · Chat over the API: SSE and sync
+**Repo:** BE · **Size:** 2d · **Deps:** T-A1 · **Priority:** P0
+**Migration:** none — the `api` channel and `api_user_ref` land in `T-A1`'s
+`031_api_channel`, because `T-A2` needs them too.
+
+### Why
+
+A report is an artefact; a question is a conversation. A tenant embedding
+Argentum in their own admin panel wants both, and the streaming contract is the
+part they cannot build around if we get it wrong.
+
+This ticket also writes down the WebSocket event schema for the first time —
+`api-surface.md` observation 4 calls it the dashboard's most important contract
+and records it as undocumented.
+
+### Do
+
+- `POST /v1/chat` — `{message, thread_id?, user_ref?}`.
+  - `Accept: text/event-stream` → SSE. Subscribe to `eventbus.ChannelFor(threadID)`
+    exactly as `internal/transport/ws/handler.go:98` does, and emit the event names
+    the dashboard already receives: `started`, `delta`, `thinking`, `tool_call`,
+    `tool_result`, `error`, `final`.
+  - `Accept: application/json` → block until `final`, capped by
+    `API_V1_SYNC_TIMEOUT_SECONDS`. On timeout return **504 with
+    `{thread_id, run_id}`** so the caller resumes over SSE instead of re-asking
+    and paying for the turn twice.
+- SSE hardening, all three of which are load-bearing:
+  - `:heartbeat` comment every 15s — idle proxies close silent streams.
+  - `Last-Event-ID` honoured, resuming from the persisted message log.
+  - **A client disconnect must not cancel the turn.** The worker finishes, the
+    answer persists, the next call collects it. Cancelling on disconnect means a
+    flaky network costs the tenant money for nothing.
+- Threads keyed by the tenant's own user identifier:
+  `ThreadService.ResolveForAPIUser(ctx, companyID, userRef, msg)` over `T-A1`'s
+  `LatestForAPIUser`, reusing the **existing idle-gap + classifier fork logic**
+  that Discord and Lark share. There are already four `LatestFor…` resolvers on
+  `domain.ThreadRepository`; this is the fifth caller of one shared heuristic,
+  not a fifth heuristic.
+- `GET /v1/threads`, `GET /v1/threads/:id`, `GET /v1/threads/:id/messages`,
+  `DELETE /v1/threads/:id` — all cursor-paginated, all company-scoped.
+- Scope split: `write:chat` to send, `read:threads` to read. A read-only key must
+  not be able to spend the tenant's credits.
+
+### Notes for the implementer
+
+- Turns now run five to seven tool calls after `T-16`. The sync door is a
+  convenience for short questions, not the default — document it that way, and
+  keep the timeout conservative rather than raising it when someone complains.
+- The SSE writer must flush per event (`c.Writer.Flush()`), or gin buffers the
+  whole stream and the feature silently does nothing.
+
+### Acceptance
+
+- [ ] An SSE turn streams deltas and ends with `final` carrying the message and usage
+- [ ] The sync door returns the same answer as the SSE door for the same question
+- [ ] Killing the client mid-stream still persists the answer; a later `GET …/messages` shows it
+- [ ] The same `user_ref` inside the idle gap continues one thread; two different refs get two threads
+- [ ] Neither `user_ref` can read the other's thread by id
+- [ ] `/api/usage/by-channel` shows `api`; `/api/usage/by-user` shows the refs
+- [ ] A sync call over the timeout returns 504 with a resumable `thread_id`, and the turn still completes
+- [ ] A `read:threads`-only key gets 403 on `POST /v1/chat`
+
+### Gate
+
+`curl -N` transcript of a streamed turn with heartbeats visible, the same
+question through the sync door, the disconnect case, and the resulting
+`by-channel` usage row. Paste all four.
+
+### Out of scope
+
+- WebSocket transport on `/v1` (locked decision 3)
+- Tool-call approval over the API — that is `T-10`/`T-11`
+- Per-end-user rate limits inside a tenant (the key's bucket is the limit in v1)
+
+---
+
+## T-A4 · OpenAPI 3.1, SDKs, and a 10-minute quickstart
+**Repo:** BE, PKG · **Size:** 2.5d · **Deps:** T-A2, T-A3 · **Priority:** P0 · **Never cut**
+
+### Why
+
+"Easily integrate" is this ticket. The rest of the track makes the API exist;
+this is what lets someone finish an integration without talking to us. Pulled
+forward from [`backlog.md`](backlog.md) ("Client SDKs for the API"), which had
+already concluded the spec must come first and be generated from, not hand-written
+alongside.
+
+### Do
+
+- `apps/backend/openapi/v1.yaml` — OpenAPI 3.1 covering every `/v1` route, the
+  error envelope, the auth scheme, and the SSE event schema (documented as a
+  `text/event-stream` response with a `oneOf` over the seven event types). Served
+  at `GET /v1/openapi.json`, **public and keyless** — an integrator reads it
+  before they have a key.
+- **CI parity check, both directions.** A test walks the gin route tree and diffs
+  `/v1` paths + methods against the spec. A route with no spec entry fails; a spec
+  entry with no route fails. Same guard shape as `T-R1`'s token-drift job.
+- SDKs — generated types, hand-written ergonomics:
+  - `packages/argentum-node` → `@argentum/sdk`: `client.reports.render(spec)`
+    returning a `Buffer`, `client.reports.create({prompt})` returning a poller,
+    `for await (const ev of client.chat.stream({…}))`.
+  - `packages/argentum-python` → `argentum`: the same three shapes, sync and
+    async clients.
+  - Both: retry with backoff on 429/5xx honouring `Retry-After`, automatic
+    `Idempotency-Key` generation on POSTs, and typed errors mirroring the
+    envelope's `type` field.
+- `T-02b` already generates TS types from Go structs. **The Node SDK consumes
+  those** — a second generated copy of the same types is exactly the drift `T-R1`
+  was written to stop.
+- `docs/api/quickstart.md` — empty directory to a PDF on disk in under ten
+  minutes: create a key, `GET /v1/me`, `POST /v1/reports/render` with a
+  copy-pasteable spec, then the agentic door and the chat stream. curl first,
+  then Node, then Python.
+- Regenerate `apps/backend/docs/postman/` from the spec, replacing the
+  hand-maintained collection.
+- **Every sample runs in CI against the demo tenant** — an example that has never
+  been executed is a support ticket with a delay fuse, and `T-22` already records
+  that examples are security surface, not documentation. **Split by cost, though:**
+  the deterministic samples (`/v1/me`, `/v1/reports/render`, the document routes)
+  run on every push because they cost a render; the agentic samples
+  (`POST /v1/reports`, `POST /v1/chat`) run **nightly**, because putting a real
+  LLM turn in the per-push path bills the demo tenant for every commit in the
+  monorepo. A nightly failure still catches a broken example within a day.
+
+### Acceptance
+
+- [ ] Adding a `/v1` route without a spec entry fails CI; deleting a route that is still specced fails CI
+- [ ] `npm i @argentum/sdk` in an empty project → a PDF on disk in under 10 minutes using only the quickstart
+- [ ] Same for the Python package
+- [ ] The SDK retries a 429 automatically and raises a typed error for a 403
+- [ ] `GET /v1/openapi.json` validates against the OpenAPI 3.1 meta-schema
+- [ ] Every deterministic code sample is executed on every push; every agentic one nightly
+- [ ] Breaking a sample turns the corresponding job red (demonstrate, do not assert)
+
+### Gate
+
+The CI run showing the parity check red on a deliberately unspecced route, then
+green. Plus a terminal transcript of the full ten-minute path from empty
+directory to PDF, timed.
+
+### Out of scope
+
+- A Go SDK — add it when someone asks; the demand is Node and Python
+- A hosted docs site (Markdown in the repo until it hurts)
+- An interactive API playground
+
+---
+
+## T-A5 · Integrator-facing observability
+**Repo:** BE, FE · **Size:** 1d · **Deps:** T-A1, T-13 · **Priority:** P1 · **Cut #1a**
+
+### Why
+
+An integrator debugging a 403 at 11pm should not need us to read logs. This is
+the difference between an API someone adopts and an API someone abandons after
+the first unexplained failure.
+
+### Do
+
+- Dashboard Settings → API Keys, per key: request count, error rate, last used,
+  and the last 50 non-2xx responses with request id, route, status, and the
+  error `code`.
+- `GET /v1/usage` — the tenant's own spend and remaining credits, so their
+  application can meter its own users.
+- Per-route latency and status histograms on `/metrics`, labelled by route and
+  key id. (`/metrics` is secured by `T-05`; do not add this before that lands.)
+
+### Acceptance
+
+- [ ] A forced 403 and a forced 429 both appear in the tab within a minute
+- [ ] The request id shown matches the `X-Request-Id` the caller received
+- [ ] The tab is admin-only (`T-04`'s `AdminOnly()`)
+
+### Gate
+
+Screenshots of the tab after deliberately triggering a 403, a 429 and a 500,
+alongside the three `curl` responses whose request ids they match.
+
+### Out of scope
+
+- Alerting on API error rates
+- A per-key spend cap (the company budget from `T-03` is the limit in v1)
 
 ---
 
@@ -1315,8 +1832,10 @@ Then attempt `http://169.254.169.254/` and show it blocked.
 # Week 5 — Other agents call it
 
 ## T-13 · Scoped API keys
-**Repo:** BE, FE · **Size:** 2d · **Deps:** T-04 · **Priority:** P1
+**Repo:** BE, FE · **Size:** 2d · **Deps:** T-04 · **Priority:** ~~P1~~ **P0** · **Never cut**
 **Migration:** `025_api_keys`
+**Runs in phase 1c, not week 5** (revised 2026-07-28) — it is the only machine
+authentication this product has, and every `/v1` route sits behind it.
 
 **Finding P-2.** Everything requires a human JWT, so nothing can integrate.
 
@@ -1325,7 +1844,8 @@ Then attempt `http://169.254.169.254/` and show it blocked.
   `key_hash` (Argon2id — reuse `internal/auth`), `scopes` (text[]),
   `created_by`, `last_used_at`, `expires_at`, `revoked_at`.
 - Scopes: `read:metrics`, `read:threads`, `write:chat`, `read:usage`,
-  `read:audit`, `write:actions`. Deny by default.
+  `read:audit`, `write:actions`, and — added by `T-A1` — `write:reports`,
+  `read:documents`. Deny by default.
 - `middleware.APIKeyAuth()` — accepts `Authorization: Bearer arg_<prefix>_<secret>`,
   sets company + `actor_kind=api_key` + `actor_ref` on the context so T-05 audit
   rows attribute correctly.
@@ -1347,7 +1867,14 @@ successful and a revoked call.
 ---
 
 ## T-14 · MCP server
-**Repo:** BE · **Size:** 2.5d · **Deps:** T-13 · **Priority:** P1 · **Cut #2**
+**Repo:** BE · **Size:** ~~2.5d~~ **2d** · **Deps:** T-13, T-A1 · **Priority:** P1 · **Cut #2**
+
+**Re-scoped 2026-07-28.** After `T-A1` this is a thin adapter, not a new surface:
+the key auth, the scope enforcement, the audit attribution and the metering path
+all already exist. What is left is the MCP protocol binding over
+`internal/tools`. Half a day cheaper, and cutting it now costs less than it did
+before the API track existed — an agent that can call `/v1` is not blocked, only
+inconvenienced.
 
 "Agent ready", literally: any MCP client — Claude Code, a customer's own agent —
 can use Argentum's tools.
@@ -1379,9 +1906,10 @@ audit row and usage event.
 **Migration:** `026_outbound_webhooks`
 
 **Do:** per-company subscriptions to `watcher.breached`, `action.executed`,
-`scheduled_task.completed`. HMAC-SHA256 signature (mirror the inbound
-verification style), asynq-backed delivery with exponential retry, delivery log,
-auto-disable after 20 consecutive failures.
+`scheduled_task.completed`. **Delivery is `internal/webhookout`, built by `T-A2`
+for report callbacks** — subscribe events to it, do not write a second signer or
+a second retry loop. This ticket adds the subscription model, the event fan-out,
+and auto-disable after 20 consecutive failures.
 
 **Gate:** local receiver, trigger a watcher breach, show the signed payload
 verifying against the secret.
@@ -1924,8 +2452,19 @@ T-02 ──► T-02c  (ordering only — see the execution-order note; runs in p
 
 Report track (phase 1a):
 
-T-00b ──► T-R1 ──► T-R2 ─┬─► T-R3 ──► T-R4
-                         └─► T-R5  (also needs T-04 for admin gating)
+T-00b ──► T-R1 ──► T-R2 ─┬─► T-R3 ──► T-R4 ──┐
+                         └─► T-R5            │ (pptx format enum)
+                          (also needs T-04)  │
+                                             ▼
+API track (phase 1c):                   T-A2 `format: pptx`
+
+T-02 ─► T-04 ─► T-13 ─┐
+T-02 ─► T-05 ─────────┼─► T-A1 ─┬─► T-A2 ─┬─► T-A4
+T-02 ─► T-03 ─────────┘         ├─► T-A3 ─┘
+                                └─► T-A5  (cut #1a)
+
+T-A2 ─► internal/webhookout ─► T-15  (T-15 subscribes, does not rebuild)
+T-A1 ─► T-14                        (MCP becomes a thin adapter, 2.5d → 2d)
 ```
 
 `T-00b` gates everything — it moves every file, so no other ticket may start
@@ -1953,54 +2492,86 @@ track in phase 1b. Build `T-R5`'s routes behind the existing admin check and
 swap to `AdminOnly()` when `T-04` lands — or run `T-R5` last, after phase 1b, as
 the roll-up assumes. It is cut #6 anyway.
 
+**The API track's dependencies are not padding.** `T-A1` deps `T-13` (there is no
+other machine auth), `T-05` (an API call that leaves no audit row is worse than a
+dashboard click that leaves none) and `T-03` (a key with no budget check is an
+unbounded spend endpoint reachable by a `for` loop). Each of those deps `T-02`.
+That chain is why phase 1b runs before 1c rather than after it, and it is 9 days
+that were always in the plan — the API track moves them, it does not add them.
+
+**`T-A2` and the report track are coupled in one direction only.** `T-A2` can
+ship the moment `T-R2` is done; `T-R3` and `T-R4` only decide how good the output
+is and whether `pptx` is in the format enum. If the schedule tightens, `T-A2`
+shipping with `pdf | xlsx | csv` and gaining `pptx` later is a clean seam.
+
 ## Effort roll-up
 
-| Phase | Tickets                                       | Days  |
-| ----- | --------------------------------------------- | ----- |
-| 0 ✅   | T-00, T-00b                                   | 2.0   |
-| 1     | T-01, T-02c, T-16                             | 6.0   |
-| 1a    | T-R1, T-R2, T-R3, T-R4, T-R5                  | 10.0  |
-| 1b    | T-02, T-02b, T-03, T-04, T-05                 | 8.0   |
-| 2     | T-06, T-07, T-07b                             | 5.0   |
-| 3     | T-08, T-09                                    | 5.0   |
-| 4     | T-10, T-11, T-12a, T-12b                      | 6.5   |
-| 5     | T-13, T-14, T-15                              | 6.0   |
-| 6     | T-17, T-18                                    | 3.0   |
-| 7–8   | T-19, T-20, T-21, T-22, T-23                  | 11.5  |
-|       | **Total**                                     | **63.0** |
+| Phase | Tickets                                       | Days  | Spent |
+| ----- | --------------------------------------------- | ----- | ----- |
+| 0 ✅   | T-00, T-00b                                   | 2.0   | 2.0 |
+| 1 ✅   | T-01, T-02c, T-16                             | 6.0   | 6.0 |
+| 1a    | ~~T-R1~~, ~~T-R2~~, ~~T-R3~~, T-R4, T-R5      | 10.0  | 6.0 |
+| 1b    | T-02, T-02b, T-03, T-04, T-05                 | 8.0   | — |
+| 1c    | T-13, T-A1, T-A2, T-A3, T-A4, T-A5            | 12.5  | — |
+| 2     | T-06, T-07, T-07b                             | 5.0   | — |
+| 3     | T-08, T-09                                    | 5.0   | — |
+| 4     | T-10, T-11, T-12a, T-12b                      | 6.5   | — |
+| 5     | T-14, T-15                                    | 3.5   | — |
+| 6     | T-17, T-18                                    | 3.0   | — |
+| 7–8   | T-19, T-20, T-21, T-22, T-23                  | 11.5  | — |
+|       | **Total**                                     | **73.0** | **14.0** |
 
-63 estimated days against 40 working days in eight weeks, of which 2.0 are spent.
-**The overage is deliberate** and is what the cut order in
-[`00-sprint-overview.md`](00-sprint-overview.md) §6 exists for — but the report
-track added 10 days to a plan that was already 12 over, and no ordering of cuts
-makes 63 fit into 40.
+73.0 estimated days against 40 working days, **14.0 of which are spent**. The API
+track added 10.5 days (`T-A1`→`T-A5`); `T-13` moved from week 5 into 1c and
+`T-14` got 0.5d cheaper as a consequence, so the net is +10.5 against the
+previous 63.0 minus the 0.5 saved.
 
-The arithmetic, stated plainly:
+`T-A1` is 2.5d and not the 2.0d first written, because the `api` channel moved
+into it from `T-A3` — `T-A2`'s agentic door needs a channel too, and scheduling
+`T-A2` first with the channel defined in `T-A3` was a dependency inversion.
 
-| Scenario | Days | Fits 40? |
-| -------- | ---- | -------- |
-| Everything | 63.0 | No |
-| Cut T-15, T-14, T-12b, T-R5, T-R3 partly (cuts #1–#7) | 54.5 | No |
-| …and slide the widget phase (T-19→T-23) whole to Sprint 2 | 43.0 | Within 3 days |
+**The useful number is not 73.0, it is 26.0** — the working days left. Against
+that:
 
-**So the report track and the widget phase cannot both ship in Sprint 1.** The
-widget is the one to move: nothing depends on it, it slides whole without
-stranding half-finished work, and weeks 7–8 were always the designated slack.
-Cutting into phases 1–6 instead would mean cutting the foundation the watchers
-depend on, which is the one thing this plan has been ordered to avoid.
+| What | Days | Cumulative | Fits in 26.0? |
+| ---- | ---- | ---------- | ------------- |
+| Finish 1a (T-R4, T-R5) | 4.0 | 4.0 | yes |
+| 1b foundation (T-02, T-02b, T-03, T-04, T-05) | 8.0 | 12.0 | yes |
+| **1c the API track (T-13, T-A1→T-A5)** | 12.5 | **24.5** | **yes, with 1.5 to spare** |
+| 2→6 (metrics, watchers, actions, MCP, hardening) | 23.5 | 48.0 | no |
+| 7–8 widget | 11.5 | 59.5 | no |
 
-Note what that trades away: the widget and MCP were the "make Argentum reachable
-from outside its dashboard" bet. The report track is a different bet — **make
-what Argentum hands you good enough to forward to someone who will never log in**.
-Both are adoption arguments; the report one is cheaper, ships against an existing
-tool, and needs no integration work from the customer.
+**So Sprint 1 is now: finish the report system, build the foundation, ship the
+API.** That is a coherent sprint and it fits. What it costs is phases 2 through 6
+— the metric registry, **watchers, and actions** — which move to Sprint 2.
 
-**Phases 1 + 1a + 1b are 24 days of work.** They will take closer to five weeks
-than one, and the plan should be read that way rather than pretending otherwise.
-`T-16` is no longer in week 6 and no longer cuttable — the smoke test moved it.
+State that plainly, because it reverses this sprint's original headline. Week 3
+(watchers) was described in `00-sprint-overview.md` §2 as *"THE WEDGE. This is the
+week that changes how a company works."* Two owner-set priority inserts have now
+landed ahead of it, and 5.5 days of slack is not enough to also start a 3-day
+subsystem plus its UI. **The wedge slips to Sprint 2.** That may well be the right
+call — reports and an API are things a customer can buy today, watchers are a
+thing a customer has to be taught to want — but it should be a decision, not a
+discovery in week six.
 
-Note the trade this represents: **the widget (T-19→T-23) and the MCP server
-(T-14) are the same strategic bet — make Argentum reachable from outside its own
-dashboard — but the widget serves humans on the tenant's own site and MCP serves
-other agents.** If the schedule forces a choice, keep the widget: it is a surface
-a customer can see and adopt without writing an integration.
+The widget phase (`T-19`→`T-23`) stays moved to Sprint 2, unchanged.
+
+**Superseded, 2026-07-28.** The paragraph that stood here said the report track
+traded away the "make Argentum reachable from outside its dashboard" bet, because
+the widget and MCP were what carried it. That is no longer the trade. **The API
+track carries that bet directly**, in the cheapest form of the three: the widget
+needs the customer's frontend team, MCP needs them to run an agent, and `/v1`
+needs one backend developer with a key. What moved out is not reachability — it
+is the push shift.
+
+Three sprint-shaping consequences, stated so nobody rediscovers them in week six:
+
+- **Phases 1a + 1b + 1c are 26.0 of the 27.5 remaining days.** They will consume
+  the sprint, and 1.5 days of slack across three phases is none. Read the plan
+  that way rather than pretending otherwise.
+- **Watchers and actions move to Sprint 2.** Sprint 1's original wedge becomes
+  Sprint 2's, behind `T-19`. Sprint 2 opens with two never-cut items already
+  queued, which is worth knowing now while it is still a plan and not a surprise.
+- **`T-13` and `T-14` split.** They were one week-5 block; keys are now
+  foundational and land in 1c, while MCP stays cut #2 and gets cheaper for it.
+  `T-16` remains out of week 6 and uncuttable — the smoke test moved it.

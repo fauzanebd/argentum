@@ -52,6 +52,22 @@
         "text": "Rincian Bulanan"
       },
       {
+        "type": "chart",
+        "caption": "Pendapatan bulanan sepanjang 2025.",
+        "chart": {
+          "type": "bar",
+          "title": "Pendapatan per bulan",
+          "fmt": "currency",
+          "labels": ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"],
+          "series": [
+            {
+              "name": "Pendapatan",
+              "values": [268431200, 251902800, 342118900, 358774100, 311204600, 296880400, 318442700, 329105300, 341776200, 358990100, 331218400, 354556000]
+            }
+          ]
+        }
+      },
+      {
         "type": "table",
         "caption": "Pendapatan, transaksi, dan nilai pesanan rata-rata per bulan",
         "columns": [

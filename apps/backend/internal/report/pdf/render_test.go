@@ -431,10 +431,59 @@ func TestNumericColumnsAreRightAligned(t *testing.T) {
 	}
 }
 
-// TestChartSectionIsRejected pins the T-R3 boundary: a chart is refused with
-// an instruction rather than dropped, because a report whose narrative refers
-// to a figure that silently did not render is worse than an error.
-func TestChartSectionIsRejected(t *testing.T) {
+// TestChartSectionRenders is the T-R3 half of the section coverage: a chart
+// arrives as an image inside the document flow, with its title and caption set
+// in the document's own type rather than baked into the bitmap.
+func TestChartSectionRenders(t *testing.T) {
+	doc := &spec.Document{
+		SpecVersion: 2,
+		Format:      "pdf",
+		Title:       "Quarterly review",
+		Currency:    "IDR",
+		GeneratedAt: "2026-07-27T09:00:00Z",
+		Content: spec.Content{Sections: []spec.Section{
+			{Type: spec.SectionHeading, Text: "Revenue"},
+			{
+				Type:    spec.SectionChart,
+				Caption: "Source: orders table.",
+				Chart: &spec.Chart{
+					Type:   spec.ChartLine,
+					Title:  "Revenue by month",
+					Labels: []string{"Jan", "Feb", "Mar"},
+					Fmt:    "currency",
+					Series: []spec.Series{{Name: "Direct", Values: []float64{4e8, 5e8, 6e8}}},
+				},
+			},
+		}},
+	}
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	var texts []string
+	for _, page := range pageTexts(t, doc, Options{}) {
+		texts = append(texts, page...)
+	}
+	for _, want := range []string{"Revenue by month", "Source: orders table."} {
+		if !contains(texts, want) {
+			t.Errorf("chart section did not emit %q as document text; got %v", want, texts)
+		}
+	}
+
+	out, err := Render(doc, Options{})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatal("empty pdf")
+	}
+}
+
+// TestChartSectionIsStillRejectedWhenMalformed keeps the boundary the chart
+// section used to be: refused with an instruction rather than dropped, because
+// a report whose narrative refers to a figure that silently did not render is
+// worse than an error.
+func TestChartSectionIsStillRejectedWhenMalformed(t *testing.T) {
 	doc := &spec.Document{
 		SpecVersion: 2,
 		Format:      "pdf",
@@ -444,10 +493,10 @@ func TestChartSectionIsRejected(t *testing.T) {
 	}
 	err := doc.Validate()
 	if err == nil {
-		t.Fatal("expected chart sections to be rejected")
+		t.Fatal("expected a chart with no series to be rejected")
 	}
-	if !strings.Contains(err.Error(), "not supported") {
-		t.Errorf("error should tell the model what to do instead, got %q", err)
+	if !strings.Contains(err.Error(), "series") {
+		t.Errorf("error should name what is missing, got %q", err)
 	}
 }
 
