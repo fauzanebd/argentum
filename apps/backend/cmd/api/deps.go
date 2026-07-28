@@ -46,6 +46,7 @@ type apiDeps struct {
 	discordSvc   *app.DiscordService
 	larkSvc      *app.LarkService
 	brandingSvc  *branding.Service
+	apiKeySvc    *app.APIKeyService
 	// larkReplier lets the webhook answer a turn it refuses before enqueueing
 	// (T-03). Nil when Lark is disabled.
 	larkReplier lark.Provider

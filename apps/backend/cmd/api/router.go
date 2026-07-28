@@ -20,7 +20,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestLogging())
-	r.Use(middleware.CORS(cfg.CORSOrigins))
+	// /v1 is excluded: it is a machine surface authenticated by an API key,
+	// and with CORS_ORIGINS unset this middleware echoes any Origin.
+	r.Use(middleware.CORS(cfg.CORSOrigins, "/v1"))
 
 	registerHealthRoutes(r, d.metrics, d.controlDB)
 
@@ -45,6 +47,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).Register(authed.Group("/users"))
 	handlers.NewReportsHandler(d.brandingSvc, d.companyRepo).Register(authed)
 	handlers.NewAuditHandler(d.actionRepo).Register(authed)
+	handlers.NewAPIKeysHandler(d.apiKeySvc).Register(authed)
 	if d.dashboardSvc != nil {
 		handlers.NewDashboardHandler(d.dashboardSvc).Register(authed)
 	}
@@ -58,6 +61,23 @@ func newRouter(d *apiDeps) *gin.Engine {
 		handlers.NewLarkHandler(d.larkSvc).Register(authed)
 	}
 	authed.GET("/threads/:id/stream", ws.NewHandler(d.rdb, d.threadRepo, cfg.CORSOrigins).Stream)
+
+	// The public API (T-13; T-A1 builds the rest of the contract on this
+	// group). It is a sibling of /api rather than a subtree of it, and it
+	// never sees middleware.Auth: a dashboard session and a machine credential
+	// are different authorities, and a group that accepted either would make
+	// "which routes can a key reach?" unanswerable.
+	//
+	// The engine-level CORS middleware skips this prefix on purpose. An API
+	// key in a browser is a leaked API key; the browser path is T-19's embed
+	// key. The live gate found this the hard way — /v1 inherited the
+	// dashboard's headers because CORS is installed above every group.
+	v1 := r.Group("/v1")
+	v1.Use(middleware.APIKeyAuth(d.apiKeySvc))
+	if keyLimiter := middleware.NewRateLimiter(d.rdb, cfg.APIV1RatePerMin, float64(cfg.APIV1RatePerMin)/60.0); keyLimiter != nil {
+		v1.Use(keyLimiter.APIKeyMiddleware())
+	}
+	handlers.NewV1MeHandler(d.companyRepo).Register(v1)
 
 	webhookGroup := r.Group("/webhook")
 	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, cfg.WhatsAppWebhookVerifyToken).

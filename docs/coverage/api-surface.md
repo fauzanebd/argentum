@@ -205,9 +205,12 @@ unmarshal into the same Go types. See
    once `AdminOnly()` is applied — see ticket `T-04`.
 2. **`/metrics` is public.** It exposes aggregate token counts and cost. Either
    authenticate it or move it to an internal-only listener — ticket `T-05`.
-3. **No machine authentication exists.** Every route above requires a
-   human-session JWT. For Argentum to be callable by other agents, a scoped API
-   key is the prerequisite — ticket `T-13`.
+3. ~~**No machine authentication exists.**~~ **Closed 2026-07-28 by `T-13`.**
+   Every route above still requires a human-session JWT, and now refuses an API
+   key outright. Machine callers use `/v1`, a sibling namespace authenticated by
+   a scoped key (`Authorization: Bearer arg_…`), which refuses a dashboard JWT
+   just as flatly. `GET /v1/me` is the only route on it until `T-A1`
+   ([`api-keys.md`](api-keys.md)).
 4. **The WebSocket event schema is the dashboard's most important contract and it
    is undocumented.** Event types in use: `started`, `delta`, `thinking`,
    `tool_call`, `tool_result`, `error`, `final`.

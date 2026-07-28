@@ -339,6 +339,13 @@ func actorOf(p queue.ChatRunPayload) (kind, ref string) {
 	if p.ScheduledTaskID != "" {
 		return string(domain.ActorKindSchedule), p.ScheduledTaskID
 	}
+	// An API key outranks any user reference on the payload for the same
+	// reason a schedule does: the turn ran because a script called us, and the
+	// tenant's own `user_ref` on a /v1 chat request is a label they chose, not
+	// an identity we authenticated (T-13).
+	if p.APIKeyID != "" {
+		return string(domain.ActorKindAPIKey), p.APIKeyID
+	}
 	for _, candidate := range []string{p.UserID, p.DiscordUserID, p.LarkOpenID, p.PhoneNumber} {
 		if candidate != "" {
 			return string(domain.ActorKindUser), candidate

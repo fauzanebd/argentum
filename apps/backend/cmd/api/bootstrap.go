@@ -76,6 +76,9 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// agent runs; the API only serves them back to an admin.
 	deps.actionRepo = pgctl.NewAgentActionRepo(controlDB)
 	deps.teamSvc = app.NewTeamService(userRepo, pgctl.NewUserInviteRepo(controlDB))
+	// The only machine credential in the product (T-13). It authenticates
+	// `/v1`; the dashboard routes beside it are how an admin mints one.
+	deps.apiKeySvc = app.NewAPIKeyService(pgctl.NewAPIKeyRepo(controlDB))
 
 	dsnCipher, err := crypto.NewFromHex(cfg.DSNEncryptionKeyHex)
 	if err != nil {

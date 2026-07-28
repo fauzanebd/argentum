@@ -55,6 +55,7 @@ func realRouter(t *testing.T) *gin.Engine {
 
 		authSvc:      app.NewAuthService(nil, nil, signer),
 		teamSvc:      app.NewTeamService(nil, nil),
+		apiKeySvc:    app.NewAPIKeyService(nil),
 		companySvc:   &app.CompanyService{},
 		usageSvc:     &app.UsageService{},
 		dashboardSvc: app.NewDashboardService(nil, nil),

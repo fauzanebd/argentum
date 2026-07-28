@@ -107,6 +107,19 @@ var apiPolicy = middleware.RolePolicy{
 	// list it — a wider view than any single chat thread gives.
 	"GET /api/audit/actions": domain.RoleAdmin,
 
+	// API keys (T-13). Admin throughout, including the list: a key is a
+	// credential that reaches the company's data from outside the dashboard,
+	// so minting one is at least as privileged as rotating a DSN. The list is
+	// admin too — it is the inventory of who can reach the tenant from
+	// outside, and it is where a revoke starts.
+	"GET /api/api-keys":        domain.RoleAdmin,
+	"POST /api/api-keys":       domain.RoleAdmin,
+	"DELETE /api/api-keys/:id": domain.RoleAdmin,
+	// The scope vocabulary is static metadata, but it is only ever read by the
+	// create form, which is admin-only. A member-readable route nobody can act
+	// on is a wider surface for nothing.
+	"GET /api/api-keys/scopes": domain.RoleAdmin,
+
 	// Scheduled tasks.
 	"GET /api/scheduled-tasks":                 domain.RoleMember,
 	"POST /api/scheduled-tasks":                domain.RoleMember,
@@ -135,7 +148,8 @@ var apiPolicy = middleware.RolePolicy{
 }
 
 // unpolicedPaths are the routes that legitimately sit outside the policy: they
-// run before or without authentication, so there is no role to check. The
+// run before or without authentication, or they authenticate as something
+// other than a dashboard session, so there is no role to check. The
 // classification test uses this list to decide which routes it may skip, which
 // keeps "not gated" an explicit decision rather than an omission.
 var unpolicedPaths = map[string]bool{
@@ -154,6 +168,13 @@ var unpolicedPaths = map[string]bool{
 
 	// Static metadata, no tenant data.
 	"/api/meta/supported-databases": true,
+
+	// The public API (T-13). Authenticated by an API key, which carries
+	// scopes rather than a role — apiPolicy answers a question that does not
+	// apply, and RequireRole never runs on this group. What gates a /v1 route
+	// is middleware.RequireScope beside it; TestV1RoutesAreKeyAuthenticated
+	// is what keeps this exemption from becoming a hole.
+	"/v1/me": true,
 
 	// Inbound webhooks authenticate by provider signature, not by JWT.
 	"/webhook/whatsapp":             true,

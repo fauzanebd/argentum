@@ -40,6 +40,20 @@ func TestActorOfDistinguishesScheduleFromUser(t *testing.T) {
 			queue.ChatRunPayload{UserID: "user-1", ScheduledTaskID: "task-3"},
 			domain.ActorKindSchedule, "task-3",
 		},
+		{
+			// T-13. A turn that arrived over /v1 is attributable to the
+			// credential, not to whatever user_ref the tenant put on the
+			// request: that string is a label they chose, not an identity we
+			// authenticated.
+			"api key outranks a caller-supplied user",
+			queue.ChatRunPayload{UserID: "user-1", APIKeyID: "key-7"},
+			domain.ActorKindAPIKey, "key-7",
+		},
+		{
+			"a schedule still outranks an api key",
+			queue.ChatRunPayload{APIKeyID: "key-7", ScheduledTaskID: "task-3"},
+			domain.ActorKindSchedule, "task-3",
+		},
 		{"dashboard user", queue.ChatRunPayload{UserID: "user-1"}, domain.ActorKindUser, "user-1"},
 		{"discord", queue.ChatRunPayload{DiscordUserID: "dsc-9"}, domain.ActorKindUser, "dsc-9"},
 		{"lark", queue.ChatRunPayload{LarkOpenID: "ou_1"}, domain.ActorKindUser, "ou_1"},

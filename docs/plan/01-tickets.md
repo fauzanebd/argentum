@@ -49,7 +49,7 @@ priority on 2026-07-28. This table is the authoritative order.
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
 | 1a — **done** | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, ~~`T-R4`~~, ~~`T-R5`~~ | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). **`T-R4` landed 2026-07-28** — the same spec projected onto slides, narrative in the speaker notes ([`../coverage/report-deck.md`](../coverage/report-deck.md)). **`T-R5` landed 2026-07-28** — tenant logo, accent, locale and footer on both formats, with a live preview rendered by the renderer itself and a contrast floor a pale brand colour cannot pass ([`../coverage/report-branding.md`](../coverage/report-branding.md)). |
 | 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, ~~`T-05`~~, ~~`T-03`~~, `T-02b` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). **`T-05` landed 2026-07-28**: one append-only row per tool call, written by a decorator over the whole registry rather than per tool, plus a row for a turn a guardrail stopped — which needed a second integration point, because a guardrail stops a turn before any tool runs ([`../coverage/agent-audit.md`](../coverage/agent-audit.md)). **`T-03` landed 2026-07-28**: the balance is checked before a turn is queued on every channel and on every scheduled fire, a tenant on their own key is never blocked, and the ticket had to grow a starting grant — because nothing had ever credited a company, so enforcing it as written would have refused every tenant at once ([`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md)). |
-| 1c — callable | `T-13`, `T-A1`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moves here from week 5 — it is the prerequisite, not a week-5 nicety. |
+| 1c — callable | ~~`T-13`~~, `T-A1`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moved here from week 5 — it is the prerequisite, not a week-5 nicety. **`T-13` landed 2026-07-28**: scoped, hashed, revocable keys on a `/v1` namespace that refuses a dashboard JWT as flatly as `/api` refuses a key, with a per-key rate bucket and a Settings tab. The hash is a SHA-256 rather than the Argon2id the ticket named, because the input is 256 random bits rather than a password; the live gate found `/v1` inheriting the dashboard's permissive CORS headers ([`../coverage/api-keys.md`](../coverage/api-keys.md)). |
 | 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Moved to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
 
@@ -71,14 +71,18 @@ Three ordering notes for 1a → 1b → 1c, decided 2026-07-28:
 - **`T-R5` dragged phase 1b forward whether or not the API existed.** It deps
   `T-04`, which deps `T-02`. So 4.5 days of "phase 1b" work was already embedded
   inside "finish the report track". The running order is therefore
-  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → ~~`T-R5`~~ → ~~`T-05`~~ → ~~`T-03`~~ → `T-13` → `T-A1`…,
-  not three clean blocks. **The report track is complete, the audit log `T-A1`
-  needs a row to write into exists, and the spend ceiling a leaked key would
-  otherwise run past is enforced.** **Next up: `T-13`** — scoped API keys, the
-  last thing standing between here and `T-A1`.
+  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → ~~`T-R5`~~ → ~~`T-05`~~ → ~~`T-03`~~ → ~~`T-13`~~ → `T-A1`…,
+  not three clean blocks. **The report track is complete, the audit log has a
+  row to write into, the spend ceiling a leaked key would otherwise run past is
+  enforced, and the key itself exists.** **Next up: `T-A1`** — the contract
+  every other `/v1` route inherits, and the last thing in this sprint that
+  becomes permanent the moment a customer writes against it.
 - **`T-13` is no longer a week-5 ticket.** Scoped API keys are the only machine
-  authentication this product has, and every `/v1` route is behind them. It runs
-  immediately before `T-A1`.
+  authentication this product has, and every `/v1` route is behind them. It ran
+  immediately before `T-A1`, and it shipped two pieces of `T-A1` with it — the
+  error envelope and `GET /v1/me` — because an auth middleware has to answer
+  in *some* format and a credential needs *something* to authenticate against.
+  Both are additive; `T-A1` extends rather than replaces them.
 
 ---
 
@@ -2001,38 +2005,44 @@ Then attempt `http://169.254.169.254/` and show it blocked.
 
 # Week 5 — Other agents call it
 
-## T-13 · Scoped API keys
+## ~~T-13~~ · Scoped API keys — **DONE 2026-07-28**
 **Repo:** BE, FE · **Size:** 2d · **Deps:** T-04 · **Priority:** ~~P1~~ **P0** · **Never cut**
-**Migration:** `025_api_keys`
-**Runs in phase 1c, not week 5** (revised 2026-07-28) — it is the only machine
-authentication this product has, and every `/v1` route sits behind it.
+**Migration:** ~~`025_api_keys`~~ **`024_api_keys`** — 023 was the highest
+applied, and golang-migrate strands anything below the current version. Fourth
+consecutive ticket to find its reserved number spent.
 
-**Finding P-2.** Everything requires a human JWT, so nothing can integrate.
+**Shipped.** Record, gate output and known limits:
+[`../coverage/api-keys.md`](../coverage/api-keys.md).
 
-**Do:**
-- `api_keys`: `id`, `company_id`, `name`, `key_prefix` (shown in UI),
-  `key_hash` (Argon2id — reuse `internal/auth`), `scopes` (text[]),
-  `created_by`, `last_used_at`, `expires_at`, `revoked_at`.
-- Scopes: `read:metrics`, `read:threads`, `write:chat`, `read:usage`,
-  `read:audit`, `write:actions`, and — added by `T-A1` — `write:reports`,
-  `read:documents`. Deny by default.
-- `middleware.APIKeyAuth()` — accepts `Authorization: Bearer arg_<prefix>_<secret>`,
-  sets company + `actor_kind=api_key` + `actor_ref` on the context so T-05 audit
-  rows attribute correctly.
-- Per-key rate limiting, separate bucket from the user limiter.
-- Plaintext shown **once** at creation, never retrievable.
-- FE: Settings → API Keys tab. Create, copy-once, list with prefix + last-used,
-  revoke.
+Three deviations from the text below, all recorded:
 
-**Acceptance:**
-- [ ] Key without the needed scope gets 403
-- [ ] Revoked key gets 401 immediately
-- [ ] Expired key gets 401
-- [ ] Audit rows attribute to `api_key` with the key id
-- [ ] Plaintext appears in exactly one response, ever
+- **`key_hash` is SHA-256, not Argon2id.** Argon2id defends a password —
+  a low-entropy input with a dictionary behind it. This secret is 256
+  uniformly random bits, so the KDF buys nothing against guessing while
+  costing 64 MiB and ~50 ms on *every authenticated request* of a
+  machine-to-machine API, and handing anyone with a valid prefix a 64 MiB
+  allocation per wrong guess. `internal/auth/invite.go` already states this
+  argument for invite tokens. The other three layers §5 of the overview names
+  — plaintext once, a separate rate bucket, per-key usage — are unchanged.
+- **`T-A1`'s two scopes are not pre-declared.** `write:reports` and
+  `read:documents` land with the routes that need them; a checkbox that grants
+  nothing is a promise the product cannot keep.
+- **Two pieces of `T-A1` had to land here**, both additive rather than
+  provisional: the typed error envelope (`internal/transport/http/apierr`),
+  because the first thing `/v1` ever answers is an auth failure and `T-A1`'s
+  own acceptance forbids a bare `{"error":"…"}` under `/v1`; and `GET /v1/me`,
+  because a credential with nothing to authenticate against cannot be
+  gate-tested. `T-A1` extends both.
 
-**Gate:** table-driven scope test. Paste output. Plus a `curl` transcript of a
-successful and a revoked call.
+Two acceptance items are met structurally but **not proven live**, and are
+stated as such in the record: no `/v1` route takes a scope yet (`RequireScope`
+has no production call site until `T-A2`), and no audit row has been written by
+a key yet (that needs a turn started over HTTP, which is `T-A3`).
+
+One defect the live gate found: **`/v1` inherited the dashboard's CORS
+headers**, because `middleware.CORS` is installed on the engine above every
+group and echoes any `Origin` when `CORS_ORIGINS` is unset. Fixed with a skip
+prefix and a test asserting both directions.
 
 ---
 

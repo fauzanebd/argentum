@@ -45,6 +45,13 @@ type ChatRunPayload struct {
 	DefaultCurrency  string         `json:"default_currency,omitempty"` // ISO 4217
 	ScheduledTaskID  string         `json:"scheduled_task_id,omitempty"`
 	ScheduledRunID   string         `json:"scheduled_run_id,omitempty"`
+	// APIKeyID attributes a turn started over /v1 to the key that started it
+	// (T-13). The audit log records who a tool call ran for, and for an
+	// integration that is a credential rather than a person — the queue is
+	// what carries that fact from the HTTP request into the worker, which is
+	// a different process and has no other way to learn it. The first writer
+	// is T-A3's chat route; until then it is set only by tests.
+	APIKeyID string `json:"api_key_id,omitempty"`
 }
 
 // ScheduledRunPayload is the body of a `scheduled:run` task. Only the

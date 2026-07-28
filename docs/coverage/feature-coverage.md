@@ -73,7 +73,7 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Topic enforcement           | ✅     | Bilingual regex families + LLM admitting gate                           |
 | PII redaction               | 🟡     | Works, but over-broad: any 16-digit number, all emails, all phone numbers are blanked in output — breaks legitimate customer-contact queries |
 | System-prompt leak guard    | 🟡     | Blocks any output containing "you are an ai"; false-positives on "what can you do?" |
-| Rate limiting               | 🟡     | Flat 60 req/min for all authenticated callers; not per-plan, not per-channel |
+| Rate limiting               | 🟡     | Flat 60 req/min per company for dashboard sessions; `T-13` adds a separate per-key bucket for `/v1` (`API_V1_RATE_PER_MIN`, default 120). Neither is per-plan, and both fail open when Redis is unhealthy |
 | Agent action audit log      | ✅     | `T-05`: one append-only `agent_actions` row per tool call — actor, channel, redacted args, status, rows, duration — written by a decorator over the whole tool registry, plus a row for a turn a guardrail stopped. Admin-only `GET /api/audit/actions` ([`agent-audit.md`](agent-audit.md)). No UI yet; `T-A5` builds one |
 
 ## Accounts, billing, admin
@@ -99,7 +99,7 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | REST API for the dashboard  | ✅     | Documented in `apps/backend/docs/api.md` + Postman collection |
 | WebSocket event stream      | ✅     | Redis-fanned so any API replica serves any thread          |
 | Inbound webhooks            | ✅     | WhatsApp, Discord, Lark — all signature-verified           |
-| API keys / machine auth     | ❌     | JWT-only; no customer system can integrate                 |
+| API keys / machine auth     | 🟡     | `T-13`: scoped, hashed, revocable keys with a per-key rate bucket and a Settings tab; `/v1` authenticates with them and refuses a dashboard JWT ([`api-keys.md`](api-keys.md)). **`GET /v1/me` is the only route behind them** until `T-A1`, so nothing a customer wants is callable yet |
 | MCP server                  | ❌     | Tools live only in the worker's in-process registry        |
 | Outbound webhooks           | ❌     | Nothing can subscribe to Argentum events                   |
 | Public/embeddable dashboards | 🟡    | Metabase URLs are shareable; no Argentum-native embedding  |

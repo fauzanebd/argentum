@@ -2,12 +2,13 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/fauzanebd/argentum/internal/transport/http/apierr"
 )
 
 // RateLimiter implements a per-company token bucket using Redis. The bucket
@@ -77,23 +78,53 @@ return allowed
 // the gin context by the Auth middleware). Anonymous requests bypass the
 // limiter — apply this middleware *after* Auth.
 func (r *RateLimiter) Middleware() gin.HandlerFunc {
+	return r.limitBy("rl:company:", "company_id", func(c *gin.Context) {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error": "rate limit exceeded",
+		})
+	})
+}
+
+// APIKeyMiddleware rate-limits per API key (T-13), in a bucket namespace of
+// its own.
+//
+// A separate bucket rather than a separate limiter: the mechanism is already
+// correct under concurrency and a second implementation is a second thing to
+// get wrong. What must not be shared is the *bucket* — a company's staff
+// using the dashboard and that company's nightly job hitting `/v1` are
+// different traffic with different burst shapes, and letting one exhaust the
+// other's budget makes an integration's reliability depend on how busy the
+// office is.
+//
+// The refusal goes out in the `/v1` envelope, because everything under `/v1`
+// does.
+func (r *RateLimiter) APIKeyMiddleware() gin.HandlerFunc {
+	return r.limitBy("rl:apikey:", CtxAPIKeyID, func(c *gin.Context) {
+		apierr.Abort(c, apierr.TypeRateLimit, "rate_limit_exceeded",
+			"Too many requests on this API key. Retry in a moment.")
+	})
+}
+
+// limitBy is the shared body: read the bucket identity off the Gin context,
+// consume a token, and hand the refusal to the caller's own writer so the two
+// surfaces can answer in their own error formats.
+func (r *RateLimiter) limitBy(prefix, ctxKey string, refuse func(*gin.Context)) gin.HandlerFunc {
 	script := redis.NewScript(tokenBucketLua)
 	return func(c *gin.Context) {
-		v, ok := c.Get("company_id")
+		v, ok := c.Get(ctxKey)
 		if !ok {
 			c.Next()
 			return
 		}
-		companyID, _ := v.(string)
-		if companyID == "" {
+		id, _ := v.(string)
+		if id == "" {
 			c.Next()
 			return
 		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
 		defer cancel()
-		key := fmt.Sprintf("rl:company:%s", companyID)
 
-		res, err := script.Run(ctx, r.rdb, []string{key},
+		res, err := script.Run(ctx, r.rdb, []string{prefix + id},
 			r.capacity, r.refillPerSec, time.Now().Unix(),
 		).Int()
 		if err != nil {
@@ -103,9 +134,7 @@ func (r *RateLimiter) Middleware() gin.HandlerFunc {
 		}
 		if res == 0 {
 			c.Header("Retry-After", "1")
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"error": "rate limit exceeded",
-			})
+			refuse(c)
 			return
 		}
 		c.Next()

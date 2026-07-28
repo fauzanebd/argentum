@@ -655,6 +655,66 @@ opposite config. `Listening on :8080` in the log is not proof; the *absence* of
 Record, gate output and the limits:
 [`credit-enforcement.md`](credit-enforcement.md).
 
+`T-13` scoped API keys
+
+Nothing could integrate with Argentum, by anyone, for any price: every route
+wanted a human's session JWT. This ticket adds the only machine credential the
+product has, and the `/v1` namespace it authenticates.
+
+The decisions worth carrying forward:
+
+- **The ticket said Argon2id and this ships SHA-256, on purpose.** Argon2id
+  makes guessing expensive against a password. The secret half of a key is 256
+  uniformly random bits — there is no dictionary to slow anybody down against,
+  and the KDF's 64 MiB and ~50 ms would land on *every authenticated request*
+  of a machine-to-machine API rather than on a fortnightly login. It is also an
+  amplification vector: a valid prefix would let anyone make the server
+  allocate 64 MiB per wrong guess. `internal/auth/invite.go` already made this
+  argument for invite tokens and already uses SHA-256. The three other layers
+  the sprint's risk register named — plaintext once, a separate rate bucket,
+  per-key usage — ship unchanged.
+- **No cache on the authentication read, and that is a deliberate departure
+  from `T-03` two commits earlier.** Caching a credit verdict for 60s costs a
+  topped-up tenant a minute of refusals. Caching a credential for 60s means a
+  revoked key keeps working for a minute after an admin decided it should not,
+  which is the exact moment it is most likely to be in the wrong hands. The
+  price is one indexed read on a UNIQUE column per request.
+- **A key carries scopes and never a role.** `APIKeyAuth` sets no `role` on
+  the context, so `T-04`'s `RequireRole` — which refuses an unrecognised role
+  — fails closed if a `/v1` group ever picks up the dashboard's policy
+  middleware. Both directions of the split are asserted against the real
+  router: a JWT gets 401 on every `/v1` route, and a well-formed key gets 401
+  on all 66 `/api` routes in the policy table.
+- **Scopes are fixed at creation, so the repository has no `Update`.** Editing
+  the capabilities of a credential already sitting in someone else's CI config
+  changes what that config can do without anyone touching it. Rotation is
+  mint-then-revoke, and leaving the unsafe operation out of the interface is
+  how that stays true.
+- **Two things that belong to `T-A1` had to land here**, both additive: the
+  typed error envelope (`internal/transport/http/apierr`), because the first
+  thing `/v1` ever answers is an auth failure and `T-A1`'s acceptance forbids a
+  bare `{"error":"…"}` under `/v1`; and `GET /v1/me`, because a credential with
+  nothing to authenticate against cannot be gate-tested. The config var uses
+  `T-A1`'s reserved name, `API_V1_RATE_PER_MIN`, rather than a second setting
+  to reconcile later.
+
+The defect the live gate found is the one worth remembering: **`/v1` inherited
+the dashboard's CORS headers**. `middleware.CORS` is installed on the engine,
+above every group, so the new group got `Access-Control-Allow-Credentials:
+true` for free — and with `CORS_ORIGINS` unset it echoes *any* `Origin`. A key
+usable from a web page is a key that shipped in a bundle, which is the precise
+conflation `T-19`'s embed key exists to avoid. It was found by curling `/v1/me`
+with an `Origin` header, not by any test. Fourth consecutive ticket where the
+live half of the gate found something the unit tests could not.
+
+A smaller one, for whoever writes the next browser check: Radix's
+`Tabs.Trigger` listens for real pointer events, so a synthetic `element.click()`
+over CDP lands on the DOM node and changes nothing — the screenshot came back
+showing the wrong tab, selected. Dispatch `Input.dispatchMouseEvent` at the
+element's own bounding box instead.
+
+Record, gate output and the limits: [`api-keys.md`](api-keys.md).
+
 ---
 
 ## What the history says about how this project is built

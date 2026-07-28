@@ -146,6 +146,12 @@ type Config struct {
 	CreditsWarningThresholdPct int     // remaining % of the grant that triggers a warning
 	CreditsDefaultGrantUSD     float64 // provisioned once per company, in dollars
 
+	// Public `/v1` API (T-13, extended by T-A1). APIV1RatePerMin is the
+	// per-key request budget; it is deliberately the name T-A1 reserves, so
+	// the limiter T-13 ships and the one that ticket configures are the same
+	// setting rather than two that drift.
+	APIV1RatePerMin int
+
 	// Object storage (MinIO / S3-compatible). Used by the generate_document
 	// tool to persist generated PDF/XLSX/CSV files and to issue presigned
 	// download URLs.
@@ -273,6 +279,9 @@ func Load() (*Config, error) {
 		CreditsEnforcementEnabled:  getEnv("CREDITS_ENFORCEMENT_ENABLED", "true") == "true",
 		CreditsWarningThresholdPct: getEnvAsInt("CREDITS_WARNING_THRESHOLD_PCT", 20),
 		CreditsDefaultGrantUSD:     getEnvAsFloat("CREDITS_DEFAULT_GRANT_USD", 25),
+
+		// Public API
+		APIV1RatePerMin: getEnvAsInt("API_V1_RATE_PER_MIN", 120),
 
 		// Object storage (MinIO / S3-compatible)
 		MinIOEndpoint:          getEnv("MINIO_ENDPOINT", ""),
