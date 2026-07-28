@@ -1,5 +1,15 @@
 # Argentum API
 
+> **Stale — do not build against the `/v1` section of this file (noted 2026-07-28, `T-A1`).**
+> This document predates the `bigref` refactor and describes a single-tenant
+> service with no authentication and a `POST /v1/query` endpoint. Neither
+> exists. `/v1` is now the multi-tenant public API: API-key authentication, a
+> typed error envelope, idempotency and per-key rate limits, described in
+> [`../../../docs/coverage/api-foundation.md`](../../../docs/coverage/api-foundation.md).
+> `T-A4` replaces this file with a generated OpenAPI 3.1 spec that CI checks
+> against the router in both directions; until then, the router is the
+> contract and this file is history.
+
 HTTP reference for the Argentum analytics service. Send a natural-language question, get back a structured insight backed by SQL execution and an optional dashboard link.
 
 ## Overview

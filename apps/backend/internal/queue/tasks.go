@@ -52,6 +52,12 @@ type ChatRunPayload struct {
 	// a different process and has no other way to learn it. The first writer
 	// is T-A3's chat route; until then it is set only by tests.
 	APIKeyID string `json:"api_key_id,omitempty"`
+	// RequestID carries the `X-Request-Id` of the HTTP call that started this
+	// turn (T-A1) into the audit rows the worker writes for it. Support
+	// starts from a request id, so a request id has to resolve to rows — and
+	// the rows are written in another process, minutes later, from a payload
+	// that is the only thing crossing the gap.
+	RequestID string `json:"request_id,omitempty"`
 }
 
 // ScheduledRunPayload is the body of a `scheduled:run` task. Only the

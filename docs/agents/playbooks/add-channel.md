@@ -22,7 +22,17 @@ fourth process.
 Slack and Telegram both support webhooks. **Choose webhooks.** Only take the
 gateway path if the platform offers no alternative.
 
-**Third case — the widget channel (`T-20`).** The embeddable widget is also a
+**Third case — the `api` channel (`T-A1`, shipped 2026-07-28).** A turn started
+over the public API has no inbound platform and no outbound provider: the
+request *is* the inbound mechanism and the HTTP response *is* the delivery. So
+steps 1–2 and 5–9 apply (channel constant, migration, thread keying, usage
+attribution, switch-case audit) and steps 3–4 and 6 do not. There is no
+allowlist either, because the API key is the allowlist. Read
+`internal/app/thread_service.go`'s `ResolveForAPIUser` and
+`ChatRunner.completeWith`'s `ChannelAPI` case before adding a channel that
+looks like this one — the empty case is deliberate and commented.
+
+**Fourth case — the widget channel (`T-20`).** The embeddable widget is also a
 `Channel`, but it has *neither* inbound mechanism: the client calls
 `/api/embed/chat` directly and receives the reply over its own WebSocket. So
 steps 1–2 and 5–9 of this playbook apply in full (channel constant, migration,

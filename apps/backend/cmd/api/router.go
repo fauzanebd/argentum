@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/transport/http/handlers"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 	"github.com/fauzanebd/argentum/internal/transport/ws"
@@ -72,12 +73,30 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// key in a browser is a leaked API key; the browser path is T-19's embed
 	// key. The live gate found this the hard way — /v1 inherited the
 	// dashboard's headers because CORS is installed above every group.
+	//
+	// The chain order below is the contract, not a preference:
+	//   RequestID   — first, so *every* response carries one, including the
+	//                 503 the kill switch writes and the 401 an integrator
+	//                 with a bad key gets. Those are the two responses most
+	//                 likely to start a support conversation, and the live
+	//                 gate found them going out without an id when this sat
+	//                 second. It reads no credential and touches no I/O, so
+	//                 there is nothing to protect by deferring it.
+	//   Enabled     — a switched-off API answers before it reads a credential
+	//   MaxBodyBytes— refuse an oversized body before anything parses it
+	//   APIKeyAuth  — who is calling
+	//   rate limit  — per key, so it needs the key
+	// Idempotency is per route rather than group-wide: a GET does not need a
+	// Redis key and a 24-hour TTL to be idempotent.
 	v1 := r.Group("/v1")
+	v1.Use(middleware.RequestID())
+	v1.Use(middleware.Enabled(cfg.APIV1Enabled))
+	v1.Use(middleware.MaxBodyBytes(cfg.APIV1MaxBodyBytes))
 	v1.Use(middleware.APIKeyAuth(d.apiKeySvc))
 	if keyLimiter := middleware.NewRateLimiter(d.rdb, cfg.APIV1RatePerMin, float64(cfg.APIV1RatePerMin)/60.0); keyLimiter != nil {
 		v1.Use(keyLimiter.APIKeyMiddleware())
 	}
-	handlers.NewV1MeHandler(d.companyRepo).Register(v1)
+	handlers.NewV1MeHandler(d.companyRepo, budgetReaderOrNil(d.usageSvc), cfg.APIV1RatePerMin).Register(v1)
 
 	webhookGroup := r.Group("/webhook")
 	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, cfg.WhatsAppWebhookVerifyToken).
@@ -105,4 +124,16 @@ func newRouter(d *apiDeps) *gin.Engine {
 	}
 
 	return r
+}
+
+// budgetReaderOrNil hands the credit reader to `/v1/me` only when there is
+// one. A nil *app.UsageService assigned straight into the handler's interface
+// parameter would arrive as a non-nil interface holding a nil pointer — the
+// handler's own `budget == nil` guard would not fire, and the first call would
+// panic on a route whose job is to answer when everything else is broken.
+func budgetReaderOrNil(svc *app.UsageService) handlers.V1BudgetReader {
+	if svc == nil {
+		return nil
+	}
+	return svc
 }

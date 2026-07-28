@@ -13,6 +13,11 @@ const (
 	ChannelDashboard Channel = "dashboard"
 	ChannelDiscord   Channel = "discord"
 	ChannelLark      Channel = "lark"
+	// ChannelAPI is a turn started over the public `/v1` API (T-A1). It is
+	// the only channel with no outbound provider: the reply is the HTTP
+	// response the caller is already holding open, so ChatRunner.completeWith
+	// deliberately does nothing for it.
+	ChannelAPI Channel = "api"
 )
 
 // ConversationThread is one logical conversation. Each phone number gets its
@@ -21,15 +26,20 @@ const (
 // (one thread = one agent memory); LarkThreadKey is the lookup key
 // (thread_id || root_id || message_id, whichever the event surfaces).
 type ConversationThread struct {
-	ID            string    `json:"id"`
-	CompanyID     string    `json:"company_id"`
-	Channel       Channel   `json:"channel"`
-	PhoneNumber   string    `json:"phone_number,omitempty"`    // empty for dashboard/discord/lark threads
-	UserID        string    `json:"user_id,omitempty"`         // empty for WA/discord/lark threads from non-account holders
-	DiscordUserID string    `json:"discord_user_id,omitempty"` // empty for non-discord threads
-	LarkChatID    string    `json:"lark_chat_id,omitempty"`    // empty for non-lark threads
-	LarkThreadKey string    `json:"lark_thread_key,omitempty"` // empty for non-lark threads
-	LarkOpenID    string    `json:"lark_open_id,omitempty"`    // initiating user's open_id; empty for non-lark threads
+	ID            string  `json:"id"`
+	CompanyID     string  `json:"company_id"`
+	Channel       Channel `json:"channel"`
+	PhoneNumber   string  `json:"phone_number,omitempty"`    // empty for dashboard/discord/lark threads
+	UserID        string  `json:"user_id,omitempty"`         // empty for WA/discord/lark threads from non-account holders
+	DiscordUserID string  `json:"discord_user_id,omitempty"` // empty for non-discord threads
+	LarkChatID    string  `json:"lark_chat_id,omitempty"`    // empty for non-lark threads
+	LarkThreadKey string  `json:"lark_thread_key,omitempty"` // empty for non-lark threads
+	LarkOpenID    string  `json:"lark_open_id,omitempty"`    // initiating user's open_id; empty for non-lark threads
+	// APIUserRef is the tenant's own identifier for whoever the API call was
+	// made on behalf of (T-A1). It is opaque to us by design: an API key
+	// belongs to a company, so the only identity available is the one the
+	// caller supplies. Empty for non-api threads.
+	APIUserRef    string    `json:"api_user_ref,omitempty"`
 	Title         string    `json:"title"`
 	Summary       string    `json:"summary,omitempty"`
 	LastMessageAt time.Time `json:"last_message_at"`
@@ -54,6 +64,9 @@ type ThreadRepository interface {
 	// (companyID, larkThreadKey) pair. One Lark reply-thread = one row.
 	// ErrNotFound if no thread exists.
 	LatestForLark(ctx context.Context, companyID, larkThreadKey string) (*ConversationThread, error)
+	// LatestForAPIUser returns the most recent non-archived api thread for a
+	// (companyID, apiUserRef) pair. ErrNotFound if no thread exists.
+	LatestForAPIUser(ctx context.Context, companyID, apiUserRef string) (*ConversationThread, error)
 	ListByCompany(ctx context.Context, companyID string, limit, offset int) ([]*ConversationThread, error)
 	UpdateSummary(ctx context.Context, id, title, summary string) error
 	Touch(ctx context.Context, id string, at time.Time) error

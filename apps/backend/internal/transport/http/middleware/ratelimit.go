@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -40,7 +41,15 @@ func NewRateLimiter(rdb *redis.Client, capacity int, refillPerSec float64) *Rate
 }
 
 // TokenBucketLua atomically refills the bucket and consumes one token.
-// Returns 1 if allowed, 0 otherwise.
+//
+// It returns three values rather than one, because T-A1 requires
+// `RateLimit-Remaining` and `RateLimit-Reset` on **every** response and not
+// just on a refusal. Computing either outside the script would mean a second
+// read of a bucket that has already moved.
+//
+//	[1] allowed  — 1 or 0
+//	[2] tokens   — whole tokens left after this request
+//	[3] reset    — seconds until at least one token is available, 0 if now
 //
 // KEYS[1] = bucket key
 // ARGV[1] = capacity
@@ -71,7 +80,12 @@ end
 
 redis.call('HMSET', key, 'tokens', tokens, 'updated', now)
 redis.call('EXPIRE', key, 600)
-return allowed
+
+local reset = 0
+if tokens < 1 then
+  reset = math.ceil((1 - tokens) / refill)
+end
+return {allowed, math.floor(tokens), reset}
 `
 
 // Middleware returns a Gin handler that rate-limits per company_id (set on
@@ -108,6 +122,12 @@ func (r *RateLimiter) APIKeyMiddleware() gin.HandlerFunc {
 // limitBy is the shared body: read the bucket identity off the Gin context,
 // consume a token, and hand the refusal to the caller's own writer so the two
 // surfaces can answer in their own error formats.
+//
+// The `RateLimit-*` headers go out on allowed requests too, which is the
+// whole point of them: a client that only learns its budget from a 429 has
+// already been refused once. They are emitted on both surfaces rather than
+// only on `/v1` — the dashboard reading its own remaining budget is
+// harmless, and one code path is one thing to keep correct.
 func (r *RateLimiter) limitBy(prefix, ctxKey string, refuse func(*gin.Context)) gin.HandlerFunc {
 	script := redis.NewScript(tokenBucketLua)
 	return func(c *gin.Context) {
@@ -126,14 +146,27 @@ func (r *RateLimiter) limitBy(prefix, ctxKey string, refuse func(*gin.Context)) 
 
 		res, err := script.Run(ctx, r.rdb, []string{prefix + id},
 			r.capacity, r.refillPerSec, time.Now().Unix(),
-		).Int()
-		if err != nil {
+		).Int64Slice()
+		if err != nil || len(res) != 3 {
 			// Fail-open: don't block traffic if Redis is unhealthy.
 			c.Next()
 			return
 		}
-		if res == 0 {
-			c.Header("Retry-After", "1")
+		allowed, remaining, reset := res[0], res[1], res[2]
+
+		c.Header("RateLimit-Limit", strconv.Itoa(r.capacity))
+		c.Header("RateLimit-Remaining", strconv.FormatInt(remaining, 10))
+		c.Header("RateLimit-Reset", strconv.FormatInt(reset, 10))
+
+		if allowed == 0 {
+			// Retry-After carries the bucket's own answer rather than a flat
+			// 1s. Every refused client retrying after the same second is how
+			// a rate limit turns into a synchronised thundering herd; floored
+			// at 1 because a `Retry-After: 0` invites an immediate retry.
+			if reset < 1 {
+				reset = 1
+			}
+			c.Header("Retry-After", strconv.FormatInt(reset, 10))
 			refuse(c)
 			return
 		}

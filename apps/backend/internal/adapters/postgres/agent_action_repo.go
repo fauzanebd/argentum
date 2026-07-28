@@ -16,7 +16,7 @@ func NewAgentActionRepo(db *sql.DB) *AgentActionRepo { return &AgentActionRepo{d
 
 const agentActionColumns = `id, company_id, thread_id, message_id, actor_kind, actor_ref, channel,
 	tool_name, source_id, args_redacted, args_hash, result_status, error_text,
-	rows_returned, duration_ms, created_at`
+	rows_returned, duration_ms, request_id, created_at`
 
 // Create writes one action. NULLIF(...)::uuid is what lets the caller pass an
 // empty thread or message id: the columns hold real UUIDs but a tool call made
@@ -27,11 +27,11 @@ func (r *AgentActionRepo) Create(ctx context.Context, a *domain.AgentAction) err
 		INSERT INTO agent_actions (
 			company_id, thread_id, message_id, actor_kind, actor_ref, channel,
 			tool_name, source_id, args_redacted, args_hash, result_status,
-			error_text, rows_returned, duration_ms
+			error_text, rows_returned, duration_ms, request_id
 		) VALUES (
 			$1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, $5, $6,
 			$7, $8, $9::jsonb, $10, $11,
-			NULLIF($12, ''), $13, $14
+			NULLIF($12, ''), $13, $14, $15
 		)
 		RETURNING id, created_at
 	`
@@ -46,7 +46,7 @@ func (r *AgentActionRepo) Create(ctx context.Context, a *domain.AgentAction) err
 	if err := r.db.QueryRowContext(ctx, q,
 		a.CompanyID, a.ThreadID, a.MessageID, string(a.ActorKind), a.ActorRef, string(a.Channel),
 		a.ToolName, a.SourceID, string(args), a.ArgsHash, string(a.ResultStatus),
-		a.ErrorText, rows, a.DurationMS,
+		a.ErrorText, rows, a.DurationMS, a.RequestID,
 	).Scan(&a.ID, &a.CreatedAt); err != nil {
 		return fmt.Errorf("insert agent action: %w", err)
 	}
@@ -68,6 +68,10 @@ func (r *AgentActionRepo) ListByCompany(
 	if f.Tool != "" {
 		args = append(args, f.Tool)
 		where = append(where, fmt.Sprintf("tool_name = $%d", len(args)))
+	}
+	if f.RequestID != "" {
+		args = append(args, f.RequestID)
+		where = append(where, fmt.Sprintf("request_id = $%d", len(args)))
 	}
 
 	limit := f.Limit
@@ -109,7 +113,7 @@ func scanAgentAction(s rowScanner) (*domain.AgentAction, error) {
 	if err := s.Scan(
 		&a.ID, &a.CompanyID, &threadID, &messageID, &actorKind, &a.ActorRef, &channel,
 		&a.ToolName, &a.SourceID, &a.ArgsRedacted, &a.ArgsHash, &status, &errText,
-		&rowsReturned, &a.DurationMS, &a.CreatedAt,
+		&rowsReturned, &a.DurationMS, &a.RequestID, &a.CreatedAt,
 	); err != nil {
 		return nil, err
 	}

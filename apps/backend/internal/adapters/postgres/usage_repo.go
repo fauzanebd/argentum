@@ -328,8 +328,13 @@ func (r *UsageRepo) UsageByChannel(ctx context.Context, companyID string, from, 
 }
 
 // UsageByUser aggregates cost + tokens by end-user identity. Identity is the
-// first non-empty of user_id / phone_number / discord_user_id / lark_open_id,
-// with user_key_kind labelling which column produced it.
+// first non-empty of user_id / phone_number / discord_user_id / lark_open_id /
+// api_user_ref, with user_key_kind labelling which column produced it.
+//
+// The api arm is last in the COALESCE for a reason that is not cosmetic: a
+// thread carries exactly one identity column, so order only matters if that
+// ever stops being true, and putting the tenant-supplied string last means a
+// first-party identity always wins over one a caller chose.
 func (r *UsageRepo) UsageByUser(ctx context.Context, companyID string, from, to time.Time) ([]*domain.UserUsageRow, error) {
 	const q = `
 		SELECT
@@ -339,6 +344,7 @@ func (r *UsageRepo) UsageByUser(ctx context.Context, companyID string, from, to 
 				NULLIF(t.phone_number, ''),
 				NULLIF(t.discord_user_id, ''),
 				NULLIF(t.lark_open_id, ''),
+				NULLIF(t.api_user_ref, ''),
 				'unknown'
 			) AS user_key,
 			CASE
@@ -346,6 +352,7 @@ func (r *UsageRepo) UsageByUser(ctx context.Context, companyID string, from, to 
 				WHEN NULLIF(t.phone_number, '')     IS NOT NULL THEN 'phone'
 				WHEN NULLIF(t.discord_user_id, '')  IS NOT NULL THEN 'discord_user_id'
 				WHEN NULLIF(t.lark_open_id, '')     IS NOT NULL THEN 'lark_open_id'
+				WHEN NULLIF(t.api_user_ref, '')     IS NOT NULL THEN 'api_user_ref'
 				ELSE 'unknown'
 			END AS user_key_kind,
 			COUNT(DISTINCT t.id) AS thread_count,

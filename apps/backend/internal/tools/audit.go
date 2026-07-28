@@ -125,6 +125,7 @@ func (a *audited) record(ctx context.Context, tool, args, out string, execErr er
 		ErrorText:    errText,
 		RowsReturned: rows,
 		DurationMS:   int(took.Milliseconds()),
+		RequestID:    tenantctx.RequestID(ctx),
 	}
 
 	// Detached from the turn's context on purpose: a turn cancelled by its

@@ -8,6 +8,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
 // ChatEnqueuer is the API-side half of the chat pipeline. It resolves the
@@ -60,8 +61,9 @@ type ChatInput struct {
 	LarkChatID       string // lark only; chat the @mention came from
 	LarkThreadKey    string // lark only; thread lookup key
 	LarkMessageID    string // lark only; reply target (latest inbound message id)
+	APIUserRef       string // api only; the tenant's own reference for the end user
 	Message          string
-	ThreadID         string // dashboard only; if set, bypasses resolver
+	ThreadID         string // dashboard and api; if set, bypasses resolver
 }
 
 func (in ChatInput) validate() error {
@@ -96,6 +98,16 @@ func (in ChatInput) validate() error {
 		}
 		if in.LarkMessageID == "" {
 			return errors.New("lark_message_id required for lark channel")
+		}
+	case domain.ChannelAPI:
+		// Either identity will do, and one of them must be there. A caller
+		// continuing a conversation names the thread; a caller starting one
+		// names their user. Neither means an unattributable turn: it would be
+		// billed to the company with nothing in `usage/by-user` to say who
+		// spent it, which is the report the tenant reads to police their own
+		// integration.
+		if in.APIUserRef == "" && in.ThreadID == "" {
+			return errors.New("api_user_ref or thread_id required for api channel")
 		}
 	default:
 		return fmt.Errorf("invalid channel: %q", in.Channel)
@@ -149,6 +161,28 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		resolved, err = s.threads.ResolveForDiscordUser(ctx, in.CompanyID, in.DiscordUserID, in.Message)
 	case domain.ChannelLark:
 		resolved, err = s.threads.ResolveForLark(ctx, in.CompanyID, in.LarkChatID, in.LarkThreadKey, in.LarkOpenID, in.Message)
+	case domain.ChannelAPI:
+		if in.ThreadID != "" {
+			thread, err := s.threads.GetByID(ctx, in.ThreadID)
+			if err != nil {
+				return nil, fmt.Errorf("lookup thread: %w", err)
+			}
+			if thread.CompanyID != in.CompanyID {
+				return nil, fmt.Errorf("thread does not belong to company")
+			}
+			// Stricter than the dashboard's equivalent check, which only
+			// tests the company. A key holder passing the thread id of a
+			// dashboard conversation would otherwise append a machine turn to
+			// a person's chat history and bill it under a channel it did not
+			// arrive on — one company, but two surfaces that report
+			// separately and are read separately.
+			if thread.Channel != domain.ChannelAPI {
+				return nil, fmt.Errorf("%w: thread was not started over the API", domain.ErrInvalidInput)
+			}
+			resolved = &ResolveResult{Thread: thread, IsNew: false}
+		} else {
+			resolved, err = s.threads.ResolveForAPIUser(ctx, in.CompanyID, in.APIUserRef, in.Message)
+		}
 	case domain.ChannelDashboard:
 		if in.ThreadID != "" {
 			// Explicit thread selected by the user — bypass resolver.
@@ -204,6 +238,11 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		UserMsgID:        userMsg.ID,
 		CompanyName:      companyName,
 		DefaultCurrency:  currency,
+		// Off the context rather than out of ChatInput: the request id is
+		// ambient per-request identity, exactly like the company id, and a
+		// field on the input would be one every caller has to remember to
+		// fill. Empty for every non-HTTP caller, which is the truth.
+		RequestID: tenantctx.RequestID(ctx),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("enqueue chat:run: %w", err)

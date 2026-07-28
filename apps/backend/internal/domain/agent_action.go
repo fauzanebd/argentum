@@ -69,9 +69,13 @@ type AgentAction struct {
 	ErrorText    string          `json:"error_text,omitempty"`
 	// RowsReturned is nil for tools that do not return rows at all, which is a
 	// different fact from a query that matched zero.
-	RowsReturned *int      `json:"rows_returned,omitempty"`
-	DurationMS   int       `json:"duration_ms"`
-	CreatedAt    time.Time `json:"created_at"`
+	RowsReturned *int `json:"rows_returned,omitempty"`
+	DurationMS   int  `json:"duration_ms"`
+	// RequestID is the `X-Request-Id` of the HTTP call that started the turn
+	// (T-A1). Empty for anything that did not start with one — a cron tick, a
+	// watcher, a channel webhook — which is most rows.
+	RequestID string    `json:"request_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // AgentActionFilter narrows an audit read. Zero values mean "no filter" except
@@ -81,8 +85,12 @@ type AgentActionFilter struct {
 	To       time.Time
 	ThreadID string
 	Tool     string
-	Limit    int
-	Offset   int
+	// RequestID narrows to one HTTP call (T-A1). It is the filter a support
+	// conversation actually starts from: the integrator has a request id and
+	// nothing else, so "what did that call do" has to be one query.
+	RequestID string
+	Limit     int
+	Offset    int
 }
 
 // AgentActionRepository is the persistence contract for the audit log.

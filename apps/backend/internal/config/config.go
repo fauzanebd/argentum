@@ -151,6 +151,18 @@ type Config struct {
 	// the limiter T-13 ships and the one that ticket configures are the same
 	// setting rather than two that drift.
 	APIV1RatePerMin int
+	// APIV1Enabled is the kill switch. False answers 503 on every `/v1`
+	// route including `/v1/me`, without touching `/api` — the dashboard must
+	// keep working while a public surface is being taken off the air.
+	APIV1Enabled bool
+	// APIV1SyncTimeoutSeconds caps the synchronous door on `/v1/chat`
+	// (T-A3). Read here so the value is one setting rather than a constant
+	// in a handler nobody can change without a deploy.
+	APIV1SyncTimeoutSeconds int
+	// APIV1MaxBodyBytes bounds a `/v1` request body. A report spec arriving
+	// over HTTP is untrusted in a way the agent's own spec never was, and the
+	// first line of defence is refusing to read it, not validating it after.
+	APIV1MaxBodyBytes int64
 
 	// Object storage (MinIO / S3-compatible). Used by the generate_document
 	// tool to persist generated PDF/XLSX/CSV files and to issue presigned
@@ -281,7 +293,10 @@ func Load() (*Config, error) {
 		CreditsDefaultGrantUSD:     getEnvAsFloat("CREDITS_DEFAULT_GRANT_USD", 25),
 
 		// Public API
-		APIV1RatePerMin: getEnvAsInt("API_V1_RATE_PER_MIN", 120),
+		APIV1RatePerMin:         getEnvAsInt("API_V1_RATE_PER_MIN", 120),
+		APIV1Enabled:            getEnv("API_V1_ENABLED", "true") == "true",
+		APIV1SyncTimeoutSeconds: getEnvAsInt("API_V1_SYNC_TIMEOUT_SECONDS", 120),
+		APIV1MaxBodyBytes:       int64(getEnvAsInt("API_V1_MAX_BODY_BYTES", 1<<20)),
 
 		// Object storage (MinIO / S3-compatible)
 		MinIOEndpoint:          getEnv("MINIO_ENDPOINT", ""),

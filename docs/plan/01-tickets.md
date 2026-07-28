@@ -49,7 +49,7 @@ priority on 2026-07-28. This table is the authoritative order.
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
 | 1a — **done** | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, ~~`T-R4`~~, ~~`T-R5`~~ | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). **`T-R4` landed 2026-07-28** — the same spec projected onto slides, narrative in the speaker notes ([`../coverage/report-deck.md`](../coverage/report-deck.md)). **`T-R5` landed 2026-07-28** — tenant logo, accent, locale and footer on both formats, with a live preview rendered by the renderer itself and a contrast floor a pale brand colour cannot pass ([`../coverage/report-branding.md`](../coverage/report-branding.md)). |
 | 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, ~~`T-05`~~, ~~`T-03`~~, `T-02b` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). **`T-05` landed 2026-07-28**: one append-only row per tool call, written by a decorator over the whole registry rather than per tool, plus a row for a turn a guardrail stopped — which needed a second integration point, because a guardrail stops a turn before any tool runs ([`../coverage/agent-audit.md`](../coverage/agent-audit.md)). **`T-03` landed 2026-07-28**: the balance is checked before a turn is queued on every channel and on every scheduled fire, a tenant on their own key is never blocked, and the ticket had to grow a starting grant — because nothing had ever credited a company, so enforcing it as written would have refused every tenant at once ([`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md)). |
-| 1c — callable | ~~`T-13`~~, `T-A1`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moved here from week 5 — it is the prerequisite, not a week-5 nicety. **`T-13` landed 2026-07-28**: scoped, hashed, revocable keys on a `/v1` namespace that refuses a dashboard JWT as flatly as `/api` refuses a key, with a per-key rate bucket and a Settings tab. The hash is a SHA-256 rather than the Argon2id the ticket named, because the input is 256 random bits rather than a password; the live gate found `/v1` inheriting the dashboard's permissive CORS headers ([`../coverage/api-keys.md`](../coverage/api-keys.md)). |
+| 1c — callable | ~~`T-13`~~, ~~`T-A1`~~, `T-A2`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moved here from week 5 — it is the prerequisite, not a week-5 nicety. **`T-13` landed 2026-07-28**: scoped, hashed, revocable keys on a `/v1` namespace that refuses a dashboard JWT as flatly as `/api` refuses a key, with a per-key rate bucket and a Settings tab. The hash is a SHA-256 rather than the Argon2id the ticket named, because the input is 256 random bits rather than a password; the live gate found `/v1` inheriting the dashboard's permissive CORS headers ([`../coverage/api-keys.md`](../coverage/api-keys.md)). **`T-A1` landed 2026-07-28**: the contract every `/v1` route inherits — request ids, the typed envelope, idempotency that records ids rather than payloads, rate-limit headers, cursor pagination, a kill switch, and the `api` channel both `T-A2` and `T-A3` need. Four acceptance items have no route to run against until `T-A2`'s first `POST` and are recorded as tested-not-live ([`../coverage/api-foundation.md`](../coverage/api-foundation.md)). |
 | 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Moved to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
 
@@ -71,12 +71,13 @@ Three ordering notes for 1a → 1b → 1c, decided 2026-07-28:
 - **`T-R5` dragged phase 1b forward whether or not the API existed.** It deps
   `T-04`, which deps `T-02`. So 4.5 days of "phase 1b" work was already embedded
   inside "finish the report track". The running order is therefore
-  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → ~~`T-R5`~~ → ~~`T-05`~~ → ~~`T-03`~~ → ~~`T-13`~~ → `T-A1`…,
+  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → ~~`T-R5`~~ → ~~`T-05`~~ → ~~`T-03`~~ → ~~`T-13`~~ → ~~`T-A1`~~ → `T-A2`…,
   not three clean blocks. **The report track is complete, the audit log has a
   row to write into, the spend ceiling a leaked key would otherwise run past is
-  enforced, and the key itself exists.** **Next up: `T-A1`** — the contract
-  every other `/v1` route inherits, and the last thing in this sprint that
-  becomes permanent the moment a customer writes against it.
+  enforced, the key itself exists, and the contract it authenticates is
+  written.** **Next up: `T-A2`** — the flagship, and the first `POST` on
+  `/v1`, which is also what turns four of `T-A1`'s tested-not-live acceptance
+  items into a transcript.
 - **`T-13` is no longer a week-5 ticket.** Scoped API keys are the only machine
   authentication this product has, and every `/v1` route is behind them. It ran
   immediately before `T-A1`, and it shipped two pieces of `T-A1` with it — the
@@ -822,9 +823,29 @@ integrate with Argentum today at all.
 
 ---
 
-## T-A1 · `/v1` foundation: envelope, auth, idempotency, limits, `api` channel
+## ~~T-A1~~ · `/v1` foundation: envelope, auth, idempotency, limits, `api` channel — **DONE 2026-07-28**
 **Repo:** BE · **Size:** 2.5d · **Deps:** T-13, T-05, T-03 · **Priority:** P0 · **Never cut**
-**Migration:** `031_api_channel`
+**Migration:** ~~`031_api_channel`~~ → landed as `025_api_channel` + `026_agent_actions_request_id`
+
+**Status — 2026-07-28.** Shipped. Record, gate output and the four acceptance
+items that have no route to run against yet:
+[`../coverage/api-foundation.md`](../coverage/api-foundation.md).
+
+Deviations, all argued in the record:
+
+- **The middleware order is `RequestID → Enabled → …`, not the other way
+  round.** The live gate found the kill switch's 503 going out with no request
+  id in it — the response most likely to start a support conversation was the
+  one with nothing to quote.
+- **`api_user_ref` gets a partial lookup index, not the unique index the
+  ticket names.** `(company_id, api_user_ref, id)` is vacuously unique because
+  `id` is the primary key, and a real unique `(company_id, api_user_ref)`
+  would forbid the fork the resolver performs.
+- **`write:reports` and `read:documents` ship before their routes.** Scopes are
+  fixed at creation with no `Update`, so a scope that appears with its route
+  forces every key minted in the meantime to be re-issued.
+- **Two migrations, not one.** The `api` channel and the audit log's
+  `request_id` are independent schema changes with independent down paths.
 
 ### Why
 
@@ -919,21 +940,32 @@ day one of the flagship ticket. Both consumers need it, so it lands here.
 
 ### Acceptance
 
-- [ ] A dashboard JWT on any `/v1` route returns 401; an API key on any `/api` route returns 401
-- [ ] A replayed `Idempotency-Key` returns the same logical response with `Idempotent-Replay: true`, and exactly one document/turn exists afterwards
-- [ ] A replay of a still-running request returns `409 request_in_flight`, not a second turn
-- [ ] No idempotency record in Redis exceeds 4 KiB, including after a 10 MB PDF render
-- [ ] The same key with a changed body returns 409
-- [ ] A turn started through `/v1` shows `channel=api` in `/api/usage/by-channel`, and `ChatRunner.completeWith` does not attempt an outbound send
-- [ ] Every `/v1` error response matches the envelope — no bare `{"error":"…"}` anywhere under `/v1`
-- [ ] A 429 carries `Retry-After` and all three `RateLimit-*` headers
-- [ ] `API_V1_ENABLED=false` → 503 on every `/v1` route, including `/v1/me`
-- [ ] The `request_id` in a response body appears in the audit row for that call
+- [x] A dashboard JWT on any `/v1` route returns 401; an API key on any `/api` route returns 401 — live, and asserted for every route in `cmd/api/v1_test.go`
+- [~] A replayed `Idempotency-Key` returns the same logical response with `Idempotent-Replay: true`, and exactly one document/turn exists afterwards — **tested, not live**: `/v1` has no `POST` route until `T-A2`
+- [~] A replay of a still-running request returns `409 request_in_flight`, not a second turn — same
+- [x] No idempotency record in Redis exceeds 4 KiB, including after a 10 MB PDF render — measured through the middleware against a real 10 MB response body
+- [~] The same key with a changed body returns 409 — tested, live at `T-A2`
+- [~] A turn started through `/v1` shows `channel=api` in `/api/usage/by-channel`, and `ChatRunner.completeWith` does not attempt an outbound send — the rollups are proven live against an `api` thread; **starting** a turn needs `T-A3`
+- [x] Every `/v1` error response matches the envelope — no bare `{"error":"…"}` anywhere under `/v1`
+- [x] A 429 carries `Retry-After` and all three `RateLimit-*` headers
+- [x] `API_V1_ENABLED=false` → 503 on every `/v1` route, including `/v1/me`, and `/api` is unaffected
+- [~] The `request_id` in a response body appears in the audit row for that call — the column, the filter and the tenant scoping are live; the worker half is unit-tested and completes at `T-A3`
+
+`[~]` is "the mechanism is proven, the route that exercises it is the next
+ticket" — stated rather than counted as met. See §4 of the record.
 
 ### Gate
 
 `curl` transcript covering all seven cases above, plus a grep over the `/v1`
 handlers showing zero direct `gin.H{"error"` sites.
+
+**Run 2026-07-28**, output in
+[`../coverage/api-foundation.md`](../coverage/api-foundation.md) §3: migrations
+`025`/`026` applied on boot, `GET /v1/me`, both auth directions, request-id
+echo and sanitisation, 120 allowed then 10 refused with all four headers, the
+kill switch with and without a credential, the `api` arm in both usage
+rollups, and a request id resolving to its audit row. `go test -race ./...`
+26 packages green, `make lint-go` 0 issues.
 
 ### Out of scope
 

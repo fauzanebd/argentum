@@ -48,6 +48,9 @@ func (f *fakeThreadRepo) LatestForDiscordUser(context.Context, string, string) (
 func (f *fakeThreadRepo) LatestForLark(context.Context, string, string) (*domain.ConversationThread, error) {
 	return f.latestOrErr()
 }
+func (f *fakeThreadRepo) LatestForAPIUser(context.Context, string, string) (*domain.ConversationThread, error) {
+	return f.latestOrErr()
+}
 func (f *fakeThreadRepo) GetByID(context.Context, string) (*domain.ConversationThread, error) {
 	panic("unexpected GetByID")
 }

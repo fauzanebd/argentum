@@ -38,19 +38,36 @@ func TestMain(m *testing.M) {
 // would silently stop covering them.
 func realRouter(t *testing.T) *gin.Engine {
 	t.Helper()
+	return routerWith(t)
+}
+
+// routerWith is realRouter with the config open to a test that needs a
+// different one — the `/v1` kill switch is the only setting so far whose
+// whole point is what happens when it is off.
+func routerWith(t *testing.T, tweaks ...func(*config.Config)) *gin.Engine {
+	t.Helper()
 	signer, err := auth.NewTokenSigner("0123456789abcdef0123456789abcdef", 15*time.Minute, 7*24*time.Hour)
 	if err != nil {
 		t.Fatalf("NewTokenSigner: %v", err)
 	}
+	cfg := &config.Config{
+		Env:         "test",
+		CORSOrigins: []string{"*"},
+		// Non-empty so the Metabase proxy route registers; the router
+		// skips it otherwise and TestUnpolicedPathsAreReal would be
+		// checking an exemption that is not in play.
+		MetabaseURL: "http://metabase.invalid",
+		// The kill switch defaults to off in a zero-value Config, and off
+		// answers 503 before authentication runs — every /v1 assertion in
+		// this package would then be testing the switch rather than the
+		// thing it names. The switch has its own test.
+		APIV1Enabled: true,
+	}
+	for _, tweak := range tweaks {
+		tweak(cfg)
+	}
 	return newRouter(&apiDeps{
-		cfg: &config.Config{
-			Env:         "test",
-			CORSOrigins: []string{"*"},
-			// Non-empty so the Metabase proxy route registers; the router
-			// skips it otherwise and TestUnpolicedPathsAreReal would be
-			// checking an exemption that is not in play.
-			MetabaseURL: "http://metabase.invalid",
-		},
+		cfg:    cfg,
 		signer: signer,
 
 		authSvc:      app.NewAuthService(nil, nil, signer),

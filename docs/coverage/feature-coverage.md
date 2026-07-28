@@ -96,10 +96,11 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 
 | Feature                     | Status | Notes                                                     |
 | --------------------------- | ------ | --------------------------------------------------------- |
-| REST API for the dashboard  | ✅     | Documented in `apps/backend/docs/api.md` + Postman collection |
+| REST API for the dashboard  | ✅     | `apps/backend/docs/api.md` is **stale** — it predates the `bigref` refactor and its `/v1` section describes routes that do not exist. Postman collection is current; `T-A4` replaces the file with a generated OpenAPI spec |
+| Public `/v1` contract       | 🟡     | `T-A1`: typed error envelope, `X-Request-Id` end to end, `Idempotency-Key` with replay/in-flight/reuse handling, `RateLimit-*` headers, cursor pagination, kill switch, body cap, `api` channel ([`api-foundation.md`](api-foundation.md)). **The contract exists and has one route to apply it to** — `T-A2` is the first `POST` |
 | WebSocket event stream      | ✅     | Redis-fanned so any API replica serves any thread          |
 | Inbound webhooks            | ✅     | WhatsApp, Discord, Lark — all signature-verified           |
-| API keys / machine auth     | 🟡     | `T-13`: scoped, hashed, revocable keys with a per-key rate bucket and a Settings tab; `/v1` authenticates with them and refuses a dashboard JWT ([`api-keys.md`](api-keys.md)). **`GET /v1/me` is the only route behind them** until `T-A1`, so nothing a customer wants is callable yet |
+| API keys / machine auth     | 🟡     | `T-13`: scoped, hashed, revocable keys with a per-key rate bucket and a Settings tab; `/v1` authenticates with them and refuses a dashboard JWT ([`api-keys.md`](api-keys.md)). **`GET /v1/me` is still the only route behind them** — `T-A1` built the contract, `T-A2` builds the first thing a customer wants to call. `write:reports` and `read:documents` are in the vocabulary ahead of their routes, because scopes are fixed at a key's creation |
 | MCP server                  | ❌     | Tools live only in the worker's in-process registry        |
 | Outbound webhooks           | ❌     | Nothing can subscribe to Argentum events                   |
 | Public/embeddable dashboards | 🟡    | Metabase URLs are shareable; no Argentum-native embedding  |

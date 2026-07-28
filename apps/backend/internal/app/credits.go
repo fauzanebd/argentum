@@ -71,6 +71,13 @@ type BudgetState struct {
 	// BYOLLM marks a tenant running on their own LLM credentials. They pay
 	// their provider directly, so no balance was consulted and none applies.
 	BYOLLM bool `json:"byo_llm"`
+	// Enforced distinguishes "the balance is zero" from "no balance was
+	// consulted" (T-A1). Without it `GET /v1/me` would report a $0.00 credit
+	// balance on a deployment with enforcement switched off, which reads as
+	// "you are out of credit" — the opposite of the truth. It is false on the
+	// fail-open paths too, and that is accurate rather than convenient:
+	// nothing was enforced for that call either.
+	Enforced bool `json:"enforced"`
 }
 
 // Blocked reports whether this state must refuse the turn.
@@ -172,7 +179,7 @@ func (s *UsageService) CheckBudget(ctx context.Context, companyID string) (Budge
 		return budgetOK, nil
 	}
 	if byo {
-		st := BudgetState{Verdict: BudgetOK, BYOLLM: true}
+		st := BudgetState{Verdict: BudgetOK, BYOLLM: true, Enforced: true}
 		s.cacheBudget(ctx, companyID, st)
 		return st, nil
 	}
@@ -198,6 +205,7 @@ func (s *UsageService) CheckBudget(ctx context.Context, companyID string) (Budge
 		BalanceMicroUSD: credits.BalanceMicroUSD,
 		GrantMicroUSD:   credits.MonthlyGrantMicroUSD,
 		RemainingPct:    remainingPct(credits.BalanceMicroUSD, credits.MonthlyGrantMicroUSD),
+		Enforced:        true,
 	}
 	switch {
 	case credits.BalanceMicroUSD <= 0:

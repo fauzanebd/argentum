@@ -175,6 +175,9 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	ctx = tenantctx.WithActor(ctx, kind, ref)
 	ctx = tenantctx.WithChannel(ctx, string(p.Channel))
 	ctx = tenantctx.WithMessageID(ctx, p.UserMsgID)
+	if p.RequestID != "" {
+		ctx = tenantctx.WithRequestID(ctx, p.RequestID)
+	}
 	ctx = multitenancy.WithOrgID(ctx, p.CompanyID)
 	ctx = memory.WithConversationID(ctx, p.ThreadID)
 
@@ -379,6 +382,7 @@ func (r *ChatRunner) recordBlockedTurn(ctx context.Context, p queue.ChatRunPaylo
 		ArgsHash:     sha256Hex(p.Message),
 		ResultStatus: domain.ActionStatusBlocked,
 		ErrorText:    reason,
+		RequestID:    p.RequestID,
 	}
 	// Detached like the tool decorator's write, and for the same reason: the
 	// turn this describes may already be over.
@@ -616,6 +620,14 @@ func (r *ChatRunner) completeWith(
 				}).Error("lark reply failed")
 			}
 		}
+	case domain.ChannelAPI:
+		// Deliberately nothing, and deliberately written out rather than
+		// left to fall through the switch (T-A1). Delivery already happened:
+		// the caller is holding an HTTP response open and reading the `final`
+		// event this function published two statements ago. There is no
+		// outbound provider to add here later — an `api` turn that tried to
+		// send somewhere would be sending a second copy of an answer the
+		// caller already has. Do not "fix" this empty case.
 	}
 }
 

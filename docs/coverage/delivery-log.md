@@ -715,6 +715,83 @@ element's own bounding box instead.
 
 Record, gate output and the limits: [`api-keys.md`](api-keys.md).
 
+## Phase 1c — Anyone can call it (2026-07-28, in progress)
+
+`T-A1` the `/v1` contract
+
+The first ticket in this project whose deliverable is a **promise**. Nothing in
+it is a feature a customer asks for: it is the error format, the idempotency
+contract, the pagination style and the request-id chain that every route
+`T-A2`→`T-A5` adds will inherit, and that become permanent the first time
+somebody writes code against them.
+
+The decisions worth carrying forward:
+
+- **An idempotency record holds ids, never payloads.** The obvious design
+  caches the bytes the handler wrote and replays them, and it is wrong here
+  twice: `POST /v1/reports/render` with `Accept: application/pdf` answers with
+  megabytes, and a streamed chat answer has no bytes to keep at all. So a
+  record holds `{"report_id":"…","status":"completed"}` and a replay
+  re-derives the response from it — re-reading object storage and
+  re-presigning, or re-attaching to the turn's pubsub channel. That is also
+  the only way a replayed download link is still valid an hour later. A 10 MB
+  render leaves a 160-byte record.
+- **A failed request forgets its key.** The next thing a well-behaved client
+  does with a 500 is retry it, and a key that survived the failure would
+  refuse that retry for 24 hours — worse than no idempotency at all. The
+  mirror case is the common one: a retry arriving *while the original is still
+  running* gets `409 request_in_flight` carrying the id it is already waiting
+  on, so the caller polls instead of starting a second turn.
+- **The `api` channel is the only one with no outbound provider, and
+  `completeWith` says so in an empty case.** Delivery already happened — the
+  caller is holding the HTTP response open. The playbook warns that a missing
+  `switch` case is a silent no-op; this is the inverse, a present case that
+  must stay empty, written out so nobody fixes it later.
+- **An explicit `thread_id` on the `api` channel is checked harder than the
+  dashboard's.** The thread must be *on the `api` channel*, not merely in the
+  same company: a key holder passing a dashboard thread's id would otherwise
+  append a machine turn to a person's chat history and bill it under a channel
+  it did not arrive on.
+- **Two scopes ship before their routes, reversing what `T-13` wrote three
+  commits earlier.** That comment — a scope with no route is a checkbox that
+  promises something — was right when no keys existed. It stops being right
+  once they do, because scopes are fixed at creation and there is no `Update`:
+  a scope that appears with its route forces every key minted in the meantime
+  to be re-issued, and it is the tenant who edits their CI config.
+- **The migration index is not the one the ticket asked for.** A unique index
+  on `(company_id, api_user_ref, id)` is vacuously unique — `id` is already
+  the primary key — so it constrains nothing while reading as if it does, and
+  a real unique `(company_id, api_user_ref)` would forbid the thread fork the
+  resolver performs. It ships as a partial lookup index on the query that
+  actually runs. Fifth consecutive ticket whose reserved migration number was
+  already spent; it landed as `025` and `026`.
+- **`/v1/me` says "not enforced" rather than "$0.00".** `BudgetState` grew an
+  `Enforced` flag, because a deployment with credit enforcement switched off
+  would otherwise report a zero balance to an integrator — which reads as
+  *you are out of credit*, the opposite of the truth.
+
+The defect the live gate found is the smallest one yet and the most annoying
+to have shipped: **the kill switch's 503 went out with no request id in it.**
+`Enabled` sat above `RequestID` on the argument that a switched-off API should
+answer before it reads a credential — true of everything below it, and not of
+a middleware that reads nothing and touches no I/O. The two responses most
+likely to start a support conversation are the 503 from a disabled API and the
+401 from a bad key, and both were shipping without the one string that makes
+them traceable. Found by curling a disabled API. **Fifth consecutive ticket
+where the live half of the gate found something the unit tests could not** —
+the pattern is now reliable enough to plan around rather than to keep noting
+with surprise.
+
+**Four acceptance items are recorded as tested-not-live**, because `/v1` still
+has no `POST` route: the idempotency replay, the mid-flight 409, the
+changed-body 409, and the body cap. Each has a test — the record cap is
+measured through the middleware against a real 10 MB response — and each gets
+a transcript in `T-A2`, whose `POST /v1/reports/render` is the first route to
+carry them. Same shape as `T-13`, which shipped `GET /v1/me` precisely because
+a credential with nothing to authenticate against cannot be gate-tested.
+
+Record, gate output and the limits: [`api-foundation.md`](api-foundation.md).
+
 ---
 
 ## What the history says about how this project is built

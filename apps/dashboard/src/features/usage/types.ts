@@ -81,6 +81,7 @@ export const CHANNEL_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
   discord: "Discord",
   lark: "Lark",
+  api: "API",
 };
 
 export const USER_KIND_LABELS: Record<string, string> = {
@@ -88,6 +89,10 @@ export const USER_KIND_LABELS: Record<string, string> = {
   phone: "Phone",
   discord_user_id: "Discord",
   lark_open_id: "Lark",
+  // The tenant's own reference for whoever their integration called on
+  // behalf of — their user id, an email, whatever their system uses. We
+  // never resolve it to a person, so it is labelled by where it came from.
+  api_user_ref: "API user",
   unknown: "Unknown",
 };
 

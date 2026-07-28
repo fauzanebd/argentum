@@ -131,6 +131,36 @@ func (s *ThreadService) ResolveForLark(ctx context.Context, companyID, larkChatI
 	return &ResolveResult{Thread: latest, IsNew: false}, nil
 }
 
+// ResolveForAPIUser picks the thread for a turn started over the public API
+// (T-A1). Threads are keyed by (companyID, apiUserRef).
+//
+// It forks on an idle gap and a topic shift, like WhatsApp and Discord and
+// unlike Lark. The playbook's rule is that a platform with native threads
+// keys on the platform's thread id and skips classification, because the user
+// already drew the boundary — and the API has both shapes: a caller that
+// tracks conversations passes an explicit thread id and never reaches here,
+// while a caller that just forwards "our user asked X" has drawn no boundary
+// at all and gets the heuristic.
+func (s *ThreadService) ResolveForAPIUser(ctx context.Context, companyID, apiUserRef, userMessage string) (*ResolveResult, error) {
+	if companyID == "" || apiUserRef == "" {
+		return nil, fmt.Errorf("companyID and apiUserRef required")
+	}
+
+	create := func() (*ResolveResult, error) {
+		return s.createAPIThread(ctx, companyID, apiUserRef, userMessage)
+	}
+
+	latest, err := s.threads.LatestForAPIUser(ctx, companyID, apiUserRef)
+	if errors.Is(err, domain.ErrNotFound) {
+		return create()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup thread: %w", err)
+	}
+
+	return s.continueOrForkWith(ctx, latest, userMessage, s.idleThreshold, create)
+}
+
 // ResolveForUser is the old dashboard thread resolver. It is kept for
 // backward compatibility but the dashboard now creates / selects threads
 // explicitly via CreateDashboardThread instead.
@@ -170,6 +200,21 @@ func (s *ThreadService) continueOrFork(
 	ctx context.Context, latest *domain.ConversationThread, userMessage string,
 	threshold time.Duration, channel domain.Channel, phone, userID, discordUserID string,
 ) (*ResolveResult, error) {
+	return s.continueOrForkWith(ctx, latest, userMessage, threshold, func() (*ResolveResult, error) {
+		return s.createThread(ctx, latest.CompanyID, channel, phone, userID, discordUserID, userMessage)
+	})
+}
+
+// continueOrForkWith is the fork decision with the creation of the new thread
+// left to the caller. The four positional identity arguments continueOrFork
+// carries cannot express a fifth channel's key without growing again, and a
+// second copy of the idle-gap-plus-classifier rule is the one thing that must
+// not happen: a channel that forks on different terms from the others is a
+// channel whose conversations end up in the wrong place.
+func (s *ThreadService) continueOrForkWith(
+	ctx context.Context, latest *domain.ConversationThread, userMessage string,
+	threshold time.Duration, create func() (*ResolveResult, error),
+) (*ResolveResult, error) {
 	idle := time.Since(latest.LastMessageAt)
 	if idle < threshold {
 		return &ResolveResult{Thread: latest, IsNew: false}, nil
@@ -184,7 +229,7 @@ func (s *ThreadService) continueOrFork(
 	if related {
 		return &ResolveResult{Thread: latest, IsNew: false}, nil
 	}
-	return s.createThread(ctx, latest.CompanyID, channel, phone, userID, discordUserID, userMessage)
+	return create()
 }
 
 func (s *ThreadService) createThread(
@@ -217,6 +262,23 @@ func (s *ThreadService) createLarkThread(
 		LarkChatID:    larkChatID,
 		LarkThreadKey: larkThreadKey,
 		LarkOpenID:    larkOpenID,
+		Title:         deriveTitle(firstMessage),
+		LastMessageAt: now,
+	}
+	if err := s.threads.Create(ctx, t); err != nil {
+		return nil, fmt.Errorf("create thread: %w", err)
+	}
+	return &ResolveResult{Thread: t, IsNew: true}, nil
+}
+
+func (s *ThreadService) createAPIThread(
+	ctx context.Context, companyID, apiUserRef, firstMessage string,
+) (*ResolveResult, error) {
+	now := time.Now()
+	t := &domain.ConversationThread{
+		CompanyID:     companyID,
+		Channel:       domain.ChannelAPI,
+		APIUserRef:    apiUserRef,
 		Title:         deriveTitle(firstMessage),
 		LastMessageAt: now,
 	}

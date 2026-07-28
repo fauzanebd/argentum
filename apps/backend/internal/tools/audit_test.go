@@ -105,6 +105,40 @@ func TestAuditRecordsOneRowPerCall(t *testing.T) {
 	}
 }
 
+// A support conversation about the public API starts with a request id and
+// nothing else, so the row a request produced has to carry it (T-A1). The
+// worker writes these rows in another process, minutes after the HTTP call
+// returned, which is why this travels in the context rather than as an
+// argument somebody could forget to pass.
+func TestAuditRowCarriesTheOriginatingRequestID(t *testing.T) {
+	rec := &fakeAuditor{}
+	tool := WithAudit(&fakeTool{name: "run_sql", result: `{"row_count":1}`}, rec)
+	ctx := tenantctx.WithRequestID(turnCtx(), "req_0123456789abcdef")
+
+	if _, err := tool.Execute(ctx, `{"sql":"SELECT 1"}`); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if got := rec.only(t).RequestID; got != "req_0123456789abcdef" {
+		t.Errorf("request_id = %q, want the id the HTTP caller was given", got)
+	}
+}
+
+// Most turns never had an HTTP request: a cron tick, a watcher, a channel
+// webhook. Empty is the truth for those, not a gap to fill.
+func TestAuditRowHasNoRequestIDWhenTheTurnDidNotStartWithOne(t *testing.T) {
+	rec := &fakeAuditor{}
+	tool := WithAudit(&fakeTool{name: "run_sql", result: `{"row_count":1}`}, rec)
+
+	if _, err := tool.Execute(turnCtx(), `{"sql":"SELECT 1"}`); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if got := rec.only(t).RequestID; got != "" {
+		t.Errorf("request_id = %q, want empty", got)
+	}
+}
+
 func TestAuditStatusPerOutcome(t *testing.T) {
 	cases := []struct {
 		name   string

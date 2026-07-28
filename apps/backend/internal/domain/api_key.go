@@ -31,22 +31,36 @@ const (
 	ScopeReadAudit Scope = "read:audit"
 	// ScopeWriteActions — execute an action (T-10/T-12).
 	ScopeWriteActions Scope = "write:actions"
+	// ScopeWriteReports — ask for a report: a spec to render, or a prompt to
+	// run a turn against (T-A2). Separate from write:chat because the two
+	// have different costs and a tenant may well want a key that can produce
+	// documents and cannot hold a conversation.
+	ScopeWriteReports Scope = "write:reports"
+	// ScopeReadDocuments — list generated documents and re-presign their
+	// download URLs (T-A2). Read-only over the tenant's own output.
+	ScopeReadDocuments Scope = "read:documents"
 )
 
 // AllScopes is the vocabulary, in the order the dashboard offers it: reads
 // first, writes last, so the two capabilities that cost money are not the
 // first two checkboxes under the cursor.
 //
-// T-A1 adds `write:reports` and `read:documents` when the routes that need
-// them exist. A scope with no route behind it is a checkbox that promises
-// something, so they are not pre-declared here.
+// `write:reports` and `read:documents` are here before their routes are
+// (T-A2), which reverses what T-13 wrote in this comment, for a reason that
+// only became clear once keys existed: **scopes are fixed at creation and
+// there is no Update.** A scope that appears only when its route does forces
+// every key minted in the meantime to be re-issued — the tenant edits their CI
+// config, not us. Deny by default is unaffected: a key holding `write:reports`
+// today reaches nothing, because nothing asks for it yet.
 var AllScopes = []Scope{
 	ScopeReadMetrics,
 	ScopeReadThreads,
 	ScopeReadUsage,
 	ScopeReadAudit,
+	ScopeReadDocuments,
 	ScopeWriteChat,
 	ScopeWriteActions,
+	ScopeWriteReports,
 }
 
 // Valid reports whether s is a scope this system issues.

@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -40,19 +41,21 @@ func (h *APIKeysHandler) Register(rg *gin.RouterGroup) {
 // backend — `T-A1` adds two — appears in the UI without a second edit, and so
 // there is exactly one place where a capability is described to a human.
 var scopeDescription = map[domain.Scope]string{
-	domain.ScopeReadMetrics:  "Read the metric registry.",
-	domain.ScopeReadThreads:  "Read conversation threads and their messages.",
-	domain.ScopeReadUsage:    "Read token usage and the credit balance.",
-	domain.ScopeReadAudit:    "Read the agent action log, including the SQL the agent ran.",
-	domain.ScopeWriteChat:    "Ask the agent a question. This spends the workspace's credits.",
-	domain.ScopeWriteActions: "Execute an action on the workspace's behalf.",
+	domain.ScopeReadMetrics:   "Read the metric registry.",
+	domain.ScopeReadThreads:   "Read conversation threads and their messages.",
+	domain.ScopeReadUsage:     "Read token usage and the credit balance.",
+	domain.ScopeReadAudit:     "Read the agent action log, including the SQL the agent ran.",
+	domain.ScopeReadDocuments: "List generated documents and get fresh download links.",
+	domain.ScopeWriteChat:     "Ask the agent a question. This spends the workspace's credits.",
+	domain.ScopeWriteActions:  "Execute an action on the workspace's behalf.",
+	domain.ScopeWriteReports:  "Generate a report. Rendering a supplied spec is free; asking the agent to write one spends credits.",
 }
 
 func (h *APIKeysHandler) scopes(c *gin.Context) {
 	type scopeInfo struct {
 		Scope       domain.Scope `json:"scope"`
 		Description string       `json:"description"`
-		// Writes is what the UI groups on: the two capabilities that change
+		// Writes is what the UI groups on: the capabilities that change
 		// something or spend money should not sit in the same block as the
 		// reads.
 		Writes bool `json:"writes"`
@@ -62,7 +65,12 @@ func (h *APIKeysHandler) scopes(c *gin.Context) {
 		out = append(out, scopeInfo{
 			Scope:       s,
 			Description: scopeDescription[s],
-			Writes:      s == domain.ScopeWriteChat || s == domain.ScopeWriteActions,
+			// Read off the scope's own name rather than an enumerated pair.
+			// The list was two scopes long when it was written and is four
+			// now; an enumeration that has to be edited every time a write
+			// scope is added is an enumeration that will one day quietly
+			// file a write under "reads".
+			Writes: strings.HasPrefix(string(s), "write:"),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"scopes": out})

@@ -38,8 +38,13 @@ func (h *AuditHandler) listActions(c *gin.Context) {
 		To:       to,
 		ThreadID: c.Query("thread_id"),
 		Tool:     c.Query("tool"),
-		Limit:    limit,
-		Offset:   offset,
+		// `?request_id=req_…` is what turns an integrator's support message
+		// into one query (T-A1). Tenant-scoped like every other filter here:
+		// a request id from another company matches nothing rather than
+		// matching someone else's row.
+		RequestID: c.Query("request_id"),
+		Limit:     limit,
+		Offset:    offset,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/fauzanebd/argentum/internal/auth"
+	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/transport/http/apierr"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 )
 
@@ -129,6 +132,84 @@ func TestV1EmitsNoCORSHeaders(t *testing.T) {
 	// literally, so a made-up origin would not get one either way.
 	if apiW.Header().Get("Access-Control-Allow-Credentials") == "" {
 		t.Error("/api lost its CORS headers")
+	}
+}
+
+// TestV1KillSwitchCoversEveryRoute is the operator's half of the contract: one
+// environment variable takes the public surface off the air without touching
+// the dashboard. It runs above authentication, so an integrator can ask "is it
+// up?" and get the answer.
+func TestV1KillSwitchCoversEveryRoute(t *testing.T) {
+	disabled := routerWith(t, func(cfg *config.Config) { cfg.APIV1Enabled = false })
+
+	for _, key := range v1Routes(t) {
+		method, path, _ := strings.Cut(key, " ")
+		t.Run(key, func(t *testing.T) {
+			req, err := http.NewRequest(method, concreteURL(path), nil)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			if code := statusOf(disabled, req); code != http.StatusServiceUnavailable {
+				t.Errorf("status = %d, want 503 with API_V1_ENABLED=false", code)
+			}
+		})
+	}
+
+	// A 503 is a support conversation waiting to happen, so it carries an id
+	// like every other response. RequestID sits above the switch for exactly
+	// this; the live gate is what found it sitting below.
+	req, err := http.NewRequest(http.MethodGet, "/v1/me", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	w := httptest.NewRecorder()
+	disabled.ServeHTTP(w, req)
+	if w.Header().Get("X-Request-Id") == "" {
+		t.Error("no X-Request-Id on the kill switch's 503")
+	}
+
+	// And the dashboard is untouched, or the switch is an outage rather than
+	// a kill switch.
+	dashboardReq, err := http.NewRequest(http.MethodGet, "/api/users/me", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	if code := statusOf(disabled, dashboardReq); code == http.StatusServiceUnavailable {
+		t.Error("/api answered 503 — the /v1 kill switch reached the dashboard")
+	}
+}
+
+// TestV1AlwaysAnswersWithARequestID pins the support path: every response
+// carries an id, including the 401 an integrator with a bad key gets, which
+// is the response they are most likely to be asking about.
+func TestV1AlwaysAnswersWithARequestID(t *testing.T) {
+	r := realRouter(t)
+
+	for _, key := range v1Routes(t) {
+		method, path, _ := strings.Cut(key, " ")
+		t.Run(key, func(t *testing.T) {
+			req, err := http.NewRequest(method, concreteURL(path), nil)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Header().Get("X-Request-Id") == "" {
+				t.Fatalf("no X-Request-Id on a %d response", w.Code)
+			}
+			var body apierr.Body
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("response is not the /v1 envelope: %q", w.Body.String())
+			}
+			// The id in the body and the id in the header have to be the
+			// same string, or a caller pasting one of them into a support
+			// message hands us the wrong one.
+			if body.Error.RequestID != w.Header().Get("X-Request-Id") {
+				t.Errorf("envelope request_id %q, header %q",
+					body.Error.RequestID, w.Header().Get("X-Request-Id"))
+			}
+		})
 	}
 }
 

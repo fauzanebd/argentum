@@ -34,6 +34,13 @@ func RequestLogging() gin.HandlerFunc {
 				fields["user_id"] = s
 			}
 		}
+		// Read after c.Next(): RequestID (T-A1) is installed on the /v1 group,
+		// below this engine-level middleware, so the id does not exist yet on
+		// the way in. It is the field that makes a support request id resolve
+		// to the log lines it produced.
+		if s := c.GetString(CtxRequestID); s != "" {
+			fields["request_id"] = s
+		}
 		if errs := c.Errors.String(); errs != "" {
 			fields["errors"] = errs
 		}
