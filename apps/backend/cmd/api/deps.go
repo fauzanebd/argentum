@@ -39,6 +39,7 @@ type apiDeps struct {
 	msgRepo      *pgctl.MessageRepo
 	userRepo     *pgctl.UserRepo
 	companyRepo  *pgctl.CompanyRepo
+	actionRepo   *pgctl.AgentActionRepo
 	dashboardSvc *app.DashboardService
 	scheduledSvc *app.ScheduledTaskService
 	discordSvc   *app.DiscordService

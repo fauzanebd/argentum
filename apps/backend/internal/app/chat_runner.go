@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -69,6 +71,7 @@ type ChatRunner struct {
 	scheduled    ScheduledRunMarker
 	historyLimit int
 	budgetFor    BudgetResolver
+	actions      domain.AgentActionRepository
 
 	// Embedding-based table picker. Both must be non-nil to inject hints;
 	// otherwise the runner silently skips and the agent falls back to the
@@ -121,6 +124,20 @@ func (r *ChatRunner) WithBudget(resolve BudgetResolver) *ChatRunner {
 	return r
 }
 
+// WithActionLog attaches the audit repository so a turn a guardrail stopped
+// leaves a row (T-05).
+//
+// Tool calls are audited by the tools.WithAudit decorator, which is the
+// ticket's one integration point and needs nothing from here. What it cannot
+// see is a turn blocked before or after the tools: an input guardrail refuses
+// the question, and the fabrication check refuses the answer. Neither reaches
+// a tool, so neither would appear in the log at all — and "the agent was
+// stopped from saying that" is the entry an auditor most wants to find.
+func (r *ChatRunner) WithActionLog(repo domain.AgentActionRepository) *ChatRunner {
+	r.actions = repo
+	return r
+}
+
 // WithLark attaches a Lark outbound provider so the runner can post replies
 // for chat:run tasks on the Lark channel. Returning the receiver mirrors
 // WithTablePicker so the worker can chain configuration on construction.
@@ -151,6 +168,13 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	if p.UserID != "" {
 		ctx = tenantctx.WithUserID(ctx, p.UserID)
 	}
+	// Identity for the audit log (T-05). It rides the context because the
+	// thing that writes the rows is a tool decorator four packages away, and
+	// this is the only place that knows a cron tick is not a person.
+	kind, ref := actorOf(p)
+	ctx = tenantctx.WithActor(ctx, kind, ref)
+	ctx = tenantctx.WithChannel(ctx, string(p.Channel))
+	ctx = tenantctx.WithMessageID(ctx, p.UserMsgID)
 	ctx = multitenancy.WithOrgID(ctx, p.CompanyID)
 	ctx = memory.WithConversationID(ctx, p.ThreadID)
 
@@ -242,7 +266,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	}
 
 	latency := time.Since(start)
-	response = r.rejectFabrication(p, response, tracker)
+	response = r.rejectFabrication(ctx, p, response, tracker)
 	r.completeWith(ctx, p, response, 0, 0, latency)
 	return nil
 }
@@ -264,7 +288,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 // WhatsApp / Discord / Lark paths — which only ever see the final — never see
 // the figure at all.
 func (r *ChatRunner) rejectFabrication(
-	p queue.ChatRunPayload, response string, tracker *agentbudget.Tracker,
+	ctx context.Context, p queue.ChatRunPayload, response string, tracker *agentbudget.Tracker,
 ) string {
 	snap := tracker.Snapshot()
 	replacement, blocked := guardrails.CheckFabrication(response, guardrails.TurnEvidence{
@@ -302,7 +326,73 @@ func (r *ChatRunner) rejectFabrication(
 		"reason":        snap.Reason,
 		"blocked_reply": response,
 	}).Warn("reply stated a figure no tool returned this turn; replaced with an incomplete-answer message")
+	r.recordBlockedTurn(ctx, p, "final_answer", "reply stated a figure no tool returned this turn")
 	return replacement
+}
+
+// actorOf decides who a turn is attributable to. A scheduled run is not the
+// user who authored the schedule — nobody was present, and an audit trail that
+// says otherwise puts a person at a keyboard they were not sitting at. The
+// channel refs are the identity each channel actually has: there is no
+// dashboard user behind a WhatsApp message.
+func actorOf(p queue.ChatRunPayload) (kind, ref string) {
+	if p.ScheduledTaskID != "" {
+		return string(domain.ActorKindSchedule), p.ScheduledTaskID
+	}
+	for _, candidate := range []string{p.UserID, p.DiscordUserID, p.LarkOpenID, p.PhoneNumber} {
+		if candidate != "" {
+			return string(domain.ActorKindUser), candidate
+		}
+	}
+	return string(domain.ActorKindUser), ""
+}
+
+// recordBlockedTurn writes the audit row for a turn a guardrail stopped.
+// toolName names which gate closed rather than a real tool: `guardrail` for a
+// question refused on the way in, `final_answer` for an answer refused on the
+// way out. Both are recorded with rows_returned unset, because neither ran
+// anything.
+//
+// Silent no-op when no repository is attached: the eval harness runs the same
+// runner and has no control-plane row to write into.
+func (r *ChatRunner) recordBlockedTurn(ctx context.Context, p queue.ChatRunPayload, toolName, reason string) {
+	if r.actions == nil {
+		return
+	}
+	kind, ref := actorOf(p)
+	action := &domain.AgentAction{
+		CompanyID:    p.CompanyID,
+		ThreadID:     p.ThreadID,
+		MessageID:    p.UserMsgID,
+		ActorKind:    domain.ActorKind(kind),
+		ActorRef:     ref,
+		Channel:      p.Channel,
+		ToolName:     toolName,
+		ArgsRedacted: []byte(`{}`),
+		ArgsHash:     sha256Hex(p.Message),
+		ResultStatus: domain.ActionStatusBlocked,
+		ErrorText:    reason,
+	}
+	// Detached like the tool decorator's write, and for the same reason: the
+	// turn this describes may already be over.
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := r.actions.Create(writeCtx, action); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": p.CompanyID,
+			"thread_id":  p.ThreadID,
+			"tool":       toolName,
+		}).Warn("blocked-turn audit write failed")
+	}
+}
+
+// sha256Hex fingerprints the message a blocked turn was carrying. The text
+// itself is not stored on the row — a refused question is exactly the input
+// most likely to contain something the tenant would not want retained — but
+// the same question asked twice is recognisable.
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
 
 // runStream executes the agent with streaming and fans out delta / thinking /
@@ -393,6 +483,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 					userMsg := strings.TrimPrefix(errMsg, guardrailsPrefix)
 					fullResponse.Reset()
 					fullResponse.WriteString(userMsg)
+					r.recordBlockedTurn(ctx, p, "guardrail", userMsg)
 					_ = r.bus.Publish(p.ThreadID, ChatEvent{
 						JobID:     p.UserMsgID,
 						ThreadID:  p.ThreadID,
@@ -444,6 +535,7 @@ func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload,
 	userMsg := err.Error()
 	if strings.HasPrefix(userMsg, guardrailsPrefix) {
 		userMsg = strings.TrimPrefix(userMsg, guardrailsPrefix)
+		r.recordBlockedTurn(ctx, p, "guardrail", userMsg)
 		r.completeWith(ctx, p, userMsg, 0, 0, 0)
 		return nil
 	}

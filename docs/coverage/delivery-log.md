@@ -539,6 +539,60 @@ are all in the record.
 
 Record, gate output and the limits: [`report-branding.md`](report-branding.md).
 
+`T-05` agent action audit log
+
+The system could say what a turn cost and what the model replied. It could not
+say what the agent *did* — which queries ran against the tenant's warehouse,
+which of them failed, or under whose authority. Fine while the only actor is a
+person watching a stream; not fine at `T-13`, where a key in someone else's CI
+config makes calls nobody is watching.
+
+The decisions worth carrying forward:
+
+- **One decorator over the registry, not a call in each tool.** `WithAuditAll`
+  wraps `s.Tools` in `bootstrap`, next to `T-16`'s budget guard and for the same
+  reason: nothing reaches the agent except through that slice, so a tool added
+  next year is audited without its author knowing this code exists. Seven call
+  sites would be an eighth that somebody forgets, and the forgotten one is the
+  tool an incident asks about.
+- **Wrap order against the budget guard is load-bearing.** A refused tool call
+  returns the guard's refusal payload with a **nil error** — it must, because
+  the model only ever reads tool results. Audited from inside the guard, a call
+  that never ran would be recorded `ok`. `agentbudget.IsRefusal` is what tells
+  them apart, and it lives in `agentbudget` so the payload keeps one owner.
+- **`rows_returned` is NULL, not 0, when a tool returns no rows.** A tool that
+  produces a Metabase link and a query that matched nothing are different facts.
+  Collapsing them would erase the distinction `T-16` exists to preserve.
+- **Redaction errs toward removing too much.** Keys *and* values are scanned —
+  a credential passed under an innocent name is exactly the case a key list
+  misses — and a `SELECT` whose text contains `password=` is dropped whole.
+  AGENTS.md §2 forbids persisting a decrypted DSN; a query lost from the audit
+  log is still in the thread.
+- **A blocked turn needed a second integration point.** An input guardrail
+  refusing the question, and `T-16`'s fabrication check refusing the answer,
+  both stop a turn without any tool running — so neither would appear in a
+  tool-call log at all. `ChatRunner.WithActionLog` writes those rows with
+  `tool_name` naming which gate closed, and stores only the sha256 of the
+  refused question: a refused question is the input most likely to hold
+  something a tenant would not want retained.
+- **A cron tick is not the person who wrote the schedule.** `actorOf` returns
+  `schedule` even though the payload carries the author's `UserID`. Attributing
+  an unattended run to them puts a name at a keyboard nobody was sitting at.
+- **The log outlives its subject.** `thread_id` carries no foreign key, because
+  `DELETE /api/threads/:id` exists and a CASCADE would let a user erase the
+  record of what the agent did by deleting the conversation.
+
+One defect was caught only because the endpoint was exercised against the
+running API rather than read: `args_redacted` typed `[]byte` marshals to
+base64, so the log's arguments arrived unreadable. `json.RawMessage` fixes it.
+This is the second ticket in a row where the live half of the gate found
+something the unit tests could not.
+
+The migration is `023`, not the ticket's `021` — the third consecutive ticket
+whose reserved number was already spent.
+
+Record, gate output and the limits: [`agent-audit.md`](agent-audit.md).
+
 ---
 
 ## What the history says about how this project is built

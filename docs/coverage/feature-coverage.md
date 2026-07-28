@@ -74,7 +74,7 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | PII redaction               | 🟡     | Works, but over-broad: any 16-digit number, all emails, all phone numbers are blanked in output — breaks legitimate customer-contact queries |
 | System-prompt leak guard    | 🟡     | Blocks any output containing "you are an ai"; false-positives on "what can you do?" |
 | Rate limiting               | 🟡     | Flat 60 req/min for all authenticated callers; not per-plan, not per-channel |
-| Agent action audit log      | ❌     | No record of what the agent did, only what it cost                      |
+| Agent action audit log      | ✅     | `T-05`: one append-only `agent_actions` row per tool call — actor, channel, redacted args, status, rows, duration — written by a decorator over the whole tool registry, plus a row for a turn a guardrail stopped. Admin-only `GET /api/audit/actions` ([`agent-audit.md`](agent-audit.md)). No UI yet; `T-A5` builds one |
 
 ## Accounts, billing, admin
 
@@ -140,4 +140,4 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Platform / agent-callable   | ██░░░░░░░░   | No machine auth, no MCP, no outbound webhooks.               |
 | Embeddability               | ░░░░░░░░░░   | Zero. Argentum lives only in its own dashboard and in chat apps. |
 | Testing / evaluation        | ███████░░░   | 22/49 packages after `T-02` and `T-04`; every CRITICAL one covered, `golangci-lint` at 0 issues, CI gates on `-race`. Answer quality is measured separately: `make eval` scores 33 golden questions through the real agent — 97.0%, see [`eval-baseline.md`](eval-baseline.md). |
-| Observability               | ███░░░░░░░   | Logs + counters. No traces, no error tracking, no replay.     |
+| Observability               | ████░░░░░░   | Logs + counters, and after `T-05` an append-only record of every tool call the agent made. No traces, no error tracking. |

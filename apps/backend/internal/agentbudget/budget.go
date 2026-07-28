@@ -312,6 +312,20 @@ func (t *Tracker) refusalLocked() string {
 	return string(out)
 }
 
+// IsRefusal reports whether a tool result is this package's refusal payload
+// rather than a tool's own output. The audit log (T-05) needs it to tell a
+// call that ran from one that was never allowed to: both come back as a
+// string with a nil error, because that is how the model has to receive them.
+func IsRefusal(result string) bool {
+	var payload struct {
+		BudgetExhausted bool `json:"budget_exhausted"`
+	}
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		return false
+	}
+	return payload.BudgetExhausted
+}
+
 // retrievedLocked summarises the turn's evidence in one line so the model can
 // quote it back accurately rather than guessing at what it has.
 func (t *Tracker) retrievedLocked() string {

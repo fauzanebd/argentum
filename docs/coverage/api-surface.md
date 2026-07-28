@@ -100,6 +100,12 @@ are what this document is for.
 | POST   | `/api/reports/branding/logo`      | JWT+ | multipart `logo`; PNG/JPEG ≤512 KB, re-encoded to PNG, returns the key only — it does **not** save the record |
 | POST   | `/api/reports/preview`            | JWT+ | Renders a fixed sample with the branding in the body, or with the stored record when the body is empty. Returns `application/pdf` for an `<iframe>` |
 
+## Agent audit log (`T-05`)
+
+| Method | Path                    | Auth | Notes                                        |
+| ------ | ----------------------- | ---- | -------------------------------------------- |
+| GET    | `/api/audit/actions`    | JWT+ | One row per tool call the agent made, newest first. Filters: `from`/`to` (RFC3339, default last 30 days), `thread_id`, `tool`, `limit` (default 100, max 500), `offset`. Admin because every row carries the full SQL the agent ran |
+
 ## Dashboards and scheduled tasks
 
 | Method | Path                                          | Auth | Notes                     |

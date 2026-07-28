@@ -71,6 +71,9 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.msgRepo = messageRepo
 	deps.userRepo = userRepo
 	deps.companyRepo = companyRepo
+	// Read-only here. The rows are written by the worker, which is where the
+	// agent runs; the API only serves them back to an admin.
+	deps.actionRepo = pgctl.NewAgentActionRepo(controlDB)
 	deps.teamSvc = app.NewTeamService(userRepo, pgctl.NewUserInviteRepo(controlDB))
 
 	dsnCipher, err := crypto.NewFromHex(cfg.DSNEncryptionKeyHex)

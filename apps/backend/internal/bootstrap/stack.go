@@ -65,6 +65,7 @@ type Stack struct {
 	Usage         domain.UsageRepository
 	Companies     domain.CompanyRepository
 	ScheduledRepo domain.ScheduledTaskRepository
+	AgentActions  domain.AgentActionRepository
 
 	TenantPool *db.TenantConnPool
 	UsageSvc   *app.UsageService
@@ -119,6 +120,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	companyRepo := pgctl.NewCompanyRepo(controlDB)
 	s.Companies = companyRepo
 	s.ScheduledRepo = pgctl.NewScheduledTaskRepo(controlDB)
+	s.AgentActions = pgctl.NewAgentActionRepo(controlDB)
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
 
@@ -233,6 +235,12 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	}.Normalize()
 	s.Tools = agentbudget.GuardAll(s.Tools)
 
+	// Audit outside the budget guard (T-05): a refused call returns a refusal
+	// string with a nil error, so wrapping the other way round would record it
+	// as an ordinary success — and "the agent tried to run one more query and
+	// was stopped" is the line an incident review reads first.
+	s.Tools = tools.WithAuditAll(s.Tools, s.AgentActions)
+
 	mem := buildMemory(cfg)
 	guardrailsTpl := buildGuardrails(cfg, lightLLMClient)
 
@@ -309,7 +317,8 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 		s.ThreadSvc, s.Messages, s.Threads, s.Connections,
 		s.AgentFactory, s.LLMCache, bus, wa, s.TenantPool,
 		s.ScheduledSvc, s.Cfg.HistoryHydrateLimit,
-	).WithBudget(func(context.Context, string) agentbudget.Budget { return s.Budget })
+	).WithBudget(func(context.Context, string) agentbudget.Budget { return s.Budget }).
+		WithActionLog(s.AgentActions)
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)
 		logrus.WithFields(logrus.Fields{

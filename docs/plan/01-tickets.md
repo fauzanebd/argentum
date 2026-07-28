@@ -48,7 +48,7 @@ priority on 2026-07-28. This table is the authoritative order.
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
 | 1a — **done** | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, ~~`T-R4`~~, ~~`T-R5`~~ | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). **`T-R4` landed 2026-07-28** — the same spec projected onto slides, narrative in the speaker notes ([`../coverage/report-deck.md`](../coverage/report-deck.md)). **`T-R5` landed 2026-07-28** — tenant logo, accent, locale and footer on both formats, with a live preview rendered by the renderer itself and a contrast floor a pale brand colour cannot pass ([`../coverage/report-branding.md`](../coverage/report-branding.md)). |
-| 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, `T-02b`, `T-03`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). |
+| 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, ~~`T-05`~~, `T-02b`, `T-03` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). **`T-05` landed 2026-07-28**: one append-only row per tool call, written by a decorator over the whole registry rather than per tool, plus a row for a turn a guardrail stopped — which needed a second integration point, because a guardrail stops a turn before any tool runs ([`../coverage/agent-audit.md`](../coverage/agent-audit.md)). |
 | 1c — callable | `T-13`, `T-A1`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moves here from week 5 — it is the prerequisite, not a week-5 nicety. |
 | 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Moved to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
@@ -71,9 +71,10 @@ Three ordering notes for 1a → 1b → 1c, decided 2026-07-28:
 - **`T-R5` dragged phase 1b forward whether or not the API existed.** It deps
   `T-04`, which deps `T-02`. So 4.5 days of "phase 1b" work was already embedded
   inside "finish the report track". The running order is therefore
-  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → ~~`T-R5`~~ → `T-05` → `T-03` → `T-13` → `T-A1`…,
-  not three clean blocks. **The report track is complete.** **Next up: `T-05`**
-  — the agent-action audit log, which `T-A1` needs a row to write into.
+  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → ~~`T-R5`~~ → ~~`T-05`~~ → `T-03` → `T-13` → `T-A1`…,
+  not three clean blocks. **The report track is complete, and so is the audit
+  log `T-A1` needs a row to write into.** **Next up: `T-03`** — credit
+  enforcement, the last of `T-A1`'s three dependencies after `T-13`.
 - **`T-13` is no longer a week-5 ticket.** Scoped API keys are the only machine
   authentication this product has, and every `/v1` route is behind them. It runs
   immediately before `T-A1`.
@@ -1616,9 +1617,30 @@ a gate that denied everything would pass the admin half on its own.
 
 ---
 
-## T-05 · Agent action audit log
+## ~~T-05~~ · Agent action audit log — **DONE 2026-07-28**
 **Repo:** BE · **Size:** 1.5d · **Deps:** T-02 · **Priority:** P0
-**Migration:** `021_agent_actions`
+**Migration:** ~~`021_agent_actions`~~ **landed as `023_agent_actions`** — 021 and
+022 were spent by `T-04` and `T-R5`. Reserved numbers in this file are not
+binding; take the next free one (`ls migrations/control | tail -3`).
+
+**Record:** [`../coverage/agent-audit.md`](../coverage/agent-audit.md).
+
+**What shipped, where it differs from the text below:**
+- `tools.WithAudit` / `WithAuditAll` decorate the registry in
+  `internal/bootstrap/stack.go` — not `cmd/worker/main.go`, which has not built
+  the tool list since `T-01` moved that into `bootstrap`. Applied **outside**
+  `agentbudget.GuardAll`, so a budget-refused call records `blocked` instead of
+  a false `ok`.
+- The ticket's acceptance item "a blocked guardrail turn records
+  `result_status=blocked`" needed a **second** integration point: a guardrail
+  stops a turn before any tool runs, so no tool decorator can see it.
+  `ChatRunner.WithActionLog` writes that row with `tool_name` = `guardrail` (the
+  question refused) or `final_answer` (`T-16`'s fabrication check refused the
+  reply). Tool calls still have exactly one integration point.
+- `rows_returned` is NULL rather than 0 when a tool returns no rows at all.
+- `args_redacted` is `json.RawMessage`; typed `[]byte` it marshals to base64 and
+  the endpoint returns an unreadable log.
+- `actor_ref` for a scheduled run is the **task id**, not the author's user id.
 
 **Finding S-5.** `usage_events` records cost, not behaviour. Before the agent can
 act, there must be an immutable record of what it did.
@@ -1632,7 +1654,8 @@ act, there must be an immutable record of what it did.
   `(company_id, created_at desc)` and `(thread_id)`.
 - `domain.AgentAction` + `AgentActionRepository`; `adapters/postgres/agent_action_repo.go`.
 - Record from a **wrapper around the tool interface**, not inside each tool —
-  `tools.WithAudit(tool, repo)` decorating every tool in `cmd/worker/main.go`.
+  `tools.WithAudit(tool, repo)` decorating every tool in `cmd/worker/main.go`
+  (shipped in `internal/bootstrap/stack.go`, which owns the registry now).
   One integration point, no per-tool duplication.
 - `args_redacted` must strip anything DSN-shaped. **Full SQL text is retained** —
   it is the point of the log — but never a credential.
@@ -1640,14 +1663,26 @@ act, there must be an immutable record of what it did.
 - Append-only: repository exposes no update or delete.
 
 **Acceptance:**
-- [ ] Every tool call produces exactly one row, success or failure
-- [ ] A blocked guardrail turn records `result_status=blocked`
-- [ ] No row contains a decrypted DSN or API key
-- [ ] Audit endpoint is admin-gated and company-scoped
+- [x] Every tool call produces exactly one row, success or failure — five rows
+      from one demo chat, including a failed `create_visualization`
+- [x] A blocked guardrail turn records `result_status=blocked` — via
+      `ChatRunner.WithActionLog`, see the note above
+- [x] No row contains a decrypted DSN or API key — zero credential-shaped
+      matches in the table dump; redaction covers keys and values
+- [x] Audit endpoint is admin-gated and company-scoped — 401 unauthenticated,
+      403 for a member (`TestGatedRoutesRejectMembers`), empty for another tenant
 
 **Gate:** run one demo chat that calls `get_schema` + `run_sql` +
 `create_visualization`; paste the resulting three rows (redacted args visible).
 Then `grep` the table dump for the demo DSN password and show zero matches.
+
+**Gate result:** met, with one environmental caveat.
+`create_visualization` audited as `error` — Metabase cannot register the demo
+source, because the tenant DSN would have to be reachable both from the
+host-run worker (`localhost:5433`) and from the Metabase container
+(`postgres_demo:5432`). Same family as `E-1`/`E-4`. The row and its
+`error_text` are the evidence; a failed call is what the log is for. Output in
+[`../coverage/agent-audit.md`](../coverage/agent-audit.md).
 
 ---
 

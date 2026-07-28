@@ -101,6 +101,12 @@ var apiPolicy = middleware.RolePolicy{
 	// Model catalogue — read-only metadata.
 	"GET /api/config/models": domain.RoleMember,
 
+	// Agent action audit log (T-05). Admin rather than member for the same
+	// reason the DSN routes are: every row carries the full SQL the agent ran,
+	// so the log reads the shape of the tenant's warehouse to anyone who can
+	// list it — a wider view than any single chat thread gives.
+	"GET /api/audit/actions": domain.RoleAdmin,
+
 	// Scheduled tasks.
 	"GET /api/scheduled-tasks":                 domain.RoleMember,
 	"POST /api/scheduled-tasks":                domain.RoleMember,
