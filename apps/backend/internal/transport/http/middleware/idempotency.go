@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -29,6 +30,7 @@ const replayHeader = "Idempotent-Replay"
 const (
 	ctxIdemResult = "idem_result"
 	ctxIdemKey    = "idem_key"
+	ctxIdemRetain = "idem_retain"
 )
 
 // maxIdempotencyKeyLen bounds the caller's key. It becomes part of a Redis
@@ -144,14 +146,23 @@ func Idempotency(store idempotency.Store, opts ...IdempotencyOption) gin.Handler
 		c.Set(ctxIdemKey, redisKey)
 		c.Next()
 
+		// Detached from the request context on purpose (T-A3). Bookkeeping for
+		// work that has already run must not be abandoned because the client
+		// hung up — and on a streaming route a client hanging up is the ordinary
+		// ending, not an exception. With the request's own context, a
+		// disconnected SSE turn left its record in_flight for the full 24-hour
+		// TTL, and every later retry under that key got `409 request_in_flight`
+		// for a turn that had long since finished.
+		ctx := context.WithoutCancel(c.Request.Context())
+
 		status := c.Writer.Status()
-		if status >= http.StatusBadRequest {
-			if err := store.Discard(c.Request.Context(), redisKey); err != nil {
+		if status >= http.StatusBadRequest && !c.GetBool(ctxIdemRetain) {
+			if err := store.Discard(ctx, redisKey); err != nil {
 				logrus.WithError(err).Warn("idempotency record not discarded after a failed request")
 			}
 			return
 		}
-		if err := store.Complete(c.Request.Context(), redisKey, status, declaredResult(c)); err != nil {
+		if err := store.Complete(ctx, redisKey, status, declaredResult(c)); err != nil {
 			logrus.WithError(err).WithField("company_id", company).
 				Warn("idempotency record not completed; a retry of this request may run it again")
 		}
@@ -228,6 +239,20 @@ func DeclareIdempotentResult(c *gin.Context, v any) {
 	}
 	c.Set(ctxIdemResult, json.RawMessage(raw))
 }
+
+// RetainIdempotentRecord keeps the record even though the response is a 4xx or
+// 5xx (T-A3).
+//
+// It exists for exactly one shape of failure: the one where the *request*
+// failed and the *work* did not. `POST /v1/chat`'s synchronous door answers
+// 504 when a turn outruns the wait, and that turn is still running and still
+// being billed. Forgetting the key there would let the caller's next retry —
+// which a 504 invites — start a second turn on the tenant's money, which is
+// the precise duplicate-billing bug this middleware exists to prevent.
+//
+// Use it only when the response body hands the caller a way to collect the
+// work that is still in flight. Anything else should forget its key.
+func RetainIdempotentRecord(c *gin.Context) { c.Set(ctxIdemRetain, true) }
 
 // DeclareIdempotentProgress attaches what is known while the request is still
 // running, so a retry arriving mid-flight gets a 409 that names the thread or

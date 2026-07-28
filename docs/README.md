@@ -78,6 +78,7 @@ docs/
 │   ├── api-keys.md               T-13 scoped machine credentials, /v1 auth, scope gate
 │   ├── api-foundation.md         T-A1 /v1 envelope, request ids, idempotency, limits
 │   ├── api-reports.md            T-A2 both report doors, documents, signed callbacks
+│   ├── api-chat.md               T-A3 SSE + sync chat, the event schema, thread reads
 │   └── report-branding.md        T-R5 tenant logo, accent, contrast floor, preview
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals

@@ -74,6 +74,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	allowedLarkRepo := pgctl.NewAllowedLarkUserRepo(controlDB)
 	deps.threadRepo = threadRepo
 	deps.msgRepo = messageRepo
+	deps.usageRepo = usageRepo
 	deps.userRepo = userRepo
 	deps.companyRepo = companyRepo
 	// Read-only here. The rows are written by the worker, which is where the

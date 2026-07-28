@@ -49,7 +49,7 @@ priority on 2026-07-28. This table is the authoritative order.
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
 | 1a — **done** | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, ~~`T-R4`~~, ~~`T-R5`~~ | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). **`T-R4` landed 2026-07-28** — the same spec projected onto slides, narrative in the speaker notes ([`../coverage/report-deck.md`](../coverage/report-deck.md)). **`T-R5` landed 2026-07-28** — tenant logo, accent, locale and footer on both formats, with a live preview rendered by the renderer itself and a contrast floor a pale brand colour cannot pass ([`../coverage/report-branding.md`](../coverage/report-branding.md)). |
 | 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, ~~`T-05`~~, ~~`T-03`~~, `T-02b` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). **`T-05` landed 2026-07-28**: one append-only row per tool call, written by a decorator over the whole registry rather than per tool, plus a row for a turn a guardrail stopped — which needed a second integration point, because a guardrail stops a turn before any tool runs ([`../coverage/agent-audit.md`](../coverage/agent-audit.md)). **`T-03` landed 2026-07-28**: the balance is checked before a turn is queued on every channel and on every scheduled fire, a tenant on their own key is never blocked, and the ticket had to grow a starting grant — because nothing had ever credited a company, so enforcing it as written would have refused every tenant at once ([`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md)). |
-| 1c — callable | ~~`T-13`~~, ~~`T-A1`~~, `T-A2`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moved here from week 5 — it is the prerequisite, not a week-5 nicety. **`T-13` landed 2026-07-28**: scoped, hashed, revocable keys on a `/v1` namespace that refuses a dashboard JWT as flatly as `/api` refuses a key, with a per-key rate bucket and a Settings tab. The hash is a SHA-256 rather than the Argon2id the ticket named, because the input is 256 random bits rather than a password; the live gate found `/v1` inheriting the dashboard's permissive CORS headers ([`../coverage/api-keys.md`](../coverage/api-keys.md)). **`T-A1` landed 2026-07-28**: the contract every `/v1` route inherits — request ids, the typed envelope, idempotency that records ids rather than payloads, rate-limit headers, cursor pagination, a kill switch, and the `api` channel both `T-A2` and `T-A3` need. Four acceptance items have no route to run against until `T-A2`'s first `POST` and are recorded as tested-not-live ([`../coverage/api-foundation.md`](../coverage/api-foundation.md)). |
+| 1c — callable | ~~`T-13`~~, ~~`T-A1`~~, ~~`T-A2`~~, ~~`T-A3`~~, `T-A4`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moved here from week 5 — it is the prerequisite, not a week-5 nicety. **`T-13` landed 2026-07-28**: scoped, hashed, revocable keys on a `/v1` namespace that refuses a dashboard JWT as flatly as `/api` refuses a key, with a per-key rate bucket and a Settings tab. The hash is a SHA-256 rather than the Argon2id the ticket named, because the input is 256 random bits rather than a password; the live gate found `/v1` inheriting the dashboard's permissive CORS headers ([`../coverage/api-keys.md`](../coverage/api-keys.md)). **`T-A1` landed 2026-07-28**: the contract every `/v1` route inherits — request ids, the typed envelope, idempotency that records ids rather than payloads, rate-limit headers, cursor pagination, a kill switch, and the `api` channel both `T-A2` and `T-A3` need. Four acceptance items have no route to run against until `T-A2`'s first `POST` and are recorded as tested-not-live ([`../coverage/api-foundation.md`](../coverage/api-foundation.md)). **`T-A2` landed 2026-07-28**: a spec posted to `POST /v1/reports/render` comes back as a branded PDF and a prompt posted to `POST /v1/reports` runs a real agent turn, with three ways to collect the result — and it turned four of `T-A1`'s tested-not-live items into transcripts ([`../coverage/api-reports.md`](../coverage/api-reports.md)). **`T-A3` landed 2026-07-28**: a question in, an answer out, streamed over SSE or waited for, on the event names the dashboard already publishes — plus the thread and transcript reads, `user_ref` isolation enforced rather than trusted, and a 504 that hands back the ids to resume with instead of inviting a second billed turn. The live gate found that `last_message_at` and `messages.created_at` are written by different clocks, which held every settled thread's stream open until the client gave up ([`../coverage/api-chat.md`](../coverage/api-chat.md)). |
 | 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Moved to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
 
@@ -945,11 +945,11 @@ day one of the flagship ticket. Both consumers need it, so it lands here.
 - [~] A replay of a still-running request returns `409 request_in_flight`, not a second turn — same
 - [x] No idempotency record in Redis exceeds 4 KiB, including after a 10 MB PDF render — measured through the middleware against a real 10 MB response body
 - [~] The same key with a changed body returns 409 — tested, live at `T-A2`
-- [~] A turn started through `/v1` shows `channel=api` in `/api/usage/by-channel`, and `ChatRunner.completeWith` does not attempt an outbound send — the rollups are proven live against an `api` thread; **starting** a turn needs `T-A3`
+- [x] A turn started through `/v1` shows `channel=api` in `/api/usage/by-channel`, and `ChatRunner.completeWith` does not attempt an outbound send — **closed by `T-A3` 2026-07-28**: four turns started over `POST /v1/chat` roll up as `channel=api`, and `by-user` names their `api_user_ref`s ([`../coverage/api-chat.md`](../coverage/api-chat.md) §4.8)
 - [x] Every `/v1` error response matches the envelope — no bare `{"error":"…"}` anywhere under `/v1`
 - [x] A 429 carries `Retry-After` and all three `RateLimit-*` headers
 - [x] `API_V1_ENABLED=false` → 503 on every `/v1` route, including `/v1/me`, and `/api` is unaffected
-- [~] The `request_id` in a response body appears in the audit row for that call — the column, the filter and the tenant scoping are live; the worker half is unit-tested and completes at `T-A3`
+- [x] The `request_id` in a response body appears in the audit row for that call — **closed by `T-A3` 2026-07-28**: the `req_800ca…` the sync door returned is on all seven `agent_actions` rows of that turn ([`../coverage/api-chat.md`](../coverage/api-chat.md) §4.9)
 
 `[~]` is "the mechanism is proven, the route that exercises it is the next
 ticket" — stated rather than counted as met. See §4 of the record.
@@ -1125,10 +1125,34 @@ receiver, the delivery log, and the migration round trip. `go test -race ./...`
 
 ---
 
-## T-A3 · Chat over the API: SSE and sync
+## ~~T-A3~~ · Chat over the API: SSE and sync — **DONE 2026-07-28**
 **Repo:** BE · **Size:** 2d · **Deps:** T-A1 · **Priority:** P0
-**Migration:** none — the `api` channel and `api_user_ref` land in `T-A1`'s
-`031_api_channel`, because `T-A2` needs them too.
+**Migration:** none — the `api` channel and `api_user_ref` landed in `T-A1`.
+
+**Record:** [`../coverage/api-chat.md`](../coverage/api-chat.md).
+
+**What shipped, and what it cost.** Both doors, the four thread routes, and a
+fifth the ticket did not name — `GET /v1/threads/:id/events`, which is where a
+504 and a mid-flight 409 send the caller, because neither is collectable by
+re-POSTing. The event schema is written down for the first time
+(`api-chat.md` §2), which closes `api-surface.md` observation 4.
+
+Three things are worth reading before touching this code:
+
+- **The stream reconciles the bus against the transcript.** Redis pub/sub keeps
+  nothing for a subscriber that was not there, and the thread id only exists
+  after the enqueue — so every attach subscribes and *then* asks the message log
+  whether the turn already answered. Worst case is a lost delta, never a lost
+  answer.
+- **`last_message_at` and `messages.created_at` are written by different
+  clocks** and land ~130µs apart in the wrong direction. Deciding "has this turn
+  answered?" by comparing them held every settled thread's stream open until the
+  client gave up. The live gate found it; the fix compares two rows written by
+  one clock.
+- **A 504 keeps its idempotency key** (`middleware.RetainIdempotentRecord`),
+  because the wait ran out and the turn did not. And the middleware now completes
+  its record on a context detached from the request — a hung-up SSE client was
+  stranding its own key for 24 hours, which is a bug `T-A2`'s doors had too.
 
 ### Why
 
@@ -1178,14 +1202,14 @@ and records it as undocumented.
 
 ### Acceptance
 
-- [ ] An SSE turn streams deltas and ends with `final` carrying the message and usage
-- [ ] The sync door returns the same answer as the SSE door for the same question
-- [ ] Killing the client mid-stream still persists the answer; a later `GET …/messages` shows it
-- [ ] The same `user_ref` inside the idle gap continues one thread; two different refs get two threads
-- [ ] Neither `user_ref` can read the other's thread by id
-- [ ] `/api/usage/by-channel` shows `api`; `/api/usage/by-user` shows the refs
-- [ ] A sync call over the timeout returns 504 with a resumable `thread_id`, and the turn still completes
-- [ ] A `read:threads`-only key gets 403 on `POST /v1/chat`
+- [x] An SSE turn streams deltas and ends with `final` carrying the message and usage
+- [x] The sync door returns the same answer as the SSE door for the same question — both **IDR 3,863,405,700**
+- [x] Killing the client mid-stream still persists the answer; a later `GET …/messages` shows it
+- [x] The same `user_ref` inside the idle gap continues one thread; two different refs get two threads
+- [x] Neither `user_ref` can read the other's thread by id — 404, not 403
+- [x] `/api/usage/by-channel` shows `api`; `/api/usage/by-user` shows the refs
+- [x] A sync call over the timeout returns 504 with a resumable `thread_id`, and the turn still completes
+- [x] A `read:threads`-only key gets 403 on `POST /v1/chat`
 
 ### Gate
 
@@ -2109,10 +2133,12 @@ Three deviations from the text below, all recorded:
   because a credential with nothing to authenticate against cannot be
   gate-tested. `T-A1` extends both.
 
-Two acceptance items are met structurally but **not proven live**, and are
-stated as such in the record: no `/v1` route takes a scope yet (`RequireScope`
-has no production call site until `T-A2`), and no audit row has been written by
-a key yet (that needs a turn started over HTTP, which is `T-A3`).
+Two acceptance items were met structurally but **not proven live**, and were
+stated as such in the record. Both are now closed: `T-A2` gave `RequireScope`
+its first production call sites and a test that sends a scopeless key at every
+`/v1` route, and `T-A3` produced the first audit rows written by a key —
+`actor_kind=api_key`, `actor_ref` the key's id, `channel=api`
+([`../coverage/api-chat.md`](../coverage/api-chat.md) §4.9).
 
 One defect the live gate found: **`/v1` inherited the dashboard's CORS
 headers**, because `middleware.CORS` is installed on the engine above every

@@ -54,8 +54,14 @@ func (f *fakeThreadRepo) LatestForAPIUser(context.Context, string, string) (*dom
 func (f *fakeThreadRepo) GetByID(context.Context, string) (*domain.ConversationThread, error) {
 	panic("unexpected GetByID")
 }
+func (f *fakeThreadRepo) GetForCompany(context.Context, string, string) (*domain.ConversationThread, error) {
+	panic("unexpected GetForCompany")
+}
 func (f *fakeThreadRepo) ListByCompany(context.Context, string, int, int) ([]*domain.ConversationThread, error) {
 	panic("unexpected ListByCompany")
+}
+func (f *fakeThreadRepo) ListPage(context.Context, string, domain.ThreadFilter) ([]*domain.ConversationThread, bool, error) {
+	panic("unexpected ListPage")
 }
 func (f *fakeThreadRepo) UpdateSummary(context.Context, string, string, string) error {
 	panic("unexpected UpdateSummary")

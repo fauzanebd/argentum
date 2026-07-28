@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -128,25 +127,12 @@ func (h *V1DocumentsHandler) list(c *gin.Context) {
 	if f.To, err = parseTimeParam(c, "created_before"); err != nil {
 		return
 	}
-	if raw := c.Query("limit"); raw != "" {
-		n, convErr := strconv.Atoi(raw)
-		if convErr != nil || n <= 0 {
-			apierr.AbortParam(c, apierr.TypeInvalidRequest, "invalid_limit",
-				"`limit` must be a positive integer.", "limit")
-			return
-		}
-		f.Limit = n
+	var ok bool
+	if f.Limit, ok = parseLimitParam(c); !ok {
+		return
 	}
-	if cursor := c.Query("cursor"); cursor != "" {
-		t, id, decErr := apiv1.DecodeCursor(cursor)
-		if decErr != nil {
-			// A caller who hand-built a cursor is told so rather than handed
-			// page one, which would look like the walk restarting for no reason.
-			apierr.AbortParam(c, apierr.TypeInvalidRequest, "invalid_cursor",
-				"That `cursor` is not one this API issued. Pass back the `next_cursor` from the previous page.", "cursor")
-			return
-		}
-		f.CursorTime, f.CursorID = t, id
+	if f.CursorTime, f.CursorID, ok = parseCursorParam(c); !ok {
+		return
 	}
 
 	rows, hasMore, err := h.docs.ListByCompany(c.Request.Context(), companyID(c), f)

@@ -195,7 +195,7 @@ unmarshal into the same Go types. See
 | Discord + Lark                 | `apps/backend/docs/lark-discord-integrations/api.md` (289) | ✅     |
 | Regenerate description         | `apps/backend/docs/db-regenerate-description/api.md` (112) | ✅     |
 | Postman collection             | `apps/backend/docs/postman/`                             | Verify   |
-| WebSocket event schema         | — **undocumented**                                   | ❌        |
+| WebSocket / SSE event schema   | [`api-chat.md`](api-chat.md) §2 (`T-A3`)             | ✅ 2026-07-28 |
 | Agent tool contracts           | — **undocumented** (only the system prompt describes them) | ❌  |
 
 ## Observations for the plan
@@ -212,8 +212,16 @@ unmarshal into the same Go types. See
    just as flatly. `GET /v1/me` was the only route on it until `T-A2`, which
    added seven more — both report doors, the report poll and its SSE stream, and
    the three document routes — each gated by `write:reports` or
-   `read:documents` ([`api-keys.md`](api-keys.md),
-   [`api-reports.md`](api-reports.md)).
-4. **The WebSocket event schema is the dashboard's most important contract and it
-   is undocumented.** Event types in use: `started`, `delta`, `thinking`,
-   `tool_call`, `tool_result`, `error`, `final`.
+   `read:documents`, and `T-A3` six more: `POST /v1/chat` plus the thread,
+   transcript, event-stream and delete routes, gated by `write:chat` or
+   `read:threads` ([`api-keys.md`](api-keys.md),
+   [`api-reports.md`](api-reports.md), [`api-chat.md`](api-chat.md)).
+4. ~~**The WebSocket event schema is the dashboard's most important contract and
+   it is undocumented.**~~ **Closed 2026-07-28 by `T-A3`.** The same seven
+   events — `started`, `delta`, `thinking`, `tool_call`, `tool_result`, `error`,
+   `final` — are now a published contract on `/v1`, with their payloads, which
+   frames carry a resumable `id:`, and why `iteration` is not among them:
+   [`api-chat.md`](api-chat.md) §2. One worker publishes both surfaces, so
+   documenting the HTTP one documents the WebSocket one; what is still not
+   written down is the *dashboard's* consumption of it, which is a frontend
+   concern rather than a contract.

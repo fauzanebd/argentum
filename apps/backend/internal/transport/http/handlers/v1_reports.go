@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -607,28 +606,21 @@ func (h *V1ReportsHandler) streamReport(c *gin.Context) {
 		return
 	}
 
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	// Proxies that buffer a response defeat the point of a stream. This is the
-	// nginx opt-out and is ignored by everything else.
-	c.Writer.Header().Set("X-Accel-Buffering", "no")
-	c.Writer.WriteHeader(http.StatusOK)
-	c.Writer.Flush()
+	sseStart(c)
 
 	// A job that finished before the caller connected gets its terminal event
 	// and nothing else. Checked before subscribing: the events it would have
 	// streamed are already published and gone, and a subscriber to a finished
 	// turn waits for a message that will never come.
 	if rep.Status.Terminal() {
-		h.sendEvent(c, "report", h.reportBody(c, rep))
+		sseEvent(c, "", "report", h.reportBody(c, rep))
 		return
 	}
 	if rep.ThreadID == "" {
 		// A queued render job publishes nothing on a thread channel — it has no
 		// thread. Poll is the collection path for those, and saying so beats
 		// holding a connection open on a stream that cannot produce an event.
-		h.sendEvent(c, "report", h.reportBody(c, rep))
+		sseEvent(c, "", "report", h.reportBody(c, rep))
 		return
 	}
 
@@ -639,7 +631,7 @@ func (h *V1ReportsHandler) streamReport(c *gin.Context) {
 	defer func() { _ = pubsub.Close() }()
 	if _, err := pubsub.Receive(ctx); err != nil {
 		logrus.WithError(err).Warn("report SSE subscribe failed")
-		h.sendEvent(c, "error", gin.H{"message": "The event stream could not be opened. Poll the report instead."})
+		sseEvent(c, "", "error", gin.H{"message": "The event stream could not be opened. Poll the report instead."})
 		return
 	}
 
@@ -648,7 +640,7 @@ func (h *V1ReportsHandler) streamReport(c *gin.Context) {
 	// millisecond too late would otherwise wait for a `final` that was
 	// published while they were still setting up.
 	if fresh, err := h.reports.GetForCompany(ctx, companyID(c), rep.ID); err == nil && fresh.Status.Terminal() {
-		h.sendEvent(c, "report", h.reportBody(c, fresh))
+		sseEvent(c, "", "report", h.reportBody(c, fresh))
 		return
 	}
 
@@ -663,7 +655,7 @@ func (h *V1ReportsHandler) streamReport(c *gin.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if !h.sendComment(c, "heartbeat") {
+			if !sseComment(c, "heartbeat") {
 				return
 			}
 		case msg, ok := <-msgCh:
@@ -679,7 +671,7 @@ func (h *V1ReportsHandler) streamReport(c *gin.Context) {
 			// asked for as a PDF is bandwidth spent on something nobody reads.
 			switch evt.Type {
 			case "started", "tool_call", "tool_result", "thinking":
-				if !h.sendEvent(c, "progress", progressBody(&evt)) {
+				if !sseEvent(c, "", "progress", progressBody(&evt)) {
 					return
 				}
 			case "final", "error":
@@ -690,7 +682,7 @@ func (h *V1ReportsHandler) streamReport(c *gin.Context) {
 				if err != nil {
 					fresh = rep
 				}
-				h.sendEvent(c, "report", h.reportBody(c, fresh))
+				sseEvent(c, "", "report", h.reportBody(c, fresh))
 				return
 			}
 		}
@@ -708,29 +700,6 @@ func progressBody(evt *app.ChatEvent) gin.H {
 		body["step"] = evt.ThinkingStep
 	}
 	return body
-}
-
-// sendEvent writes one SSE frame. The bool is whether the connection is still
-// usable — a client that hung up mid-report is the ordinary end of one of
-// these streams, not an error worth logging.
-func (h *V1ReportsHandler) sendEvent(c *gin.Context, name string, payload any) bool {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return true
-	}
-	if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", name, body); err != nil {
-		return false
-	}
-	c.Writer.Flush()
-	return true
-}
-
-func (h *V1ReportsHandler) sendComment(c *gin.Context, text string) bool {
-	if _, err := fmt.Fprintf(c.Writer, ": %s\n\n", text); err != nil {
-		return false
-	}
-	c.Writer.Flush()
-	return true
 }
 
 // loadReport resolves `:id` inside the tenant boundary, writing the envelope

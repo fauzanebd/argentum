@@ -191,6 +191,15 @@ var unpolicedPaths = map[string]bool{
 	"/v1/documents/:id":         true, // read:documents
 	"/v1/documents/:id/content": true, // read:documents
 
+	// T-A3's chat surface. The split is write:chat to spend, read:threads to
+	// read — and DELETE is a write, because destroying a conversation is not
+	// something a read-only key should be able to do.
+	"/v1/chat":                 true, // write:chat
+	"/v1/threads":              true, // read:threads
+	"/v1/threads/:id":          true, // read:threads (GET), write:chat (DELETE)
+	"/v1/threads/:id/messages": true, // read:threads
+	"/v1/threads/:id/events":   true, // read:threads
+
 	// Inbound webhooks authenticate by provider signature, not by JWT.
 	"/webhook/whatsapp":             true,
 	"/webhook/discord/interactions": true,

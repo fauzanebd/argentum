@@ -122,6 +122,70 @@ func TestReportScopesAreDistinct(t *testing.T) {
 	}
 }
 
+// TestChatScopesAreSplitByCost is the ticket's eighth acceptance item, in both
+// directions. A read-only key must not be able to spend the tenant's credits,
+// and a key minted to send must not be able to read back conversations it did
+// not start — the two capabilities are priced differently and a tenant should
+// be able to hand out one without the other.
+//
+// DELETE is on the write side deliberately: destroying a conversation is not a
+// read, and `read:threads` is the scope a tenant gives to a reporting job.
+func TestChatScopesAreSplitByCost(t *testing.T) {
+	readOnly := routerWithDeps(t, func(d *apiDeps) {
+		d.apiKeyAuth = scopelessKey{scopes: []domain.Scope{domain.ScopeReadThreads}}
+	})
+	for _, key := range []string{"POST /v1/chat", "DELETE /v1/threads/:id"} {
+		method, path, _ := strings.Cut(key, " ")
+		t.Run(key, func(t *testing.T) {
+			req, err := http.NewRequest(method, concreteURL(path), strings.NewReader(`{}`))
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			req.Header.Set("Authorization", "Bearer arg_test_key")
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Idempotency-Key", "k-1")
+			if code := statusOf(readOnly, req); code != http.StatusForbidden {
+				t.Errorf("status = %d, want 403 — read:threads must not spend or destroy", code)
+			}
+		})
+	}
+
+	writeOnly := routerWithDeps(t, func(d *apiDeps) {
+		d.apiKeyAuth = scopelessKey{scopes: []domain.Scope{domain.ScopeWriteChat}}
+	})
+	for _, key := range []string{"GET /v1/threads", "GET /v1/threads/:id/messages"} {
+		method, path, _ := strings.Cut(key, " ")
+		t.Run(key, func(t *testing.T) {
+			req, err := http.NewRequest(method, concreteURL(path), nil)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			req.Header.Set("Authorization", "Bearer arg_test_key")
+			if code := statusOf(writeOnly, req); code != http.StatusForbidden {
+				t.Errorf("status = %d, want 403 — write:chat must not read transcripts", code)
+			}
+		})
+	}
+}
+
+// TestChatRequiresAnIdempotencyKey pins the other half of "a turn spends
+// money": the header is mandatory rather than honoured-if-present, on the same
+// terms as the report doors.
+func TestChatRequiresAnIdempotencyKey(t *testing.T) {
+	r := routerWithDeps(t, func(d *apiDeps) {
+		d.apiKeyAuth = scopelessKey{scopes: []domain.Scope{domain.ScopeWriteChat}}
+	})
+	req, err := http.NewRequest(http.MethodPost, "/v1/chat", strings.NewReader(`{"message":"hi","user_ref":"u"}`))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer arg_test_key")
+	req.Header.Set("Content-Type", "application/json")
+	if code := statusOf(r, req); code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 without an Idempotency-Key", code)
+	}
+}
+
 // TestIdempotencyIsRequiredOnBothDoors is the acceptance item T-A1 recorded as
 // tested-not-live because `/v1` had no POST route to exercise it. It has one
 // now: a write that spends money without an Idempotency-Key is a

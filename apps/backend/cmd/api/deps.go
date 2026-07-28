@@ -45,6 +45,10 @@ type apiDeps struct {
 	userRepo     *pgctl.UserRepo
 	companyRepo  *pgctl.CompanyRepo
 	actionRepo   *pgctl.AgentActionRepo
+	// usageRepo is read directly by `/v1/chat` for one thing UsageService does
+	// not expose: what a single turn cost, over a window bounded by time.Time
+	// rather than by the dashboard's string dates.
+	usageRepo    *pgctl.UsageRepo
 	dashboardSvc *app.DashboardService
 	scheduledSvc *app.ScheduledTaskService
 	discordSvc   *app.DiscordService

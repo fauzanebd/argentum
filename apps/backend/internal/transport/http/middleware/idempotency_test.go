@@ -51,7 +51,16 @@ func (m *memStore) Progress(_ context.Context, key string, result json.RawMessag
 	return nil
 }
 
-func (m *memStore) Complete(_ context.Context, key string, status int, result json.RawMessage) error {
+// Complete and Discard honour cancellation, unlike Begin and Progress, because
+// they are the two the middleware calls *after* the handler has returned — the
+// point at which a streaming route's request context is routinely already
+// dead. A fake that ignored the context would make that whole class of bug
+// untestable here, and it is a real one: go-redis refuses a command on a
+// cancelled context without touching the socket.
+func (m *memStore) Complete(ctx context.Context, key string, status int, result json.RawMessage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if rec, ok := m.records[key]; ok {
@@ -62,7 +71,10 @@ func (m *memStore) Complete(_ context.Context, key string, status int, result js
 	return nil
 }
 
-func (m *memStore) Discard(_ context.Context, key string) error {
+func (m *memStore) Discard(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.records, key)
@@ -211,6 +223,65 @@ func TestAFailedRequestForgetsItsKey(t *testing.T) {
 	}
 	if runs != 2 {
 		t.Errorf("handler ran %d times, want 2", runs)
+	}
+}
+
+// The exception to the rule above, and the reason it is an exception: a 504
+// from `POST /v1/chat`'s synchronous door means the *wait* ran out, not the
+// turn. That turn is still running and still being billed, so forgetting the
+// key would let the retry a 504 invites start a second one (T-A3).
+func TestARetainedRecordSurvivesAFailedResponse(t *testing.T) {
+	store := newMemStore()
+	runs := 0
+	r := gin.New()
+	v1 := r.Group("/v1")
+	v1.Use(func(c *gin.Context) { c.Set("company_id", "co-1") })
+	v1.POST("/reports", Idempotency(store), func(c *gin.Context) {
+		runs++
+		DeclareIdempotentResult(c, gin.H{"thread_id": "th-1", "run_id": "msg-1"})
+		RetainIdempotentRecord(c)
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "still running"})
+	})
+
+	if w := postWithKey(t, r, "k-1", `{"m":1}`); w.Code != http.StatusGatewayTimeout {
+		t.Fatalf("first status = %d, want 504", w.Code)
+	}
+	rec := store.get(idempotency.Key("co-1", "k-1"))
+	if rec == nil {
+		t.Fatal("the record was discarded — a retry would start a second turn")
+	}
+	if rec.Status != idempotency.StatusCompleted || !strings.Contains(string(rec.Result), "th-1") {
+		t.Fatalf("record = %+v, want a completed record carrying the ids", rec)
+	}
+	postWithKey(t, r, "k-1", `{"m":1}`)
+	if runs != 1 {
+		t.Errorf("handler ran %d times, want 1", runs)
+	}
+}
+
+// A streaming route ends when the client hangs up, which cancels the request
+// context. The bookkeeping for work that has already run must not be abandoned
+// with it: a record left in_flight refuses every retry for the full 24-hour
+// TTL, for a turn that finished minutes ago (T-A3).
+func TestTheRecordIsCompletedEvenWhenTheClientHangsUp(t *testing.T) {
+	store := newMemStore()
+	r := gin.New()
+	v1 := r.Group("/v1")
+	v1.Use(func(c *gin.Context) { c.Set("company_id", "co-1") })
+	v1.POST("/reports", Idempotency(store), func(c *gin.Context) {
+		DeclareIdempotentResult(c, gin.H{"thread_id": "th-1"})
+		// What a disconnected SSE handler leaves behind.
+		ctx, cancel := context.WithCancel(c.Request.Context())
+		cancel()
+		c.Request = c.Request.WithContext(ctx)
+		c.Status(http.StatusOK)
+	})
+
+	postWithKey(t, r, "k-1", `{"m":1}`)
+
+	rec := store.get(idempotency.Key("co-1", "k-1"))
+	if rec == nil || rec.Status != idempotency.StatusCompleted {
+		t.Fatalf("record = %+v, want completed — a hung-up stream stranded its key", rec)
 	}
 }
 

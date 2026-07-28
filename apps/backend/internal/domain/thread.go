@@ -47,10 +47,39 @@ type ConversationThread struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// ThreadFilter narrows a keyset-paginated thread listing (T-A3).
+//
+// Channel is a filter rather than an assumption because the table holds every
+// channel's conversations in one place. `/v1` always sets it to ChannelAPI: a
+// machine credential listing the threads of named people who have dashboard
+// sessions is a leaked key reading the staff's chat history, and the tenant's
+// own audit surface for those is the dashboard, which is role-gated.
+//
+// APIUserRef narrows further, to one end user of the tenant's own product. It
+// is what makes "neither user_ref can read the other's thread" enforceable by
+// us rather than by the integrator remembering to filter.
+type ThreadFilter struct {
+	Channel    Channel
+	APIUserRef string
+	CursorTime time.Time
+	CursorID   string
+	Limit      int
+}
+
 // ThreadRepository is the persistence contract for conversation threads.
 type ThreadRepository interface {
 	Create(ctx context.Context, t *ConversationThread) error
 	GetByID(ctx context.Context, id string) (*ConversationThread, error)
+	// GetForCompany is GetByID with the tenant boundary inside the query.
+	// `/v1` uses only this one, for the reason DocumentRepository states: a
+	// handler that fetches first and compares afterwards is one forgotten
+	// comparison away from a cross-tenant read.
+	GetForCompany(ctx context.Context, companyID, id string) (*ConversationThread, error)
+	// ListPage returns one keyset page newest-first plus whether another page
+	// exists. Distinct from ListByCompany, which is the dashboard's offset
+	// listing: an offset walk over a table that gains rows while it is being
+	// paged shows an item twice or misses one entirely.
+	ListPage(ctx context.Context, companyID string, f ThreadFilter) ([]*ConversationThread, bool, error)
 	// LatestForPhone returns the most recent non-archived thread for a phone
 	// number within a company. ErrNotFound if no thread exists yet.
 	LatestForPhone(ctx context.Context, companyID, phoneNumber string) (*ConversationThread, error)

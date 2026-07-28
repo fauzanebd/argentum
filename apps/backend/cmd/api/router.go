@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/transport/http/handlers"
@@ -111,6 +112,13 @@ func newRouter(d *apiDeps) *gin.Engine {
 		cfg.APIV1CallbackAllowPrivate,
 	).Register(v1)
 	handlers.NewV1DocumentsHandler(d.documentRepo, d.docGen, contentStoreOrNil(d.storageSvc)).Register(v1)
+	// T-A3's chat surface. Same reasoning as above: registered unconditionally
+	// so a deployment missing a dependency answers a typed 503 from inside the
+	// handler rather than a 404 that reads as a wrong path.
+	handlers.NewV1ChatHandler(
+		chatEnqueuerOrNil(d.chatEnq), d.threadRepo, d.msgRepo, turnUsageOrNil(d.usageRepo), d.rdb, d.idemStore,
+		time.Duration(cfg.APIV1SyncTimeoutSeconds)*time.Second,
+	).WithDashboards(d.dashboardSvc).Register(v1)
 
 	webhookGroup := r.Group("/webhook")
 	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, cfg.WhatsAppWebhookVerifyToken).
@@ -150,6 +158,28 @@ func budgetReaderOrNil(svc *app.UsageService) handlers.V1BudgetReader {
 		return nil
 	}
 	return svc
+}
+
+// chatEnqueuerOrNil is budgetReaderOrNil for the chat enqueuer (T-A3). Third
+// instance of the same trap, and the one that would be hardest to spot: a
+// deployment with no queue would answer a panic on `POST /v1/chat` rather than
+// the typed 503 the handler's own guard writes.
+func chatEnqueuerOrNil(e *app.ChatEnqueuer) handlers.V1ChatEnqueuer {
+	if e == nil {
+		return nil
+	}
+	return e
+}
+
+// turnUsageOrNil is budgetReaderOrNil for the per-turn usage read (T-A3). The
+// same nil-pointer-in-a-non-nil-interface trap: `/v1/chat` reports what a turn
+// cost on a best-effort basis, and a typed nil would turn "omit the usage
+// block" into a panic on the response path.
+func turnUsageOrNil(repo *pgctl.UsageRepo) handlers.V1TurnUsageReader {
+	if repo == nil {
+		return nil
+	}
+	return repo
 }
 
 // apiKeyAuthOf is the one seam a test can drive the real router through.

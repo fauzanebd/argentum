@@ -856,6 +856,77 @@ that was never registered.
 
 Record, gate output and the limits: [`api-reports.md`](api-reports.md).
 
+`T-A3` chat over the API
+
+The other half of what a tenant's application asks for. `T-A2` sells "give me a
+file"; this is "answer my user's question, in my own interface". One question in,
+one answer out — streamed as it is written, or waited for.
+
+The event names are the dashboard's, unchanged, and that is the decision the
+ticket turns on. One worker publishes both surfaces; a second vocabulary for
+HTTP would have been a translation layer nobody could keep in step with a schema
+that had never been written down. Writing it down is itself a deliverable —
+`api-surface.md` observation 4 has recorded it as *the dashboard's most
+important contract and undocumented* since the first survey.
+
+The decisions worth carrying forward:
+
+- **The stream reconciles the bus against the transcript.** Redis pub/sub keeps
+  nothing for a subscriber who was not there, and the thread id only exists once
+  the enqueue returns — so there is a window in which the worker can publish
+  `final` into an empty room, on exactly the fast turns the synchronous door is
+  for. Every attach therefore subscribes and *then* asks the message log whether
+  the turn has already answered. The worst case is a lost delta; the answer is
+  never lost.
+- **Only durable frames carry an `id:`.** A client's `Last-Event-ID` is the last
+  id it saw, so pinning one to a token delta would promise a replay this system
+  cannot perform — deltas exist nowhere but the connection that carried them. A
+  reconnect gets back the messages it missed, which is the part that was real.
+- **A 504 is the wait running out, not the turn.** It answers with
+  `{thread_id, run_id}` and points at `GET /v1/threads/:id/events`, and it
+  **keeps its idempotency key**. The middleware's rule — a failed request forgets
+  its key — is right for every other 5xx and exactly wrong here, because the work
+  is still running and still being billed: the retry a 504 invites would start a
+  second turn. Proven over the wire, one question and one answer in the thread
+  afterwards.
+- **`user_ref` is enforced rather than trusted.** We cannot authenticate it — a
+  key belongs to a company, not to one of its users — but we can hold a caller to
+  the one they named. That turns "our backend passes the logged-in user's id
+  through" from a convention into a boundary, and it answers 404 rather than 403
+  because a 403 confirms the thread exists.
+- **`/v1/threads` is the `api` channel and nothing else.** A key that could page
+  the dashboard's threads is a leaked key reading the staff's chat history.
+- **The stream carries a tool's name and never its arguments.** Those are the SQL
+  the agent ran; the place for them is `T-05`'s audit log, redacted and
+  admin-only.
+
+**The live gate found two defects, and the first is the more interesting.**
+`last_message_at` is written from the API process's clock and `messages.created_at`
+from Postgres's — they land ~130µs apart, in the wrong direction. Deciding
+"has this turn answered?" by comparing those two columns meant a settled thread's
+answer was never inside the window, so attaching to one held the connection open
+until the client gave up, for an answer already in the database. The fix compares
+two rows written by one clock. The general rule it is an instance of is worth
+more than the fix: never compare timestamps from two writers when you can compare
+two rows from one.
+
+The second: a hung-up SSE client was **stranding its own idempotency key**. The
+middleware completes its record after the handler returns and used the request's
+context to do it — which a disconnect has already cancelled — so the record sat
+`in_flight` for 24 hours and every later retry got `409 request_in_flight` for a
+turn that had finished minutes earlier. `T-A2`'s doors had the same exposure on
+any client that gave up mid-render.
+
+Seventh consecutive ticket where the live half of the gate found something the
+unit tests could not — and both findings now have tests that fail against the
+old code.
+
+It also closed two items earlier tickets recorded as unprovable: the first audit
+rows written by a key (`actor_kind=api_key`, `T-13`), and the request id from a
+response body appearing on every audit row of that turn (`T-A1`).
+
+Record, gate output and the limits: [`api-chat.md`](api-chat.md).
+
 ---
 
 ## What the history says about how this project is built

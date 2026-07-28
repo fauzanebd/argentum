@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -83,6 +84,91 @@ func (r *ThreadRepo) LatestForAPIUser(ctx context.Context, companyID, apiUserRef
 		WHERE company_id = $1 AND api_user_ref = $2 AND channel = 'api' AND NOT is_archived
 		ORDER BY last_message_at DESC LIMIT 1`
 	return r.scanOne(ctx, q, companyID, apiUserRef)
+}
+
+// GetForCompany is GetByID with the tenant boundary inside the query (T-A3).
+//
+// The `/v1` chat surface uses only this one. A malformed uuid fails the cast
+// rather than matching nothing, which is why the caller maps every error here
+// onto the same not-found: an id from another tenant and an id that is not an
+// id must be indistinguishable, or the route is an existence oracle over other
+// companies' conversations.
+func (r *ThreadRepo) GetForCompany(ctx context.Context, companyID, id string) (*domain.ConversationThread, error) {
+	q := `SELECT ` + threadSelectCols + `
+		FROM conversation_threads WHERE id = $1 AND company_id = $2`
+	return r.scanOne(ctx, q, id, companyID)
+}
+
+// maxThreadPage / defaultThreadPage bound a `/v1` page, on the same terms
+// documents are bounded: an over-large ask is trimmed rather than refused,
+// because the cursor is what makes the rest reachable.
+const (
+	maxThreadPage     = 100
+	defaultThreadPage = 25
+)
+
+// ListPage returns one keyset page newest-first plus whether another exists.
+//
+// Ordered by (created_at, id) rather than by last_message_at, which is what the
+// dashboard's listing sorts on: last_message_at *moves*, so a cursor built from
+// it names a position that has already changed by the time the next page is
+// asked for — a thread that receives a message mid-walk jumps to the front and
+// is served twice. created_at never moves. The cost is that a `/v1` listing is
+// in creation order rather than in recency order, which is the right trade for
+// a machine walking a list once.
+func (r *ThreadRepo) ListPage(ctx context.Context, companyID string, f domain.ThreadFilter) ([]*domain.ConversationThread, bool, error) {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = defaultThreadPage
+	}
+	if limit > maxThreadPage {
+		limit = maxThreadPage
+	}
+
+	var where strings.Builder
+	where.WriteString(` WHERE company_id = $1`)
+	args := []any{companyID}
+	if f.Channel != "" {
+		args = append(args, string(f.Channel))
+		where.WriteString(` AND channel = $` + itoa(len(args)))
+	}
+	if f.APIUserRef != "" {
+		args = append(args, f.APIUserRef)
+		where.WriteString(` AND api_user_ref = $` + itoa(len(args)))
+	}
+	if f.CursorID != "" && !f.CursorTime.IsZero() {
+		args = append(args, f.CursorTime, f.CursorID)
+		where.WriteString(` AND (created_at, id) < ($` + itoa(len(args)-1) + `, $` + itoa(len(args)) + `::uuid)`)
+	}
+
+	// One row more than asked for, discarded before returning: has_more is then
+	// a fact rather than the guess `len(rows) == limit` gives.
+	args = append(args, limit+1)
+	q := `SELECT ` + threadSelectCols + ` FROM conversation_threads` + where.String() +
+		` ORDER BY created_at DESC, id DESC LIMIT $` + itoa(len(args))
+
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	out := make([]*domain.ConversationThread, 0, limit)
+	for rows.Next() {
+		t, err := scanThreadRow(rows)
+		if err != nil {
+			return nil, false, err
+		}
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
+	return out, hasMore, nil
 }
 
 func (r *ThreadRepo) ListByCompany(ctx context.Context, companyID string, limit, offset int) ([]*domain.ConversationThread, error) {
