@@ -95,6 +95,46 @@ zero tests.**
 > Details, including the guardrail golden set's shape, are in the sections
 > below.
 
+> **Updated after `T-04` (2026-07-28):** **22 of 49 packages have tests.** The
+> new one is `cmd/api` — the first `cmd/` package with any, and the reason is
+> worth recording because it is a pattern the `/v1` tickets will want.
+>
+> `T-04`'s gate is "every gated route × {admin, member}". Gin's `RouteInfo`
+> exposes a route's final handler and nothing about the middleware chain in
+> front of it, so *no* test can read per-route gating back out of a built
+> router. Putting the access decision in a table (`cmd/api/policy.go`) rather
+> than in scattered `AdminOnly()` calls makes it readable — and then
+> `TestEveryAuthedRouteIsClassified` can diff the table against `r.Routes()` in
+> both directions: a route with no entry fails, and an entry with no route fails
+> too.
+>
+> The tests drive the **real** `newRouter` with every service present but
+> unwired. Nothing touches a database; a member's 403 is asserted directly, and
+> an admin's success is asserted as "not 403", because reaching a handler backed
+> by a nil service is the signal. Services must be non-nil at construction or
+> the optional handler groups never register and the sweep would silently stop
+> covering them — which is itself a trap this test would otherwise fall into.
+>
+> Two things it found:
+>
+> - **`NewRateLimiter` returned a limiter that panics when Redis is absent.**
+>   `newRouter` already read `if rateLimiter != nil`, so the intent was there;
+>   the constructor never returned nil. Production always passes a live client,
+>   so it was latent rather than live — but it made the router untestable, which
+>   is how it surfaced. It now returns nil for a nil client.
+> - **`RequireRole` checked the role only on admin routes.** Wired without
+>   `Auth` in front of it, a member-classified route would have admitted a
+>   request with no identity at all. It now refuses any role it does not
+>   recognise, on every route. `TestRequireRoleDeniesWhenAuthDidNotRun` covers
+>   the misordered chain.
+>
+> Also new: `internal/app` gained `team_service_test.go` and
+> `auth_service_test.go`. The in-memory user repo there deliberately reproduces
+> two guards the SQL relies on — the global uniqueness of `users.email`, and
+> `Activate` only firing on a still-pending row — because those are what make an
+> invite single-use, and a fake that ignored them would let the suite pass on a
+> service that has neither. Full record: [`rbac.md`](rbac.md).
+
 ## Go backend — package by package
 
 ### Packages with tests (21)
@@ -387,11 +427,16 @@ ok  	github.com/fauzanebd/argentum/internal/transport/http/middleware	2.529s
 
 21 `ok`, 28 `[no test files]`, 0 `FAIL`, 49 packages.
 
+**After `T-04` (2026-07-28):** 22 `ok`, 27 `[no test files]`, 0 `FAIL`, 49
+packages — `cmd/api` is the addition. `go test -race ./...` exit 0.
+
 `golangci-lint run ./...`:
 
 ```
 0 issues.
 ```
+
+Still 0 issues after `T-04`.
 
 **CI fails when a test fails — proved locally.** The round-trip assertion in
 `internal/crypto/dsn_test.go` was inverted (`got != tc.plain` → `got ==`) and

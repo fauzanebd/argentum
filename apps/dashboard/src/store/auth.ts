@@ -33,3 +33,13 @@ export const useAuthStore = create<AuthState>()(
     { name: "argentum-auth" },
   ),
 );
+
+/**
+ * useIsAdmin drives what the UI offers, never what it permits — the API's
+ * route policy is the only thing enforcing anything, and this store is
+ * persisted to localStorage where a user can edit it freely. Its job is to
+ * stop showing members buttons that would answer 403.
+ */
+export function useIsAdmin(): boolean {
+  return useAuthStore((s) => s.user?.role === "admin");
+}

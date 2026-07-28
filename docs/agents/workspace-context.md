@@ -65,7 +65,7 @@ A SQL query against the control plane   | `internal/adapters/postgres/*_repo.go`
 Something the agent can do              | `internal/tools/` + register in `cmd/worker/main.go`
 The agent's instructions                | `buildSystemPrompt()` in `cmd/worker/main.go:426`
 A guardrail                             | `config/guardrails.yaml`
-An HTTP route                           | `internal/transport/http/handlers/` + `cmd/api/router.go`
+An HTTP route                           | `internal/transport/http/handlers/` + `cmd/api/router.go` — **and an entry in `cmd/api/policy.go`**, or it 403s and CI fails
 Dependency wiring (API)                 | `cmd/api/bootstrap.go`
 Dependency wiring (worker)              | `cmd/worker/main.go`
 A tenant DB dialect                     | `internal/adapters/db/<driver>/`
@@ -86,7 +86,7 @@ Auth state                   | `src/store/auth.ts` (Zustand)
 Live chat stream             | `src/features/chat/use-thread-stream.ts`
 Routing                      | `src/routes/index.tsx` (TanStack Router)
 
-## The seven things that will bite you
+## The eight things that will bite you
 
 ### 1. There are two processes and they do not share caches
 
@@ -135,7 +135,24 @@ schema meets old code. **Every migration must be forward-compatible:** add
 nullable columns or new tables; do not drop or rename anything a running binary
 reads. Add-then-backfill-then-remove across two releases.
 
-### 7. Tenant databases are customer property
+### 7. Every authenticated route needs a line in `cmd/api/policy.go`
+
+`middleware.RequireRole(apiPolicy)` gates the whole `/api` authed group by
+looking up `METHOD + " " + c.FullPath()`. **A route with no entry is denied**,
+including to admins, and `TestEveryAuthedRouteIsClassified` in `cmd/api` fails
+the build in both directions — a route with no entry, and an entry whose route
+no longer exists.
+
+This is deliberate. Gin exposes a route's final handler and nothing about the
+middleware chain in front of it, so per-route `AdminOnly()` calls cannot be
+verified by any test; a table can be diffed against the router. If you add a
+route and the test fails, the fix is to decide `domain.RoleAdmin` or
+`domain.RoleMember` — not to add it to `unpolicedPaths`, which is only for
+routes that run before authentication exists.
+
+Rationale for the current classification: `docs/coverage/rbac.md`.
+
+### 8. Tenant databases are customer property
 
 Argentum never migrates them, never writes to them, and only reads through
 `Conn.ExecuteReadOnly`. `migrations/demo_tenant/` is for the local demo container

@@ -44,18 +44,6 @@ func Auth(signer *auth.TokenSigner) gin.HandlerFunc {
 	}
 }
 
-// AdminOnly is a middleware factory that rejects non-admin requests. Apply
-// after Auth.
-func AdminOnly() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if role, _ := c.Get("role"); role != "admin" {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin only"})
-			return
-		}
-		c.Next()
-	}
-}
-
 // extractToken reads the access token from, in order:
 //  1. The Authorization "Bearer …" header (default for fetch/axios calls).
 //  2. The `?at=` query parameter (used by the WebSocket endpoint where the

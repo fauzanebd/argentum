@@ -69,6 +69,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.msgRepo = messageRepo
 	deps.userRepo = userRepo
 	deps.companyRepo = companyRepo
+	deps.teamSvc = app.NewTeamService(userRepo, pgctl.NewUserInviteRepo(controlDB))
 
 	dsnCipher, err := crypto.NewFromHex(cfg.DSNEncryptionKeyHex)
 	if err != nil {

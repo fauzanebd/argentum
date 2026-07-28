@@ -26,10 +26,15 @@ func newRouter(d *apiDeps) *gin.Engine {
 
 	api := r.Group("/api")
 	handlers.NewMetaHandler().Register(api.Group("/meta"))
-	handlers.NewAuthHandler(d.authSvc, cfg.CookieSecure, d.signer.RefreshTTL()).Register(api.Group("/auth"))
+	handlers.NewAuthHandler(d.authSvc, d.teamSvc, cfg.CookieSecure, d.signer.RefreshTTL()).
+		Register(api.Group("/auth"))
 
 	authed := api.Group("")
 	authed.Use(middleware.Auth(d.signer))
+	// RequireRole runs after Auth (it reads the role Auth sets) and before the
+	// rate limiter, so a request a member is not allowed to make does not
+	// consume their budget. apiPolicy in policy.go is the whole access model.
+	authed.Use(middleware.RequireRole(apiPolicy))
 	if rateLimiter := middleware.NewRateLimiter(d.rdb, 60, 1.0); rateLimiter != nil {
 		authed.Use(rateLimiter.Middleware())
 	}
@@ -37,7 +42,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.dashboardSvc).Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
 	handlers.NewConfigHandler(cfg).Register(authed)
-	handlers.NewUserHandler(d.userRepo, d.companyRepo).Register(authed.Group("/users"))
+	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).Register(authed.Group("/users"))
 	if d.dashboardSvc != nil {
 		handlers.NewDashboardHandler(d.dashboardSvc).Register(authed)
 	}

@@ -42,7 +42,7 @@ priority on 2026-07-28. This table is the authoritative order.
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
 | 1a — worth forwarding | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, `T-R4`→`T-R5` | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). |
-| 1b — safe to change | ~~`T-02`~~, `T-02b`, `T-03`, `T-04`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). |
+| 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, `T-02b`, `T-03`, `T-05` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). |
 | 1c — callable | `T-13`, `T-A1`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moves here from week 5 — it is the prerequisite, not a week-5 nicety. |
 | 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Moved to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
@@ -65,8 +65,9 @@ Three ordering notes for 1a → 1b → 1c, decided 2026-07-28:
 - **`T-R5` drags phase 1b forward whether or not the API exists.** It deps `T-04`,
   which deps `T-02`. So 4.5 days of "phase 1b" work is already embedded inside
   "finish the report track". The running order is therefore
-  ~~`T-R3`~~ → `T-R4` → `T-02` → `T-04` → `T-R5` → `T-05` → `T-03` → `T-13` → `T-A1`…,
-  not three clean blocks.
+  ~~`T-R3`~~ → ~~`T-R4`~~ → ~~`T-02`~~ → ~~`T-04`~~ → `T-R5` → `T-05` → `T-03` → `T-13` → `T-A1`…,
+  not three clean blocks. **Next up: `T-R5`** — tenant report branding, now
+  unblocked.
 - **`T-13` is no longer a week-5 ticket.** Scoped API keys are the only machine
   authentication this product has, and every `/v1` route is behind them. It runs
   immediately before `T-A1`.
@@ -1495,9 +1496,43 @@ company and assert 200.
 
 ---
 
-## T-04 · Apply RBAC + team invites
+## ~~T-04~~ · Apply RBAC + team invites — **DONE 2026-07-28**
 **Repo:** BE, FE · **Size:** 1.5d · **Deps:** T-02 · **Priority:** P0 · **Never cut**
-**Migration:** `027_user_invites`
+**Migration:** ~~`027_user_invites`~~ → **`021_user_invites`**
+
+**Shipped.** Record, gate output and known limits:
+[`../coverage/rbac.md`](../coverage/rbac.md).
+
+Four things about the delivered shape differ from the text below, all
+deliberate:
+
+- **The gate is a policy table, not `AdminOnly()` per route.** Gin's
+  `RouteInfo` exposes a route's final handler and nothing about the middleware
+  chain in front of it, so per-route middleware cannot be verified by any test.
+  The decision lives in `cmd/api/policy.go` as data; `middleware.RequireRole`
+  enforces it, unlisted routes are denied, and
+  `TestEveryAuthedRouteIsClassified` diffs the table against the router's own
+  route list in both directions. `AdminOnly()` survives for one-off routes
+  outside a policed group.
+- **More is gated than step 1 lists.** `POST /api/connections` (a member who
+  can add a source can point one anywhere), both `/test` routes (outbound
+  connection to a caller-chosen host, no row written), `PATCH
+  /connections/:id`, `POST …/default`, and the three routes that spend LLM or
+  embedding budget per table. Reasoning is in `policy.go` beside the table.
+- **The migration renumbered to `021`.** golang-migrate only applies versions
+  above the schema's current one, so landing 027 would strand 021–026 forever —
+  and `T-05` (`021_agent_actions`) and `T-06` (`022_metric_definitions`) are
+  filed against those numbers. It also backfills `activated_at` for existing
+  users; without that line the new login check locks out everyone on rollout.
+- **Deactivation reaches live sessions.** `Refresh` re-reads the user rather
+  than re-signing the claims it was handed, so removal takes effect within one
+  access-token lifetime (15 min) instead of at the refresh token's seven-day
+  expiry, and a role change lands on the next refresh. A blocklist for
+  already-issued access tokens is out of scope and belongs with `T-13`.
+
+**"Every LLM-credential route" has no referent.** `company_llm_credentials` has
+a repo and a resolver but no HTTP surface. When one lands it needs a policy
+entry, and the classification test will refuse to pass without one.
 
 **Findings S-1, S-2.** `AdminOnly()` exists and is applied to nothing. Nine
 credential/config-mutating routes are open to any member.
@@ -1522,13 +1557,25 @@ credential/config-mutating routes are open to any member.
    nullable `users.activated_at` so a pending user cannot log in before accepting.
 
 **Acceptance:**
-- [ ] Member JWT gets 403 on every route listed in step 1
-- [ ] Admin JWT succeeds on all of them
-- [ ] Invite → accept → login works end to end
-- [ ] Last admin cannot be removed or demoted
+- [x] Member JWT gets 403 on every route listed in step 1 —
+      `TestGatedRoutesRejectMembers`, 26 admin routes driven through the real
+      `newRouter`
+- [x] Admin JWT succeeds on all of them — same test, admin arm. Asserted as
+      "not 403" because the routers under test have no database behind them, so
+      reaching the handler is the signal
+- [x] Invite → accept → login works end to end — `TestInviteAndAccept`,
+      `TestAcceptIsSingleUse`, plus the `/accept-invite` page, which logs the
+      invitee straight in because the token they arrived with is now spent
+- [x] Last admin cannot be removed or demoted —
+      `TestLastAdminCannotBeDemotedOrRemoved` and
+      `TestDeactivatedAdminsDoNotCountAsCover`
 
 **Gate:** table-driven test over every gated route × {admin, member} asserting
 {200-ish, 403}. Paste the test output.
+
+**Gate met.** Output in [`../coverage/rbac.md`](../coverage/rbac.md), together
+with the 31 member routes checked from the other side —
+a gate that denied everything would pass the admin half on its own.
 
 ---
 

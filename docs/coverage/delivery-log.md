@@ -418,6 +418,73 @@ exit 0 — but the CI half needs a push, which is the repo owner's call.
 Record, gate output and the full lint triage:
 [`test-coverage.md`](test-coverage.md).
 
+`T-04` RBAC + team invites
+
+Two findings, one ticket. `middleware.AdminOnly()` had existed since the first
+architecture pass, was correct, was tested — and was wired to zero routes, so
+any authenticated caller could rotate a database DSN, delete a data source, or
+replace the Discord and Lark bot credentials. And there was no way to create a
+second user at all: `users` carried a `company_id` and a `role`, and the only
+writer was signup, which creates a company and exactly one admin. A company
+with two people was not expressible.
+
+The decisions worth carrying forward:
+
+- **Access is a table, not a decoration.** The obvious fix is an `AdminOnly()`
+  argument in each handler's `Register`. It was rejected because it cannot be
+  verified: gin's `RouteInfo` exposes a route's final handler and nothing about
+  the chain in front of it, so no test can read per-route gating back out of a
+  built router. "Did we remember to gate the new one?" would be answerable only
+  by reading a dozen files, forever. With the decision in
+  `cmd/api/policy.go` as data, one test diffs it against `r.Routes()` in both
+  directions — a route with no entry fails, and an entry with no route fails
+  too. Unlisted routes are denied, so the failure mode of forgetting is closed
+  rather than open.
+- **The gate is wider than the ticket, on purpose.** The ticket named nine
+  routes, including `PUT /connections/:id/dsn`. It did not name `POST
+  /connections` — and a member who can *add* a source can point one anywhere,
+  which is the same capability. Nor `POST /connections/test`, which opens an
+  outbound connection to a caller-chosen host:port and writes no row. A list of
+  routes is a proxy for a capability; gating the proxy and not the capability is
+  how these findings get re-filed six months later.
+- **Deactivation had to reach sessions that already exist.** `Refresh` re-read
+  the claims it was handed and re-signed them, so removing someone left them
+  seven days of working refreshes. It now loads the user, which also means a
+  role change lands on the next refresh rather than the next login. Access
+  tokens already issued still live out their 15 minutes; that window is
+  deliberate, and a blocklist is `T-13`'s problem.
+- **The last-admin rule counts who can *currently act*.** A pending admin who
+  has never accepted their invite, and a deactivated one, do not count —
+  otherwise inviting a second admin would unlock the door before anyone walked
+  through it.
+- **The migration is `021`, not the ticket's `027`.** golang-migrate only
+  applies versions above the schema's current one, so landing 027 now would
+  strand 021–026 permanently, and `T-05` and `T-06` are already filed against
+  those numbers.
+
+Two bugs surfaced from making the router testable at all. `NewRateLimiter`
+returned a limiter that panics when Redis is absent — `newRouter` already read
+`if rateLimiter != nil`, so the intent was there and the constructor never
+honoured it. And `RequireRole` as first written checked the role only on admin
+routes, which would have admitted a request with no identity at all to a member
+route if it were ever wired without `Auth` in front of it. Both are closed.
+
+The gate was run twice: unit tests against the real `newRouter` with nil
+services, and then against a live `cmd/api` on a real Postgres — invite →
+preview → accept → replay(404) → login(200), every gated route 403 for a member
+and not-403 for an admin, and a removed member's login returning 403 rather
+than a session.
+
+That second run also produced the one mistake worth recording: the first
+attempt sourced `apps/backend/.env`, which points `DB_HOST` at a **remote**
+server rather than the local container, and `cmd/api` migrates on boot. `021`
+landed there unintentionally. It is additive and forward-compatible, the
+`activated_at` backfill covered all four existing accounts, and the owner chose
+to leave it applied. `docs/agents/playbooks/add-migration.md` and
+[`rbac.md`](rbac.md) both carry the lesson.
+
+Record, gate output and the limits: [`rbac.md`](rbac.md).
+
 ---
 
 ## What the history says about how this project is built

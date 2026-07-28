@@ -3,8 +3,23 @@
 Complete route inventory extracted from handler `Register()` functions,
 2026-07-26. 61 HTTP routes + 1 WebSocket + 1 reverse proxy + 7 agent tools.
 
-`Auth` column: `—` public, `JWT` user access token, `HMAC` signature-verified
-webhook.
+**Re-counted from the router itself after `T-04` (2026-07-28): 70 HTTP routes +
+1 WebSocket + 1 reverse proxy** (`gin.Engine.Routes()`, counting the proxy's
+nine methods as one). `T-04` added six of those — two public invite routes and
+four team routes. The rest of the gap is a hand-count that had drifted; the
+number above is left as written because the tables below, not the headline,
+are what this document is for.
+
+`Auth` column: `—` public, `JWT` any authenticated member, `JWT+` admin only,
+`HMAC` signature-verified webhook.
+
+> **Updated after `T-04` (2026-07-28).** Every `⚠️ not admin-gated` marker below
+> is gone because the routes are gated now — and more of them than the ticket
+> named. The decision for every authenticated route lives in
+> `apps/backend/cmd/api/policy.go`; `TestEveryAuthedRouteIsClassified` fails if
+> a route is added without one, or if an entry outlives its route. That test,
+> not this table, is the source of truth — this file is a reading copy.
+> Rationale per route: [`rbac.md`](rbac.md).
 
 ## Public
 
@@ -23,6 +38,8 @@ webhook.
 | POST   | `/api/auth/login`    | —    | Access JWT + refresh cookie        |
 | POST   | `/api/auth/refresh`  | —    | Refresh cookie → new access JWT    |
 | POST   | `/api/auth/logout`   | —    | Clears refresh cookie              |
+| GET    | `/api/auth/invite`   | —    | `?token=` → invite preview; does not consume it |
+| POST   | `/api/auth/accept-invite` | — | Sets the password, activates the account, logs in |
 
 ## Chat and threads
 
@@ -41,28 +58,37 @@ webhook.
 | Method | Path                                                | Auth | Notes                            |
 | ------ | --------------------------------------------------- | ---- | -------------------------------- |
 | GET    | `/api/connections`                                  | JWT  | List sources                      |
-| POST   | `/api/connections`                                  | JWT  | Register a DSN (encrypted)        |
-| PATCH  | `/api/connections/:id`                              | JWT  | Update label / description / flags |
-| PUT    | `/api/connections/:id/dsn`                          | JWT  | Rotate DSN ⚠️ **not admin-gated** |
-| POST   | `/api/connections/:id/default`                      | JWT  | Set default source                |
-| POST   | `/api/connections/:id/regenerate-description`       | JWT  | Re-run the LLM describer          |
-| POST   | `/api/connections/:id/reindex-embeddings`           | JWT  | Rebuild the table-picker index    |
-| POST   | `/api/connections/:id/test-rag`                     | JWT  | Probe top-K retrieval for a query |
-| POST   | `/api/connections/:id/test`                         | JWT  | Test a saved connection           |
-| POST   | `/api/connections/test`                             | JWT  | Dry-run a DSN before saving       |
-| DELETE | `/api/connections/:id`                              | JWT  | Remove source                     |
+| POST   | `/api/connections`                                  | JWT+ | Register a DSN (encrypted)        |
+| PATCH  | `/api/connections/:id`                              | JWT+ | Update label / description / flags |
+| PUT    | `/api/connections/:id/dsn`                          | JWT+ | Rotate DSN                        |
+| POST   | `/api/connections/:id/default`                      | JWT+ | Set default source                |
+| POST   | `/api/connections/:id/regenerate-description`       | JWT+ | Re-run the LLM describer          |
+| POST   | `/api/connections/:id/reindex-embeddings`           | JWT+ | Rebuild the table-picker index    |
+| POST   | `/api/connections/:id/test-rag`                     | JWT+ | Probe top-K retrieval for a query |
+| POST   | `/api/connections/:id/test`                         | JWT+ | Test a saved connection           |
+| POST   | `/api/connections/test`                             | JWT+ | Dry-run a DSN before saving; outbound to any host |
+| DELETE | `/api/connections/:id`                              | JWT+ | Remove source                     |
 
 ## Company settings
 
 | Method | Path                        | Auth | Notes                                     |
 | ------ | --------------------------- | ---- | ----------------------------------------- |
 | GET    | `/api/settings`             | JWT  | Company settings                           |
-| PUT    | `/api/settings`             | JWT  | Update settings ⚠️ **not admin-gated**     |
+| PUT    | `/api/settings`             | JWT+ | Update settings                            |
 | GET    | `/api/phones`               | JWT  | WhatsApp allowlist                         |
-| POST   | `/api/phones`               | JWT  | Add phone ⚠️ **not admin-gated**           |
-| DELETE | `/api/phones/:phone`        | JWT  | Remove phone                               |
+| POST   | `/api/phones`               | JWT+ | Add phone                                  |
+| DELETE | `/api/phones/:phone`        | JWT+ | Remove phone                               |
 | GET    | `/api/config/models`        | JWT  | Resolved models per role + per-1K rates    |
-| GET    | `/api/users/me`             | JWT  | Current user. **The only user endpoint**   |
+| GET    | `/api/users/me`             | JWT  | Current user                               |
+
+## Team (`T-04`)
+
+| Method | Path                    | Auth | Notes                                        |
+| ------ | ----------------------- | ---- | -------------------------------------------- |
+| GET    | `/api/users`            | JWT+ | Members and pending invites, with invite state |
+| POST   | `/api/users/invite`     | JWT+ | Creates a pending user + a single-use token. **The plaintext token is returned once and never readable again** — there is no mail transport yet |
+| PATCH  | `/api/users/:id`        | JWT+ | Change role; 409 on the last admin            |
+| DELETE | `/api/users/:id`        | JWT+ | Deactivate a member, or delete a pending one (frees the globally unique email); 409 on the last admin |
 
 ## Dashboards and scheduled tasks
 
@@ -74,7 +100,7 @@ webhook.
 | POST   | `/api/scheduled-tasks`                        | JWT  | Create                     |
 | GET    | `/api/scheduled-tasks/:id`                    | JWT  | Detail                     |
 | PATCH  | `/api/scheduled-tasks/:id`                    | JWT  | Update                     |
-| DELETE | `/api/scheduled-tasks/:id`                    | JWT  | Delete ⚠️ **not admin-gated** |
+| DELETE | `/api/scheduled-tasks/:id`                    | JWT+ | Delete                     |
 | GET    | `/api/scheduled-tasks/:id/runs`               | JWT  | Run history                |
 | GET    | `/api/scheduled-tasks/:id/runs/:runID`        | JWT  | Run detail                 |
 
@@ -95,17 +121,17 @@ webhook.
 | Method | Path                        | Auth | Notes                                 |
 | ------ | --------------------------- | ---- | ------------------------------------- |
 | GET    | `/api/discord`              | JWT  | Credentials (secret-redacted)           |
-| PUT    | `/api/discord`              | JWT  | Save bot token ⚠️ **not admin-gated**   |
-| DELETE | `/api/discord`              | JWT  | Remove                                  |
+| PUT    | `/api/discord`              | JWT+ | Save bot token                          |
+| DELETE | `/api/discord`              | JWT+ | Remove                                  |
 | GET    | `/api/discord/users`        | JWT  | Allowlist                               |
-| POST   | `/api/discord/users`        | JWT  | Add ⚠️ **not admin-gated**              |
-| DELETE | `/api/discord/users/:id`    | JWT  | Remove                                  |
+| POST   | `/api/discord/users`        | JWT+ | Add                                     |
+| DELETE | `/api/discord/users/:id`    | JWT+ | Remove                                  |
 | GET    | `/api/lark`                 | JWT  | Credentials                             |
-| PUT    | `/api/lark`                 | JWT  | Save app secret ⚠️ **not admin-gated**  |
-| DELETE | `/api/lark`                 | JWT  | Remove                                  |
+| PUT    | `/api/lark`                 | JWT+ | Save app secret                         |
+| DELETE | `/api/lark`                 | JWT+ | Remove                                  |
 | GET    | `/api/lark/users`           | JWT  | Allowlist                               |
-| POST   | `/api/lark/users`           | JWT  | Add                                     |
-| DELETE | `/api/lark/users/:id`       | JWT  | Remove                                  |
+| POST   | `/api/lark/users`           | JWT+ | Add                                     |
+| DELETE | `/api/lark/users/:id`       | JWT+ | Remove                                  |
 
 ## Webhooks
 

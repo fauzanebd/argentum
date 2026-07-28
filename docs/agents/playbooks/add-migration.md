@@ -4,7 +4,7 @@
 
 The control plane is the only database Argentum migrates. Tenant analytical
 databases are customer property and are never migrated — see
-[`../workspace-context.md`](../workspace-context.md) §7.
+[`../workspace-context.md`](../workspace-context.md) §8.
 
 ---
 
@@ -16,12 +16,42 @@ All paths below are relative to `apps/backend/` unless shown otherwise.
 ls apps/backend/migrations/control/ | tail -3
 ```
 
-Last applied is `020_thread_lark`. Sprint 1 pre-assigns 021–026 in
+Last applied is `021_user_invites` (`T-04`). Sprint 1 pre-assigned 021–026 in
 [`../../plan/01-tickets.md`](../../plan/01-tickets.md) — check that table before
-claiming.
+claiming, and note that the pre-assignment has already shifted once: `T-04` was
+filed as `027` and landed as `021`, because **golang-migrate only applies
+versions above the schema's current one.** Claiming a number far ahead of the
+last applied one strands everything between. Always take the next free number,
+whatever the ticket says.
 
 **Only one agent may hold a number at a time.** Two migrations with the same
 number desync every environment, and the fix is manual.
+
+## Step 0b — Know which database you are about to migrate
+
+`cmd/api` applies migrations on boot, and **`apps/backend/.env` points
+`DB_HOST` at a remote server**, not at the local `argentum_postgres` container.
+Sourcing it and running `go run ./cmd/api` migrates that host. On 2026-07-28
+that is exactly how `T-04`'s migration reached a server nobody meant to touch.
+
+Override the host explicitly:
+
+```bash
+set -a; . ./.env; set +a
+DB_HOST=127.0.0.1 DB_PORT=5432 REDIS_URL=localhost:6385 PORT=8099 go run ./cmd/api
+```
+
+Then read the target back out of the log before believing it:
+
+```
+{"msg":"control DB migrated to version 21"}
+```
+
+and confirm against the container, not against whatever the binary told you:
+
+```bash
+docker exec argentum_postgres psql -U metabase -d argentum -c "select * from schema_migrations;"
+```
 
 ## Step 1 — Design for forward compatibility
 

@@ -67,7 +67,12 @@ docs/
 │   ├── delivery-log.md           What has been shipped, chronologically
 │   ├── eval-baseline.md          Agent answer quality: the number to beat
 │   ├── environment-notes.md      T-00 smoke test + local environment findings
-│   └── migration-notes.md        T-00b migration record + remaining steps
+│   ├── migration-notes.md        T-00b migration record + remaining steps
+│   ├── design-tokens.md          T-R1 one token source → dashboard CSS + Go theme
+│   ├── report-rendering.md       T-R2 PDF renderer v2 record
+│   ├── report-charts.md          T-R3 chart images, palette and CVD gate
+│   ├── report-deck.md            T-R4 PPTX deck renderer record
+│   └── rbac.md                   T-04 route policy, team invites, account lifecycle
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals
 │   ├── 01-tickets.md             Ticket-level, agent-executable units

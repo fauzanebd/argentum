@@ -21,8 +21,14 @@ type RateLimiter struct {
 }
 
 // NewRateLimiter constructs a RateLimiter. capacity is the burst budget;
-// refillPerSec is the steady-state rate.
+// refillPerSec is the steady-state rate. A nil client yields a nil limiter —
+// callers already test the result for nil before installing it, and the
+// alternative is a middleware that panics on the first authenticated request
+// instead of simply not limiting.
 func NewRateLimiter(rdb *redis.Client, capacity int, refillPerSec float64) *RateLimiter {
+	if rdb == nil {
+		return nil
+	}
 	if capacity <= 0 {
 		capacity = 60
 	}

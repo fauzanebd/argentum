@@ -223,9 +223,10 @@ func TestExtractTokenFallbackOrder(t *testing.T) {
 	})
 }
 
-// AdminOnly is unwired today — T-04 applies it. Testing it now means that
-// ticket is applying something with known behaviour rather than discovering
-// it against production routes.
+// AdminOnly is no longer how the API gates anything — T-04 moved that to
+// RequireRole and a policy table, because per-route middleware cannot be read
+// back out of a built router by any test. AdminOnly stays for one-off routes
+// registered outside a policed group, so its behaviour stays pinned here.
 func TestAdminOnly(t *testing.T) {
 	signer := newSigner(t)
 

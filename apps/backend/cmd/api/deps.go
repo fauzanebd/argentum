@@ -29,6 +29,7 @@ type apiDeps struct {
 
 	signer       *auth.TokenSigner
 	authSvc      *app.AuthService
+	teamSvc      *app.TeamService
 	companySvc   *app.CompanyService
 	embeddingSvc *app.EmbeddingService
 	usageSvc     *app.UsageService

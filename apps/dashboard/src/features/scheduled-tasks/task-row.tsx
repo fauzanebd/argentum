@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useIsAdmin } from "@/store/auth";
 import type { ScheduledTask } from "./types";
 import { apiErrorMessage } from "@/lib/api-error";
 
@@ -37,6 +38,7 @@ export function TaskRow({
   onOpenRuns: (task: ScheduledTask) => void;
 }) {
   const qc = useQueryClient();
+  const isAdmin = useIsAdmin();
   const [enabled, setEnabled] = useState(task.enabled);
 
   const toggle = useMutation({
@@ -133,7 +135,16 @@ export function TaskRow({
             <MessageSquare className="h-4 w-4" />
           </Link>
         </Button>
-        <Button variant="ghost" size="icon" onClick={remove} title="Delete">
+        {/* Deleting a task is the one scheduled-task route T-04 gated: it is
+            the operation that reaches across users. Members still create and
+            edit their own. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={remove}
+          disabled={!isAdmin}
+          title={isAdmin ? "Delete" : "Only admins can delete scheduled tasks"}
+        >
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>

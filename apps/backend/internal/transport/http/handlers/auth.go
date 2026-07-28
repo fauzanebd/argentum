@@ -16,23 +16,31 @@ import (
 // AuthHandler exposes /auth/* endpoints.
 type AuthHandler struct {
 	svc        *app.AuthService
+	team       *app.TeamService
 	cookieName string
 	secure     bool
 	refreshTTL time.Duration
 }
 
 // NewAuthHandler constructs the handler. `secure` should be true in
-// production so the refresh cookie carries the Secure flag.
-func NewAuthHandler(svc *app.AuthService, secure bool, refreshTTL time.Duration) *AuthHandler {
-	return &AuthHandler{svc: svc, cookieName: "rt", secure: secure, refreshTTL: refreshTTL}
+// production so the refresh cookie carries the Secure flag. team may be nil,
+// in which case the invite routes answer 503.
+func NewAuthHandler(svc *app.AuthService, team *app.TeamService, secure bool, refreshTTL time.Duration) *AuthHandler {
+	return &AuthHandler{svc: svc, team: team, cookieName: "rt", secure: secure, refreshTTL: refreshTTL}
 }
 
 // Register installs auth routes onto the supplied router group.
+//
+// The invite routes live here rather than under /users because they are the
+// only two team endpoints an unauthenticated caller must reach: the invitee
+// has no session until the second of them succeeds.
 func (h *AuthHandler) Register(rg *gin.RouterGroup) {
 	rg.POST("/signup", h.signup)
 	rg.POST("/login", h.login)
 	rg.POST("/refresh", h.refresh)
 	rg.POST("/logout", h.logout)
+	rg.GET("/invite", h.previewInvite)
+	rg.POST("/accept-invite", h.acceptInvite)
 }
 
 type signupReq struct {
@@ -80,10 +88,76 @@ func (h *AuthHandler) login(c *gin.Context) {
 	}
 	res, err := h.svc.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
-		if errors.Is(err, domain.ErrCredentialsBad) {
+		switch {
+		case errors.Is(err, domain.ErrCredentialsBad):
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-			return
+		case errors.Is(err, domain.ErrAccountInactive):
+			// The password was right, so naming the actual problem tells this
+			// caller nothing they could not already confirm.
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "this account is not active — accept your invitation, or ask an admin to restore access",
+			})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
+		return
+	}
+	h.setRefreshCookie(c, res.RefreshToken)
+	c.JSON(http.StatusOK, gin.H{
+		"user":         res.User,
+		"company_id":   res.CompanyID,
+		"access_token": res.AccessToken,
+	})
+}
+
+// previewInvite resolves ?token= without consuming it so the accept page can
+// show who is being invited, and fail early on an expired link.
+func (h *AuthHandler) previewInvite(c *gin.Context) {
+	if h.team == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "invites are not configured"})
+		return
+	}
+	preview, err := h.team.Preview(c.Request.Context(), c.Query("token"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "this invitation is invalid or has expired"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"invite": preview})
+}
+
+type acceptInviteReq struct {
+	Token    string `json:"token" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+// acceptInvite activates the pending account and logs it straight in. Skipping
+// the round trip through the login form is not just convenience: the invitee
+// has no other credential yet, so any failure between activate and login would
+// leave them holding a consumed token.
+func (h *AuthHandler) acceptInvite(c *gin.Context) {
+	if h.team == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "invites are not configured"})
+		return
+	}
+	var req acceptInviteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	user, err := h.team.Accept(c.Request.Context(), req.Token, req.Password)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrInvalidInput):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, domain.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "this invitation is invalid or has expired"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	res, err := h.svc.IssueSession(user)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

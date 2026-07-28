@@ -50,8 +50,8 @@ func (s *AuthService) Signup(ctx context.Context, companyName, email, password s
 	if companyName == "" || email == "" || password == "" {
 		return nil, fmt.Errorf("%w: company name, email, password required", domain.ErrInvalidInput)
 	}
-	if len(password) < 8 {
-		return nil, fmt.Errorf("%w: password must be at least 8 characters", domain.ErrInvalidInput)
+	if err := validatePassword(password); err != nil {
+		return nil, err
 	}
 
 	if existing, err := s.users.GetByEmail(ctx, email); err == nil && existing != nil {
@@ -99,6 +99,16 @@ func (s *AuthService) Signup(ctx context.Context, companyName, email, password s
 	}, nil
 }
 
+// validatePassword is the one place the password policy lives. Signup and
+// invite acceptance both set a password, and a rule enforced in only one of
+// them is a rule an attacker picks the other door for.
+func validatePassword(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("%w: password must be at least 8 characters", domain.ErrInvalidInput)
+	}
+	return nil
+}
+
 // Login verifies credentials and issues a fresh token pair.
 func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginResult, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
@@ -112,6 +122,12 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	ok, err := auth.VerifyPassword(password, user.PasswordHash)
 	if err != nil || !ok {
 		return nil, domain.ErrCredentialsBad
+	}
+	// Deliberately after the password check: someone who cannot authenticate
+	// learns "invalid credentials" and nothing about whether the address is a
+	// pending invite or a removed colleague.
+	if !user.Active() {
+		return nil, domain.ErrAccountInactive
 	}
 	access, err := s.signer.IssueAccessToken(user.ID, user.CompanyID, string(user.Role))
 	if err != nil {
@@ -130,6 +146,13 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 }
 
 // Refresh exchanges a valid refresh token for a fresh access token.
+//
+// It re-reads the user rather than re-signing the claims it was handed. That
+// costs one query per refresh and buys two things RBAC needs: deactivating a
+// member ends their session within one access-token lifetime instead of at the
+// refresh token's seven-day expiry, and a role change takes effect on the next
+// refresh instead of the next login. Access tokens already issued stay valid
+// until they expire — 15 minutes is the window, and it is deliberate.
 func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (string, error) {
 	c, err := s.signer.Verify(refreshToken)
 	if err != nil {
@@ -138,7 +161,37 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (string,
 	if c.TokenType != "refresh" {
 		return "", domain.ErrUnauthorized
 	}
-	return s.signer.IssueAccessToken(c.UserID, c.CompanyID, c.Role)
+	user, err := s.users.GetByID(ctx, c.UserID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return "", domain.ErrUnauthorized
+	}
+	if err != nil {
+		return "", err
+	}
+	if !user.Active() {
+		return "", domain.ErrAccountInactive
+	}
+	return s.signer.IssueAccessToken(user.ID, user.CompanyID, string(user.Role))
+}
+
+// IssueSession mints a token pair for a user the caller has already
+// authenticated by another route — today, invite acceptance. Keeping it here
+// means "what a session looks like" has one definition.
+func (s *AuthService) IssueSession(user *domain.User) (*LoginResult, error) {
+	access, err := s.signer.IssueAccessToken(user.ID, user.CompanyID, string(user.Role))
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := s.signer.IssueRefreshToken(user.ID, user.CompanyID, string(user.Role))
+	if err != nil {
+		return nil, err
+	}
+	return &LoginResult{
+		User:         user,
+		CompanyID:    user.CompanyID,
+		AccessToken:  access,
+		RefreshToken: refresh,
+	}, nil
 }
 
 // slugify returns a URL-safe lowercase slug derived from a company name. We

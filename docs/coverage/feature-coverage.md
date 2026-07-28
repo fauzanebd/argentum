@@ -82,8 +82,8 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | ------------------------------ | ------ | ----------------------------------------------------------------- |
 | Signup / login / refresh       | ✅     | Argon2id, 15m access JWT, httpOnly refresh cookie                  |
 | Company + user model           | ✅     | One user → exactly one company                                     |
-| Role model (admin / member)    | 🔧     | `AdminOnly()` middleware exists, **applied to zero routes**        |
-| Team invite / user management   | ❌     | Only `GET /api/users/me` is exposed                                |
+| Role model (admin / member)    | ✅     | `T-04`: 26 routes admin-gated by a policy table the router's route list is diffed against ([`rbac.md`](rbac.md)) |
+| Team invite / user management   | 🟡     | `T-04`: invite → accept → login, role change, revoke, last-admin guard. **No email** — the link is handed to the inviting admin |
 | Per-tenant LLM credentials     | ✅     | Primary / light / embedding tiers, encrypted, cached               |
 | Usage metering                 | ✅     | LLM (incl. cache tokens), SQL, cards, dashboards, documents        |
 | Usage audit endpoints          | ✅     | By company / thread / channel / end-user, arbitrary window         |
@@ -135,9 +135,9 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Guardrails                  | ████████░░   | Heavily tuned; PII rules over-reach.                          |
 | Automation                  | ████░░░░░░   | Cron only. No condition triggers, no proactivity.            |
 | Metering / usage visibility | ███████░░░   | Rich reporting; no enforcement, no message-level attribution. |
-| Accounts / RBAC / teams     | ███░░░░░░░   | Single-user-per-company in practice. Role model unwired.      |
+| Accounts / RBAC / teams     | ███████░░░   | `T-04`: roles enforced, teams expressible, removal ends sessions. No email delivery, no token revocation, two roles only. |
 | Billing / monetization      | ██░░░░░░░░   | Tracks cost, cannot charge or cap it.                         |
 | Platform / agent-callable   | ██░░░░░░░░   | No machine auth, no MCP, no outbound webhooks.               |
 | Embeddability               | ░░░░░░░░░░   | Zero. Argentum lives only in its own dashboard and in chat apps. |
-| Testing / evaluation        | ███░░░░░░░   | 5/37 packages, still zero on every CRITICAL one (`T-02`). But answer quality is now measured: `make eval` scores 31 golden questions through the real agent — baseline 96.8%, see [`eval-baseline.md`](eval-baseline.md). |
+| Testing / evaluation        | ███████░░░   | 22/49 packages after `T-02` and `T-04`; every CRITICAL one covered, `golangci-lint` at 0 issues, CI gates on `-race`. Answer quality is measured separately: `make eval` scores 33 golden questions through the real agent — 97.0%, see [`eval-baseline.md`](eval-baseline.md). |
 | Observability               | ███░░░░░░░   | Logs + counters. No traces, no error tracking, no replay.     |
