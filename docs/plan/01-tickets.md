@@ -975,9 +975,38 @@ rollups, and a request id resolving to its audit row. `go test -race ./...`
 
 ---
 
-## T-A2 · Reports over the API
+## ~~T-A2~~ · Reports over the API — **DONE 2026-07-28**
 **Repo:** BE · **Size:** 2.5d · **Deps:** T-A1, T-R2 (`pptx` needs T-R4) · **Priority:** P0 · **Never cut**
-**Migration:** `032_documents_api`
+**Migration:** ~~`032_documents_api`~~ → landed as `027_documents_api` + `028_api_reports` + `029_webhook_delivery`
+
+**Status — 2026-07-28.** Shipped. Record, gate output, acceptance and the
+limits: [`../coverage/api-reports.md`](../coverage/api-reports.md).
+
+Deviations, all argued in the record:
+
+- **The shared generator is `internal/docgen`, not
+  `internal/app/document_service.go`.** `internal/app` already depends on
+  `internal/tools`, so a service there could not be called by
+  `GenerateDocumentTool`. A package both callers import gives the property the
+  ticket wanted — one implementation, no second renderer.
+- **Three migrations, not one, and none of them `032`.** The document columns,
+  the report job and the callback machinery are independent schema changes with
+  independent down paths. Sixth consecutive ticket whose reserved number was
+  already spent.
+- **`API_V1_SYNC_RENDER_TIMEOUT` abandons the render rather than cancelling
+  it.** The renderers never check for cancellation, so the deadline cannot be
+  pushed into them; the handler stops waiting and converts the request into a
+  job.
+- **Two caps the ticket did not name** — `MaxSections` and `MaxChartPoints` —
+  because a document of a million headings or a chart of a million points is
+  expensive without a single row.
+- **An SSRF guard on `callback_url`, which the ticket did not ask for.** The URL
+  is caller-chosen; a blind POST to 169.254.169.254 is how an outbound webhook
+  becomes somebody else's credentials.
+- **`agentbudget.ForDocument`.** The live gate found an agentic report spending
+  `T-16`'s whole iteration budget on exploration and never reaching
+  `generate_document`: the budget is tuned for a turn whose last iteration
+  produces the answer, and this door's last iteration produces the file.
 
 ### Why
 
@@ -1057,22 +1086,36 @@ and a file — which makes it the right flagship for the track.
 
 ### Acceptance
 
-- [ ] `POST /v1/reports/render` with the `monthly_sales.json` fixture returns a PDF byte-identical to what `go test ./internal/report/pdf` renders
-- [ ] The same fixture at `format: xlsx` opens in Excel; at `pptx` opens in PowerPoint (after `T-R4`)
-- [ ] `POST /v1/reports` with a prompt against the demo tenant produces a document whose figures match a direct `run_sql`
-- [ ] A `/render` document row has `source=api`, a **null** `thread_id`, and the generating `api_key_id`
-- [ ] An agentic-door document row has `source=api`, a **non-null** `thread_id` on an `api`-channel thread, and the same `api_key_id`
-- [ ] `GET /v1/documents/:id` an hour after creation still returns a working `download_url`
-- [ ] A spec over the row cap is rejected with `invalid_request` **before** any rendering starts
-- [ ] A callback body verifies against the secret; a tampered body does not
-- [ ] A key without `write:reports` gets 403 on both doors
-- [ ] `migrate down` succeeds against a database holding both an agent document and an API document
+- [~] `POST /v1/reports/render` with the `monthly_sales.json` fixture returns a PDF byte-identical to what `go test ./internal/report/pdf` renders — **adapted**: the API resolves the *calling tenant's* branding and the golden renders Argentum's, so byte-identity to the golden was never achievable over the wire. Proven instead: the render is deterministic over the wire (two calls, identical sha256) and identical to what `/content` streams back. The renderer's own determinism stays pinned by the golden test.
+- [x] The same fixture at `format: xlsx` opens in Excel; at `pptx` opens in PowerPoint — `Microsoft Excel 2007+` / `Microsoft OOXML`, both through `/v1`
+- [x] `POST /v1/reports` with a prompt against the demo tenant produces a document whose figures match a direct `run_sql` — a 127 KB PDF from a real turn; the SSE transcript shows the `run_sql` the figures came from
+- [x] A `/render` document row has `source=api`, a **null** `thread_id`, and the generating `api_key_id`
+- [x] An agentic-door document row has `source=api`, a **non-null** `thread_id` on an `api`-channel thread, and the same `api_key_id`
+- [~] `GET /v1/documents/:id` an hour after creation still returns a working `download_url` — the mechanism is live (re-presigned on every read, never stored; a fresh signature and expiry in the transcript); an hour was not waited out
+- [x] A spec over the row cap is rejected with `invalid_request` **before** any rendering starts — live, and the "before" half is proven by a test asserting nothing was uploaded
+- [x] A callback body verifies against the secret; a tampered body does not — plus the wrong-secret case
+- [x] A key without `write:reports` gets 403 on both doors
+- [x] `migrate down` succeeds against a database holding both an agent document and an API document — round trip clean, `dirty=f`
+
+**Also closed here, from `T-A1`'s tested-not-live list:** the idempotency
+replay, the mid-flight `409 request_in_flight`, the changed-body 409, and the
+`request_id` → audit-row chain. Each now has a route that exercises it and a
+transcript.
 
 ### Gate
 
 `curl` transcript: render → download → re-fetch after the first presign expires.
 Then the agentic door end to end with the signed callback received and verified.
 Then `migrate up` / `migrate down` output against a database with both row kinds.
+
+**Run 2026-07-28**, output in
+[`../coverage/api-reports.md`](../coverage/api-reports.md) §3: migrations
+`027`–`029` applied on boot, both doors, all four formats, the bytes-vs-JSON
+Accept split, replay and both 409s, the row and column caps with their `param`,
+cursor paging, scope refusals in both directions, a cross-tenant 404, the SSE
+progress stream closing on the finished report, the callback verified at the
+receiver, the delivery log, and the migration round trip. `go test -race ./...`
+29 packages green, `make lint-go` 0 issues.
 
 ### Out of scope
 

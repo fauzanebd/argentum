@@ -209,8 +209,11 @@ unmarshal into the same Go types. See
    Every route above still requires a human-session JWT, and now refuses an API
    key outright. Machine callers use `/v1`, a sibling namespace authenticated by
    a scoped key (`Authorization: Bearer arg_…`), which refuses a dashboard JWT
-   just as flatly. `GET /v1/me` is the only route on it until `T-A1`
-   ([`api-keys.md`](api-keys.md)).
+   just as flatly. `GET /v1/me` was the only route on it until `T-A2`, which
+   added seven more — both report doors, the report poll and its SSE stream, and
+   the three document routes — each gated by `write:reports` or
+   `read:documents` ([`api-keys.md`](api-keys.md),
+   [`api-reports.md`](api-reports.md)).
 4. **The WebSocket event schema is the dashboard's most important contract and it
    is undocumented.** Event types in use: `started`, `delta`, `thinking`,
    `tool_call`, `tool_result`, `error`, `final`.

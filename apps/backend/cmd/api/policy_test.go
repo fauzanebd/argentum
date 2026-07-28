@@ -66,7 +66,31 @@ func routerWith(t *testing.T, tweaks ...func(*config.Config)) *gin.Engine {
 	for _, tweak := range tweaks {
 		tweak(cfg)
 	}
-	return newRouter(&apiDeps{
+	return newRouter(testDeps(cfg, signer))
+}
+
+// routerWithDeps is routerWith for a test that has to change a dependency
+// rather than a setting — so far only the `/v1` authenticator, which is the
+// only way to send a request carrying a credential without a database to issue
+// one from.
+func routerWithDeps(t *testing.T, tweak func(*apiDeps)) *gin.Engine {
+	t.Helper()
+	signer, err := auth.NewTokenSigner("0123456789abcdef0123456789abcdef", 15*time.Minute, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("NewTokenSigner: %v", err)
+	}
+	d := testDeps(&config.Config{
+		Env:          "test",
+		CORSOrigins:  []string{"*"},
+		MetabaseURL:  "http://metabase.invalid",
+		APIV1Enabled: true,
+	}, signer)
+	tweak(d)
+	return newRouter(d)
+}
+
+func testDeps(cfg *config.Config, signer *auth.TokenSigner) *apiDeps {
+	return &apiDeps{
 		cfg:    cfg,
 		signer: signer,
 
@@ -79,7 +103,7 @@ func routerWith(t *testing.T, tweaks ...func(*config.Config)) *gin.Engine {
 		scheduledSvc: app.NewScheduledTaskService(nil, nil, nil, nil),
 		discordSvc:   app.NewDiscordService(nil, nil, nil, nil),
 		larkSvc:      app.NewLarkService(nil, nil, nil),
-	})
+	}
 }
 
 // TestEveryAuthedRouteIsClassified is the reason the policy is a table rather

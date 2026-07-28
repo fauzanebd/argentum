@@ -39,6 +39,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
+	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/llmclient"
@@ -83,6 +84,13 @@ type Stack struct {
 	Tools        []interfaces.Tool
 	AgentFactory app.AgentFactory
 	Budget       agentbudget.Budget
+
+	// Docs is the one path from a spec to a stored document (T-A2). Nil when
+	// the deployment has no object storage, which is the same condition that
+	// leaves generate_document unregistered — the worker's async render task
+	// checks it for exactly that reason.
+	Docs      *docgen.Service
+	Documents domain.DocumentRepository
 
 	tableEmbeddings domain.TableEmbeddingRepository
 	scheduledEnq    *queue.Enqueuer
@@ -206,6 +214,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.MetabaseSync = app.NewMetabaseWarehouseSync(metabaseClient)
 	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
+	s.Documents = documentRepo
 
 	s.Tools = []interfaces.Tool{
 		tools.NewListSourcesTool(s.Connections),
@@ -224,7 +233,12 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// resolver, so a document generated from chat carries exactly what the
 		// preview showed.
 		brandingSvc := branding.NewService(companyRepo, storageSvc, s.Companies)
-		s.Tools = append(s.Tools, tools.NewGenerateDocumentTool(storageSvc, documentRepo, s.Companies, brandingSvc, s.UsageSvc, presignTTL))
+		// One generator for the tool and for `/v1` (T-A2). The API builds its
+		// own instance in cmd/api — separate process, same constructor — and
+		// installs the untrusted-spec caps on top; the agent's path leaves them
+		// off, which is the only difference between the two.
+		s.Docs = docgen.New(storageSvc, documentRepo, s.Companies, brandingSvc, s.UsageSvc, presignTTL)
+		s.Tools = append(s.Tools, tools.NewGenerateDocumentTool(s.Docs))
 		logrus.WithFields(logrus.Fields{
 			"bucket":   cfg.MinIOBucket,
 			"endpoint": cfg.MinIOEndpoint,
@@ -263,6 +277,17 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 
 	systemPrompt := SystemPrompt()
 	agentTools := s.Tools
+
+	// The registry, by name, once per boot. The SDK looks a tool call up by
+	// matching `tool.Name()` against what the model asked for and logs a bare
+	// "Tool not found" when it misses — which is indistinguishable, in a log,
+	// from a tool that was never registered. One line here tells the two
+	// apart, and T-A2's gate needed exactly that.
+	names := make([]string, 0, len(agentTools))
+	for _, t := range agentTools {
+		names = append(names, t.Name())
+	}
+	logrus.WithField("tools", names).Info("agent tool registry")
 
 	// AgentFactory builds a fresh sdkagent.Agent per chat turn from the
 	// per-tenant primary + light LLM clients. Tools / memory / system
@@ -340,6 +365,11 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 // TableEmbeddings returns the repo when the table picker is enabled, nil
 // otherwise. Callers that need it directly (reindex paths) can ask.
 func (s *Stack) TableEmbeddings() domain.TableEmbeddingRepository { return s.tableEmbeddings }
+
+// Enqueuer is the shared asynq client. The worker needs it to queue a webhook
+// delivery from inside a task it is already running (T-A2), which is the one
+// place a consumer is also a producer — every other caller is in cmd/api.
+func (s *Stack) Enqueuer() *queue.Enqueuer { return s.scheduledEnq }
 
 // Close releases every resource the stack opened, in reverse order.
 func (s *Stack) Close() {

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/transport/http/apierr"
 	"github.com/fauzanebd/argentum/internal/transport/http/apiv1"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
+	"github.com/fauzanebd/argentum/internal/webhookout"
 )
 
 // V1MeHandler answers `GET /v1/me`: who this key is, what it can do, what it
@@ -26,7 +28,14 @@ import (
 type V1MeHandler struct {
 	companies  *pgctl.CompanyRepo
 	budget     V1BudgetReader
+	secrets    V1WebhookSecretReader
 	ratePerMin int
+}
+
+// V1WebhookSecretReader hands back the tenant's callback signing secret,
+// minting one on first read (T-A2).
+type V1WebhookSecretReader interface {
+	EnsureWebhookSecret(ctx context.Context, companyID string) (string, error)
 }
 
 // V1BudgetReader is the narrow half of app.UsageService this handler needs.
@@ -43,6 +52,18 @@ type V1BudgetReader interface {
 // key's own identity is what this route is fundamentally for.
 func NewV1MeHandler(companies *pgctl.CompanyRepo, budget V1BudgetReader, ratePerMin int) *V1MeHandler {
 	return &V1MeHandler{companies: companies, budget: budget, ratePerMin: ratePerMin}
+}
+
+// WithWebhookSecrets lets `/v1/me` report the callback signing secret (T-A2).
+//
+// It is here rather than on a route of its own because this is already the
+// call an integrator makes before writing any code, and a secret they need in
+// order to verify a callback is exactly the kind of thing they should not have
+// to hunt for. Additive to T-A1's contract, which is the only kind of change
+// this package permits.
+func (h *V1MeHandler) WithWebhookSecrets(r V1WebhookSecretReader) *V1MeHandler {
+	h.secrets = r
+	return h
 }
 
 // Register installs the route. Call on a group already carrying APIKeyAuth.
@@ -83,7 +104,39 @@ func (h *V1MeHandler) me(c *gin.Context) {
 	if credits := h.credits(c); credits != nil {
 		body["credits"] = credits
 	}
+	if hooks := h.webhooks(c, scopes); hooks != nil {
+		body["webhooks"] = hooks
+	}
 	c.JSON(http.StatusOK, body)
+}
+
+// webhooks reports the signing secret, and only to a key that could cause a
+// callback in the first place.
+//
+// Gated on `write:reports` rather than returned to everyone: the secret
+// verifies a body we send *because* a report was requested, so a read-only key
+// has nothing to verify and no reason to be holding it. A key without the
+// scope gets the block omitted rather than an error — nothing about this route
+// should fail because of what the caller cannot do.
+//
+// Minting is lazy and happens here, on the first read by a key that could use
+// it, rather than at signup for every company that will never receive one.
+func (h *V1MeHandler) webhooks(c *gin.Context, scopes []domain.Scope) gin.H {
+	if h.secrets == nil {
+		return nil
+	}
+	if !slices.Contains(scopes, domain.ScopeWriteReports) {
+		return nil
+	}
+	secret, err := h.secrets.EnsureWebhookSecret(c.Request.Context(), companyID(c))
+	if err != nil || secret == "" {
+		return nil
+	}
+	return gin.H{
+		"signing_secret":   secret,
+		"signature_header": webhookout.SignatureHeader,
+		"how":              "HMAC-SHA256 over `<t>.<raw body>` where t is the unix timestamp in the header. Compare in constant time and reject a timestamp more than five minutes old.",
+	}
 }
 
 // credits reports the spend position, or nil when it cannot be read.

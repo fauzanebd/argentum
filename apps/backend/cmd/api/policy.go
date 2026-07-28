@@ -174,7 +174,22 @@ var unpolicedPaths = map[string]bool{
 	// apply, and RequireRole never runs on this group. What gates a /v1 route
 	// is middleware.RequireScope beside it; TestV1RoutesAreKeyAuthenticated
 	// is what keeps this exemption from becoming a hole.
-	"/v1/me": true,
+	//
+	// The scope each one names is in the comment, and
+	// TestEveryV1RouteNamesAScope proves the comment against the router: a
+	// route added here without a RequireScope reaches every key its tenant has
+	// ever minted, and that is the one failure this list cannot catch on its
+	// own.
+	"/v1/me": true, // none — identity, and the one route a key with no scopes must reach
+
+	// T-A2's report surface.
+	"/v1/reports/render":        true, // write:reports
+	"/v1/reports":               true, // write:reports
+	"/v1/reports/:id":           true, // read:documents
+	"/v1/reports/:id/events":    true, // read:documents
+	"/v1/documents":             true, // read:documents
+	"/v1/documents/:id":         true, // read:documents
+	"/v1/documents/:id/content": true, // read:documents
 
 	// Inbound webhooks authenticate by provider signature, not by JWT.
 	"/webhook/whatsapp":             true,

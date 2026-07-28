@@ -73,6 +73,39 @@ func Default() Budget {
 	}
 }
 
+// ForDocument returns the budget for a turn whose deliverable is a file
+// (T-A2's `POST /v1/reports`).
+//
+// The live gate found why this is needed and the shape of the failure is worth
+// keeping: an agentic report spent all eight iterations on `get_schema` and
+// five `run_sql` calls, hit the cap, and answered in prose — **without ever
+// calling `generate_document`**. Nothing was broken. The budget was simply
+// tuned for a chat turn, where the last iteration produces the answer, and on
+// this door the last iteration produces the *file*. A report that explores
+// exactly as much as a chat turn does still needs one more call after it, and
+// the one it needs is the only one the caller asked for.
+//
+// Headroom on the exploration budget rather than a separate budget, so a
+// tenant who has tuned theirs down still has it respected — this raises what
+// they set, it does not replace it. Tokens and wall clock are untouched:
+// neither was the binding constraint, and a document turn that runs away is
+// still a document turn that has to stop.
+func (b Budget) ForDocument() Budget {
+	b = b.Normalize()
+	b.MaxIterations += documentHeadroomIterations
+	b.MaxToolCalls += documentHeadroomToolCalls
+	return b
+}
+
+// Headroom for a document turn. Four and six rather than one: the failing run
+// had six tool calls across eight iterations and was still mid-exploration, so
+// one more of each would only have moved where it ran out. These are the
+// numbers that let a turn finish exploring *and* write the file.
+const (
+	documentHeadroomIterations = 4
+	documentHeadroomToolCalls  = 6
+)
+
 // Normalize replaces non-positive fields with the shipped defaults so a
 // half-filled config cannot silently disable a dimension.
 func (b Budget) Normalize() Budget {

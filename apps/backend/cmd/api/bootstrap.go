@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
@@ -15,6 +16,8 @@ import (
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
+	"github.com/fauzanebd/argentum/internal/docgen"
+	"github.com/fauzanebd/argentum/internal/idempotency"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
@@ -22,6 +25,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/migrate"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
@@ -236,12 +240,44 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			logrus.WithError(err).Warn("object storage unavailable; report logo upload is disabled")
 		} else {
 			logoStore = st
+			deps.storageSvc = st
 		}
 	}
 	deps.brandingSvc = branding.NewService(companyRepo, logoStore, companyRepo)
+
+	// The `/v1` report surface (T-A2). Same constructor the worker's stack
+	// uses for the agent's generate_document, with the untrusted-spec caps
+	// installed on top — that difference, and nothing else, is what separates
+	// a spec written by our own model from one posted by a stranger.
+	deps.reportRepo = pgctl.NewAPIReportRepo(controlDB)
+	deps.documentRepo = pgctl.NewDocumentRepo(controlDB)
+	deps.idemStore = idempotencyStoreOrNil(rdb)
+	if deps.storageSvc != nil {
+		deps.docGen = docgen.New(
+			deps.storageSvc, deps.documentRepo, companyRepo, deps.brandingSvc, deps.usageSvc,
+			time.Duration(cfg.DocumentPresignTTLSecs)*time.Second,
+		).WithLimits(spec.Limits{
+			MaxRows: cfg.APIV1MaxSpecRows,
+			MaxCols: cfg.APIV1MaxSpecCols,
+		})
+	}
 
 	// Shared with app.MeteredLLM, which is too deep in the call graph to be
 	// handed a collector, so /metrics reports streaming-metering health too.
 	deps.metrics = metrics.Default()
 	return deps, nil
+}
+
+// idempotencyStoreOrNil hands back a typed nil-free store, or a genuinely nil
+// interface. Assigning a nil *idempotency.RedisStore straight into the
+// interface would produce a non-nil interface holding a nil pointer, and the
+// middleware's own `store == nil` guard — the one that degrades to no replay
+// protection instead of refusing every write — would never fire. The same trap
+// budgetReaderOrNil exists for in router.go.
+func idempotencyStoreOrNil(rdb *redis.Client) idempotency.Store {
+	st := idempotency.NewRedisStore(rdb)
+	if st == nil {
+		return nil
+	}
+	return st
 }

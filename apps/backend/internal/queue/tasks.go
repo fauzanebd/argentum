@@ -6,18 +6,48 @@
 //     cron tick of an enabled scheduled_tasks row;
 //     the worker resolves the task and re-enqueues
 //     a `chat:run` against the dedicated thread.
+//   - `report:render`      — a `POST /v1/reports/render` spec that overran the
+//     synchronous window and became a job (T-A2).
+//   - `webhook:deliver`    — one attempt at handing a tenant's server a signed
+//     callback (T-A2).
 //
 // Payloads are JSON-marshalled into the asynq task body.
 package queue
 
-import "github.com/fauzanebd/argentum/internal/domain"
+import (
+	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/report/spec"
+)
 
 // Task type constants. These are the values asynq uses to dispatch tasks
 // to handlers; keep them stable across deploys.
 const (
 	TypeChatRun          = "chat:run"
 	TypeScheduledTaskRun = "scheduled:run"
+	TypeReportRender     = "report:render"
+	TypeWebhookDeliver   = "webhook:deliver"
 )
+
+// ReportRenderPayload carries a spec whose synchronous render ran long
+// (T-A2). The whole spec travels rather than a reference to a stored copy:
+// the row it would otherwise be stored in is the report job, and putting a
+// megabyte of caller-supplied JSON in a control-plane table to save a
+// megabyte in Redis is the wrong trade — the task is transient and the row
+// is not.
+type ReportRenderPayload struct {
+	ReportID  string        `json:"report_id"`
+	CompanyID string        `json:"company_id"`
+	APIKeyID  string        `json:"api_key_id,omitempty"`
+	RequestID string        `json:"request_id,omitempty"`
+	Spec      spec.Document `json:"spec"`
+}
+
+// WebhookDeliverPayload names the delivery row. Only the id: the URL, the
+// body and the event all live in that row, and a payload that repeated them
+// would be a second copy able to disagree with the log a tenant reads.
+type WebhookDeliverPayload struct {
+	DeliveryID string `json:"delivery_id"`
+}
 
 // ChatRunPayload carries everything the worker needs to process one chat
 // turn. UserMsgID lets the worker re-derive the original message row in
@@ -45,6 +75,12 @@ type ChatRunPayload struct {
 	DefaultCurrency  string         `json:"default_currency,omitempty"` // ISO 4217
 	ScheduledTaskID  string         `json:"scheduled_task_id,omitempty"`
 	ScheduledRunID   string         `json:"scheduled_run_id,omitempty"`
+	// APIReportID ties this turn to the report job `POST /v1/reports` handed
+	// the caller (T-A2). The worker marks that row terminal when the turn
+	// finishes, which is how "is my report ready?" gets an answer — a thread
+	// id would not do, because a thread outlives the turn and accumulates more
+	// of them.
+	APIReportID string `json:"api_report_id,omitempty"`
 	// APIKeyID attributes a turn started over /v1 to the key that started it
 	// (T-13). The audit log records who a tool call ran for, and for an
 	// integration that is a credential rather than a person — the queue is

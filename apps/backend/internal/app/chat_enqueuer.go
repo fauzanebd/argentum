@@ -64,6 +64,13 @@ type ChatInput struct {
 	APIUserRef       string // api only; the tenant's own reference for the end user
 	Message          string
 	ThreadID         string // dashboard and api; if set, bypasses resolver
+	// APIReportID ties this turn to the report job `POST /v1/reports` handed
+	// back (T-A2). The worker marks that row terminal when the turn ends.
+	APIReportID string
+	// APIKeyID attributes the turn to the credential that started it, which is
+	// what makes T-05's audit rows say "an integration did this" rather than
+	// naming a person who was not there.
+	APIKeyID string
 }
 
 func (in ChatInput) validate() error {
@@ -238,6 +245,8 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		UserMsgID:        userMsg.ID,
 		CompanyName:      companyName,
 		DefaultCurrency:  currency,
+		APIReportID:      in.APIReportID,
+		APIKeyID:         in.APIKeyID,
 		// Off the context rather than out of ChatInput: the request id is
 		// ambient per-request identity, exactly like the company id, and a
 		// field on the input would be one every caller has to remember to

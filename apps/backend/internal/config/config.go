@@ -163,6 +163,25 @@ type Config struct {
 	// over HTTP is untrusted in a way the agent's own spec never was, and the
 	// first line of defence is refusing to read it, not validating it after.
 	APIV1MaxBodyBytes int64
+	// APIV1MaxSpecRows / APIV1MaxSpecCols bound what a spec may ask the
+	// renderer to lay out (T-A2). The body cap above is not enough on its own:
+	// 50 000 rows of small integers fit comfortably inside a megabyte, and
+	// maroto will attempt every one of them.
+	APIV1MaxSpecRows int
+	APIV1MaxSpecCols int
+	// APIV1SyncRenderTimeoutSecs is how long `POST /v1/reports/render` will
+	// hold a connection open before the render becomes a job and the caller
+	// gets a 202. Distinct from APIV1SyncTimeoutSeconds, which is a chat turn:
+	// a render that takes twenty seconds is pathological, and a chat turn that
+	// takes twenty seconds is Tuesday.
+	APIV1SyncRenderTimeoutSecs int
+	// APIV1CallbackAllowPrivate permits a `callback_url` pointing at an
+	// address only this deployment can reach — loopback, RFC1918, link-local.
+	// False everywhere it matters: the URL is chosen by the caller, and a POST
+	// to 169.254.169.254 on their behalf is how an outbound webhook becomes
+	// somebody else's credentials. True is for local development and for this
+	// ticket's own gate, where the receiver is a script on localhost.
+	APIV1CallbackAllowPrivate bool
 
 	// Object storage (MinIO / S3-compatible). Used by the generate_document
 	// tool to persist generated PDF/XLSX/CSV files and to issue presigned
@@ -297,6 +316,11 @@ func Load() (*Config, error) {
 		APIV1Enabled:            getEnv("API_V1_ENABLED", "true") == "true",
 		APIV1SyncTimeoutSeconds: getEnvAsInt("API_V1_SYNC_TIMEOUT_SECONDS", 120),
 		APIV1MaxBodyBytes:       int64(getEnvAsInt("API_V1_MAX_BODY_BYTES", 1<<20)),
+
+		APIV1MaxSpecRows:           getEnvAsInt("API_V1_MAX_SPEC_ROWS", 50_000),
+		APIV1MaxSpecCols:           getEnvAsInt("API_V1_MAX_SPEC_COLS", 40),
+		APIV1SyncRenderTimeoutSecs: getEnvAsInt("API_V1_SYNC_RENDER_TIMEOUT", 20),
+		APIV1CallbackAllowPrivate:  getEnv("API_V1_CALLBACK_ALLOW_PRIVATE", "false") == "true",
 
 		// Object storage (MinIO / S3-compatible)
 		MinIOEndpoint:          getEnv("MINIO_ENDPOINT", ""),

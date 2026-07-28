@@ -53,6 +53,14 @@ type ScheduledRunMarker interface {
 	MarkRunResult(ctx context.Context, runID, assistantMsgID string, runErr error)
 }
 
+// APIReportCompleter is the narrow contract ChatRunner uses to close out an
+// `api_reports` row when an agentic report turn finishes (T-A2). Shaped like
+// ScheduledRunMarker and installed the same way, because it is the same idea:
+// a turn that somebody else is waiting on the outcome of.
+type APIReportCompleter interface {
+	CompleteReport(ctx context.Context, reportID, threadID string, runErr error)
+}
+
 // ChatRunner is the worker-side half of the chat pipeline. It runs the
 // agent against a queued ChatRunPayload, persists the assistant turn,
 // publishes streaming events through the EventBus, and (for WhatsApp
@@ -69,6 +77,7 @@ type ChatRunner struct {
 	larkProv     lark.Provider
 	pool         *db.TenantConnPool
 	scheduled    ScheduledRunMarker
+	apiReports   APIReportCompleter
 	historyLimit int
 	budgetFor    BudgetResolver
 	actions      domain.AgentActionRepository
@@ -121,6 +130,14 @@ func NewChatRunner(
 // the caller gets, because the failure it produces is a fabricated number.
 func (r *ChatRunner) WithBudget(resolve BudgetResolver) *ChatRunner {
 	r.budgetFor = resolve
+	return r
+}
+
+// WithAPIReports lets the runner close out an agentic report job when its turn
+// ends (T-A2). Optional: a stack with no `/v1` report routes passes nothing
+// and every turn behaves exactly as it did before.
+func (r *ChatRunner) WithAPIReports(c APIReportCompleter) *ChatRunner {
+	r.apiReports = c
 	return r
 }
 
@@ -201,6 +218,12 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	budget := agentbudget.Default()
 	if r.budgetFor != nil {
 		budget = r.budgetFor(ctx, p.CompanyID).Normalize()
+	}
+	if p.APIReportID != "" {
+		// A turn whose deliverable is a file needs one more call after it has
+		// finished exploring, and that call is the only one the caller asked
+		// for. See agentbudget.ForDocument for what the live gate found.
+		budget = budget.ForDocument()
 	}
 	tracker := agentbudget.New(budget)
 	ctx = agentbudget.WithTracker(ctx, tracker)
@@ -581,6 +604,14 @@ func (r *ChatRunner) completeWith(
 			msgID = assistantMsg.ID
 		}
 		r.scheduled.MarkRunResult(ctx, p.ScheduledRunID, msgID, nil)
+	}
+	// Before the `final` event, not after (T-A2). A caller streaming
+	// `GET /v1/reports/:id/events` sees `final` and re-reads the report row;
+	// completing afterwards would leave a window in which a finished report
+	// reports itself as still running, and close the stream on it. Ordering it
+	// here is what lets the SSE bridge be a forwarder rather than a poll loop.
+	if p.APIReportID != "" && r.apiReports != nil {
+		r.apiReports.CompleteReport(ctx, p.APIReportID, p.ThreadID, nil)
 	}
 	if err := r.bus.Publish(p.ThreadID, ChatEvent{
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "final",

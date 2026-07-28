@@ -76,6 +76,8 @@ docs/
 │   ├── agent-audit.md            T-05 agent_actions log, redaction, attribution
 │   ├── credit-enforcement.md     T-03 budget check, the starting grant, BYO-key exemption
 │   ├── api-keys.md               T-13 scoped machine credentials, /v1 auth, scope gate
+│   ├── api-foundation.md         T-A1 /v1 envelope, request ids, idempotency, limits
+│   ├── api-reports.md            T-A2 both report doors, documents, signed callbacks
 │   └── report-branding.md        T-R5 tenant logo, accent, contrast floor, preview
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals

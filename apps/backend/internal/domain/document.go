@@ -50,23 +50,79 @@ func (f DocumentFormat) ContentType() string {
 	return "application/octet-stream"
 }
 
-// Document is a persisted artifact produced by the generate_document tool.
-// Generic-purpose: invoices, agreements, T&Cs, research summaries, exports.
+// DocumentSource is which door produced a document.
+type DocumentSource string
+
+const (
+	// DocumentSourceAgent — the generate_document tool, inside a turn.
+	DocumentSourceAgent DocumentSource = "agent"
+	// DocumentSourceAPI — either `/v1` door (T-A2). It says nothing about
+	// whether there was a thread: the agentic door has one and the render door
+	// does not, and reading the thread off the source is the mistake the
+	// migration's comment exists to prevent.
+	DocumentSourceAPI DocumentSource = "api"
+)
+
+// Document is a persisted artifact produced by the generate_document tool or
+// by a `/v1` report route. Generic-purpose: invoices, agreements, T&Cs,
+// research summaries, exports.
 type Document struct {
-	ID         string         `json:"id"`
-	CompanyID  string         `json:"company_id"`
-	ThreadID   string         `json:"thread_id"`
+	ID        string `json:"id"`
+	CompanyID string `json:"company_id"`
+	// ThreadID is empty for a document `POST /v1/reports/render` produced.
+	// That door takes a spec and returns a file: no LLM, no conversation, and
+	// so nothing for a thread to be. Every other path still has one.
+	ThreadID   string         `json:"thread_id,omitempty"`
 	MessageID  string         `json:"message_id,omitempty"`
 	Format     DocumentFormat `json:"format"`
 	Filename   string         `json:"filename"`
 	StorageKey string         `json:"storage_key"`
 	SizeBytes  int64          `json:"size_bytes"`
-	CreatedAt  time.Time      `json:"created_at"`
+	Source     DocumentSource `json:"source"`
+	// APIKeyID is the credential that paid for it, empty for the agent path.
+	// It is what makes per-key usage answerable, which is one of the four
+	// layers the sprint's risk register names against a leaked key.
+	APIKeyID  string    `json:"api_key_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// DocumentFilter narrows a company-scoped document listing. A zero value
+// lists everything for the tenant, newest first.
+type DocumentFilter struct {
+	Format DocumentFormat
+	// From/To bound created_at. Zero means unbounded on that side.
+	From time.Time
+	To   time.Time
+	// CursorTime/CursorID are the (created_at, id) of the last row the caller
+	// saw. Both empty starts at the newest row. The pair, not the id alone:
+	// two documents can share a microsecond, and a keyset predicate needs a
+	// total order or it drops rows silently at a page boundary.
+	CursorTime time.Time
+	CursorID   string
+	// Limit is the page size. The repository normalises a non-positive or
+	// oversized value rather than erroring, matching every other constructor
+	// in this codebase.
+	Limit int
 }
 
 // DocumentRepository persists document metadata.
 type DocumentRepository interface {
 	Insert(ctx context.Context, d *Document) error
 	GetByID(ctx context.Context, id string) (*Document, error)
+	// GetForCompany is GetByID with the tenant boundary in the query rather
+	// than in the caller's memory. `/v1` uses only this one: an id from
+	// another tenant has to be a not-found, and a handler that fetches first
+	// and compares afterwards is one forgotten comparison away from a
+	// cross-tenant read.
+	GetForCompany(ctx context.Context, companyID, id string) (*Document, error)
+	// ListByCompany returns one page plus whether another exists. The extra
+	// bool is not len(rows) == limit: a caller cannot tell a full last page
+	// from a full middle one.
+	ListByCompany(ctx context.Context, companyID string, f DocumentFilter) ([]*Document, bool, error)
 	ListByThread(ctx context.Context, threadID string) ([]*Document, error)
+	// NewestForThreadSince finds the document a turn produced. The completer
+	// for an agentic report has the report row and therefore its start time;
+	// bounding on it is what stops a turn that generated nothing from
+	// attaching the *previous* turn's document to this report.
+	NewestForThreadSince(ctx context.Context, companyID, threadID string, since time.Time) (*Document, error)
 }

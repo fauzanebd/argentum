@@ -31,6 +31,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
+	"github.com/fauzanebd/argentum/internal/webhookout"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
 
@@ -71,7 +72,17 @@ func main() {
 		logrus.Fatalf("WhatsApp provider: %v", err)
 	}
 
-	runner := stack.NewChatRunner(bus, waProvider)
+	// Report jobs and their callbacks (T-A2). Built before the runner because
+	// the runner closes a report out when its turn ends — the API process only
+	// creates these rows, and everything that moves one lives here.
+	reportRepo := pgctl.NewAPIReportRepo(stack.ControlDB)
+	deliveryRepo := pgctl.NewWebhookDeliveryRepo(stack.ControlDB)
+	companyRepo := pgctl.NewCompanyRepo(stack.ControlDB)
+	webhookSender := webhookout.NewSender(deliveryRepo, companyRepo, stack.Enqueuer(), cfg.APIV1CallbackAllowPrivate)
+	webhookDeliverer := webhookout.NewDeliverer(deliveryRepo, companyRepo, cfg.APIV1CallbackAllowPrivate, webhookMaxAttempts)
+	reportSvc := app.NewAPIReportService(reportRepo, stack.Documents, stack.Docs, webhookSender)
+
+	runner := stack.NewChatRunner(bus, waProvider).WithAPIReports(reportSvc)
 
 	// Lark outbound: worker calls the Lark Open Platform REST API to post
 	// replies on the bot's behalf. Token caching is per-company, on-demand.
@@ -92,8 +103,10 @@ func main() {
 	})
 
 	mux := asynq.NewServeMux()
-	mux.HandleFunc(queue.TypeChatRun, makeChatRunHandler(runner))
+	mux.HandleFunc(queue.TypeChatRun, makeChatRunHandler(runner, reportSvc))
 	mux.HandleFunc(queue.TypeScheduledTaskRun, makeScheduledRunHandler(stack.ScheduledSvc))
+	mux.HandleFunc(queue.TypeReportRender, makeReportRenderHandler(reportSvc))
+	mux.HandleFunc(queue.TypeWebhookDeliver, makeWebhookDeliverHandler(webhookDeliverer))
 
 	// --- Periodic task manager ---
 	// Polls scheduled_tasks every SyncInterval and registers/refreshes one
@@ -129,9 +142,21 @@ func main() {
 	logrus.Info("Bye")
 }
 
+// webhookMaxAttempts is the delivery budget, and it matches the MaxRetry the
+// enqueuer sets. Two numbers that disagree would produce a row still marked
+// pending after asynq has given up, or one marked failed with an attempt still
+// queued behind it.
+const webhookMaxAttempts = 5
+
 // makeChatRunHandler adapts ChatRunner.Run to asynq's HandlerFunc signature.
 // Returning a non-nil error triggers asynq's retry/backoff machinery.
-func makeChatRunHandler(runner *app.ChatRunner) asynq.HandlerFunc {
+//
+// The report half is here rather than inside ChatRunner because only this
+// layer knows whether asynq will try again. Marking a report failed on the
+// first error would be wrong — Complete is one-way, so a retry that then
+// succeeded could not undo it — and never marking it would leave a caller
+// polling a job that has already exhausted its retries.
+func makeChatRunHandler(runner *app.ChatRunner, reports *app.APIReportService) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var p queue.ChatRunPayload
 		if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -139,7 +164,46 @@ func makeChatRunHandler(runner *app.ChatRunner) asynq.HandlerFunc {
 			// instead of looping forever.
 			return asynq.SkipRetry
 		}
-		return runner.Run(ctx, p)
+		err := runner.Run(ctx, p)
+		if err != nil && p.APIReportID != "" && reports != nil {
+			retried, _ := asynq.GetRetryCount(ctx)
+			maxRetry, _ := asynq.GetMaxRetry(ctx)
+			if retried >= maxRetry {
+				reports.CompleteReport(ctx, p.APIReportID, p.ThreadID, err)
+			}
+		}
+		return err
+	}
+}
+
+// makeReportRenderHandler runs a spec whose synchronous render overran its
+// window. The service decides what is retryable; a returned error here is one
+// it asked for.
+func makeReportRenderHandler(reports *app.APIReportService) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var p queue.ReportRenderPayload
+		if err := json.Unmarshal(t.Payload(), &p); err != nil {
+			return asynq.SkipRetry
+		}
+		if p.ReportID == "" {
+			return asynq.SkipRetry
+		}
+		return reports.RunRenderJob(ctx, p)
+	}
+}
+
+// makeWebhookDeliverHandler makes one delivery attempt. asynq owns the backoff
+// between attempts; the deliverer decides whether there should be another.
+func makeWebhookDeliverHandler(d *webhookout.Deliverer) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var p queue.WebhookDeliverPayload
+		if err := json.Unmarshal(t.Payload(), &p); err != nil {
+			return asynq.SkipRetry
+		}
+		if p.DeliveryID == "" {
+			return asynq.SkipRetry
+		}
+		return d.Deliver(ctx, p.DeliveryID)
 	}
 }
 

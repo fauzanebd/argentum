@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,6 +61,69 @@ func (r *CompanyRepo) Update(ctx context.Context, c *domain.Company) error {
 	const q = `UPDATE companies SET name = $1, slug = $2, default_currency = $3 WHERE id = $4`
 	_, err := r.db.ExecContext(ctx, q, c.Name, c.Slug, c.DefaultCurrency, c.ID)
 	return err
+}
+
+// EnsureWebhookSecret returns the tenant's callback signing secret, minting
+// one on first use (T-A2).
+//
+// Lazy rather than at signup because a column of secrets for companies that
+// will never receive a callback is a liability with no user. The UPDATE is
+// conditional on the column still being empty and returns whatever the row
+// holds afterwards, so two concurrent first callbacks converge on one secret
+// instead of the second overwriting a value the first already signed with.
+//
+// The secret is never put on domain.Company: that struct is serialised
+// straight to the dashboard, and a field that exists is a field that leaks the
+// first time somebody returns the record from a new handler.
+func (r *CompanyRepo) EnsureWebhookSecret(ctx context.Context, companyID string) (string, error) {
+	const read = `SELECT webhook_secret FROM companies WHERE id = $1`
+	var secret string
+	err := r.db.QueryRowContext(ctx, read, companyID).Scan(&secret)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", domain.ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if secret != "" {
+		return secret, nil
+	}
+
+	minted, err := newWebhookSecret()
+	if err != nil {
+		return "", err
+	}
+	const claim = `
+		UPDATE companies SET webhook_secret = $2
+		WHERE id = $1 AND webhook_secret = ''
+		RETURNING webhook_secret
+	`
+	err = r.db.QueryRowContext(ctx, claim, companyID, minted).Scan(&secret)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Another request minted one between the read and the claim. Re-read
+		// rather than returning ours: theirs is the one already in use.
+		if err := r.db.QueryRowContext(ctx, read, companyID).Scan(&secret); err != nil {
+			return "", err
+		}
+		return secret, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return secret, nil
+}
+
+// newWebhookSecret mints `whsec_` + 32 random bytes, base64url.
+//
+// The prefix is not decoration: a secret that leaks into a paste, a log or a
+// commit is recognisable as one at a glance, which is what makes a secret
+// scanner — ours or GitHub's — able to find it.
+func newWebhookSecret() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("mint webhook secret: %w", err)
+	}
+	return "whsec_" + base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 // GetBranding reads the report branding record. A company that has never

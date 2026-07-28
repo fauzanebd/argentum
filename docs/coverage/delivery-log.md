@@ -792,6 +792,70 @@ a credential with nothing to authenticate against cannot be gate-tested.
 
 Record, gate output and the limits: [`api-foundation.md`](api-foundation.md).
 
+`T-A2` reports over the API
+
+The thing the owner asked for: a tenant's application asks Argentum for a PDF
+and gets one. Two doors — a spec in and a file out, or a prompt in and a real
+agent turn — plus the documents both produce and three ways to collect an
+asynchronous one.
+
+The decisions worth carrying forward:
+
+- **The shared generator is a new package, and the ticket's location was
+  impossible.** `internal/app` already depends on `internal/tools`, so a
+  service there could not be called by `GenerateDocumentTool` — the same
+  constraint that put `tools.UsageRecorder` in `run_sql.go`. It landed as
+  `internal/docgen`, which both callers import, so the property the ticket
+  wanted (one implementation, no second renderer) holds. The tool keeps only
+  the agent's half: the description the model reads, the schema, the thread
+  requirement, and the JSON it gets back.
+- **Provenance comes off the context, not off a parameter.** The render door
+  could pass `source` and `api_key_id`; the agentic door cannot, because its
+  document is written by the tool at the model's discretion, four packages and
+  a queue away from the HTTP request. The tool reads `tenantctx.Actor`, which
+  `T-05` already populates with `actor_kind=api_key` for that turn — so the
+  audit log and the document row derive provenance from one fact rather than
+  two that can disagree.
+- **`source` and `thread_id` are independent, and the migration says so.**
+  `source=api` with a non-null thread is the *normal* shape for the agentic
+  door. What is unique to the render door is the null thread, not the source.
+- **An idempotency replay re-derives and never replays bytes.** Both doors
+  install a `Replayer` — the hook `T-A1` put in the middleware for exactly
+  this. The record holds a document id, so a replay re-reads the row and
+  re-presigns, which is also the only way a replayed link is still valid an
+  hour later.
+- **An outbound callback needed three guards, one of which the ticket did not
+  ask for.** The signature (timestamp inside the MAC, or a captured delivery is
+  replayable forever), the delivery log (without it "we never got the callback"
+  is unanswerable), and an SSRF check — the URL is chosen by the caller, and
+  169.254.169.254 hands out instance credentials to anything asking from inside
+  the VPC.
+
+**The live gate found four things, three of them defects in code that passed
+its tests.** The report row never recorded its thread — every test passed
+because the 202 read the in-memory struct — so the SSE bridge found no channel
+and closed immediately on every call, which is the entire point of that
+endpoint. A replayed `POST /v1/reports` returned the raw idempotency record
+instead of the report object, a different shape on a published contract. And
+the agentic door failed to produce a document three times in three different
+ways: the agent called `create_visualization` because the system prompt teaches
+that a chart is a Metabase card; then it spent `T-16`'s whole iteration budget
+exploring, because that budget is tuned for a turn whose last iteration
+produces the *answer* rather than the *file*; then it wrote the tool arguments
+into its reply as a fenced JSON block, because the directive was appended after
+the caller's prompt where it reads as commentary. Sixth consecutive ticket
+where the live half found what the unit tests could not.
+
+The fourth was not a defect and cost the most time: two runs reported the old
+`source=agent` after the fix had shipped, because **`go run` was serving a
+binary older than the edit**. Building an explicit binary produced the right
+answer immediately. The same shape as `T-03`'s `pkill` finding, one layer up —
+and the reason `internal/bootstrap` now logs the agent's tool registry by name
+at boot, since the SDK's bare `Tool not found` is indistinguishable from a tool
+that was never registered.
+
+Record, gate output and the limits: [`api-reports.md`](api-reports.md).
+
 ---
 
 ## What the history says about how this project is built

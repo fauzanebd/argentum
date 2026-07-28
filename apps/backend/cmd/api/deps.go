@@ -8,14 +8,18 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
+	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/docgen"
+	"github.com/fauzanebd/argentum/internal/idempotency"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
 
@@ -47,6 +51,19 @@ type apiDeps struct {
 	larkSvc      *app.LarkService
 	brandingSvc  *branding.Service
 	apiKeySvc    *app.APIKeyService
+	// The `/v1` report surface (T-A2). docGen and storageSvc are nil on a
+	// deployment without object storage — the same condition that leaves
+	// generate_document unregistered in the worker — and the routes that need
+	// them answer a typed 503 rather than being absent, so an integrator gets
+	// a reason instead of a 404.
+	docGen       *docgen.Service
+	storageSvc   *storage.StorageService
+	reportRepo   *pgctl.APIReportRepo
+	documentRepo *pgctl.DocumentRepo
+	idemStore    idempotency.Store
+	// apiKeyAuth overrides what authenticates `/v1`. Nil in production, where
+	// apiKeySvc is used; see apiKeyAuthOf in router.go for why the seam exists.
+	apiKeyAuth middleware.APIKeyAuthenticator
 	// larkReplier lets the webhook answer a turn it refuses before enqueueing
 	// (T-03). Nil when Lark is disabled.
 	larkReplier lark.Provider

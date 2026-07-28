@@ -137,6 +137,29 @@ func (s *StorageService) DownloadKey(ctx context.Context, key string) ([]byte, e
 	return data, nil
 }
 
+// StreamKey opens an object for reading and reports its size.
+//
+// The method DownloadKey's comment asked for (T-A2). `GET
+// /v1/documents/:id/content` writes a generated document straight to an HTTP
+// response, and a deck with a dozen chart images is megabytes — buffering
+// every concurrent download in the API's heap is a memory footprint chosen by
+// whoever is downloading. The caller closes the reader.
+//
+// The size comes from a HEAD rather than from the caller's row, because the
+// Content-Length header has to describe the stream that is actually about to
+// be written.
+func (s *StorageService) StreamKey(ctx context.Context, key string) (io.ReadCloser, int64, error) {
+	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		return nil, 0, fmt.Errorf("storage: stat %q: %w", key, err)
+	}
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, 0, fmt.Errorf("storage: get %q: %w", key, err)
+	}
+	return obj, info.Size, nil
+}
+
 // PresignKey is a convenience for callers that already hold the key.
 func (s *StorageService) PresignKey(ctx context.Context, key string, expiry time.Duration) (string, error) {
 	signed, err := s.client.PresignedGetObject(ctx, s.bucket, key, expiry, nil)

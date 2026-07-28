@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,18 +8,11 @@ import (
 	"time"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
-	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 
-	"github.com/fauzanebd/argentum/internal/adapters/storage"
-	"github.com/fauzanebd/argentum/internal/branding"
+	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/domain"
-	"github.com/fauzanebd/argentum/internal/report/brand"
-	"github.com/fauzanebd/argentum/internal/report/pdf"
-	"github.com/fauzanebd/argentum/internal/report/pptx"
 	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
-	"github.com/fauzanebd/argentum/internal/tools/document"
 )
 
 // GenerateDocumentTool turns a structured spec into a downloadable PDF /
@@ -29,37 +21,20 @@ import (
 // the user as a file. The bytes are uploaded to MinIO/S3 under a
 // tenant-scoped key and the tool returns a presigned download URL the
 // chat UI can render as an attachment.
+//
+// Since T-A2 the work happens in docgen.Service, which `POST /v1/reports`
+// also calls. What is left here is the agent's half: the tool description the
+// model reads, the parameter schema, the thread requirement, and the JSON
+// shape the agent gets back. Any divergence between what this produces and
+// what the API produces would be a bug, and there is now nowhere for one to
+// live.
 type GenerateDocumentTool struct {
-	storage    *storage.StorageService
-	repo       domain.DocumentRepository
-	companies  domain.CompanyRepository
-	branding   *branding.Service
-	recorder   UsageRecorder
-	presignTTL time.Duration
+	docs *docgen.Service
 }
 
-func NewGenerateDocumentTool(
-	st *storage.StorageService,
-	repo domain.DocumentRepository,
-	companies domain.CompanyRepository,
-	brandingSvc *branding.Service,
-	recorder UsageRecorder,
-	presignTTL time.Duration,
-) *GenerateDocumentTool {
-	if recorder == nil {
-		recorder = nopRecorder{}
-	}
-	if presignTTL <= 0 {
-		presignTTL = time.Hour
-	}
-	return &GenerateDocumentTool{
-		storage:    st,
-		repo:       repo,
-		companies:  companies,
-		branding:   brandingSvc,
-		recorder:   recorder,
-		presignTTL: presignTTL,
-	}
+// NewGenerateDocumentTool wires the tool to the shared generator.
+func NewGenerateDocumentTool(docs *docgen.Service) *GenerateDocumentTool {
+	return &GenerateDocumentTool{docs: docs}
 }
 
 func (t *GenerateDocumentTool) Name() string { return "generate_document" }
@@ -177,192 +152,58 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 	if err := json.Unmarshal([]byte(args), &input); err != nil {
 		return "", fmt.Errorf("parse parameters: %w", err)
 	}
-	input.Normalize()
-	if err := input.Validate(); err != nil {
-		return "", err
-	}
 
 	companyID := tenantctx.CompanyID(ctx)
 	if companyID == "" {
 		return "", fmt.Errorf("no tenant in context: cannot generate document")
 	}
+	// The thread requirement stays on the agent path and did not move into the
+	// service with everything else (T-A2). A turn without a thread is a bug in
+	// the worker's wiring and should fail loudly here; `/v1`'s render door
+	// legitimately has none, and a shared check would have had to be satisfied
+	// with a fake one.
 	threadID := tenantctx.ThreadID(ctx)
 	if threadID == "" {
 		return "", fmt.Errorf("no thread in context: cannot generate document")
 	}
 
-	format := domain.DocumentFormat(input.Format)
-	data, err := t.render(ctx, &input, companyID)
+	// Provenance comes off the context, not off a parameter (T-A2).
+	//
+	// A document produced by a turn that arrived through `POST /v1/reports` is
+	// an API document with a thread, and the tool cannot be told so by the
+	// caller — the caller is the model, four packages and a queue away from the
+	// HTTP request. The actor is already there for T-05's audit rows, which
+	// record `actor_kind=api_key` for exactly this turn, so the two now agree
+	// about who produced a document rather than disagreeing quietly.
+	source, keyID := domain.DocumentSourceAgent, ""
+	if kind, ref := tenantctx.Actor(ctx); kind == string(domain.ActorKindAPIKey) {
+		source, keyID = domain.DocumentSourceAPI, ref
+	}
+
+	res, err := t.docs.Generate(ctx, docgen.Input{
+		Spec:      &input,
+		CompanyID: companyID,
+		ThreadID:  threadID,
+		Source:    source,
+		APIKeyID:  keyID,
+		// The agent's own spec is not checked against the API's caps. It comes
+		// from a model on the other side of a tool description that already
+		// asks for small tables, and a turn refused by a row cap the agent
+		// cannot see is a turn that fails with nothing to act on.
+		EnforceLimits: false,
+	})
 	if err != nil {
 		return "", err
 	}
 
-	// Generate id up-front so the storage key is deterministic and we
-	// can upload before persisting metadata. On upload failure we leave
-	// no orphan DB row.
-	docID := uuid.New().String()
-	storageKey := fmt.Sprintf("documents/%s/%s/%s.%s", companyID, threadID, docID, format.Extension())
-	filename := normalizeFilename(input.Filename, input.Title, format)
-
-	if _, err := t.storage.UploadKey(ctx, storageKey, bytes.NewReader(data), format.ContentType()); err != nil {
-		return "", fmt.Errorf("upload document: %w", err)
-	}
-
-	doc := &domain.Document{
-		ID:         docID,
-		CompanyID:  companyID,
-		ThreadID:   threadID,
-		Format:     format,
-		Filename:   filename,
-		StorageKey: storageKey,
-		SizeBytes:  int64(len(data)),
-	}
-	if err := t.repo.Insert(ctx, doc); err != nil {
-		return "", fmt.Errorf("persist document: %w", err)
-	}
-
-	t.recorder.RecordDocument(ctx, companyID, threadID, input.Format)
-
-	expiresAt := time.Now().Add(t.presignTTL)
-	signed, err := t.storage.PresignKey(ctx, storageKey, t.presignTTL)
-	if err != nil {
-		return "", fmt.Errorf("presign document: %w", err)
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"company_id":  companyID,
-		"thread_id":   threadID,
-		"document_id": doc.ID,
-		"format":      input.Format,
-		"size":        doc.SizeBytes,
-	}).Info("Generated document")
-
 	out, _ := json.Marshal(map[string]interface{}{
-		"document_id":  doc.ID,
+		"document_id":  res.Document.ID,
 		"format":       input.Format,
-		"filename":     filename,
-		"download_url": signed,
-		"expires_at":   expiresAt.UTC().Format(time.RFC3339),
-		"size_bytes":   doc.SizeBytes,
-		"note":         "Embed download_url as a markdown link with descriptive text, e.g. [Download " + filename + "](download_url). The link expires after about an hour.",
+		"filename":     res.Document.Filename,
+		"download_url": res.DownloadURL,
+		"expires_at":   res.ExpiresAt.UTC().Format(time.RFC3339),
+		"size_bytes":   res.Document.SizeBytes,
+		"note":         "Embed download_url as a markdown link with descriptive text, e.g. [Download " + res.Document.Filename + "](download_url). The link expires after about an hour.",
 	})
 	return string(out), nil
-}
-
-// render dispatches to the format's renderer.
-//
-// The PDF and PPTX paths are the only ones that read company settings. A
-// spreadsheet and a CSV are data, and a tenant's currency symbol pasted into a
-// cell someone wants to sum is a formatting decision made in the wrong place.
-func (t *GenerateDocumentTool) render(ctx context.Context, doc *spec.Document, companyID string) ([]byte, error) {
-	switch doc.Format {
-	case "pdf":
-		return pdf.Render(doc, t.pdfOptions(ctx, companyID))
-	case "pptx":
-		return pptx.Render(doc, t.pptxOptions(ctx, companyID))
-	case "xlsx":
-		return document.RenderXLSX(document.FromReportSpec(doc))
-	case "csv":
-		return document.RenderCSV(document.FromReportSpec(doc))
-	}
-	return nil, fmt.Errorf("unsupported format %q", doc.Format)
-}
-
-// currencyFor is the tenant's default currency, used when the spec names none.
-// A failed lookup is logged and not fatal: a document with bare numbers beats
-// an error where a report was asked for.
-func (t *GenerateDocumentTool) currencyFor(ctx context.Context, companyID string) string {
-	if t.companies == nil {
-		return ""
-	}
-	company, err := t.companies.GetByID(ctx, companyID)
-	if err != nil || company == nil {
-		if err != nil {
-			logrus.WithError(err).WithField("company_id", companyID).
-				Warn("generate_document: company lookup failed; rendering with defaults")
-		}
-		return ""
-	}
-	return company.DefaultCurrency
-}
-
-// brandFor resolves the tenant's report branding — logo, accent, footer line,
-// locale (T-R5). It goes through the same branding.Service the dashboard's
-// preview does, which is what makes "what I approved is what my customer
-// receives" true rather than intended.
-//
-// A tool with no branding service (a stack built before this wiring, or a
-// deployment without object storage) resolves to Argentum's defaults, which is
-// what every document looked like before this existed.
-func (t *GenerateDocumentTool) brandFor(ctx context.Context, companyID string) brand.Config {
-	if t.branding == nil {
-		return brand.Resolve(brand.Input{
-			CompanyName: t.companyName(ctx, companyID),
-			ShowCredit:  true,
-		})
-	}
-	return t.branding.Resolve(ctx, companyID, func(err error) {
-		logrus.WithError(err).WithField("company_id", companyID).
-			Warn("generate_document: branding partially unresolved; rendering the rest")
-	})
-}
-
-func (t *GenerateDocumentTool) companyName(ctx context.Context, companyID string) string {
-	if t.companies == nil {
-		return ""
-	}
-	company, err := t.companies.GetByID(ctx, companyID)
-	if err != nil || company == nil {
-		return ""
-	}
-	return company.Name
-}
-
-func (t *GenerateDocumentTool) pdfOptions(ctx context.Context, companyID string) pdf.Options {
-	cfg := t.brandFor(ctx, companyID)
-	return pdf.Options{
-		Brand:    cfg.PDF(),
-		Currency: t.currencyFor(ctx, companyID),
-		Locale:   cfg.Locale,
-	}
-}
-
-// pptxOptions is pdfOptions for the deck. The two Options types are separate
-// because the renderers are, and they read one resolved branding so a report
-// and the deck attached to it cannot disagree about whose document it is.
-func (t *GenerateDocumentTool) pptxOptions(ctx context.Context, companyID string) pptx.Options {
-	cfg := t.brandFor(ctx, companyID)
-	return pptx.Options{
-		Brand:    cfg.PPTX(),
-		Currency: t.currencyFor(ctx, companyID),
-		Locale:   cfg.Locale,
-	}
-}
-
-func normalizeFilename(suggested, title string, format domain.DocumentFormat) string {
-	ext := "." + format.Extension()
-	name := strings.TrimSpace(suggested)
-	if name == "" {
-		base := strings.TrimSpace(title)
-		if base == "" {
-			base = "document"
-		}
-		name = base + "-" + time.Now().UTC().Format("20060102-150405")
-	}
-	if !strings.EqualFold(filepathExt(name), ext) {
-		if i := strings.LastIndexByte(name, '.'); i > 0 {
-			name = name[:i]
-		}
-		name += ext
-	}
-	repl := strings.NewReplacer("/", "_", "\\", "_", "\x00", "_")
-	return repl.Replace(name)
-}
-
-func filepathExt(name string) string {
-	i := strings.LastIndexByte(name, '.')
-	if i < 0 {
-		return ""
-	}
-	return name[i:]
 }

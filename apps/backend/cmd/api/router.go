@@ -4,9 +4,11 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/transport/http/handlers"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
@@ -92,11 +94,23 @@ func newRouter(d *apiDeps) *gin.Engine {
 	v1.Use(middleware.RequestID())
 	v1.Use(middleware.Enabled(cfg.APIV1Enabled))
 	v1.Use(middleware.MaxBodyBytes(cfg.APIV1MaxBodyBytes))
-	v1.Use(middleware.APIKeyAuth(d.apiKeySvc))
+	v1.Use(middleware.APIKeyAuth(apiKeyAuthOf(d)))
 	if keyLimiter := middleware.NewRateLimiter(d.rdb, cfg.APIV1RatePerMin, float64(cfg.APIV1RatePerMin)/60.0); keyLimiter != nil {
 		v1.Use(keyLimiter.APIKeyMiddleware())
 	}
-	handlers.NewV1MeHandler(d.companyRepo, budgetReaderOrNil(d.usageSvc), cfg.APIV1RatePerMin).Register(v1)
+	handlers.NewV1MeHandler(d.companyRepo, budgetReaderOrNil(d.usageSvc), cfg.APIV1RatePerMin).
+		WithWebhookSecrets(d.companyRepo).
+		Register(v1)
+	// T-A2's two doors and the documents they produce. Registered
+	// unconditionally: a deployment without object storage answers a typed 503
+	// from inside the handler, which tells an integrator why, where an absent
+	// route tells them they got the path wrong.
+	handlers.NewV1ReportsHandler(
+		d.docGen, d.reportRepo, d.documentRepo, d.chatEnq, d.enqueuer, d.rdb, d.idemStore,
+		time.Duration(cfg.APIV1SyncRenderTimeoutSecs)*time.Second,
+		cfg.APIV1CallbackAllowPrivate,
+	).Register(v1)
+	handlers.NewV1DocumentsHandler(d.documentRepo, d.docGen, contentStoreOrNil(d.storageSvc)).Register(v1)
 
 	webhookGroup := r.Group("/webhook")
 	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, cfg.WhatsAppWebhookVerifyToken).
@@ -136,4 +150,32 @@ func budgetReaderOrNil(svc *app.UsageService) handlers.V1BudgetReader {
 		return nil
 	}
 	return svc
+}
+
+// apiKeyAuthOf is the one seam a test can drive the real router through.
+//
+// "Every `/v1` route names its scope" is a review rule, not a table, because
+// scopes are per-key and RequireScope sits beside each route — there is
+// nothing for a test to diff the router against, which is precisely the gap
+// the sprint's risk register calls out. The only way to *prove* the rule is to
+// send a real request with a real credential holding no scopes and watch every
+// route refuse it, and that needs an authenticator a test can supply.
+// Production never sets this field.
+func apiKeyAuthOf(d *apiDeps) middleware.APIKeyAuthenticator {
+	if d.apiKeyAuth != nil {
+		return d.apiKeyAuth
+	}
+	return d.apiKeySvc
+}
+
+// contentStoreOrNil is budgetReaderOrNil for the object store (T-A2). A nil
+// *storage.StorageService assigned into the interface parameter would arrive
+// as a non-nil interface holding a nil pointer, and `GET
+// /v1/documents/:id/content` would panic on a deployment with no object
+// storage instead of answering the typed 503 its own guard writes.
+func contentStoreOrNil(st *storage.StorageService) handlers.DocumentContentStore {
+	if st == nil {
+		return nil
+	}
+	return st
 }
