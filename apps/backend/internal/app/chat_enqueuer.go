@@ -63,7 +63,18 @@ type ChatInput struct {
 	LarkMessageID    string // lark only; reply target (latest inbound message id)
 	APIUserRef       string // api only; the tenant's own reference for the end user
 	Message          string
-	ThreadID         string // dashboard and api; if set, bypasses resolver
+	// Directive is an instruction for this turn that the *caller* did not
+	// write — today, `POST /v1/reports`'s ReportDirective. It is carried
+	// beside Message rather than folded into it because the two are judged
+	// differently: Message is what the input guardrails inspect, and an
+	// instruction block sent as a user message is refused by our own
+	// injection classifier (T-A2b). ChatRunner delivers this as a per-turn
+	// system-prompt addendum instead.
+	//
+	// It is also not persisted as the user's message, so a thread reads back
+	// as the conversation the caller had rather than as our scaffolding.
+	Directive string
+	ThreadID  string // dashboard and api; if set, bypasses resolver
 	// APIReportID ties this turn to the report job `POST /v1/reports` handed
 	// back (T-A2). The worker marks that row terminal when the turn ends.
 	APIReportID string
@@ -242,6 +253,7 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		LarkMessageID:    in.LarkMessageID,
 		Channel:          in.Channel,
 		Message:          in.Message,
+		Directive:        in.Directive,
 		UserMsgID:        userMsg.ID,
 		CompanyName:      companyName,
 		DefaultCurrency:  currency,

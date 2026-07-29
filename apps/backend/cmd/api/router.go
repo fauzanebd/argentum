@@ -118,7 +118,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// from inside the handler, which tells an integrator why, where an absent
 	// route tells them they got the path wrong.
 	handlers.NewV1ReportsHandler(
-		d.docGen, d.reportRepo, d.documentRepo, d.chatEnq, d.enqueuer, d.rdb, d.idemStore,
+		d.docGen, d.reportRepo, d.documentRepo, chatEnqueuerOrNil(d.chatEnq), d.enqueuer, d.rdb, d.idemStore,
 		time.Duration(cfg.APIV1SyncRenderTimeoutSecs)*time.Second,
 		cfg.APIV1CallbackAllowPrivate,
 	).Register(v1)
@@ -174,7 +174,8 @@ func budgetReaderOrNil(svc *app.UsageService) handlers.V1BudgetReader {
 // chatEnqueuerOrNil is budgetReaderOrNil for the chat enqueuer (T-A3). Third
 // instance of the same trap, and the one that would be hardest to spot: a
 // deployment with no queue would answer a panic on `POST /v1/chat` rather than
-// the typed 503 the handler's own guard writes.
+// the typed 503 the handler's own guard writes. `POST /v1/reports` runs
+// through the same door since T-A2b, and needs the same conversion.
 func chatEnqueuerOrNil(e *app.ChatEnqueuer) handlers.V1ChatEnqueuer {
 	if e == nil {
 		return nil

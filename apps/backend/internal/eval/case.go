@@ -20,6 +20,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/fauzanebd/argentum/internal/domain"
 )
 
 // Kind is what a case asserts about the agent's reply.
@@ -56,8 +58,18 @@ type Case struct {
 	// stops the set from drifting into thirty variations of one question.
 	Category string `yaml:"category"`
 	// Notes is free text for the human reading a failure.
-	Notes  string `yaml:"notes,omitempty"`
-	Expect Expect `yaml:"expect"`
+	Notes string `yaml:"notes,omitempty"`
+	// ReportFormat, when set, runs the case the way `POST /v1/reports` does:
+	// the question is the caller's prompt and the report directive travels
+	// beside it, out of the user message (T-A2b). It is a document format
+	// ("pdf", "pptx", "xlsx", "csv") because that is what the directive names.
+	//
+	// It exists because the property T-A2b fixed is invisible to a plain case:
+	// what the guardrail sees depends on how the turn was assembled, and the
+	// only honest way to test it is to assemble the turn the same way the
+	// route does.
+	ReportFormat string `yaml:"report_format,omitempty"`
+	Expect       Expect `yaml:"expect"`
 }
 
 // Expect is the assertion attached to a case.
@@ -155,6 +167,8 @@ func (s *Set) Validate() error {
 			return fmt.Errorf("case %q: question is required", c.ID)
 		case c.Lang != "en" && c.Lang != "id":
 			return fmt.Errorf("case %q: lang must be 'en' or 'id', got %q", c.ID, c.Lang)
+		case c.ReportFormat != "" && !domain.DocumentFormat(c.ReportFormat).Valid():
+			return fmt.Errorf("case %q: report_format must be one of pdf, pptx, xlsx, csv, got %q", c.ID, c.ReportFormat)
 		}
 		seen[c.ID] = true
 

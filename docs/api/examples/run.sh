@@ -92,17 +92,19 @@ for t in json.load(sys.stdin).get("data", []):
 #
 # **The retry is not flake-hiding.** The nightly run exists to catch a *broken
 # sample* — a route renamed, a field removed, an SDK that no longer compiles —
-# and the agentic door has two other ways to produce nothing, both of which
-# `T-A2` completes as a successful report with an absent `document`:
+# and the agentic door has one other way to produce nothing, which `T-A2`
+# completes as a successful report with an absent `document`: the agent answers
+# the prompt in prose without invoking `generate_document`. That is a model
+# outcome, not a broken sample, and the retry is what keeps a nightly job from
+# going red for it.
 #
-#   * our own `semantic_prompt_injection` guardrail blocks the report directive
-#     (four of five attempts during this ticket's gate), or
-#   * the agent answers the prompt in prose without invoking `generate_document`.
-#
-# The first is a live defect with a ticket's worth of work behind it; see
-# docs/coverage/api-contract.md §5. **Until it is fixed this job is expected to
-# be red**, and the retry is what keeps it from being red for the *other*,
-# ordinary reason. A sample that fails twice in a row is worth looking at.
+# It used to cover a second cause — our own `semantic_prompt_injection`
+# guardrail refusing the report directive, four attempts in five — and this job
+# was expected red until that was fixed. `T-A2b` fixed it on 2026-07-29 by
+# moving the directive out of the user message, so the retry is back to
+# covering only the ordinary reason. A sample that fails twice in a row is
+# worth looking at; a run that *needs* the retry more than occasionally is
+# worth looking at too.
 retry_agentic() {
   reset_threads
   if "$@"; then return 0; fi

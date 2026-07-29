@@ -289,19 +289,61 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	}
 	logrus.WithField("tools", names).Info("agent tool registry")
 
-	// AgentFactory builds a fresh sdkagent.Agent per chat turn from the
-	// per-tenant primary + light LLM clients. Tools / memory / system
-	// prompt / streaming config are captured here once; primaryInterface
-	// gates Anthropic-only prompt caching.
-	s.AgentFactory = func(primary, light interfaces.LLM, primaryInterface string) (*sdkagent.Agent, error) {
+	s.AgentFactory = newAgentFactory(agentFactoryDeps{
+		systemPrompt:  systemPrompt,
+		tools:         agentTools,
+		memory:        mem,
+		guardrails:    guardrailsTpl,
+		maxIterations: s.Budget.MaxIterations,
+		agentConfig:   agentCfgOpt,
+	})
+
+	if cfg.EmbeddingEnabled {
+		s.tableEmbeddings = pgctl.NewTableEmbeddingRepo(controlDB)
+	}
+
+	return s, nil
+}
+
+// agentFactoryDeps is everything an agent is built from that does not change
+// between turns.
+type agentFactoryDeps struct {
+	systemPrompt  string
+	tools         []interfaces.Tool
+	memory        interfaces.Memory
+	guardrails    *guardrails.Analytics
+	maxIterations int
+	agentConfig   sdkagent.Option
+}
+
+// newAgentFactory returns the closure ChatRunner calls once per turn.
+//
+// Extracted from NewStack so it can be built without a database, a queue or a
+// Redis — the agent's composition is where T-A2b's fix lives (the report
+// directive reaches the model through the system prompt and not through the
+// guardrail-inspected input), and a property that can only be exercised
+// against a live stack is a property nothing tests.
+func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
+	return func(spec app.AgentSpec) (*sdkagent.Agent, error) {
+		// A per-turn addendum, appended rather than prepended: the shared
+		// prompt is what the agent is, and the addendum is what this one turn
+		// wants of it — and on Anthropic the shared prefix is also what the
+		// cache is keyed on, so appending keeps every ordinary turn on the
+		// same cached system message. A report turn pays for its own, which
+		// is a few hundred tokens on a request that is about to run a
+		// multi-minute agentic loop.
+		turnPrompt := d.systemPrompt
+		if spec.SystemAddendum != "" {
+			turnPrompt = d.systemPrompt + "\n\n" + spec.SystemAddendum
+		}
 		opts := []sdkagent.Option{
-			sdkagent.WithLLM(primary),
-			sdkagent.WithTools(agentTools...),
-			sdkagent.WithMemory(mem),
-			sdkagent.WithSystemPrompt(systemPrompt),
+			sdkagent.WithLLM(spec.Primary),
+			sdkagent.WithTools(d.tools...),
+			sdkagent.WithMemory(d.memory),
+			sdkagent.WithSystemPrompt(turnPrompt),
 			sdkagent.WithName("Argentum"),
 			sdkagent.WithDescription("Conversational analytics agent for B2B owners."),
-			sdkagent.WithMaxIterations(s.Budget.MaxIterations),
+			sdkagent.WithMaxIterations(d.maxIterations),
 			sdkagent.WithRequirePlanApproval(false),
 			sdkagent.WithLLMConfig(interfaces.LLMConfig{Temperature: 0.2}),
 			// Stream content from every iteration immediately. The SDK's default
@@ -317,7 +359,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// and the rolling conversation prefix so each turn only pays for the new
 		// user message + assistant delta. With ~70k-token schema results in
 		// history, this saves ~90% of input tokens on follow-up turns.
-		if primaryInterface == config.LLMInterfaceAnthropic {
+		if spec.PrimaryInterface == config.LLMInterfaceAnthropic {
 			opts = append(opts, sdkagent.WithCacheConfig(interfaces.CacheConfig{
 				CacheSystemMessage: true,
 				CacheTools:         true,
@@ -325,20 +367,14 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 				CacheTTL:           "5m",
 			}))
 		}
-		if guardrailsTpl != nil {
-			opts = append(opts, sdkagent.WithGuardrails(guardrailsTpl.WithLLM(light)))
+		if d.guardrails != nil {
+			opts = append(opts, sdkagent.WithGuardrails(d.guardrails.WithLLM(spec.Light)))
 		}
-		if agentCfgOpt != nil {
-			opts = append(opts, agentCfgOpt)
+		if d.agentConfig != nil {
+			opts = append(opts, d.agentConfig)
 		}
 		return sdkagent.NewAgent(opts...)
 	}
-
-	if cfg.EmbeddingEnabled {
-		s.tableEmbeddings = pgctl.NewTableEmbeddingRepo(controlDB)
-	}
-
-	return s, nil
 }
 
 // NewChatRunner builds the runner over this stack. bus is required; wa may

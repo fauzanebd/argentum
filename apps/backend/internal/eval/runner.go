@@ -70,11 +70,15 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 
 	start := time.Now()
 	runErr := runner.Run(runCtx, queue.ChatRunPayload{
-		CompanyID:       r.tenant.CompanyID,
-		ThreadID:        thread.ID,
-		UserID:          r.tenant.UserID,
-		Channel:         domain.ChannelDashboard,
-		Message:         c.Question,
+		CompanyID: r.tenant.CompanyID,
+		ThreadID:  thread.ID,
+		UserID:    r.tenant.UserID,
+		Channel:   domain.ChannelDashboard,
+		Message:   c.Question,
+		// Assembled exactly as `POST /v1/reports` assembles it, from the same
+		// function, so that a case asserting "our own directive is not read as
+		// an injection" is asserting it about the directive that ships.
+		Directive:       reportDirective(c, r.tenant.Currency),
 		UserMsgID:       userMsg.ID,
 		CompanyName:     r.tenant.CompanyName,
 		DefaultCurrency: r.tenant.Currency,
@@ -97,6 +101,19 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 	res.Failures = Score(c, res.Reply, res.ToolCalls)
 	res.Passed = len(res.Failures) == 0
 	return res
+}
+
+// reportDirective returns the per-turn directive for a case that asked to be
+// run as a report, and "" for every other case — which is what a dashboard
+// turn carries.
+func reportDirective(c Case, currency string) string {
+	if c.ReportFormat == "" {
+		return ""
+	}
+	return app.ReportDirective(app.ReportDirectiveInput{
+		Format:   domain.DocumentFormat(c.ReportFormat),
+		Currency: currency,
+	})
 }
 
 // attachUsage reads back what the turn cost. Best-effort: the usage rows are

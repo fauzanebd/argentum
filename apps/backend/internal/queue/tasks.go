@@ -70,11 +70,16 @@ type ChatRunPayload struct {
 	LarkMessageID    string         `json:"lark_message_id,omitempty"` // reply target
 	Channel          domain.Channel `json:"channel"`
 	Message          string         `json:"message"`
-	UserMsgID        string         `json:"user_msg_id"`
-	CompanyName      string         `json:"company_name,omitempty"`
-	DefaultCurrency  string         `json:"default_currency,omitempty"` // ISO 4217
-	ScheduledTaskID  string         `json:"scheduled_task_id,omitempty"`
-	ScheduledRunID   string         `json:"scheduled_run_id,omitempty"`
+	// Directive is an instruction for this turn that the caller did not write
+	// (T-A2b). It rides beside Message, never inside it: the worker delivers
+	// it as a system-prompt addendum, so the input guardrails judge the user's
+	// own words and nothing else. Empty for every channel but `POST /v1/reports`.
+	Directive       string `json:"directive,omitempty"`
+	UserMsgID       string `json:"user_msg_id"`
+	CompanyName     string `json:"company_name,omitempty"`
+	DefaultCurrency string `json:"default_currency,omitempty"` // ISO 4217
+	ScheduledTaskID string `json:"scheduled_task_id,omitempty"`
+	ScheduledRunID  string `json:"scheduled_run_id,omitempty"`
 	// APIReportID ties this turn to the report job `POST /v1/reports` handed
 	// the caller (T-A2). The worker marks that row terminal when the turn
 	// finishes, which is how "is my report ready?" gets an answer — a thread

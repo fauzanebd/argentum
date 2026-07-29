@@ -40,7 +40,7 @@ type V1ReportsHandler struct {
 	gen      *docgen.Service
 	reports  domain.APIReportRepository
 	docs     domain.DocumentRepository
-	chat     *app.ChatEnqueuer
+	chat     V1ChatEnqueuer
 	enqueuer *queue.Enqueuer
 	rdb      *redis.Client
 	idem     idempotency.Store
@@ -54,7 +54,7 @@ func NewV1ReportsHandler(
 	gen *docgen.Service,
 	reports domain.APIReportRepository,
 	docs domain.DocumentRepository,
-	chat *app.ChatEnqueuer,
+	chat V1ChatEnqueuer,
 	enqueuer *queue.Enqueuer,
 	rdb *redis.Client,
 	idem idempotency.Store,
@@ -469,11 +469,19 @@ func (h *V1ReportsHandler) createReport(c *gin.Context) {
 	})
 
 	res, err := h.chat.Enqueue(c.Request.Context(), app.ChatInput{
-		Channel:     domain.ChannelAPI,
-		CompanyID:   company,
-		APIUserRef:  req.UserRef,
-		ThreadID:    req.ThreadID,
-		Message:     reportDirective(req, format),
+		Channel:    domain.ChannelAPI,
+		CompanyID:  company,
+		APIUserRef: req.UserRef,
+		ThreadID:   req.ThreadID,
+		// The caller's prompt, and only the caller's prompt. What Argentum
+		// wants of this turn travels as a directive (T-A2b) — a message
+		// carrying both is a message the injection guardrail refuses.
+		Message: req.Prompt,
+		Directive: app.ReportDirective(app.ReportDirectiveInput{
+			Format:   format,
+			Locale:   req.Locale,
+			Currency: req.Currency,
+		}),
 		APIReportID: rep.ID,
 		APIKeyID:    rep.APIKeyID,
 	})
@@ -524,53 +532,6 @@ func (h *V1ReportsHandler) abortEnqueue(c *gin.Context, rep *domain.APIReport, e
 		logrus.WithError(err).WithField("company_id", rep.CompanyID).Error("enqueue report turn")
 		apierr.Abort(c, apierr.TypeServer, "report_failed", "The report turn could not be started.")
 	}
-}
-
-// reportDirective is the message the agent actually receives.
-//
-// The caller's prompt with an instruction appended, rather than a system-prompt
-// change: the directive applies to this turn and to no other, and a caller
-// asking "what were sales last month?" through `/v1/chat` must not get a PDF
-// because a sibling endpoint wanted one.
-//
-// **The negative half is the half that works.** The live gate's first agentic
-// run answered a prompt containing the words "bar chart" by calling
-// `create_visualization` twice and finishing without a document — obeying the
-// system prompt, which teaches that a chart is a Metabase card, over a
-// directive that only said what to do at the end. A chart *inside* a report is
-// a `chart` section in the spec, and the agent has to be told that the other
-// tool is not what this turn wants.
-func reportDirective(req createReportRequest, format domain.DocumentFormat) string {
-	var b strings.Builder
-
-	// The directive goes **before** the request, not after it. The live gate's
-	// second agentic run had it appended, and the model answered by writing the
-	// `generate_document` arguments into its prose as a fenced JSON block —
-	// narrating the call instead of making it. An instruction that arrives
-	// after the question reads as commentary on the answer; one that arrives
-	// first reads as the task.
-	b.WriteString("[REPORT REQUEST — the deliverable is a file, not a chat reply]\n")
-	b.WriteString("You MUST end this turn by actually invoking the generate_document tool with format=")
-	b.WriteString(string(format))
-	if format == domain.DocumentFormatPDF || format == domain.DocumentFormatPPTX {
-		b.WriteString(" and spec_version=2")
-	}
-	b.WriteString(".\n")
-	// Named failure modes, because each of these is something a model did on a
-	// real run of this endpoint rather than something imagined here.
-	b.WriteString("Invoke the tool. Do not print its arguments as JSON in your reply — a code block is not a document and the caller receives no file.\n")
-	b.WriteString("Do not call create_visualization or create_dashboard: a chart in this report is a \"chart\" section inside the generate_document spec, not a Metabase card.\n")
-	b.WriteString("Query only what you need first; the document is the last thing you do.\n")
-	if req.Locale != "" {
-		b.WriteString("Use locale=" + req.Locale + ".\n")
-	}
-	if req.Currency != "" {
-		b.WriteString("Use currency=" + req.Currency + ".\n")
-	}
-
-	b.WriteString("\nThe report to produce:\n")
-	b.WriteString(req.Prompt)
-	return b.String()
 }
 
 // getReport is `GET /v1/reports/:id`.

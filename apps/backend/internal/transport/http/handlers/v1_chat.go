@@ -52,13 +52,14 @@ type V1ChatHandler struct {
 	heartbeat time.Duration
 }
 
-// V1ChatEnqueuer is the half of app.ChatEnqueuer this handler uses: resolve the
-// thread, persist the question, hand the turn to the worker.
+// V1ChatEnqueuer is the half of app.ChatEnqueuer the `/v1` handlers use:
+// resolve the thread, persist the question, hand the turn to the worker.
 //
-// An interface rather than the concrete *app.ChatEnqueuer the report handler
-// takes, because the concrete one needs a live asynq client to do anything at
-// all — and a streaming contract that can only be exercised against a running
-// queue is a streaming contract nothing tests until a customer does.
+// An interface rather than the concrete *app.ChatEnqueuer, because the
+// concrete one needs a live asynq client to do anything at all — and a
+// contract that can only be exercised against a running queue is a contract
+// nothing tests until a customer does. The report handler took the concrete
+// type until T-A2b, whose whole subject is *what* gets enqueued.
 type V1ChatEnqueuer interface {
 	Enqueue(ctx context.Context, in app.ChatInput) (*app.EnqueueResult, error)
 }

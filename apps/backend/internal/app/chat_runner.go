@@ -27,12 +27,38 @@ import (
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
 
-// AgentFactory builds a sdkagent.Agent for one chat turn from per-tenant
-// LLM clients. The worker captures tools, memory, system prompt, and
-// guardrails in the closure; callers pass the freshly resolved primary and
-// light LLM clients plus the primary's interface name (so the factory can
-// gate provider-specific options like Anthropic prompt caching).
-type AgentFactory func(primary, light interfaces.LLM, primaryInterface string) (*sdkagent.Agent, error)
+// AgentSpec is everything one turn needs from the factory. A struct rather
+// than a parameter list because two of its fields are strings and two are
+// LLMs, and a caller swapping either pair would compile.
+type AgentSpec struct {
+	// Primary and Light are the freshly resolved per-tenant clients.
+	Primary, Light interfaces.LLM
+	// PrimaryInterface names the provider, so the factory can gate
+	// provider-specific options like Anthropic prompt caching.
+	PrimaryInterface string
+	// SystemAddendum is appended to the shared system prompt for this turn
+	// only. It is how an instruction the caller did not write reaches the
+	// model without passing through the input guardrails, which exist to
+	// judge what the caller *did* write (T-A2b).
+	SystemAddendum string
+}
+
+// AgentFactory builds a sdkagent.Agent for one chat turn. The worker captures
+// tools, memory, the shared system prompt, and guardrails in the closure;
+// callers pass what varies per turn.
+type AgentFactory func(AgentSpec) (*sdkagent.Agent, error)
+
+// LLMResolver is the half of llmtenant.ClientCache a turn needs: the tenant's
+// client for a tier, and the profile that names its provider.
+//
+// Declared at the consumer, like ChatEnqueuer's BudgetChecker — and for the
+// same reason it earns its keep here: the concrete cache resolves per-tenant
+// credentials out of the control database, so a runner that took it could not
+// be run at all in a test, and how a turn is assembled (T-A2b) is exactly the
+// kind of thing that has to be.
+type LLMResolver interface {
+	For(ctx context.Context, companyID string, tier domain.LLMTier) (interfaces.LLM, *llmtenant.EffectiveProfile, error)
+}
 
 // BudgetResolver returns the per-turn budget a company's agent runs under.
 //
@@ -71,7 +97,7 @@ type ChatRunner struct {
 	threadRepo   domain.ThreadRepository
 	connections  domain.ConnectionRepository
 	agentFactory AgentFactory
-	llmCache     *llmtenant.ClientCache
+	llmCache     LLMResolver
 	bus          EventBus
 	wa           whatsapp.Provider
 	larkProv     lark.Provider
@@ -100,7 +126,7 @@ func NewChatRunner(
 	threadRepo domain.ThreadRepository,
 	connections domain.ConnectionRepository,
 	agentFactory AgentFactory,
-	llmCache *llmtenant.ClientCache,
+	llmCache LLMResolver,
 	bus EventBus,
 	wa whatsapp.Provider,
 	pool *db.TenantConnPool,
@@ -201,7 +227,12 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// Cheap small-talk short-circuit: skip the agent (and the light-LLM
 	// guardrail/classifier pipeline behind it) when the message is a
 	// greeting or one-word ack. Saves multiple LLM calls per turn.
-	if reply, ok := trivialReply(p.Message); ok {
+	//
+	// Never for a turn carrying a directive. The deliverable of a report turn
+	// is a file, and a caller whose prompt happens to read as small talk would
+	// otherwise get a friendly sentence and a report that completed with
+	// nothing attached — the exact silent failure T-A2b exists to remove.
+	if reply, ok := trivialReply(p.Message); ok && p.Directive == "" {
 		now := time.Now()
 		_ = r.bus.Publish(p.ThreadID, ChatEvent{
 			JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "started", Timestamp: now,
@@ -240,7 +271,15 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		logrus.WithError(err).Warn("resolve light LLM failed; using primary for guardrails")
 		lightLLM = primaryLLM
 	}
-	agent, err := r.agentFactory(primaryLLM, lightLLM, primaryProfile.Interface)
+	agent, err := r.agentFactory(AgentSpec{
+		Primary:          primaryLLM,
+		Light:            lightLLM,
+		PrimaryInterface: primaryProfile.Interface,
+		// The one place the report directive enters the model's view. It is
+		// not in p.Message, so the input guardrails never see it, and it is
+		// not in the shared system prompt, so it applies to this turn alone.
+		SystemAddendum: p.Directive,
+	})
 	if err != nil {
 		return r.handleRunError(ctx, p, fmt.Errorf("build agent: %w", err))
 	}

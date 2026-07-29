@@ -61,6 +61,12 @@ func TestValidateRejectsBrokenCases(t *testing.T) {
 			{ID: "a", Question: "q", Lang: "en", Expect: Expect{Kind: KindNumeric}},
 			{ID: "a", Question: "q2", Lang: "en", Expect: Expect{Kind: KindNumeric}},
 		}}},
+		// A report case whose format is not one — the directive would name a
+		// format generate_document refuses, and the case would fail for a
+		// reason that has nothing to do with what it asserts (T-A2b).
+		{"unknown report format", Set{Cases: []Case{
+			{ID: "a", Question: "q", Lang: "en", ReportFormat: "docx", Expect: Expect{Kind: KindNumeric}},
+		}}},
 	}
 	for _, tt := range tests {
 		if err := tt.set.Validate(); err == nil {
