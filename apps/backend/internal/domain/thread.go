@@ -39,7 +39,13 @@ type ConversationThread struct {
 	// made on behalf of (T-A1). It is opaque to us by design: an API key
 	// belongs to a company, so the only identity available is the one the
 	// caller supplies. Empty for non-api threads.
-	APIUserRef    string    `json:"api_user_ref,omitempty"`
+	APIUserRef string `json:"api_user_ref,omitempty"`
+	// AgentID is the roster agent this conversation runs as (T-S2). Empty
+	// means the company default, which is what every thread predating the
+	// roster resolves to and what a thread whose agent was deleted falls back
+	// to — the column is ON DELETE SET NULL precisely so that a tidied roster
+	// cannot strand a conversation.
+	AgentID       string    `json:"agent_id,omitempty"`
 	Title         string    `json:"title"`
 	Summary       string    `json:"summary,omitempty"`
 	LastMessageAt time.Time `json:"last_message_at"`

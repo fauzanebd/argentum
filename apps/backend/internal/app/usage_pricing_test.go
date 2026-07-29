@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -25,6 +26,41 @@ func newUsageService() (*UsageService, *fakeUsageRepo, *recordingCredits) {
 	usage := &fakeUsageRepo{}
 	credits := &recordingCredits{}
 	return NewUsageService(usage, credits, DefaultPricing), usage, credits
+}
+
+// T-S2. "What does the Finance agent cost us" is the first question a customer
+// with four agents asks, and it is answerable only if every event carries the
+// agent. One assignment inside append covers all six Record* methods, so this
+// checks a token event and a tool event.
+func TestUsageEventsCarryTheTurnsAgent(t *testing.T) {
+	svc, usage, _ := newUsageService()
+	ctx := agentscope.WithScope(context.Background(), agentscope.Scope{AgentID: "ag-fin"})
+
+	svc.RecordLLM(ctx, "co-1", "th-1", "msg-1", "gpt-4o", 100, 50, 0, 0)
+	svc.RecordSQL(ctx, "co-1", "th-1")
+
+	if len(usage.events) != 2 {
+		t.Fatalf("events = %d, want 2", len(usage.events))
+	}
+	for _, e := range usage.events {
+		if e.AgentID != "ag-fin" {
+			t.Errorf("%s event agent_id = %q, want ag-fin", e.EventType, e.AgentID)
+		}
+	}
+}
+
+// Spend outside a turn — a schema refresh, a reindex — belongs to no agent.
+func TestUsageOutsideATurnHasNoAgent(t *testing.T) {
+	svc, usage, _ := newUsageService()
+
+	svc.RecordSQL(context.Background(), "co-1", "")
+
+	if len(usage.events) != 1 {
+		t.Fatalf("events = %d, want 1", len(usage.events))
+	}
+	if got := usage.events[0].AgentID; got != "" {
+		t.Errorf("agent_id = %q, want empty", got)
+	}
 }
 
 func TestLookupModelPricing(t *testing.T) {

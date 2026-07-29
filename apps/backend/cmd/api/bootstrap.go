@@ -198,8 +198,14 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			IdleMinutes:        cfg.ThreadIdleMinutes,
 			SummaryEveryNTurns: cfg.SummaryEveryNTurns,
 		})
+	// The roster is read on two paths in this process: the enqueuer pins every
+	// turn to an agent (T-S2), and the Agents tab edits the rows (T-S1). One
+	// repository, constructed here because the enqueuer is built several
+	// hundred lines before the service that owns the CRUD surface.
+	agentRepo := pgctl.NewAgentRepo(controlDB)
 	deps.chatEnq = app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, deps.enqueuer).
-		WithBudget(deps.usageSvc)
+		WithBudget(deps.usageSvc).
+		WithRoster(agentRepo)
 	scheduledRepo := pgctl.NewScheduledTaskRepo(controlDB)
 	// The API process only creates and edits schedules — the worker fires
 	// them — but the service is the same type, and wiring it here keeps the
@@ -271,7 +277,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// object storage offers no generate_document checkbox for the same reason
 	// the worker registers no such tool.
 	deps.agentSvc = app.NewAgentService(
-		pgctl.NewAgentRepo(controlDB), connRepo,
+		agentRepo, connRepo,
 		tools.Names(tools.Registry(tools.RegistryDeps{
 			Pool:                deps.tenant,
 			Connections:         connRepo,

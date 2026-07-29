@@ -16,23 +16,23 @@ func NewThreadRepo(db *sql.DB) *ThreadRepo { return &ThreadRepo{db: db} }
 
 const threadSelectCols = `id, company_id, channel, COALESCE(phone_number, ''), COALESCE(user_id::text, ''),
 		COALESCE(discord_user_id, ''), COALESCE(lark_chat_id, ''), COALESCE(lark_thread_key, ''),
-		COALESCE(lark_open_id, ''), COALESCE(api_user_ref, ''),
+		COALESCE(lark_open_id, ''), COALESCE(api_user_ref, ''), COALESCE(agent_id::text, ''),
 		title, summary, last_message_at, is_archived, created_at`
 
 func (r *ThreadRepo) Create(ctx context.Context, t *domain.ConversationThread) error {
 	const q = `
 		INSERT INTO conversation_threads
 			(company_id, channel, phone_number, user_id, discord_user_id,
-			 lark_chat_id, lark_thread_key, lark_open_id, api_user_ref,
+			 lark_chat_id, lark_thread_key, lark_open_id, api_user_ref, agent_id,
 			 title, summary, last_message_at)
 		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, '')::uuid, NULLIF($5, ''),
 			NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''),
-			$10, $11, $12)
+			NULLIF($10, '')::uuid, $11, $12, $13)
 		RETURNING id, created_at
 	`
 	return r.db.QueryRowContext(ctx, q,
 		t.CompanyID, string(t.Channel), t.PhoneNumber, t.UserID, t.DiscordUserID,
-		t.LarkChatID, t.LarkThreadKey, t.LarkOpenID, t.APIUserRef,
+		t.LarkChatID, t.LarkThreadKey, t.LarkOpenID, t.APIUserRef, t.AgentID,
 		t.Title, t.Summary, t.LastMessageAt,
 	).Scan(&t.ID, &t.CreatedAt)
 }
@@ -241,7 +241,7 @@ func scanThreadRow(row rowScanner) (*domain.ConversationThread, error) {
 	var channel string
 	if err := row.Scan(
 		&t.ID, &t.CompanyID, &channel, &t.PhoneNumber, &t.UserID, &t.DiscordUserID,
-		&t.LarkChatID, &t.LarkThreadKey, &t.LarkOpenID, &t.APIUserRef,
+		&t.LarkChatID, &t.LarkThreadKey, &t.LarkOpenID, &t.APIUserRef, &t.AgentID,
 		&t.Title, &t.Summary, &t.LastMessageAt, &t.IsArchived, &t.CreatedAt,
 	); err != nil {
 		return nil, err

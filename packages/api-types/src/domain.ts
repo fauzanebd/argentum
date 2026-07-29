@@ -17,7 +17,9 @@
  * stops an employee from opening it and asking what it can reach. Per-agent
  * user grants are a follow-on, and this struct is shaped so adding them later
  * changes no field here.
- * Nothing reads these rows at turn time yet — that is T-S2.
+ * T-S2 is what reads these rows at turn time: the persona is appended to the
+ * system prompt, AllowedTools filters the registry the turn is built with, and
+ * SourceIDs becomes the scope tools.ResolveSource enforces.
  */
 export interface Agent {
   id: string;
@@ -95,6 +97,14 @@ export interface AgentAction {
   actor_kind: ActorKind;
   actor_ref?: string;
   channel?: Channel;
+  /**
+   * AgentID names the roster agent the turn ran as (T-S2). It carries no
+   * foreign key and it is never cleared: "which agent ran this query" is a
+   * question asked about deleted agents more often than about live ones.
+   * Empty for a turn that ran before the roster existed, or under a company
+   * that has none.
+   */
+  agent_id?: string;
   tool_name: string;
   source_id?: string;
   /**
@@ -775,6 +785,14 @@ export interface ConversationThread {
    * caller supplies. Empty for non-api threads.
    */
   api_user_ref?: string;
+  /**
+   * AgentID is the roster agent this conversation runs as (T-S2). Empty
+   * means the company default, which is what every thread predating the
+   * roster resolves to and what a thread whose agent was deleted falls back
+   * to — the column is ON DELETE SET NULL precisely so that a tidied roster
+   * cannot strand a conversation.
+   */
+  agent_id?: string;
   title: string;
   summary?: string;
   last_message_at: string;
@@ -823,6 +841,12 @@ export interface UsageEvent {
   company_id: string;
   thread_id?: string;
   message_id?: string;
+  /**
+   * AgentID attributes the spend to a roster agent (T-S2). No foreign key,
+   * same reasoning as agent_actions: a deleted agent's costs stay on the
+   * month they were incurred in. Empty when the turn ran unscoped.
+   */
+  agent_id?: string;
   event_type: UsageEventType;
   model?: string;
   tokens_in?: number /* int */;

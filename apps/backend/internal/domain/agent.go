@@ -20,7 +20,9 @@ import (
 // user grants are a follow-on, and this struct is shaped so adding them later
 // changes no field here.
 //
-// Nothing reads these rows at turn time yet — that is T-S2.
+// T-S2 is what reads these rows at turn time: the persona is appended to the
+// system prompt, AllowedTools filters the registry the turn is built with, and
+// SourceIDs becomes the scope tools.ResolveSource enforces.
 type Agent struct {
 	ID          string `json:"id"`
 	CompanyID   string `json:"company_id"`
@@ -60,9 +62,10 @@ func (a *Agent) AllowsTool(name string) bool {
 // AllowsSource reports whether this agent may reach the given connection.
 // Empty means every source the company owns; see AllowsTool.
 //
-// This is the predicate tools.ResolveSource will consult in T-S2. Scoping is
-// enforced at the tool, not in the persona: a prompt saying "only use the
-// finance database" is a wish.
+// At turn time the same rule is applied through agentscope.Scope, which is how
+// it reaches tools.ResolveSource without every tool learning what an agent is.
+// Scoping is enforced at the tool, not in the persona: a prompt saying "only
+// use the finance database" is a wish.
 func (a *Agent) AllowsSource(connectionID string) bool {
 	return len(a.SourceIDs) == 0 || slices.Contains(a.SourceIDs, connectionID)
 }
@@ -77,6 +80,11 @@ func (a *Agent) AllowsSource(connectionID string) bool {
 type AgentRepository interface {
 	Create(ctx context.Context, a *Agent) error
 	GetByID(ctx context.Context, companyID, id string) (*Agent, error)
+	// GetDefault returns the company's default agent — what a turn that names
+	// no agent runs as (T-S2). ErrNotFound when the company has no roster at
+	// all, which the caller treats as "run unscoped" rather than as a failure:
+	// a tenant whose seed did not run must still be able to ask a question.
+	GetDefault(ctx context.Context, companyID string) (*Agent, error)
 	ListByCompany(ctx context.Context, companyID string) ([]*Agent, error)
 	Update(ctx context.Context, a *Agent) error
 	Delete(ctx context.Context, companyID, id string) error

@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/agentbudget"
+	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
@@ -111,12 +112,16 @@ func (a *audited) record(ctx context.Context, tool, args, out string, execErr er
 	redacted, rows, sourceID := digestArgs(args, out)
 
 	action := &domain.AgentAction{
-		CompanyID:    companyID,
-		ThreadID:     tenantctx.ThreadID(ctx),
-		MessageID:    tenantctx.MessageID(ctx),
-		ActorKind:    domain.ActorKind(kind),
-		ActorRef:     ref,
-		Channel:      domain.Channel(tenantctx.Channel(ctx)),
+		CompanyID: companyID,
+		ThreadID:  tenantctx.ThreadID(ctx),
+		MessageID: tenantctx.MessageID(ctx),
+		ActorKind: domain.ActorKind(kind),
+		ActorRef:  ref,
+		Channel:   domain.Channel(tenantctx.Channel(ctx)),
+		// Which of the tenant's agents made this call (T-S2). Off the context
+		// rather than a constructor argument: this decorator wraps the whole
+		// registry once at boot, and the agent is per turn.
+		AgentID:      agentscope.AgentID(ctx),
 		ToolName:     tool,
 		SourceID:     sourceID,
 		ArgsRedacted: redacted,

@@ -21,10 +21,14 @@ const (
 // company. Persisted for usage display today; will back per-call billing in
 // V2.
 type UsageEvent struct {
-	ID                  string                 `json:"id"`
-	CompanyID           string                 `json:"company_id"`
-	ThreadID            string                 `json:"thread_id,omitempty"`
-	MessageID           string                 `json:"message_id,omitempty"`
+	ID        string `json:"id"`
+	CompanyID string `json:"company_id"`
+	ThreadID  string `json:"thread_id,omitempty"`
+	MessageID string `json:"message_id,omitempty"`
+	// AgentID attributes the spend to a roster agent (T-S2). No foreign key,
+	// same reasoning as agent_actions: a deleted agent's costs stay on the
+	// month they were incurred in. Empty when the turn ran unscoped.
+	AgentID             string                 `json:"agent_id,omitempty"`
 	EventType           UsageEventType         `json:"event_type"`
 	Model               string                 `json:"model,omitempty"`
 	TokensIn            int                    `json:"tokens_in,omitempty"`

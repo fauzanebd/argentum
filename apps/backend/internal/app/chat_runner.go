@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/agentbudget"
+	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/lark"
@@ -41,6 +43,20 @@ type AgentSpec struct {
 	// model without passing through the input guardrails, which exist to
 	// judge what the caller *did* write (T-A2b).
 	SystemAddendum string
+	// Persona is the roster agent's own instructions (T-S2), appended to the
+	// shared prompt ahead of the addendum. An addendum, never a replacement:
+	// the shared prompt carries the SQL-dialect rules, the anti-fabrication
+	// language and the formatting contract, and a customer-authored prompt
+	// that could replace them would be a self-service route back to C-1.
+	Persona string
+	// ToolNames restricts this turn to a subset of the registry, by name.
+	// Empty means every tool — the roster's rule, stated once in
+	// domain.Agent.AllowsTool and not restated here.
+	ToolNames []string
+
+	// Primitives rather than a *domain.Agent on purpose: the factory lives in
+	// bootstrap, and it should not have to learn a domain entity in order to
+	// append a string and filter a slice.
 }
 
 // AgentFactory builds a sdkagent.Agent for one chat turn. The worker captures
@@ -70,6 +86,19 @@ type LLMResolver interface {
 // defaults, and a per-company lookup replaces that one line when there is a
 // table to read from.
 type BudgetResolver func(ctx context.Context, companyID string) agentbudget.Budget
+
+// AgentLoader is the half of the roster one turn needs (T-S2): the agent the
+// payload names, or the company default when it names none.
+//
+// domain.AgentRepository satisfies it. Narrowed at the consumer because a
+// runner that could write to the roster is a runner that could be asked to,
+// and because a nil loader has to remain legal — the eval harness and every
+// test below run without one, and a turn with no agent is the behaviour this
+// product had before the roster existed.
+type AgentLoader interface {
+	GetByID(ctx context.Context, companyID, id string) (*domain.Agent, error)
+	GetDefault(ctx context.Context, companyID string) (*domain.Agent, error)
+}
 
 // ScheduledRunMarker is the narrow contract ChatRunner uses to close out
 // a scheduled_task_runs row when the agent finishes (or errors). Defined
@@ -107,6 +136,7 @@ type ChatRunner struct {
 	historyLimit int
 	budgetFor    BudgetResolver
 	actions      domain.AgentActionRepository
+	roster       AgentLoader
 
 	// Embedding-based table picker. Both must be non-nil to inject hints;
 	// otherwise the runner silently skips and the agent falls back to the
@@ -178,6 +208,19 @@ func (r *ChatRunner) WithAPIReports(c APIReportCompleter) *ChatRunner {
 // stopped from saying that" is the entry an auditor most wants to find.
 func (r *ChatRunner) WithActionLog(repo domain.AgentActionRepository) *ChatRunner {
 	r.actions = repo
+	return r
+}
+
+// WithRoster lets a turn run as one of the tenant's agents (T-S2): its
+// persona, its tools, its sources.
+//
+// Optional, and a runner without one behaves exactly as this product did
+// before the roster existed — the shared prompt, the whole registry, every
+// source the company owns. That is not a courtesy to tests: it is what a
+// company whose roster failed to seed gets, and "cannot ask a question because
+// a settings table is empty" is not an acceptable failure.
+func (r *ChatRunner) WithRoster(l AgentLoader) *ChatRunner {
+	r.roster = l
 	return r
 }
 
@@ -259,6 +302,14 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	tracker := agentbudget.New(budget)
 	ctx = agentbudget.WithTracker(ctx, tracker)
 
+	// Which of the tenant's agents this turn runs as (T-S2). Installed beside
+	// the budget tracker and for the same reason: the constraint has to reach
+	// seven tools, and the tools take a context and a JSON string. Before the
+	// LLMs are resolved, so that every row this turn writes — including the
+	// audit row for a turn that fails to build an agent at all — carries it.
+	agentRow := r.resolveAgent(ctx, p)
+	ctx = agentscope.WithScope(ctx, scopeOf(agentRow))
+
 	// Resolve the per-tenant LLMs for this turn. Primary is required; light
 	// falls back to primary if resolution fails (preserves today's behavior
 	// where missing LIGHT_LLM_API_KEY means "use primary").
@@ -279,6 +330,8 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		// not in p.Message, so the input guardrails never see it, and it is
 		// not in the shared system prompt, so it applies to this turn alone.
 		SystemAddendum: p.Directive,
+		Persona:        personaOf(agentRow),
+		ToolNames:      toolNamesOf(agentRow),
 	})
 	if err != nil {
 		return r.handleRunError(ctx, p, fmt.Errorf("build agent: %w", err))
@@ -297,6 +350,12 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	if err != nil {
 		logrus.WithError(err).Warn("source catalog prefetch failed; agent will discover via list_sources")
 	}
+	// The same scope the tools enforce, applied to the catalog the agent is
+	// *told* about (T-S2). Skipping this would leave the agent reading about a
+	// database its every query against would then be refused — the most
+	// confusing failure available here, and one no tool-level test catches
+	// because no tool is involved.
+	sources = agentscope.FromContext(ctx).FilterSources(sources)
 
 	start := time.Now()
 
@@ -334,6 +393,72 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	response = r.rejectFabrication(ctx, p, response, tracker)
 	r.completeWith(ctx, p, response, 0, 0, latency)
 	return nil
+}
+
+// resolveAgent loads the roster row this turn runs as (T-S2), or nil.
+//
+// Nil is a legitimate answer in three cases, and none of them is an error: no
+// roster is wired (the eval harness), the company has none (a seed that never
+// ran), or the lookup failed. All three run the turn unscoped, which is what
+// this product did before the roster existed.
+//
+// The payload's agent is preferred and the company default is the fallback,
+// including when the named agent has since been deleted — a conversation must
+// not become unanswerable because an admin tidied the roster, and the thread's
+// own `agent_id` is already NULL by then anyway.
+func (r *ChatRunner) resolveAgent(ctx context.Context, p queue.ChatRunPayload) *domain.Agent {
+	if r.roster == nil {
+		return nil
+	}
+	if p.AgentID != "" {
+		a, err := r.roster.GetByID(ctx, p.CompanyID, p.AgentID)
+		if err == nil {
+			return a
+		}
+		if !errors.Is(err, domain.ErrNotFound) {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"company_id": p.CompanyID, "agent_id": p.AgentID,
+			}).Warn("agent lookup failed; falling back to the company default")
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"company_id": p.CompanyID, "agent_id": p.AgentID,
+			}).Info("agent gone since the turn was queued; falling back to the company default")
+		}
+	}
+	def, err := r.roster.GetDefault(ctx, p.CompanyID)
+	if err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			logrus.WithError(err).WithField("company_id", p.CompanyID).
+				Warn("default agent lookup failed; running this turn unscoped")
+		}
+		return nil
+	}
+	return def
+}
+
+// scopeOf, personaOf and toolNamesOf are the three things a turn takes from an
+// agent. Separate nil-tolerant functions rather than methods, because the
+// caller's `nil` is the ordinary case and a method set that has to be
+// nil-checked at three call sites is three chances to forget.
+func scopeOf(a *domain.Agent) agentscope.Scope {
+	if a == nil {
+		return agentscope.Scope{}
+	}
+	return agentscope.Scope{AgentID: a.ID, Name: a.Name, SourceIDs: a.SourceIDs}
+}
+
+func personaOf(a *domain.Agent) string {
+	if a == nil {
+		return ""
+	}
+	return a.PersonaPrompt
+}
+
+func toolNamesOf(a *domain.Agent) []string {
+	if a == nil {
+		return nil
+	}
+	return a.AllowedTools
 }
 
 // rejectFabrication is the last thing between the agent and the user: a reply
@@ -433,12 +558,16 @@ func (r *ChatRunner) recordBlockedTurn(ctx context.Context, p queue.ChatRunPaylo
 	}
 	kind, ref := actorOf(p)
 	action := &domain.AgentAction{
-		CompanyID:    p.CompanyID,
-		ThreadID:     p.ThreadID,
-		MessageID:    p.UserMsgID,
-		ActorKind:    domain.ActorKind(kind),
-		ActorRef:     ref,
-		Channel:      p.Channel,
+		CompanyID: p.CompanyID,
+		ThreadID:  p.ThreadID,
+		MessageID: p.UserMsgID,
+		ActorKind: domain.ActorKind(kind),
+		ActorRef:  ref,
+		Channel:   p.Channel,
+		// Off the context, not off the payload: the turn may be running under
+		// the company default because the payload's agent was deleted, and the
+		// row has to name the agent that actually ran (T-S2).
+		AgentID:      agentscope.AgentID(ctx),
 		ToolName:     toolName,
 		ArgsRedacted: []byte(`{}`),
 		ArgsHash:     sha256Hex(p.Message),

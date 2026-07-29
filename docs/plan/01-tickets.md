@@ -30,7 +30,7 @@ would never run. The next free number is **`030`**.
 | T-A1   | `025_api_channel`, `026_agent_actions_request_id` | **applied** |
 | T-A2   | `027_documents_api`, `028_api_reports`, `029_webhook_delivery` | **applied** |
 | T-S1   | `030_agents` | **written 2026-07-29, not yet applied** |
-| T-S2   | `031_thread_agent` | next free number from here |
+| T-S2   | `031_thread_agent` | **written 2026-07-29, not yet applied** |
 | T-S4   | `032_agent_channel_bindings` | |
 | T-06   | `033_metric_definitions` | pre-assignment only — re-derive on landing |
 | T-08   | `034_watchers` | pre-assignment only |
@@ -3151,6 +3151,13 @@ migration.
 ## T-S2 · One turn, one agent: composition and enforcement
 **Repo:** BE · **Size:** 2.5d · **Deps:** T-S1 · **Priority:** P0 · **Never cut**
 **Migration:** `031_thread_agent`
+
+> **Status 2026-07-29: code complete, gate outstanding.** `make check` clean,
+> `make types-check` current, 31 new tests across five packages. The acceptance
+> boxes below stay unticked until the gate runs against a live API — and the
+> gate's `make eval` regression check is the reason: neither `030` nor `031`
+> has been applied to any database. Record:
+> [`../coverage/agent-roster.md`](../coverage/agent-roster.md).
 
 ### Why
 

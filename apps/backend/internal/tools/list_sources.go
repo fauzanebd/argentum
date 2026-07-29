@@ -7,6 +7,7 @@ import (
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 
+	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
@@ -47,6 +48,11 @@ func (t *ListSourcesTool) Execute(ctx context.Context, _ string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("list sources: %w", err)
 	}
+	// The catalog this tool returns is a menu the model then orders from, so it
+	// is scoped for the same reason ResolveSource is (T-S2): an agent that is
+	// told about the HR database and then refused it every time it asks is
+	// worse than one that never hears of it. Empty allowlist returns everything.
+	conns = agentscope.FromContext(ctx).FilterSources(conns)
 	type sourceRow struct {
 		ID          string `json:"id"`
 		Label       string `json:"label,omitempty"`

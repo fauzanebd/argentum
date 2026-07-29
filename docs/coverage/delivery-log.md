@@ -1118,6 +1118,59 @@ unticked until three agents have been created through a live dashboard.
 Record, decisions and the outstanding gate:
 [`agent-roster.md`](agent-roster.md).
 
+`T-S2` one turn, one agent
+
+The verb to `T-S1`'s noun, and the only ticket in the track with a security
+property: the Finance agent must be *unable* to read the HR source, where
+"unable" means a tool error rather than a paragraph in a persona. Migration
+`031_thread_agent`, a new `internal/agentscope` package, and edits at five
+points in the turn — resolution, composition, enforcement, attribution,
+pinning.
+
+The shape: `ChatEnqueuer` pins the thread's agent (or the company default) onto
+the queue payload; the worker loads the row, installs a scope on the turn's
+context beside the budget tracker, hands the factory a persona and a tool
+allowlist, and filters the source catalog it injects into the message. The
+tools read the same scope. Every audit row and usage event carries the agent id.
+
+Four decisions the ticket did not contain:
+
+- **One `FilterSources`, three call sites.** `ResolveSource`, `list_sources`
+  and the injected catalog have to agree; if they do not, the agent is *told*
+  about a database its every query against is refused for — the failure the
+  ticket flagged as the one no tool-level test catches. The answer is to make
+  disagreement impossible, not to test for it three times.
+
+- **The persona is framed, not merely appended.** "Addendum, never a
+  replacement" is an ordering rule, and ordering does not stop customer text in
+  the system prompt from reading like something we wrote. It now carries a
+  header saying it refines and cannot override, and that anything contradicting
+  the rules above is a mistake. A few dozen tokens against a self-service route
+  back to the `C-1` fabrication.
+
+- **An allowlist matching nothing leaves the turn with no tools**, not the full
+  registry. The safe reading of "may use exactly these three" is never "may use
+  all nine". A `Warn` names the allowlist; the turn says it cannot do the work.
+
+- **A deleted agent falls back to the default; a disabled one does not.** The
+  ticket specifies the first. Falling back on the second would *widen* a
+  thread's access at the moment an admin switched its agent off, which is the
+  wrong direction.
+
+Also outside the ticket: the scheduled-fire path pins the agent too — it is the
+second producer of `chat:run` payloads — and the eval tenant now seeds its own
+default agent, without which the harness would have scored a turn resolving to
+no agent at all, which is precisely not the regression the gate has to prove.
+
+`make check` clean, `make types-check` current, 31 new tests across five
+packages. **Both `030` and `031` remain unapplied**, so the live half — a
+transcript of one question, two agents, one answer and one refusal, plus the
+`make eval` score the ticket calls a failed gate rather than a note — has not
+run.
+
+Record, decisions and the outstanding gate:
+[`agent-roster.md`](agent-roster.md).
+
 ---
 
 ## What the history says about how this project is built

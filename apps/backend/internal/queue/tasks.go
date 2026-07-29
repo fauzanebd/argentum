@@ -74,7 +74,17 @@ type ChatRunPayload struct {
 	// (T-A2b). It rides beside Message, never inside it: the worker delivers
 	// it as a system-prompt addendum, so the input guardrails judge the user's
 	// own words and nothing else. Empty for every channel but `POST /v1/reports`.
-	Directive       string `json:"directive,omitempty"`
+	Directive string `json:"directive,omitempty"`
+	// AgentID is which of the tenant's agents runs this turn (T-S2). The API
+	// process resolves it — the thread's agent, else the company default — and
+	// the worker loads the row: persona, tool allowlist, source allowlist. It
+	// travels rather than being re-resolved because the two processes must not
+	// be able to disagree about which agent a turn ran as, and the audit row
+	// the worker writes is the answer of record.
+	//
+	// Empty means the worker resolves the default itself, which is what a task
+	// queued before this field existed carries.
+	AgentID         string `json:"agent_id,omitempty"`
 	UserMsgID       string `json:"user_msg_id"`
 	CompanyName     string `json:"company_name,omitempty"`
 	DefaultCurrency string `json:"default_currency,omitempty"` // ISO 4217

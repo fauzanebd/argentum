@@ -77,6 +77,22 @@ func (r *AgentRepo) GetByID(ctx context.Context, companyID, id string) (*domain.
 	return a, err
 }
 
+// GetDefault returns the company's default agent (T-S2) — the row a turn that
+// names no agent runs as. One indexed lookup on the partial unique index that
+// makes "exactly one default" true in the first place, rather than a roster
+// listing filtered in Go: this runs on the enqueue path of every turn on every
+// channel.
+func (r *AgentRepo) GetDefault(ctx context.Context, companyID string) (*domain.Agent, error) {
+	q := `SELECT ` + agentColumns + ` FROM agents a WHERE a.company_id = $1 AND a.is_default`
+	a, err := scanAgent(r.db.QueryRowContext(ctx, q, companyID))
+	if errors.Is(err, sql.ErrNoRows) {
+		// A company with no roster at all. The caller runs the turn unscoped
+		// rather than refusing it — see domain.AgentRepository.
+		return nil, domain.ErrNotFound
+	}
+	return a, err
+}
+
 // ListByCompany returns the roster with the default first, then by name. The
 // picker T-S3 builds reads in this order, and "which one runs if I do nothing"
 // is the first question it has to answer.

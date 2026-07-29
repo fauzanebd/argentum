@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -20,6 +21,18 @@ import (
 //   - >1 connections, empty requestedID → error listing available sources;
 //     the agent reads the menu in the tool error and retries with an id.
 //   - >1 connections, non-empty requestedID → validate ownership.
+//
+// This is the choke point every data tool goes through — get_schema, run_sql
+// and create_visualization all call it — which is why the roster's source
+// allowlist is enforced here rather than in a persona (T-S2). The scope is
+// applied to the catalog *before* any other branch, so an agent scoped to one
+// source sees a one-source world: the "specify source_id" menu lists only what
+// it may reach, and an out-of-scope id gets the same "not found for this
+// company" it would get for another tenant's id.
+//
+// That sameness is deliberate. A distinct "not allowed for this agent" error
+// would tell a prompt-injected model exactly what to probe for, and the id it
+// was handed came from the model rather than from the user.
 func ResolveSource(ctx context.Context, repo domain.ConnectionRepository, companyID, requestedID string) (*domain.DBConnection, error) {
 	if companyID == "" {
 		return nil, fmt.Errorf("companyID is required")
@@ -28,6 +41,7 @@ func ResolveSource(ctx context.Context, repo domain.ConnectionRepository, compan
 	if err != nil {
 		return nil, fmt.Errorf("list sources: %w", err)
 	}
+	conns = agentscope.FromContext(ctx).FilterSources(conns)
 	if len(conns) == 0 {
 		return nil, fmt.Errorf("no DB connection registered for this company; ask the user to connect a database in settings")
 	}

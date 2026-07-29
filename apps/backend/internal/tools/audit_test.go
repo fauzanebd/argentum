@@ -11,6 +11,7 @@ import (
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 
 	"github.com/fauzanebd/argentum/internal/agentbudget"
+	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
@@ -121,6 +122,39 @@ func TestAuditRowCarriesTheOriginatingRequestID(t *testing.T) {
 
 	if got := rec.only(t).RequestID; got != "req_0123456789abcdef" {
 		t.Errorf("request_id = %q, want the id the HTTP caller was given", got)
+	}
+}
+
+// T-S2's fifth acceptance item, on the decorator that writes the rows. "Which
+// agent ran this query" is the question the roster exists to make answerable,
+// and it is answerable only if every row carries the id.
+func TestAuditRowCarriesTheAgentTheTurnRanAs(t *testing.T) {
+	rec := &fakeAuditor{}
+	tool := WithAudit(&fakeTool{name: "run_sql", result: `{"row_count":1}`}, rec)
+	ctx := agentscope.WithScope(turnCtx(), agentscope.Scope{AgentID: "ag-fin", Name: "Finance"})
+
+	if _, err := tool.Execute(ctx, `{"sql":"SELECT 1"}`); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if got := rec.only(t).AgentID; got != "ag-fin" {
+		t.Errorf("agent_id = %q, want ag-fin", got)
+	}
+}
+
+// A tool call made outside a chat turn — the schema-cache refresh, a reindex —
+// belongs to no agent, and recording one would be a fabrication in the one
+// table whose value is that it is not.
+func TestAuditRowHasNoAgentWhenTheTurnRanUnscoped(t *testing.T) {
+	rec := &fakeAuditor{}
+	tool := WithAudit(&fakeTool{name: "get_schema", result: `{}`}, rec)
+
+	if _, err := tool.Execute(turnCtx(), `{}`); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if got := rec.only(t).AgentID; got != "" {
+		t.Errorf("agent_id = %q, want empty", got)
 	}
 }
 

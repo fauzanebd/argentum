@@ -70,6 +70,19 @@ func (f *fakeAgents) GetByID(_ context.Context, companyID, id string) (*domain.A
 	return &cp, nil
 }
 
+// GetDefault is the turn-time read T-S2 added. The fake answers it the way the
+// partial unique index does: at most one row can be the default, so the first
+// match is the only match.
+func (f *fakeAgents) GetDefault(_ context.Context, companyID string) (*domain.Agent, error) {
+	for _, a := range f.byID {
+		if a.CompanyID == companyID && a.IsDefault {
+			cp := *a
+			return &cp, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
 func (f *fakeAgents) ListByCompany(_ context.Context, companyID string) ([]*domain.Agent, error) {
 	var out []*domain.Agent
 	for _, a := range f.byID {

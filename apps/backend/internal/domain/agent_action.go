@@ -57,8 +57,14 @@ type AgentAction struct {
 	ActorKind ActorKind `json:"actor_kind"`
 	ActorRef  string    `json:"actor_ref,omitempty"`
 	Channel   Channel   `json:"channel,omitempty"`
-	ToolName  string    `json:"tool_name"`
-	SourceID  string    `json:"source_id,omitempty"`
+	// AgentID names the roster agent the turn ran as (T-S2). It carries no
+	// foreign key and it is never cleared: "which agent ran this query" is a
+	// question asked about deleted agents more often than about live ones.
+	// Empty for a turn that ran before the roster existed, or under a company
+	// that has none.
+	AgentID  string `json:"agent_id,omitempty"`
+	ToolName string `json:"tool_name"`
+	SourceID string `json:"source_id,omitempty"`
 	// ArgsRedacted is json.RawMessage rather than []byte so the audit endpoint
 	// returns the object itself; encoding/json renders a []byte as base64, and
 	// a log whose arguments have to be decoded before they can be read is a

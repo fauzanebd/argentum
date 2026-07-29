@@ -58,7 +58,7 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Metric / semantic layer         | ❌     | Every question re-derives SQL. Same question can yield two numbers  |
 | Write-back / actions            | ❌     | Structurally read-only by design; no permissioned action layer      |
 | Proactive alerts / watchers     | ❌     | Automation is cron-only; nothing is condition-triggered             |
-| Tenant agent roster (Marketing / Ops / HR / Finance) | 🔧 | `T-S1` built the roster — `agents` + `agent_sources`, CRUD, Settings tab, one default per company. **Nothing reads it at turn time**: every turn still runs the single shared agent until `T-S2`. Migration `030` written, unapplied |
+| Tenant agent roster (Marketing / Ops / HR / Finance) | 🔧 | `T-S1` built the roster — `agents` + `agent_sources`, CRUD, Settings tab. `T-S2` made it run: persona appended to the system prompt, tools filtered by allowlist, sources enforced in `ResolveSource` and `list_sources`, `agent_id` on every audit row and usage event. **Nothing can pick an agent yet** — the picker is `T-S3`, channel bindings `T-S4`, `/v1` `T-S5` — so every turn resolves to the company default. Migrations `030` and `031` written, unapplied |
 | Multi-agent / specialist agents | ❌     | Internal planner + specialists. Backlog, not the roster above       |
 | Forecasting / anomaly detection | ❌     | Not implemented                                                     |
 

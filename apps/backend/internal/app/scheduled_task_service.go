@@ -243,6 +243,22 @@ func (s *ScheduledTaskService) GetRun(ctx context.Context, companyID, taskID, ru
 	return run, nil
 }
 
+// threadAgent reads the agent a scheduled task's thread is bound to. A lookup
+// failure returns empty rather than failing the tick: the worker then resolves
+// the company default, which is a running schedule instead of a missed one.
+func (s *ScheduledTaskService) threadAgent(ctx context.Context, threadID string) string {
+	if s.threads == nil || threadID == "" {
+		return ""
+	}
+	t, err := s.threads.GetByID(ctx, threadID)
+	if err != nil {
+		logrus.WithError(err).WithField("thread_id", threadID).
+			Debug("scheduled fire: thread lookup for agent failed; using the company default")
+		return ""
+	}
+	return t.AgentID
+}
+
 // HandleFire is invoked by the worker's scheduled:run handler. It opens a
 // new ScheduledTaskRun, appends the saved prompt to the dedicated thread
 // as a user message, and enqueues a chat:run task. The chat runner will
@@ -301,6 +317,12 @@ func (s *ScheduledTaskService) HandleFire(ctx context.Context, taskID string) er
 		UserMsgID:       userMsg.ID,
 		CompanyName:     companyName,
 		DefaultCurrency: currency,
+		// A schedule runs as whatever agent its dedicated thread runs as
+		// (T-S2). Empty leaves the worker to resolve the company default,
+		// which is every schedule today — nothing sets a thread's agent until
+		// T-S3 — but a report scheduled on the Finance thread must not quietly
+		// widen to the default's access the moment it does.
+		AgentID:         s.threadAgent(ctx, t.ThreadID),
 		ScheduledTaskID: t.ID,
 		ScheduledRunID:  run.ID,
 	}); err != nil {

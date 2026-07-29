@@ -6,6 +6,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -132,6 +133,14 @@ func (s *UsageService) RecordDocument(ctx context.Context, companyID, threadID, 
 func (s *UsageService) append(ctx context.Context, e *domain.UsageEvent) {
 	if e.CompanyID == "" {
 		return
+	}
+	// Which agent spent this (T-S2). One assignment here rather than a
+	// parameter on six Record* methods, for the same reason the audit
+	// decorator reads it off the context: every caller is inside a turn that
+	// already carries the scope, and the ones that are not — the connection
+	// describer, a reindex — correctly record nothing.
+	if e.AgentID == "" {
+		e.AgentID = agentscope.AgentID(ctx)
 	}
 	if err := s.usage.Append(ctx, e); err != nil {
 		logrus.WithError(err).Warn("usage append failed")

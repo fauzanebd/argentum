@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
@@ -21,6 +23,18 @@ type ChatEnqueuer struct {
 	companies domain.CompanyRepository
 	enqueuer  *queue.Enqueuer
 	budget    BudgetChecker
+	roster    DefaultAgentReader
+}
+
+// DefaultAgentReader is the half of the roster the enqueue path needs: which
+// agent runs when the thread names none (T-S2).
+//
+// Declared at the consumer, like BudgetChecker. It is one method rather than
+// domain.AgentRepository whole because this path must not be able to write to
+// the roster, and because the thread already carries its own agent — the only
+// question left here is what the fallback is.
+type DefaultAgentReader interface {
+	GetDefault(ctx context.Context, companyID string) (*domain.Agent, error)
 }
 
 // BudgetChecker is the narrow contract ChatEnqueuer uses to refuse a turn a
@@ -44,6 +58,15 @@ func NewChatEnqueuer(threads *ThreadService, messages domain.MessageRepository, 
 // different answer by wiring itself differently.
 func (s *ChatEnqueuer) WithBudget(b BudgetChecker) *ChatEnqueuer {
 	s.budget = b
+	return s
+}
+
+// WithRoster pins each enqueued turn to an agent (T-S2). Optional: without it
+// every payload leaves with an empty AgentID and the worker resolves the
+// company default itself, which is the behaviour of every turn queued before
+// this ticket.
+func (s *ChatEnqueuer) WithRoster(r DefaultAgentReader) *ChatEnqueuer {
+	s.roster = r
 	return s
 }
 
@@ -254,6 +277,7 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		Channel:          in.Channel,
 		Message:          in.Message,
 		Directive:        in.Directive,
+		AgentID:          s.agentFor(ctx, thread),
 		UserMsgID:        userMsg.ID,
 		CompanyName:      companyName,
 		DefaultCurrency:  currency,
@@ -280,6 +304,33 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		out.BudgetWarning = &warning
 	}
 	return out, nil
+}
+
+// agentFor decides which agent this turn runs as: the thread's own, else the
+// company default (T-S2).
+//
+// Never an error. A roster lookup that fails leaves the field empty, the
+// worker resolves the default itself, and the turn runs — the alternative is a
+// tenant who cannot ask a question because a table nobody has read in six
+// months is unavailable. The failure is logged, not returned.
+func (s *ChatEnqueuer) agentFor(ctx context.Context, thread *domain.ConversationThread) string {
+	if thread != nil && thread.AgentID != "" {
+		return thread.AgentID
+	}
+	if s.roster == nil || thread == nil {
+		return ""
+	}
+	def, err := s.roster.GetDefault(ctx, thread.CompanyID)
+	if err != nil {
+		// ErrNotFound is ordinary: a company whose roster was never seeded.
+		// Everything else is worth a line, at the level that distinguishes them.
+		if !errors.Is(err, domain.ErrNotFound) {
+			logrus.WithError(err).WithField("company_id", thread.CompanyID).
+				Warn("default agent lookup failed; the worker will resolve it")
+		}
+		return ""
+	}
+	return def.ID
 }
 
 // checkBudget returns the tenant's spend position, or ErrInsufficientCredits

@@ -88,6 +88,7 @@ func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN, metabase
 	if err := ensureSources(ctx, stack, company.ID, demoDSN, metabaseHostPort); err != nil {
 		return Tenant{}, err
 	}
+	ensureDefaultAgent(ctx, stack, company.ID)
 
 	return Tenant{
 		CompanyID:   company.ID,
@@ -95,6 +96,42 @@ func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN, metabase
 		UserID:      user.ID,
 		Currency:    company.DefaultCurrency,
 	}, nil
+}
+
+// ensureDefaultAgent gives the eval tenant the same unrestricted default agent
+// that 030's backfill gave every real company and that signup gives every new
+// one (T-S2).
+//
+// Without it the harness would score a turn that resolves to *no* agent, and
+// the regression this ticket has to prove — that an agent with empty
+// allowlists behaves exactly as the agent did before the roster existed — is
+// precisely the one the harness would then not be exercising. The tenant is
+// created through the repositories rather than through signup, so nothing else
+// seeds it.
+//
+// Idempotent, and non-fatal: a harness that refuses to run because it could
+// not write a settings row is worse than one that runs unscoped and says so.
+func ensureDefaultAgent(ctx context.Context, stack *bootstrap.Stack, companyID string) {
+	if _, err := stack.Agents.GetDefault(ctx, companyID); err == nil {
+		return
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		logrus.WithError(err).Warn("eval: default agent lookup failed; the run will be unscoped")
+		return
+	}
+	a := &domain.Agent{
+		CompanyID:    companyID,
+		Name:         "Analyst",
+		Description:  "General analytics assistant",
+		AllowedTools: []string{},
+		SourceIDs:    []string{},
+		IsDefault:    true,
+		Enabled:      true,
+	}
+	if err := stack.Agents.Create(ctx, a); err != nil {
+		logrus.WithError(err).Warn("eval: default agent seed failed; the run will be unscoped")
+		return
+	}
+	logrus.WithField("agent_id", a.ID).Info("eval: seeded the tenant's default agent")
 }
 
 func ensureSources(ctx context.Context, stack *bootstrap.Stack, companyID, demoDSN, metabaseHostPort string) error {
