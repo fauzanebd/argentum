@@ -36,6 +36,34 @@ func v1Routes(t *testing.T) []string {
 	return out
 }
 
+// keylessV1Routes carry no credential at all. There is exactly one, and it is
+// the published contract (T-A4): an integrator reads the spec before they have
+// a key, so requiring one would mean asking us for a credential in order to
+// evaluate whether the API is worth integrating.
+//
+// It is a list rather than a special case inside each test because the two
+// properties below — "a dashboard token is refused" and "every response is an
+// error envelope" — are true of every *other* route, and an exemption that is
+// written down once is one a reviewer can audit.
+var keylessV1Routes = map[string]bool{
+	"GET /v1/openapi.json": true,
+}
+
+// TestKeylessV1RoutesAreReal keeps that exemption from rotting into a list of
+// paths that no longer exist, exactly as TestUnscopedV1RoutesAreReal does for
+// the scope exemption.
+func TestKeylessV1RoutesAreReal(t *testing.T) {
+	registered := map[string]bool{}
+	for _, key := range v1Routes(t) {
+		registered[key] = true
+	}
+	for key := range keylessV1Routes {
+		if !registered[key] {
+			t.Errorf("%s is exempted from key authentication but is not a route", key)
+		}
+	}
+}
+
 // TestV1RejectsADashboardSession is half of phase 1c's exit criterion: the two
 // authorities do not cross. A dashboard JWT is a person's session and carries
 // a role; a /v1 route wants a key and its scopes. Accepting the JWT here would
@@ -52,6 +80,11 @@ func TestV1RejectsADashboardSession(t *testing.T) {
 	}
 
 	for _, key := range v1Routes(t) {
+		if keylessV1Routes[key] {
+			// Nothing to refuse: this route reads no credential, so a dashboard
+			// token is not accepted here so much as ignored.
+			continue
+		}
 		method, path, _ := strings.Cut(key, " ")
 		t.Run(key, func(t *testing.T) {
 			req, err := http.NewRequest(method, concreteURL(path), nil)
@@ -197,6 +230,12 @@ func TestV1AlwaysAnswersWithARequestID(t *testing.T) {
 
 			if w.Header().Get("X-Request-Id") == "" {
 				t.Fatalf("no X-Request-Id on a %d response", w.Code)
+			}
+			if keylessV1Routes[key] {
+				// This one succeeds without a credential, so it answers with the
+				// contract rather than with an envelope. The id above is the
+				// part of this test that applies to it.
+				return
 			}
 			var body apierr.Body
 			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {

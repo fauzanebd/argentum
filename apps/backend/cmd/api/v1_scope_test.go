@@ -35,6 +35,10 @@ func (k scopelessKey) Authenticate(context.Context, string) (*domain.APIKey, err
 // on one of them would make a key with none undiagnosable.
 var unscopedV1Routes = map[string]bool{
 	"GET /v1/me": true,
+	// The published contract (T-A4). It has no scope for the same reason it has
+	// no credential: it is what an integrator reads *before* they have a key,
+	// let alone one with the right scopes on it.
+	"GET /v1/openapi.json": true,
 }
 
 // TestEveryV1RouteNamesAScope is the guard for the risk the sprint register

@@ -32,6 +32,8 @@ security.
 | **Never** edit `apps/backend/migrations/control/*.sql` that already exists. Add a new numbered pair.   | Applied migrations are immutable; editing them desyncs environments.            |
 | **Never** run `migrations/demo_tenant/` against anything but the local demo container.                 | It creates tables. Tenant databases are never migrated by Argentum.             |
 | **Never** hand-edit `packages/api-types/`.                                                            | It is generated from Go structs. Edit the Go struct and run `make types`.        |
+| **Never** hand-edit `packages/argentum-node/src/types.generated.ts`, `packages/argentum-python/src/argentum/types.py`, or `apps/backend/docs/postman/`. | All three are generated from `apps/backend/openapi/v1.yaml`. Edit the spec and run `make openapi`; CI diffs the committed copies. |
+| **Never** add or change a `/v1` route without its `apps/backend/openapi/v1.yaml` entry.               | It is a published contract. `cmd/api`'s parity test fails in both directions, and the SDKs are generated from it. |
 | **Never** change `module github.com/fauzanebd/argentum` in `apps/backend/go.mod`.                     | Kept deliberately mismatched with the directory so the monorepo migration needed zero import rewrites. |
 | **Never** commit or push unless explicitly asked.                                                     | Repo owner controls history.                                                    |
 | **Never** add a secret to a committed file. `.env` is gitignored; `helm/` uses Bitwarden secrets.      | Leaked LLM keys are billable by strangers.                                      |
@@ -48,8 +50,10 @@ A task is done when **all** of these hold. Not when the code compiles.
       `pnpm build` clean (frontend).
 - [ ] New behaviour has a test, or the ticket states explicitly why it cannot.
 - [ ] Docs updated when the change alters the public surface:
-      `apps/backend/docs/` for API changes, `docs/coverage/feature-coverage.md`
-      for capability changes.
+      `apps/backend/openapi/v1.yaml` for anything under `/v1` (and
+      `docs/api/quickstart.md` if an integrator would do it differently),
+      `apps/backend/docs/` for the dashboard's `/api`,
+      `docs/coverage/feature-coverage.md` for capability changes.
 - [ ] The ticket's own acceptance criteria, quoted back with evidence.
 
 ## 4. Reporting back

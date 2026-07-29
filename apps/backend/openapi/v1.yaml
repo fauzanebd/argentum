@@ -1,0 +1,1683 @@
+# The Argentum public API, version 1 (T-A4).
+#
+# This file is the contract. It is served at `GET /v1/openapi.json`, both SDKs
+# generate their types from it, and the Postman collection is generated from it
+# — so a shape stated here wrongly is wrong in four places at once.
+#
+# Two CI checks keep it honest, and both fail in *both* directions:
+#
+#   * `cmd/api`'s parity test walks the gin route tree. A `/v1` route with no
+#     entry here fails; an entry here with no route fails.
+#   * `internal/transport/http/handlers`'s schema test reflects over the Go
+#     response structs. A field renamed in Go and not here fails, and so does a
+#     property here that no struct carries.
+#
+# The rule for editing it is `internal/transport/http/apiv1`'s package rule:
+# **additive only**. A field removed or renamed is a breaking change to a
+# published contract, and the answer to needing one is `/v2`.
+openapi: 3.1.1
+
+info:
+  title: Argentum API
+  # A date rather than a semver, matching what `GET /v1/me` reports as
+  # `api_version` — "you are on 2026-07-28" locates a deploy, where "1.0.0"
+  # locates nothing. A test pins this equal to `apiv1.Version`.
+  version: '2026-07-28'
+  summary: Ask for a report or an answer over HTTP.
+  description: |
+    Argentum turns a question about a company's own data into an answer or a
+    branded document. This is the machine-facing half: the same agent the
+    dashboard drives, reachable with an API key.
+
+    ## The two products
+
+    **Reports.** `POST /v1/reports/render` takes a document spec and returns a
+    file — deterministic, sub-second, no LLM. `POST /v1/reports` takes a prompt
+    and runs a real agent turn that ends by generating one.
+
+    **Chat.** `POST /v1/chat` takes a question and returns an answer, either
+    streamed over server-sent events or waited for on the connection.
+
+    ## The contract every route inherits
+
+    * **Authentication** is `Authorization: Bearer arg_…`. A dashboard session
+      is refused here, and a key is refused on the dashboard's own `/api`
+      routes: they are different authorities.
+    * **Scopes** are fixed when a key is minted and cannot be changed. Each
+      operation below names the one it requires under `x-argentum-scope`.
+    * **Every response carries `X-Request-Id`**, including failures. Quote it
+      in a support conversation.
+    * **Errors** are always the envelope in `Error` — never a bare string.
+      Switch on `error.type`; `error.code` is the specific reason and
+      `error.message` is for a human.
+    * **Writes require `Idempotency-Key`.** A retry under the same key replays
+      the first result rather than billing a second time. See the header's own
+      description for the three ways a second request under one key ends.
+    * **Lists are cursor-paginated**, never offset-paginated. Pass
+      `next_cursor` back as `cursor`.
+    * **`RateLimit-Limit` / `-Remaining` / `-Reset`** are on every response, not
+      only on a refusal: a client that learns its budget from a 429 has already
+      been refused once.
+
+    ## Streams
+
+    `text/event-stream` responses are ordinary SSE. Frames that correspond to
+    something persisted carry an `id:`; token deltas do not, so a client's
+    `Last-Event-ID` stays pinned to the last durable point and a reconnect
+    replays the messages it missed rather than promising a replay of tokens
+    that were never stored anywhere.
+
+    A `: heartbeat` comment arrives every 15 seconds on a chat stream and every
+    20 on a report stream. It is a comment rather than an event so an
+    integrator needs no code to ignore it.
+
+    ## Compatibility
+
+    This surface is additive only. Fields are added; they are not renamed or
+    removed. Treat unknown fields and unknown SSE event names as ignorable —
+    that is what lets us add without breaking you.
+  contact:
+    name: Argentum
+    url: https://github.com/fauzanebd/argentum
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8080
+    description: A local `cmd/api`
+  - url: '{base}'
+    description: Your deployment
+    variables:
+      base:
+        default: https://argentum.example.com
+        description: The origin Argentum is deployed on
+
+security:
+  - apiKey: []
+
+tags:
+  - name: Identity
+    description: Who this key is, and what it may spend.
+  - name: Reports
+    description: A spec in and a file out, or a prompt in and a turn behind it.
+  - name: Documents
+    description: The files either door produced.
+  - name: Chat
+    description: A question in, an answer out.
+  - name: Meta
+    description: This document.
+
+paths:
+  /v1/openapi.json:
+    get:
+      operationId: getOpenAPI
+      tags: [Meta]
+      summary: This document, as JSON
+      description: |
+        Public and keyless: an integrator reads the contract before they have a
+        credential to call it with. It is the same bytes as
+        `apps/backend/openapi/v1.yaml`, converted to JSON.
+
+        It is still behind the `/v1` kill switch. A spec for a surface that is
+        refusing every call would generate a client nobody can use, so a
+        disabled deployment answers 503 here too.
+      security: []
+      responses:
+        '200':
+          description: The OpenAPI 3.1 document.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+          content:
+            application/json:
+              schema:
+                type: object
+                description: An OpenAPI 3.1 document.
+                additionalProperties: true
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/me:
+    get:
+      operationId: getMe
+      tags: [Identity]
+      summary: The key, its scopes, its rate limit, and the tenant's credit position
+      description: |
+        The first call to make and the one paste that makes a support question
+        answerable. It needs no scope — a key with none must still be able to
+        find out that it has none.
+      x-argentum-scope: null
+      responses:
+        '200':
+          description: The caller's own identity and budget.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+            RateLimit-Limit: { $ref: '#/components/headers/RateLimit-Limit' }
+            RateLimit-Remaining: { $ref: '#/components/headers/RateLimit-Remaining' }
+            RateLimit-Reset: { $ref: '#/components/headers/RateLimit-Reset' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/reports/render:
+    post:
+      operationId: renderReport
+      tags: [Reports]
+      summary: Render a document from a spec
+      description: |
+        Deterministic. A spec goes in, a file comes out, and nothing about it
+        touches an LLM or a thread.
+
+        **`Accept` decides the response body.** `application/json` (or an absent
+        `Accept`) returns the document object with a short-lived presigned URL.
+        The format's own content type — `application/pdf`, `text/csv`, the two
+        OOXML types — or `application/octet-stream` returns the bytes inline,
+        which is what a caller writing them straight to disk wants.
+
+        A spec that outruns the synchronous window becomes a job and answers
+        `202` with a report object, on the same shape `POST /v1/reports`
+        returns. Write one collection path for both.
+      x-argentum-scope: write:reports
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportSpec' }
+            # A real spec, small enough to read. The Postman collection is
+            # generated from this value, so it is exercised every time someone
+            # imports the collection and presses Send.
+            example:
+              spec_version: 2
+              format: pdf
+              title: Revenue by month
+              locale: en
+              currency: USD
+              content:
+                sections:
+                  - type: heading
+                    text: Revenue by month
+                  - type: kpi_row
+                    items:
+                      - label: Total
+                        value: { v: 270300, fmt: currency }
+                        delta_pct: 10.5
+                  - type: table
+                    columns:
+                      - { label: Month }
+                      - { label: Revenue, fmt: currency }
+                    rows:
+                      - ['July', 128400]
+                      - ['August', 141900]
+                    total_row: [{ v: Total }, { v: 270300, fmt: currency }]
+      responses:
+        '200':
+          description: |
+            The rendered document. The body is JSON or the file's bytes,
+            according to `Accept`.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+            Idempotent-Replay: { $ref: '#/components/headers/Idempotent-Replay' }
+            Content-Disposition: { $ref: '#/components/headers/Content-Disposition' }
+            X-Document-Id: { $ref: '#/components/headers/X-Document-Id' }
+            RateLimit-Remaining: { $ref: '#/components/headers/RateLimit-Remaining' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RenderedDocument' }
+            application/pdf:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.presentationml.presentation:
+              schema: { type: string, format: binary }
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '202':
+          description: |
+            The spec outran the synchronous window and became a job. Poll
+            `GET /v1/reports/{id}` or stream `GET /v1/reports/{id}/events`.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+            Idempotent-Replay: { $ref: '#/components/headers/Idempotent-Replay' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Report' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/reports:
+    post:
+      operationId: createReport
+      tags: [Reports]
+      summary: Ask an agent for a report
+      description: |
+        A prompt in, a real agent turn behind it, a document at the end. Seconds
+        to minutes, priced in tokens.
+
+        Three ways to collect the result, and a caller picks one: poll
+        `GET /v1/reports/{id}`, stream `GET /v1/reports/{id}/events`, or supply
+        a `callback_url` and verify the signature described by
+        `GET /v1/me`'s `webhooks` block.
+      x-argentum-scope: write:reports
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateReportRequest' }
+            example:
+              prompt: Monthly revenue for 2024, with a bar chart by month and a short commentary.
+              format: pdf
+              user_ref: u_42
+      responses:
+        '202':
+          description: The job was accepted. It is `queued` until a worker picks it up.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+            Idempotent-Replay: { $ref: '#/components/headers/Idempotent-Replay' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Report' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/BudgetExhausted' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/reports/{id}:
+    get:
+      operationId: getReport
+      tags: [Reports]
+      summary: Poll a report
+      description: |
+        Once `status` is `completed` the `document` block carries a freshly
+        presigned `download_url`. It is re-issued on every read rather than
+        stored, so a caller who saved one and came back an hour later gets a
+        working link without paying to regenerate the document.
+      x-argentum-scope: read:documents
+      parameters:
+        - $ref: '#/components/parameters/ReportID'
+      responses:
+        '200':
+          description: The report, and its document once there is one.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Report' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/reports/{id}/events:
+    get:
+      operationId: streamReport
+      tags: [Reports]
+      summary: Stream a report's progress
+      description: |
+        Server-sent events for a job that can take minutes. Two event names:
+        `progress` while the agent works, and `report` — terminal — carrying the
+        same object `GET /v1/reports/{id}` returns.
+
+        The agent's token deltas are deliberately not forwarded: a report's
+        consumer wants progress and a file, not the prose of an answer they
+        asked for as a PDF.
+
+        A job that had already finished when the caller connected gets its
+        `report` frame and nothing else. A queued *render* job has no thread to
+        publish on, so it gets the same — poll that one.
+      x-argentum-scope: read:documents
+      parameters:
+        - $ref: '#/components/parameters/ReportID'
+      responses:
+        '200':
+          description: An event stream that closes on the terminal `report` frame.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+          content:
+            text/event-stream:
+              schema: { $ref: '#/components/schemas/ReportEvent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/documents:
+    get:
+      operationId: listDocuments
+      tags: [Documents]
+      summary: List generated documents
+      description: |
+        Newest first, cursor-paginated.
+
+        **No download URLs on the list.** Presigning is a signature per row, and
+        a caller paging a hundred documents to find one is not about to fetch
+        all hundred. `GET /v1/documents/{id}` issues the URL for the one they
+        picked.
+      x-argentum-scope: read:documents
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: format
+          in: query
+          description: Only documents of this format.
+          required: false
+          schema: { $ref: '#/components/schemas/DocumentFormat' }
+        - name: created_after
+          in: query
+          description: Only documents created at or after this RFC3339 timestamp.
+          required: false
+          schema: { type: string, format: date-time }
+        - name: created_before
+          in: query
+          description: Only documents created at or before this RFC3339 timestamp.
+          required: false
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: One page of documents.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/documents/{id}:
+    get:
+      operationId: getDocument
+      tags: [Documents]
+      summary: Fetch one document's metadata and a fresh download URL
+      x-argentum-scope: read:documents
+      parameters:
+        - $ref: '#/components/parameters/DocumentID'
+      responses:
+        '200':
+          description: |
+            The document. `download_url` is absent when the object store could
+            not be reached — the metadata is still true, and a caller listing
+            documents is not necessarily about to download one.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/documents/{id}/content:
+    get:
+      operationId: downloadDocument
+      tags: [Documents]
+      summary: Download a document's bytes
+      description: |
+        Streams the object rather than redirecting to the presigned URL. A
+        server-side HTTP client that does not follow redirects — a deliberate
+        setting in plenty of them — would otherwise write three hundred bytes of
+        nothing to disk, and the redirect is a second hostname the caller's
+        egress rules have to allow.
+      x-argentum-scope: read:documents
+      parameters:
+        - $ref: '#/components/parameters/DocumentID'
+      responses:
+        '200':
+          description: The file.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+            Content-Disposition: { $ref: '#/components/headers/Content-Disposition' }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.presentationml.presentation:
+              schema: { type: string, format: binary }
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/chat:
+    post:
+      operationId: sendChat
+      tags: [Chat]
+      summary: Ask a question
+      description: |
+        **`Accept` decides the door.** `text/event-stream` streams the turn as
+        it is written; anything else blocks until the turn answers.
+
+        A client disconnect never cancels a turn: the agent runs in the worker
+        and this route is a reader of the same bus the dashboard reads. Hanging
+        up ends the read, the turn finishes, the answer persists, and
+        `GET /v1/threads/{id}/messages` collects it.
+
+        The synchronous door answers **504** when the turn outruns the wait —
+        not when the turn fails. That response carries `in_flight.thread_id`,
+        and it **keeps its idempotency key**, so the retry a 504 invites replays
+        instead of starting a second billed turn. Attach to
+        `GET /v1/threads/{id}/events` instead.
+      x-argentum-scope: write:chat
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyRequired'
+        - $ref: '#/components/parameters/LastEventID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatRequest' }
+            example:
+              message: What were total sales last month?
+              user_ref: u_42
+      responses:
+        '200':
+          description: |
+            The completed turn, or — with `Accept: text/event-stream` — the
+            stream that produces it.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+            Idempotent-Replay: { $ref: '#/components/headers/Idempotent-Replay' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Turn' }
+            text/event-stream:
+              schema: { $ref: '#/components/schemas/ChatEvent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/BudgetExhausted' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504':
+          description: |
+            The **wait** ran out, not the turn. It is still running and still
+            being billed; collect it from the stream rather than asking again.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PendingTurn' }
+
+  /v1/threads:
+    get:
+      operationId: listThreads
+      tags: [Chat]
+      summary: List the conversations this integration started
+      description: |
+        `api` threads only. A machine credential that could list the dashboard's
+        threads would let a leaked key read the staff's own chat history.
+      x-argentum-scope: read:threads
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: user_ref
+          in: query
+          description: Only threads belonging to this end user.
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: One page of threads, newest first.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThreadPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/threads/{id}:
+    get:
+      operationId: getThread
+      tags: [Chat]
+      summary: Fetch one conversation
+      x-argentum-scope: read:threads
+      parameters:
+        - $ref: '#/components/parameters/ThreadID'
+        - $ref: '#/components/parameters/UserRefGuard'
+      responses:
+        '200':
+          description: The thread.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Thread' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    delete:
+      operationId: deleteThread
+      tags: [Chat]
+      summary: Delete a conversation
+      description: |
+        `write:chat` rather than `read:threads`: destroying a conversation is
+        not a read. Saved dashboards the turns produced are removed with it.
+      x-argentum-scope: write:chat
+      parameters:
+        - $ref: '#/components/parameters/ThreadID'
+        - $ref: '#/components/parameters/UserRefGuard'
+      responses:
+        '204':
+          description: Deleted.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/threads/{id}/messages:
+    get:
+      operationId: listMessages
+      tags: [Chat]
+      summary: Read a transcript
+      description: Oldest first, cursor-paginated.
+      x-argentum-scope: read:threads
+      parameters:
+        - $ref: '#/components/parameters/ThreadID'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/UserRefGuard'
+      responses:
+        '200':
+          description: One page of messages.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessagePage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/threads/{id}/events:
+    get:
+      operationId: streamThread
+      tags: [Chat]
+      summary: Attach to a thread's newest turn
+      description: |
+        The resume door. A 504 from the synchronous send and a
+        `409 request_in_flight` from a retried one both hand back a `thread_id`,
+        and neither is collectable by re-POSTing — one turn is already running,
+        and starting a second is what the whole idempotency chain exists to
+        prevent. This is where a caller goes instead.
+
+        If the thread's newest turn has already answered, the answer is
+        delivered and the stream closes. Send `Last-Event-ID` to have the
+        messages you missed replayed first.
+      x-argentum-scope: read:threads
+      parameters:
+        - $ref: '#/components/parameters/ThreadID'
+        - $ref: '#/components/parameters/LastEventID'
+        - $ref: '#/components/parameters/UserRefGuard'
+      responses:
+        '200':
+          description: An event stream that closes on `final` or `error`.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+          content:
+            text/event-stream:
+              schema: { $ref: '#/components/schemas/ChatEvent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: |
+        `Authorization: Bearer arg_<prefix>_<secret>`, minted in the dashboard
+        under Settings → API Keys. The secret is shown once.
+
+        **Header only.** The dashboard's own token may travel in a cookie or a
+        query parameter because a browser cannot set a header on a WebSocket
+        upgrade; neither applies to a machine caller, and both are how a
+        credential ends up in an access log or a proxy trace.
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: |
+        Page size. A value over the repository's cap is clamped rather than
+        refused — a caller asking for 10 000 rows wants as many as they can get,
+        and the cursor is what makes the rest reachable.
+      required: false
+      schema: { type: integer, minimum: 1, examples: [50] }
+    Cursor:
+      name: cursor
+      in: query
+      description: |
+        The `next_cursor` from the previous page. Opaque: it encodes the
+        `(created_at, id)` of the last row you saw, and hand-building one is a
+        `400`, not a silent restart at page one.
+      required: false
+      schema: { type: string }
+    ReportID:
+      name: id
+      in: path
+      required: true
+      description: A report id.
+      schema: { type: string, format: uuid }
+    DocumentID:
+      name: id
+      in: path
+      required: true
+      description: A document id.
+      schema: { type: string, format: uuid }
+    ThreadID:
+      name: id
+      in: path
+      required: true
+      description: A thread id.
+      schema: { type: string, format: uuid }
+    UserRefGuard:
+      name: user_ref
+      in: query
+      required: false
+      description: |
+        When present, the thread must belong to this end user or the route
+        answers 404. We cannot authenticate a `user_ref` — a key belongs to the
+        company, not to one of its users — but we can hold a caller to the one
+        they named, which is what turns "our backend passes the logged-in user's
+        id through" into an isolation boundary rather than a convention.
+      schema: { type: string }
+    IdempotencyKeyRequired:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        A unique string per logical request; a UUID is the usual choice. Both
+        SDKs generate one automatically when you do not supply it.
+
+        A second request under the same key ends one of three ways:
+
+        * the original finished — you get its result again, with
+          `Idempotent-Replay: true`, and nothing is billed twice;
+        * the original is still running — `409 request_in_flight`, carrying the
+          ids of the work you are already waiting on;
+        * the body differs from the original's — `409 idempotency_key_reuse`.
+          Use a new key for a new request.
+
+        A request that fails forgets its key, so a retry after a 500 is a fresh
+        attempt. The one exception is `POST /v1/chat`'s 504, where the request
+        failed and the work did not.
+      schema: { type: string, maxLength: 255 }
+    LastEventID:
+      name: Last-Event-ID
+      in: header
+      required: false
+      description: |
+        The `id:` of the last frame you received. An SSE client sends this by
+        itself on reconnect. The messages after that point are replayed before
+        the stream attaches live. A value this API did not issue is a `400`.
+      schema: { type: string }
+
+  headers:
+    X-Request-Id:
+      description: |
+        This request's id, on every response including failures. Send your own
+        and it is echoed back, provided it is at most 128 characters of
+        `[A-Za-z0-9_.:-]`.
+      schema: { type: string, examples: ['req_1945841125adc2c7bb618224f5fa88fd'] }
+    RateLimit-Limit:
+      description: Requests permitted per minute on this key.
+      schema: { type: integer }
+    RateLimit-Remaining:
+      description: Whole requests left in the bucket after this one.
+      schema: { type: integer }
+    RateLimit-Reset:
+      description: Seconds until at least one request is available. `0` means now.
+      schema: { type: integer }
+    Retry-After:
+      description: Seconds to wait before retrying. Both SDKs honour it.
+      schema: { type: integer }
+    Idempotent-Replay:
+      description: |
+        `true` when this response replays an earlier request under the same
+        `Idempotency-Key` rather than executing a new one.
+      schema: { type: string, enum: ['true'] }
+    Content-Disposition:
+      description: '`attachment; filename="…"`, with the generated filename.'
+      schema: { type: string }
+    X-Document-Id:
+      description: |
+        The document's id, on the inline-bytes path. It is the only place the id
+        appears when the body is a file rather than JSON.
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: |
+        The request is malformed. `error.param` names the offending field
+        whenever there is one to name.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: |
+        No key, or one that is not usable. One message covers malformed,
+        unknown, wrong-secret, revoked and expired: a caller holding a broken
+        credential has no business learning which of the five it is.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: |
+        A valid key without the scope this route requires. Scopes are fixed when
+        a key is minted — mint a new one.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: |
+        No such resource **for this company**. A cross-tenant id and a
+        nonexistent id answer identically; anything else is an existence oracle
+        over another company's data.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: |
+        Two shapes, distinguished by `error.code`. `request_in_flight` carries
+        `in_flight` with the ids of the work already running;
+        `idempotency_key_reuse` means the same key arrived with a different
+        body.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+        Idempotent-Replay: { $ref: '#/components/headers/Idempotent-Replay' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ConflictError' }
+    BudgetExhausted:
+      description: |
+        The tenant is out of credit. Typed rather than a 500 on purpose: a
+        programmatic caller retries a 500, and retrying a turn nobody can pay
+        for is a loop that stops only when someone notices.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooLarge:
+      description: The request body is over this deployment's cap.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Too many requests on this key.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+        Retry-After: { $ref: '#/components/headers/Retry-After' }
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimit-Limit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimit-Remaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimit-Reset' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServerError:
+      description: |
+        Our fault. Quote `error.request_id` — it is the string that finds this
+        attempt in our logs.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unavailable:
+      description: |
+        Either the whole public API is switched off (`api_disabled`, with
+        `Retry-After`) or one subsystem this route needs is not configured on
+        this deployment. The routes exist and are coming back, which is why this
+        is not a 404.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+        Retry-After: { $ref: '#/components/headers/Retry-After' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    ErrorDetail:
+      type: object
+      description: |
+        Switch on `type`. `code` is the specific reason within that class, and
+        only `message` is meant for a human to read.
+      required: [type, code, message]
+      properties:
+        type:
+          type: string
+          description: The coarse class. The vocabulary is closed.
+          enum:
+            - invalid_request
+            - authentication
+            - permission
+            - not_found
+            - rate_limit
+            - budget_exhausted
+            - server
+        code:
+          type: string
+          description: |
+            The specific reason — `insufficient_scope`, `spec_too_large`,
+            `thread_not_found`, and so on. New codes are added over time; treat
+            an unknown one as its `type`.
+          examples: ['insufficient_scope']
+        message:
+          type: string
+          description: A sentence for a person. Do not switch on it.
+        param:
+          type: string
+          description: |
+            The field or header that was wrong, when there is one. Its presence
+            means something — an integrator reading `"param": "rows"` fixes
+            their request without reading prose.
+        request_id:
+          type: string
+          description: The same value as the `X-Request-Id` header.
+      additionalProperties: false
+    Error:
+      type: object
+      description: |
+        Every failure under `/v1` has this shape. A bare `{"error": "…"}` string
+        anywhere here is a defect.
+      required: [error]
+      properties:
+        error: { $ref: '#/components/schemas/ErrorDetail' }
+      additionalProperties: false
+    ConflictError:
+      type: object
+      description: |
+        A 409. `in_flight` is present only for `request_in_flight`, and its
+        contents are whatever ids identify the work — `{thread_id, run_id,
+        started_at}` for a chat turn, `{report_id, status}` for a report.
+      required: [error]
+      properties:
+        error: { $ref: '#/components/schemas/ErrorDetail' }
+        in_flight:
+          type: object
+          description: The ids of the request that is still running.
+          additionalProperties: true
+      additionalProperties: false
+
+    Me:
+      type: object
+      description: |
+        `credits` is absent when this deployment cannot read a balance, and
+        `webhooks` only appears for a key carrying `write:reports` — a read-only
+        key has no callback to verify and no reason to hold the secret.
+      required: [api_version, company, key, rate_limit]
+      properties:
+        api_version:
+          type: string
+          description: |
+            The contract version, as a date. It matches `info.version` in this
+            document.
+          examples: ['2026-07-28']
+        company:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+          additionalProperties: false
+        key:
+          type: object
+          required: [id, name, scopes]
+          properties:
+            id: { type: string }
+            name: { type: string, description: The label chosen when the key was minted. }
+            scopes:
+              type: array
+              items: { $ref: '#/components/schemas/Scope' }
+          additionalProperties: false
+        rate_limit:
+          type: object
+          required: [requests_per_minute]
+          properties:
+            requests_per_minute: { type: integer }
+          additionalProperties: false
+        credits: { $ref: '#/components/schemas/Credits' }
+        webhooks: { $ref: '#/components/schemas/WebhookSettings' }
+      additionalProperties: false
+    Credits:
+      type: object
+      description: |
+        `enforced: false` means nothing was consulted. It is not a zero balance
+        — reporting `$0.00` there would read as "you are out of credit", which
+        is the opposite of what an unenforced deployment is saying. A tenant on
+        their own LLM key reports `byo_llm: true` and no balance.
+      required: [enforced]
+      properties:
+        enforced: { type: boolean }
+        byo_llm: { type: boolean }
+        status:
+          type: string
+          description: The verdict the budget check reached.
+          examples: ['ok']
+        balance_usd:
+          type: number
+          description: Dollars, not the micro-USD the system counts in — this number is read by a person.
+        grant_usd: { type: number }
+        remaining_pct: { type: number }
+      additionalProperties: false
+    WebhookSettings:
+      type: object
+      description: The signing secret for `callback_url` deliveries, minted on first read.
+      required: [signing_secret, signature_header, how]
+      properties:
+        signing_secret: { type: string, examples: ['whsec_…'] }
+        signature_header: { type: string, examples: ['Argentum-Signature'] }
+        how:
+          type: string
+          description: How to verify, in one sentence, so it travels with the secret.
+      additionalProperties: false
+    Scope:
+      type: string
+      description: One capability a key may carry. Fixed at mint time.
+      enum:
+        - read:metrics
+        - read:threads
+        - read:usage
+        - read:audit
+        - read:documents
+        - write:chat
+        - write:actions
+        - write:reports
+
+    DocumentFormat:
+      type: string
+      enum: [pdf, pptx, xlsx, csv]
+    Document:
+      type: object
+      description: One generated file.
+      required: [id, object, filename, format, size_bytes, source, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        object: { type: string, const: document }
+        filename: { type: string }
+        format: { $ref: '#/components/schemas/DocumentFormat' }
+        size_bytes: { type: integer }
+        source:
+          type: string
+          description: |
+            Which door produced it. `api` for either `/v1` report route, `agent`
+            for the `generate_document` tool inside a dashboard turn.
+          enum: [agent, api]
+        thread_id:
+          type: string
+          format: uuid
+          description: |
+            Absent for a document the render door produced — it has no
+            conversation behind it.
+        created_at: { type: string, format: date-time }
+        download_url:
+          type: string
+          format: uri
+          description: |
+            Presigned and short-lived, re-issued on every read rather than
+            stored. Absent on list responses and when the object store could not
+            be reached.
+        expires_at: { type: string, format: date-time }
+      additionalProperties: false
+    RenderedDocument:
+      type: object
+      description: What the render door returns when `Accept` asks for JSON.
+      required: [object, document]
+      properties:
+        object: { type: string, const: document }
+        document: { $ref: '#/components/schemas/Document' }
+        request_id: { type: string }
+      additionalProperties: false
+    DocumentPage:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Document' }
+        has_more:
+          type: boolean
+          description: |
+            Not `len(data) == limit`. A caller cannot tell a full last page from
+            a full middle one, and asking for one more page to find out is a
+            request nobody should have to make.
+        next_cursor: { type: string }
+      additionalProperties: false
+
+    CreateReportRequest:
+      type: object
+      description: |
+        Send `user_ref` **or** `thread_id`: the first names who the report is
+        for, the second continues a conversation that already knows.
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          description: What the report should contain, in words.
+          examples: ['Monthly revenue for 2024 with a bar chart by month and a short commentary.']
+        format:
+          allOf: [{ $ref: '#/components/schemas/DocumentFormat' }]
+          description: Defaults to `pdf`.
+        user_ref:
+          type: string
+          description: |
+            Your own identifier for the person this is on behalf of. It is what
+            makes the spend attributable in the tenant's usage reporting.
+        thread_id:
+          type: string
+          format: uuid
+          description: Continue an existing `api` conversation instead of starting one.
+        callback_url:
+          type: string
+          format: uri
+          description: |
+            Receives the signed `report.completed` body. Optional — most callers
+            poll or stream. A private-network target is refused unless the
+            deployment allows one.
+        locale:
+          type: string
+          description: '`id` or `en`. Decides separators, month names and magnitude words.'
+        currency:
+          type: string
+          description: An ISO 4217 code.
+      additionalProperties: false
+    Report:
+      type: object
+      description: |
+        One shape for both doors and for the poll route, so a caller writes the
+        collection path once whether the job came from a prompt or from a spec
+        that ran long.
+      required: [id, object, status, kind, format, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        object: { type: string, const: report }
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        kind:
+          type: string
+          description: '`agentic` for a prompt; `render` for a spec that outran the synchronous window.'
+          enum: [agentic, render]
+        format: { $ref: '#/components/schemas/DocumentFormat' }
+        thread_id:
+          type: string
+          format: uuid
+          description: |
+            The conversation behind an agentic report — continue it through
+            `POST /v1/chat`. Absent for a render job, which has none.
+        document: { $ref: '#/components/schemas/Document' }
+        error:
+          type: string
+          description: Why a `failed` report failed.
+        created_at: { type: string, format: date-time }
+        request_id: { type: string }
+      additionalProperties: false
+
+    ChatRequest:
+      type: object
+      description: |
+        Send `user_ref` **or** `thread_id`. `user_ref` keys the thread when there
+        is no `thread_id`, and is what makes the spend attributable.
+      required: [message]
+      properties:
+        message:
+          type: string
+          description: The question you want answered.
+        thread_id:
+          type: string
+          format: uuid
+          description: Continue a conversation you are already tracking.
+        user_ref:
+          type: string
+          description: Your own identifier for the person asking.
+      additionalProperties: false
+    Turn:
+      type: object
+      description: |
+        One question and its answer. The same shape arrives as the `final` SSE
+        frame, so a caller who starts on the synchronous door and moves to the
+        stream does not rewrite their parser.
+      required: [object, thread_id, message]
+      properties:
+        object: { type: string, const: turn }
+        thread_id: { type: string, format: uuid }
+        run_id:
+          type: string
+          description: |
+            Identifies this turn within the thread. It is the id of the question
+            that started it.
+        message: { $ref: '#/components/schemas/Message' }
+        usage: { $ref: '#/components/schemas/Usage' }
+        request_id: { type: string }
+      additionalProperties: false
+    Usage:
+      type: object
+      description: |
+        What this turn cost. Best-effort and omitted entirely rather than
+        reported as zeros: an all-zero window happens when attaching to a turn
+        that had already finished, and publishing `tokens_in: 0` there would
+        state something false about a turn that cost real money.
+      required: [tokens_in, tokens_out, cost_usd]
+      properties:
+        tokens_in: { type: integer }
+        tokens_out: { type: integer }
+        cost_usd:
+          type: number
+          description: Dollars, for the reason `credits` gives.
+      additionalProperties: false
+    Message:
+      type: object
+      description: |
+        One turn in a transcript. Token counts and latency are deliberately not
+        here: they are per-message zeros for every streamed turn, and a field
+        that is honestly zero most of the time is a field integrators report as
+        a bug.
+      required: [object, role, content]
+      properties:
+        id: { type: string, format: uuid }
+        object: { type: string, const: message }
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content: { type: string }
+        created_at: { type: string, format: date-time }
+      additionalProperties: false
+    MessagePage:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Message' }
+        has_more: { type: boolean }
+        next_cursor: { type: string }
+      additionalProperties: false
+    Thread:
+      type: object
+      description: |
+        A conversation. Deliberately not the internal thread record, which
+        carries a phone number, a Discord user id and two Lark keys — none of
+        which an `api` thread has, and all of which would become part of a
+        published contract the moment one was serialized.
+      required: [id, object, last_message_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        object: { type: string, const: thread }
+        user_ref: { type: string }
+        title: { type: string }
+        summary:
+          type: string
+          description: The rolling topic summary the thread resolver keeps.
+        last_message_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+      additionalProperties: false
+    ThreadPage:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Thread' }
+        has_more: { type: boolean }
+        next_cursor: { type: string }
+      additionalProperties: false
+    PendingTurn:
+      type: object
+      description: |
+        The 504 body. The field names match the `409 request_in_flight` on
+        purpose: both mean "the work is still running and here is how to find
+        it", and a caller should be able to parse them with one branch.
+      required: [error, in_flight]
+      properties:
+        error: { $ref: '#/components/schemas/ErrorDetail' }
+        in_flight:
+          type: object
+          required: [thread_id, started_at]
+          properties:
+            thread_id: { type: string, format: uuid }
+            run_id: { type: string }
+            started_at: { type: string, format: date-time }
+          additionalProperties: false
+      additionalProperties: false
+
+    ChatEvent:
+      description: |
+        One frame of a chat stream, as the `data:` of an SSE event whose
+        `event:` is the `type` below. The names are the dashboard's, unchanged,
+        because one worker publishes both surfaces.
+
+        `final` and `error` are terminal. `message` appears only on a resumed
+        stream, replaying what a disconnect missed. Only `message` and `final`
+        carry an `id:` — they are the frames backed by something persisted.
+
+        Treat an unknown event name as ignorable; that is what lets this list
+        grow without breaking you.
+      oneOf:
+        - $ref: '#/components/schemas/ChatEventStarted'
+        - $ref: '#/components/schemas/ChatEventDelta'
+        - $ref: '#/components/schemas/ChatEventThinking'
+        - $ref: '#/components/schemas/ChatEventTool'
+        - $ref: '#/components/schemas/ChatEventMessage'
+        - $ref: '#/components/schemas/ChatEventError'
+        - $ref: '#/components/schemas/ChatEventFinal'
+    ChatEventStarted:
+      type: object
+      title: started
+      description: The worker picked the turn up.
+      required: [thread_id, at]
+      properties:
+        thread_id: { type: string, format: uuid }
+        run_id: { type: string }
+        at: { type: string, format: date-time }
+      additionalProperties: false
+    ChatEventDelta:
+      type: object
+      title: delta
+      description: A fragment of the answer as it is written. Never persisted; carries no `id:`.
+      required: [content]
+      properties:
+        content: { type: string }
+      additionalProperties: false
+    ChatEventThinking:
+      type: object
+      title: thinking
+      description: A one-line statement of what the agent is doing.
+      required: [step]
+      properties:
+        step: { type: string }
+      additionalProperties: false
+    ChatEventTool:
+      type: object
+      title: tool_call / tool_result
+      description: |
+        The tool's **name only** — never its arguments or its result. Those
+        carry the SQL the agent ran, and the place for that is the audit log,
+        where it is redacted on the way in and reachable only by an admin.
+      properties:
+        tool: { type: string, examples: ['run_sql'] }
+      additionalProperties: false
+    ChatEventMessage:
+      title: message
+      description: |
+        A persisted message being replayed to a client that reconnected with
+        `Last-Event-ID`. Carries an `id:`.
+      allOf: [{ $ref: '#/components/schemas/Message' }]
+    ChatEventError:
+      type: object
+      title: error
+      description: The turn failed. Terminal.
+      required: [message]
+      properties:
+        message: { type: string }
+      additionalProperties: false
+    ChatEventFinal:
+      title: final
+      description: |
+        The answer, as the same `Turn` object the synchronous door returns.
+        Terminal, and carries an `id:` a client can resume from.
+      allOf: [{ $ref: '#/components/schemas/Turn' }]
+
+    ReportEvent:
+      description: |
+        One frame of a report stream. `progress` while the agent works, `report`
+        — terminal — carrying the same object the poll route returns, and
+        `error` when the stream itself could not be opened.
+      oneOf:
+        - $ref: '#/components/schemas/ReportEventProgress'
+        - $ref: '#/components/schemas/ReportEventReport'
+        - $ref: '#/components/schemas/ChatEventError'
+    ReportEventProgress:
+      type: object
+      title: progress
+      description: What is happening, not what the agent is saying.
+      required: [type, at]
+      properties:
+        type:
+          type: string
+          enum: [started, tool_call, tool_result, thinking]
+        at: { type: string, format: date-time }
+        tool: { type: string }
+        step: { type: string }
+      additionalProperties: false
+    ReportEventReport:
+      title: report
+      description: The terminal frame. Identical to `GET /v1/reports/{id}`.
+      allOf: [{ $ref: '#/components/schemas/Report' }]
+
+    # ---------------------------------------------------------------------
+    # The render door's body: `spec.Document`, version 2.
+    #
+    # A cell declares what it *is* ({v, fmt}) and the renderer decides how it
+    # looks. That split is the whole reason v2 exists — v1 put thousands
+    # separators, decimal places, currency symbols and column widths inside the
+    # model's head, one turn at a time, and the results were inconsistent
+    # because the model is inconsistent.
+    # ---------------------------------------------------------------------
+    ReportSpec:
+      type: object
+      description: |
+        One file, one format, one content tree.
+
+        `content` carries one of three shapes: `sections` for a PDF or a deck,
+        `table` for a CSV, `sheets` or `table` for a workbook.
+      required: [format, content]
+      properties:
+        spec_version:
+          type: integer
+          description: |
+            `2` for the enterprise layout — cover page, running header, footer.
+            Absent or `1` renders flat. A v1 spec is a v2 spec whose columns are
+            all text, so this only decides whether the *renderer* offers the v2
+            chrome: a document that has been rendering as a bare table for three
+            months should not sprout a cover page because the backend was
+            upgraded.
+          enum: [1, 2]
+        format: { $ref: '#/components/schemas/DocumentFormat' }
+        filename:
+          type: string
+          description: Without a directory. Sanitised; the extension follows `format`.
+        title: { type: string }
+        locale:
+          type: string
+          description: '`id` or `en`. Empty derives it from `currency`.'
+        currency:
+          type: string
+          description: An ISO 4217 code. Empty uses the company default.
+        generated_at:
+          type: string
+          description: |
+            RFC3339. It is a spec field rather than a clock read so the same
+            spec renders the same bytes twice — pin it and the output is
+            reproducible.
+        meta: { $ref: '#/components/schemas/ReportSpecMeta' }
+        content: { $ref: '#/components/schemas/ReportSpecContent' }
+      additionalProperties: false
+    ReportSpecMeta:
+      type: object
+      description: |
+        What lands in the PDF's info dictionary. A document that leaves the
+        building with an empty Title in its properties is one a records system
+        cannot file.
+      properties:
+        author: { type: string }
+        subject: { type: string }
+        keywords: { type: string }
+      additionalProperties: false
+    ReportSpecContent:
+      type: object
+      properties:
+        sections:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSpecSection' }
+        table: { $ref: '#/components/schemas/ReportSpecTable' }
+        sheets:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSpecSheet' }
+      additionalProperties: false
+    ReportSpecSection:
+      type: object
+      description: |
+        One block in the document flow. Every payload field for every section
+        type is on this one object rather than in a union — a model that puts
+        `text` on a callout instead of inside it still renders something.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum:
+            - cover
+            - heading
+            - paragraph
+            - kpi_row
+            - table
+            - callout
+            - key_value
+            - chart
+            - footnote
+            - page_break
+            - spacer
+        subtitle: { type: string }
+        period: { type: string }
+        prepared_for: { type: string }
+        prepared_by: { type: string }
+        confidentiality: { type: string }
+        text: { type: string }
+        level: { type: integer, description: 'Heading level, 1–3.' }
+        title: { type: string }
+        tone:
+          type: string
+          description: A callout's colour.
+          enum: [info, warn, good]
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSpecItem' }
+        columns:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSpecColumn' }
+        rows:
+          type: array
+          items:
+            type: array
+            items: { $ref: '#/components/schemas/ReportSpecCell' }
+        total_row:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSpecCell' }
+        caption: { type: string }
+        size: { type: number, description: 'A v1 spacer''s height in millimetres.' }
+        chart: { $ref: '#/components/schemas/ReportSpecChart' }
+      additionalProperties: false
+    ReportSpecItem:
+      type: object
+      description: |
+        A row of a `key_value` block or a card in a `kpi_row`. Both vocabularies
+        are accepted — `{k, v}` and `{label, value}` — because rendering nothing
+        when a caller picked the wrong pair of field names is not a defensible
+        failure.
+      properties:
+        k: { type: string }
+        v: { type: string }
+        label: { type: string }
+        value: { $ref: '#/components/schemas/ReportSpecCell' }
+        delta_pct:
+          type: number
+          description: 'Percent units: `12.5` is +12.5%, not +1250%.'
+        direction:
+          type: string
+          description: Empty reads the direction off the sign of `delta_pct`.
+          enum: [up, down, increase, decrease, rising, falling, naik, turun]
+        higher_is_better:
+          type: boolean
+          description: |
+            Whether an up arrow is good news. Defaults to true. Churn going up is
+            not good news, and a renderer that colours every rise green is
+            telling the reader something false.
+        fmt: { type: string }
+      additionalProperties: false
+    ReportSpecColumn:
+      description: |
+        A header plus the formatting every cell beneath it inherits. A bare
+        string is accepted as `{label: "…"}` — that is the whole of the v1 table
+        shim.
+      oneOf:
+        - type: string
+        - type: object
+          required: [label]
+          properties:
+            label: { type: string }
+            fmt:
+              type: string
+              description: Empty infers the kind from the column's own values.
+              enum: [text, number, currency, percent, date]
+            align:
+              type: string
+              description: Empty lets the kind decide — numerics right, everything else left.
+              enum: [left, center, right]
+            width_weight:
+              type: number
+              description: |
+                Rarely needed: the renderer measures the header and a sample of
+                the cells.
+          additionalProperties: false
+    ReportSpecCell:
+      description: |
+        One value, optionally with a format override. A scalar is accepted as
+        `{v: <scalar>}`.
+
+        Numbers are decoded without going through a float, so a 19-digit invoice
+        number survives the trip — a float64 loses its last four digits and
+        would print a subtly wrong id in a document someone pays against.
+      oneOf:
+        - type: [string, number, boolean, 'null']
+        - type: object
+          properties:
+            v: { type: [string, number, boolean, 'null'] }
+            fmt:
+              type: string
+              enum: [text, number, currency, percent, date]
+          additionalProperties: false
+    ReportSpecTable:
+      type: object
+      required: [columns, rows]
+      properties:
+        columns:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSpecColumn' }
+        rows:
+          type: array
+          items:
+            type: array
+            items: { $ref: '#/components/schemas/ReportSpecCell' }
+        total_row:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSpecCell' }
+        caption: { type: string }
+      additionalProperties: false
+    ReportSpecSheet:
+      type: object
+      description: One workbook tab.
+      required: [name, columns, rows]
+      properties:
+        name: { type: string }
+        columns:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSpecColumn' }
+        rows:
+          type: array
+          items:
+            type: array
+            items: { $ref: '#/components/schemas/ReportSpecCell' }
+      additionalProperties: false
+    ReportSpecChart:
+      type: object
+      description: |
+        There is no `stacked` flag: stacking is a chart type. A flag would make
+        `{type: "pie", stacked: true}` expressible, and every such combination is
+        a validation rule someone has to write, test and explain.
+      properties:
+        type:
+          type: string
+          enum: [line, bar, grouped_bar, stacked_bar, pie, donut, sparkline]
+        title: { type: string }
+        labels:
+          type: array
+          items: { type: string }
+        series:
+          type: array
+          items: { $ref: '#/components/schemas/ReportSpecSeries' }
+        fmt: { type: string }
+        y_axis: { $ref: '#/components/schemas/ReportSpecAxis' }
+        height_mm:
+          type: number
+          description: |
+            Zero takes the renderer's default, which is almost always right: the
+            width is the measure and the height is a proportion of it.
+      additionalProperties: false
+    ReportSpecSeries:
+      type: object
+      description: |
+        One plotted population. For a pie or a donut only the first series is
+        drawn, because a pie of two series is two pies.
+      properties:
+        name: { type: string }
+        values:
+          type: array
+          items: { type: number }
+      additionalProperties: false
+    ReportSpecAxis:
+      type: object
+      description: |
+        `min` matters more than it looks: a bar chart whose axis starts at 94% of
+        the smallest bar shows a 3% movement as a doubling, which is the most
+        common way a correct number is used to say something false.
+      properties:
+        label: { type: string }
+        min: { type: number }
+        max: { type: number }
+      additionalProperties: false

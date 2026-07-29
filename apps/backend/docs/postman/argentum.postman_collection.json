@@ -1,9 +1,19 @@
 {
   "info": {
-    "name": "Argentum API",
-    "description": "HTTP endpoints exposed by the Argentum API server (cmd/api/main.go). No auth layer — tenant fixed at startup via TENANT_ID env. Job and WhatsApp routes only registered when ENABLE_WHATSAPP=true.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "_postman_id": "argentum-api-collection-v1"
+    "name": "Argentum API — /v1",
+    "_postman_id": "argentum-v1-generated",
+    "description": "Generated from apps/backend/openapi/v1.yaml (contract version 2026-07-28).\n\nDo not edit by hand — run `pnpm --filter @argentum/openapi-tools build` and commit the result.\n\nSet `apiKey` in the environment first. `GET /v1/me` is the call to make before any other:\nit tells you which scopes your key has, what it may spend, and which contract version you\nare talking to.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{apiKey}}",
+        "type": "string"
+      }
+    ]
   },
   "variable": [
     {
@@ -12,216 +22,652 @@
       "type": "string"
     },
     {
-      "key": "jobId",
+      "key": "apiKey",
+      "value": "arg_replace_me",
+      "type": "string"
+    },
+    {
+      "key": "userRef",
+      "value": "u_42",
+      "type": "string"
+    },
+    {
+      "key": "reportId",
       "value": "00000000-0000-0000-0000-000000000000",
       "type": "string"
     },
     {
-      "key": "webhookVerifyToken",
-      "value": "your-webhook-verify-token",
+      "key": "documentId",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "type": "string"
+    },
+    {
+      "key": "threadId",
+      "value": "00000000-0000-0000-0000-000000000000",
       "type": "string"
     }
   ],
   "item": [
     {
-      "name": "Health",
+      "name": "Identity",
+      "description": "Who this key is, and what it may spend.",
       "item": [
         {
-          "name": "Health Check",
+          "name": "The key, its scopes, its rate limit, and the tenant's credit position",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["health"]
+              "raw": "{{baseUrl}}/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "me"
+              ]
             },
-            "description": "Returns server health + tenant identifier. Handler: cmd/api/main.go:116-122. Response: {status, tenant, timestamp}."
-          }
-        },
-        {
-          "name": "Readiness Probe",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/ready",
-              "host": ["{{baseUrl}}"],
-              "path": ["ready"]
-            },
-            "description": "K8s-style readiness probe. Checks source DB, internal DB, RabbitMQ. Handler: cmd/api/main.go:124-143. 200 when ready, 503 otherwise."
-          }
-        },
-        {
-          "name": "Metrics",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/metrics",
-              "host": ["{{baseUrl}}"],
-              "path": ["metrics"]
-            },
-            "description": "Application metrics snapshot. Handler: cmd/api/main.go:145-148."
+            "description": "The first call to make and the one paste that makes a support question\nanswerable. It needs no scope — a key with none must still be able to\nfind out that it has none.\n\nScope: none — any key reaches this route."
           }
         }
       ]
     },
     {
-      "name": "Analytics Query",
+      "name": "Reports",
+      "description": "A spec in and a file out, or a prompt in and a turn behind it.",
       "item": [
         {
-          "name": "Process Query",
+          "name": "Ask an agent for a report",
           "request": {
             "method": "POST",
             "header": [
               {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text",
+                "disabled": false,
+                "description": "A unique string per logical request; a UUID is the usual choice. Both"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"session_id\": \"demo\",\n  \"query\": \"top 5 customers by revenue last month\"\n}"
+              "raw": "{\n  \"prompt\": \"Monthly revenue for 2024, with a bar chart by month and a short commentary.\",\n  \"format\": \"pdf\",\n  \"user_ref\": \"u_42\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/query",
-              "host": ["{{baseUrl}}"],
-              "path": ["v1", "query"]
+              "raw": "{{baseUrl}}/v1/reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "reports"
+              ]
             },
-            "description": "Synchronous analytics endpoint. Natural language query → LLM agent → SQL execution. Handler: cmd/api/main.go:151-180. 60s timeout. Response: AgentResponse {message_id, query, insight, query_result, dashboard_url, follow_up_questions, error}."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Jobs (WhatsApp)",
-      "item": [
-        {
-          "name": "Job Stats",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/jobs/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["jobs", "stats"]
-            },
-            "description": "Aggregate job statistics. Handler: cmd/api/main.go:248-250. Only registered when ENABLE_WHATSAPP=true."
+            "description": "A prompt in, a real agent turn behind it, a document at the end. Seconds\nto minutes, priced in tokens.\n\nThree ways to collect the result, and a caller picks one: poll\n`GET /v1/reports/{id}`, stream `GET /v1/reports/{id}/events`, or supply\na `callback_url` and verify the signature described by\n`GET /v1/me`'s `webhooks` block.\n\nScope: `write:reports`"
           }
         },
         {
-          "name": "Get Job By ID",
+          "name": "Poll a report",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/jobs/{{jobId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["jobs", "{{jobId}}"]
+              "raw": "{{baseUrl}}/v1/reports/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "reports",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{reportId}}"
+                }
+              ]
             },
-            "description": "Retrieve job status + progress. Handler: cmd/api/main.go:238-246. 404 if not found. Set jobId collection variable to a real UUID."
+            "description": "Once `status` is `completed` the `document` block carries a freshly\npresigned `download_url`. It is re-issued on every read rather than\nstored, so a caller who saved one and came back an hour later gets a\nworking link without paying to regenerate the document.\n\nScope: `read:documents`"
+          }
+        },
+        {
+          "name": "Stream a report's progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reports/:id/events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "reports",
+                ":id",
+                "events"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{reportId}}"
+                }
+              ]
+            },
+            "description": "Server-sent events for a job that can take minutes. Two event names:\n`progress` while the agent works, and `report` — terminal — carrying the\nsame object `GET /v1/reports/{id}` returns.\n\nThe agent's token deltas are deliberately not forwarded: a report's\nconsumer wants progress and a file, not the prose of an answer they\nasked for as a PDF.\n\nA job that had already finished when the caller connected gets its\n`report` frame and nothing else. A queued *render* job has no thread to\npublish on, so it gets the same — poll that one.\n\nScope: `read:documents`"
+          }
+        },
+        {
+          "name": "Render a document from a spec",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text",
+                "disabled": false,
+                "description": "A unique string per logical request; a UUID is the usual choice. Both"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spec_version\": 2,\n  \"format\": \"pdf\",\n  \"title\": \"Revenue by month\",\n  \"locale\": \"en\",\n  \"currency\": \"USD\",\n  \"content\": {\n    \"sections\": [\n      {\n        \"type\": \"heading\",\n        \"text\": \"Revenue by month\"\n      },\n      {\n        \"type\": \"kpi_row\",\n        \"items\": [\n          {\n            \"label\": \"Total\",\n            \"value\": {\n              \"v\": 270300,\n              \"fmt\": \"currency\"\n            },\n            \"delta_pct\": 10.5\n          }\n        ]\n      },\n      {\n        \"type\": \"table\",\n        \"columns\": [\n          {\n            \"label\": \"Month\"\n          },\n          {\n            \"label\": \"Revenue\",\n            \"fmt\": \"currency\"\n          }\n        ],\n        \"rows\": [\n          [\n            \"July\",\n            128400\n          ],\n          [\n            \"August\",\n            141900\n          ]\n        ],\n        \"total_row\": [\n          {\n            \"v\": \"Total\"\n          },\n          {\n            \"v\": 270300,\n            \"fmt\": \"currency\"\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reports/render",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "reports",
+                "render"
+              ]
+            },
+            "description": "Deterministic. A spec goes in, a file comes out, and nothing about it\ntouches an LLM or a thread.\n\n**`Accept` decides the response body.** `application/json` (or an absent\n`Accept`) returns the document object with a short-lived presigned URL.\nThe format's own content type — `application/pdf`, `text/csv`, the two\nOOXML types — or `application/octet-stream` returns the bytes inline,\nwhich is what a caller writing them straight to disk wants.\n\nA spec that outruns the synchronous window becomes a job and answers\n`202` with a report object, on the same shape `POST /v1/reports`\nreturns. Write one collection path for both.\n\nScope: `write:reports`"
           }
         }
       ]
     },
     {
-      "name": "WhatsApp Webhook",
+      "name": "Documents",
+      "description": "The files either door produced.",
       "item": [
         {
-          "name": "Webhook Verification (GET)",
+          "name": "List generated documents",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/webhook/whatsapp?hub.mode=subscribe&hub.verify_token={{webhookVerifyToken}}&hub.challenge=12345",
-              "host": ["{{baseUrl}}"],
-              "path": ["webhook", "whatsapp"],
+              "raw": "{{baseUrl}}/v1/documents?limit=&cursor=&format=&created_after=&created_before=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "documents"
+              ],
               "query": [
-                {"key": "hub.mode", "value": "subscribe"},
-                {"key": "hub.verify_token", "value": "{{webhookVerifyToken}}"},
-                {"key": "hub.challenge", "value": "12345"}
+                {
+                  "key": "limit",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Page size. A value over the repository's cap is clamped rather than"
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true,
+                  "description": "The `next_cursor` from the previous page. Opaque: it encodes the"
+                },
+                {
+                  "key": "format",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Only documents of this format."
+                },
+                {
+                  "key": "created_after",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Only documents created at or after this RFC3339 timestamp."
+                },
+                {
+                  "key": "created_before",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Only documents created at or before this RFC3339 timestamp."
+                }
               ]
             },
-            "description": "WhatsApp Business webhook verification. Handler: cmd/api/main.go:252-261. Returns hub.challenge value as plain text on success. 403 if token mismatch."
+            "description": "Newest first, cursor-paginated.\n\n**No download URLs on the list.** Presigning is a signature per row, and\na caller paging a hundred documents to find one is not about to fetch\nall hundred. `GET /v1/documents/{id}` issues the URL for the one they\npicked.\n\nScope: `read:documents`"
           }
         },
         {
-          "name": "Webhook Message - WhatsApp Business",
+          "name": "Fetch one document's metadata and a fresh download URL",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
               {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-Hub-Signature-256",
-                "value": "sha256=REPLACE_WITH_HMAC_SHA256_OF_BODY",
-                "description": "HMAC-SHA256 of request body using WHATSAPP_APP_SECRET"
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [\n    {\n      \"id\": \"BUSINESS_ACCOUNT_ID\",\n      \"changes\": [\n        {\n          \"field\": \"messages\",\n          \"value\": {\n            \"messaging_product\": \"whatsapp\",\n            \"metadata\": {\n              \"display_phone_number\": \"15551234567\",\n              \"phone_number_id\": \"PHONE_NUMBER_ID\"\n            },\n            \"contacts\": [\n              {\n                \"profile\": {\"name\": \"Test User\"},\n                \"wa_id\": \"15551234567\"\n              }\n            ],\n            \"messages\": [\n              {\n                \"from\": \"15551234567\",\n                \"id\": \"wamid.TEST\",\n                \"timestamp\": \"1700000000\",\n                \"type\": \"text\",\n                \"text\": {\"body\": \"hello argentum\"}\n              }\n            ]\n          }\n        }\n      ]\n    }\n  ]\n}"
-            },
             "url": {
-              "raw": "{{baseUrl}}/webhook/whatsapp",
-              "host": ["{{baseUrl}}"],
-              "path": ["webhook", "whatsapp"]
+              "raw": "{{baseUrl}}/v1/documents/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "documents",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{documentId}}"
+                }
+              ]
             },
-            "description": "Inbound WhatsApp Business message. Handler: cmd/api/main.go:263-347. Verifies X-Hub-Signature-256, queues async job to RabbitMQ. Response: {status, job_id, timestamp}."
+            "description": "Scope: `read:documents`"
           }
         },
         {
-          "name": "Webhook Message - Twilio",
+          "name": "Download a document's bytes",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
               {
-                "key": "Content-Type",
-                "value": "application/x-www-form-urlencoded"
-              },
-              {
-                "key": "X-Twilio-Signature",
-                "value": "REPLACE_WITH_TWILIO_HMAC_SIGNATURE",
-                "description": "HMAC validation using TWILIO_AUTH_TOKEN"
+                "key": "Accept",
+                "value": "application/pdf",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "urlencoded",
-              "urlencoded": [
-                {"key": "From", "value": "whatsapp:+15551234567"},
-                {"key": "Body", "value": "hello argentum"},
-                {"key": "MessageSid", "value": "SM00000000000000000000000000000000"},
-                {"key": "AccountSid", "value": "AC00000000000000000000000000000000"},
-                {"key": "To", "value": "whatsapp:+14155238886"}
+            "url": {
+              "raw": "{{baseUrl}}/v1/documents/:id/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "documents",
+                ":id",
+                "content"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{documentId}}"
+                }
               ]
             },
-            "url": {
-              "raw": "{{baseUrl}}/webhook/whatsapp",
-              "host": ["{{baseUrl}}"],
-              "path": ["webhook", "whatsapp"]
-            },
-            "description": "Inbound Twilio WhatsApp message. Handler: cmd/api/main.go:263-347. Form-urlencoded payload. Empty 200 response on accept."
+            "description": "Streams the object rather than redirecting to the presigned URL. A\nserver-side HTTP client that does not follow redirects — a deliberate\nsetting in plenty of them — would otherwise write three hundred bytes of\nnothing to disk, and the redirect is a second hostname the caller's\negress rules have to allow.\n\nScope: `read:documents`"
           }
         }
       ]
     },
     {
-      "name": "Metabase Proxy",
+      "name": "Chat",
+      "description": "A question in, an answer out.",
       "item": [
         {
-          "name": "Metabase Health (proxied)",
+          "name": "Ask a question",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text",
+                "disabled": false,
+                "description": "A unique string per logical request; a UUID is the usual choice. Both"
+              },
+              {
+                "key": "Last-Event-ID",
+                "value": "",
+                "type": "text",
+                "disabled": true,
+                "description": "The `id:` of the last frame you received. An SSE client sends this by"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What were total sales last month?\",\n  \"user_ref\": \"u_42\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "chat"
+              ]
+            },
+            "description": "**`Accept` decides the door.** `text/event-stream` streams the turn as\nit is written; anything else blocks until the turn answers.\n\nA client disconnect never cancels a turn: the agent runs in the worker\nand this route is a reader of the same bus the dashboard reads. Hanging\nup ends the read, the turn finishes, the answer persists, and\n`GET /v1/threads/{id}/messages` collects it.\n\nThe synchronous door answers **504** when the turn outruns the wait —\nnot when the turn fails. That response carries `in_flight.thread_id`,\nand it **keeps its idempotency key**, so the retry a 504 invites replays\ninstead of starting a second billed turn. Attach to\n`GET /v1/threads/{id}/events` instead.\n\nScope: `write:chat`"
+          }
+        },
+        {
+          "name": "List the conversations this integration started",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/metabase/api/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["metabase", "api", "health"]
+              "raw": "{{baseUrl}}/v1/threads?limit=&cursor=&user_ref={{userRef}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Page size. A value over the repository's cap is clamped rather than"
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true,
+                  "description": "The `next_cursor` from the previous page. Opaque: it encodes the"
+                },
+                {
+                  "key": "user_ref",
+                  "value": "{{userRef}}",
+                  "disabled": true,
+                  "description": "Only threads belonging to this end user."
+                }
+              ]
             },
-            "description": "Reverse proxy to Metabase (http://metabase:3000). Handler: cmd/api/main.go:185-195. Any HTTP method + path under /metabase/* forwarded transparently."
+            "description": "`api` threads only. A machine credential that could list the dashboard's\nthreads would let a leaked key read the staff's own chat history.\n\nScope: `read:threads`"
+          }
+        },
+        {
+          "name": "Delete a conversation",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/:id?user_ref={{userRef}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                ":id"
+              ],
+              "query": [
+                {
+                  "key": "user_ref",
+                  "value": "{{userRef}}",
+                  "disabled": true,
+                  "description": "When present, the thread must belong to this end user or the route"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{threadId}}"
+                }
+              ]
+            },
+            "description": "`write:chat` rather than `read:threads`: destroying a conversation is\nnot a read. Saved dashboards the turns produced are removed with it.\n\nScope: `write:chat`"
+          }
+        },
+        {
+          "name": "Fetch one conversation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/:id?user_ref={{userRef}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                ":id"
+              ],
+              "query": [
+                {
+                  "key": "user_ref",
+                  "value": "{{userRef}}",
+                  "disabled": true,
+                  "description": "When present, the thread must belong to this end user or the route"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{threadId}}"
+                }
+              ]
+            },
+            "description": "Scope: `read:threads`"
+          }
+        },
+        {
+          "name": "Attach to a thread's newest turn",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream",
+                "type": "text"
+              },
+              {
+                "key": "Last-Event-ID",
+                "value": "",
+                "type": "text",
+                "disabled": true,
+                "description": "The `id:` of the last frame you received. An SSE client sends this by"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/:id/events?user_ref={{userRef}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                ":id",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "user_ref",
+                  "value": "{{userRef}}",
+                  "disabled": true,
+                  "description": "When present, the thread must belong to this end user or the route"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{threadId}}"
+                }
+              ]
+            },
+            "description": "The resume door. A 504 from the synchronous send and a\n`409 request_in_flight` from a retried one both hand back a `thread_id`,\nand neither is collectable by re-POSTing — one turn is already running,\nand starting a second is what the whole idempotency chain exists to\nprevent. This is where a caller goes instead.\n\nIf the thread's newest turn has already answered, the answer is\ndelivered and the stream closes. Send `Last-Event-ID` to have the\nmessages you missed replayed first.\n\nScope: `read:threads`"
+          }
+        },
+        {
+          "name": "Read a transcript",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/:id/messages?limit=&cursor=&user_ref={{userRef}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                ":id",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Page size. A value over the repository's cap is clamped rather than"
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true,
+                  "description": "The `next_cursor` from the previous page. Opaque: it encodes the"
+                },
+                {
+                  "key": "user_ref",
+                  "value": "{{userRef}}",
+                  "disabled": true,
+                  "description": "When present, the thread must belong to this end user or the route"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{threadId}}"
+                }
+              ]
+            },
+            "description": "Oldest first, cursor-paginated.\n\nScope: `read:threads`"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Meta",
+      "description": "This document.",
+      "item": [
+        {
+          "name": "This document, as JSON",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/openapi.json",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "openapi.json"
+              ]
+            },
+            "description": "Public and keyless: an integrator reads the contract before they have a\ncredential to call it with. It is the same bytes as\n`apps/backend/openapi/v1.yaml`, converted to JSON.\n\nIt is still behind the `/v1` kill switch. A spec for a surface that is\nrefusing every call would generate a client nobody can use, so a\ndisabled deployment answers 503 here too.\n\nScope: none — any key reaches this route."
           }
         }
       ]

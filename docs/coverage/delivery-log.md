@@ -927,6 +927,69 @@ response body appearing on every audit row of that turn (`T-A1`).
 
 Record, gate output and the limits: [`api-chat.md`](api-chat.md).
 
+`T-A4` the contract, published
+
+`T-13` through `T-A3` built an API. This is the ticket that lets someone use it
+without talking to us: an OpenAPI 3.1 document covering all fifteen operations,
+served keyless at `GET /v1/openapi.json`, two SDKs generated from it, and a
+quickstart that goes from an empty directory to a branded PDF — measured at one
+second in Node and four in Python, against a ten-minute budget meant for a
+person reading the page.
+
+The decision the ticket turns on is which way the generation runs. The ticket
+said the spec should be generated from the routes; what ships is the reverse —
+the spec is authored, and **four checks bind it to the code in both
+directions**: route parity, scope parity (asserted behaviourally: the documented
+scope is both sufficient and necessary), response-field parity by reflection
+over the Go structs, and a drift gate on every committed artifact generated from
+the document. A generated spec would have carried no prose, and nearly every
+sentence in this one exists because it is the thing an integrator gets wrong.
+Hand-authored prose, machine-enforced accuracy.
+
+The published examples are executed rather than read. Every fenced block in the
+quickstart is a file `run.sh` runs against a live server — deterministic samples
+on every push, agentic ones nightly, split by what they cost — and a second
+check asserts the block and the file are byte-for-byte equal, because the prose
+is the version an integrator reads.
+
+**The live gate found three things, and two of them are not this ticket's.**
+
+The first is: `node docs/api/examples/node/render.mjs` cannot import
+`@argentum/sdk`. Node resolves a bare import upward from the *script's* own
+directory, so running the sample from the repository looked for the package
+beside the repository rather than beside the copy just installed into the
+scratch directory. The sample worked in every arrangement except the one the
+quickstart tells a reader to use. That is the whole argument for executing
+published examples.
+
+The second is the serious one: **our own guardrail blocks the agentic report
+door.** `T-A2`'s report directive opens with "[REPORT REQUEST …] You MUST end
+this turn by actually invoking the generate_document tool", and it travels
+inside the *user* message — where `semantic_prompt_injection` inspects it and
+classifies it as an instruction override. Four of five attempts came back
+`guardrail | blocked | "I cannot fulfill requests that attempt to override my
+instructions or change my role"`, on fresh threads as well as continued ones.
+The report then completes with `status: completed` and no document, so the
+flagship path fails **silently**: a 202, a completed report, and nothing to
+download. The classifier is an LLM, which is why `T-A2`'s own single agentic run
+passed and why this needed five.
+
+The fix is architectural rather than a threshold — the directive belongs
+out-of-band, in the system prompt for that turn, so what the guardrail inspects
+is only what the caller sent. Weakening the classifier to admit our own
+instruction blocks would weaken it against real injections.
+
+The third: the one report that was not blocked answered in prose without
+invoking `generate_document` at all — four tool calls and a stop, well inside
+`T-16`'s budget. Same visible outcome, different mechanism.
+
+Eighth consecutive ticket where the live half of the gate found something the
+unit tests could not, and the first where the finding belongs to the ticket
+before it.
+
+Record, gate output, both defects and the deviations:
+[`api-contract.md`](api-contract.md).
+
 ---
 
 ## What the history says about how this project is built

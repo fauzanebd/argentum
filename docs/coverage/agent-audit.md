@@ -320,4 +320,7 @@ one — against both roles through the real router.
   [`api-surface.md`](api-surface.md), which this ticket did update. Rewriting or
   retiring the two stale files is worth its own ticket, and `T-A4` — which
   builds an OpenAPI spec with a CI parity check in both directions — is the
-  obvious place to fold it in.
+  obvious place to fold it in. **Partly done 2026-07-29:** `T-A4` published the
+  `/v1` half and re-banners `api.md`, but it deliberately left the `/api`
+  routes — including `/api/audit/actions` — undocumented and ungenerated. They
+  are first-party and change with the dashboard; `T-02b` is where they belong.

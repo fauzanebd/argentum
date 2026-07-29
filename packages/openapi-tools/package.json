@@ -1,0 +1,20 @@
+{
+  "name": "@argentum/openapi-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Everything downstream of apps/backend/openapi/v1.yaml: the Postman collection, the Python SDK's types, a verdict on whether the document is valid OpenAPI 3.1, and the check that keeps the quickstart's code blocks equal to the files CI runs.",
+  "scripts": {
+    "validate": "node scripts/validate.mjs",
+    "postman": "node scripts/gen-postman.mjs",
+    "python-types": "node scripts/gen-python-types.mjs",
+    "examples": "node scripts/check-examples.mjs",
+    "build": "pnpm validate && pnpm postman && pnpm python-types && pnpm examples",
+    "check": "pnpm validate && node scripts/gen-postman.mjs --check && node scripts/gen-python-types.mjs --check && pnpm examples",
+    "lint": "pnpm check"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "yaml": "^2.8.1"
+  }
+}

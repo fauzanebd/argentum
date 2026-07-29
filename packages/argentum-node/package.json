@@ -1,0 +1,38 @@
+{
+  "name": "@argentum/sdk",
+  "version": "0.1.0",
+  "description": "The Argentum API from Node: a spec in and a PDF out, a prompt in and a report back, a question in and an answer streamed.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "keywords": [
+    "argentum",
+    "reports",
+    "pdf",
+    "analytics"
+  ],
+  "license": "UNLICENSED",
+  "scripts": {
+    "generate": "openapi-typescript ../../apps/backend/openapi/v1.yaml --output src/types.generated.ts",
+    "build": "pnpm generate && tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "openapi-typescript": "^7.9.1",
+    "typescript": "^5.9.3"
+  }
+}

@@ -30,6 +30,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       tokens: ${{ steps.filter.outputs.tokens }}
       report: ${{ steps.filter.outputs.report }}
+      api: ${{ steps.filter.outputs.api }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -55,6 +56,18 @@ jobs:
             report:
               - 'apps/backend/internal/report/**'
               - 'apps/backend/internal/tools/generate_document.go'
+              - '.github/workflows/ci.yaml'
+            # The published contract and everything generated from it. The
+            # samples are executed rather than read, so a change to a handler
+            # has to re-run them too — hence the backend paths.
+            api:
+              - 'apps/backend/openapi/**'
+              - 'apps/backend/internal/transport/http/**'
+              - 'apps/backend/cmd/api/**'
+              - 'docs/api/**'
+              - 'packages/argentum-node/**'
+              - 'packages/argentum-python/**'
+              - 'packages/openapi-tools/**'
               - '.github/workflows/ci.yaml'
             web:
               - 'apps/dashboard/**'
@@ -214,6 +227,145 @@ jobs:
       # dashboard: eslint. landing: `tsc -b --noEmit` (typecheck, not eslint).
       - name: Lint
         run: pnpm -r lint
+
+      # `pnpm -r build` regenerated the SDK's TypeScript types, the Python
+      # SDK's types and the Postman collection from apps/backend/openapi/v1.yaml.
+      # All three are committed, so a diff here means the committed copy
+      # disagrees with the spec — the same gate the design tokens have, for the
+      # same reason: two copies of one truth disagree quietly.
+      - name: Fail on generated-artifact drift
+        run: |
+          git --no-pager diff --exit-code -- \
+            packages/argentum-node/src/types.generated.ts \
+            packages/argentum-python/src/argentum/types.py \
+            apps/backend/docs/postman \
+          || {
+            echo "::error::Generated API artifacts are stale. Run 'make openapi' and commit the result."
+            exit 1
+          }
+
+  api-examples:
+    name: API examples (deterministic)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    # Every sample published in docs/api/quickstart.md is executed here against
+    # a real server. An example that has never been run is a support ticket with
+    # a delay fuse.
+    #
+    # **Only the deterministic half.** These cost a render — no LLM, no tokens —
+    # so they run on every push. The two that spend the demo tenant's money
+    # (POST /v1/reports, POST /v1/chat) run in nightly.yaml instead: putting a
+    # real agent turn in the per-push path would bill an LLM call for every
+    # commit in the monorepo.
+    services:
+      postgres:
+        image: ankane/pgvector:latest
+        env:
+          POSTGRES_USER: argentum
+          POSTGRES_PASSWORD: argentum
+          POSTGRES_DB: argentum
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U argentum"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: apps/backend/go.sum
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      # MinIO is a `docker run` rather than a service container because it needs
+      # a command argument (`server /data`) and the services block has nowhere
+      # to put one. The render door answers a typed 503 without object storage,
+      # so this is not optional for these samples.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && break
+            sleep 2
+          done
+
+      - name: Start the API
+        working-directory: apps/backend
+        env:
+          # Config.Validate insists on these four. The deterministic samples
+          # never reach an LLM or WhatsApp — the render door is a spec in and a
+          # file out — so placeholders are honest here rather than a shortcut.
+          LLM_API_KEY: ci-placeholder
+          WHATSAPP_ACCESS_TOKEN: ci-placeholder
+          WHATSAPP_PHONE_NUMBER_ID: ci-placeholder
+          ARGENTUM_JWT_SECRET: 0123456789abcdef0123456789abcdef
+          ARGENTUM_DSN_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_USER: argentum
+          DB_PASSWORD: argentum
+          DB_NAME: argentum
+          REDIS_URL: localhost:6379
+          MINIO_ENDPOINT: localhost:9000
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
+          API_V1_ENABLED: 'true'
+        run: |
+          go build -o /tmp/api ./cmd/api
+          /tmp/api > /tmp/api.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/ready && break
+            sleep 2
+          done
+          curl -sf http://localhost:8080/ready || { cat /tmp/api.log; exit 1; }
+
+      # A company and a key, over the same routes a tenant uses. Minting the key
+      # by writing a row would skip the hashing and prove nothing about the
+      # credential an integrator actually holds.
+      - name: Mint an API key
+        run: |
+          token=$(curl -sf -X POST http://localhost:8080/api/auth/signup \
+            -H 'Content-Type: application/json' \
+            -d '{"company_name":"CI Examples","email":"ci@example.test","password":"ci-password-123"}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+          key=$(curl -sf -X POST http://localhost:8080/api/api-keys \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"name":"quickstart","scopes":["write:reports","read:documents","write:chat","read:threads"]}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          echo "::add-mask::$key"
+          echo "ARGENTUM_API_KEY=$key" >> "$GITHUB_ENV"
+          echo "ARGENTUM_BASE_URL=http://localhost:8080" >> "$GITHUB_ENV"
+
+      - name: Run every deterministic sample
+        run: ./docs/api/examples/run.sh deterministic
+
+      - name: API log
+        if: failure()
+        run: cat /tmp/api.log
 
   docker:
     name: Build & Push Docker Image

@@ -1,0 +1,181 @@
+name: Nightly
+
+# The samples that spend money.
+#
+# `docs/api/quickstart.md` publishes five things an integrator will copy, and
+# the ticket's rule is that an example nobody has executed is a support ticket
+# with a delay fuse. Three of them cost a render and run on every push
+# (`api-examples` in ci.yaml). The other two — `POST /v1/reports` and
+# `POST /v1/chat` — run a real agent turn against a real LLM, and putting those
+# in the per-push path would bill the demo tenant for every commit in the
+# monorepo. Nightly still catches a broken example within a day, which is the
+# number that matters: an integrator who copies a sample that stopped working
+# yesterday is a support conversation, and one who copies a sample that stopped
+# working in March is a lost customer.
+#
+# It needs three secrets. Without them the job skips rather than failing red
+# every night in a fork that has none.
+on:
+  schedule:
+    # 02:00 UTC — after the working day in UTC+7, where the demo tenant lives.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.26'
+  PNPM_VERSION: '10'
+  NODE_VERSION: '22'
+
+jobs:
+  agentic-examples:
+    name: API examples (agentic)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: ankane/pgvector:latest
+        env:
+          POSTGRES_USER: argentum
+          POSTGRES_PASSWORD: argentum
+          POSTGRES_DB: argentum
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U argentum"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      # The tenant's own warehouse. The agentic samples ask questions about
+      # data, so unlike the deterministic ones they need something to query.
+      postgres_demo:
+        image: ankane/pgvector:latest
+        env:
+          POSTGRES_USER: demo
+          POSTGRES_PASSWORD: demo
+          POSTGRES_DB: demo_analytics
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U demo"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip without an LLM key
+        id: guard
+        run: |
+          if [ -z "${{ secrets.NIGHTLY_LLM_API_KEY }}" ]; then
+            echo "no NIGHTLY_LLM_API_KEY configured; the agentic samples cannot run"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.guard.outputs.run == 'true'
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: apps/backend/go.sum
+
+      - uses: pnpm/action-setup@v4
+        if: steps.guard.outputs.run == 'true'
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.run == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - uses: actions/setup-python@v5
+        if: steps.guard.outputs.run == 'true'
+        with:
+          python-version: '3.11'
+
+      - name: Install workspace dependencies
+        if: steps.guard.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Start MinIO
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && break
+            sleep 2
+          done
+
+      # The same star schema the eval harness scores against, so a question in
+      # the quickstart ("total revenue by month for 2024") has an answer.
+      - name: Seed the demo warehouse
+        if: steps.guard.outputs.run == 'true'
+        env:
+          PGPASSWORD: demo
+        run: |
+          for f in apps/backend/migrations/demo_tenant/*.sql; do
+            psql -h localhost -p 5433 -U demo -d demo_analytics -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Start the API and the worker
+        if: steps.guard.outputs.run == 'true'
+        working-directory: apps/backend
+        env:
+          LLM_API_KEY: ${{ secrets.NIGHTLY_LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.NIGHTLY_LLM_MODEL }}
+          WHATSAPP_ACCESS_TOKEN: ci-placeholder
+          WHATSAPP_PHONE_NUMBER_ID: ci-placeholder
+          ARGENTUM_JWT_SECRET: 0123456789abcdef0123456789abcdef
+          ARGENTUM_DSN_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_USER: argentum
+          DB_PASSWORD: argentum
+          DB_NAME: argentum
+          REDIS_URL: localhost:6379
+          MINIO_ENDPOINT: localhost:9000
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
+          API_V1_ENABLED: 'true'
+        run: |
+          go build -o /tmp/api ./cmd/api
+          go build -o /tmp/worker ./cmd/worker
+          /tmp/api > /tmp/api.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/ready && break
+            sleep 2
+          done
+          curl -sf http://localhost:8080/ready || { cat /tmp/api.log; exit 1; }
+          /tmp/worker > /tmp/worker.log 2>&1 &
+          sleep 5
+
+      - name: Mint a key and connect the warehouse
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          token=$(curl -sf -X POST http://localhost:8080/api/auth/signup \
+            -H 'Content-Type: application/json' \
+            -d '{"company_name":"Nightly Examples","email":"nightly@example.test","password":"ci-password-123"}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+          curl -sf -X POST http://localhost:8080/api/connections \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"label":"Demo Retail","db_type":"postgres","dsn":"postgres://demo:demo@localhost:5433/demo_analytics?sslmode=disable","is_default":true}'
+          key=$(curl -sf -X POST http://localhost:8080/api/api-keys \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"name":"quickstart","scopes":["write:reports","read:documents","write:chat","read:threads"]}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          echo "::add-mask::$key"
+          echo "ARGENTUM_API_KEY=$key" >> "$GITHUB_ENV"
+          echo "ARGENTUM_BASE_URL=http://localhost:8080" >> "$GITHUB_ENV"
+
+      - name: Run every agentic sample
+        if: steps.guard.outputs.run == 'true'
+        run: ./docs/api/examples/run.sh agentic
+
+      - name: Logs
+        if: failure()
+        run: |
+          echo '--- api'; cat /tmp/api.log || true
+          echo '--- worker'; cat /tmp/worker.log || true

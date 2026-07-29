@@ -6,9 +6,16 @@
 > exists. `/v1` is now the multi-tenant public API: API-key authentication, a
 > typed error envelope, idempotency and per-key rate limits, described in
 > [`../../../docs/coverage/api-foundation.md`](../../../docs/coverage/api-foundation.md).
-> `T-A4` replaces this file with a generated OpenAPI 3.1 spec that CI checks
-> against the router in both directions; until then, the router is the
-> contract and this file is history.
+> **Superseded 2026-07-29 by `T-A4`.** The `/v1` contract is now
+> [`apps/backend/openapi/v1.yaml`](../openapi/v1.yaml), served at
+> `GET /v1/openapi.json` and checked against the gin route tree in both
+> directions by CI. Start at
+> [`docs/api/quickstart.md`](../../../docs/api/quickstart.md).
+>
+> What remains below describes the **dashboard's** `/api` routes, and even that
+> predates the `bigref` refactor in places. It is kept as history rather than
+> deleted because several sections are the only written description of routes
+> `T-02b` will eventually generate types for.
 
 HTTP reference for the Argentum analytics service. Send a natural-language question, get back a structured insight backed by SQL execution and an optional dashboard link.
 

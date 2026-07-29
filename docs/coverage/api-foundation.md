@@ -410,5 +410,7 @@ worker wrote — needs the same `/v1/chat` route, and lands with `T-A3`.
   and it cannot replay one that asked for something else.
 - **`apps/backend/docs/api.md` is stale and now says so.** It describes a
   pre-refactor single-tenant service with a `POST /v1/query` that does not
-  exist. `T-A4` replaces it with a generated OpenAPI 3.1 spec; a banner warns
-  against building on it in the meantime.
+  exist. **Superseded 2026-07-29 by `T-A4`**: the `/v1` contract is
+  `apps/backend/openapi/v1.yaml`, served at `GET /v1/openapi.json` and checked
+  against the router in both directions. What remains in `api.md` is the
+  dashboard's `/api` surface, and its banner now says so.

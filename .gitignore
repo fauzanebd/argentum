@@ -19,6 +19,13 @@ dist/
 # before the monorepo migration; they are machine-local build artifacts.
 *.tsbuildinfo
 
+# Python — packages/argentum-python is a source tree, not a build output.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
 # Secrets
 .env
 .env.local

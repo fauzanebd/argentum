@@ -91,6 +91,17 @@ func newRouter(d *apiDeps) *gin.Engine {
 	//   rate limit  — per key, so it needs the key
 	// Idempotency is per route rather than group-wide: a GET does not need a
 	// Redis key and a 24-hour TTL to be idempotent.
+	//
+	// The published contract is served from a sibling group carrying only the
+	// first two links of that chain (T-A4). It is keyless on purpose — an
+	// integrator reads the spec before they have a key — and it stays under the
+	// kill switch, because a spec for a surface that is refusing every call
+	// generates a client nobody can use.
+	spec := r.Group("/v1")
+	spec.Use(middleware.RequestID())
+	spec.Use(middleware.Enabled(cfg.APIV1Enabled))
+	handlers.NewV1OpenAPIHandler().Register(spec)
+
 	v1 := r.Group("/v1")
 	v1.Use(middleware.RequestID())
 	v1.Use(middleware.Enabled(cfg.APIV1Enabled))

@@ -11,12 +11,15 @@ pipeline.
 ```
 /Users/rizkal/Work/smartsoft/argentum/     ← the repo root
 ├── apps/
-│   ├── backend/          Go: cmd/{api,worker,discord}, internal/, migrations/, config/
+│   ├── backend/          Go: cmd/{api,worker,discord}, internal/, migrations/, config/, openapi/
 │   ├── dashboard/        React 18 + Vite + TanStack — the customer web app
 │   ├── landing/          React 18 + Vite — marketing site
 │   └── widget/           Preact — embeddable chat widget (created in T-21)
 ├── packages/
 │   ├── api-types/        TS types generated from Go structs (T-02b)
+│   ├── argentum-node/    @argentum/sdk — the public API from Node (T-A4)
+│   ├── argentum-python/  argentum — the same, sync and async (T-A4)
+│   ├── openapi-tools/    Everything generated from openapi/v1.yaml (T-A4)
 │   └── chat-ui/          Chat components shared by dashboard + widget (T-21)
 ├── docs/                 This documentation — now tracked
 ├── .github/workflows/    One pipeline, path-filtered per app

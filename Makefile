@@ -101,7 +101,27 @@ eval-dry: ## Validate the golden set and seed the eval tenant without calling th
 .PHONY: types
 types: ## Regenerate packages/api-types from Go structs (T-02b)
 	@echo "type generation not wired yet — see docs/plan/01-tickets.md T-02b"
+	@echo "the /v1 wire types are generated from the OpenAPI spec instead: make openapi"
 	@exit 1
+
+# ---------------------------------------------------------------------------
+# The published API contract (T-A4)
+# ---------------------------------------------------------------------------
+
+.PHONY: openapi
+openapi: ## Validate apps/backend/openapi/v1.yaml and regenerate everything from it
+	pnpm --filter @argentum/openapi-tools build
+	pnpm --filter @argentum/sdk build
+
+.PHONY: openapi-check
+openapi-check: ## Verify the generated API artifacts match the spec, writing nothing
+	pnpm --filter @argentum/openapi-tools check
+
+.PHONY: api-examples
+api-examples: ## Run every published sample against a live API (see docs/api/examples/run.sh)
+	./docs/api/examples/run.sh $(EXAMPLES_MODE)
+
+EXAMPLES_MODE ?= deterministic
 
 # ---------------------------------------------------------------------------
 # Design system

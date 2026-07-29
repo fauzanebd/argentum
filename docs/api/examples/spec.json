@@ -1,0 +1,45 @@
+{
+  "spec_version": 2,
+  "format": "pdf",
+  "filename": "revenue.pdf",
+  "title": "Revenue by month",
+  "locale": "en",
+  "currency": "USD",
+  "content": {
+    "sections": [
+      {
+        "type": "cover",
+        "subtitle": "Prepared from the quickstart",
+        "period": "Q3",
+        "confidentiality": "Internal"
+      },
+      { "type": "heading", "text": "Revenue by month", "level": 1 },
+      {
+        "type": "kpi_row",
+        "items": [
+          { "label": "Total", "value": { "v": 270300, "fmt": "currency" }, "delta_pct": 10.5 },
+          { "label": "Best month", "value": { "v": "August" } }
+        ]
+      },
+      {
+        "type": "table",
+        "columns": [{ "label": "Month" }, { "label": "Revenue", "fmt": "currency" }],
+        "rows": [
+          ["July", 128400],
+          ["August", 141900]
+        ],
+        "total_row": [{ "v": "Total" }, { "v": 270300, "fmt": "currency" }]
+      },
+      {
+        "type": "chart",
+        "caption": "Revenue by month",
+        "chart": {
+          "type": "bar",
+          "labels": ["July", "August"],
+          "series": [{ "name": "Revenue", "values": [128400, 141900] }],
+          "fmt": "currency"
+        }
+      }
+    ]
+  }
+}

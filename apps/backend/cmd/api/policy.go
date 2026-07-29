@@ -182,6 +182,10 @@ var unpolicedPaths = map[string]bool{
 	// own.
 	"/v1/me": true, // none — identity, and the one route a key with no scopes must reach
 
+	// T-A4's published contract. The only `/v1` route with no credential at
+	// all: an integrator reads the spec before they have a key.
+	"/v1/openapi.json": true, // none — public and keyless
+
 	// T-A2's report surface.
 	"/v1/reports/render":        true, // write:reports
 	"/v1/reports":               true, // write:reports
