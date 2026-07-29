@@ -2,12 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  EVENT_LABELS,
-  microToUsd,
-  type CreditBalance,
-  type UsageSummary,
-} from "./types";
+import type { CompanyCredits, UsageSummary } from "@argentum/api-types";
+import { EVENT_LABELS, microToUsd } from "./labels";
 
 export function OverviewTab() {
   const { data: summary, isLoading } = useQuery({
@@ -17,7 +13,7 @@ export function OverviewTab() {
 
   const { data: credits } = useQuery({
     queryKey: ["usage-credits"],
-    queryFn: async () => (await api.get<CreditBalance>("/usage/credits")).data,
+    queryFn: async () => (await api.get<CompanyCredits>("/usage/credits")).data,
   });
 
   if (isLoading) return <div className="text-sm text-muted-foreground">Loading…</div>;

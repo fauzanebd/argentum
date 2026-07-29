@@ -48,7 +48,7 @@ priority on 2026-07-28. This table is the authoritative order.
 | 0 — done | `T-00`, `T-00b` | 2.0 | Re-warm, then monorepo. Both landed 2026-07-26. |
 | 1 — done | ~~`T-01`~~, ~~`T-02c`~~, ~~`T-16`~~ | 6.0 | A branded PDF containing an invented figure is worse than an ugly one containing a real figure. Evals first because they are what proves the other two fixed anything. **All three landed 2026-07-27.** `T-01` baseline 96.8% → **97.0% (32/33) after `T-16`**, [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md). `T-02c` — primary-model turns are billed, `T-03` unblocked. `T-16` — the `C-1` question now returns the true figure, and a turn that runs out of budget says so. |
 | 1a — **done** | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, ~~`T-R4`~~, ~~`T-R5`~~ | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). **`T-R4` landed 2026-07-28** — the same spec projected onto slides, narrative in the speaker notes ([`../coverage/report-deck.md`](../coverage/report-deck.md)). **`T-R5` landed 2026-07-28** — tenant logo, accent, locale and footer on both formats, with a live preview rendered by the renderer itself and a contrast floor a pale brand colour cannot pass ([`../coverage/report-branding.md`](../coverage/report-branding.md)). |
-| 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, ~~`T-05`~~, ~~`T-03`~~, `T-02b` | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). **`T-05` landed 2026-07-28**: one append-only row per tool call, written by a decorator over the whole registry rather than per tool, plus a row for a turn a guardrail stopped — which needed a second integration point, because a guardrail stops a turn before any tool runs ([`../coverage/agent-audit.md`](../coverage/agent-audit.md)). **`T-03` landed 2026-07-28**: the balance is checked before a turn is queued on every channel and on every scheduled fire, a tenant on their own key is never blocked, and the ticket had to grow a starting grant — because nothing had ever credited a company, so enforcing it as written would have refused every tenant at once ([`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md)). |
+| 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, ~~`T-05`~~, ~~`T-03`~~, ~~`T-02b`~~ | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). **`T-05` landed 2026-07-28**: one append-only row per tool call, written by a decorator over the whole registry rather than per tool, plus a row for a turn a guardrail stopped — which needed a second integration point, because a guardrail stops a turn before any tool runs ([`../coverage/agent-audit.md`](../coverage/agent-audit.md)). **`T-03` landed 2026-07-28**: the balance is checked before a turn is queued on every channel and on every scheduled fire, a tenant on their own key is never blocked, and the ticket had to grow a starting grant — because nothing had ever credited a company, so enforcing it as written would have refused every tenant at once ([`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md)). |
 | 1c — callable | ~~`T-13`~~, ~~`T-A1`~~, ~~`T-A2`~~, ~~`T-A3`~~, ~~`T-A4`~~, `T-A2b`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moved here from week 5 — it is the prerequisite, not a week-5 nicety. **`T-13` landed 2026-07-28**: scoped, hashed, revocable keys on a `/v1` namespace that refuses a dashboard JWT as flatly as `/api` refuses a key, with a per-key rate bucket and a Settings tab. The hash is a SHA-256 rather than the Argon2id the ticket named, because the input is 256 random bits rather than a password; the live gate found `/v1` inheriting the dashboard's permissive CORS headers ([`../coverage/api-keys.md`](../coverage/api-keys.md)). **`T-A1` landed 2026-07-28**: the contract every `/v1` route inherits — request ids, the typed envelope, idempotency that records ids rather than payloads, rate-limit headers, cursor pagination, a kill switch, and the `api` channel both `T-A2` and `T-A3` need. Four acceptance items have no route to run against until `T-A2`'s first `POST` and are recorded as tested-not-live ([`../coverage/api-foundation.md`](../coverage/api-foundation.md)). **`T-A2` landed 2026-07-28**: a spec posted to `POST /v1/reports/render` comes back as a branded PDF and a prompt posted to `POST /v1/reports` runs a real agent turn, with three ways to collect the result — and it turned four of `T-A1`'s tested-not-live items into transcripts ([`../coverage/api-reports.md`](../coverage/api-reports.md)). **`T-A3` landed 2026-07-28**: a question in, an answer out, streamed over SSE or waited for, on the event names the dashboard already publishes — plus the thread and transcript reads, `user_ref` isolation enforced rather than trusted, and a 504 that hands back the ids to resume with instead of inviting a second billed turn. The live gate found that `last_message_at` and `messages.created_at` are written by different clocks, which held every settled thread's stream open until the client gave up ([`../coverage/api-chat.md`](../coverage/api-chat.md)). **`T-A4` landed 2026-07-29 and closes the phase's exit criterion**: an OpenAPI 3.1 document covering all fifteen operations, served keyless at `GET /v1/openapi.json`, a Node and a Python SDK generated from it, and a quickstart that takes an empty directory to a branded PDF in one second of machine time against a ten-minute budget. Four CI checks bind the document to the code in both directions — routes, scopes, response fields, generated artifacts — and every code block on the quickstart is a file CI executes. The gate found `T-A2`'s agentic door blocked by our own injection guardrail in four of five attempts, which is now `T-A2b` ([`../coverage/api-contract.md`](../coverage/api-contract.md)). |
 | 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Moved to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
@@ -1318,7 +1318,9 @@ the timed path recorded, in [`../coverage/api-contract.md`](../coverage/api-cont
 
 ## T-A2b · The report directive must not look like a prompt injection
 **Repo:** BE · **Size:** 0.5d · **Deps:** T-A2 · **Priority:** P0 · **Never cut**
-**Raised by `T-A4`'s live gate, 2026-07-29.**
+**Raised by `T-A4`'s live gate, 2026-07-29. Code shipped 2026-07-29; the live
+half of the gate is outstanding —
+[`../coverage/api-reports.md`](../coverage/api-reports.md) §7.**
 
 ### Why
 
@@ -1358,14 +1360,24 @@ run was one of the lucky ones. Evidence and audit rows:
 
 ### Acceptance
 
-- [ ] Ten consecutive `POST /v1/reports` calls with the quickstart's prompt produce ten documents
-- [ ] An injection inside the caller's own `prompt` is still blocked
-- [ ] `docs/api/examples/run.sh agentic` passes without needing its retry
-- [ ] The eval set covers both directions
+- [ ] Ten consecutive `POST /v1/reports` calls with the quickstart's prompt produce ten documents — **outstanding, needs a live server and a billable key**
+- [x] An injection inside the caller's own `prompt` is still blocked — `bootstrap.TestAnInjectionInTheCallersPromptIsStillRefused`, through the real `config/guardrails.yaml`
+- [ ] `docs/api/examples/run.sh agentic` passes without needing its retry — **outstanding**, same reason; the comment claiming the job is expected red is gone
+- [x] The eval set covers both directions — `report-directive-is-not-an-injection` and `report-directive-does-not-admit-an-injection`, run through the same `app.ReportDirective` the route calls
+
+### What shipped
+
+The directive is now a field on `app.ChatInput` / `queue.ChatRunPayload` that
+`ChatRunner` hands to the agent factory as a per-turn **system-prompt
+addendum**, so the input guardrails judge the caller's prompt and nothing else.
+The classifier is unchanged. Nine unit tests pin the seam at each of its three
+links, plus one for the small-talk short-circuit, which would otherwise have
+swallowed a report turn whose prompt read as a greeting.
 
 ### Gate
 
-Ten consecutive runs, and the nightly `agentic-examples` job green.
+Ten consecutive runs, and the nightly `agentic-examples` job green. **Not run
+here** — both need a live API, worker, Redis, MinIO and a real LLM key.
 
 ---
 
@@ -1556,6 +1568,7 @@ showing red on the deliberate break and green after revert.
 
 ## T-02b · Generate TS types from Go structs
 **Repo:** BE, PKG, FE · **Size:** 1d · **Deps:** T-00b, T-02 · **Priority:** P1
+**Landed 2026-07-29.** Record: [`../coverage/generated-types.md`](../coverage/generated-types.md).
 
 Today `apps/dashboard/src/features/*/types.ts` hand-mirrors Go JSON tags and
 nothing checks that they agree. A renamed field or a changed type is a runtime
@@ -1588,14 +1601,15 @@ surprise, found by a user. The monorepo makes this mechanically fixable, so fix 
   string, not a `Date`.
 
 **Acceptance:**
-- [ ] `make types` produces types for every domain type crossing the API
-- [ ] Dashboard compiles against `@argentum/api-types` with its hand-written
-      duplicates deleted
-- [ ] CI fails when a Go struct changes without regeneration — prove it and revert
-- [ ] Any real Go↔TS mismatch found during migration is listed in the report
+- [x] `make types` produces types for every domain type crossing the API — `internal/domain` whole, plus the event/credit/response files named in `apps/backend/tygo.yaml`
+- [x] Dashboard compiles against `@argentum/api-types` with its hand-written duplicates deleted — all four `types.ts` files gone; `tsc -b --noEmit`, `pnpm build` and `pnpm lint` clean
+- [x] CI fails when a Go struct changes without regeneration — proven by renaming `ConversationThread.Title`'s tag, and reverted ([`../coverage/generated-types.md`](../coverage/generated-types.md) gate 1)
+- [x] Any real Go↔TS mismatch found during migration is listed in the report — seven, including a `channel` union that had been wrong since Discord landed
 
 **Gate:** paste the CI failure from a deliberate Go field rename, then the pass
 after `make types`. List every mismatch the migration surfaced.
+**Done 2026-07-29** — gate output and all seven findings in
+[`../coverage/generated-types.md`](../coverage/generated-types.md).
 
 ---
 

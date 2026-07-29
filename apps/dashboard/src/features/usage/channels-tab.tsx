@@ -7,7 +7,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { CHANNEL_LABELS, buildRangeParams, type ChannelRow } from "./types";
+import type { ChannelUsageRow } from "@argentum/api-types";
+import { CHANNEL_LABELS, buildRangeParams } from "./labels";
 
 interface Props {
   from: string;
@@ -19,7 +20,7 @@ export function ChannelsTab({ from, to }: Props) {
     queryKey: ["usage-by-channel", from, to],
     queryFn: async () =>
       (
-        await api.get<{ channels: ChannelRow[] }>("/usage/by-channel", {
+        await api.get<{ channels: ChannelUsageRow[] }>("/usage/by-channel", {
           params: buildRangeParams(from, to),
         })
       ).data.channels,

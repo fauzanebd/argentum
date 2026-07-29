@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ChatEvent } from "./types";
+import type { ChatEvent } from "@argentum/api-types";
 import { useAuthStore } from "@/store/auth";
 
 // useThreadStream subscribes to the WebSocket for a single thread. Reconnects

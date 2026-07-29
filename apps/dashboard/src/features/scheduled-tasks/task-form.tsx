@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { CRON_PRESETS, defaultTimezone } from "./cron-presets";
-import type { ScheduledTask } from "./types";
+import type { ScheduledTask } from "@argentum/api-types";
 import { apiErrorMessage } from "@/lib/api-error";
 
 const CUSTOM_PRESET = "__custom__";

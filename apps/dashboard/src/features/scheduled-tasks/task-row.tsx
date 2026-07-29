@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useIsAdmin } from "@/store/auth";
-import type { ScheduledTask } from "./types";
+import type { ScheduledTask } from "@argentum/api-types";
 import { apiErrorMessage } from "@/lib/api-error";
 
 function humanCron(expr: string): string {
@@ -21,7 +21,11 @@ function humanCron(expr: string): string {
   }
 }
 
-function relative(ts: string | null): string {
+// `string | undefined`, not `string | null`: the Go field is a `*time.Time`
+// with `omitempty`, so a task that has never run omits the key entirely. The
+// hand-written type said `| null` and this function was checking for a value
+// the API has never sent (T-02b).
+function relative(ts: string | undefined): string {
   if (!ts) return "never";
   try {
     return formatDistanceToNow(new Date(ts), { addSuffix: true });

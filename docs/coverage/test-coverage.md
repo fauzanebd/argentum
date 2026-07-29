@@ -137,7 +137,7 @@ zero tests.**
 
 ## Go backend — package by package
 
-### Packages with tests (23)
+### Packages with tests (24)
 
 `T-02` added five packages and grew three that already had tests. Four of the
 other new entries since this table last said twelve — `internal/report/chart`,
@@ -160,6 +160,7 @@ recorded in [`report-charts.md`](report-charts.md) and
 | `internal/tools` | `run_sql_test.go`, `run_sql_bytecap_test.go`, `source_resolve_test.go` | The `run_sql` result notes (`T-16`), plus the byte-cap trimming loop — wide rows shrink from the tail, the count matches what was sent, a single oversized row does not become a false "matched zero rows" — and `ResolveSource` with 0/1/many sources, an explicit id, a cross-tenant id, and the empty-company rejection that happens before the repository is touched (`T-02`) |
 | `internal/branding` | `service_test.go` | The contrast floor with its measured ratio in the message, the locale and length rules, normalisation before storage, logo re-encoding (JPEG→PNG, oversize scaled on both axes, SVG/HTML/truncated/empty refused, >512 KB refused), and that resolution is never fatal — broken bucket, broken row, broken company lookup and a nil service each fall back to Argentum's defaults (`T-R5`) |
 | `internal/report/brand` | `brand_test.go` | Per-field fallback (a logo without a colour keeps the brand red), legal name over company name, an unparseable stored colour falling back rather than failing, the `ShowCredit`→`HideCredit` inversion surviving both projections, and the PDF and PPTX projections agreeing field for field while owning separate colour pointers (`T-R5`) |
+| `internal/bootstrap` | `agent_factory_test.go` | The per-turn agent, built by the factory the worker uses and run against the **shipped** `config/guardrails.yaml`: a report turn's directive lands in the system prompt, every other turn's prompt is byte-identical to before, the guardrail classifiers are asked to judge the caller's question and nothing else, an injection in that question is still refused, and the directive itself is still the shape an input guardrail blocks — so the ticket cannot be closed by weakening the classifier (`T-A2b`) |
 
 The twelve that came before:
 
@@ -190,7 +191,7 @@ CRITICAL row is now closed**; what is left is `T-02`'s Sprint 2 successor.
 
 | Risk     | Package                                | Why it matters                                                                                        |
 | -------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| ~~**CRITICAL**~~ ✅ | `internal/app`              | Closed by `T-02` for the three named services (pricing, fork heuristics, cron). `ChatRunner` itself is still uncovered by unit tests — it is the one component the eval harness exercises end-to-end instead, which is the more honest signal for it. |
+| ~~**CRITICAL**~~ ✅ | `internal/app`              | Closed by `T-02` for the three named services (pricing, fork heuristics, cron). `ChatRunner` was uncovered by unit tests until `T-A2b`, which needed to assert *how a turn is assembled* — a question the eval harness cannot answer, because it observes the answer and not the input. `ChatRunner.Run` now runs end-to-end in `chat_runner_directive_test.go` against a stub model, via an `LLMResolver` interface declared at the consumer. What the agent does with a tool result is still the eval harness's job. |
 | ~~**CRITICAL**~~ ✅ | `internal/guardrails`       | Closed by `T-02`'s golden suite over the shipped YAML. The output rules still never execute in production (`T-07b` owns that), and the suite says so rather than implying otherwise. |
 | ~~**CRITICAL**~~ ✅ | `internal/crypto`           | Closed by `T-02`.                                                                                      |
 | ~~**CRITICAL**~~ ✅ | `internal/tenantctx`        | Closed by `T-02`.                                                                                      |
@@ -367,6 +368,15 @@ f850a88  feat: cheaper-smarter LLM defaults, streaming metering, models endpoint
 Note `a56fd85` (default to DeepSeek) followed by `74f5419` (Anthropic-native
 defaults) — a model-default reversal. Whether that was an improvement is
 currently unknowable.
+
+### The API-type drift gate
+
+`T-02b` added a third generated-artifact gate beside the design tokens and the
+OpenAPI artifacts: `make types` regenerates `packages/api-types` from the Go
+structs and the `types` job diffs the result. It is a *type* gate rather than a
+test gate, but it catches the same class the suite cannot — a contract the
+dashboard compiles against and the backend no longer serves — and it was proven
+by breaking it ([`generated-types.md`](generated-types.md)).
 
 ## Targets
 

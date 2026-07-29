@@ -5,11 +5,21 @@ import (
 	"time"
 )
 
-// ScheduledTaskStatus values written to scheduled_task_runs.status.
+// ScheduledRunStatus is how one firing of a scheduled task ended.
+//
+// A named type rather than three untyped constants (T-02b): the constants and
+// the `Status` field were declared independently, so nothing stopped a fourth
+// spelling reaching the column — and the generated TypeScript inherited the
+// weakness as a bare `string` while the dashboard's hand-written type had the
+// three-value union right. The union is the truth; this is where it is now
+// written down.
+type ScheduledRunStatus string
+
+// Values written to scheduled_task_runs.status.
 const (
-	ScheduledRunStatusRunning   = "running"
-	ScheduledRunStatusSucceeded = "succeeded"
-	ScheduledRunStatusFailed    = "failed"
+	ScheduledRunStatusRunning   ScheduledRunStatus = "running"
+	ScheduledRunStatusSucceeded ScheduledRunStatus = "succeeded"
+	ScheduledRunStatusFailed    ScheduledRunStatus = "failed"
 )
 
 // ScheduledTask is a cron-driven saved prompt. Each fire reuses the same
@@ -35,14 +45,14 @@ type ScheduledTask struct {
 // is populated once the agent reply has been persisted to the dedicated
 // thread; it stays nil for failed runs that never produced one.
 type ScheduledTaskRun struct {
-	ID             string     `json:"id"`
-	TaskID         string     `json:"task_id"`
-	CompanyID      string     `json:"company_id"`
-	Status         string     `json:"status"`
-	AssistantMsgID *string    `json:"assistant_msg_id,omitempty"`
-	ErrorMessage   string     `json:"error_message,omitempty"`
-	StartedAt      time.Time  `json:"started_at"`
-	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+	ID             string             `json:"id"`
+	TaskID         string             `json:"task_id"`
+	CompanyID      string             `json:"company_id"`
+	Status         ScheduledRunStatus `json:"status"`
+	AssistantMsgID *string            `json:"assistant_msg_id,omitempty"`
+	ErrorMessage   string             `json:"error_message,omitempty"`
+	StartedAt      time.Time          `json:"started_at"`
+	FinishedAt     *time.Time         `json:"finished_at,omitempty"`
 }
 
 // ScheduledTaskRepository is the persistence contract for cron-scheduled

@@ -11,6 +11,7 @@
     "deploy": "pnpm build && wrangler pages deploy dist --project-name argentum-dashboard"
   },
   "dependencies": {
+    "@argentum/api-types": "workspace:*",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.1.12",

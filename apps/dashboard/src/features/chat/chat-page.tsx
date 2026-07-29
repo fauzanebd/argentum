@@ -14,14 +14,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
-import { microToUsd } from "@/features/usage/types";
+import { microToUsd } from "@/features/usage/labels";
 import type {
-  Thread,
-  Message,
+  BudgetState,
   ChatEvent,
-  BudgetWarning,
+  ConversationThread,
+  Message,
   SendMessageResponse,
-} from "./types";
+} from "@argentum/api-types";
 import { useModels } from "@/lib/use-models";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
@@ -37,7 +37,7 @@ export function ChatPage() {
   const { data: threadsData } = useQuery({
     queryKey: ["threads"],
     queryFn: async () =>
-      (await api.get<{ threads: Thread[] }>("/threads")).data.threads,
+      (await api.get<{ threads: ConversationThread[] }>("/threads")).data.threads,
   });
   const threads = threadsData ?? [];
 
@@ -91,7 +91,7 @@ export function ChatPage() {
    * that is still near the limit, which is the only moment it is worth
    * anything.
    */
-  const { data: budgetWarning = null } = useQuery<BudgetWarning | null>({
+  const { data: budgetWarning = null } = useQuery<BudgetState | null>({
     queryKey: ["budget-warning"],
     queryFn: () => null,
     staleTime: Infinity,
@@ -100,7 +100,7 @@ export function ChatPage() {
     refetchOnWindowFocus: false,
   });
   const setBudgetWarning = useCallback(
-    (w: BudgetWarning | null) => qc.setQueryData(["budget-warning"], w),
+    (w: BudgetState | null) => qc.setQueryData(["budget-warning"], w),
     [qc],
   );
 
@@ -409,7 +409,7 @@ function BudgetWarningBanner({
   onDismiss,
   className,
 }: {
-  warning: BudgetWarning;
+  warning: BudgetState;
   onDismiss: () => void;
   className?: string;
 }) {
@@ -449,7 +449,7 @@ function ChatHeader({
   thread,
   className,
 }: {
-  thread?: Thread;
+  thread?: ConversationThread;
   className?: string;
 }) {
   if (!thread) return null;

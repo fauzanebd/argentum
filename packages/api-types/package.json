@@ -1,0 +1,18 @@
+{
+  "name": "@argentum/api-types",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript for the Go structs the dashboard reads off /api. Generated from apps/backend by tygo; never hand-edited. Deliberately has no `build` or `lint` script: regeneration needs the Go toolchain, which the web CI job does not have — the `types` job owns it.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./webhooks": "./src/webhooks.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "check": "node scripts/generate.mjs --check"
+  }
+}

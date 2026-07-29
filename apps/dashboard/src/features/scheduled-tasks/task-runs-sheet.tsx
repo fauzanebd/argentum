@@ -12,10 +12,10 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { RunStatus, ScheduledTask, TaskRun } from "./types";
+import type { ScheduledRunStatus, ScheduledTask, ScheduledTaskRun } from "@argentum/api-types";
 
 const STATUS_VARIANT: Record<
-  RunStatus,
+  ScheduledRunStatus,
   { variant: "default" | "secondary" | "destructive" | "outline"; label: string }
 > = {
   running: { variant: "outline", label: "running" },
@@ -23,7 +23,7 @@ const STATUS_VARIANT: Record<
   failed: { variant: "destructive", label: "failed" },
 };
 
-function duration(run: TaskRun): string | null {
+function duration(run: ScheduledTaskRun): string | null {
   if (!run.finished_at) return null;
   try {
     return formatDistanceStrict(new Date(run.started_at), new Date(run.finished_at));
@@ -62,7 +62,7 @@ export function TaskRunsSheet({
     queryKey: ["scheduled-task", task?.id, "runs"],
     queryFn: async () =>
       (
-        await api.get<{ runs: TaskRun[] }>(
+        await api.get<{ runs: ScheduledTaskRun[] }>(
           `/scheduled-tasks/${task!.id}/runs?limit=50`,
         )
       ).data.runs,

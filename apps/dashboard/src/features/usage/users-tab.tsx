@@ -8,12 +8,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  CHANNEL_LABELS,
-  USER_KIND_LABELS,
-  buildRangeParams,
-  type UserRow,
-} from "./types";
+import type { UserUsageRow } from "@argentum/api-types";
+import { CHANNEL_LABELS, USER_KIND_LABELS, buildRangeParams } from "./labels";
 
 interface Props {
   from: string;
@@ -25,7 +21,7 @@ export function UsersTab({ from, to }: Props) {
     queryKey: ["usage-by-user", from, to],
     queryFn: async () =>
       (
-        await api.get<{ users: UserRow[] }>("/usage/by-user", {
+        await api.get<{ users: UserUsageRow[] }>("/usage/by-user", {
           params: buildRangeParams(from, to),
         })
       ).data.users,

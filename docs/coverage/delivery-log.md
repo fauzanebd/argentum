@@ -990,6 +990,74 @@ before it.
 Record, gate output, both defects and the deviations:
 [`api-contract.md`](api-contract.md).
 
+`T-A2b` the directive stops looking like an injection
+
+Raised and fixed the same day, which is the point: the finding above is a
+flagship path failing silently, and a finding that sits is a finding that ships.
+
+The report directive — *"[REPORT REQUEST …] You MUST end this turn by actually
+invoking the generate_document tool"* — travelled as the first half of the
+**user** message, which is exactly where the input guardrails look. There were
+two ways to stop `semantic_prompt_injection` refusing it, and only one of them
+survives contact with what the rule is for: teaching the classifier that
+official-sounding instruction overrides are fine would teach it to admit the
+forged ones. So the classifier is untouched and the delivery moved — a
+`Directive` field on `ChatInput` and the queue payload, applied by `ChatRunner`
+as a per-turn **system-prompt addendum**. What Argentum wants of the turn is in
+the system prompt; what the guardrails judge is what the caller typed.
+
+Two things came with it that the ticket did not ask for. A tenant reading their
+own thread no longer sees our scaffolding as their own message — and neither
+does the next turn hydrating memory from it. And the small-talk short-circuit,
+which answers "hi" without an agent, now skips any turn carrying a directive:
+without that, a report prompt that read as a greeting would have returned a
+friendly sentence and a `completed` report with nothing attached, which is the
+same silent failure arriving by a different road.
+
+The gate is half done and honestly so: nine unit tests across three packages
+pin the seam at each link, two eval cases carry both directions through the
+real agent, and the ten-consecutive-runs confirmation needs a live deployment
+and a billable key. What is proven without one is that the string `T-A2` used
+to send is no longer sent.
+
+Record and the outstanding half: [`api-reports.md`](api-reports.md) §7.
+
+`T-02b` the dashboard's types stop being a second opinion
+
+`apps/dashboard/src/features/*/types.ts` hand-mirrored the Go JSON tags and
+nothing checked that they agreed. The four files are gone; `packages/api-types`
+is generated from the Go structs by tygo, committed, and diffed by CI. Phase
+1b's last open criterion — *a Go struct rename without `make types` is a red
+build* — is met, and was proven by making one: a renamed `title` tag failed
+`make types-check`, failed CI's regenerate-and-diff, and stopped the dashboard
+compiling in three files.
+
+**The migration found seven live mismatches, and the first one had been shipping
+for two phases.** `Thread.channel` was typed `"whatsapp" | "dashboard"`; the
+backend has sent `discord`, `lark` and `api` since long before this ticket, and
+the same interface was missing five fields the API has been sending. Two more
+were the opposite of what the hand-written types claimed: fields declared
+`string | null` are *absent* rather than null (`omitempty` on a Go pointer), so a
+"never run" check tested for a value the API has never sent, and the usage
+sheet's token counters compared `undefined > 0` — silently false, so the row
+never rendered the numbers it exists to show.
+
+One went the other way, which is the finding worth keeping: `ScheduledTaskRun`'s
+status was three untyped Go constants and a bare `string` field, while the
+dashboard's hand-written union had the three values right. **The TypeScript was
+more correct than the backend**, so the fix went upstream — a `ScheduledRunStatus`
+type in `internal/domain`.
+
+The decision under the whole thing is that a *file* now decides what a browser
+can see: `handlers/wire.go` for `/api` bodies that are not entities,
+`app/budget_state.go` split out of `credits.go` so operator configuration stays
+out of the generated TypeScript. `/v1` keeps generating from `openapi/v1.yaml`
+instead — the code is the only definition `/api` has, and the document is a
+promise `/v1` is checked against.
+
+Record, gate output and all seven findings:
+[`generated-types.md`](generated-types.md).
+
 ---
 
 ## What the history says about how this project is built

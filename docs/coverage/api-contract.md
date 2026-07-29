@@ -103,9 +103,10 @@ what make it a trade rather than a hope.
 ### Generated types, hand-written ergonomics — but generated from the spec
 
 `T-02b` was to generate TypeScript from Go structs, and the ticket says the Node
-SDK should consume that. **`T-02b` has not landed** — `make types` still exits 1
-— so the SDK's types are generated from `v1.yaml` by `openapi-typescript`, and
-the Python SDK's by a generator in `packages/openapi-tools`.
+SDK should consume that. **`T-02b` had not landed when this was written** —
+`make types` still exited 1 — so the SDK's types are generated from `v1.yaml` by
+`openapi-typescript`, and the Python SDK's by a generator in
+`packages/openapi-tools`.
 
 This satisfies the constraint the ticket was actually protecting ("a second
 generated copy of the same types is exactly the drift `T-R1` was written to
@@ -113,6 +114,13 @@ stop"), because there is still one generated copy per language and its source is
 the document CI binds to the router. When `T-02b` lands it should own the
 dashboard's `/api` types; `/v1` types should keep coming from the spec, which is
 the published contract and the only one an external consumer can see.
+
+**`T-02b` landed 2026-07-29 and the split held exactly as written above.**
+`packages/api-types` is generated from the Go structs and consumed by the
+dashboard; the two SDKs still generate from `v1.yaml`. Two generators, two
+sources, one direction each: `/api` is derived from the code because the code
+is its only definition, and `/v1` is checked against a document because the
+document is a promise ([`generated-types.md`](generated-types.md)).
 
 ### An example that has never been executed is a support ticket with a delay fuse
 
@@ -430,6 +438,12 @@ them.
 
 ### 5.2 Our own guardrail blocks the agentic report door
 
+**Closed 2026-07-29 by `T-A2b`** — the directive now travels as a per-turn
+system-prompt addendum, so the guardrails inspect only what the caller sent,
+and the classifier was not weakened. What shipped, where the seam is tested,
+and which half of the gate is still outstanding:
+[`api-reports.md`](api-reports.md) §7. The finding, as it stood, is below.
+
 **`POST /v1/reports` produced a document in one of five attempts. Four were
 refused by `semantic_prompt_injection`.**
 
@@ -496,6 +510,11 @@ which is a ticket rather than a paragraph. **The nightly job will be red until
 it is fixed**, and `run.sh`'s retry exists so that it is red for this reason
 rather than for an ordinary flake.
 
+*Fixed the next day by `T-A2b`, and it turned out to touch `ChatRunner` and the
+eval set but not the guardrail config — the classifier is doing its job, so
+nothing in it changed. `run.sh`'s comment no longer says the job is expected
+red.*
+
 ### 5.3 An SDK message that told the caller to wait for something that will never come
 
 `ReportJob.download()` on a completed-with-no-document report said *"Report … is
@@ -516,8 +535,9 @@ state the stream already delivered.
   pack` produces exactly what `npm publish` uploads — and both CI jobs install
   the same way. The same applies to `pip install argentum`, which installs from
   `packages/argentum-python`.
-- **`T-02b` has not landed**, so the Node SDK's types come from the spec rather
-  than from Go structs. See §3.
+- **`T-02b` had not landed**, so the Node SDK's types come from the spec rather
+  than from Go structs. See §3 — it landed the next day, and this stayed true on
+  purpose: the SDK's types keep coming from the published document.
 - **The nightly workflow has not been observed running in CI.** It needs
   `NIGHTLY_LLM_API_KEY`, which does not exist in the repository's secrets, and
   it skips rather than failing red without one. Its script is the same

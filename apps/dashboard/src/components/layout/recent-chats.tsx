@@ -18,14 +18,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
-import type { Thread } from "@/features/chat/types";
+import type { ConversationThread } from "@argentum/api-types";
 import { formatMessageTimestamp } from "@/features/chat/format";
 
 export function RecentChats() {
   const { data: threadsData } = useQuery({
     queryKey: ["threads"],
     queryFn: async () =>
-      (await api.get<{ threads: Thread[] }>("/threads")).data.threads,
+      (await api.get<{ threads: ConversationThread[] }>("/threads")).data.threads,
   });
   const threads = threadsData ?? [];
   const params = useParams({ strict: false }) as { threadId?: string };
@@ -35,8 +35,8 @@ export function RecentChats() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   async function deleteThread(id: string) {
-    const previousThreads = qc.getQueryData<Thread[]>(["threads"]) ?? [];
-    qc.setQueryData<Thread[]>(
+    const previousThreads = qc.getQueryData<ConversationThread[]>(["threads"]) ?? [];
+    qc.setQueryData<ConversationThread[]>(
       ["threads"],
       previousThreads.filter((t) => t.id !== id),
     );
@@ -46,7 +46,7 @@ export function RecentChats() {
     try {
       await api.delete(`/threads/${id}`);
     } catch {
-      qc.setQueryData<Thread[]>(["threads"], previousThreads);
+      qc.setQueryData<ConversationThread[]>(["threads"], previousThreads);
     }
   }
 

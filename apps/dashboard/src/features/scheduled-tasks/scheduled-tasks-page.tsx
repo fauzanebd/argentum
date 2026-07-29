@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TaskForm } from "./task-form";
 import { TaskRow } from "./task-row";
 import { TaskRunsSheet } from "./task-runs-sheet";
-import type { ScheduledTask } from "./types";
+import type { ScheduledTask } from "@argentum/api-types";
 
 export function ScheduledTasksPage() {
   const search = useSearch({ strict: false }) as { taskId?: string };

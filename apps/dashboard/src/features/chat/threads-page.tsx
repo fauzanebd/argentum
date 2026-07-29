@@ -5,17 +5,17 @@ import { Phone, Globe } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { Thread } from "./types";
+import type { ConversationThread } from "@argentum/api-types";
 import { formatRelative } from "./format";
 
 export function ThreadsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["threads"],
-    queryFn: async () => (await api.get<{ threads: Thread[] }>("/threads")).data.threads,
+    queryFn: async () => (await api.get<{ threads: ConversationThread[] }>("/threads")).data.threads,
   });
 
   const grouped = useMemo(() => {
-    const map = new Map<string, Thread[]>();
+    const map = new Map<string, ConversationThread[]>();
     for (const t of data ?? []) {
       const key = t.channel === "whatsapp" && t.phone_number ? t.phone_number : "Dashboard";
       const arr = map.get(key) ?? [];

@@ -131,14 +131,15 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	out := gin.H{
-		"task_id":       res.TaskID,
-		"thread_id":     res.Thread.ID,
-		"is_new_thread": res.IsNewThread,
-		"user_msg_id":   res.UserMsgID,
-	}
-	if res.BudgetWarning != nil {
-		out["budget_warning"] = res.BudgetWarning
-	}
-	c.JSON(http.StatusAccepted, out)
+	// A declared struct rather than a gin.H, so the dashboard's TypeScript for
+	// this shape is generated rather than hand-mirrored (T-02b). The JSON is
+	// identical: `budget_warning` is a nil pointer with `omitempty` in the
+	// ordinary case, exactly as the map omitted the key.
+	c.JSON(http.StatusAccepted, SendMessageResponse{
+		TaskID:        res.TaskID,
+		ThreadID:      res.Thread.ID,
+		IsNewThread:   res.IsNewThread,
+		UserMsgID:     res.UserMsgID,
+		BudgetWarning: res.BudgetWarning,
+	})
 }

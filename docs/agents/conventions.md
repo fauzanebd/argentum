@@ -178,16 +178,19 @@ A tool implements `Name()`, `Description()`, `Parameters()`, `Run()`, `Execute()
 
 ## Frontend
 
-- Feature-first: `src/features/<feature>/` holds pages, sub-components, and
-  `types.ts`. Shared primitives only in `src/components/ui/`.
+- Feature-first: `src/features/<feature>/` holds pages and sub-components.
+  Shared primitives only in `src/components/ui/`.
 - TanStack Query for all server state. No `useEffect` fetching.
 - Zustand for auth only. Everything else is either Query state or local state.
 - React Hook Form + Zod for every form.
 - Tailwind utilities; `cn()` from `src/lib/utils.ts` for conditional classes.
 - shadcn-style Radix primitives — extend the existing ones instead of adding a
   component library.
-- Types mirroring backend DTOs go in the feature's `types.ts` and must match the
-  Go JSON tags exactly.
+- **Types mirroring backend DTOs are generated, not written.** Import them from
+  `@argentum/api-types`; if one is missing or wrong, fix the Go struct and run
+  `make types` (`T-02b`). A feature-local `types.ts` is now only for shapes that
+  never cross the wire — form state, view models — and a hand-written mirror of a
+  Go struct is a review finding.
 
 ## Commits
 

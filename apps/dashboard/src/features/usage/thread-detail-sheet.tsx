@@ -8,17 +8,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  EVENT_LABELS,
-  buildRangeParams,
-  microToUsd,
-  type ThreadRow,
-  type UsageEvent,
-  type UsageSummary,
-} from "./types";
+import type { ThreadUsageRow, UsageEvent, UsageSummary } from "@argentum/api-types";
+import { EVENT_LABELS, buildRangeParams, microToUsd } from "./labels";
 
 interface Props {
-  thread: ThreadRow | null;
+  thread: ThreadUsageRow | null;
   from: string;
   to: string;
   onClose: () => void;
@@ -136,12 +130,16 @@ export function ThreadDetailSheet({ thread, from, to, onClose }: Props) {
                       </div>
                       <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                         <span>{new Date(e.created_at).toLocaleString()}</span>
-                        {(e.tokens_in > 0 || e.tokens_out > 0) && (
+                        {/* The token counters are `omitempty` on the Go
+                            struct, so a zero-token event omits them; the
+                            hand-written type declared them required and this
+                            compared `undefined > 0` (T-02b). */}
+                        {((e.tokens_in ?? 0) > 0 || (e.tokens_out ?? 0) > 0) && (
                           <span className="font-mono">
-                            {e.tokens_in}↓ {e.tokens_out}↑
+                            {e.tokens_in ?? 0}↓ {e.tokens_out ?? 0}↑
                           </span>
                         )}
-                        {e.cache_read_tokens_in > 0 && (
+                        {(e.cache_read_tokens_in ?? 0) > 0 && (
                           <span className="font-mono">
                             cache {e.cache_read_tokens_in}
                           </span>

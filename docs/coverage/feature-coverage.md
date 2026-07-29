@@ -69,7 +69,7 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Row + byte result caps      | ✅     | 100 rows / 200 KB default, tail-trimmed with a `truncated` flag          |
 | SQL mutation blocking       | ✅     | Tuned so "create a dashboard" / "update me on sales" pass                |
 | SQL injection patterns      | ✅     | Regex family on input                                                   |
-| Prompt-injection blocking   | ✅     | Regex + conservative LLM classifier (defaults FALSE)                    |
+| Prompt-injection blocking   | ✅     | Regex + conservative LLM classifier (defaults FALSE). Argentum's own per-turn instructions travel in the system prompt rather than the user message (`T-A2b`), so the classifier only ever judges what a caller sent — it refused four of five agentic report turns while they did not ([`api-reports.md`](api-reports.md) §7) |
 | Topic enforcement           | ✅     | Bilingual regex families + LLM admitting gate                           |
 | PII redaction               | 🟡     | Works, but over-broad: any 16-digit number, all emails, all phone numbers are blanked in output — breaks legitimate customer-contact queries |
 | System-prompt leak guard    | 🟡     | Blocks any output containing "you are an ai"; false-positives on "what can you do?" |
@@ -126,7 +126,8 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Distributed tracing         | ❌     | Not implemented                                                    |
 | Error tracking (Sentry)     | ❌     | Not implemented                                                    |
 | Persisted run traces        | ❌     | Tool calls stream to the UI, then are discarded                    |
-| CI test gate                | ❌     | CI builds api + worker only — no test, vet, lint, or frontend check |
+| CI test gate                | ✅     | `T-02`: `go vet`, `golangci-lint` and `go test -race` on every backend change, plus the dashboard's own lint and build |
+| Generated API types         | ✅     | `T-02b`: `packages/api-types` is generated from the Go structs by tygo and committed; the `types` job regenerates and diffs, so a struct change without `make types` is a red build. The dashboard's four hand-written `types.ts` files are gone ([`generated-types.md`](generated-types.md)) |
 
 ---
 

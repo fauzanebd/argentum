@@ -31,6 +31,7 @@ jobs:
       tokens: ${{ steps.filter.outputs.tokens }}
       report: ${{ steps.filter.outputs.report }}
       api: ${{ steps.filter.outputs.api }}
+      types: ${{ steps.filter.outputs.types }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -56,6 +57,20 @@ jobs:
             report:
               - 'apps/backend/internal/report/**'
               - 'apps/backend/internal/tools/generate_document.go'
+              - '.github/workflows/ci.yaml'
+            # The dashboard's types, and the Go they are generated from. The
+            # generated output is listed as well as the source, for the same
+            # reason the tokens filter lists both: a hand edit to a generated
+            # file has to trip the job that would overwrite it.
+            types:
+              - 'apps/backend/internal/domain/**'
+              - 'apps/backend/internal/app/event_bus.go'
+              - 'apps/backend/internal/app/budget_state.go'
+              - 'apps/backend/internal/transport/http/handlers/wire.go'
+              - 'apps/backend/pkg/models/**'
+              - 'apps/backend/tygo.yaml'
+              - 'packages/api-types/**'
+              - 'Makefile'
               - '.github/workflows/ci.yaml'
             # The published contract and everything generated from it. The
             # samples are executed rather than read, so a change to a handler
@@ -168,6 +183,41 @@ jobs:
             apps/backend/internal/report/theme \
           || {
             echo "::error::Generated design tokens are stale. Run 'make tokens' and commit the result."
+            exit 1
+          }
+
+  types:
+    name: API types
+    needs: changes
+    if: needs.changes.outputs.types == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both toolchains: node runs the generator, Go parses the structs. No
+      # pnpm install — the generator has no dependencies, deliberately, so this
+      # job cannot be broken by a lockfile.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: apps/backend/go.sum
+
+      - name: Regenerate the API types
+        run: make types
+
+      # The gate the ticket asks for: a Go struct that changed without a
+      # regeneration is a red build. The committed output is what the dashboard
+      # compiles against, so a diff here means the dashboard is type-checking
+      # against a contract the backend no longer serves.
+      - name: Fail on drift
+        run: |
+          git --no-pager diff --exit-code -- packages/api-types \
+          || {
+            echo "::error::packages/api-types is stale. Run 'make types' and commit the result."
             exit 1
           }
 

@@ -1,0 +1,80 @@
+# TypeScript generation for packages/api-types (T-02b).
+#
+# Run from this directory (tygo resolves package paths through the Go module),
+# which is what `make types` and packages/api-types/scripts/generate.mjs do.
+# The output is post-processed by that script and committed; CI regenerates and
+# diffs, so a Go struct change without `make types` is a red build.
+#
+# `enum_style: union` renders a Go string enum as a literal union rather than
+# as a bare `string`, which is what makes this generator worth having for the
+# dashboard: adding a channel in Go widens the union, and any `switch` that no
+# longer covers every case fails the dashboard's build. A `type Channel =
+# string` would let that ship silently — which is exactly what happened to the
+# hand-written type it replaces, still claiming `"whatsapp" | "dashboard"` two
+# channels after Discord and Lark landed.
+#
+# tygo only forms the union when every constant's name begins with the type's
+# name: `ChannelWhatsApp` does, `UsageEventLLMCall` and `APIReportQueued` do
+# not, and those still come out as `= string` with named constants beside them.
+# The result is uniform in behaviour if not in strength — a union is assignable
+# everywhere the alias was — and the alternative is renaming domain constants
+# to suit a TypeScript generator, which is the tail wagging the dog.
+type_mappings:
+  time.Time: "string"
+  json.RawMessage: "unknown"
+
+packages:
+  # The entities. Everything the dashboard reads out of `/api` is one of these
+  # or a list of them.
+  - path: "github.com/fauzanebd/argentum/internal/domain"
+    output_path: "../../packages/api-types/src/domain.ts"
+    enum_style: "union"
+    frontmatter: |
+      /* eslint-disable */
+      // Entities, from apps/backend/internal/domain.
+
+  # The streaming half of the contract, and the one with the most drift risk:
+  # nothing about a WebSocket frame is documented anywhere else.
+  #
+  # Only two files, because `internal/app` is the service layer — generating
+  # all of it would put ChatInput, AgentSpec and every other internal shape
+  # into a package whose whole promise is "these cross the wire".
+  - path: "github.com/fauzanebd/argentum/internal/app"
+    include_files:
+      - "event_bus.go"
+      - "budget_state.go"
+    output_path: "../../packages/api-types/src/events.ts"
+    enum_style: "union"
+    frontmatter: |
+      /* eslint-disable */
+      // WebSocket frames and the credit position, from apps/backend/internal/app.
+
+  # Responses that are neither entities nor events. One file, by design: see
+  # its package comment for what belongs in it.
+  - path: "github.com/fauzanebd/argentum/internal/transport/http/handlers"
+    include_files:
+      - "wire.go"
+    output_path: "../../packages/api-types/src/api.ts"
+    enum_style: "union"
+    # tygo resolves types within a package, not across them: without this,
+    # `*app.BudgetState` lands as the fallback type with the Go name in a
+    # comment beside it. The frontmatter below imports the real one.
+    type_mappings:
+      app.BudgetState: "BudgetState"
+    frontmatter: |
+      /* eslint-disable */
+      // `/api` response bodies that are not domain entities, from
+      // apps/backend/internal/transport/http/handlers/wire.go.
+      import type { BudgetState } from "./events.js";
+
+  # Inbound webhook envelopes. Named by the ticket, and generated for the same
+  # reason the rest is — but deliberately not re-exported from the package
+  # index: these are what Meta and Twilio send *us*, no browser ever sees one,
+  # and `models.Message` would collide with `domain.Message` in a barrel. Import
+  # them from "@argentum/api-types/webhooks" if you ever need one.
+  - path: "github.com/fauzanebd/argentum/pkg/models"
+    output_path: "../../packages/api-types/src/webhooks.ts"
+    enum_style: "union"
+    frontmatter: |
+      /* eslint-disable */
+      // Inbound WhatsApp / Twilio webhook envelopes, from apps/backend/pkg/models.

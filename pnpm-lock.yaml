@@ -8,6 +8,9 @@ importers:
 
   apps/dashboard:
     dependencies:
+      '@argentum/api-types':
+        specifier: workspace:*
+        version: link:../../packages/api-types
       '@hookform/resolvers':
         specifier: ^3.9.1
         version: 3.10.0(react-hook-form@7.83.0(react@18.3.1))
@@ -211,6 +214,8 @@ importers:
       vite:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
+
+  packages/api-types: {}
 
   packages/argentum-node:
     devDependencies:

@@ -11,7 +11,7 @@ import {
   SidebarMenuAction,
 } from "@/components/ui/sidebar";
 import { api } from "@/lib/api";
-import type { SavedDashboard } from "@/features/dashboard/types";
+import type { SavedDashboard } from "@argentum/api-types";
 
 export function GeneratedDashboards() {
   const qc = useQueryClient();

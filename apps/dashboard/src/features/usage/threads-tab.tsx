@@ -11,11 +11,8 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronRight } from "lucide-react";
-import {
-  CHANNEL_LABELS,
-  buildRangeParams,
-  type ThreadRow,
-} from "./types";
+import type { ThreadUsageRow } from "@argentum/api-types";
+import { CHANNEL_LABELS, buildRangeParams } from "./labels";
 import { ThreadDetailSheet } from "./thread-detail-sheet";
 
 interface Props {
@@ -27,13 +24,13 @@ const PAGE_SIZE = 25;
 
 export function ThreadsTab({ from, to }: Props) {
   const [offset, setOffset] = useState(0);
-  const [selected, setSelected] = useState<ThreadRow | null>(null);
+  const [selected, setSelected] = useState<ThreadUsageRow | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["usage-threads", from, to, offset],
     queryFn: async () =>
       (
-        await api.get<{ threads: ThreadRow[] }>("/usage/threads", {
+        await api.get<{ threads: ThreadUsageRow[] }>("/usage/threads", {
           params: { ...buildRangeParams(from, to), limit: PAGE_SIZE, offset },
         })
       ).data.threads,

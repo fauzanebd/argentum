@@ -188,12 +188,12 @@ pnpm dev   # then exercise the flow
 - [ ] Flow works in the browser — screenshot it
 - [ ] Loading and error states render
 - [ ] Mobile viewport is not broken (the chat UI has had regressions here)
-- [ ] Types match the backend JSON tags exactly
+- [ ] Wire types come from `@argentum/api-types`, not from a hand-written mirror
 - [ ] No `console.log` left behind
 
 ### Changed the WebSocket contract
 
-- [ ] Backend event struct and frontend `types.ts` agree
+- [ ] The event struct is in `internal/app/event_bus.go`, so `make types` regenerates the frontend's copy of it
 - [ ] Unknown event types are ignored by the client, not fatal
 - [ ] Reconnect still works — kill the API, restart, confirm the stream resumes
 - [ ] Event schema documented in `apps/backend/docs/`

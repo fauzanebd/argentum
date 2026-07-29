@@ -100,9 +100,11 @@ eval-dry: ## Validate the golden set and seed the eval tenant without calling th
 
 .PHONY: types
 types: ## Regenerate packages/api-types from Go structs (T-02b)
-	@echo "type generation not wired yet — see docs/plan/01-tickets.md T-02b"
-	@echo "the /v1 wire types are generated from the OpenAPI spec instead: make openapi"
-	@exit 1
+	node packages/api-types/scripts/generate.mjs
+
+.PHONY: types-check
+types-check: ## Verify packages/api-types matches the Go structs, writing nothing
+	node packages/api-types/scripts/generate.mjs --check
 
 # ---------------------------------------------------------------------------
 # The published API contract (T-A4)
