@@ -8,6 +8,20 @@ has one.
 
 ## Sprint 2 candidates (high confidence)
 
+### The tenant agent roster (`T-S1` → `T-S5`) — **scheduled, tickets written**
+The customer creates their own agents — Marketing, Ops, HR, Finance — each with
+a persona, a tool allowlist and a data-source allowlist, reachable from the
+dashboard, from a bound Discord/Lark/WhatsApp channel, and over `/v1`.
+**Status:** owner-set 2026-07-29. Not deferred — filed as five tickets in
+[`01-tickets.md`](01-tickets.md), scheduled for Sprint 2 beside `T-19` and
+`T-08`. Listed here so this file stays the single place to read what Sprint 2
+holds.
+**Why not Sprint 1:** Sprint 1's remaining days are committed to the API track;
+inserting a 9.5d track would have displaced `T-A5` and overrun. Nothing in the
+roster blocks anything in Sprint 1.
+**Estimate:** 9.5d (`T-S1` 2.5, `T-S2` 2.5, `T-S3` 1.0, `T-S4` 2.0, `T-S5` 1.5).
+`T-S1`/`T-S2` never-cut; `T-S4`/`T-S5` are cuts #2a and #2b.
+
 ### Phases 2–6: metric registry, watchers, actions, MCP, hardening (T-06 → T-18)
 **Why deferred:** Scheduling, again, and this one is expensive. The API track
 (`T-A1`→`T-A5`, 10.5d plus the foundation it forces earlier) was made the
@@ -187,6 +201,12 @@ instead of the hardcoded `0, 0`.
 ## Platform depth
 
 ### Multi-agent architecture (planner + specialists)
+**Not to be confused with the tenant agent roster (`T-S1`→`T-S5`), which is
+scheduled for Sprint 2.** This entry is the *internal* one: a planner that
+decomposes a question across specialists we write. That one is invisible to the
+customer and gated on eval data; the roster is a product surface the customer
+operates. A planner would eventually sit *inside* one roster agent. Neither
+blocks the other.
 **Why deferred:** T-16 raises the iteration budget, which is the cheap 80%.
 Specialist agents (SQL analyst / report writer / ops executor) need eval data to
 prove they beat one well-prompted agent — otherwise it is added cost and latency
@@ -194,6 +214,44 @@ for a feeling.
 **Trigger:** eval cases that consistently fail because one agent is doing two
 incompatible jobs in a single prompt.
 **Estimate:** 8d.
+**Note added 2026-07-29:** this entry was the only place the plan mentioned
+multiple agents, so a customer-facing roster was read into it for a while. It
+does not cover that, and its trigger would never have fired for it — eval
+regressions are not customer demand. The roster is now its own track in
+[`01-tickets.md`](01-tickets.md).
+
+### Per-agent user grants
+Restrict which users may open which agent, so the HR agent is reachable only by
+HR. `T-S1`'s v1 makes company membership the whole boundary: the Finance agent
+cannot query the HR source, but any member can talk to the Finance agent.
+**Why deferred:** decided 2026-07-29 to keep the roster's first version to
+persona + tools + sources. Grants add an authz surface to every agent route and
+every enqueue path, plus a negative test on each — roughly doubling `T-S1`.
+**Trigger:** the first tenant who puts genuinely sensitive data behind an agent
+— payroll, personnel, unreleased financials. Expect it early, because "HR agent"
+is one of the four use cases that motivated the track. **Until it ships, the
+dashboard must say plainly that an agent is not an access boundary.**
+**Estimate:** 2d. `agents` and `agent_sources` are shaped so an `agent_grants`
+table adds no column to either.
+
+### Per-agent model, temperature, and budget
+A cheap model for the marketing agent, the expensive one for finance.
+**Why deferred:** the seams already exist — `BudgetResolver` is
+`func(ctx, companyID)` and `llmCache.For` takes a tier — but a tenant who puts
+an agent on a weak model has changed what `T-16` guarantees about fabricated
+figures, so it needs its own eval run per configuration, not a settings field.
+**Trigger:** a tenant whose bill is dominated by one high-volume, low-stakes
+agent.
+**Estimate:** 1.5d plus an eval matrix.
+
+### Agent templates
+Prebuilt Marketing / Ops / HR / Finance personas a tenant can start from instead
+of writing a prompt in an empty textarea.
+**Why deferred:** we do not yet know what a good persona for these looks like in
+production. Shipping four guesses as "templates" makes them the default and
+freezes the guess.
+**Trigger:** three tenants having written roughly the same persona by hand.
+**Estimate:** 1d.
 
 ### Persisted run traces with replay
 **Why deferred:** Finding O-3. T-17's OTel spans cover live debugging; replay is a

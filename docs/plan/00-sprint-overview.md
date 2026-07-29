@@ -371,7 +371,8 @@ change no one's workflow. Watchers do.
 | Plans, checkout, invoicing         | Price after the value ships. `T-03` caps spend in the meantime.     |
 | Slack / Telegram / email channels  | Additive, low-risk, no workflow change. See `backlog.md`.            |
 | New DB drivers (BigQuery etc.)     | Additive against the driver registry. Pull-driven by demand.         |
-| Multi-agent / planner architecture | `T-16` raises the iteration budget; specialist agents need eval data first. |
+| Multi-agent / planner architecture | `T-16` raises the iteration budget; specialist agents **we** write need eval data first. This is the internal planner, not the tenant roster below. |
+| **The tenant agent roster (`T-S1`→`T-S5`)** | Owner-set 2026-07-29: the customer creates their own Marketing / Ops / HR / Finance agents. **Scheduled for Sprint 2, not deferred** — 9.5d of written tickets that would have displaced `T-A5` and overrun if inserted here. |
 | Forecasting / anomaly ML           | Watchers ship with threshold + delta comparators. Statistical anomaly detection is Sprint 2. |
 | SSO / SOC2                         | No enterprise deal is blocked on it yet.                            |
 | Native dashboard embedding         | Metabase share URLs are adequate.                                   |
@@ -549,6 +550,13 @@ cannot.
 
 Sprint 2 therefore opens with two never-cut items already queued — `T-19` (embed
 auth) and `T-08` (watchers) — before anything new is considered.
+
+**Updated 2026-07-29: three, not two.** The tenant agent roster (`T-S1`→`T-S5`,
+9.5d) was made a Sprint 2 commitment by the owner on 2026-07-29 and its tickets
+are written. Sprint 2 therefore opens with ~40.5 days already spoken for. Say it
+now rather than let Sprint 2 repeat Sprint 1's arithmetic surprise: **something
+in phases 2–6 will have to move again**, and that decision is better made against
+a written roster track than against a discovery in week four.
 
 `T-00b` is uncuttable for a scheduling reason rather than a product one: it moves
 every file in the workspace, so it is only cheap **before** the sprint. Deferred to

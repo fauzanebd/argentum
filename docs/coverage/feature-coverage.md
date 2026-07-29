@@ -58,7 +58,8 @@ What Argentum actually does, as of 2026-07-26 (`argentum` @ `3891579`).
 | Metric / semantic layer         | ❌     | Every question re-derives SQL. Same question can yield two numbers  |
 | Write-back / actions            | ❌     | Structurally read-only by design; no permissioned action layer      |
 | Proactive alerts / watchers     | ❌     | Automation is cron-only; nothing is condition-triggered             |
-| Multi-agent / specialist agents | ❌     | Single agent, single prompt                                         |
+| Tenant agent roster (Marketing / Ops / HR / Finance) | ❌ | Single agent, single prompt. Scheduled Sprint 2 as `T-S1`→`T-S5` |
+| Multi-agent / specialist agents | ❌     | Internal planner + specialists. Backlog, not the roster above       |
 | Forecasting / anomaly detection | ❌     | Not implemented                                                     |
 
 ## Safety and guardrails

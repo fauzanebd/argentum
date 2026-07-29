@@ -15,22 +15,29 @@ number when you land, and update this table.** Always write both `.up.sql` and
 `.down.sql`. The playbook is
 [`../agents/playbooks/add-migration.md`](../agents/playbooks/add-migration.md).
 
-The last applied migration is **`022`**.
+The last applied migration is **`029_webhook_delivery`**. **Corrected 2026-07-29
+— this line said `022` while the tree held everything through `029`**, which is
+precisely the failure the paragraph above warns about: the next ticket to file a
+migration would have read `022`, claimed `023`, and shipped a file golang-migrate
+would never run. The next free number is **`030`**.
 
 | Ticket | Migration | Status |
 | ------ | --------- | ------ |
-| T-04   | `021_user_invites` | **applied** (filed as 027) |
-| T-R5   | `022_report_branding` | **applied** (filed as 030) |
-| T-05   | `023_agent_actions` | next free numbers from here |
-| T-06   | `024_metric_definitions` | |
-| T-08   | `025_watchers` | |
-| T-10   | `026_actions` | |
-| T-13   | `027_api_keys` | |
-| T-15   | `028_outbound_webhooks` | |
-| T-19   | `029_embed_keys` | |
-| T-20   | `030_thread_embed` | |
-| T-A1   | `031_api_channel` | |
-| T-A2   | `032_documents_api` | |
+| T-04   | `021_user_invites` | **applied** |
+| T-R5   | `022_report_branding` | **applied** |
+| T-05   | `023_agent_actions` | **applied** |
+| T-13   | `024_api_keys` | **applied** |
+| T-A1   | `025_api_channel`, `026_agent_actions_request_id` | **applied** |
+| T-A2   | `027_documents_api`, `028_api_reports`, `029_webhook_delivery` | **applied** |
+| T-S1   | `030_agents` | next free numbers from here |
+| T-S2   | `031_thread_agent` | |
+| T-S4   | `032_agent_channel_bindings` | |
+| T-06   | `033_metric_definitions` | pre-assignment only — re-derive on landing |
+| T-08   | `034_watchers` | pre-assignment only |
+| T-10   | `035_actions` | pre-assignment only |
+| T-15   | `036_outbound_webhooks` | pre-assignment only (subscription model; the sender landed in `029`) |
+| T-19   | `037_embed_keys` | pre-assignment only |
+| T-20   | `038_thread_embed` | pre-assignment only |
 
 ---
 
@@ -2939,6 +2946,465 @@ Three sprint-shaping consequences, stated so nobody rediscovers them in week six
 - **Watchers and actions move to Sprint 2.** Sprint 1's original wedge becomes
   Sprint 2's, behind `T-19`. Sprint 2 opens with two never-cut items already
   queued, which is worth knowing now while it is still a plan and not a surprise.
+  **Three, as of 2026-07-29** — the tenant agent roster (`T-S1`→`T-S5`, 9.5d)
+  joined them; its tickets are at the end of this file.
 - **`T-13` and `T-14` split.** They were one week-5 block; keys are now
   foundational and land in 1c, while MCP stays cut #2 and gets cheaper for it.
   `T-16` remains out of week 6 and uncuttable — the smoke test moved it.
+
+---
+
+# Sprint 2 — The agent roster (`T-S1` → `T-S5`)
+
+**Filed 2026-07-29, owner-set. Scheduled for Sprint 2, alongside `T-19` and
+`T-08`, not inserted into Sprint 1.** Sprint 1 closes on the API track as
+committed; nothing below moves a Sprint 1 date.
+
+## Why this track exists, and why it is not the backlog's multi-agent item
+
+`backlog.md` has carried "Multi-agent architecture (planner + specialists)" under
+Platform depth since the plan was written. **That is a different thing and this
+track does not deliver it.** The distinction is worth stating once, precisely,
+because the two are one word apart and eight days apart in cost:
+
+| | Backlog's item | This track |
+| --- | --- | --- |
+| Who creates the agents | We do, in the codebase | **The customer does, in the dashboard** |
+| Who picks which one runs | The planner, per question | The user, per thread — or a channel binding |
+| Visible to the tenant | No | It is the entire feature |
+| Trigger | Eval cases failing because one agent does two incompatible jobs | A customer wanting a Marketing agent, an Ops agent, an HR agent, a Finance agent |
+
+The backlog's trigger **will never fire for this goal**. It is an internal
+quality mechanism gated on eval regressions; this is a product surface gated on
+customer demand, and the demand is already stated. Both can exist later — a
+planner would sit *inside* one roster agent — but neither blocks the other, and
+filing this under that entry would have buried a committed feature behind a
+condition nobody was measuring.
+
+## Decisions (locked — do not re-litigate inside the tickets)
+
+1. **An agent is persona + tools + sources. Not per-agent user grants.** Chosen
+   2026-07-29. Company membership remains the authorization boundary: any member
+   can talk to any of their company's agents. The Finance agent physically
+   cannot query the HR source, but any employee can open the Finance agent and
+   ask it what it can reach. **This is a real limitation and it must be said out
+   loud in the dashboard copy**, not discovered by a customer who assumed
+   otherwise — an agent named "HR" implies an access boundary that v1 does not
+   draw. Per-agent grants are a follow-on (`backlog.md`), and the schema below
+   is shaped so adding an `agent_grants` table later touches no existing column.
+2. **Empty means unrestricted, for both `allowed_tools` and `agent_sources`.**
+   One rule, both places. The alternative — empty means *nothing* — reads safer
+   and behaves worse: every tool added after an agent was created would be
+   invisible to it, and every new database connection would reach no agent until
+   somebody remembered to tick it. An agent that must be restricted carries an
+   explicit list. This rule is why the `T-S1` backfill can create one unrestricted
+   default agent per company and change no existing behaviour at all.
+3. **The persona is an addendum, never a replacement.** It appends to
+   `SystemPrompt()` exactly as `T-A2b`'s directive does (`bootstrap/stack.go:336`).
+   The shared prompt carries the SQL-dialect rules, the anti-fabrication
+   language `T-16` fought for, and the formatting contract. A customer-authored
+   persona that could replace it would be a self-service route back to the `C-1`
+   fabrication.
+4. **Scoping is enforced in the tools, not in the prompt.** A persona saying
+   "only use the finance database" is a wish. `tools.ResolveSource`
+   (`internal/tools/source_resolve.go:23`) is the choke point — `get_schema:135`,
+   `run_sql:105` and `create_visualization:113` all go through it — and it is
+   where the source allowlist is checked.
+5. **All three surfaces in v1**: dashboard picker (`T-S3`), channel bindings
+   (`T-S4`), and `/v1` (`T-S5`). Decided 2026-07-29. The reason to take the
+   wider scope is that an Ops agent nobody can reach from the ops Discord
+   channel is a settings page, not a product.
+
+**Order:** `T-S1` → `T-S2` → then `T-S3`, `T-S4`, `T-S5` in any order (they are
+three independent surfaces over the same composition). **Total 9.5d.**
+
+**On the cut markers.** `T-S4` and `T-S5` carry **#2a** and **#2b**, which are
+positions *within this track*, not entries in `00-sprint-overview.md` §6 — that
+list is Sprint 1's and closes with the sprint. Sprint 2 needs its own cut order
+and does not have one yet; when it is written, these two go in it first and in
+that order. `T-S1`→`T-S2`→`T-S3` are never-cut as a unit: the first two without
+the third ship a roster nobody can select, which is worse than not shipping.
+
+---
+
+## T-S1 · Agent roster: schema, CRUD, and the dashboard tab
+**Repo:** BE, FE, PKG · **Size:** 2.5d · **Deps:** T-02b, T-04 · **Priority:** P0 · **Never cut**
+**Migration:** `030_agents`
+
+### Why
+
+The customer has four jobs and one agent. Marketing, Ops, HR and Finance ask
+incompatible questions of incompatible data through a single prompt that must
+serve all of them, and the only per-tenant customization today is the system
+prompt nobody outside this repo can edit. This ticket is the noun; `T-S2` is the
+verb.
+
+### Do
+
+- Migration `030_agents.up.sql` / `.down.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS agents (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id     UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    name           TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    persona_prompt TEXT NOT NULL DEFAULT '',
+    -- Empty = every registered tool. See locked decision 2.
+    allowed_tools  TEXT[] NOT NULL DEFAULT '{}',
+    is_default     BOOLEAN NOT NULL DEFAULT false,
+    enabled        BOOLEAN NOT NULL DEFAULT true,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_company_name
+    ON agents(company_id, lower(name));
+-- Exactly one default per company, enforced the way db_connections does it
+-- (001_init.up.sql:33) rather than in application code.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_one_default
+    ON agents(company_id) WHERE is_default;
+
+-- Empty set = every source the company owns. See locked decision 2.
+CREATE TABLE IF NOT EXISTS agent_sources (
+    agent_id      UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    connection_id UUID NOT NULL REFERENCES db_connections(id) ON DELETE CASCADE,
+    PRIMARY KEY (agent_id, connection_id)
+);
+
+-- Backfill: one unrestricted default agent per existing company. No rows in
+-- agent_sources, empty allowed_tools — so every existing tenant keeps exactly
+-- the agent they have today, under a name.
+INSERT INTO agents (company_id, name, description, is_default)
+SELECT id, 'Analyst', 'General analytics assistant', true FROM companies;
+```
+
+- `domain.Agent` + `domain.AgentRepository` in `internal/domain/agent.go`, beside
+  `agent_action.go`. Repo in `adapters/postgres/agent_repo.go`.
+- `internal/app/agent_service.go`: create, update, delete, list, set-default.
+  Deleting the default is refused while another agent exists; deleting the last
+  agent is refused outright.
+- `handlers/agents.go` — `GET|POST /api/agents`, `GET|PUT|DELETE /api/agents/:id`,
+  `PUT /api/agents/:id/default`. Register in `cmd/api/router.go` beside
+  `NewChatHandler` (`router.go:48`).
+- Policy rows in `cmd/api/policy.go`: **reads `RoleMember`, all writes
+  `RoleAdmin`.** An agent's tool and source allowlist is "what the agent can
+  reach", which is the exact line `policy.go` already draws for connections.
+- `make types` — `domain.Agent` reaches `packages/api-types` through tygo, or CI
+  is red.
+- Dashboard: Settings → Agents. List, create, edit (name, description, persona
+  textarea, tool checkboxes, source checkboxes), set-default, delete. The empty
+  checkbox set must render as **"all"**, not as an empty box — the UI is where
+  decision 2 either reads as a feature or as a bug.
+
+### Notes for the implementer
+
+- Copy `internal/app/dashboard_service.go` for shape and
+  `adapters/postgres/agent_action_repo.go` for the repo idiom. Do not invent a
+  third pattern.
+- The tool checkbox list comes from the live registry, not a hardcoded array.
+  `bootstrap.Stack.Tools` already logs its own names at boot
+  (`stack.go:286-290`); expose the same slice through a `GET /api/agents/tools`
+  or fold it into the agents payload. A hardcoded list drifts the first time a
+  tool is added, and `generate_document` is already conditional on storage being
+  configured (`stack.go:227-246`) — so the *correct* list is per-deployment.
+- `lower(name)` uniqueness, not raw: "Finance" and "finance" in one picker is a
+  support ticket.
+- Nothing in this ticket touches the turn. A roster exists and changes nothing
+  until `T-S2` lands. That is deliberate — it keeps a migration, a CRUD surface
+  and a UI out of the ticket that rewires the agent pipeline.
+
+### Acceptance
+
+- [ ] An admin creates "Finance", scoped to one source and three tools; it round-trips through `GET /api/agents`
+- [ ] After migration, every pre-existing company has exactly one enabled default agent and chat behaves identically
+- [ ] A member gets 200 on `GET /api/agents` and **403 on `POST`, `PUT`, `DELETE`, and set-default**
+- [ ] A company cannot read or edit another company's agent by id — 404, not 403
+- [ ] Two agents named "finance" and "Finance" in one company is rejected
+- [ ] Deleting the last remaining agent is refused
+- [ ] `make types-check` is red if `domain.Agent` changes without regeneration
+
+### Gate
+
+`make check` clean. Then, against a live API: create three agents through the
+dashboard, paste `GET /api/agents`, and paste the 403 body a member receives on
+`POST /api/agents`. Dump `agents` and show the backfilled default for the demo
+company. Run one chat turn and show the reply is unchanged from before the
+migration.
+
+### Out of scope
+
+- Anything reading these rows at turn time — that is `T-S2`
+- Per-agent user grants (backlog)
+- Per-agent model / temperature / budget overrides (`T-S2`'s notes say why)
+- Agent templates or a gallery of prebuilt personas
+
+---
+
+## T-S2 · One turn, one agent: composition and enforcement
+**Repo:** BE · **Size:** 2.5d · **Deps:** T-S1 · **Priority:** P0 · **Never cut**
+**Migration:** `031_thread_agent`
+
+### Why
+
+`T-S1` stores an agent. This makes one run. It is also the only ticket in the
+track with a security property: the Finance agent must be *unable* to read the
+HR source, and "unable" means a tool error, not a paragraph in a persona.
+
+### Do
+
+- Migration `031_thread_agent.up.sql` / `.down.sql`:
+  - `ALTER TABLE conversation_threads ADD COLUMN agent_id UUID REFERENCES agents(id) ON DELETE SET NULL;`
+  - `ALTER TABLE agent_actions ADD COLUMN agent_id UUID;` (no FK — the audit log
+    is append-only and must survive the agent's deletion, same reasoning as its
+    nullable `thread_id`, `023_agent_actions.up.sql:20`)
+  - `ALTER TABLE usage_events ADD COLUMN agent_id UUID;` + index on
+    `(company_id, agent_id)` — "what does the Finance agent cost us" is the
+    first question a customer with four agents asks.
+- `queue.ChatRunPayload.AgentID` (`internal/queue/tasks.go:60`), set by
+  `app.ChatEnqueuer` from the thread's `agent_id`, falling back to the company
+  default.
+- `app.AgentSpec` (`internal/app/chat_runner.go:32`) gains `Persona string` and
+  `ToolNames []string`. Keep it primitives-in, not `*domain.Agent`: the factory
+  lives in `bootstrap` and should not learn the domain entity to append a string.
+- `newAgentFactory` (`internal/bootstrap/stack.go:326`):
+  - filter `d.tools` to `spec.ToolNames` when non-empty, by `t.Name()`
+  - `turnPrompt = d.systemPrompt + persona + directive`, in that order
+- **New package `internal/agentscope`**, shaped exactly like
+  `internal/agentbudget`: a scope value carried on the context
+  (`agentscope.WithScope(ctx, scope)`), because that is how a constraint reaches
+  seven tools without changing seven signatures. `ChatRunner.Run` installs it
+  beside the budget tracker (`chat_runner.go:250-259`).
+- Enforce in two places and only two:
+  - `tools.ResolveSource` (`source_resolve.go:23`) filters `conns` by the scope
+    before any other branch, so the "multiple sources, specify source_id" menu
+    lists only what this agent may see, and an out-of-scope `source_id` is
+    "not found for this company" — the same string an id from another tenant
+    gets. **Do not add a distinct "not allowed for this agent" error**; it tells
+    a prompt-injected model exactly what to probe for.
+  - `ListSourcesTool.Execute` (`list_sources.go:38`) filters the catalog it
+    returns.
+- `ChatRunner` writes `agent_id` on every audit row and usage event.
+
+### Notes for the implementer
+
+- **The tool filter must run over the already-wrapped slice.** `s.Tools` is
+  budget-guarded (`stack.go:258`) and audit-wrapped (`stack.go:264`) before the
+  factory sees it; filtering a wrapped list by `Name()` preserves both. Building
+  a per-agent list from the raw constructors would silently drop auditing —
+  which is the exact failure `T-05` chose a decorator-over-the-registry to
+  prevent.
+- **Prompt caching regresses, by design.** Anthropic caching is keyed on the
+  system-message prefix (`stack.go:362-369`). Distinct personas mean one cache
+  entry per agent, so a rarely-used agent pays full input on its first turn of
+  each 5-minute window. Accept it; do not "fix" it by moving the persona into
+  the user message, which is where `T-A2b` proved the guardrails will judge it
+  as an injection. Note the observed cache-hit change in the coverage doc.
+- `withSourcesContext` (`chat_runner.go:~305`) prefetches the catalog from
+  `r.connections.ListByCompany` and injects it into the message. **Filter it by
+  the same scope** or the agent is told about a source its tools will then
+  refuse — the most confusing possible failure, and one no tool-level test
+  catches.
+- A thread whose agent was deleted (`agent_id` → NULL) falls back to the company
+  default rather than failing. A conversation should not become unusable because
+  an admin tidied the roster.
+- Per-agent model and budget overrides are **not** in this ticket. The seam
+  exists — `BudgetResolver` is already `func(ctx, companyID)`
+  (`chat_runner.go:66-73`) and `llmCache.For` takes a tier — and widening both to
+  take an agent is a follow-on with its own eval run, because a customer who
+  puts the Finance agent on a cheap model has changed what `T-16` guarantees.
+
+### Acceptance
+
+- [ ] A thread on the Finance agent (scoped to source A) runs `run_sql` against A and answers
+- [ ] The same thread asking for source B's data gets a tool error and **no rows from B**, and `list_sources` never named B
+- [ ] The error text for an out-of-scope source is byte-identical to the error for another tenant's source id
+- [ ] An agent whose `allowed_tools` excludes `create_dashboard` produces no dashboard even when asked directly three times
+- [ ] Every `agent_actions` and `usage_events` row from that turn carries the agent's id
+- [ ] An agent with empty `allowed_tools` and no `agent_sources` behaves exactly as the agent does today (regression: `make eval` score does not drop)
+- [ ] Deleting an agent mid-conversation leaves the thread answerable on the default
+
+### Gate
+
+`make check` clean. `make eval` on the backfilled default agent — paste the
+score beside the `T-16` baseline of 97.0% (32/33); **a regression here is a
+failed gate, not a note.** Then a live transcript: same question, two agents,
+different scopes, one answer and one refusal. Dump the `agent_actions` rows for
+both turns showing distinct `agent_id`s. Record it in
+`../coverage/agent-roster.md`.
+
+### Out of scope
+
+- The dashboard picker (`T-S3`), channel bindings (`T-S4`), `/v1` (`T-S5`)
+- Per-agent model, temperature, or budget
+- Agent-to-agent handoff or a planner — see the backlog item this track is not
+
+---
+
+## T-S3 · Agent picker in the dashboard chat
+**Repo:** FE, BE · **Size:** 1d · **Deps:** T-S2 · **Priority:** P0 · **Never cut**
+
+### Why
+
+`T-S2` makes a thread's agent decide the turn. Until the web chat can set it,
+every thread is the default agent and the roster is a settings page that does
+nothing.
+
+### Do
+
+- `POST /api/threads` (and whatever `handlers/chat.go` uses to open a thread)
+  accepts `agent_id`; omitted means the company default. An `agent_id` from
+  another company, or a disabled agent, is a 404.
+- Thread list and thread header show the agent's name; the picker is disabled
+  once a thread has messages. **Changing the agent mid-thread is out of scope**
+  — the history in memory was produced under different tools and sources, and
+  reinterpreting it under new ones is a decision, not a widget.
+- New-chat screen: agent chooser showing name + description.
+
+### Acceptance
+
+- [ ] Opening a chat on "Ops" produces a thread whose `agent_id` is Ops, visible in the header
+- [ ] Reloading the page keeps the agent; a follow-up turn runs under it
+- [ ] `agent_id` belonging to another company returns 404 and creates no thread
+- [ ] A disabled agent does not appear in the picker and is refused if posted directly
+- [ ] The picker is not editable on a thread that already has messages
+
+### Gate
+
+A screen recording: pick Ops, ask a question, reload, ask a follow-up, and show
+both `agent_actions` rows carrying the Ops agent id.
+
+### Out of scope
+
+- Switching agents inside a live thread
+- Per-agent theming or avatars
+- Suggesting an agent based on the question — that is the planner, deliberately not here
+
+---
+
+## T-S4 · Channel bindings: Discord, Lark, WhatsApp
+**Repo:** BE, FE · **Size:** 2d · **Deps:** T-S2 · **Priority:** P1 · **Cut #2a**
+**Migration:** `032_agent_channel_bindings`
+
+### Why
+
+The ops team asks in the ops Discord channel. Making them open the dashboard to
+reach the Ops agent removes the reason the channel integrations exist.
+
+### Do
+
+- Migration `032_agent_channel_bindings.up.sql` / `.down.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS agent_channel_bindings (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id  UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    agent_id    UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    channel     TEXT NOT NULL,   -- domain.Channel
+    -- Discord channel id | Lark chat id | E.164 phone number.
+    external_id TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_binding_channel_ref
+    ON agent_channel_bindings(company_id, channel, external_id);
+```
+
+- One resolver, called by all three inbound paths:
+  `bound agent → company default`. The three call sites are the Discord handler
+  (`handlers/discord_webhook.go` and `cmd/discord`), `handlers/lark_webhook.go`,
+  and `handlers/webhook.go` (WhatsApp). It sets `ChatRunPayload.AgentID` and
+  nothing else — `T-S2` already does the rest.
+- Thread forking (`ThreadService`, idle-gap classifier) must carry the agent
+  onto the forked thread, not re-resolve it to the default.
+- Dashboard: bindings table under Settings → Agents — channel, identifier,
+  agent. Admin-only.
+
+### Notes for the implementer
+
+- **One resolver function, three call sites.** Three copies of "look up the
+  binding, else default" will disagree within a month; the Discord path in
+  particular exists twice, in the webhook handler and the gateway bot.
+- `external_id` is stored as the provider gives it. Do not normalize Discord
+  snowflakes; do normalize phone numbers to the same shape
+  `allowed_phone_numbers` uses, or the lookup misses.
+- A binding to a deleted agent is cascaded away by the FK and the channel
+  silently returns to the default. That is the correct behaviour, and it needs a
+  test that says so.
+
+### Acceptance
+
+- [ ] A message in the bound Discord channel runs under that agent — proven from `agent_actions.agent_id`
+- [ ] An unbound channel runs under the company default
+- [ ] Binding two agents to one channel is rejected by the unique index, and the API returns a clean 409
+- [ ] A binding cannot name another company's agent
+- [ ] A thread forked by the idle-gap classifier keeps the parent's agent
+- [ ] Deleting the agent removes the binding and the channel falls back to the default
+
+### Gate
+
+Live: bind #ops to the Ops agent, ask a scoped question in Discord, paste the
+reply and the `agent_actions` row. Then ask the same question in an unbound
+channel and show it ran on the default. Then delete the Ops agent and show the
+channel still answers.
+
+### Out of scope
+
+- Per-user bindings (the person, not the channel)
+- Mentioning an agent by name inside a message to switch mid-thread
+- Slack / Telegram (backlog — they have no channel adapter yet)
+
+---
+
+## T-S5 · `agent_id` on `/v1`
+**Repo:** BE, PKG · **Size:** 1.5d · **Deps:** T-S2 · **Priority:** P1 · **Cut #2b**
+
+### Why
+
+`/v1` is a surface the tenant's own backend calls (`T-A3`, `T-A4`). If the
+roster is invisible there, an integrator building a finance workflow has no way
+to reach the Finance agent, and the API silently means "the default agent"
+forever.
+
+### Do
+
+- `GET /v1/agents` — id, name, description, enabled. Scope: the same read scope
+  `GET /v1/me` uses.
+- Optional `agent_id` on `POST /v1/chat` (`handlers/v1_chat.go`) and
+  `POST /v1/reports` (`handlers/v1_reports.go`). Omitted = company default.
+- Unknown or other-company `agent_id` → **404 with the `/v1` envelope**, not 403.
+  A 403 confirms the id exists, which is an existence oracle across tenants.
+- `openapi/v1.yaml`: the new operation, both request fields, and the error. Then
+  regenerate both SDKs (`packages/argentum-node`, `packages/argentum-python`).
+- The quickstart gains a two-line "choose an agent" section — every code block
+  in it is a file CI executes (`T-A4`), so it is a test, not prose.
+
+### Notes for the implementer
+
+- `T-A4` installed four drift checks binding the spec to the code — a route
+  diff, a scope diff, a response-field reflection diff, and a
+  regenerate-and-diff on the SDKs. All four will fail on an incomplete job.
+  That is the ticket working, not the ticket being hard.
+- Idempotency (`T-A1`) records ids, not payloads. Two requests with the same
+  `Idempotency-Key` and different `agent_id`s must 409 like any other changed
+  body — verify, do not assume.
+
+### Acceptance
+
+- [ ] `POST /v1/chat` with the Finance agent's id answers under its scope; the same call with no `agent_id` runs on the default
+- [ ] An `agent_id` from another company returns 404 with the standard envelope and starts no turn and bills nothing
+- [ ] `GET /v1/openapi.json` documents the field, and both SDKs expose it after regeneration
+- [ ] All four `T-A4` drift checks pass
+- [ ] Same key, changed `agent_id` → 409
+
+### Gate
+
+`curl` transcripts: the same question to two agents with two answers, the
+cross-tenant 404, and the 409. Then the generated Node and Python snippets from
+the quickstart, run against a live server, both passing agent ids.
+
+### Out of scope
+
+- Per-key default agent (a key is a machine credential; the caller passes what it wants)
+- MCP exposure of the roster — `T-14`, when it lands
+- Per-agent rate limits or spend caps
