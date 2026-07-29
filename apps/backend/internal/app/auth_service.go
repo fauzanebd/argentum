@@ -19,10 +19,28 @@ type AuthService struct {
 	companies domain.CompanyRepository
 	users     domain.UserRepository
 	signer    *auth.TokenSigner
+	roster    RosterSeeder
 }
 
 func NewAuthService(c domain.CompanyRepository, u domain.UserRepository, s *auth.TokenSigner) *AuthService {
 	return &AuthService{companies: c, users: u, signer: s}
+}
+
+// RosterSeeder gives a new company its first agent (T-S1). Narrow interface
+// rather than *AgentService so this package's signup path does not acquire a
+// dependency on the roster's CRUD surface.
+type RosterSeeder interface {
+	EnsureDefault(ctx context.Context, companyID string)
+}
+
+// WithRoster makes signup seed the default agent. Without it a company created
+// after migration 030 would start with an empty roster while every company
+// that existed before it got a backfilled default — the same product,
+// depending on the signup date, which is exactly the kind of difference nobody
+// finds until T-S2 resolves a turn to no agent at all.
+func (s *AuthService) WithRoster(r RosterSeeder) *AuthService {
+	s.roster = r
+	return s
 }
 
 // SignupResult bundles the freshly created company + user with an access /
@@ -67,6 +85,13 @@ func (s *AuthService) Signup(ctx context.Context, companyName, email, password s
 	}
 	if err := s.companies.Create(ctx, company); err != nil {
 		return nil, fmt.Errorf("create company: %w", err)
+	}
+	// The starting roster: one unrestricted default agent, identical to what
+	// 030_agents backfilled for every company that predates it. Best-effort by
+	// design — see AgentService.EnsureDefault for why a signup does not fail
+	// over it.
+	if s.roster != nil {
+		s.roster.EnsureDefault(ctx, company.ID)
 	}
 
 	hash, err := auth.HashPassword(password)

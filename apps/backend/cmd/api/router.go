@@ -52,6 +52,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewReportsHandler(d.brandingSvc, d.companyRepo).Register(authed)
 	handlers.NewAuditHandler(d.actionRepo).Register(authed)
 	handlers.NewAPIKeysHandler(d.apiKeySvc).Register(authed)
+	handlers.NewAgentsHandler(d.agentSvc).Register(authed)
 	if d.dashboardSvc != nil {
 		handlers.NewDashboardHandler(d.dashboardSvc).Register(authed)
 	}

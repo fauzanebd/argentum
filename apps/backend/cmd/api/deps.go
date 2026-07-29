@@ -55,6 +55,10 @@ type apiDeps struct {
 	larkSvc      *app.LarkService
 	brandingSvc  *branding.Service
 	apiKeySvc    *app.APIKeyService
+	// The tenant agent roster (T-S1). It holds this deployment's tool registry
+	// by name, which is why it is built from the same tools.Registry the
+	// worker runs rather than from a list maintained beside the handler.
+	agentSvc *app.AgentService
 	// The `/v1` report surface (T-A2). docGen and storageSvc are nil on a
 	// deployment without object storage — the same condition that leaves
 	// generate_document unregistered in the worker — and the routes that need

@@ -216,14 +216,8 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
 	s.Documents = documentRepo
 
-	s.Tools = []interfaces.Tool{
-		tools.NewListSourcesTool(s.Connections),
-		tools.NewGetSchemaToolWithRedis(s.TenantPool, s.Connections, s.Redis),
-		tools.NewRunSQLTool(s.TenantPool, s.Connections, s.UsageSvc, cfg.MaxQueryRows, cfg.MaxQueryResultBytes),
-		tools.NewCreateVisualizationTool(s.TenantPool, s.Connections, metabaseClient, s.Connections, s.UsageSvc),
-		tools.NewCreateDashboardTool(metabaseClient, s.UsageSvc, app.NewDashboardService(dashboardRepo, metabaseClient)),
-		tools.NewScheduleTaskTool(s.ScheduledSvc),
-	}
+	// Object storage first, because whether it exists decides whether the
+	// registry below has a generate_document in it.
 	if storageSvc, err := buildStorageService(cfg); err != nil {
 		logrus.WithError(err).Warn("storage disabled; generate_document tool will not be registered")
 	} else if storageSvc != nil {
@@ -238,12 +232,30 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// installs the untrusted-spec caps on top; the agent's path leaves them
 		// off, which is the only difference between the two.
 		s.Docs = docgen.New(storageSvc, documentRepo, s.Companies, brandingSvc, s.UsageSvc, presignTTL)
-		s.Tools = append(s.Tools, tools.NewGenerateDocumentTool(s.Docs))
 		logrus.WithFields(logrus.Fields{
 			"bucket":   cfg.MinIOBucket,
 			"endpoint": cfg.MinIOEndpoint,
 		}).Info("generate_document tool enabled")
 	}
+
+	// One construction site for the tool list, shared with the API (T-S1),
+	// which serves the same names as the checkboxes an admin scopes an agent
+	// with. A second list would have gone stale the first time a tool was
+	// added — and a tool missing from those checkboxes is a capability no
+	// agent can ever be given.
+	s.Tools = tools.Registry(tools.RegistryDeps{
+		Pool:                s.TenantPool,
+		Connections:         s.Connections,
+		Redis:               s.Redis,
+		Usage:               s.UsageSvc,
+		Metabase:            metabaseClient,
+		MetabaseSource:      s.Connections,
+		Dashboards:          app.NewDashboardService(dashboardRepo, metabaseClient),
+		Scheduled:           s.ScheduledSvc,
+		Docs:                s.Docs,
+		MaxQueryRows:        cfg.MaxQueryRows,
+		MaxQueryResultBytes: cfg.MaxQueryResultBytes,
+	})
 
 	// Every tool runs behind the per-turn budget guard (T-16). Wrapping here
 	// rather than at each construction site means a tool added later cannot

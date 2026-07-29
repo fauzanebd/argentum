@@ -2,6 +2,7 @@ import { useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { GeneralTab } from "./general-tab";
 import { ConnectionsTab } from "./connections-tab";
+import { AgentsTab } from "./agents-tab";
 import { PhonesTab } from "./phones-tab";
 import { IntegrationsTab } from "./integrations-tab";
 import { TeamTab } from "./team-tab";
@@ -23,6 +24,7 @@ export function SettingsPage() {
   const tabs = [
     { id: "general", label: "General" },
     { id: "connections", label: "Databases" },
+    { id: "agents", label: "Agents" },
     { id: "phones", label: "Phone numbers" },
     { id: "integrations", label: "Integrations" },
     ...(isAdmin ? [{ id: "reports", label: "Reports" }] : []),
@@ -63,6 +65,14 @@ export function SettingsPage() {
           <Tabs.Content value="connections">
             <AdminGate>
               <ConnectionsTab />
+            </AdminGate>
+          </Tabs.Content>
+          {/* Reads are member-level here — T-S3 puts the roster in the chat
+              picker — but every write is admin, so the panel is gated the same
+              way the other configuration panels are. */}
+          <Tabs.Content value="agents">
+            <AdminGate>
+              <AgentsTab />
             </AdminGate>
           </Tabs.Content>
           <Tabs.Content value="phones">

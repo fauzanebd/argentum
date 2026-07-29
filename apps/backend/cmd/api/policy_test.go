@@ -97,6 +97,7 @@ func testDeps(cfg *config.Config, signer *auth.TokenSigner) *apiDeps {
 		authSvc:      app.NewAuthService(nil, nil, signer),
 		teamSvc:      app.NewTeamService(nil, nil),
 		apiKeySvc:    app.NewAPIKeyService(nil),
+		agentSvc:     app.NewAgentService(nil, nil, nil),
 		companySvc:   &app.CompanyService{},
 		usageSvc:     &app.UsageService{},
 		dashboardSvc: app.NewDashboardService(nil, nil),

@@ -1060,6 +1060,66 @@ Record, gate output and all seven findings:
 
 ---
 
+# Sprint 2
+
+## Phase 2a — The agent roster (2026-07-29, in progress)
+
+`T-S1` the roster exists
+
+**Out of order, and the log should say so before it says anything else.**
+[`../plan/00-sprint-overview.md`](../plan/00-sprint-overview.md) scheduled this
+track for Sprint 2 precisely because inserting it into Sprint 1 *"would have
+displaced `T-A5` and overrun"*. `T-A5` has not landed; this has. Sprint 1's
+last committed ticket is open while Sprint 2's first one is code-complete,
+which is a re-plan or a note, and somebody has to decide which.
+
+The thing itself: a customer with four jobs had one agent. `agents` and
+`agent_sources` (migration `030`), an entity, a repository, a service, six
+routes and a Settings tab — and **nothing that reads any of it at turn time**.
+That separation is the point. A roster exists and changes no behaviour until
+`T-S2` lands, which keeps a schema, a CRUD surface and a UI out of the ticket
+that rewires the agent pipeline.
+
+Three decisions came out of building it that the ticket did not contain:
+
+- **One tool registry, built by both processes.** The ticket asked for the
+  checkbox list to come from the live registry rather than a hardcoded array,
+  and the only way to mean that across two binaries is one construction site.
+  `internal/tools/registry.go` replaced the literal slice in
+  `bootstrap/stack.go`; the API calls the same function and reads names off it.
+  A second list would have gone stale the first time a tool was added, and a
+  tool missing from those checkboxes is a capability **no agent can ever be
+  given** — a ceiling on the feature that nothing would have reported. It also
+  keeps `generate_document` honest: registered only where object storage
+  exists, so the checkbox disappears on the same condition the tool does.
+
+- **Signup seeds the new company's first agent.** `030`'s backfill covers every
+  company that predates it and no company created after it. Without a seed the
+  product would have had two classes of tenant, and `T-S2` — which resolves an
+  unspecified thread to the company default — would have found nothing to run
+  for the second. It is idempotent, and its failure is logged rather than
+  returned: a signup that fails *after* the company row is written is worse than
+  a tenant who clicks "Create agent" once.
+
+- **The limitation is in the form, not in a doc.** An agent is not an access
+  boundary — company membership still is — and an agent named "HR" implies
+  otherwise. The Agents tab says so above the fields, and the empty checkbox
+  groups render `All tools` rather than as empty boxes, because empty means
+  *unrestricted* and an unlabelled empty box reads as the opposite of what the
+  backend does with it.
+
+The gate is honest and outstanding: `make check` is clean, `make types-check`
+is current, the route-classification test passes and twelve service tests cover
+the delete refusals, the case-insensitive name collision, the cross-company 404
+and the seeding path surviving a repository failure. **Migration `030` has
+never been applied to a database**, and the ticket's acceptance boxes stay
+unticked until three agents have been created through a live dashboard.
+
+Record, decisions and the outstanding gate:
+[`agent-roster.md`](agent-roster.md).
+
+---
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

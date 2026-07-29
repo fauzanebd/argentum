@@ -61,11 +61,13 @@ packages:
     # comment beside it. The frontmatter below imports the real one.
     type_mappings:
       app.BudgetState: "BudgetState"
+      domain.Agent: "Agent"
     frontmatter: |
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
       // apps/backend/internal/transport/http/handlers/wire.go.
       import type { BudgetState } from "./events.js";
+      import type { Agent } from "./domain.js";
 
   # Inbound webhook envelopes. Named by the ticket, and generated for the same
   # reason the rest is — but deliberately not re-exported from the package

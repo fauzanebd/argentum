@@ -29,8 +29,8 @@ would never run. The next free number is **`030`**.
 | T-13   | `024_api_keys` | **applied** |
 | T-A1   | `025_api_channel`, `026_agent_actions_request_id` | **applied** |
 | T-A2   | `027_documents_api`, `028_api_reports`, `029_webhook_delivery` | **applied** |
-| T-S1   | `030_agents` | next free numbers from here |
-| T-S2   | `031_thread_agent` | |
+| T-S1   | `030_agents` | **written 2026-07-29, not yet applied** |
+| T-S2   | `031_thread_agent` | next free number from here |
 | T-S4   | `032_agent_channel_bindings` | |
 | T-06   | `033_metric_definitions` | pre-assignment only — re-derive on landing |
 | T-08   | `034_watchers` | pre-assignment only |
@@ -3030,6 +3030,13 @@ the third ship a roster nobody can select, which is worse than not shipping.
 ## T-S1 · Agent roster: schema, CRUD, and the dashboard tab
 **Repo:** BE, FE, PKG · **Size:** 2.5d · **Deps:** T-02b, T-04 · **Priority:** P0 · **Never cut**
 **Migration:** `030_agents`
+
+> **Status 2026-07-29: code complete, gate outstanding.** Built ahead of the
+> schedule that filed it — Sprint 1's `T-A5` is still open. `make check` clean,
+> `make types-check` current, 12 service tests. The acceptance boxes below stay
+> unticked until the gate runs against a live API; migration `030` has not been
+> applied to any database. Record:
+> [`../coverage/agent-roster.md`](../coverage/agent-roster.md).
 
 ### Why
 

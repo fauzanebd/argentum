@@ -1,6 +1,9 @@
 package handlers
 
-import "github.com/fauzanebd/argentum/internal/app"
+import (
+	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/domain"
+)
 
 // Wire types for the dashboard's `/api` surface that are not domain entities
 // (T-02b).
@@ -20,6 +23,31 @@ import "github.com/fauzanebd/argentum/internal/app"
 // `/v1` is not in scope for this file. Its types are generated from
 // `apps/backend/openapi/v1.yaml` (T-A4) — a published contract is authored,
 // not derived.
+
+// AgentToolInfo is one tool checkbox in Settings → Agents (T-S1).
+//
+// Name comes from the live registry, so a tool added on the backend appears in
+// the dashboard without a frontend change. Label does not: a tool's own
+// Description is prompt text written for the model — three sentences of
+// instruction on when to call it — and pasting that beside a checkbox would be
+// unreadable. An unlabelled tool falls back to its bare name rather than
+// disappearing, which is the failure direction a per-agent allowlist can
+// afford.
+type AgentToolInfo struct {
+	Name  string `json:"name"`
+	Label string `json:"label"`
+}
+
+// AgentsResponse is the body of `GET /api/agents`.
+//
+// The tool vocabulary rides along with the roster rather than sitting on its
+// own route: it is only ever read by the same form, and `GET /api/agents/tools`
+// beside `GET /api/agents/:id` is a static segment competing with a wildcard in
+// one method tree.
+type AgentsResponse struct {
+	Agents []*domain.Agent `json:"agents"`
+	Tools  []AgentToolInfo `json:"tools"`
+}
 
 // SendMessageResponse is the body of `POST /api/chat` — the acknowledgement
 // that a turn was queued, not the answer. The answer arrives over the

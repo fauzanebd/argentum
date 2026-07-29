@@ -3,6 +3,53 @@
 // Entities, from apps/backend/internal/domain.
 
 //////////
+// source: agent.go
+
+/**
+ * Agent is one entry in a company's roster (T-S1).
+ * The customer has four jobs and one agent: Marketing, Ops, HR and Finance ask
+ * incompatible questions of incompatible data through a single prompt. An
+ * Agent is persona + tools + sources — a named, tenant-editable configuration
+ * of the one pipeline this product runs.
+ * It is **not** an access boundary. Company membership remains the
+ * authorization boundary, so any member can open any of their company's
+ * agents; the Finance agent physically cannot query the HR source, but nothing
+ * stops an employee from opening it and asking what it can reach. Per-agent
+ * user grants are a follow-on, and this struct is shaped so adding them later
+ * changes no field here.
+ * Nothing reads these rows at turn time yet — that is T-S2.
+ */
+export interface Agent {
+  id: string;
+  company_id: string;
+  name: string;
+  description: string;
+  /**
+   * PersonaPrompt is appended to the shared system prompt, never a
+   * replacement for it (bootstrap.SystemPrompt). The shared prompt carries
+   * the SQL-dialect rules, the anti-fabrication language and the formatting
+   * contract; a customer-authored prompt that could replace it would be a
+   * self-service route back to fabricated answers.
+   */
+  persona_prompt: string;
+  /**
+   * AllowedTools is empty for "every registered tool". See AllowsTool.
+   */
+  allowed_tools: string[];
+  /**
+   * SourceIDs is empty for "every source the company owns". See
+   * AllowsSource. Stored in agent_sources rather than inline: these are real
+   * foreign keys, and a deleted connection has to leave every agent's
+   * allowlist with it.
+   */
+  source_ids: string[];
+  is_default: boolean;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+//////////
 // source: agent_action.go
 
 /**

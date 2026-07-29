@@ -3,10 +3,36 @@
 // `/api` response bodies that are not domain entities, from
 // apps/backend/internal/transport/http/handlers/wire.go.
 import type { BudgetState } from "./events.js";
+import type { Agent } from "./domain.js";
 
 //////////
 // source: wire.go
 
+/**
+ * AgentToolInfo is one tool checkbox in Settings → Agents (T-S1).
+ * Name comes from the live registry, so a tool added on the backend appears in
+ * the dashboard without a frontend change. Label does not: a tool's own
+ * Description is prompt text written for the model — three sentences of
+ * instruction on when to call it — and pasting that beside a checkbox would be
+ * unreadable. An unlabelled tool falls back to its bare name rather than
+ * disappearing, which is the failure direction a per-agent allowlist can
+ * afford.
+ */
+export interface AgentToolInfo {
+  name: string;
+  label: string;
+}
+/**
+ * AgentsResponse is the body of `GET /api/agents`.
+ * The tool vocabulary rides along with the roster rather than sitting on its
+ * own route: it is only ever read by the same form, and `GET /api/agents/tools`
+ * beside `GET /api/agents/:id` is a static segment competing with a wildcard in
+ * one method tree.
+ */
+export interface AgentsResponse {
+  agents: (Agent | undefined)[];
+  tools: AgentToolInfo[];
+}
 /**
  * SendMessageResponse is the body of `POST /api/chat` — the acknowledgement
  * that a turn was queued, not the answer. The answer arrives over the

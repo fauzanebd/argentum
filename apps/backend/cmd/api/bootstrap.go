@@ -263,6 +263,34 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		})
 	}
 
+	// The agent roster (T-S1). The tool checkboxes an admin scopes an agent
+	// with are the names of the registry the worker actually runs, built here
+	// from the same tools.Registry — this process constructs the tools and
+	// calls none of them, which is a few pointer copies and the only way the
+	// two lists cannot drift. Docs is deps.docGen, so a deployment without
+	// object storage offers no generate_document checkbox for the same reason
+	// the worker registers no such tool.
+	deps.agentSvc = app.NewAgentService(
+		pgctl.NewAgentRepo(controlDB), connRepo,
+		tools.Names(tools.Registry(tools.RegistryDeps{
+			Pool:                deps.tenant,
+			Connections:         connRepo,
+			Redis:               rdb,
+			Usage:               deps.usageSvc,
+			Metabase:            mbCli,
+			MetabaseSource:      connRepo,
+			Dashboards:          deps.dashboardSvc,
+			Scheduled:           deps.scheduledSvc,
+			Docs:                deps.docGen,
+			MaxQueryRows:        cfg.MaxQueryRows,
+			MaxQueryResultBytes: cfg.MaxQueryResultBytes,
+		})),
+	)
+	// Signup seeds the new company's first agent. Wired after the roster
+	// exists rather than at NewAuthService, which runs several hundred lines
+	// earlier and before there is a connection repository to validate against.
+	deps.authSvc.WithRoster(deps.agentSvc)
+
 	// Shared with app.MeteredLLM, which is too deep in the call graph to be
 	// handed a collector, so /metrics reports streaming-metering health too.
 	deps.metrics = metrics.Default()

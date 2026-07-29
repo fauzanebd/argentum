@@ -55,6 +55,19 @@ var apiPolicy = middleware.RolePolicy{
 	"POST /api/connections/test":                       domain.RoleAdmin,
 	"POST /api/connections/:id/test":                   domain.RoleAdmin,
 
+	// The agent roster (T-S1). Reads are member because T-S3 puts this list in
+	// the chat picker, and an agent nobody but an admin can see is a settings
+	// page rather than a product. Every write is admin on the same line drawn
+	// for connections just above: an agent's tool and source allowlist is
+	// "what the agent can reach", and editing a persona rewrites what every
+	// member of the company gets answered by.
+	"GET /api/agents":             domain.RoleMember,
+	"GET /api/agents/:id":         domain.RoleMember,
+	"POST /api/agents":            domain.RoleAdmin,
+	"PUT /api/agents/:id":         domain.RoleAdmin,
+	"DELETE /api/agents/:id":      domain.RoleAdmin,
+	"PUT /api/agents/:id/default": domain.RoleAdmin,
+
 	// WhatsApp allowlist: adding a number grants a phone the company's agent.
 	"GET /api/phones":           domain.RoleMember,
 	"POST /api/phones":          domain.RoleAdmin,

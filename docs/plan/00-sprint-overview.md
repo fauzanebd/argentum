@@ -372,7 +372,7 @@ change no one's workflow. Watchers do.
 | Slack / Telegram / email channels  | Additive, low-risk, no workflow change. See `backlog.md`.            |
 | New DB drivers (BigQuery etc.)     | Additive against the driver registry. Pull-driven by demand.         |
 | Multi-agent / planner architecture | `T-16` raises the iteration budget; specialist agents **we** write need eval data first. This is the internal planner, not the tenant roster below. |
-| **The tenant agent roster (`T-S1`→`T-S5`)** | Owner-set 2026-07-29: the customer creates their own Marketing / Ops / HR / Finance agents. **Scheduled for Sprint 2, not deferred** — 9.5d of written tickets that would have displaced `T-A5` and overrun if inserted here. |
+| **The tenant agent roster (`T-S1`→`T-S5`)** | Owner-set 2026-07-29: the customer creates their own Marketing / Ops / HR / Finance agents. **Scheduled for Sprint 2, not deferred** — 9.5d of written tickets that would have displaced `T-A5` and overrun if inserted here. **`T-S1` was then built the same day, out of that order**, so this row is now a schedule the tree does not match: `T-A5` is open and 2.5d of Sprint 2 is code-complete. Decide re-plan or note at sprint close — see [`../coverage/agent-roster.md`](../coverage/agent-roster.md) §0. |
 | Forecasting / anomaly ML           | Watchers ship with threshold + delta comparators. Statistical anomaly detection is Sprint 2. |
 | SSO / SOC2                         | No enterprise deal is blocked on it yet.                            |
 | Native dashboard embedding         | Metabase share URLs are adequate.                                   |
