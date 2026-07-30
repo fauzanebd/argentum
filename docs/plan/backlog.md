@@ -8,7 +8,7 @@ has one.
 
 ## Sprint 2 candidates (high confidence)
 
-### The tenant agent roster (`T-S1` → `T-S5`) — **scheduled, tickets written**
+### The tenant agent roster (`T-S1` → `T-S5`) — **`T-S1`→`T-S3` shipped, `T-S4`/`T-S5` open**
 The customer creates their own agents — Marketing, Ops, HR, Finance — each with
 a persona, a tool allowlist and a data-source allowlist, reachable from the
 dashboard, from a bound Discord/Lark/WhatsApp channel, and over `/v1`.
@@ -21,6 +21,10 @@ inserting a 9.5d track would have displaced `T-A5` and overrun. Nothing in the
 roster blocks anything in Sprint 1.
 **Estimate:** 9.5d (`T-S1` 2.5, `T-S2` 2.5, `T-S3` 1.0, `T-S4` 2.0, `T-S5` 1.5).
 `T-S1`/`T-S2` never-cut; `T-S4`/`T-S5` are cuts #2a and #2b.
+**Delivered 2026-07-30:** `T-S1`, `T-S2` and `T-S3` are done — built 2026-07-29/30
+and gated against a live API, `030`/`031` applied
+([`../coverage/agent-roster.md`](../coverage/agent-roster.md)). 3.5d left in the
+track, and it is no longer a Sprint 2 candidate so much as a Sprint 2 remainder.
 
 ### Tenant MCP servers as a source (`T-M1` → `T-M4`) — **scheduled, tickets written**
 The customer registers their own MCP server — ticketing, CRM, an internal ops
@@ -33,7 +37,9 @@ the credential.
 **Status:** owner-set 2026-07-29. Filed as four tickets in
 [`01-tickets.md`](01-tickets.md), scheduled for Sprint 2.
 **Why not Sprint 1:** Sprint 1 has one open ticket (`T-A5`) and no room; this
-track also deps `T-S1`/`T-S2`, which are themselves Sprint 2.
+track also deps `T-S1`/`T-S2`, which are themselves Sprint 2. **Those two landed
+and were gated on 2026-07-30**, so the dependency is discharged — what keeps this
+track out of Sprint 1 is now only the room, not the ordering.
 **Why it is not small:** an MCP server cannot be a `db_connection` —
 `db.Driver` demands `ExecuteReadOnly(sql)` and `ExtractSchema()`, and it has
 neither. The real cost is that `internal/tools/registry.go` builds one static

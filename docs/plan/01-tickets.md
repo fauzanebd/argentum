@@ -3054,11 +3054,12 @@ the third ship a roster nobody can select, which is worse than not shipping.
 **Repo:** BE, FE, PKG · **Size:** 2.5d · **Deps:** T-02b, T-04 · **Priority:** P0 · **Never cut**
 **Migration:** `030_agents`
 
-> **Status 2026-07-29: code complete, gate outstanding.** Built ahead of the
-> schedule that filed it — Sprint 1's `T-A5` is still open. `make check` clean,
-> `make types-check` current, 12 service tests. The acceptance boxes below stay
-> unticked until the gate runs against a live API; migration `030` has not been
-> applied to any database. Record:
+> **Status: DONE — gate run live 2026-07-30.** Built ahead of the schedule that
+> filed it (Sprint 1's `T-A5` is still open), code complete 2026-07-29, and
+> gated on 2026-07-30 once `030` and `031` were applied: 11 pre-existing
+> companies backfilled with one default each, the `C-1` question still answering
+> 3,863,405,700 under a scoped agent, and every refusal — member 403, foreign
+> 404, name collision 409, last-agent 409 — proven over the wire. Record:
 > [`../coverage/agent-roster.md`](../coverage/agent-roster.md).
 
 ### Why
@@ -3146,13 +3147,13 @@ SELECT id, 'Analyst', 'General analytics assistant', true FROM companies;
 
 ### Acceptance
 
-- [ ] An admin creates "Finance", scoped to one source and three tools; it round-trips through `GET /api/agents`
-- [ ] After migration, every pre-existing company has exactly one enabled default agent and chat behaves identically
-- [ ] A member gets 200 on `GET /api/agents` and **403 on `POST`, `PUT`, `DELETE`, and set-default**
-- [ ] A company cannot read or edit another company's agent by id — 404, not 403
-- [ ] Two agents named "finance" and "Finance" in one company is rejected
-- [ ] Deleting the last remaining agent is refused
-- [ ] `make types-check` is red if `domain.Agent` changes without regeneration
+- [x] An admin creates "Finance", scoped to one source and three tools; it round-trips through `GET /api/agents`
+- [x] After migration, every pre-existing company has exactly one enabled default agent and chat behaves identically — 11/11, and the `C-1` figure is unchanged
+- [x] A member gets 200 on `GET /api/agents` and **403 on `POST`, `PUT`, `DELETE`, and set-default** — via a real invite + accept
+- [x] A company cannot read or edit another company's agent by id — 404, not 403
+- [x] Two agents named "finance" and "Finance" in one company is rejected — 409, from the index
+- [x] Deleting the last remaining agent is refused — 409
+- [x] `make types-check` is red if `domain.Agent` changes without regeneration — proven by renaming `allowed_tools` and reverting
 
 ### Gate
 
@@ -3175,12 +3176,15 @@ migration.
 **Repo:** BE · **Size:** 2.5d · **Deps:** T-S1 · **Priority:** P0 · **Never cut**
 **Migration:** `031_thread_agent`
 
-> **Status 2026-07-29: code complete, gate outstanding.** `make check` clean,
-> `make types-check` current, 31 new tests across five packages. The acceptance
-> boxes below stay unticked until the gate runs against a live API — and the
-> gate's `make eval` regression check is the reason: neither `030` nor `031`
-> has been applied to any database. Record:
-> [`../coverage/agent-roster.md`](../coverage/agent-roster.md).
+> **Status: DONE — gate run live 2026-07-30.** Code complete 2026-07-29; gated
+> once `030`/`031` were applied. `make eval` is level with `T-16`'s 97.0% on the
+> comparable 33 cases (the one failure is the same `ambiguous-headcount`), and the
+> same question asked of two differently-scoped agents returned one answer and one
+> refusal with distinct `agent_id`s on every row. Two honest caveats in the
+> record: the eval ran in two parts because the environment stopped it at case 33,
+> and `T-A2b`'s `report-directive` case cannot pass here at all — no `MINIO_*`, so
+> `generate_document` is not in the registry. Record:
+> [`../coverage/agent-roster.md`](../coverage/agent-roster.md) §5.
 
 ### Why
 
@@ -3253,13 +3257,13 @@ HR source, and "unable" means a tool error, not a paragraph in a persona.
 
 ### Acceptance
 
-- [ ] A thread on the Finance agent (scoped to source A) runs `run_sql` against A and answers
-- [ ] The same thread asking for source B's data gets a tool error and **no rows from B**, and `list_sources` never named B
-- [ ] The error text for an out-of-scope source is byte-identical to the error for another tenant's source id
-- [ ] An agent whose `allowed_tools` excludes `create_dashboard` produces no dashboard even when asked directly three times
-- [ ] Every `agent_actions` and `usage_events` row from that turn carries the agent's id
-- [ ] An agent with empty `allowed_tools` and no `agent_sources` behaves exactly as the agent does today (regression: `make eval` score does not drop)
-- [ ] Deleting an agent mid-conversation leaves the thread answerable on the default
+- [x] A thread on the Finance agent (scoped to source A) runs `run_sql` against A and answers — 3,863,405,700
+- [x] The same thread asking for source B's data gets a tool error and **no rows from B**, and `list_sources` never named B
+- [x] The error text for an out-of-scope source is byte-identical to the error for another tenant's source id — same sentence, one-source menu, in both directions
+- [x] An agent whose `allowed_tools` excludes `create_dashboard` produces no dashboard even when asked directly three times — no `create_dashboard` row at all; the tool was never offered
+- [x] Every `agent_actions` and `usage_events` row from that turn carries the agent's id
+- [x] An agent with empty `allowed_tools` and no `agent_sources` behaves exactly as the agent does today (regression: `make eval` score does not drop) — 97.0% on the comparable 33, same single failure
+- [x] Deleting an agent mid-conversation leaves the thread answerable on the default — `agent_id` → NULL, next turn ran as `Analyst`
 
 ### Gate
 
@@ -3282,10 +3286,10 @@ both turns showing distinct `agent_id`s. Record it in
 **Repo:** FE, BE · **Size:** 1d · **Deps:** T-S2 · **Priority:** P0 · **Never cut**
 **Migration:** none — `031_thread_agent` already added the column.
 
-> **Status 2026-07-30: code complete, gate outstanding.** `make check` clean,
-> `make types-check` current, 9 new tests across two packages. The acceptance
-> boxes below stay unticked: every one of them needs a live API and a browser,
-> and `030`/`031` are still applied to no database. Record:
+> **Status: DONE — gate run live 2026-07-30.** Code complete the same day, then
+> gated through headless Chrome over the DevTools protocol (the extension was not
+> connected, so the record is stills rather than video): pick Ops, ask, reload,
+> follow up, and all four `agent_actions` rows carry the Ops id. Record:
 > [`../coverage/agent-roster.md`](../coverage/agent-roster.md).
 
 ### Why
@@ -3307,11 +3311,11 @@ nothing.
 
 ### Acceptance
 
-- [ ] Opening a chat on "Ops" produces a thread whose `agent_id` is Ops, visible in the header
-- [ ] Reloading the page keeps the agent; a follow-up turn runs under it
-- [ ] `agent_id` belonging to another company returns 404 and creates no thread
-- [ ] A disabled agent does not appear in the picker and is refused if posted directly
-- [ ] The picker is not editable on a thread that already has messages
+- [x] Opening a chat on "Ops" produces a thread whose `agent_id` is Ops, visible in the header — `Dashboard · Ops`
+- [x] Reloading the page keeps the agent; a follow-up turn runs under it — both turns' rows carry Ops
+- [x] `agent_id` belonging to another company returns 404 and creates no thread — thread count 7 before, 7 after
+- [x] A disabled agent does not appear in the picker and is refused if posted directly — 404
+- [x] The picker is not editable on a thread that already has messages — it is not rendered as a control at all
 
 ### Gate
 

@@ -8,9 +8,9 @@ names this file too, and each later ticket appends its own section.
 
 | Ticket | What | Size | State |
 | ------ | ---- | ---- | ----- |
-| `T-S1` | `agents` + `agent_sources`, CRUD, Settings tab | 2.5d | **code complete 2026-07-29, live gate outstanding** |
-| `T-S2` | Turn composition and enforcement | 2.5d | **code complete 2026-07-29, live gate outstanding** |
-| `T-S3` | Agent picker in the dashboard chat | 1.0d | **code complete 2026-07-30, live gate outstanding** |
+| `T-S1` | `agents` + `agent_sources`, CRUD, Settings tab | 2.5d | **done — gate run live 2026-07-30** |
+| `T-S2` | Turn composition and enforcement | 2.5d | **done — gate run live 2026-07-30** |
+| `T-S3` | Agent picker in the dashboard chat | 1.0d | **done — gate run live 2026-07-30** |
 | `T-S4` | Discord / Lark / WhatsApp channel bindings | 2.0d | not started |
 | `T-S5` | `agent_id` on `/v1`, plus `GET /v1/agents` | 1.5d | not started |
 
@@ -175,13 +175,30 @@ scoping on every read. A fake keyed on the raw name would have let the
 `"finance"`/`"Finance"` test pass against a service that has no such rule,
 because that rule is a database index.
 
-**The gate is outstanding and the acceptance boxes stay unticked.** It wants:
-three agents created through the dashboard, the `GET /api/agents` body, the 403
-a member receives on `POST`, the `agents` table dumped showing the backfilled
-default for the demo company, and one chat turn proving the reply is unchanged
-from before the migration. `make infra` provides the postgres for it.
+**The gate ran on 2026-07-30 and the acceptance boxes are ticked.** `030` and
+`031` were applied together with `migrate -path migrations/control` against the
+`make infra` postgres; the tree went 29 → 31 clean, and the backfill wrote one
+unrestricted default `Analyst` for each of the eleven companies that predated
+it — including the demo, eval and every ticket-gate tenant. Signup's seed then
+did the same for the two created through the API afterwards: 13 companies, 13
+defaults, one apiece.
 
-**Migration `030_agents` has never been applied.** It is written and unrun.
+What the live run produced, all against `:8090` on the local control plane:
+
+| Acceptance item | Result |
+| --------------- | ------ |
+| "Finance" scoped to one source and three tools round-trips through `GET /api/agents` | `allowed_tools=[list_sources,get_schema,run_sql]`, `source_ids=[f74b2c96…]`, three more agents beside it |
+| Every pre-existing company has exactly one enabled default, chat unchanged | 11/11 backfilled; the `C-1` question answered **3,863,405,700** — the same figure `T-16` fixed it to, under a scoped agent |
+| A member gets 200 on `GET` and 403 on every write | `{"error":"admin only"}` on `POST`, `PUT`, `DELETE` **and** set-default; `GET` 200 |
+| Another company's agent by id is 404, not 403 | `{"error":"no such agent"}`, 404 |
+| `"finance"` beside `"Finance"` is rejected | 409, `an agent called "finance" already exists` — the index, not the service |
+| Deleting the last agent is refused | 409, `a company needs at least one agent` |
+| `make types-check` is red if `domain.Agent` changes without regeneration | renaming `allowed_tools` → `allowed_tools_renamed` failed the check (`1 file(s) differ`); reverting made it green |
+
+The member account came through the real invite path — `POST /api/users/invite`,
+then `accept-invite` with the returned token — rather than a row edited into
+`users`, because "a member cannot write the roster" is a claim about the token a
+member actually holds.
 
 ### 5. For T-S2
 
@@ -205,11 +222,11 @@ from before the migration. `make infra` provides the postgres for it.
 
 ## T-S2 · One turn, one agent
 
-> **Status 2026-07-29: code complete, gate outstanding.** `make check` clean,
-> `make types-check` current, 31 new tests. Neither `030` nor `031` has been
-> applied to any database, so the live half of the gate — including the `make
-> eval` regression the ticket calls a failed gate rather than a note — has not
-> run.
+> **Status 2026-07-30: done, gate run — see §5.** `make check` clean,
+> `make types-check` current, 31 new tests. `030` and `031` are applied, the
+> `make eval` regression check came back level with `T-16`'s 97.0%, and the same
+> question asked of two differently-scoped agents produced one answer and one
+> refusal.
 
 ### 1. What ships
 
@@ -364,18 +381,56 @@ registry to prevent.
 a real turn answering from source A and refusing source B. Those are the gate,
 and the gate needs a database with `030` and `031` applied.
 
-### 5. The gate, outstanding
+### 5. The gate, run 2026-07-30
 
-Unchanged from the ticket, and none of it has run:
+**1. `make eval` — no regression.** The comparable set is the 33 cases `T-16`
+scored 97.0% (32/33) on; the golden set is now 35, because `T-A2b` added two.
+Against those 33: **32 pass, 1 fail**, and the failure is `ambiguous-headcount` —
+the *same* case, failing for the same reason
+([`eval-baseline.md`](eval-baseline.md) *The one failure*). **97.0%, unchanged.**
 
-1. `make eval` on the backfilled default agent, scored against `T-16`'s 97.0%
-   (32/33). **A regression is a failed gate, not a note.**
-2. A live transcript: the same question to two agents with different scopes —
-   one answer, one refusal.
-3. The `agent_actions` rows for both turns, showing distinct `agent_id`s.
+Two caveats, both stated rather than smoothed over:
 
-`make infra` provides the postgres. Both `030` and `031` are written and
-unapplied.
+- The run happened in two parts. The first was stopped by the environment at
+  case 33 of 35 (31 pass / 1 fail at that point); the remaining three were run
+  with `-only`. Two runs, one score — not what the ticket asked for, and the
+  reason is an interrupted process rather than anything the harness found.
+- `report-directive-is-not-an-injection` (one of `T-A2b`'s two) **fails in this
+  environment and cannot pass here**: it asserts a `generate_document` call, and
+  this deployment has no `MINIO_*` configured, so the tool is not in the registry
+  at all — `tools:[list_sources, get_schema, run_sql, create_visualization,
+  create_dashboard, schedule_task]`. That is an environment gap, not a
+  regression, and it is the same gap that leaves `T-A2b`'s own live half open
+  ([`api-reports.md`](api-reports.md) §7).
+
+**2. A live transcript, same question, two agents.** *"What were our total sales
+last month?"*, asked twice on the same tenant:
+
+| Agent | Scope | Outcome |
+| ----- | ----- | ------- |
+| `Finance` (`6e99c89d`) | Sales Warehouse | **3,863,405,700** — the `C-1` figure, from `run_sql` against source A |
+| `People Ops` (`1f704013`) | HR Warehouse | refused: `source_id "f74b2c96…" not found for this company. Available: 6ce606fb…=HR Warehouse`, then answered what it *could* see and said what it could not |
+
+Then the reciprocal, in the Finance thread: asked directly for the HR source by
+id, it got `source_id "6ce606fb…" not found for this company. Available:
+f74b2c96…=Sales Warehouse` — the identical sentence, with a one-source menu. No
+`run_sql` against B exists in either thread, and `list_sources` returned one
+source to each agent.
+
+**3. Distinct `agent_id`s.** Every `agent_actions` and `usage_events` row of both
+turns carries its own agent — 7 usage rows on `6e99c89d`, 3 on `1f704013`, and
+the tool rows likewise. The remaining two acceptance items ran too:
+
+- **Tool allowlist.** Asked three times over, in one message, to use
+  `create_dashboard`, the three-tool Finance agent produced **no
+  `create_dashboard` row at all** — the tool was never offered to the model, so
+  there was nothing to refuse. That is stronger than a refused call and it is
+  what `newAgentFactory`'s filter is for.
+- **Delete mid-conversation.** `DELETE /api/agents/{finance}` → 204, the thread's
+  `agent_id` went NULL by `ON DELETE SET NULL`, and the next turn in that same
+  thread answered under the company default (`d6d2aca8`, `Analyst`) and saw both
+  sources again. A conversation did not become unusable because an admin tidied
+  the roster, which is what the column's `SET NULL` was chosen for.
 
 ### 6. For T-S3, T-S4 and T-S5
 
@@ -498,17 +553,30 @@ thread the header shows as Ops, that a reload keeps it, that a follow-up turn
 runs under it, and that the `agent_actions` rows carry the Ops id. Those are the
 gate.
 
-### 4. The gate, outstanding
+### 4. The gate, run 2026-07-30
 
-Unchanged from the ticket, and none of it has run — it needs `030` and `031`
-applied, which is the same blocker `T-S1` and `T-S2` still carry:
+The Chrome extension was not connected, so the browser half was driven over the
+DevTools protocol against headless Chrome instead of recorded as video. Stills
+rather than a recording, and the sequence the ticket asked for:
 
-1. A screen recording: pick Ops, ask a question, reload, ask a follow-up.
-2. Both `agent_actions` rows carrying the Ops agent id.
-3. The cross-tenant 404 and the disabled-agent 404 over the wire, each creating
-   no thread.
+| Step | Evidence |
+| ---- | -------- |
+| The picker on the new-chat screen | `Analyst` / `Ops` / `People Ops`, each with its description. **`Archive` — created and disabled for this gate — does not appear**, and neither does the deleted `Finance` |
+| Pick Ops, ask a question | chip reads `Ops`; the thread header reads `Dashboard · Ops`; the answer names both sources and counts 5 employees, which is what an unrestricted agent should see |
+| Reload | header still `Dashboard · Ops`, and the chip is **no longer a button** — a static label, because the thread has messages |
+| Follow-up turn | answered 124,500,000 — the seeded total — in the same thread |
+| `agent_actions` | all four rows across both turns carry `14ba3d72` (Ops); `conversation_threads.agent_id` is Ops |
+| Cross-tenant `agent_id` | 404, and the thread count was 7 before and 7 after |
+| Disabled `agent_id` posted directly | 404 |
 
-`make infra` provides the postgres.
+The disabled-agent check needed an agent to disable, so the gate created
+`Archive` with `enabled:false` — which is also the only reason we know the
+picker filters on `enabled` rather than on `is_default` or on nothing.
+
+One thing the stills cannot show and the DOM can: the picker is not merely
+`disabled`, it is not rendered as a control at all once a thread has messages.
+That is the stronger version of the acceptance item, and it is why probing for
+`button[text=Ops]` after the reload returns nothing.
 
 ### 5. For T-S4 and T-S5
 
@@ -522,3 +590,67 @@ applied, which is the same blocker `T-S1` and `T-S2` still carry:
 - The dashboard reads the roster through `useAgents()` on the `["agents"]` query
   key that Settings → Agents already populates. Anything else needing the roster
   in the frontend should use it rather than issue a second `GET /agents`.
+
+---
+
+## What running the gate found (2026-07-30)
+
+Two findings, neither in the code the three tickets shipped, and the first one
+cost an hour of believing the second ticket was broken.
+
+### 1. A stale consumer on a shared queue serves old code, silently
+
+The first two gate turns came back with `agent_actions.agent_id` and
+`usage_events.agent_id` **NULL**, and the Finance agent — scoped to the sales
+source — reached the HR source and was refused only by a TLS error. Read as a
+`T-S2` defect that is: enforcement absent, attribution absent, on a freshly
+built binary.
+
+It was not. `asynq:servers` held three registrations, and two of them were
+`go run` workers started on 2026-07-28 that were still alive — binaries from
+before `T-S1` existed. asynq handed the turns to one of them, and a runner with
+no roster is *specified* to run unscoped (`resolveAgent` returns nil, silently,
+which is the correct product behaviour and a terrible diagnostic).
+
+The tell, in hindsight, is in the rows themselves: `company_id`, `thread_id`,
+`channel`, `actor_kind` and `message_id` were all correct on the same rows whose
+`agent_id` was NULL. Every one of those values rides the same context. A scope
+that failed to *filter* would have logged an agent id; only a scope that was
+never *installed* looks like that.
+
+Moving the gate's API and worker onto Redis DB 3 fixed it in one line of env —
+`ASYNQ_REDIS_URL=redis://localhost:6385/3` — and the next turn resolved
+`payload_agent_id=6e99c89d`, enforced the source allowlist and wrote the agent id
+on every row.
+
+Two rules out of it, both cheap:
+
+- **A live result is evidence about whichever process picked the task up, not
+  about the tree you built from.** `git log` and `go build` say nothing here.
+  Check `asynq:servers` (or `zrange asynq:servers 0 -1`) against `ps` before
+  trusting a queue-driven gate, exactly as
+  [`go-run-serves-stale-binaries`](environment-notes.md) says for a single
+  process.
+- **The two stale workers were still running when this was written** — the
+  sandbox refused the `kill` — so anyone re-running a live gate on this machine
+  hits the same thing until pids `73719` and `75346` are gone.
+
+Worth considering as a product change rather than a note: `resolveAgent`'s
+"no roster wired" branch is the only one of its three nil paths that logs
+nothing. A single `Debug` there would have named the cause in seconds.
+
+### 2. A source added through the dashboard form cannot reach a local Postgres
+
+`buildDSN` (`internal/transport/http/handlers/company.go:88`) sets
+`sslmode=require` unconditionally for the discrete host/port form. That is the
+right default for a customer's warehouse and it makes the local demo database
+unusable through the UI: creation succeeds (nothing connects at create time),
+and the failure surfaces one turn later as
+`pq: SSL is not enabled on the server` — which the agent then reports as a
+plausible-sounding recommendation to talk to your DBA.
+
+The gate worked around it with `PUT /api/connections/:id/dsn` and an explicit
+`postgres://…?sslmode=disable`, after which `POST /api/connections/:id/test`
+returns `{"ok":true}`. Two things follow, neither urgent enough to block this
+track: the form has no SSL-mode control, and **create does not test**, so the
+first evidence of a bad connection is a wasted agent turn.

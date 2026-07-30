@@ -1171,6 +1171,54 @@ run.
 Record, decisions and the outstanding gate:
 [`agent-roster.md`](agent-roster.md).
 
+`T-S1`, `T-S2`, `T-S3` — the gates, 2026-07-30
+
+No new feature code. `030` and `031` were applied to a database for the first
+time, and three tickets that had been sitting at "code complete, gate
+outstanding" were run against a live API. Written up because *how* they were run
+is the part worth keeping.
+
+The backfill did what it claimed: eleven pre-existing companies, one
+unrestricted default `Analyst` each, and the `C-1` question still answering
+3,863,405,700 — now under a scoped agent rather than an unscoped turn. Then the
+enforcement half: the same question to a Finance agent (sales source) and a
+People Ops agent (HR source) produced one figure and one refusal, in both
+directions, with the *identical* refusal sentence and a menu naming only what
+each agent may reach. Every `agent_actions` and `usage_events` row carries its
+own agent id.
+
+The `T-S3` half needed a browser and the Chrome extension was not connected, so
+it was driven over the DevTools protocol against headless Chrome: pick Ops, ask,
+reload, follow up. The picker filters `enabled` (a disabled `Archive` never
+appears) and, once a thread has messages, is not rendered as a control at all —
+which is the stronger reading of "not editable" and the one the DOM can prove.
+
+**The finding that cost the most time was not in the tickets.** Two `go run`
+workers from 2026-07-28 were still alive on the same Redis and asynq handed them
+the first two gate turns. They predate `T-S1`, so those turns ran with no roster:
+NULL `agent_id`, and a scoped agent reaching a source it should not — an exact
+impersonation of a `T-S2` bug. The tell was that `company_id`, `thread_id`,
+`channel` and the actor were all correct on the same rows; everything rides one
+context, so a scope that failed to filter would still have logged an id. Only a
+scope that was never installed looks like that. The rule, added beside
+`go-run-serves-stale-binaries`: **a queue-driven live result is evidence about
+whichever consumer picked the task up.** Check `asynq:servers` against `ps`
+first.
+
+Second finding, smaller and still open: the dashboard's discrete host/port
+connection form pins `sslmode=require`, and create does not test the connection —
+so a local Postgres added through the UI fails one turn later with
+`pq: SSL is not enabled on the server`, after an agent has spent its budget
+discovering it.
+
+`make eval` came back level with `T-16` — 32 of the comparable 33, the same
+`ambiguous-headcount` failure — in two parts, because the environment stopped the
+first run at case 33 of 35. `T-A2b`'s `report-directive` case cannot pass in this
+environment at all: no `MINIO_*`, so `generate_document` is not in the registry.
+
+The gates, the transcripts and both findings:
+[`agent-roster.md`](agent-roster.md).
+
 ---
 
 ## What the history says about how this project is built

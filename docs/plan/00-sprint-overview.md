@@ -372,7 +372,7 @@ change no one's workflow. Watchers do.
 | Slack / Telegram / email channels  | Additive, low-risk, no workflow change. See `backlog.md`.            |
 | New DB drivers (BigQuery etc.)     | Additive against the driver registry. Pull-driven by demand.         |
 | Multi-agent / planner architecture | `T-16` raises the iteration budget; specialist agents **we** write need eval data first. This is the internal planner, not the tenant roster below. |
-| **The tenant agent roster (`T-S1`→`T-S5`)** | Owner-set 2026-07-29: the customer creates their own Marketing / Ops / HR / Finance agents. **Scheduled for Sprint 2, not deferred** — 9.5d of written tickets that would have displaced `T-A5` and overrun if inserted here. **`T-S1` was then built the same day, out of that order**, so this row is now a schedule the tree does not match: `T-A5` is open and 2.5d of Sprint 2 is code-complete. Decide re-plan or note at sprint close — see [`../coverage/agent-roster.md`](../coverage/agent-roster.md) §0. |
+| **The tenant agent roster (`T-S1`→`T-S5`)** | Owner-set 2026-07-29: the customer creates their own Marketing / Ops / HR / Finance agents. **Scheduled for Sprint 2, not deferred** — 9.5d of written tickets that would have displaced `T-A5` and overrun if inserted here. **`T-S1`→`T-S3` were then built out of that order and gated live on 2026-07-30**, so this row is a schedule the tree does not match: `T-A5` is open and **6.0d of Sprint 2 is done**, leaving `T-S4` (2.0d) and `T-S5` (1.5d). Decide re-plan or note at sprint close — see [`../coverage/agent-roster.md`](../coverage/agent-roster.md) §0. |
 | **Tenant MCP servers as a source (`T-M1`→`T-M4`)** | Owner-set 2026-07-29: the customer registers their own MCP server and their agents call its tools. **Scheduled for Sprint 2, not deferred** — 8.0d of written tickets, and it deps `T-S1`/`T-S2`, which are Sprint 2 themselves. **Not `T-14`**, which is the same protocol pointed the other way: `T-14` serves our tools to their agent, this consumes their tools into ours. |
 | Forecasting / anomaly ML           | Watchers ship with threshold + delta comparators. Statistical anomaly detection is Sprint 2. |
 | SSO / SOC2                         | No enterprise deal is blocked on it yet.                            |
@@ -575,6 +575,11 @@ says "something in phases 2–6 will have to move again"; with a fourth track th
 is no longer a prediction, it is arithmetic. **Whoever opens Sprint 2 writes its
 cut order first, before its first ticket** — Sprint 1's cut order was written up
 front and is the only reason two priority inserts did not strand anything.
+
+**Updated 2026-07-30: 6.0 of those days are already delivered.** `T-S1`, `T-S2`
+and `T-S3` are done and gated live, so the roster track has 3.5d left (`T-S4`
+2.0d, `T-S5` 1.5d). That reduces whichever of the two figures below turns out to
+be right by the same 6.0 — it does not settle which one it is.
 
 **And the ~40.5 above does not reconcile.** The same set of tickets totals 44.5
 by `01-tickets.md`'s own phase figures (23.5 + 11.5 + 9.5). One of the two is
