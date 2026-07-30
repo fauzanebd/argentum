@@ -373,6 +373,7 @@ change no one's workflow. Watchers do.
 | New DB drivers (BigQuery etc.)     | Additive against the driver registry. Pull-driven by demand.         |
 | Multi-agent / planner architecture | `T-16` raises the iteration budget; specialist agents **we** write need eval data first. This is the internal planner, not the tenant roster below. |
 | **The tenant agent roster (`T-S1`→`T-S5`)** | Owner-set 2026-07-29: the customer creates their own Marketing / Ops / HR / Finance agents. **Scheduled for Sprint 2, not deferred** — 9.5d of written tickets that would have displaced `T-A5` and overrun if inserted here. **`T-S1` was then built the same day, out of that order**, so this row is now a schedule the tree does not match: `T-A5` is open and 2.5d of Sprint 2 is code-complete. Decide re-plan or note at sprint close — see [`../coverage/agent-roster.md`](../coverage/agent-roster.md) §0. |
+| **Tenant MCP servers as a source (`T-M1`→`T-M4`)** | Owner-set 2026-07-29: the customer registers their own MCP server and their agents call its tools. **Scheduled for Sprint 2, not deferred** — 8.0d of written tickets, and it deps `T-S1`/`T-S2`, which are Sprint 2 themselves. **Not `T-14`**, which is the same protocol pointed the other way: `T-14` serves our tools to their agent, this consumes their tools into ours. |
 | Forecasting / anomaly ML           | Watchers ship with threshold + delta comparators. Statistical anomaly detection is Sprint 2. |
 | SSO / SOC2                         | No enterprise deal is blocked on it yet.                            |
 | Native dashboard embedding         | Metabase share URLs are adequate.                                   |
@@ -427,6 +428,9 @@ change no one's workflow. Watchers do.
 | **The OpenAPI spec drifts from the routes**               | ~~High~~ **Closed** | Medium | Exactly the failure the design tokens already had — two copies of one truth, disagreeing quietly. Same fix, and it is proven in this repo. **Closed 2026-07-29 by `T-A4`, with four checks rather than one**: route parity walks the gin tree in both directions; scope parity asserts `x-argentum-scope` behaviourally (the named scope must be both sufficient and necessary); schema parity reflects over the Go response structs so a renamed field fails; and a drift gate covers every artifact generated from the document. The residual risk is the prose, which no test can check. |
 | ~~**A sync `/v1/chat` call dies behind a proxy**~~ **Closed 2026-07-28** | Medium | Low | `T-A3` shipped it as designed and the gate's own turns showed why the row existed: 58s and 130s for two ordinary questions. The sync door is capped by `API_V1_SYNC_TIMEOUT_SECONDS` and answers 504 with `{thread_id, run_id}` and a sentence naming the stream to resume on; SSE with a 15s heartbeat comment is the documented default. Two things the row did not anticipate. The 504 has to **keep** its idempotency key — every other 5xx correctly forgets one, but here the turn is still running and still being billed, so the retry a 504 invites would start a second. And an SSE client hanging up cancels the request context the middleware completes its record with, which stranded the key `in_flight` for 24 hours; bookkeeping for work that has already run is now detached from the request. Do not raise the cap when someone complains — point them at the stream. |
 | **A comparison between two writers' clocks decides something** | **Observed** | Medium | New 2026-07-28, from `T-A3`'s live gate. `conversation_threads.last_message_at` is written by the API process and `messages.created_at` by Postgres; they land ~130µs apart, in the wrong direction, and the code that asked "has this turn answered?" by comparing them held every settled thread's SSE stream open until the client gave up — for an answer already in the database. The instance is fixed by comparing two rows written by one clock (`LatestByThread`). The class is not: this codebase writes timestamps from both processes into the same tables, and any future predicate across them is the same bug. The rule is in `api-chat.md` §3 and in the code: never compare timestamps from two writers when you can compare two rows from one. |
+| **A tenant MCP server URL is an SSRF into our infrastructure** | **High if unguarded** | **Critical** | New 2026-07-29 with the `T-M1`→`T-M4` track. The tenant types a URL and we fetch it from inside the worker. `http://169.254.169.254/`, `http://localhost:6379`, a public hostname whose DNS answers with an RFC1918 address, or a 302 from a legitimate host to any of those — each is a request to our own network with our own network position. Mitigation is `T-M1`'s gate, not a hardening pass: https-only outside dev, resolve-and-reject private ranges, pin the resolved address for the request, re-run the check on every redirect, one function with its own test table. It is written as a gate item because "we validated the URL" is the sentence every SSRF postmortem contains. |
+| **A tenant MCP server prompt-injects our agent**          | **High**   | High   | New 2026-07-29. A tool description and a tool result are both text the tenant's server writes and our agent reads, in a context that can already run SQL against their warehouse. Two distinct vectors, and the second is worse: a description is reviewed by an admin once (`T-M1`'s approval screen) and pinned by digest, so a server that rewrites one shows as drifted; a *result* is fresh on every call and nobody reviews it. It goes through the same guardrail path as any tool output. This is not fully solvable — it is the same trust the tenant already extends by connecting a database — but the digest pin, the admin review, and read-only-by-default are what keep it from being silent. |
+| **`T-14` and `T-M1` get confused for each other**         | **High**   | Low    | Two tracks, same protocol, opposite directions, adjacent names. Someone will cut one thinking they cut the other, or build the client and tick the server's acceptance boxes. Both tickets open by stating the distinction; the one-line test is **who holds the credential** — `T-14` authenticates their agent with our API key, `T-M1` authenticates us with their token. |
 | **The push shift ships in neither sprint**                | Medium     | **High** | Watchers were Sprint 1's wedge and are now Sprint 2's, behind `T-19`. Two priority inserts have moved them once already; a third would strand them. The mitigation is a decision, not a mechanism: Sprint 2 opens with `T-19` and `T-08` and nothing is inserted ahead of them without explicitly writing down what slips. |
 | **Embed auth flaw exposes tenant data**                   | Low        | **Critical** | `T-19` ships before any widget UI exists and is gated on a full forgery matrix: tampered signature, wrong origin, expired token, far-future expiry, revoked key. Constant-time comparison enforced by diff review. Mandatory origin allowlist, wildcard rejected. |
 | Integrators copy an insecure signing shortcut              | Medium     | High   | `T-22` ships complete server-side snippets in four languages. The failure mode is a partial example, so examples are treated as security surface, not documentation. |
@@ -557,6 +561,26 @@ are written. Sprint 2 therefore opens with ~40.5 days already spoken for. Say it
 now rather than let Sprint 2 repeat Sprint 1's arithmetic surprise: **something
 in phases 2–6 will have to move again**, and that decision is better made against
 a written roster track than against a discovery in week four.
+
+**Updated again the same day: four.** Tenant MCP servers as a source
+(`T-M1`→`T-M4`, 8.0d) was made a Sprint 2 commitment by the owner on 2026-07-29
+and its tickets are written. The customer registers their own MCP server and
+their agents call its tools; it is `T-14` pointed the other way, and it deps the
+roster, so it lands behind `T-S2` regardless of priority.
+
+**Sprint 2 now holds 52.5 days of committed work** — 23.5 (phases 2–6) + 11.5
+(widget) + 9.5 (roster) + 8.0 (MCP-as-source) — before anything new is
+considered, and before anyone has said how long Sprint 2 is. The paragraph above
+says "something in phases 2–6 will have to move again"; with a fourth track that
+is no longer a prediction, it is arithmetic. **Whoever opens Sprint 2 writes its
+cut order first, before its first ticket** — Sprint 1's cut order was written up
+front and is the only reason two priority inserts did not strand anything.
+
+**And the ~40.5 above does not reconcile.** The same set of tickets totals 44.5
+by `01-tickets.md`'s own phase figures (23.5 + 11.5 + 9.5). One of the two is
+wrong, neither has been checked, and the gap is 4.0 days — a working week's
+worth of planning error sitting in the number Sprint 2 will be sized against.
+Settle it at sprint close.
 
 `T-00b` is uncuttable for a scheduling reason rather than a product one: it moves
 every file in the workspace, so it is only cheap **before** the sprint. Deferred to

@@ -22,6 +22,27 @@ roster blocks anything in Sprint 1.
 **Estimate:** 9.5d (`T-S1` 2.5, `T-S2` 2.5, `T-S3` 1.0, `T-S4` 2.0, `T-S5` 1.5).
 `T-S1`/`T-S2` never-cut; `T-S4`/`T-S5` are cuts #2a and #2b.
 
+### Tenant MCP servers as a source (`T-M1` → `T-M4`) — **scheduled, tickets written**
+The customer registers their own MCP server — ticketing, CRM, an internal ops
+API — and their agents call its tools alongside `run_sql` and `get_schema`.
+**Not `T-14`, which is the opposite direction:** `T-14` makes Argentum an MCP
+*server* so the customer's agent can call us; this makes Argentum an MCP
+*client* so we can call theirs. One word apart, no shared code, neither blocks
+the other. The names will keep colliding in conversation — the test is who holds
+the credential.
+**Status:** owner-set 2026-07-29. Filed as four tickets in
+[`01-tickets.md`](01-tickets.md), scheduled for Sprint 2.
+**Why not Sprint 1:** Sprint 1 has one open ticket (`T-A5`) and no room; this
+track also deps `T-S1`/`T-S2`, which are themselves Sprint 2.
+**Why it is not small:** an MCP server cannot be a `db_connection` —
+`db.Driver` demands `ExecuteReadOnly(sql)` and `ExtractSchema()`, and it has
+neither. The real cost is that `internal/tools/registry.go` builds one static
+in-process list while MCP tools are per-tenant and discovered at runtime, and
+every one of them still has to pass through `T-05`'s audit decorator and
+`T-16`'s budget guard. Plus a genuine SSRF surface: the tenant supplies the URL.
+**Estimate:** 8.0d (`T-M1` 2.5, `T-M2` 3.0, `T-M3` 1.0, `T-M4` 1.5).
+`T-M1`/`T-M2` never-cut; `T-M3`/`T-M4` are cuts #3a and #3b.
+
 ### Phases 2–6: metric registry, watchers, actions, MCP, hardening (T-06 → T-18)
 **Why deferred:** Scheduling, again, and this one is expensive. The API track
 (`T-A1`→`T-A5`, 10.5d plus the foundation it forces earlier) was made the
@@ -272,6 +293,14 @@ and needs a different safety model.
 **Trigger:** three prospects whose real data lives in Sheets — plausible in the
 SMB segment, so watch for it.
 **Estimate:** 5d.
+**Note added 2026-07-29:** this was the nearest thing the backlog held to
+"connect a non-database source", and a tenant MCP server was very nearly filed
+under it. It does not cover that — this entry is about reading *rows* from a
+non-SQL store, and an MCP server supplies *tools*. Its trigger (three Sheets
+prospects) would never have fired for it either. That is now its own track,
+`T-M1`→`T-M4`, under Sprint 2 candidates. The two do share the hard part: both
+need a safety model the `Conn` contract does not give them, so whichever lands
+first should be read by whoever builds the second.
 
 ### Native embeddable dashboards
 **Why deferred:** Metabase share URLs work today.

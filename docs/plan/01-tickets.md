@@ -2839,6 +2839,19 @@ T-02 ─► T-03 ─────────┘         ├─► T-A3 ─┘
 
 T-A2 ─► internal/webhookout ─► T-15  (T-15 subscribes, does not rebuild)
 T-A1 ─► T-14                        (MCP becomes a thin adapter, 2.5d → 2d)
+
+Sprint 2 tracks (roster, then MCP-as-a-source):
+
+T-02b ─┐
+T-04  ─┼─► T-S1 ──► T-S2 ─┬─► T-S3
+       │                  ├─► T-S4 (cut #2a)
+       │                  └─► T-S5 (cut #2b) ──┐
+       │                                       │
+       └─► T-M1 ──► T-M2 ─┬─────────────────► T-M3 (cut #3a)
+         (also needs T-S1) └─► T-M4 (cut #3b, also needs T-10, T-11)
+
+T-14 and T-M1 share the letters and nothing else — T-14 is Argentum as the
+MCP server, T-M1 is Argentum as the client. Neither blocks the other.
 ```
 
 `T-00b` gates everything — it moves every file, so no other ticket may start
@@ -2947,7 +2960,17 @@ Three sprint-shaping consequences, stated so nobody rediscovers them in week six
   Sprint 2's, behind `T-19`. Sprint 2 opens with two never-cut items already
   queued, which is worth knowing now while it is still a plan and not a surprise.
   **Three, as of 2026-07-29** — the tenant agent roster (`T-S1`→`T-S5`, 9.5d)
-  joined them; its tickets are at the end of this file.
+  joined them; its tickets are at the end of this file. **Four, later the same
+  day** — tenant MCP servers as a source (`T-M1`→`T-M4`, 8.0d), also owner-set,
+  also written up at the end of this file. Sprint 2's committed load is now
+  **35.0d** (phases 2–6 at 23.5 plus the widget at 11.5) **plus 17.5d of two new
+  tracks** — 52.5 against a sprint nobody has sized. That number is the point of
+  writing it here.
+  **A discrepancy worth someone's attention:** `00-sprint-overview.md` §6 says
+  Sprint 2 opened with "~40.5 days already spoken for", and this file's own
+  phase totals give 44.5 for the same set. The two do not reconcile and neither
+  has been shown to be right. Settle it when Sprint 2 is sized rather than
+  building a second plan on an unverified figure.
 - **`T-13` and `T-14` split.** They were one week-5 block; keys are now
   foundational and land in 1c, while MCP stays cut #2 and gets cheaper for it.
   `T-16` remains out of week 6 and uncuttable — the smoke test moved it.
@@ -3257,7 +3280,6 @@ both turns showing distinct `agent_id`s. Record it in
 
 ## T-S3 · Agent picker in the dashboard chat
 **Repo:** FE, BE · **Size:** 1d · **Deps:** T-S2 · **Priority:** P0 · **Never cut**
-
 ### Why
 
 `T-S2` makes a thread's agent decide the turn. Until the web chat can set it,
@@ -3422,3 +3444,381 @@ the quickstart, run against a live server, both passing agent ids.
 - Per-key default agent (a key is a machine credential; the caller passes what it wants)
 - MCP exposure of the roster — `T-14`, when it lands
 - Per-agent rate limits or spend caps
+
+---
+
+# Sprint 2 — Tenant MCP servers as a source (`T-M1` → `T-M4`)
+
+**Filed 2026-07-29, owner-set.** The customer registers their own MCP server —
+their ticketing system, their CRM, their internal ops API — and their Argentum
+agents can call its tools alongside `run_sql` and `get_schema`.
+
+## This is the opposite direction from `T-14`, and the names collide
+
+Every prior mention of MCP in this plan is **Argentum as the server**: `T-14`
+exposes our tools so a customer's agent can call us. This track is **Argentum as
+the client**: we call the customer's tools. One word apart, no shared code, and
+neither blocks the other.
+
+| | `T-14` | This track |
+| --- | --- | --- |
+| Who runs the MCP server | We do (`cmd/mcp`) | **The customer does** |
+| Who holds the credential | The customer's agent, an Argentum API key | **We do**, the customer's token |
+| What flows | Our data out | **Their tools in** |
+| Failure mode | An outside agent cannot reach us | A tenant's server returns anything it likes into our agent's context |
+
+That last row is the whole reason this track is not a two-day adapter. `T-14`
+serves data we already scope; this consumes a surface we do not control.
+
+## Why the existing source model does not absorb it
+
+A "source" today is a SQL pool. `domain.DBConnection.DBType` must match one of
+`db.Supported`, and `db.Driver` demands two methods an MCP server cannot answer:
+
+- `ExecuteReadOnly(ctx, sql, maxRows)` — there is no SQL.
+- `ExtractSchema(ctx)` — there is no `information_schema`, only a tool list.
+
+Registering an MCP server as a `db_connection` would mean synthesising both,
+which puts a lie in the one abstraction whose honesty `run_sql`'s safety rests
+on. So an MCP server is **a source of tools, not a source of rows**, and it gets
+its own table rather than a new `db_type`.
+
+The real work is not the transport. It is that `internal/tools/registry.go`
+builds one static in-process list, and `agents.allowed_tools` is a vocabulary
+"owned by the Go code, validated on write" (`030_agents.up.sql:35`). MCP tools
+are **per-tenant and discovered at runtime**. Making the agent's tool set
+company-dependent, while every tool still passes through `T-05`'s audit
+decorator and `T-16`'s budget guard, is the ticket.
+
+## Decisions (locked — do not re-litigate inside the tickets)
+
+1. **An MCP server is a source of tools, not a source of rows.** It never becomes
+   a `db_connection` and never implements `db.Driver`. `get_schema` and
+   `run_sql` do not change at all.
+2. **Read-only in v1. Writes are `T-M4`, behind `T-10`'s approval flow.** The
+   backlog rejects relaxing `run_sql` to allow writes, and a tenant MCP tool
+   named `create_ticket` is that same decision arriving through a side door. A
+   tool is callable without approval only if an admin marked it read-only when
+   they reviewed the discovered list — **default is not-read-only**, the one
+   place in this codebase where empty means nothing rather than everything, and
+   deliberately against `T-S1`'s rule because the failure directions are not
+   symmetric.
+3. **HTTP transports only — streamable HTTP and SSE. No stdio.** stdio means
+   spawning the tenant's process inside our worker, which is arbitrary code
+   execution wearing a config field. There is no v2 of this decision.
+4. **The URL is attacker-controlled input.** A tenant pointing a server at
+   `http://169.254.169.254/` or at `localhost` is reaching our infrastructure,
+   not theirs. Egress is allowlisted to public addresses, resolved-and-pinned,
+   with redirects re-checked — the same class of check as any SSRF surface, and
+   it is `T-M1`'s gate, not a hardening pass.
+5. **Reachable only through an agent.** An MCP server touches a turn via
+   `agent_mcp_servers`, enforced in `internal/agentscope` exactly as
+   `agent_sources` is. A company-wide "all agents get all servers" default would
+   put the CRM's tools in the Finance agent's context on day one.
+6. **Discovery is explicit, not per turn.** Tools are fetched when the server is
+   saved and on an admin's "refresh", stored, and shown for review. Discovering
+   per turn adds a network round trip to every question and lets the tenant's
+   server change what our agent can do without anyone looking. A drifted list is
+   surfaced, never silently adopted.
+7. **Their tool output is untrusted text.** It lands in the agent's context like
+   any tool result, which means it is a prompt-injection carrier. It goes
+   through the same guardrail path as the rest, and `T-16`'s
+   "no figure that no tool returned" check treats an MCP result as a source of
+   figures — because it is one.
+
+**Order:** `T-M1` → `T-M2` → then `T-M3` and `T-M4` in either order.
+**Total 8.0d.**
+
+**Cut markers** are positions within this track (`#3a`, `#3b`), matching how
+`T-S4`/`T-S5` carry theirs. Sprint 2 still has no single cut order; when one is
+written these fall in after the roster's.
+
+**Migration numbers below are provisional.** `030` and `031` are applied to no
+database yet and `032` is `T-S4`'s claim. Take the next free number at
+implementation time — golang-migrate strands anything numbered below the current
+version.
+
+---
+
+## T-M1 · MCP servers: schema, egress safety, CRUD, and discovery
+**Repo:** BE, FE, PKG · **Size:** 2.5d · **Deps:** T-S1, T-04, T-02b · **Priority:** P0 · **Never cut**
+**Migration:** `033_mcp_servers` (provisional)
+
+### Why
+
+The noun, and the security boundary. Nothing here reaches a turn — same split as
+`T-S1`/`T-S2`, for the same reason: a schema, a CRUD surface, an egress
+allowlist and a UI do not belong in the ticket that rewires tool registration.
+
+### Do
+
+- Migration `033_mcp_servers.up.sql` / `.down.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id     UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    name           TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    url            TEXT NOT NULL,
+    transport      TEXT NOT NULL,          -- 'http' | 'sse'
+    -- Encrypted at rest exactly as db_connections.dsn_encrypted is, and for the
+    -- same reason: it is a bearer credential for a system we do not own.
+    auth_encrypted BYTEA,
+    enabled        BOOLEAN NOT NULL DEFAULT true,
+    last_probed_at TIMESTAMPTZ,
+    probe_error    TEXT NOT NULL DEFAULT '',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mcp_servers_company_name
+    ON mcp_servers(company_id, lower(name));
+
+-- The reviewed tool list. Rows are written by discovery and approved by an
+-- admin; nothing is callable until approved is true.
+CREATE TABLE IF NOT EXISTS mcp_server_tools (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    server_id      UUID NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    tool_name      TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    input_schema   JSONB NOT NULL,
+    -- Decision 2: default false. A tool nobody classified is not callable
+    -- without approval, which is the opposite of allowed_tools' rule and is
+    -- meant to be.
+    read_only      BOOLEAN NOT NULL DEFAULT false,
+    approved       BOOLEAN NOT NULL DEFAULT false,
+    -- The hash of (description, input_schema) at approval time. Discovery
+    -- compares against it, so a server that quietly rewrites a tool's
+    -- description — the cheapest injection vector this track opens — shows as
+    -- drifted rather than being adopted.
+    approved_digest TEXT NOT NULL DEFAULT '',
+    UNIQUE (server_id, tool_name)
+);
+```
+
+- `internal/domain/mcp_server.go`: the entity and its repository contract,
+  shaped like `domain.DBConnection`.
+- `internal/adapters/mcp`: the client. Connect, `tools/list`, and a `Probe` that
+  the CRUD layer calls on save. One package, no tool execution yet — that is
+  `T-M2`.
+- **Egress guard, and it is the point of the ticket.** Before any connection:
+  reject non-`https` except for an explicit dev-mode env flag; resolve the host
+  and reject loopback, link-local (`169.254.0.0/16`), and RFC1918 ranges; pin
+  the resolved address for the request so a second DNS answer cannot swap it;
+  re-run the whole check on every redirect. Put it in one function with its own
+  test table, not inline in the client.
+- Six routes under `/api/mcp-servers`, `AdminOnly()` per `T-04` — an MCP server
+  is a credential plus an egress destination, which is a DSN-class object.
+- Settings → MCP Servers tab: add, probe, review the discovered tools, tick
+  read-only, approve, refresh. The review screen shows each tool's description
+  and schema, because approving a tool is approving the text that will enter the
+  agent's context.
+- `make types` — the entity crosses to the dashboard through
+  `packages/api-types` (`T-02b`).
+
+### Notes for the implementer
+
+- `auth_encrypted` uses the same envelope as `dsn_encrypted`. Do not invent a
+  second scheme; find the one the connection repository uses and reuse it.
+- A probe failure is a saved row with `probe_error`, not a rejected save. A
+  server that is down at 4pm is not a configuration error.
+- The discovered tool namespace collides with ours the moment a tenant ships a
+  `run_sql`. Namespace on the way out in `T-M2`, but store the raw name here —
+  the tenant's server is the one that has to recognise it.
+
+### Acceptance
+
+- [ ] A server saved with a valid URL probes, lists its tools, and shows them unapproved
+- [ ] `http://127.0.0.1:*`, `http://169.254.169.254/*`, and a public URL that 302s to either are all rejected, with the redirect case proving the check re-runs
+- [ ] A DNS name resolving to a private address is rejected even though the name is public
+- [ ] Non-admin cannot create, edit, or read the auth field of an MCP server
+- [ ] The auth token is never returned by any read route
+- [ ] Nothing in this ticket changes any agent turn — an existing chat behaves identically with a server registered
+
+### Gate
+
+`curl` transcripts of the four rejected egress cases and the one accepted, the
+non-admin 403, and a screenshot of the review screen with a real server's tools
+listed. Plus `make check` and `make types-check`, and a chat turn before and
+after registering a server showing identical tool availability.
+
+### Out of scope
+
+- Calling any tool (`T-M2`)
+- stdio transport (locked decision 3)
+- OAuth flows against the tenant's server — a static bearer token in v1
+
+---
+
+## T-M2 · MCP tools at turn time
+**Repo:** BE · **Size:** 3.0d · **Deps:** T-M1, T-S2 · **Priority:** P0 · **Never cut**
+**Migration:** `034_agent_mcp_servers` (provisional)
+
+### Why
+
+`T-M1` stores a server. This makes its tools callable — and it is the ticket
+that makes the agent's tool set depend on which company is asking, which the
+registry has never had to do.
+
+### Do
+
+- Migration `034_agent_mcp_servers.up.sql` / `.down.sql`:
+
+```sql
+-- Unlike agent_sources, empty means NONE. Decision 5: an MCP server reaches an
+-- agent only when someone said so. The asymmetry with agent_sources is
+-- deliberate — a database the company connected is already theirs, a tool that
+-- takes actions in a third-party system is not the same object.
+CREATE TABLE IF NOT EXISTS agent_mcp_servers (
+    agent_id  UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    server_id UUID NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    PRIMARY KEY (agent_id, server_id)
+);
+```
+
+- `agent_actions` gains `mcp_server_id UUID` (no FK — append-only, same
+  reasoning as its nullable `thread_id`, `023_agent_actions.up.sql:20`).
+- `internal/tools/mcp`: an `interfaces.Tool` implementation per approved,
+  read-only, in-scope MCP tool. Name it `mcp__<server>__<tool>` so a tenant's
+  `run_sql` cannot shadow ours, and so an audit row says which server ran.
+- **`RegistryDeps` grows a per-company step.** `tools.Registry` stays what it is
+  — the static, deployment-wide list — and a new
+  `tools.CompanyTools(ctx, companyID)` returns the MCP ones. The turn's list is
+  static + company, and **the wrapping order is the security property**: the
+  combined slice goes through `T-16`'s budget guard and `T-05`'s audit decorator
+  exactly as `stack.go:258-264` does today. Wrapping only the static half is the
+  bug this ticket is most likely to ship.
+- `internal/agentscope.Scope` gains `MCPServerIDs` and an `AllowsMCPServer`,
+  beside `AllowsSource`. `ChatRunner.Run` populates it from the thread's agent.
+- `newAgentFactory` (`stack.go:326`) filters the combined list by
+  `spec.ToolNames` as it already does. A namespaced MCP tool name is just a
+  name; `agents.allowed_tools` validation must accept it, which means the
+  vocabulary is no longer purely static — validate against
+  `static ∪ this company's approved MCP tools`.
+- Per-call timeout, a response size cap, and a per-turn call cap. An MCP tool
+  that returns 40 MB of JSON is a context-window incident and a bill.
+- A tool call to a server that has since been disabled, deleted, or whose digest
+  drifted returns a tool error naming the state, and never a stale cached tool.
+- Usage: an MCP call spends tokens (the result enters the context) but costs no
+  LLM call of its own. Record it on the existing `usage_events` path with
+  `agent_id` already there from `T-S2`; do not invent a second meter.
+
+### Notes for the implementer
+
+- **Read `T-S2`'s note about filtering the already-wrapped slice**
+  (`stack.go:258`) before writing a line of this. The same trap, one layer
+  deeper: here you are also *adding* to the slice, and anything added after the
+  decorators is unaudited and unbudgeted.
+- `T-16`'s output check asks whether a data tool returned rows before allowing a
+  figure. An MCP tool result **is** such a return. If it is not registered as
+  one, every MCP-derived number gets suppressed as a fabrication — and the
+  symptom will look like a broken guardrail, not a missing registration.
+- The eval suite (`T-01`) must not regress. It has no MCP server, so the
+  company-tools path returning empty has to be indistinguishable from today.
+
+### Acceptance
+
+- [ ] An agent with a bound server calls one of its approved read-only tools and uses the result in an answer
+- [ ] The same tool is invisible to an agent with no binding, and to an agent whose binding was removed mid-session on the next turn
+- [ ] An unapproved tool, a non-read-only tool, and a drifted tool are each absent from the tool list
+- [ ] The call writes an `agent_actions` row with the redacted arguments, the server id, and the agent id
+- [ ] A turn that would exceed the budget is refused before the MCP call goes out, and records as blocked
+- [ ] A server that times out, 500s, or returns 40 MB produces a tool error the agent recovers from, not a failed turn
+- [ ] `make eval` scores at or above the `T-01` baseline with no MCP server configured
+- [ ] A tenant tool named `run_sql` does not shadow ours
+
+### Gate
+
+A transcript of a real question answered through a real MCP server's tool, the
+matching `agent_actions` row, the `usage_events` row carrying `agent_id`, and
+the negative case from a second agent with no binding. Plus `make eval` output
+against the baseline.
+
+### Out of scope
+
+- Write-capable tools (`T-M4`)
+- MCP resources and prompts — tools only in v1
+- Per-server spend caps
+
+---
+
+## T-M3 · MCP servers on the dashboard and `/v1`
+**Repo:** BE, FE · **Size:** 1.0d · **Deps:** T-M2, T-S5 · **Priority:** P1 · **Cut #3a**
+
+### Why
+
+`T-M2` makes it work. This makes it legible: which agent reaches which server,
+what a tool call cost, and why an answer used the CRM. An integrator on `/v1`
+gets the same agent-scoped behaviour without a second concept — the `agent_id`
+they already pass carries the bindings with it.
+
+### Do
+
+- Settings → Agents: bind servers to an agent, beside the existing sources
+  checklist. **The copy must say empty means none here**, because the control
+  directly above it means the opposite.
+- Thread view: a tool call from an MCP server is labelled with the server's
+  name, not just the namespaced tool name.
+- `GET /v1/agents` (from `T-S5`) grows the bound server names — an integrator
+  choosing an agent is choosing a capability set.
+- `openapi/v1.yaml` and both SDKs regenerated; `T-A4`'s four drift checks pass.
+- Usage: MCP tool calls broken out per server in the existing usage views.
+
+### Acceptance
+
+- [ ] Binding a server to the Ops agent and asking Ops a question that needs it works end to end from the UI alone
+- [ ] `POST /v1/chat` with the Ops `agent_id` reaches the same server; with the default agent's id it does not
+- [ ] The thread view names the server on the tool call
+- [ ] All four `T-A4` drift checks pass
+
+### Gate
+
+A screen recording: bind, ask, see the labelled call. Plus the two `curl`
+transcripts and the drift-check output.
+
+### Out of scope
+
+- Per-agent server *creation* — servers are company-level objects, agents bind to them
+
+---
+
+## T-M4 · Write-capable MCP tools behind approval
+**Repo:** BE, FE · **Size:** 1.5d · **Deps:** T-M2, T-10, T-11 · **Priority:** P1 · **Cut #3b**
+
+### Why
+
+Decision 2 keeps v1 read-only, and the reason a customer registers their
+ticketing system is to have a ticket created. This is that, without becoming the
+side door around the read-only-SQL property the product is sold on.
+
+### Do
+
+- A non-read-only MCP tool is registered but **executes through `T-10`'s action
+  framework**: the agent proposes, an approval card appears (`T-11`), approving
+  executes, rejecting does nothing.
+- Idempotency: `T-10`'s key covers the MCP call, so a double-approve or a retry
+  does not create two tickets. The tenant's server offers no such guarantee, so
+  ours has to.
+- The approval card shows the server name, the tool name, and the arguments as
+  they will be sent — not a summary. An approval is only meaningful against the
+  literal payload.
+- `agent_actions` records proposal, approval, actor and outcome, as `T-10` does
+  for its own actions.
+
+### Acceptance
+
+- [ ] A write tool proposes rather than executes; approving executes exactly once; rejecting executes never
+- [ ] The approved payload is byte-identical to what was shown on the card
+- [ ] Double-approving the same proposal calls the server once
+- [ ] A tool marked read-only by mistake is still just a tool call — this ticket adds a path, it does not re-classify
+
+### Gate
+
+A recording of propose → approve → the tenant's system showing the effect once,
+plus the reject case, plus the audit rows for both.
+
+### Out of scope
+
+- Chat-native approval for MCP actions (the backlog's chat-native approval item covers all actions at once)
+- Automatic classification of which tools are writes — an admin ticks the box, and MCP's own annotations are a hint shown next to it, never the decision
