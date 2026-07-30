@@ -109,7 +109,10 @@ func (s *ScheduledTaskService) Create(ctx context.Context, in CreateInput) (*dom
 		return nil, fmt.Errorf("user_id required (scheduled tasks are owned by a dashboard user)")
 	}
 
-	thread, err := s.threads.CreateDashboardThread(ctx, in.CompanyID, in.UserID, "Scheduled: "+in.Name)
+	// No agent: a scheduled task runs as the company default, resolved per fire
+	// rather than pinned at creation. Binding a schedule to an agent is T-S4's
+	// question, not this one's.
+	thread, err := s.threads.CreateDashboardThread(ctx, in.CompanyID, in.UserID, "Scheduled: "+in.Name, "")
 	if err != nil {
 		return nil, fmt.Errorf("create dedicated thread: %w", err)
 	}

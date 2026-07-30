@@ -23,18 +23,24 @@ type ChatEnqueuer struct {
 	companies domain.CompanyRepository
 	enqueuer  *queue.Enqueuer
 	budget    BudgetChecker
-	roster    DefaultAgentReader
+	roster    RosterReader
 }
 
-// DefaultAgentReader is the half of the roster the enqueue path needs: which
-// agent runs when the thread names none (T-S2).
+// RosterReader is the half of the roster the enqueue path needs: which agent
+// runs when the thread names none (T-S2), and whether the agent a caller just
+// named is one it may have (T-S3).
 //
-// Declared at the consumer, like BudgetChecker. It is one method rather than
-// domain.AgentRepository whole because this path must not be able to write to
-// the roster, and because the thread already carries its own agent — the only
-// question left here is what the fallback is.
-type DefaultAgentReader interface {
+// Declared at the consumer, like BudgetChecker. Two read methods rather than
+// domain.AgentRepository whole, because this path must not be able to write to
+// the roster — an enqueue path that could edit an agent is one that could be
+// asked to.
+type RosterReader interface {
 	GetDefault(ctx context.Context, companyID string) (*domain.Agent, error)
+	// GetByID returns domain.ErrNotFound for another company's id as well as
+	// for one that never existed. That sameness is the point: the caller is a
+	// browser holding a bare uuid, and a distinguishable error is an existence
+	// oracle across tenants.
+	GetByID(ctx context.Context, companyID, id string) (*domain.Agent, error)
 }
 
 // BudgetChecker is the narrow contract ChatEnqueuer uses to refuse a turn a
@@ -65,7 +71,7 @@ func (s *ChatEnqueuer) WithBudget(b BudgetChecker) *ChatEnqueuer {
 // every payload leaves with an empty AgentID and the worker resolves the
 // company default itself, which is the behaviour of every turn queued before
 // this ticket.
-func (s *ChatEnqueuer) WithRoster(r DefaultAgentReader) *ChatEnqueuer {
+func (s *ChatEnqueuer) WithRoster(r RosterReader) *ChatEnqueuer {
 	s.roster = r
 	return s
 }
@@ -97,7 +103,16 @@ type ChatInput struct {
 	// It is also not persisted as the user's message, so a thread reads back
 	// as the conversation the caller had rather than as our scaffolding.
 	Directive string
-	ThreadID  string // dashboard and api; if set, bypasses resolver
+	// AgentID is the roster agent the *caller* picked for a new conversation
+	// (T-S3). Dashboard only today; `/v1` is T-S5 and channel bindings are
+	// T-S4, and both will arrive here rather than beside here.
+	//
+	// It applies to thread creation and nothing else. On an existing thread it
+	// must either match what the thread already runs as or be absent —
+	// changing an agent mid-conversation reinterprets history produced under
+	// different tools and sources, which is a decision, not a field.
+	AgentID  string
+	ThreadID string // dashboard and api; if set, bypasses resolver
 	// APIReportID ties this turn to the report job `POST /v1/reports` handed
 	// back (T-A2). The worker marks that row terminal when the turn ends.
 	APIReportID string
@@ -173,8 +188,55 @@ type EnqueueResult struct {
 // CreateDashboardThread creates a fresh empty dashboard thread for the
 // authenticated user. The frontend calls this when the user clicks
 // "New conversation".
-func (s *ChatEnqueuer) CreateDashboardThread(ctx context.Context, companyID, userID string) (*domain.ConversationThread, error) {
-	return s.threads.CreateDashboardThread(ctx, companyID, userID, "")
+//
+// agentID is the agent the user picked (T-S3), empty for the company default.
+// It is validated before the row is written, so a rejected pick leaves no
+// thread behind — the same ordering the budget check follows above.
+func (s *ChatEnqueuer) CreateDashboardThread(ctx context.Context, companyID, userID, agentID string) (*domain.ConversationThread, error) {
+	pinned, err := s.pickAgent(ctx, companyID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	return s.threads.CreateDashboardThread(ctx, companyID, userID, "", pinned)
+}
+
+// pickAgent validates an agent the caller named and returns what to store on
+// the thread. Empty in, empty out: "the company default", resolved per turn by
+// agentFor rather than frozen into the row, so a company that moves its default
+// moves every unpinned conversation with it.
+//
+// The three refusals are one error — domain.ErrNotFound — on purpose. Unknown,
+// another company's, and disabled are distinguishable states to us and must not
+// be to a browser: two of them confirm a row exists that the caller has no
+// business knowing about.
+//
+// Disabled is checked **here and not at turn time**. A thread already bound to
+// an agent keeps its narrower scope even after an admin disables it, because
+// the alternative is a conversation that silently widens its own data access
+// the moment someone tidies the roster. Disabling stops new picks, not running
+// ones.
+func (s *ChatEnqueuer) pickAgent(ctx context.Context, companyID, agentID string) (string, error) {
+	if agentID == "" {
+		return "", nil
+	}
+	if s.roster == nil {
+		// No roster wired at all: the deployment predates T-S1 or is stripped
+		// down. Refusing here would break a dashboard that offers a picker
+		// against a build that has no agents, so the pick is dropped and the
+		// turn runs exactly as it did before the roster existed.
+		return "", nil
+	}
+	a, err := s.roster.GetByID(ctx, companyID, agentID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return "", fmt.Errorf("%w: no such agent", domain.ErrNotFound)
+		}
+		return "", fmt.Errorf("lookup agent: %w", err)
+	}
+	if !a.Enabled {
+		return "", fmt.Errorf("%w: no such agent", domain.ErrNotFound)
+	}
+	return a.ID, nil
 }
 
 // Enqueue resolves the thread, persists the user message, and dispatches
@@ -234,10 +296,22 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 			if thread.CompanyID != in.CompanyID {
 				return nil, fmt.Errorf("thread does not belong to company")
 			}
+			// A pick that disagrees with the thread is refused rather than
+			// ignored (T-S3). Silently dropping it would let a client believe
+			// it switched agents while every turn kept running as the old one,
+			// and "the answer came from the wrong agent" is not a bug anyone
+			// finds by reading a reply.
+			if in.AgentID != "" && in.AgentID != thread.AgentID {
+				return nil, fmt.Errorf("%w: a conversation cannot change agent", domain.ErrInvalidInput)
+			}
 			resolved = &ResolveResult{Thread: thread, IsNew: false}
 		} else {
 			// Brand-new dashboard chat — create a fresh thread.
-			thread, err := s.threads.CreateDashboardThread(ctx, in.CompanyID, in.UserID, in.Message)
+			pinned, err := s.pickAgent(ctx, in.CompanyID, in.AgentID)
+			if err != nil {
+				return nil, err
+			}
+			thread, err := s.threads.CreateDashboardThread(ctx, in.CompanyID, in.UserID, in.Message, pinned)
 			if err != nil {
 				return nil, fmt.Errorf("create thread: %w", err)
 			}

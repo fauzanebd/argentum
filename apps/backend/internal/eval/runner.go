@@ -52,7 +52,10 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
-	thread, err := r.stack.ThreadSvc.CreateDashboardThread(runCtx, r.tenant.CompanyID, r.tenant.UserID, c.Question)
+	// No agent: the eval measures the deployment's default, which is what the
+	// T-16 baseline was scored against. Pinning a case to one would make the
+	// score depend on the demo tenant's roster.
+	thread, err := r.stack.ThreadSvc.CreateDashboardThread(runCtx, r.tenant.CompanyID, r.tenant.UserID, c.Question, "")
 	if err != nil {
 		res.Failures = []string{fmt.Sprintf("create thread: %v", err)}
 		return res

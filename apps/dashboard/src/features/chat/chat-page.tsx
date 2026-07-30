@@ -23,6 +23,8 @@ import type {
   SendMessageResponse,
 } from "@argentum/api-types";
 import { useModels } from "@/lib/use-models";
+import { useAgents } from "./use-agents";
+import { AgentBadge, AgentPicker } from "./agent-picker";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
 import { MarkdownRenderer } from "./markdown-renderer";
@@ -76,6 +78,17 @@ export function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+
+  /**
+   * Which agent the next new conversation opens on (T-S3).
+   *
+   * Only meaningful on the new-chat screen: once the thread exists its agent
+   * is fixed, and the send below stops passing this. null means "whatever the
+   * company's default is", resolved by the backend per turn rather than frozen
+   * here — so a roster that still has one agent behaves exactly as it did.
+   */
+  const agents = useAgents();
+  const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
 
   /**
    * The credit warning lives in the query cache, not in component state.
@@ -251,6 +264,11 @@ export function ChatPage() {
       const res = await api.post<SendMessageResponse>("/chat", {
         message: text,
         thread_id: targetThreadId ?? undefined,
+        // Only on the send that opens a conversation. On an existing thread
+        // the backend refuses an agent that disagrees with the one already on
+        // it, and sending the same one back is a round trip that can only ever
+        // agree with itself.
+        agent_id: targetThreadId ? undefined : (pickedAgentId ?? undefined),
       });
 
       setBudgetWarning(res.data.budget_warning ?? null);
@@ -338,6 +356,13 @@ export function ChatPage() {
                 className="w-full"
               />
             )}
+            {/* Agent — pickable only here, before the thread exists */}
+            <AgentPicker
+              agents={agents.selectable}
+              value={pickedAgentId ?? agents.fallback?.id ?? null}
+              onChange={setPickedAgentId}
+              className="self-start"
+            />
             {/* Composer */}
             <ChatComposer
               value={input}
@@ -352,6 +377,10 @@ export function ChatPage() {
           {/* ── Existing thread ──────────────────────────────────────── */}
           <ChatHeader
             thread={threads.find((t) => t.id === activeThreadId)}
+            agentName={agentNameFor(
+              threads.find((t) => t.id === activeThreadId),
+              agents,
+            )}
             className="shrink-0 bg-background/95 backdrop-blur-md z-20"
           />
           <div ref={timelineRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
@@ -444,12 +473,34 @@ function BudgetWarningBanner({
   );
 }
 
+/**
+ * The name to caption a thread with (T-S3).
+ *
+ * A thread with no `agent_id` runs as whatever the company default is at the
+ * time of each turn, so it is captioned with that name rather than left blank —
+ * and it resolves live, which is correct: an unpinned conversation really does
+ * follow the default when an admin moves it.
+ *
+ * Undefined means "say nothing": the roster has not loaded, or this deployment
+ * has none. A caption is not worth a layout shift or a guess.
+ */
+function agentNameFor(
+  thread: ConversationThread | undefined,
+  agents: ReturnType<typeof useAgents>,
+): string | undefined {
+  if (!thread) return undefined;
+  if (thread.agent_id) return agents.byId.get(thread.agent_id)?.name;
+  return agents.fallback?.name;
+}
+
 /* ── Chat Header — floating, no border ───────────────────────────────── */
 function ChatHeader({
   thread,
+  agentName,
   className,
 }: {
   thread?: ConversationThread;
+  agentName?: string;
   className?: string;
 }) {
   if (!thread) return null;
@@ -459,10 +510,18 @@ function ChatHeader({
         <div className="text-base font-semibold leading-snug">
           {thread.title || "Conversation"}
         </div>
-        <div className="text-xs text-muted-foreground mt-0.5">
-          {thread.channel === "whatsapp"
-            ? `WhatsApp · ${thread.phone_number}`
-            : "Dashboard"}
+        <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+          <span>
+            {thread.channel === "whatsapp"
+              ? `WhatsApp · ${thread.phone_number}`
+              : "Dashboard"}
+          </span>
+          {agentName && (
+            <>
+              <span aria-hidden>·</span>
+              <AgentBadge name={agentName} />
+            </>
+          )}
         </div>
       </div>
     </header>

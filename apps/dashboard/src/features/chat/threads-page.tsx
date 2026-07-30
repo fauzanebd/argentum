@@ -7,12 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import type { ConversationThread } from "@argentum/api-types";
 import { formatRelative } from "./format";
+import { useAgents } from "./use-agents";
+import { AgentBadge } from "./agent-picker";
 
 export function ThreadsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["threads"],
     queryFn: async () => (await api.get<{ threads: ConversationThread[] }>("/threads")).data.threads,
   });
+  const agents = useAgents();
 
   const grouped = useMemo(() => {
     const map = new Map<string, ConversationThread[]>();
@@ -66,6 +69,12 @@ export function ThreadsPage() {
                       <div className="text-sm font-medium truncate">{t.title || "Untitled"}</div>
                       {t.summary && (
                         <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{t.summary}</div>
+                      )}
+                      {/* Only for a thread pinned to an agent. An unpinned one
+                          follows the company default, and captioning every row
+                          with the same name says nothing. */}
+                      {t.agent_id && agents.byId.get(t.agent_id) && (
+                        <AgentBadge name={agents.byId.get(t.agent_id)!.name} className="mt-1" />
                       )}
                     </div>
                     <div className="text-right ml-4 shrink-0">

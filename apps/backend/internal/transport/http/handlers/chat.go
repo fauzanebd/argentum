@@ -42,13 +42,47 @@ func (h *ChatHandler) listThreads(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"threads": out})
 }
 
+// createThreadReq is the body of POST /threads. Every field is optional: the
+// dashboard's "New conversation" button still posts nothing at all.
+type createThreadReq struct {
+	// AgentID pins the conversation to one of the company's agents (T-S3).
+	// Absent means the company default, resolved per turn.
+	AgentID string `json:"agent_id,omitempty"`
+}
+
 func (h *ChatHandler) createThread(c *gin.Context) {
-	thread, err := h.chat.CreateDashboardThread(c.Request.Context(), companyID(c), userID(c))
+	var req createThreadReq
+	// An empty body is the ordinary case — the button that opens a chat sends
+	// none — so a decode failure is only an error when there was something to
+	// decode. ShouldBindJSON reports EOF for the empty body, which is not one.
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	thread, err := h.chat.CreateDashboardThread(c.Request.Context(), companyID(c), userID(c), req.AgentID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		chatFail(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, thread)
+}
+
+// chatFail maps the enqueue path's sentinel errors onto status codes.
+//
+// ErrNotFound is 404 for an agent belonging to another company as much as for
+// one that never existed, matching what agentFail does on the roster's own
+// routes — a 403 would confirm the row is real to a caller holding a bare uuid.
+func chatFail(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "no such agent"})
+	case errors.Is(err, domain.ErrInvalidInput):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
 }
 
 func (h *ChatHandler) getThread(c *gin.Context) {
@@ -105,6 +139,11 @@ func (h *ChatHandler) listMessages(c *gin.Context) {
 type sendReq struct {
 	Message  string `json:"message" binding:"required"`
 	ThreadID string `json:"thread_id,omitempty"`
+	// AgentID applies to the send that *opens* a conversation — the dashboard
+	// creates the thread and sends the first message in one call (T-S3). On a
+	// send that names an existing thread it must match what the thread already
+	// runs as, or the enqueuer refuses it.
+	AgentID string `json:"agent_id,omitempty"`
 }
 
 func (h *ChatHandler) sendMessage(c *gin.Context) {
@@ -119,6 +158,7 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 		UserID:    userID(c),
 		Message:   req.Message,
 		ThreadID:  req.ThreadID,
+		AgentID:   req.AgentID,
 	})
 	if err != nil {
 		// 402 rather than 400: the request was well-formed and the caller can
@@ -128,7 +168,7 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 			c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditsExhaustedMessage})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		chatFail(c, err)
 		return
 	}
 	// A declared struct rather than a gin.H, so the dashboard's TypeScript for

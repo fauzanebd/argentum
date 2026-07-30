@@ -10,7 +10,7 @@ names this file too, and each later ticket appends its own section.
 | ------ | ---- | ---- | ----- |
 | `T-S1` | `agents` + `agent_sources`, CRUD, Settings tab | 2.5d | **code complete 2026-07-29, live gate outstanding** |
 | `T-S2` | Turn composition and enforcement | 2.5d | **code complete 2026-07-29, live gate outstanding** |
-| `T-S3` | Agent picker in the dashboard chat | 1.0d | not started |
+| `T-S3` | Agent picker in the dashboard chat | 1.0d | **code complete 2026-07-30, live gate outstanding** |
 | `T-S4` | Discord / Lark / WhatsApp channel bindings | 2.0d | not started |
 | `T-S5` | `agent_id` on `/v1`, plus `GET /v1/agents` | 1.5d | not started |
 
@@ -392,3 +392,133 @@ unapplied.
   disabled while it holds the flag (`T-S1`). What `T-S3` and `T-S5` must add is
   refusing a disabled agent **at pick time** — the runner deliberately does not
   re-check, because a thread already bound to one keeps its narrower scope.
+
+---
+
+## T-S3 · The picker
+
+> **Status 2026-07-30: code complete, gate outstanding.** `make check` clean,
+> `make types-check` current, `make lint-go` at 0 issues, 9 new tests across two
+> packages. **No migration** — `031` already added
+> `conversation_threads.agent_id` and nothing here needed a column. The gate is
+> a screen recording against a live API, and `030`/`031` are still applied to no
+> database.
+
+### 1. What ships
+
+The verb `T-S1` and `T-S2` were waiting for. Until this, every dashboard thread
+was created with a NULL `agent_id` and every turn resolved the company default,
+so a customer with four agents could talk to exactly one of them. Two doors now
+accept a pick, and one place decides whether it is allowed.
+
+| Layer | File |
+| ----- | ---- |
+| Pick validation | `internal/app/chat_enqueuer.go` — `pickAgent`, `RosterReader` |
+| Thread creation | `internal/app/thread_service.go` — `createDashboardThread` |
+| Routes | `internal/transport/http/handlers/chat.go` — `createThreadReq`, `sendReq.AgentID`, `chatFail` |
+| Roster read | `apps/dashboard/src/features/chat/use-agents.ts` (new) |
+| Picker | `apps/dashboard/src/features/chat/agent-picker.tsx` (new) |
+| Wiring | `chat-page.tsx` (new-chat screen, header, send), `threads-page.tsx` |
+
+`POST /api/threads` and `POST /api/chat` both take an optional `agent_id`. The
+dashboard only uses the second — "New conversation" navigates to an empty
+screen and the first send is what creates the thread, so the dashboard has
+never called `POST /threads` at all. It takes the field anyway, because the
+ticket's cross-tenant acceptance item is about the *door*, not about which door
+this frontend happens to use.
+
+### 2. Decisions worth carrying forward
+
+- **Empty stays empty; it does not resolve to the default at pick time.** A
+  thread the user did not pin is stored with a NULL `agent_id` and resolves the
+  default on every turn (`agentFor`, unchanged from `T-S2`). Freezing the
+  default's id onto the row at creation would have been one less lookup and a
+  worse product: a company that later moves its default would find every old
+  conversation still running as the old one, with nothing in the UI to explain
+  why. The cost of the choice is that "picked the default explicitly" and "did
+  not pick" store different rows and behave identically **until** the default
+  moves, at which point they correctly diverge.
+- **The three refusals are one error.** Unknown id, another company's id, and a
+  disabled agent all return `domain.ErrNotFound` wrapped with the same
+  sentence, which `chatFail` answers as a 404 reading `no such agent`. This is
+  the rule `agentFail` already set on the roster's own routes (`T-S1`), and the
+  reason is unchanged: the caller is a browser holding a bare uuid, and a
+  distinguishable error is an existence oracle across tenants. There is a test
+  asserting the body mentions neither "disabled" nor "company", because the
+  leak this prevents is one a future well-meaning error message reintroduces.
+- **Disabled is checked at pick time and nowhere else.** `T-S2`'s
+  `resolveAgent` deliberately does not re-check, and that stays true: a thread
+  already bound to an agent keeps its narrower scope after an admin disables
+  it. Disabling stops new picks, not running conversations. The alternative — a
+  disabled agent falling back to the default — would *widen* a conversation's
+  data access at the moment someone tried to restrict it, which is the wrong
+  direction for a switch labelled "disable".
+- **A pick that disagrees with an existing thread is refused, not ignored.**
+  `POST /chat` with a `thread_id` and a conflicting `agent_id` is a 400.
+  Dropping it silently would let a client believe it had switched agents while
+  every turn kept running as the old one, and "the answer came from the wrong
+  agent" is not a defect anyone finds by reading a reply.
+- **No roster wired means the pick is dropped, not refused.** A stripped-down
+  deployment — the eval harness, a build predating `T-S1` — has no roster to
+  validate against. Refusing there would break every new chat on a dashboard
+  that offers a picker; dropping the pick runs the turn exactly as this product
+  did before the roster existed, which is the same fallback `T-S2` chose three
+  times over.
+- **The dashboard got its own thread constructor rather than an eighth
+  positional argument.** `createThread` already carries four positional identity
+  parameters and a comment in `continueOrForkWith` explaining why a fifth
+  channel's key could not join them. `createDashboardThread` sits beside
+  `createLarkThread` and `createAPIThread` for that stated reason.
+- **The picker hides itself below two agents.** A company that has never opened
+  Settings → Agents has exactly the one agent `030`'s backfill created, and a
+  select with a single option is furniture. It also means this ticket changes
+  nothing visible for a tenant who has not used `T-S1`.
+- **A thread's agent is a label, never a disabled control.** `AgentBadge`, not a
+  greyed-out `Select`: a control that cannot be operated reads as one that might
+  become operable, and this one never does.
+
+### 3. What is proven, and what is not
+
+Nine tests, and the split between the two packages is deliberate — *which* picks
+are refused is an `internal/app` question, and *what the browser sees* is a
+transport one:
+
+- `internal/app/chat_enqueuer_agent_test.go` (+5): an owned agent is accepted; no
+  pick leaves the thread unpinned **and does not consult the default**; the three
+  refusals are all `ErrNotFound` and all read the same; an unreadable roster is
+  *not* an `ErrNotFound` (it would send an admin looking for a row that is right
+  there); no roster wired drops the pick.
+- `internal/transport/http/handlers/chat_test.go` (+4, new file): `chatFail`
+  maps `ErrNotFound`→404, `ErrInvalidInput`→400, everything else→400 as before,
+  and a refusal names none of what it refused.
+
+**What no test here establishes** is the ticket's five acceptance items, all of
+which need a live API and a browser: that opening a chat on "Ops" produces a
+thread the header shows as Ops, that a reload keeps it, that a follow-up turn
+runs under it, and that the `agent_actions` rows carry the Ops id. Those are the
+gate.
+
+### 4. The gate, outstanding
+
+Unchanged from the ticket, and none of it has run — it needs `030` and `031`
+applied, which is the same blocker `T-S1` and `T-S2` still carry:
+
+1. A screen recording: pick Ops, ask a question, reload, ask a follow-up.
+2. Both `agent_actions` rows carrying the Ops agent id.
+3. The cross-tenant 404 and the disabled-agent 404 over the wire, each creating
+   no thread.
+
+`make infra` provides the postgres.
+
+### 5. For T-S4 and T-S5
+
+- `ChatEnqueuer.pickAgent` is the validation both should reuse rather than
+  re-derive. `T-S5`'s `/v1` routes want exactly its three refusals, and its
+  404-not-403 reasoning is already the `/v1` house rule (`T-A3`).
+- `ChatInput.AgentID` is dashboard-only today and the field is channel-agnostic.
+  `T-S4` sets `ChatRunPayload.AgentID` from a binding instead, which is a
+  different insertion point — a binding is not a caller's pick and must not be
+  refusable by the same path.
+- The dashboard reads the roster through `useAgents()` on the `["agents"]` query
+  key that Settings → Agents already populates. Anything else needing the roster
+  in the frontend should use it rather than issue a second `GET /agents`.

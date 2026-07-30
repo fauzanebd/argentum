@@ -185,11 +185,18 @@ func (s *ThreadService) ResolveForUser(ctx context.Context, companyID, userID, u
 
 // CreateDashboardThread creates a fresh dashboard thread for the given user.
 // The dashboard calls this explicitly when the user clicks "New conversation".
-func (s *ThreadService) CreateDashboardThread(ctx context.Context, companyID, userID, firstMessage string) (*domain.ConversationThread, error) {
+//
+// agentID pins the conversation to one roster agent (T-S3) and is empty for
+// "the company default", which is what every caller outside the chat UI passes.
+// It is **not** validated here: whether that agent exists, belongs to this
+// company and is enabled is a pick-time question, answered by ChatEnqueuer
+// before this is reached. A thread service that re-checked it would need the
+// roster, and the roster is not what decides where a conversation is stored.
+func (s *ThreadService) CreateDashboardThread(ctx context.Context, companyID, userID, firstMessage, agentID string) (*domain.ConversationThread, error) {
 	if companyID == "" || userID == "" {
 		return nil, fmt.Errorf("companyID and userID required")
 	}
-	res, err := s.createThread(ctx, companyID, domain.ChannelDashboard, "", userID, "", firstMessage)
+	res, err := s.createDashboardThread(ctx, companyID, userID, firstMessage, agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +269,29 @@ func (s *ThreadService) createLarkThread(
 		LarkChatID:    larkChatID,
 		LarkThreadKey: larkThreadKey,
 		LarkOpenID:    larkOpenID,
+		Title:         deriveTitle(firstMessage),
+		LastMessageAt: now,
+	}
+	if err := s.threads.Create(ctx, t); err != nil {
+		return nil, fmt.Errorf("create thread: %w", err)
+	}
+	return &ResolveResult{Thread: t, IsNew: true}, nil
+}
+
+// createDashboardThread is the dashboard's own constructor, beside Lark's and
+// the API's, rather than an eighth positional argument on createThread. The
+// same reasoning continueOrForkWith records: a channel that carries a key the
+// others do not gets its own function, because the alternative is a signature
+// every channel pays for and one channel reads.
+func (s *ThreadService) createDashboardThread(
+	ctx context.Context, companyID, userID, firstMessage, agentID string,
+) (*ResolveResult, error) {
+	now := time.Now()
+	t := &domain.ConversationThread{
+		CompanyID:     companyID,
+		Channel:       domain.ChannelDashboard,
+		UserID:        userID,
+		AgentID:       agentID,
 		Title:         deriveTitle(firstMessage),
 		LastMessageAt: now,
 	}

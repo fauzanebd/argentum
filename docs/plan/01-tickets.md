@@ -3280,6 +3280,14 @@ both turns showing distinct `agent_id`s. Record it in
 
 ## T-S3 · Agent picker in the dashboard chat
 **Repo:** FE, BE · **Size:** 1d · **Deps:** T-S2 · **Priority:** P0 · **Never cut**
+**Migration:** none — `031_thread_agent` already added the column.
+
+> **Status 2026-07-30: code complete, gate outstanding.** `make check` clean,
+> `make types-check` current, 9 new tests across two packages. The acceptance
+> boxes below stay unticked: every one of them needs a live API and a browser,
+> and `030`/`031` are still applied to no database. Record:
+> [`../coverage/agent-roster.md`](../coverage/agent-roster.md).
+
 ### Why
 
 `T-S2` makes a thread's agent decide the turn. Until the web chat can set it,
