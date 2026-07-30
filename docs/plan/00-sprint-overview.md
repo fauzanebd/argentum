@@ -397,7 +397,7 @@ change no one's workflow. Watchers do.
 | 0 ✅ | **One tree**            | Single repo, all three histories blameable through the subtree boundary. Zero Go import-path changes in the migration diff. Both Cloudflare Pages previews deploy from the new roots. CI path-filters correctly per job, and `cmd/discord` builds in it for the first time. |
 | 1 ✅ | **It admits what it doesn't know** | `make eval` prints a score over ≥30 golden questions. The exact C-1 question — "What were our total sales last month?" — returns the right order of magnitude or an explicit "I could not complete this", and never an invented figure. `/api/usage/summary` shows the primary model with non-zero tokens after one chat turn. **Met 2026-07-27.** The C-1 question returns the exact figure; a turn that runs out now says so in the reply ("the budget was exhausted before I could get the final sum") instead of inventing one. |
 | 1a | **Worth forwarding**     | The same monthly-sales spec renders as (a) a branded PDF with a cover, a running header, `Page N of M`, a chart, right-aligned rupiah, and a repeating table header across 200 rows, and (b) a PPTX deck that opens cleanly in PowerPoint, Keynote, Google Slides, and LibreOffice with the narrative in speaker notes. Both derive their colours, type scale, and fonts from the same generated tokens as the dashboard, and CI fails if the two drift. A tenant logo and colour set in Settings → Reports appear in the next generated file with no redeploy. **PDF half met in full 2026-07-28:** cover, running header, `Page N of M`, right-aligned rupiah, a header repeating across 17 pages of a 200-row table, byte-identical between runs, and — since `T-R3` — a chart, on the same generated tokens as the dashboard and on a palette now gated against deuteranopia and greyscale. **Deck half met 2026-07-28 except the four-application check:** the identical fixture — same file, only `format` changed — renders as 11 slides with the narrative in speaker notes, byte-identical between runs, and LibreOffice 7.4.7.2 converts all five fixtures in CI. PowerPoint, Keynote and Google Slides cannot be driven from a headless runner; that check is outstanding and named in `coverage/report-deck.md`. Tenant branding is `T-R5`. |
-| 1b | **Safe to change**       | CI fails on a failing test. All CRITICAL packages have tests. A Go struct rename without `make types` is a red build. Non-admin cannot rotate a DSN. A tenant at zero credits gets a clear refusal instead of a bill. **Half met 2026-07-28 by `T-02`:** all CRITICAL packages have tests (21 of 49 packages, up from 16), CI runs `go vet`, `golangci-lint` and `go test -race` and the tree is clean under all three, and a deliberate break was shown to fail the suite locally — the CI-run proof needs a push and is recorded as outstanding. **`T-04` closed the RBAC half 2026-07-28** — non-admin cannot rotate a DSN, proven against a live API. **`T-05` closed the audit half 2026-07-28** — every tool call, and every guardrail-stopped turn, leaves an append-only row scoped to its tenant. **`T-03` closed the credits half 2026-07-28** — a tenant at zero gets a 402 and a plain sentence on every channel, with zero `usage_events` written, and a tenant on their own key is never blocked; it also had to ship the starting grant, because until now nothing had ever credited a company and "refuse at zero" would have refused everyone ([`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md)). **`T-02b` closed the last of it 2026-07-29** — the dashboard's four hand-written `types.ts` files are gone, `packages/api-types` is generated from the Go structs, and a renamed JSON tag was shown to fail `make types-check`, fail CI's regenerate-and-diff, and stop the dashboard compiling. The migration found seven live mismatches, including a `Thread.channel` union that had said `"whatsapp" | "dashboard"` since two channels before Discord ([`../coverage/generated-types.md`](../coverage/generated-types.md)). **Phase 1b is met.** |
+| 1b | **Safe to change**       | CI fails on a failing test. All CRITICAL packages have tests. A Go struct rename without `make types` is a red build. Non-admin cannot rotate a DSN. A tenant at zero credits gets a clear refusal instead of a bill. **Half met 2026-07-28 by `T-02`:** all CRITICAL packages have tests (21 of 49 packages, up from 16), CI runs `go vet`, `golangci-lint` and `go test -race` and the tree is clean under all three, and a deliberate break was shown to fail the suite locally — the CI-run proof needs a push and is recorded as outstanding. **Half closed 2026-07-30:** run `30522320695` on `main` executed all three jobs green in 10m17s, so the pipeline demonstrably runs on a push. The other half — *"CI fails on a failing test"*, which is the criterion's actual wording — still has no red run behind it, because nobody has pushed a deliberate break. It stays outstanding, and it is cheap: one throwaway branch with a broken assertion. **`T-04` closed the RBAC half 2026-07-28** — non-admin cannot rotate a DSN, proven against a live API. **`T-05` closed the audit half 2026-07-28** — every tool call, and every guardrail-stopped turn, leaves an append-only row scoped to its tenant. **`T-03` closed the credits half 2026-07-28** — a tenant at zero gets a 402 and a plain sentence on every channel, with zero `usage_events` written, and a tenant on their own key is never blocked; it also had to ship the starting grant, because until now nothing had ever credited a company and "refuse at zero" would have refused everyone ([`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md)). **`T-02b` closed the last of it 2026-07-29** — the dashboard's four hand-written `types.ts` files are gone, `packages/api-types` is generated from the Go structs, and a renamed JSON tag was shown to fail `make types-check`, fail CI's regenerate-and-diff, and stop the dashboard compiling. The migration found seven live mismatches, including a `Thread.channel` union that had said `"whatsapp" | "dashboard"` since two channels before Discord ([`../coverage/generated-types.md`](../coverage/generated-types.md)). **Phase 1b is met.** |
 | 1c | **Anyone can call it**   | A throwaway Node script holding an API key writes a branded PDF to disk in under 10 minutes, using only the published quickstart and no help from us. The same key streams a chat answer over SSE, and is rejected by every `/api` dashboard route. A retried request with the same `Idempotency-Key` bills once. Adding a `/v1` route without an OpenAPI entry is a red build. **The credential half is met 2026-07-28 by `T-13`**: a key authenticates `/v1`, is rejected by all 66 policed `/api` routes, and a dashboard JWT is rejected by `/v1` — proven against the real router in both directions. **`T-A1` met the contract half 2026-07-28**: the envelope, request ids, idempotency, rate-limit headers, cursor pagination and the kill switch are in, and `GET /v1/me` reports the key, its scopes, its rate limit and the tenant's credit position. **`T-A2` shipped the routes 2026-07-28**: a spec posted to `POST /v1/reports/render` comes back as a branded PDF — inline bytes or a presigned URL — and a prompt posted to `POST /v1/reports` runs a real agent turn whose progress streams over SSE and whose result arrives as a signed callback. "Bills once" is now proven **over the wire**: a replayed `Idempotency-Key` returns the same document with a re-presigned URL, a retry mid-render gets `409 request_in_flight`, and a changed body under the same key gets 409. **`T-A3` closed the chat half 2026-07-28**: the same key streams an answer over SSE — deltas, tool calls, a 15s heartbeat, and a `final` carrying the message and what the turn cost — and the synchronous door returns the same answer to the same question. A turn that outruns the wait answers 504 with the ids to resume from, and **keeps its idempotency key**, so the retry it invites replays instead of billing twice; proven over the wire, one question and one answer in the thread afterwards. **`T-A4` met the last of it 2026-07-29**: the contract is published as OpenAPI 3.1, served keyless at `GET /v1/openapi.json`, and a throwaway project reached a branded PDF on disk in **one second** from an empty directory using only the quickstart — four in Python — against a ten-minute budget. "Adding a `/v1` route without an OpenAPI entry is a red build" is now literally true, in both directions, and so are three checks the criterion did not ask for. **The criterion is met.** What the gate also found: `T-A2`'s agentic door is refused by our own injection guardrail four times in five, silently — `T-A2b`, **fixed the same day**: the report directive now travels in the system prompt for that turn, so the guardrail judges only what the caller sent, and the classifier keeps its teeth. The ten-run confirmation needs a live deployment and is outstanding. **`T-A5` closed the track 2026-07-30**, beyond the criterion rather than inside it: an integrator whose key gets a 403 at 11pm now reads the 403 themselves, in their own dashboard, with the request id their script was handed — proven live for a forced 403, five forced 429s and a forced 500, each id matching its `curl`, admin-only against a member session. `GET /v1/usage` gives their application the spend and the balance over a window it chooses. The ticket's parenthetical *"`/metrics` is secured by `T-05`"* was false — `T-05` was the audit log — so per-key labels there are gated on `METRICS_TOKEN` and route-level numbers, which name no tenant, are served as before ([`../coverage/api-observability.md`](../coverage/api-observability.md)). |
 | 2  | **Authoritative numbers**| A metric is defined once in the UI; asking the same question twice in two threads returns the same number via `query_metric`. Eval score has not regressed. |
 | 3  | **It tells you first**   | A watcher on a demo-tenant metric breaches and a WhatsApp/Discord message arrives, unprompted, containing the number and the agent's explanation. |
@@ -564,7 +564,7 @@ Sprint 2's roster track, which started early.
 It fits — with 4.0 days of slack across three phases after `T-R4` landed on
 2026-07-28, which is more comfortable than the 1.5 this table showed a day
 earlier but is still a plan that has already absorbed two priority inserts. What pays for it is phases 2–6 — the metric registry,
-**watchers**, actions, MCP and hardening, 23.5 days — moving to Sprint 2
+**watchers**, actions, MCP and hardening, 23.0 days — moving to Sprint 2
 alongside the widget phase.
 
 **Say the expensive part out loud.** §2 calls week 3 *"THE WEDGE. This is the week
@@ -591,13 +591,18 @@ and its tickets are written. The customer registers their own MCP server and
 their agents call its tools; it is `T-14` pointed the other way, and it deps the
 roster, so it lands behind `T-S2` regardless of priority.
 
-**Sprint 2 now holds 52.5 days of committed work** — 23.5 (phases 2–6) + 11.5
+**Sprint 2 now holds 52.0 days of committed work** — 23.0 (phases 2–6) + 11.5
 (widget) + 9.5 (roster) + 8.0 (MCP-as-source) — before anything new is
-considered, and before anyone has said how long Sprint 2 is. The paragraph above
+considered, and before anyone has said how long Sprint 2 is. **Was `52.5` and
+`23.5` until 2026-07-30 (§8a); 46.0 of the 52.0 is still ahead, since
+`T-S1`→`T-S3` are delivered.** The paragraph above
 says "something in phases 2–6 will have to move again"; with a fourth track that
 is no longer a prediction, it is arithmetic. **Whoever opens Sprint 2 writes its
 cut order first, before its first ticket** — Sprint 1's cut order was written up
 front and is the only reason two priority inserts did not strand anything.
+**Written 2026-07-30 in §8, three tickets late** — `T-S1`→`T-S3` had already
+landed. They ran in dependency order and stranded nothing, so the cost was the
+guarantee rather than the work.
 
 **Updated 2026-07-30: 6.0 of those days are already delivered.** `T-S1`, `T-S2`
 and `T-S3` are done and gated live, so the roster track has 3.5d left (`T-S4`
@@ -608,7 +613,12 @@ be right by the same 6.0 — it does not settle which one it is.
 by `01-tickets.md`'s own phase figures (23.5 + 11.5 + 9.5). One of the two is
 wrong, neither has been checked, and the gap is 4.0 days — a working week's
 worth of planning error sitting in the number Sprint 2 will be sized against.
-Settle it at sprint close.
+~~Settle it at sprint close.~~ **Settled 2026-07-30 in §8a, and neither figure
+survived: the answer is `44.0`.** `~40.5` is a 4.0-day arithmetic slip, and the
+`23.5` both figures leaned on is itself 0.5 stale — `T-14` was re-estimated from
+`2.5d` to `2d` and the phase table never followed. So the `52.5` above is
+**`52.0`**, and less the three delivered roster tickets, **46.0 days remain
+committed**.
 
 `T-00b` is uncuttable for a scheduling reason rather than a product one: it moves
 every file in the workspace, so it is only cheap **before** the sprint. Deferred to
@@ -632,3 +642,88 @@ surface, the second gets integrated insecurely.
   workspace; work started against the old layout is work thrown away.
 - After `T-00b`, a ticket spanning backend and frontend is **one commit**. Two
   commits for one feature is now a review finding, not a necessity.
+
+## 8. Sprint 2 cut order
+
+**Written 2026-07-30, and late.** §6 says *"whoever opens Sprint 2 writes its cut
+order first, before its first ticket."* Sprint 2's first three tickets
+(`T-S1`→`T-S3`) landed on 2026-07-29–30 without one, so this is written against
+three tickets already spent rather than against a clean sprint. Nothing was
+stranded — the roster track ran in dependency order — but the guarantee §6 was
+buying did not exist while it ran.
+
+### 8a. The 40.5 / 44.5 gap, settled
+
+§6 flagged two irreconcilable totals — `~40.5` and `44.5` — and said "settle it
+at sprint close". Settled here instead, because Sprint 2 is about to be sized
+against it. **Neither figure is right.** Summed from the tickets themselves rather
+than from any phase table:
+
+| Track | Days | Sum |
+| ----- | ---- | --- |
+| Phases 2–6 (`T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18`) | **23.0** | 3 + 1.5 + 3 + 2 + 2.5 + 1.5 + 1 + 1.5 + 2 + 1.5 + 2 + 1.5 |
+| Widget (`T-19`→`T-23`) | 11.5 | 2.5 + 2 + 3.5 + 2 + 1.5 |
+| Roster (`T-S1`→`T-S5`) | 9.5 | 2.5 + 2.5 + 1 + 2 + 1.5 |
+| MCP-as-source (`T-M1`→`T-M4`) | 8.0 | 2.5 + 3 + 1 + 1.5 |
+| **Committed total** | **52.0** | |
+
+Two separate errors, not one. **`~40.5` is a 4.0-day arithmetic slip** against its
+own inputs — the three tracks it summed came to `44.5` by the figures available
+when it was written. And **`23.5` for phases 2–6 is stale by 0.5**: `T-14` was
+re-estimated from `2.5d` to `2d` in its own header and
+[`01-tickets.md`](01-tickets.md)'s execution-order table never picked it up. The
+correct three-track figure is therefore **44.0**, and **`52.5` becomes `52.0`**.
+
+The lesson is the one the migration table keeps teaching in the same document: a
+number copied into a summary stops tracking the thing it summarises. **Sum from
+the ticket headers.**
+
+**Less `T-S1`→`T-S3` (6.0d, delivered): 46.0 days remain committed** before
+anything new is considered.
+
+### 8b. The order
+
+Cut from the top. One list, not four — the per-track markers (`#2a`, `#2b`,
+`#3a`, `#3b`) were assigned inside their own tickets and **collided with the
+positions Sprint 1's list already used**, which is the concrete cost of not
+having written this in time. The markers are mapped here; where a ticket's own
+header disagrees with this table, **this table wins**.
+
+| # | Ticket | Days | Old marker | What cutting it costs |
+| - | ------ | ---- | ---------- | --------------------- |
+| 1 | `T-M4` write-capable MCP tools | 1.5 | `#3b` | Read-only tenant tools are the value; writes are the second product. Also the only Sprint 2 ticket depending on `T-10`+`T-11`, so cutting it decouples the MCP track from the action track entirely. |
+| 2 | `T-15` outbound webhook subscriptions | 1.5 | Sprint 1 `#1` | The delivery core shipped inside `T-A2`. This is the subscription model, not the sender. |
+| 3 | `T-14` MCP server (us as server) | 2.0 | Sprint 1 `#2` | After `T-A1` an outside agent reaches Argentum over `/v1`. Costs convenience, not reachability. **Not `T-M1`** — see §5's confusion risk. |
+| 4 | `T-17` OTel tracing | 2.0 | Sprint 1 `#3` | Keep the `/metrics` half: it now carries an open finding of its own (§5, `/metrics` is on the public router) and `T-A5` added per-key labels behind `METRICS_TOKEN` rather than fixing it. Cutting the tracing does not cut that, and the header already scopes the cut to "tracing only". |
+| 5 | `T-12b` `http_action` | 1.5 | Sprint 1 `#4` | Keep `send_message` — it is what makes watchers useful. |
+| 6 | `T-S4` channel bindings | 2.0 | `#2a` | The roster stays dashboard-only. Discord/Lark/WhatsApp keep answering on the company default, which is today's behaviour — a cut here removes an improvement, not a capability. |
+| 7 | `T-M3` MCP legibility — **partially, never whole** | 1.0 | `#3a` | Cut the per-server usage breakout and the thread-view labelling. **Keep the agent↔server binding control.** `T-M1` creates servers and `T-M2` calls them, but the binding UI is in `T-M3`; cut whole, the track ships reachable only by writing `agent_mcp_servers` rows by hand. Same shape as Sprint 1's `T-22` cut. |
+| 8 | `T-S5` `agent_id` on `/v1` | 1.5 | `#2b` | **Cutting it strands `T-M3`, which deps it.** So it is below `T-M3` in cost despite being the cheaper ticket, and cutting it means cutting `T-M3` whole — which position 7 says never to do. Read this row as: cut 8 only after 7 is already gone. |
+| 9 | `T-23` widget config UI | 1.5 | Sprint 1 `#8` | Ship the widget on hardcoded defaults. |
+| 10 | `T-22` npm packages and examples | 2.0 | Sprint 1 `#9` | Only down to the vanilla example and the Go + Node signing snippets. **Never ship the widget with no integration docs.** |
+
+Cutting all ten recovers at most **16.5 of the 46.0** — less than that in
+practice, because positions 4 and 7 are scoped cuts rather than whole tickets
+(`T-17` keeps the `/metrics` fix, `T-M3` keeps the binding control), and because
+positions 9–10 belong to the widget phase, which §6 says is cut whole or not at
+all. Read the list as a sequence to stop partway down, not as a budget.
+
+**Never cut:** `T-06`/`T-07` (metric registry), `T-08`/`T-09` (watchers — twice
+displaced already, see §5), `T-10`/`T-11`/`T-12a` (the action framework and the
+one action that makes watchers useful), `T-19` (embed auth), `T-M1`/`T-M2` (the
+egress gate and the turn-time integration; a half-built MCP client is dead
+attack surface in the same way a half-built embed surface is).
+
+**Two rules carried forward from §6.** The widget phase is cut whole or not at
+all — `T-19`→`T-23` move together. And nothing is inserted ahead of `T-19` and
+`T-08` without writing down what slips; Sprint 1 absorbed two priority inserts
+and this is the mechanism that let it.
+
+**What is not in this list, and should be decided before Sprint 2 opens:** the
+two acceptance items Sprint 1 still owes (`T-R4`'s three unautomatable
+applications, `T-A2b`'s ten live report calls), the `/metrics` finding above, and
+the unfiled `T-S3` gate finding — the dashboard's host/port connection form pins
+`sslmode=require` and does not test the connection on create, so a source added
+through the UI fails one turn later after an agent has spent its budget
+discovering it. None is a track; all four are smaller than any row above and
+none has an owner.

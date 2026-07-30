@@ -15,11 +15,19 @@ number when you land, and update this table.** Always write both `.up.sql` and
 `.down.sql`. The playbook is
 [`../agents/playbooks/add-migration.md`](../agents/playbooks/add-migration.md).
 
-The last applied migration is **`029_webhook_delivery`**. **Corrected 2026-07-29
-— this line said `022` while the tree held everything through `029`**, which is
-precisely the failure the paragraph above warns about: the next ticket to file a
-migration would have read `022`, claimed `023`, and shipped a file golang-migrate
-would never run. The next free number is **`030`**.
+The last applied migration is **`032_api_observability`**. **Corrected 2026-07-30
+— this line said `029` while the tree held everything through `032`**, the second
+correction in two days, and both times the same failure the paragraph above warns
+about: a ticket reading this line would have claimed `030` and shipped a file
+golang-migrate can never run, because `T-S1` already holds it. Read from the
+database rather than from this table — `schema_migrations` reports version `32`,
+not dirty. The next free number is **`033`**.
+
+**Pre-assignment below stops at the first unlanded ticket, deliberately.** Six
+rows used to carry numbers `033`–`038` for tickets that have not been written yet.
+Nothing outside this table ever cited them, and every one of them shifts the
+moment a ticket lands out of order — which is what has now happened twice. A slug
+with no number cannot drift.
 
 | Ticket | Migration | Status |
 | ------ | --------- | ------ |
@@ -29,15 +37,16 @@ would never run. The next free number is **`030`**.
 | T-13   | `024_api_keys` | **applied** |
 | T-A1   | `025_api_channel`, `026_agent_actions_request_id` | **applied** |
 | T-A2   | `027_documents_api`, `028_api_reports`, `029_webhook_delivery` | **applied** |
-| T-S1   | `030_agents` | **written 2026-07-29, not yet applied** |
-| T-S2   | `031_thread_agent` | **written 2026-07-29, not yet applied** |
-| T-S4   | `032_agent_channel_bindings` | |
-| T-06   | `033_metric_definitions` | pre-assignment only — re-derive on landing |
-| T-08   | `034_watchers` | pre-assignment only |
-| T-10   | `035_actions` | pre-assignment only |
-| T-15   | `036_outbound_webhooks` | pre-assignment only (subscription model; the sender landed in `029`) |
-| T-19   | `037_embed_keys` | pre-assignment only |
-| T-20   | `038_thread_embed` | pre-assignment only |
+| T-S1   | `030_agents` | **applied** (this row said "not yet applied" until 2026-07-30; `T-S3`'s live gate ran against it) |
+| T-S2   | `031_thread_agent` | **applied** (same correction) |
+| T-A5   | `032_api_observability` | **applied** |
+| T-S4   | `033_agent_channel_bindings` | **reassigned 2026-07-30** — the ticket was written against `032`, which `T-A5` then took |
+| T-06   | `*_metric_definitions` | next free on landing |
+| T-08   | `*_watchers` | next free on landing |
+| T-10   | `*_actions` | next free on landing |
+| T-15   | `*_outbound_webhooks` | next free on landing (subscription model; the sender landed in `029`) |
+| T-19   | `*_embed_keys` | next free on landing |
+| T-20   | `*_thread_embed` | next free on landing |
 
 ---
 
@@ -57,7 +66,7 @@ priority on 2026-07-28. This table is the authoritative order.
 | 1a — **done** | ~~`T-R1`~~, ~~`T-R2`~~, ~~`T-R3`~~, ~~`T-R4`~~, ~~`T-R5`~~ | 10.0 | Owner-set priority. The document is the artefact that leaves the building. **`T-R1` and `T-R2` landed 2026-07-27** — one `tokens.json` generates the dashboard's CSS variables and the backend's Go report theme ([`../coverage/design-tokens.md`](../coverage/design-tokens.md)), and the PDF renderer was rewritten against it: cover, running header, `Page N of M`, numbered sections, KPI cards, typed and locale-formatted cells, content-weighted columns ([`../coverage/report-rendering.md`](../coverage/report-rendering.md)). **`T-R3` landed 2026-07-28** — seven chart types on the token palette, which the colour-vision gate forced a change to ([`../coverage/report-charts.md`](../coverage/report-charts.md)). **`T-R4` landed 2026-07-28** — the same spec projected onto slides, narrative in the speaker notes ([`../coverage/report-deck.md`](../coverage/report-deck.md)). **`T-R5` landed 2026-07-28** — tenant logo, accent, locale and footer on both formats, with a live preview rendered by the renderer itself and a contrast floor a pale brand colour cannot pass ([`../coverage/report-branding.md`](../coverage/report-branding.md)). |
 | 1b — safe to change | ~~`T-02`~~, ~~`T-04`~~, ~~`T-05`~~, ~~`T-03`~~, ~~`T-02b`~~ | 8.0 | The rest of the foundation: CI gate, generated types, credit enforcement, RBAC, audit log. Not optional ahead of 1c — a public API is the first surface where an unaudited, unbounded, un-role-gated system is reachable by a script. **`T-02` landed 2026-07-28**: every CRITICAL package covered, `golangci-lint` at 0 issues, and the dashboard linted for the first time. It also found that non-UTC scheduled tasks cannot work in the deployed images ([`../coverage/test-coverage.md`](../coverage/test-coverage.md)). **`T-04` landed 2026-07-28**: 26 routes gated by a policy table the router's own route list is diffed against, plus team invites and an account lifecycle that ends a removed user's sessions ([`../coverage/rbac.md`](../coverage/rbac.md)). **`T-05` landed 2026-07-28**: one append-only row per tool call, written by a decorator over the whole registry rather than per tool, plus a row for a turn a guardrail stopped — which needed a second integration point, because a guardrail stops a turn before any tool runs ([`../coverage/agent-audit.md`](../coverage/agent-audit.md)). **`T-03` landed 2026-07-28**: the balance is checked before a turn is queued on every channel and on every scheduled fire, a tenant on their own key is never blocked, and the ticket had to grow a starting grant — because nothing had ever credited a company, so enforcing it as written would have refused every tenant at once ([`../coverage/credit-enforcement.md`](../coverage/credit-enforcement.md)). |
 | 1c — callable | ~~`T-13`~~, ~~`T-A1`~~, ~~`T-A2`~~, ~~`T-A3`~~, ~~`T-A4`~~, `T-A2b`→`T-A5` | 12.5 | **Owner-set highest priority, 2026-07-28.** The tenant's own app asks Argentum for a report or an answer over HTTP. `T-13` moved here from week 5 — it is the prerequisite, not a week-5 nicety. **`T-13` landed 2026-07-28**: scoped, hashed, revocable keys on a `/v1` namespace that refuses a dashboard JWT as flatly as `/api` refuses a key, with a per-key rate bucket and a Settings tab. The hash is a SHA-256 rather than the Argon2id the ticket named, because the input is 256 random bits rather than a password; the live gate found `/v1` inheriting the dashboard's permissive CORS headers ([`../coverage/api-keys.md`](../coverage/api-keys.md)). **`T-A1` landed 2026-07-28**: the contract every `/v1` route inherits — request ids, the typed envelope, idempotency that records ids rather than payloads, rate-limit headers, cursor pagination, a kill switch, and the `api` channel both `T-A2` and `T-A3` need. Four acceptance items have no route to run against until `T-A2`'s first `POST` and are recorded as tested-not-live ([`../coverage/api-foundation.md`](../coverage/api-foundation.md)). **`T-A2` landed 2026-07-28**: a spec posted to `POST /v1/reports/render` comes back as a branded PDF and a prompt posted to `POST /v1/reports` runs a real agent turn, with three ways to collect the result — and it turned four of `T-A1`'s tested-not-live items into transcripts ([`../coverage/api-reports.md`](../coverage/api-reports.md)). **`T-A3` landed 2026-07-28**: a question in, an answer out, streamed over SSE or waited for, on the event names the dashboard already publishes — plus the thread and transcript reads, `user_ref` isolation enforced rather than trusted, and a 504 that hands back the ids to resume with instead of inviting a second billed turn. The live gate found that `last_message_at` and `messages.created_at` are written by different clocks, which held every settled thread's stream open until the client gave up ([`../coverage/api-chat.md`](../coverage/api-chat.md)). **`T-A4` landed 2026-07-29 and closes the phase's exit criterion**: an OpenAPI 3.1 document covering all fifteen operations, served keyless at `GET /v1/openapi.json`, a Node and a Python SDK generated from it, and a quickstart that takes an empty directory to a branded PDF in one second of machine time against a ten-minute budget. Four CI checks bind the document to the code in both directions — routes, scopes, response fields, generated artifacts — and every code block on the quickstart is a file CI executes. The gate found `T-A2`'s agentic door blocked by our own injection guardrail in four of five attempts, which is now `T-A2b` ([`../coverage/api-contract.md`](../coverage/api-contract.md)). |
-| 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.5 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. |
+| 2→6 | `T-06`→`T-12b`, `T-14`, `T-15`, `T-17`, `T-18` | 23.0 | Metric registry → watchers → actions → MCP → hardening. **Does not fit what is left of the sprint** — see the roll-up. Was `23.5` until 2026-07-30; the 0.5 was `T-14`'s re-estimate from `2.5d` to `2d`, which this row had not picked up. |
 | 7–8 | `T-19`→`T-23` | 11.5 | **Moved to Sprint 2 whole** — see `00-sprint-overview.md` §6. |
 
 Two dependency notes for phase 1:
@@ -1882,7 +1891,8 @@ host-run worker (`localhost:5433`) and from the Metabase container
 
 ## T-06 · Metric registry
 **Repo:** BE, FE · **Size:** 3d · **Deps:** T-02 · **Priority:** P0 · **Never cut**
-**Migration:** `022_metric_definitions`
+**Migration:** `*_metric_definitions` — next free on landing. **This line read
+`022` until 2026-07-30; `022` has been `report_branding` since `T-R5`.**
 
 **The accuracy foundation.** Today every question re-derives its SQL, so the same
 question can produce two different numbers. Watchers cannot exist on top of that.
@@ -2010,7 +2020,8 @@ switching the rules on is a behaviour change on every turn, which needs a
 
 ## T-08 · Watchers domain + evaluation loop
 **Repo:** BE · **Size:** 3d · **Deps:** T-06, T-07 · **Priority:** P0 · **Never cut**
-**Migration:** `023_watchers`
+**Migration:** `*_watchers` — next free on landing. **This line read `023` until
+2026-07-30; `023` has been `agent_actions` since `T-05`.**
 
 **The wedge.** This is the ticket that changes how a company works.
 
@@ -2107,7 +2118,8 @@ non-breaching watcher showing silence.
 
 ## T-10 · Action framework
 **Repo:** BE · **Size:** 2.5d · **Deps:** T-05 · **Priority:** P1
-**Migration:** `024_actions`
+**Migration:** `*_actions` — next free on landing. **This line read `024` until
+2026-07-30; `024` has been `api_keys` since `T-13`.**
 
 Write-capable agency, gated. **Never route this through `run_sql`** — tenant SQL
 stays read-only, permanently.
@@ -2281,7 +2293,8 @@ audit row and usage event.
 
 ## T-15 · Outbound webhooks
 **Repo:** BE, FE · **Size:** 1.5d · **Deps:** T-08 · **Priority:** P2 · **Cut #1**
-**Migration:** `026_outbound_webhooks`
+**Migration:** `*_outbound_webhooks` — next free on landing. **This line read
+`026` until 2026-07-30; `026` has been `agent_actions_request_id` since `T-A1`.**
 
 **Do:** per-company subscriptions to `watcher.breached`, `action.executed`,
 `scheduled_task.completed`. **Delivery is `internal/webhookout`, built by `T-A2`
@@ -2544,7 +2557,8 @@ mechanical.
 
 ## T-19 · Embed auth: keys, HMAC identity, session tokens
 **Repo:** BE, FE · **Size:** 2.5d · **Deps:** T-04, T-13 · **Priority:** P0 (of this phase)
-**Migration:** `028_embed_keys`
+**Migration:** `*_embed_keys` — next free on landing. **This line read `028`
+until 2026-07-30; `028` has been `api_reports` since `T-A2`.**
 
 The security foundation. Get this wrong and a tenant's data is one forged request
 away. Build it before any UI exists.
@@ -2608,7 +2622,8 @@ Plus a `curl` transcript of a successful session mint and a forged one.
 
 ## T-20 · Widget channel + scoped embed API
 **Repo:** BE · **Size:** 2d · **Deps:** T-19, T-05, T-03 · **Priority:** P0 (of this phase)
-**Migration:** `029_thread_embed`
+**Migration:** `*_thread_embed` — next free on landing. **This line read `029`
+until 2026-07-30; `029` has been `webhook_delivery` since `T-A2`.**
 
 Wire the embed session into the existing chat pipeline. Follow
 [`../agents/playbooks/add-channel.md`](../agents/playbooks/add-channel.md) — the
@@ -2944,14 +2959,16 @@ that:
 | Finish 1a (T-R4, T-R5) | 4.0 | 4.0 | yes — **done 2026-07-28** |
 | 1b foundation (T-02, T-02b, T-03, T-04, T-05) | 8.0 | 12.0 | yes — **done 2026-07-29** |
 | **1c the API track (T-13, T-A1→T-A5)** | 12.5 | **24.5** | **yes — done 2026-07-30** |
-| 2→6 (metrics, watchers, actions, MCP, hardening) | 23.5 | 48.0 | no |
-| 7–8 widget | 11.5 | 59.5 | no |
+| 2→6 (metrics, watchers, actions, MCP, hardening) | 23.0 | 47.5 | no |
+| 7–8 widget | 11.5 | 59.0 | no |
 
 **Every row this table said would fit, fit.** The three committed phases are in,
 which is the first time that has been true of any version of this plan. What is
-open is the two acceptance items named under the roll-up, and the question §6 of
-the overview defers to sprint close: Sprint 2 has already spent 6.0 days out of
-order, and its 40.5-vs-44.5 figure still does not reconcile.
+open is the two acceptance items named under the roll-up. Sprint 2 has already
+spent 6.0 days out of order; **its cut order and its day total were both settled
+2026-07-30** in `00-sprint-overview.md` §8 and §8a — the answer to the
+`40.5`-vs-`44.5` question was that both were wrong and the figure is `44.0`, which
+is also why the `23.5` in the row above is now `23.0`.
 
 **So Sprint 1 is now: finish the report system, build the foundation, ship the
 API.** That is a coherent sprint and it fits. What it costs is phases 2 through 6
@@ -2988,14 +3005,16 @@ Three sprint-shaping consequences, stated so nobody rediscovers them in week six
   joined them; its tickets are at the end of this file. **Four, later the same
   day** — tenant MCP servers as a source (`T-M1`→`T-M4`, 8.0d), also owner-set,
   also written up at the end of this file. Sprint 2's committed load is now
-  **35.0d** (phases 2–6 at 23.5 plus the widget at 11.5) **plus 17.5d of two new
-  tracks** — 52.5 against a sprint nobody has sized. That number is the point of
+  **34.5d** (phases 2–6 at 23.0 plus the widget at 11.5) **plus 17.5d of two new
+  tracks** — 52.0 against a sprint nobody has sized. That number is the point of
   writing it here.
-  **A discrepancy worth someone's attention:** `00-sprint-overview.md` §6 says
-  Sprint 2 opened with "~40.5 days already spoken for", and this file's own
-  phase totals give 44.5 for the same set. The two do not reconcile and neither
-  has been shown to be right. Settle it when Sprint 2 is sized rather than
-  building a second plan on an unverified figure.
+  ~~**A discrepancy worth someone's attention:**~~ **Settled 2026-07-30**
+  (`00-sprint-overview.md` §8a). The overview's "~40.5" and this file's "44.5"
+  were both wrong: the first by a 4.0-day arithmetic slip, the second because the
+  `23.5` it leaned on never picked up `T-14`'s re-estimate from `2.5d` to `2d`.
+  **The figure is `44.0`, and with the MCP track, `52.0`** — 46.0 of it still
+  ahead, since `T-S1`→`T-S3` are delivered. Summed from the ticket headers, not
+  from a phase table, which is how both errors got in.
 - **`T-13` and `T-14` split.** They were one week-5 block; keys are now
   foundational and land in 1c, while MCP stays cut #2 and gets cheaper for it.
   `T-16` remains out of week 6 and uncuttable — the smoke test moved it.
@@ -3066,12 +3085,20 @@ condition nobody was measuring.
 **Order:** `T-S1` → `T-S2` → then `T-S3`, `T-S4`, `T-S5` in any order (they are
 three independent surfaces over the same composition). **Total 9.5d.**
 
-**On the cut markers.** `T-S4` and `T-S5` carry **#2a** and **#2b**, which are
-positions *within this track*, not entries in `00-sprint-overview.md` §6 — that
-list is Sprint 1's and closes with the sprint. Sprint 2 needs its own cut order
-and does not have one yet; when it is written, these two go in it first and in
-that order. `T-S1`→`T-S2`→`T-S3` are never-cut as a unit: the first two without
-the third ship a roster nobody can select, which is worse than not shipping.
+**On the cut markers.** `T-S4` and `T-S5` carry **#2a** and **#2b**, positions
+*within this track* rather than entries in `00-sprint-overview.md` §6, which is
+Sprint 1's list and closes with the sprint. **Sprint 2's cut order was written
+2026-07-30 — `00-sprint-overview.md` §8 — and it did not place these two where
+this paragraph predicted.** It said they "go in it first"; they landed at
+positions **6** and **8** of ten, behind `T-M4`, `T-15`, `T-14`, `T-17` and
+`T-12b`, because each of those costs less to lose. Their relative order held.
+`T-S5` sits *below* `T-M3` despite being the cheaper ticket, because `T-M3` deps
+it — cutting `T-S5` strands `T-M3`. **§8 is authoritative where it and these
+markers disagree.**
+
+`T-S1`→`T-S2`→`T-S3` were never-cut as a unit — the first two without the third
+ship a roster nobody can select — and **all three landed 2026-07-30**, so the
+question is closed rather than pending.
 
 ---
 
@@ -3357,7 +3384,9 @@ both `agent_actions` rows carrying the Ops agent id.
 
 ## T-S4 · Channel bindings: Discord, Lark, WhatsApp
 **Repo:** BE, FE · **Size:** 2d · **Deps:** T-S2 · **Priority:** P1 · **Cut #2a**
-**Migration:** `032_agent_channel_bindings`
+**Migration:** `033_agent_channel_bindings` — **was `032`, reassigned 2026-07-30
+when `T-A5` landed `032_api_observability`. Re-check the next free number against
+`schema_migrations` before writing the file; do not trust this one either.**
 
 ### Why
 
@@ -3366,7 +3395,7 @@ reach the Ops agent removes the reason the channel integrations exist.
 
 ### Do
 
-- Migration `032_agent_channel_bindings.up.sql` / `.down.sql`:
+- Migration `033_agent_channel_bindings.up.sql` / `.down.sql`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS agent_channel_bindings (
@@ -3567,19 +3596,23 @@ decorator and `T-16`'s budget guard, is the ticket.
 **Total 8.0d.**
 
 **Cut markers** are positions within this track (`#3a`, `#3b`), matching how
-`T-S4`/`T-S5` carry theirs. Sprint 2 still has no single cut order; when one is
-written these fall in after the roster's.
+`T-S4`/`T-S5` carry theirs. **Sprint 2's cut order was written 2026-07-30** —
+[`00-sprint-overview.md`](00-sprint-overview.md) §8 — and these positions are
+reproduced in it rather than restated here.
 
-**Migration numbers below are provisional.** `030` and `031` are applied to no
-database yet and `032` is `T-S4`'s claim. Take the next free number at
-implementation time — golang-migrate strands anything numbered below the current
-version.
+**Migration numbers below carry no number, deliberately.** The paragraph this one
+replaced said *"`030` and `031` are applied to no database yet and `032` is
+`T-S4`'s claim"* — all three sentences are now false: `030`, `031` and `032` are
+applied, and `T-S4` moved to `033`. Take the next free number from
+`schema_migrations` at implementation time; golang-migrate strands anything
+numbered below the current version.
 
 ---
 
 ## T-M1 · MCP servers: schema, egress safety, CRUD, and discovery
 **Repo:** BE, FE, PKG · **Size:** 2.5d · **Deps:** T-S1, T-04, T-02b · **Priority:** P0 · **Never cut**
-**Migration:** `033_mcp_servers` (provisional)
+**Migration:** `*_mcp_servers` — next free on landing. **Was written as `033`,
+which is now `T-S4`'s.**
 
 ### Why
 
@@ -3690,7 +3723,7 @@ after registering a server showing identical tool availability.
 
 ## T-M2 · MCP tools at turn time
 **Repo:** BE · **Size:** 3.0d · **Deps:** T-M1, T-S2 · **Priority:** P0 · **Never cut**
-**Migration:** `034_agent_mcp_servers` (provisional)
+**Migration:** `*_agent_mcp_servers` — next free on landing, after `T-M1`'s.
 
 ### Why
 
