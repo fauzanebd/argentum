@@ -20,9 +20,9 @@ openapi: 3.1.1
 info:
   title: Argentum API
   # A date rather than a semver, matching what `GET /v1/me` reports as
-  # `api_version` — "you are on 2026-07-28" locates a deploy, where "1.0.0"
+  # `api_version` — "you are on 2026-07-30" locates a deploy, where "1.0.0"
   # locates nothing. A test pins this equal to `apiv1.Version`.
-  version: '2026-07-28'
+  version: '2026-07-30'
   summary: Ask for a report or an answer over HTTP.
   description: |
     Argentum turns a question about a company's own data into an answer or a
@@ -158,6 +158,55 @@ paths:
               schema: { $ref: '#/components/schemas/Me' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/usage:
+    get:
+      operationId: getUsage
+      tags: [Identity]
+      summary: Spend over a window, and what is left
+      description: |
+        What this workspace has spent between `from` and `to`, and the credit
+        position at the moment of the call.
+
+        This is not `GET /v1/me` with more fields. `/v1/me` answers "can I make
+        a call at all", in one paste, with no period attached to the number.
+        This answers "what did my integration cost over the period I bill my own
+        users for" — a window the caller chooses, broken down by model, which is
+        what an application reselling these answers needs in order to meter its
+        own users.
+
+        Both bounds default to the current calendar month in UTC, which is the
+        period a monthly grant is measured against. `from` is inclusive and `to`
+        is exclusive.
+      x-argentum-scope: read:usage
+      parameters:
+        - name: from
+          in: query
+          description: Start of the window, inclusive, as an RFC3339 timestamp. Defaults to the first of the current UTC month.
+          required: false
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: End of the window, exclusive. Defaults to the first of next UTC month. Must be after `from`, and no more than 366 days later.
+          required: false
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Spend for the window, and the credit position.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+            RateLimit-Limit: { $ref: '#/components/headers/RateLimit-Limit' }
+            RateLimit-Remaining: { $ref: '#/components/headers/RateLimit-Remaining' }
+            RateLimit-Reset: { $ref: '#/components/headers/RateLimit-Reset' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
         '503': { $ref: '#/components/responses/Unavailable' }
 
   /v1/reports/render:
@@ -979,7 +1028,7 @@ components:
           description: |
             The contract version, as a date. It matches `info.version` in this
             document.
-          examples: ['2026-07-28']
+          examples: ['2026-07-30']
         company:
           type: object
           required: [id, name]
@@ -1026,6 +1075,58 @@ components:
           description: Dollars, not the micro-USD the system counts in — this number is read by a person.
         grant_usd: { type: number }
         remaining_pct: { type: number }
+      additionalProperties: false
+    UsageReport:
+      type: object
+      description: |
+        The body of `GET /v1/usage`. `credits` is absent for the same reason it
+        is absent from `Me`: this deployment could not read a balance. It is the
+        identical object in both places.
+      required: [period, spend]
+      properties:
+        period: { $ref: '#/components/schemas/UsagePeriod' }
+        spend: { $ref: '#/components/schemas/UsageSpend' }
+        credits: { $ref: '#/components/schemas/Credits' }
+      additionalProperties: false
+    UsagePeriod:
+      type: object
+      description: |
+        The window the numbers cover, echoed rather than implied — a spend figure
+        with no period attached is a number nobody can reconcile.
+      required: [from, to]
+      properties:
+        from: { type: string, format: date-time, description: Inclusive. }
+        to: { type: string, format: date-time, description: Exclusive. }
+      additionalProperties: false
+    UsageSpend:
+      type: object
+      required: [tokens_in, tokens_out, cost_usd]
+      properties:
+        tokens_in: { type: integer, format: int64 }
+        tokens_out: { type: integer, format: int64 }
+        cost_usd:
+          type: number
+          description: Dollars. The system counts in micro-USD internally; this number is for a human and for an invoice.
+        by_model:
+          type: object
+          description: |
+            Keyed by the provider's own model id, which is what a caller
+            comparing this against their provider invoice needs. Absent when
+            nothing was spent.
+          additionalProperties: { $ref: '#/components/schemas/UsageModelSpend' }
+      additionalProperties: false
+    UsageModelSpend:
+      type: object
+      required: [tokens_in, tokens_out, cost_usd]
+      properties:
+        tokens_in: { type: integer, format: int64 }
+        tokens_out: { type: integer, format: int64 }
+        cost_usd:
+          type: number
+          description: |
+            Zero for a model this deployment has no price for. Its tokens are
+            still counted, because dropping the model entirely would make the
+            per-model figures disagree with the total.
       additionalProperties: false
     WebhookSettings:
       type: object

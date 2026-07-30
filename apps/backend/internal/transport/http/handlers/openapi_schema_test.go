@@ -50,6 +50,16 @@ var schemaCases = []schemaCase{
 	{schema: "Thread", value: threadResponse{}},
 	{schema: "Usage", value: usageBody{}},
 	{schema: "PendingTurn", value: pendingBody{}},
+	// T-A5's spend report. `Credits` gets a Go type here for the first time:
+	// `GET /v1/me` assembles its block as a gin.H, so the schema was previously
+	// unbound in either direction, and `GET /v1/usage` returns the identical
+	// object. Binding it means the two cannot drift into two shapes for one
+	// concept.
+	{schema: "UsageReport", value: usageReportResponse{}},
+	{schema: "UsagePeriod", value: usagePeriodBody{}},
+	{schema: "UsageSpend", value: usageSpendBody{}},
+	{schema: "UsageModelSpend", value: usageModelSpendBody{}},
+	{schema: "Credits", value: usageCreditsBody{}},
 	// One generic type behind three schemas. They are three rather than one
 	// `$ref` because a generated client should name `DocumentPage.data` as an
 	// array of documents, not as an array of "T".

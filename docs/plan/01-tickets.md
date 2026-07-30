@@ -1388,40 +1388,44 @@ here** — both need a live API, worker, Redis, MinIO and a real LLM key.
 
 ---
 
-## T-A5 · Integrator-facing observability
+## ~~T-A5~~ · Integrator-facing observability — **DONE 2026-07-30**
 **Repo:** BE, FE · **Size:** 1d · **Deps:** T-A1, T-13 · **Priority:** P1 · **Cut #1a**
 
-### Why
+**Shipped, and it closes Sprint 1's API track.** Record, with the gate output:
+[`../coverage/api-observability.md`](../coverage/api-observability.md).
 
-An integrator debugging a 403 at 11pm should not need us to read logs. This is
-the difference between an API someone adopts and an API someone abandons after
-the first unexplained failure.
+All three acceptance items met live: a forced 403 and a forced 429 (five of them)
+were in the tab within seconds, every request id matching the `X-Request-Id` the
+`curl` received, and both routes answer `403 admin only` to a member session.
+The gate added a 500 (`rendering_unavailable`) and screenshots per the ticket.
 
-### Do
+Four things came out of it that the ticket did not anticipate:
 
-- Dashboard Settings → API Keys, per key: request count, error rate, last used,
-  and the last 50 non-2xx responses with request id, route, status, and the
-  error `code`.
-- `GET /v1/usage` — the tenant's own spend and remaining credits, so their
-  application can meter its own users.
-- Per-route latency and status histograms on `/metrics`, labelled by route and
-  key id. (`/metrics` is secured by `T-05`; do not add this before that lands.)
+- **The ticket's own precondition was false.** *"`/metrics` is secured by `T-05`;
+  do not add this before that lands"* — `T-05` was the agent audit log and
+  secured nothing here. `/metrics` is in `unpolicedPaths` and always has been;
+  securing it is `T-17`, cut #3, unlanded. Taken literally the item could never
+  ship; taken loosely it would publish tenant key ids on an open endpoint. So
+  route-level numbers go out as before and **per-key labels require
+  `METRICS_TOKEN`**, with an unset token never matching. `T-17` still owns the
+  real fix, and the histogram is already shaped for its Prometheus half.
+- **One row per request was the wrong schema.** `032_api_observability` is a
+  bounded hourly rollup plus a failures-only detail table: the gate's 18 requests
+  produced 5 counter rows. Route *patterns*, never concrete paths, so cardinality
+  cannot follow traffic.
+- **Recording had to leave the request path.** `internal/apiobs` buffers under a
+  mutex and flushes batches; `cleanup()` flushes on shutdown, proven by a 403
+  issued and the process `SIGTERM`ed inside the flush interval. A failed flush
+  drops its batch rather than growing a queue across a Postgres outage.
+- **A 401 belongs to no tenant**, so unauthenticated samples are counted on
+  `/metrics` and never persisted. Guessing whose key it was, or showing it to
+  everyone, are the two alternatives.
 
-### Acceptance
-
-- [ ] A forced 403 and a forced 429 both appear in the tab within a minute
-- [ ] The request id shown matches the `X-Request-Id` the caller received
-- [ ] The tab is admin-only (`T-04`'s `AdminOnly()`)
-
-### Gate
-
-Screenshots of the tab after deliberately triggering a 403, a 429 and a 500,
-alongside the three `curl` responses whose request ids they match.
-
-### Out of scope
-
-- Alerting on API error rates
-- A per-key spend cap (the company budget from `T-03` is the limit in v1)
+`GET /v1/usage` also gave `Credits` a Go type for the first time — `/v1/me`
+assembles that block as a `gin.H`, so the schema was unchecked in both directions
+until this ticket bound it to a struct. Both SDKs gained a `usage()` method and
+the spec is 16 operations across 15 paths; all four of `T-A4`'s drift checks
+pass, and three of them failed first, which is them working.
 
 ---
 
@@ -2835,7 +2839,8 @@ API track (phase 1c):                   T-A2 `format: pptx`
 T-02 ─► T-04 ─► T-13 ─┐
 T-02 ─► T-05 ─────────┼─► T-A1 ─┬─► T-A2 ─┬─► T-A4 ─► T-A2b  (raised by T-A4's gate)
 T-02 ─► T-03 ─────────┘         ├─► T-A3 ─┘
-                                └─► T-A5  (cut #1a)
+                                └─► T-A5 ✅ (was cut #1a; landed 2026-07-30,
+                                            so the cut list starts at #1)
 
 T-A2 ─► internal/webhookout ─► T-15  (T-15 subscribes, does not rebuild)
 T-A1 ─► T-14                        (MCP becomes a thin adapter, 2.5d → 2d)
@@ -2897,18 +2902,32 @@ shipping with `pdf | xlsx | csv` and gaining `pptx` later is a clean seam.
 | ----- | --------------------------------------------- | ----- | ----- |
 | 0 ✅   | T-00, T-00b                                   | 2.0   | 2.0 |
 | 1 ✅   | T-01, T-02c, T-16                             | 6.0   | 6.0 |
-| 1a    | ~~T-R1~~, ~~T-R2~~, ~~T-R3~~, T-R4, T-R5      | 10.0  | 6.0 |
-| 1b    | T-02, T-02b, T-03, T-04, T-05                 | 8.0   | — |
-| 1c    | T-13, T-A1, T-A2, T-A3, T-A4, T-A2b, T-A5     | 13.0  | +0.5 for T-A2b, raised by T-A4's gate |
+| 1a ✅  | ~~T-R1~~, ~~T-R2~~, ~~T-R3~~, ~~T-R4~~, ~~T-R5~~ | 10.0  | 10.0 |
+| 1b ✅  | T-02, T-02b, T-03, T-04, T-05                 | 8.0   | 8.0 |
+| 1c ✅  | T-13, T-A1, T-A2, T-A3, T-A4, T-A2b, T-A5     | 13.0  | 13.0 — the whole track is in |
 | 2     | T-06, T-07, T-07b                             | 5.0   | — |
 | 3     | T-08, T-09                                    | 5.0   | — |
 | 4     | T-10, T-11, T-12a, T-12b                      | 6.5   | — |
 | 5     | T-14, T-15                                    | 3.5   | — |
 | 6     | T-17, T-18                                    | 3.0   | — |
 | 7–8   | T-19, T-20, T-21, T-22, T-23                  | 11.5  | — |
-|       | **Total**                                     | **73.0** | **14.0** |
+|       | **Total**                                     | **73.0** | **39.0 + 6.0 of Sprint 2** |
 
-73.0 estimated days against 40 working days, **14.0 of which are spent**. The API
+**Updated 2026-07-30: `T-A5` closes phase 1c, and with it Sprint 1's committed
+scope.** Every ticket in phases 0, 1, 1a, 1b and 1c has shipped. Two acceptance
+items inside them are still open and are not closed by this line — `T-R4`'s
+PowerPoint / Keynote / Google Slides check, which cannot be driven from a
+headless runner, and `T-A2b`'s ten live report calls, which need a deployed
+worker with an LLM key. Both are recorded where they are owed, in
+[`../coverage/report-deck.md`](../coverage/report-deck.md) and
+[`../coverage/api-reports.md`](../coverage/api-reports.md).
+
+What is *not* on this table is that Sprint 2 has already started: `T-S1`→`T-S3`
+(6.0d of the roster track) landed 2026-07-30, out of the order §6 wrote. The
+sprint-close decision that row asks for is now the whole remaining question.
+
+73.0 estimated days against 40 working days, **39.0 of which are spent** (plus
+6.0 on Sprint 2's roster track, which landed early). The API
 track added 10.5 days (`T-A1`→`T-A5`); `T-13` moved from week 5 into 1c and
 `T-14` got 0.5d cheaper as a consequence, so the net is +10.5 against the
 previous 63.0 minus the 0.5 saved.
@@ -2922,11 +2941,17 @@ that:
 
 | What | Days | Cumulative | Fits in 26.0? |
 | ---- | ---- | ---------- | ------------- |
-| Finish 1a (T-R4, T-R5) | 4.0 | 4.0 | yes |
-| 1b foundation (T-02, T-02b, T-03, T-04, T-05) | 8.0 | 12.0 | yes |
-| **1c the API track (T-13, T-A1→T-A5)** | 12.5 | **24.5** | **yes, with 1.5 to spare** |
+| Finish 1a (T-R4, T-R5) | 4.0 | 4.0 | yes — **done 2026-07-28** |
+| 1b foundation (T-02, T-02b, T-03, T-04, T-05) | 8.0 | 12.0 | yes — **done 2026-07-29** |
+| **1c the API track (T-13, T-A1→T-A5)** | 12.5 | **24.5** | **yes — done 2026-07-30** |
 | 2→6 (metrics, watchers, actions, MCP, hardening) | 23.5 | 48.0 | no |
 | 7–8 widget | 11.5 | 59.5 | no |
+
+**Every row this table said would fit, fit.** The three committed phases are in,
+which is the first time that has been true of any version of this plan. What is
+open is the two acceptance items named under the roll-up, and the question §6 of
+the overview defers to sprint close: Sprint 2 has already spent 6.0 days out of
+order, and its 40.5-vs-44.5 figure still does not reconcile.
 
 **So Sprint 1 is now: finish the report system, build the foundation, ship the
 API.** That is a coherent sprint and it fits. What it costs is phases 2 through 6

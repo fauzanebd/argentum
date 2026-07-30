@@ -2,7 +2,22 @@ import { Chat } from './chat.js';
 import { Documents } from './documents.js';
 import { HttpClient, type ArgentumOptions } from './http.js';
 import { Reports } from './reports.js';
-import type { Me } from './types.js';
+import type { Me, UsageReport } from './types.js';
+
+/** The window `usage()` reports on. Both bounds default to the current UTC month. */
+export interface UsageOptions {
+  /** Inclusive. RFC3339, or a Date. */
+  from?: string | Date;
+  /** Exclusive, and no more than 366 days after `from`. */
+  to?: string | Date;
+  signal?: AbortSignal;
+}
+
+/** Dates go out as RFC3339, which is the only form the API accepts. */
+function iso(value: string | Date | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value instanceof Date ? value.toISOString() : value;
+}
 
 export { ReportJob, Reports, type RenderOptions, type WaitOptions } from './reports.js';
 export { Chat, Threads, type PageOptions, type SendOptions, type StreamOptions } from './chat.js';
@@ -50,6 +65,30 @@ export class Argentum {
    */
   async me(signal?: AbortSignal): Promise<Me> {
     return this.http.json<Me>({ method: 'GET', path: '/v1/me', ...(signal ? { signal } : {}) });
+  }
+
+  /**
+   * What this workspace spent over a window, and what is left.
+   *
+   * Not `me()` with more fields: `me()` answers "can I call at all" with no
+   * period attached to the number. This takes the period you bill your own
+   * users for — both bounds default to the current UTC calendar month — and
+   * breaks the spend down by model.
+   *
+   * Needs the `read:usage` scope.
+   *
+   * ```ts
+   * const { spend } = await client.usage({ from: '2026-07-01T00:00:00Z' });
+   * console.log(spend.cost_usd);
+   * ```
+   */
+  async usage(options: UsageOptions = {}): Promise<UsageReport> {
+    return this.http.json<UsageReport>({
+      method: 'GET',
+      path: '/v1/usage',
+      query: { from: iso(options.from), to: iso(options.to) },
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
   }
 
   /** The origin this client is talking to. Useful in a log line. */

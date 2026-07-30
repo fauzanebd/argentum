@@ -31,6 +31,11 @@ server.
 Fifteen operations across fourteen paths, which is every `/v1` route the router
 registers, and one of them is new: `GET /v1/openapi.json`.
 
+**Sixteen across fifteen since `T-A5` (2026-07-30)**, which added
+`GET /v1/usage`. The count is not maintained by hand — the four drift checks
+below are what keep it true, and they failed on the new route until the spec
+entry existed. See [`api-observability.md`](api-observability.md).
+
 ### The keyless route
 
 `GET /v1/openapi.json` is the only route under `/v1` that reads no credential.

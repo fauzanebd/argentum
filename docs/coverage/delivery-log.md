@@ -715,7 +715,7 @@ element's own bounding box instead.
 
 Record, gate output and the limits: [`api-keys.md`](api-keys.md).
 
-## Phase 1c — Anyone can call it (2026-07-28, in progress)
+## Phase 1c — Anyone can call it (2026-07-28 → 2026-07-30) ✅
 
 `T-A1` the `/v1` contract
 
@@ -1057,6 +1057,59 @@ promise `/v1` is checked against.
 
 Record, gate output and all seven findings:
 [`generated-types.md`](generated-types.md).
+
+---
+
+`T-A5` integrator-facing observability — **the last ticket of the API track**
+
+An integrator whose script gets a 403 at 11pm can now read the 403 themselves.
+Per key, the dashboard shows the last 24 hours of traffic and the last 50 non-2xx
+responses with the request id the caller was handed; `GET /v1/usage` gives their
+*application* the spend and the balance over a window it chooses; `/metrics`
+grows per-route latency histograms and status counts.
+
+**The ticket's own precondition was false, and following it either way would have
+been wrong.** It says *"`/metrics` is secured by `T-05`; do not add this before
+that lands"* — `T-05` was the agent audit log and secured nothing here.
+`/metrics` sits in `unpolicedPaths` and always has; `T-17` owns moving it. Taken
+literally the item could never ship. Taken loosely it would have published a
+tenant's API key ids on an unauthenticated endpoint. So route-level numbers — no
+tenant named — go out as before, and the new per-key labels require
+`METRICS_TOKEN`, where an unset token is never a match.
+
+**One row per `/v1` request was the wrong schema.** A nightly job polling every
+ten seconds is 8,640 rows a day for one key, 99% of them `200`. `032` is a
+bounded hourly rollup (key, hour, route, method, status class) plus a
+failures-only detail table: the gate's 18 requests produced **5 counter rows**.
+The rollup stores route *patterns*, so cardinality cannot follow traffic, and its
+upsert adds rather than assigns — two replicas flushing one bucket would
+otherwise silently drop one replica's traffic.
+
+**Recording had to leave the request path**, so `internal/apiobs` buffers under a
+mutex and a loop flushes batches. Two consequences worth naming: a failed flush
+drops its batch instead of growing a queue across an outage of unknown length,
+and `cleanup()` flushes on shutdown — proven by issuing a 403 and `SIGTERM`ing
+the process inside the flush interval, then finding the row.
+
+**A 401 belongs to no tenant.** Unauthenticated samples are counted on
+`/metrics` and never persisted; guessing whose key it was, or showing it to every
+tenant, are the two alternatives.
+
+The gate ran live: a forced 403, five forced 429s and a forced 500, every request
+id in the tab matching the one its `curl` received, within seconds; a member
+session refused on both dashboard routes; `/metrics` key labels present with the
+token and absent without it. The browser half needed the DevTools protocol again
+(the extension is not connected here) and taught one thing: a synthetic
+`element.click()` does not open a Radix tab, so the first pass screenshotted the
+General tab while cheerfully reporting "clicked API keys". Real
+`Input.dispatchMouseEvent` triples fixed it.
+
+`GET /v1/usage` also gave the `Credits` schema a Go type for the first time —
+`/v1/me` builds that block as a `gin.H`, so it had been unchecked in both
+directions since `T-A1`.
+
+Record, transcripts and the five known limits:
+[`api-observability.md`](api-observability.md).
 
 ---
 

@@ -4,14 +4,14 @@ Generated from apps/backend/openapi/v1.yaml — the same document the server
 serves at GET /v1/openapi.json and CI diffs against the gin route tree.
 
 Do not edit. Run `pnpm --filter @argentum/openapi-tools build` and commit.
-Contract version: 2026-07-28
+Contract version: 2026-07-30
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, TypedDict, Union
 
-API_VERSION = "2026-07-28"
+API_VERSION = "2026-07-30"
 
 class ChatEventDelta(TypedDict, total=False):
     """A fragment of the answer as it is written. Never persisted; carries no
@@ -467,6 +467,50 @@ class Usage(TypedDict, total=False):
     cost_usd: float
 
 
+class UsageModelSpend(TypedDict, total=False):
+    """Always present: tokens_in, tokens_out, cost_usd.
+    """
+    tokens_in: int
+    tokens_out: int
+    # Zero for a model this deployment has no price for.
+    cost_usd: float
+
+
+class UsagePeriod(TypedDict, total=False):
+    """The window the numbers cover, echoed rather than implied — a spend
+    figure with no period attached is a number nobody can reconcile.
+
+    Always present: from, to.
+    """
+    # Inclusive.
+    from_: str
+    # Exclusive.
+    to: str
+
+
+class UsageReport(TypedDict, total=False):
+    """The body of `GET /v1/usage`. `credits` is absent for the same reason it
+    is absent from `Me`: this deployment could not read a balance. It is the
+    identical object in both places.
+
+    Always present: period, spend.
+    """
+    period: UsagePeriod
+    spend: UsageSpend
+    credits: Credits
+
+
+class UsageSpend(TypedDict, total=False):
+    """Always present: tokens_in, tokens_out, cost_usd.
+    """
+    tokens_in: int
+    tokens_out: int
+    # Dollars.
+    cost_usd: float
+    # Keyed by the provider's own model id, which is what a caller comparing this against their provide…
+    by_model: Dict[str, Any]
+
+
 class WebhookSettings(TypedDict, total=False):
     """The signing secret for `callback_url` deliveries, minted on first read.
 
@@ -544,5 +588,9 @@ __all__ = [
     "ThreadPage",
     "Turn",
     "Usage",
+    "UsageModelSpend",
+    "UsagePeriod",
+    "UsageReport",
+    "UsageSpend",
     "WebhookSettings",
 ]

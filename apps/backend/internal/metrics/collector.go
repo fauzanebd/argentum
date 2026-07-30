@@ -1,8 +1,16 @@
-// Package metrics exposes the Prometheus-format counters and histograms the
-// API serves at /metrics: turn latency, tool-call outcomes and queue depth.
+// Package metrics holds the counters and histograms the API serves at
+// /metrics: query and LLM totals, streaming-metering health, and — since T-A5 —
+// per-route and per-key `/v1` request profiles.
+//
+// The wire format is JSON, not Prometheus exposition, whatever this comment
+// used to claim. Converting it is T-17's job; the histogram added by T-A5 is
+// already shaped for that conversion (cumulative buckets keyed by upper bound,
+// with a `+Inf` overflow), so the change is a serializer rather than a
+// remodelling.
 package metrics
 
 import (
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,13 +53,51 @@ type Collector struct {
 	conversationsActive int64
 	contextResets       int64
 
+	// Public API request metrics (T-A5), guarded by mu rather than by atomics:
+	// the unit of update is a map entry and a bucket array, not a counter.
+	apiRoutes        map[string]*routeAgg
+	apiKeys          map[string]*keyAgg
+	apiKeysUntracked int64
+
 	// Timestamp of last reset
 	lastReset time.Time
+}
+
+// apiLatencyBucketsMS are the histogram's upper bounds, in milliseconds. They
+// are Prometheus's defaults shifted for an HTTP API that talks to Postgres and
+// an LLM: the bottom of the range separates "answered from memory" from "did a
+// query", and the top has to reach a synchronous chat turn, which T-A3 caps at
+// 120 seconds.
+var apiLatencyBucketsMS = []int64{5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 120000}
+
+// maxTrackedAPIKeys bounds the per-key cardinality. Routes are bounded by the
+// router, but key ids are minted by tenants, and an unbounded label set on a
+// scraped endpoint is how a metrics exporter becomes the process's largest
+// allocation. Overflow is counted so the truncation is visible rather than
+// silent.
+const maxTrackedAPIKeys = 500
+
+// routeAgg is one route's counters. byStatus is exact statuses rather than
+// classes: the whole point of the endpoint is telling a 403 from a 429.
+type routeAgg struct {
+	requests int64
+	errors   int64
+	byStatus map[int]int64
+	latSumMS int64
+	latMaxMS int64
+	buckets  []int64 // len(apiLatencyBucketsMS)+1; last is the +Inf overflow
+}
+
+type keyAgg struct {
+	requests int64
+	errors   int64
 }
 
 // NewCollector creates a new metrics collector
 func NewCollector() *Collector {
 	return &Collector{
+		apiRoutes: map[string]*routeAgg{},
+		apiKeys:   map[string]*keyAgg{},
 		lastReset: time.Now(),
 	}
 }
@@ -100,6 +146,73 @@ func (c *Collector) RecordLLMStreamTurn(usageEvents int) {
 		return
 	}
 	atomic.AddInt64(&c.llmStreamUsageEventsTotal, int64(usageEvents))
+}
+
+// RecordAPIRequest records one finished `/v1` request (T-A5).
+//
+// Called from internal/apiobs for every request, including the ones no tenant
+// can be shown — an unauthenticated 401 has no key id, and counting it here is
+// the only place it is counted at all.
+//
+// route is the gin pattern; an empty one (no route matched) is folded into
+// "unmatched" rather than recorded under the concrete path, because a 404
+// sweep would otherwise mint a label per URL somebody guessed.
+func (c *Collector) RecordAPIRequest(method, route, keyID string, status int, d time.Duration) {
+	if route == "" {
+		route = "unmatched"
+	}
+	label := method + " " + route
+	ms := d.Milliseconds()
+	failed := status < 200 || status >= 300
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	r := c.apiRoutes[label]
+	if r == nil {
+		r = &routeAgg{
+			byStatus: map[int]int64{},
+			buckets:  make([]int64, len(apiLatencyBucketsMS)+1),
+		}
+		c.apiRoutes[label] = r
+	}
+	r.requests++
+	if failed {
+		r.errors++
+	}
+	r.byStatus[status]++
+	r.latSumMS += ms
+	if ms > r.latMaxMS {
+		r.latMaxMS = ms
+	}
+	r.buckets[bucketIndex(ms)]++
+
+	if keyID == "" {
+		return
+	}
+	k := c.apiKeys[keyID]
+	if k == nil {
+		if len(c.apiKeys) >= maxTrackedAPIKeys {
+			c.apiKeysUntracked++
+			return
+		}
+		k = &keyAgg{}
+		c.apiKeys[keyID] = k
+	}
+	k.requests++
+	if failed {
+		k.errors++
+	}
+}
+
+// bucketIndex finds the first bound ms falls under, or the overflow slot.
+func bucketIndex(ms int64) int {
+	for i, bound := range apiLatencyBucketsMS {
+		if ms <= bound {
+			return i
+		}
+	}
+	return len(apiLatencyBucketsMS)
 }
 
 // RecordCacheHit records a cache hit
@@ -198,8 +311,71 @@ func (c *Collector) GetSnapshot() MetricsSnapshot {
 			ContextResets: atomic.LoadInt64(&c.contextResets),
 		},
 
+		APIV1: c.apiSnapshot(),
+
 		UptimeSeconds: time.Since(c.lastReset).Seconds(),
 	}
+}
+
+// apiSnapshot copies the per-route and per-key maps out from under the lock.
+// Copies, not references: a scrape must not hand the caller a map that request
+// goroutines are still writing to.
+func (c *Collector) apiSnapshot() APIV1Metrics {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	out := APIV1Metrics{
+		Routes:        make(map[string]RouteMetrics, len(c.apiRoutes)),
+		Keys:          make(map[string]KeyMetrics, len(c.apiKeys)),
+		KeysUntracked: c.apiKeysUntracked,
+	}
+	for label, r := range c.apiRoutes {
+		byStatus := make(map[string]int64, len(r.byStatus))
+		for status, n := range r.byStatus {
+			byStatus[strconv.Itoa(status)] = n
+		}
+		// Cumulative, Prometheus-style: bucket `le=100` counts everything at or
+		// under 100ms, not just what landed between 50 and 100. A consumer
+		// computing a quantile needs the cumulative form, and converting later
+		// means every consumer converts.
+		cumulative := make(map[string]int64, len(r.buckets))
+		var running int64
+		for i, n := range r.buckets {
+			running += n
+			bound := "+Inf"
+			if i < len(apiLatencyBucketsMS) {
+				bound = strconv.FormatInt(apiLatencyBucketsMS[i], 10)
+			}
+			cumulative[bound] = running
+		}
+		out.Routes[label] = RouteMetrics{
+			Requests: r.requests,
+			Errors:   r.errors,
+			ByStatus: byStatus,
+			Latency: LatencyHistogram{
+				Buckets: cumulative,
+				SumMS:   r.latSumMS,
+				Count:   r.requests,
+				MaxMS:   r.latMaxMS,
+			},
+		}
+	}
+	for id, k := range c.apiKeys {
+		out.Keys[id] = KeyMetrics{Requests: k.requests, Errors: k.errors}
+	}
+	return out
+}
+
+// WithoutKeyLabels returns the snapshot with the per-key block removed.
+//
+// `/metrics` has no credential of its own (T-17 owns fixing that), and a key id
+// is a tenant's identifier for a credential they hold. Route-level numbers say
+// nothing about who called; a key id does, so the serving side strips them
+// unless the endpoint is actually protected. See cmd/api/health.go.
+func (s MetricsSnapshot) WithoutKeyLabels() MetricsSnapshot {
+	s.APIV1.Keys = nil
+	s.APIV1.KeysUntracked = 0
+	return s
 }
 
 // Reset resets all metrics
@@ -223,6 +399,9 @@ func (c *Collector) Reset() {
 	atomic.StoreInt64(&c.contextResets, 0)
 
 	c.mu.Lock()
+	c.apiRoutes = map[string]*routeAgg{}
+	c.apiKeys = map[string]*keyAgg{}
+	c.apiKeysUntracked = 0
 	c.lastReset = time.Now()
 	c.mu.Unlock()
 }
@@ -235,7 +414,51 @@ type MetricsSnapshot struct {
 	Cache         CacheMetrics        `json:"cache"`
 	Jobs          JobMetrics          `json:"jobs"`
 	Conversations ConversationMetrics `json:"conversations"`
+	APIV1         APIV1Metrics        `json:"api_v1"`
 	UptimeSeconds float64             `json:"uptime_seconds"`
+}
+
+// APIV1Metrics is the public API's request profile (T-A5). Two label sets, and
+// they answer different questions: a route tells you what is slow or failing,
+// a key tells you whose integration is doing it.
+type APIV1Metrics struct {
+	// Routes is keyed by "METHOD /gin/path".
+	Routes map[string]RouteMetrics `json:"routes,omitempty"`
+	// Keys is keyed by API key id, and is omitted entirely when `/metrics` is
+	// served without a credential — see MetricsSnapshot.WithoutKeyLabels.
+	Keys map[string]KeyMetrics `json:"keys,omitempty"`
+	// KeysUntracked counts requests by keys beyond maxTrackedAPIKeys. Non-zero
+	// means the per-key block is incomplete, which is worth knowing before
+	// reading it as a total.
+	KeysUntracked int64 `json:"keys_untracked,omitempty"`
+}
+
+// RouteMetrics is one route's traffic.
+type RouteMetrics struct {
+	Requests int64 `json:"requests"`
+	// Errors counts everything outside 2xx, including the 4xx a caller caused.
+	// An error rate that excluded client errors would hide the one failure mode
+	// this endpoint exists to surface.
+	Errors   int64            `json:"errors"`
+	ByStatus map[string]int64 `json:"by_status"`
+	Latency  LatencyHistogram `json:"latency_ms"`
+}
+
+// LatencyHistogram is cumulative, keyed by upper bound in milliseconds with
+// "+Inf" for the overflow — the shape a quantile can be read out of.
+type LatencyHistogram struct {
+	Buckets map[string]int64 `json:"buckets"`
+	SumMS   int64            `json:"sum_ms"`
+	Count   int64            `json:"count"`
+	MaxMS   int64            `json:"max_ms"`
+}
+
+// KeyMetrics is one API key's traffic, process-local. The tenant's own durable
+// view of the same thing is api_request_stats — this is for whoever operates
+// the deployment.
+type KeyMetrics struct {
+	Requests int64 `json:"requests"`
+	Errors   int64 `json:"errors"`
 }
 
 // QueryMetrics contains query-related metrics

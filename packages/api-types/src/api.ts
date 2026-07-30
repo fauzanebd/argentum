@@ -3,7 +3,7 @@
 // `/api` response bodies that are not domain entities, from
 // apps/backend/internal/transport/http/handlers/wire.go.
 import type { BudgetState } from "./events.js";
-import type { Agent } from "./domain.js";
+import type { Agent, APIKey, APIKeyRequestStats, APIRequestError } from "./domain.js";
 
 //////////
 // source: wire.go
@@ -32,6 +32,36 @@ export interface AgentToolInfo {
 export interface AgentsResponse {
   agents: (Agent | undefined)[];
   tools: AgentToolInfo[];
+}
+/**
+ * APIKeysResponse is the body of `GET /api/api-keys` (T-13, extended by T-A5).
+ * Stats rides with the roster for the same reason AgentsResponse carries the
+ * tool vocabulary: the tab never renders one without the other, and a key's
+ * traffic is a property of that key rather than a separate resource.
+ * Keyed by key id rather than sorted alongside `Keys`, because a key with no
+ * traffic in the window has no entry at all — "no calls" and "no such key" are
+ * different facts, and a parallel array would have to invent a zero row to keep
+ * the indices lined up.
+ */
+export interface APIKeysResponse {
+  keys: (APIKey | undefined)[];
+  /**
+   * Stats is absent on a deployment without the request recorder, and after a
+   * failed counters read. A tab that hides the numbers still manages keys.
+   */
+  stats?: { [key: string]: APIKeyRequestStats | undefined};
+}
+/**
+ * APIKeyErrorsResponse is the body of `GET /api/api-keys/errors` (T-A5) — the
+ * last non-2xx `/v1` responses, newest first, optionally for one key.
+ */
+export interface APIKeyErrorsResponse {
+  errors: (APIRequestError | undefined)[];
+  /**
+   * Limit is echoed so the tab can say "the last 50" without hardcoding the
+   * number the backend actually applied.
+   */
+  limit: number /* int */;
 }
 /**
  * SendMessageResponse is the body of `POST /api/chat` — the acknowledgement

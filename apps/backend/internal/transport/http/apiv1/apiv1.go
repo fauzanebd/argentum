@@ -17,9 +17,9 @@ import (
 
 // Version is the API contract version, reported by `GET /v1/me`. It is a date
 // rather than a number because that is what a support conversation can act
-// on: "you are on 2026-07-28" locates a deploy, where "v1" is already in the
+// on: "you are on 2026-07-30" locates a deploy, where "v1" is already in the
 // path and says nothing.
-const Version = "2026-07-28"
+const Version = "2026-07-30"
 
 // Page is the envelope for every list `/v1` returns.
 //

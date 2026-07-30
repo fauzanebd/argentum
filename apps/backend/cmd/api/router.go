@@ -10,6 +10,7 @@ import (
 
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
+	"github.com/fauzanebd/argentum/internal/apiobs"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/transport/http/handlers"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
@@ -28,7 +29,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// and with CORS_ORIGINS unset this middleware echoes any Origin.
 	r.Use(middleware.CORS(cfg.CORSOrigins, "/v1"))
 
-	registerHealthRoutes(r, d.metrics, d.controlDB)
+	registerHealthRoutes(r, d.metrics, d.controlDB, cfg.MetricsToken)
 
 	api := r.Group("/api")
 	handlers.NewMetaHandler().Register(api.Group("/meta"))
@@ -51,7 +52,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).Register(authed.Group("/users"))
 	handlers.NewReportsHandler(d.brandingSvc, d.companyRepo).Register(authed)
 	handlers.NewAuditHandler(d.actionRepo).Register(authed)
-	handlers.NewAPIKeysHandler(d.apiKeySvc).Register(authed)
+	handlers.NewAPIKeysHandler(d.apiKeySvc).
+		WithTraffic(trafficReaderOrNil(d.requestRepo)).
+		Register(authed)
 	handlers.NewAgentsHandler(d.agentSvc).Register(authed)
 	if d.dashboardSvc != nil {
 		handlers.NewDashboardHandler(d.dashboardSvc).Register(authed)
@@ -106,6 +109,11 @@ func newRouter(d *apiDeps) *gin.Engine {
 	v1 := r.Group("/v1")
 	v1.Use(middleware.RequestID())
 	v1.Use(middleware.Enabled(cfg.APIV1Enabled))
+	// The recorder (T-A5) wraps everything below it, which is what makes a 401
+	// from a bad key and a 429 from the limiter both countable. It goes below
+	// the kill switch on purpose: a 503 from a switched-off API is a fact about
+	// us, not about anybody's integration.
+	v1.Use(middleware.RecordAPIRequests(requestSinkOrNil(d.requestObs)))
 	v1.Use(middleware.MaxBodyBytes(cfg.APIV1MaxBodyBytes))
 	v1.Use(middleware.APIKeyAuth(apiKeyAuthOf(d)))
 	if keyLimiter := middleware.NewRateLimiter(d.rdb, cfg.APIV1RatePerMin, float64(cfg.APIV1RatePerMin)/60.0); keyLimiter != nil {
@@ -113,6 +121,11 @@ func newRouter(d *apiDeps) *gin.Engine {
 	}
 	handlers.NewV1MeHandler(d.companyRepo, budgetReaderOrNil(d.usageSvc), cfg.APIV1RatePerMin).
 		WithWebhookSecrets(d.companyRepo).
+		Register(v1)
+	// `GET /v1/usage` (T-A5): the spend and the balance, over a window the
+	// caller chooses, so a tenant's own application can meter its own users
+	// instead of polling `/v1/me` for a number with no period attached.
+	handlers.NewV1UsageHandler(usageReaderOrNil(d.usageRepo), budgetReaderOrNil(d.usageSvc)).
 		Register(v1)
 	// T-A2's two doors and the documents they produce. Registered
 	// unconditionally: a deployment without object storage answers a typed 503
@@ -189,6 +202,33 @@ func chatEnqueuerOrNil(e *app.ChatEnqueuer) handlers.V1ChatEnqueuer {
 // cost on a best-effort basis, and a typed nil would turn "omit the usage
 // block" into a panic on the response path.
 func turnUsageOrNil(repo *pgctl.UsageRepo) handlers.V1TurnUsageReader {
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+
+// usageReaderOrNil, requestSinkOrNil and trafficReaderOrNil are
+// budgetReaderOrNil for T-A5's three dependencies. Same trap, three more
+// places: a nil concrete pointer assigned into an interface parameter arrives
+// as a non-nil interface holding nil, and each of these has a `== nil` guard
+// downstream that exists precisely so a stripped-down wiring degrades instead
+// of panicking.
+func usageReaderOrNil(repo *pgctl.UsageRepo) handlers.V1UsageReader {
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+
+func requestSinkOrNil(rec *apiobs.Recorder) middleware.APIRequestSink {
+	if rec == nil {
+		return nil
+	}
+	return rec
+}
+
+func trafficReaderOrNil(repo *pgctl.APIRequestRepo) handlers.APIKeyTrafficReader {
 	if repo == nil {
 		return nil
 	}

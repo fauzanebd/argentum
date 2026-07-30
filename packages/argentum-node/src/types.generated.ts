@@ -52,6 +52,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Spend over a window, and what is left
+         * @description What this workspace has spent between `from` and `to`, and the credit
+         *     position at the moment of the call.
+         *
+         *     This is not `GET /v1/me` with more fields. `/v1/me` answers "can I make
+         *     a call at all", in one paste, with no period attached to the number.
+         *     This answers "what did my integration cost over the period I bill my own
+         *     users for" — a window the caller chooses, broken down by model, which is
+         *     what an application reselling these answers needs in order to meter its
+         *     own users.
+         *
+         *     Both bounds default to the current calendar month in UTC, which is the
+         *     period a monthly grant is measured against. `from` is inclusive and `to`
+         *     is exclusive.
+         */
+        get: operations["getUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/reports/render": {
         parameters: {
             query?: never;
@@ -411,7 +443,7 @@ export interface components {
             /**
              * @description The contract version, as a date. It matches `info.version` in this
              *     document.
-             * @example 2026-07-28
+             * @example 2026-07-30
              */
             api_version: string;
             company: {
@@ -449,6 +481,60 @@ export interface components {
             balance_usd?: number;
             grant_usd?: number;
             remaining_pct?: number;
+        };
+        /**
+         * @description The body of `GET /v1/usage`. `credits` is absent for the same reason it
+         *     is absent from `Me`: this deployment could not read a balance. It is the
+         *     identical object in both places.
+         */
+        UsageReport: {
+            period: components["schemas"]["UsagePeriod"];
+            spend: components["schemas"]["UsageSpend"];
+            credits?: components["schemas"]["Credits"];
+        };
+        /**
+         * @description The window the numbers cover, echoed rather than implied — a spend figure
+         *     with no period attached is a number nobody can reconcile.
+         */
+        UsagePeriod: {
+            /**
+             * Format: date-time
+             * @description Inclusive.
+             */
+            from: string;
+            /**
+             * Format: date-time
+             * @description Exclusive.
+             */
+            to: string;
+        };
+        UsageSpend: {
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            /** @description Dollars. The system counts in micro-USD internally; this number is for a human and for an invoice. */
+            cost_usd: number;
+            /**
+             * @description Keyed by the provider's own model id, which is what a caller
+             *     comparing this against their provider invoice needs. Absent when
+             *     nothing was spent.
+             */
+            by_model?: {
+                [key: string]: components["schemas"]["UsageModelSpend"];
+            };
+        };
+        UsageModelSpend: {
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            /**
+             * @description Zero for a model this deployment has no price for. Its tokens are
+             *     still counted, because dropping the model entirely would make the
+             *     per-model figures disagree with the total.
+             */
+            cost_usd: number;
         };
         /** @description The signing secret for `callback_url` deliveries, minted on first read. */
         WebhookSettings: {
@@ -1243,6 +1329,41 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             429: components["responses"]["RateLimited"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getUsage: {
+        parameters: {
+            query?: {
+                /** @description Start of the window, inclusive, as an RFC3339 timestamp. Defaults to the first of the current UTC month. */
+                from?: string;
+                /** @description End of the window, exclusive. Defaults to the first of next UTC month. Must be after `from`, and no more than 366 days later. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Spend for the window, and the credit position. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageReport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["ServerError"];
             503: components["responses"]["Unavailable"];
         };
     };

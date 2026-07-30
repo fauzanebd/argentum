@@ -9,6 +9,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
+	"github.com/fauzanebd/argentum/internal/apiobs"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
 	"github.com/fauzanebd/argentum/internal/branding"
@@ -82,10 +83,26 @@ type apiDeps struct {
 	embedCache *llmtenant.EmbeddingCache
 
 	metrics *metrics.Collector
+	// Integrator-facing observability over `/v1` (T-A5). requestObs buffers
+	// samples off the request path and flushes batches; requestRepo is the same
+	// store read back by the dashboard's API Keys tab. stopObs ends the flush
+	// loop — cleanup calls it, then flushes what the loop had not.
+	requestObs  *apiobs.Recorder
+	requestRepo *pgctl.APIRequestRepo
+	stopObs     context.CancelFunc
 }
 
 // cleanup releases resources in reverse order of creation (same as the original defer stack).
 func (d *apiDeps) cleanup() {
+	// First, because it writes to the control DB this function later closes —
+	// and because the records it is holding cover the minutes immediately
+	// before a shutdown, which is when somebody is most likely to be looking.
+	if d.stopObs != nil {
+		d.stopObs()
+	}
+	if d.requestObs != nil {
+		d.requestObs.Close()
+	}
 	if d.embedCache != nil {
 		d.embedCache.CloseAll()
 	}

@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -15,7 +18,23 @@ import (
 // revokes machine credentials here. The keys themselves authenticate `/v1`,
 // which is a different surface with a different middleware — nothing on this
 // handler is reachable with a key.
-type APIKeysHandler struct{ svc *app.APIKeyService }
+//
+// T-A5 added the other half of owning a key: seeing what it has been doing.
+// `requests` is the recorder's read side, and it is nil on a deployment without
+// the 032 migration — the list then returns keys with no stats block rather
+// than failing, because "we cannot show you the traffic" must not become
+// "you cannot manage your keys".
+type APIKeysHandler struct {
+	svc      *app.APIKeyService
+	requests APIKeyTrafficReader
+}
+
+// APIKeyTrafficReader is the narrow half of domain.APIRequestRepository this
+// handler needs — the two reads, and neither write.
+type APIKeyTrafficReader interface {
+	StatsByKey(ctx context.Context, companyID string, since time.Time) (map[string]*domain.APIKeyRequestStats, error)
+	RecentErrors(ctx context.Context, companyID, keyID string, limit int) ([]*domain.APIRequestError, error)
+}
 
 // NewAPIKeysHandler constructs the handler. svc may be nil in stripped-down
 // wirings; the routes then answer 503 rather than panicking.
@@ -23,15 +42,36 @@ func NewAPIKeysHandler(svc *app.APIKeyService) *APIKeysHandler {
 	return &APIKeysHandler{svc: svc}
 }
 
+// WithTraffic gives the handler the `/v1` request record (T-A5). Additive, like
+// V1MeHandler.WithWebhookSecrets: a wiring without it serves exactly what T-13
+// served.
+func (h *APIKeysHandler) WithTraffic(r APIKeyTrafficReader) *APIKeysHandler {
+	h.requests = r
+	return h
+}
+
+// statsWindow is the period the per-key counters cover. A day is the window an
+// integrator is actually in when something breaks — "is it still failing?" —
+// and it is echoed on every stats object so the number in the tab is never a
+// count without a period.
+const statsWindow = 24 * time.Hour
+
+// errorListLimit is the ticket's own number: the last 50 non-2xx responses.
+const errorListLimit = 50
+
 // Register installs the routes. Call after Auth; the policy table in cmd/api
 // is what makes them admin-only.
 //
 // `GET /api-keys/scopes` and `DELETE /api-keys/:id` do not collide: gin keeps
 // one route tree per method, and no GET route under this prefix takes a
-// parameter.
+// parameter. `GET /api-keys/errors` (T-A5) keeps that true on purpose — the key
+// it filters on arrives as `?key_id=`, not as a path segment, because a
+// literal beside a wildcard in one method tree is the collision this comment
+// exists to avoid.
 func (h *APIKeysHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/api-keys", h.list)
 	rg.GET("/api-keys/scopes", h.scopes)
+	rg.GET("/api-keys/errors", h.errors)
 	rg.POST("/api-keys", h.create)
 	rg.DELETE("/api-keys/:id", h.revoke)
 }
@@ -76,6 +116,17 @@ func (h *APIKeysHandler) scopes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"scopes": out})
 }
 
+// list returns the roster and, beside it, what each key has been doing.
+//
+// The stats ride along with the list rather than sitting on a route of their
+// own — the same call the tab already makes, and the same reasoning as the tool
+// vocabulary in `GET /api/agents`. A second round trip to decorate a list that
+// is never rendered without the decoration is a request nobody should have to
+// make.
+//
+// A failed stats read degrades to a list with no stats. The keys are the
+// operational surface here: an admin who needs to revoke a leaked credential
+// must not be blocked because a counters table is unreadable.
 func (h *APIKeysHandler) list(c *gin.Context) {
 	if h.svc == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "API keys are not configured"})
@@ -89,7 +140,54 @@ func (h *APIKeysHandler) list(c *gin.Context) {
 	if keys == nil {
 		keys = []*domain.APIKey{}
 	}
-	c.JSON(http.StatusOK, gin.H{"keys": keys})
+	c.JSON(http.StatusOK, APIKeysResponse{
+		Keys:  keys,
+		Stats: h.statsFor(c),
+	})
+}
+
+// statsFor reads the window's counters, keyed by key id. Nil on any failure and
+// on a wiring without the reader.
+func (h *APIKeysHandler) statsFor(c *gin.Context) map[string]*domain.APIKeyRequestStats {
+	if h.requests == nil {
+		return nil
+	}
+	since := time.Now().UTC().Add(-statsWindow).Truncate(time.Hour)
+	stats, err := h.requests.StatsByKey(c.Request.Context(), companyID(c), since)
+	if err != nil {
+		logrus.WithError(err).Warn("api key traffic stats unavailable")
+		return nil
+	}
+	for _, s := range stats {
+		s.WindowHours = int(statsWindow / time.Hour)
+	}
+	return stats
+}
+
+// errors serves the last 50 non-2xx `/v1` responses, optionally for one key.
+//
+// This is the route the ticket is really about: an integrator whose script got a
+// 403 at 11pm reads it here, with the request id they were handed, instead of
+// asking us to read a log. Admin-only through the policy table, like every
+// other route on this handler — the error list names routes and error codes for
+// every integration the company runs.
+func (h *APIKeysHandler) errors(c *gin.Context) {
+	if h.requests == nil {
+		// Not a 503: the feature is absent on this deployment, and an empty list
+		// with the window stated reads correctly in the tab. A 503 would put an
+		// error banner on a page whose primary job — managing keys — works.
+		c.JSON(http.StatusOK, APIKeyErrorsResponse{Errors: []*domain.APIRequestError{}, Limit: errorListLimit})
+		return
+	}
+	rows, err := h.requests.RecentErrors(c.Request.Context(), companyID(c), c.Query("key_id"), errorListLimit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if rows == nil {
+		rows = []*domain.APIRequestError{}
+	}
+	c.JSON(http.StatusOK, APIKeyErrorsResponse{Errors: rows, Limit: errorListLimit})
 }
 
 type createAPIKeyReq struct {

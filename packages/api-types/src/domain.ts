@@ -314,6 +314,97 @@ export interface APIReport {
 }
 
 //////////
+// source: api_request.go
+
+/**
+ * APIRequestSample is one finished `/v1` request, as the middleware observed
+ * it. It is the input to the recorder and is never stored in this shape: the
+ * counters go to a rollup and only the failures keep their detail.
+ * CompanyID and APIKeyID are empty when the request never authenticated. Such a
+ * sample still counts on /metrics and is never persisted, because a 401 from an
+ * unknown credential belongs to no tenant — attributing it to one would mean
+ * guessing, and showing it to all of them would leak another tenant's traffic.
+ */
+export interface APIRequestSample {
+  CompanyID: string;
+  APIKeyID: string;
+  /**
+   * RequestID is the value the caller was handed in `X-Request-Id`. It is the
+   * only handle they have when they ask us what happened.
+   */
+  RequestID: string;
+  Method: string;
+  /**
+   * Route is the gin pattern (`/v1/reports/:id`), not the concrete path. See
+   * 032_api_observability.up.sql for why the distinction is load-bearing.
+   */
+  Route: string;
+  Status: number /* int */;
+  /**
+   * ErrorCode and ErrorType are the envelope's own fields, empty on a 2xx and
+   * on any failure that did not go through apierr.
+   */
+  ErrorCode: string;
+  ErrorType: string;
+  Latency: unknown /* time.Duration */;
+  At: string;
+}
+/**
+ * APIRequestStatRow is one upsertable rollup bucket.
+ */
+export interface APIRequestStatRow {
+  CompanyID: string;
+  APIKeyID: string;
+  BucketHour: string;
+  Route: string;
+  Method: string;
+  StatusClass: number /* int */;
+  Requests: number /* int64 */;
+  LatencyMSSum: number /* int64 */;
+  LatencyMSMax: number /* int */;
+}
+/**
+ * APIRequestError is one recorded failure, as the dashboard reads it back.
+ */
+export interface APIRequestError {
+  id: string;
+  api_key_id: string;
+  request_id: string;
+  method: string;
+  route: string;
+  status: number /* int */;
+  /**
+   * ErrorCode is what an integrator matches on in their own code, so it is
+   * the field the tab shows first. Empty means the failure never reached the
+   * error envelope — a panic, or a handler writing its own body.
+   */
+  error_code?: string;
+  error_type?: string;
+  latency_ms: number /* int */;
+  created_at: string;
+}
+/**
+ * APIKeyRequestStats is the per-key summary the dashboard shows beside a key.
+ * The window is on the struct rather than implied, because "412 requests" means
+ * nothing without it and the tab must not have to remember which window it
+ * asked for.
+ */
+export interface APIKeyRequestStats {
+  api_key_id: string;
+  window_hours: number /* int */;
+  requests: number /* int64 */;
+  failed: number /* int64 */;
+  /**
+   * ErrorRatePct is failed/requests as a percentage, rounded to one decimal.
+   * Derived here rather than in the dashboard so the number in the tab and the
+   * number in a support conversation are computed once.
+   */
+  error_rate_pct: number /* float64 */;
+  avg_latency_ms: number /* int */;
+  max_latency_ms: number /* int */;
+}
+
+//////////
 // source: branding.go
 
 /**

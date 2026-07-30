@@ -2,7 +2,7 @@
   "info": {
     "name": "Argentum API — /v1",
     "_postman_id": "argentum-v1-generated",
-    "description": "Generated from apps/backend/openapi/v1.yaml (contract version 2026-07-28).\n\nDo not edit by hand — run `pnpm --filter @argentum/openapi-tools build` and commit the result.\n\nSet `apiKey` in the environment first. `GET /v1/me` is the call to make before any other:\nit tells you which scopes your key has, what it may spend, and which contract version you\nare talking to.",
+    "description": "Generated from apps/backend/openapi/v1.yaml (contract version 2026-07-30).\n\nDo not edit by hand — run `pnpm --filter @argentum/openapi-tools build` and commit the result.\n\nSet `apiKey` in the environment first. `GET /v1/me` is the call to make before any other:\nit tells you which scopes your key has, what it may spend, and which contract version you\nare talking to.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -74,6 +74,44 @@
               ]
             },
             "description": "The first call to make and the one paste that makes a support question\nanswerable. It needs no scope — a key with none must still be able to\nfind out that it has none.\n\nScope: none — any key reaches this route."
+          }
+        },
+        {
+          "name": "Spend over a window, and what is left",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/usage?from=&to=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "usage"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Start of the window, inclusive, as an RFC3339 timestamp. Defaults to the first of the current UTC month."
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "disabled": true,
+                  "description": "End of the window, exclusive. Defaults to the first of next UTC month. Must be after `from`, and no more than 366 days later."
+                }
+              ]
+            },
+            "description": "What this workspace has spent between `from` and `to`, and the credit\nposition at the moment of the call.\n\nThis is not `GET /v1/me` with more fields. `/v1/me` answers \"can I make\na call at all\", in one paste, with no period attached to the number.\nThis answers \"what did my integration cost over the period I bill my own\nusers for\" — a window the caller chooses, broken down by model, which is\nwhat an application reselling these answers needs in order to meter its\nown users.\n\nBoth bounds default to the current calendar month in UTC, which is the\nperiod a monthly grant is measured against. `from` is inclusive and `to`\nis exclusive.\n\nScope: `read:usage`"
           }
         }
       ]

@@ -83,6 +83,34 @@ type Body struct {
 // when that middleware lands.
 const requestIDKey = "request_id"
 
+// Gin context keys this package *writes* (T-A5).
+//
+// The recorder needs the `code` and `type` a failure went out with, and by the
+// time a middleware sees the response the body is bytes on the wire. Parsing
+// them back out of it would mean buffering every response to read two fields
+// off the few that failed. So the envelope leaves them here on its way past,
+// which also means a failure that never went through this package records with
+// no code — honestly, rather than as a guess.
+const (
+	CtxErrorCode = "api_error_code"
+	CtxErrorType = "api_error_type"
+)
+
+// Recorded reports the code and type of the error written on this request, or
+// two empty strings if none was.
+func Recorded(c *gin.Context) (code, errType string) {
+	return c.GetString(CtxErrorCode), c.GetString(CtxErrorType)
+}
+
+// note stamps the context with what is about to be written. Called by every
+// path that produces a Detail, including NewDetail — the idempotency
+// middleware's 409 composes its body by hand and would otherwise be the one
+// failure the recorder could not name.
+func note(c *gin.Context, t Type, code string) {
+	c.Set(CtxErrorCode, code)
+	c.Set(CtxErrorType, string(t))
+}
+
 // NewDetail builds the error object without writing it, for the one response
 // that carries something alongside the error — the idempotency middleware's
 // `409 request_in_flight`, which returns the ids the caller is already
@@ -90,6 +118,7 @@ const requestIDKey = "request_id"
 // map is what stops the envelope's field names from having a second
 // definition that quietly drifts.
 func NewDetail(c *gin.Context, t Type, code, message string) Detail {
+	note(c, t, code)
 	return Detail{
 		Type:      t,
 		Code:      code,
@@ -121,6 +150,7 @@ func AbortParam(c *gin.Context, t Type, code, message, param string) {
 // (`server` for "we turned it off", `invalid_request` for "you sent too
 // much") and only the status carries the extra precision.
 func AbortStatus(c *gin.Context, status int, t Type, code, message, param string) {
+	note(c, t, code)
 	c.AbortWithStatusJSON(status, Body{Error: Detail{
 		Type:      t,
 		Code:      code,

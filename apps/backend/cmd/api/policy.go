@@ -132,6 +132,11 @@ var apiPolicy = middleware.RolePolicy{
 	// create form, which is admin-only. A member-readable route nobody can act
 	// on is a wider surface for nothing.
 	"GET /api/api-keys/scopes": domain.RoleAdmin,
+	// The `/v1` failure list (T-A5). Admin for the same reason the audit log is:
+	// it names every route every integration called and how each call failed,
+	// across the whole company. The ticket's acceptance asks for admin-only in
+	// as many words, and this table is where that is true.
+	"GET /api/api-keys/errors": domain.RoleAdmin,
 
 	// Scheduled tasks.
 	"GET /api/scheduled-tasks":                 domain.RoleMember,
@@ -193,7 +198,8 @@ var unpolicedPaths = map[string]bool{
 	// route added here without a RequireScope reaches every key its tenant has
 	// ever minted, and that is the one failure this list cannot catch on its
 	// own.
-	"/v1/me": true, // none — identity, and the one route a key with no scopes must reach
+	"/v1/me":    true, // none — identity, and the one route a key with no scopes must reach
+	"/v1/usage": true, // read:usage (T-A5)
 
 	// T-A4's published contract. The only `/v1` route with no credential at
 	// all: an integrator reads the spec before they have a key.

@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Check, Trash2 } from "lucide-react";
+import { Copy, Check, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import type {
+  APIKeyErrorsResponse,
+  APIKeyRequestStats,
+  APIRequestError,
+} from "@argentum/api-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +40,12 @@ interface APIKey {
   last_used_at?: string;
   expires_at?: string;
   created_at: string;
+}
+
+/** `GET /api/api-keys` carries the traffic beside the roster (T-A5). */
+interface APIKeysBody {
+  keys: APIKey[];
+  stats?: Record<string, APIKeyRequestStats>;
 }
 
 interface ScopeInfo {
@@ -80,6 +91,102 @@ function relative(iso?: string): string {
   return `used ${new Date(iso).toLocaleDateString()}`;
 }
 
+/** A key with no traffic in the window has no stats row at all — "no calls" and
+ *  "we cannot read the counters" are different facts and read differently. */
+function traffic(stats?: APIKeyRequestStats): string {
+  if (!stats) return "no calls in 24h";
+  const window = `${stats.window_hours}h`;
+  const calls = `${stats.requests} ${stats.requests === 1 ? "call" : "calls"} in ${window}`;
+  if (stats.failed === 0) return `${calls} · no errors · ${stats.avg_latency_ms}ms avg`;
+  return `${calls} · ${stats.error_rate_pct}% errors · ${stats.avg_latency_ms}ms avg`;
+}
+
+/** Errors get colour; a 429 is not the same conversation as a 500. */
+function statusTone(status: number): string {
+  if (status >= 500) return "text-destructive";
+  if (status === 429) return "text-amber-600 dark:text-amber-500";
+  return "text-muted-foreground";
+}
+
+function shortTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+/** The failure list for one key.
+ *
+ *  Fetched when the row is expanded rather than with the roster: most keys are
+ *  working, and nobody opens this tab to read fifty rows for a key that is
+ *  fine. The request id is monospace and selectable because the entire point of
+ *  showing it is that somebody pastes it. */
+function KeyErrors({ keyId }: { keyId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["api-key-errors", keyId],
+    queryFn: async () =>
+      (
+        await api.get<APIKeyErrorsResponse>("/api-keys/errors", {
+          params: { key_id: keyId },
+        })
+      ).data,
+    // The recorder flushes on an interval, so a failure that just happened
+    // arrives within seconds of it. Refetching while the panel is open is what
+    // makes "trigger a 403 and watch it appear" true without a reload.
+    refetchInterval: 15000,
+  });
+
+  const rows = (data?.errors ?? []) as APIRequestError[];
+
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground py-2">Loading recent failures…</div>;
+  }
+  if (rows.length === 0) {
+    return (
+      <div className="text-xs text-muted-foreground py-2">
+        No failed calls recorded for this key.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1.5 py-2">
+      <p className="text-xs text-muted-foreground">
+        The last {data?.limit ?? rows.length} non-2xx responses, newest first. Quote the request id
+        if you need help with one.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-muted-foreground">
+            <tr className="text-left">
+              <th className="font-normal py-1 pr-3">When</th>
+              <th className="font-normal py-1 pr-3">Route</th>
+              <th className="font-normal py-1 pr-3">Status</th>
+              <th className="font-normal py-1 pr-3">Code</th>
+              <th className="font-normal py-1">Request id</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((e) => (
+              <tr key={e.id} className="border-t border-border/40">
+                <td className="py-1 pr-3 whitespace-nowrap">{shortTime(e.created_at)}</td>
+                <td className="py-1 pr-3 font-mono whitespace-nowrap">
+                  {e.method} {e.route}
+                </td>
+                <td className={`py-1 pr-3 font-mono ${statusTone(e.status)}`}>{e.status}</td>
+                <td className="py-1 pr-3 font-mono">{e.error_code || "—"}</td>
+                <td className="py-1 font-mono select-all whitespace-nowrap">{e.request_id}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function APIKeysTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -93,6 +200,9 @@ export function APIKeysTab() {
   // after four seconds — the same reasoning as the invite link in TeamTab.
   const [issued, setIssued] = useState<CreatedKey | null>(null);
   const [copied, setCopied] = useState(false);
+  // One key's failures at a time. Fifty rows per key, expanded for every key at
+  // once, is a page nobody can read — and each panel is its own request.
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   // The vocabulary comes from the API rather than a constant here, so a scope
   // added on the backend shows up without a frontend change.
@@ -102,9 +212,13 @@ export function APIKeysTab() {
       (await api.get<{ scopes: ScopeInfo[] }>("/api-keys/scopes")).data.scopes ?? [],
   });
 
-  const { data: keys, isLoading } = useQuery({
+  const { data: roster, isLoading } = useQuery({
     queryKey: ["api-keys"],
-    queryFn: async () => (await api.get<{ keys: APIKey[] }>("/api-keys")).data.keys ?? [],
+    queryFn: async () => (await api.get<APIKeysBody>("/api-keys")).data,
+    // A key minted five minutes ago and used since should show that without a
+    // reload. The counters are flushed on an interval anyway, so polling faster
+    // than that would only ask the same question twice.
+    refetchInterval: 30000,
   });
 
   const create = useMutation({
@@ -154,7 +268,8 @@ export function APIKeysTab() {
     }
   }
 
-  const list = keys ?? [];
+  const list = roster?.keys ?? [];
+  const stats = roster?.stats ?? {};
   const reads = (scopes ?? []).filter((s) => !s.writes);
   const writes = (scopes ?? []).filter((s) => s.writes);
 
@@ -267,6 +382,10 @@ export function APIKeysTab() {
         <CardHeader>
           <CardTitle>Keys</CardTitle>
           <CardDescription>
+            Traffic is the last 24 hours. Open <span className="font-medium">Failures</span> on a key
+            to see its last 50 non-2xx responses with the request id the caller was handed — that is
+            what makes a 403 at 11pm answerable without us reading a log.
+            <br />
             Revoked keys stay listed: the audit log attributes calls to a key id, and a key nobody
             can name is a row nobody can explain.
           </CardDescription>
@@ -277,45 +396,72 @@ export function APIKeysTab() {
             <div className="text-sm text-muted-foreground py-4">No keys yet.</div>
           )}
           {list.map((k) => (
-            <div key={k.id} className="flex items-start justify-between gap-4 py-3">
-              <div className="min-w-0 space-y-1">
-                <div className="text-sm font-medium truncate">
-                  {k.name} {statusBadge(k.status)}
+            <div key={k.id} className="py-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 space-y-1">
+                  <div className="text-sm font-medium truncate">
+                    {k.name} {statusBadge(k.status)}
+                  </div>
+                  <div className="text-xs text-muted-foreground font-mono">
+                    arg_{k.key_prefix}_…
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {relative(k.last_used_at)}
+                    {k.expires_at &&
+                      ` · expires ${new Date(k.expires_at).toLocaleDateString()}`}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {traffic(stats[k.id])}
+                    {(stats[k.id]?.failed ?? 0) > 0 && (
+                      <span className="text-destructive">
+                        {" "}
+                        · {stats[k.id]?.failed} failed
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {k.scopes.map((s) => (
+                      <Badge key={s} variant="outline" className="font-mono text-[10px]">
+                        {s}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-                <div className="text-xs text-muted-foreground font-mono">
-                  arg_{k.key_prefix}_…
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {relative(k.last_used_at)}
-                  {k.expires_at &&
-                    ` · expires ${new Date(k.expires_at).toLocaleDateString()}`}
-                </div>
-                <div className="flex flex-wrap gap-1 pt-0.5">
-                  {k.scopes.map((s) => (
-                    <Badge key={s} variant="outline" className="font-mono text-[10px]">
-                      {s}
-                    </Badge>
-                  ))}
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs"
+                    aria-expanded={expanded === k.id}
+                    onClick={() => setExpanded(expanded === k.id ? null : k.id)}
+                  >
+                    {expanded === k.id ? (
+                      <ChevronDown className="h-3.5 w-3.5 mr-1" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Failures
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={k.status !== "active"}
+                    aria-label={`Revoke ${k.name}`}
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Revoke ${k.name}? Anything using it stops working immediately, and it cannot be restored.`,
+                        )
+                      ) {
+                        revoke.mutate(k.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="shrink-0"
-                disabled={k.status !== "active"}
-                aria-label={`Revoke ${k.name}`}
-                onClick={() => {
-                  if (
-                    confirm(
-                      `Revoke ${k.name}? Anything using it stops working immediately, and it cannot be restored.`,
-                    )
-                  ) {
-                    revoke.mutate(k.id);
-                  }
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              {expanded === k.id && <KeyErrors keyId={k.id} />}
             </div>
           ))}
         </CardContent>

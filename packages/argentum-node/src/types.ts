@@ -20,6 +20,11 @@ export type Me = Schemas['Me'];
 export type Scope = Schemas['Scope'];
 export type Credits = Schemas['Credits'];
 
+export type UsageReport = Schemas['UsageReport'];
+export type UsagePeriod = Schemas['UsagePeriod'];
+export type UsageSpend = Schemas['UsageSpend'];
+export type UsageModelSpend = Schemas['UsageModelSpend'];
+
 export type DocumentFormat = Schemas['DocumentFormat'];
 export type ArgentumDocument = Schemas['Document'];
 export type DocumentPage = Schemas['DocumentPage'];

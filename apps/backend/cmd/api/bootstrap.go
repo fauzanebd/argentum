@@ -11,6 +11,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
+	"github.com/fauzanebd/argentum/internal/apiobs"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
 	"github.com/fauzanebd/argentum/internal/branding"
@@ -300,6 +301,18 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// Shared with app.MeteredLLM, which is too deep in the call graph to be
 	// handed a collector, so /metrics reports streaming-metering health too.
 	deps.metrics = metrics.Default()
+
+	// The `/v1` request recorder (T-A5). It is built last because it needs the
+	// collector, and it owns a goroutine: the flush loop runs for the life of
+	// the process and is stopped by deps.cleanup, which flushes what is left
+	// rather than dropping it.
+	deps.requestRepo = pgctl.NewAPIRequestRepo(controlDB)
+	deps.requestObs = apiobs.New(deps.requestRepo, deps.metrics,
+		apiobs.WithRetention(time.Duration(cfg.APIV1ObsRetentionDays)*24*time.Hour))
+	obsCtx, stopObs := context.WithCancel(ctx)
+	deps.stopObs = stopObs
+	go deps.requestObs.Run(obsCtx, time.Duration(cfg.APIV1ObsFlushSeconds)*time.Second)
+
 	return deps, nil
 }
 

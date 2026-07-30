@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, AsyncIterator, Dict, Mapping, Optional
+from datetime import datetime, timezone
+from typing import Any, AsyncIterator, Dict, Mapping, Optional, Union
 
 import httpx
 
@@ -74,6 +75,21 @@ class AsyncArgentum:
     async def me(self) -> t.Me:
         """Who this key is, what it can do, and what the tenant has left to spend."""
         return await self.request_json("GET", "/v1/me")
+
+    async def usage(
+        self,
+        *,
+        since: Optional[Union[str, datetime]] = None,
+        until: Optional[Union[str, datetime]] = None,
+    ) -> t.UsageReport:
+        """What this workspace spent over a window, and what is left.
+
+        The async twin of ``Argentum.usage``; see it for why the parameters are
+        ``since`` / ``until`` and what the defaults are.
+        """
+        return await self.request_json(
+            "GET", "/v1/usage", params={"from": _rfc3339(since), "to": _rfc3339(until)}
+        )
 
     # -- transport ---------------------------------------------------------
 
@@ -471,3 +487,16 @@ class AsyncThreads:
 
     async def delete(self, thread_id: str) -> None:
         await self._client.request("DELETE", f"/v1/threads/{thread_id}")
+
+
+def _rfc3339(value: "Optional[Union[str, datetime]]") -> Optional[str]:
+    """Renders a window bound. RFC3339 is the only form the API accepts, and a
+    naive datetime is treated as UTC — the API's own default window is UTC, so
+    guessing the local zone would silently shift the period."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value

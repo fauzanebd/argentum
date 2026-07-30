@@ -182,6 +182,26 @@ type Config struct {
 	// somebody else's credentials. True is for local development and for this
 	// ticket's own gate, where the receiver is a script on localhost.
 	APIV1CallbackAllowPrivate bool
+	// APIV1ObsFlushSeconds is how often the request recorder writes what it has
+	// buffered (T-A5). It is the staleness of the tenant's own error list and
+	// the write rate of the rollup, traded against each other: the acceptance
+	// criterion is "within a minute", and the default leaves room for a failed
+	// flush and the next one to carry the difference.
+	APIV1ObsFlushSeconds int
+	// APIV1ObsRetentionDays bounds how long `/v1` request counters and failures
+	// are kept. Longer than any debugging session, short enough that the tables
+	// stay small.
+	APIV1ObsRetentionDays int
+
+	// MetricsToken gates `/metrics` when set: `Authorization: Bearer <token>`.
+	//
+	// Unset serves the endpoint as it always has, minus the per-key block —
+	// T-A5 labels request counters by API key id, and a key id is a tenant's
+	// identifier for a credential they hold, so it does not go out on an
+	// endpoint with no credential of its own. Moving `/metrics` off the public
+	// router entirely is T-17's job; this is the smaller thing that stops this
+	// ticket adding a tenant identifier to an open endpoint on the way.
+	MetricsToken string
 
 	// Object storage (MinIO / S3-compatible). Used by the generate_document
 	// tool to persist generated PDF/XLSX/CSV files and to issue presigned
@@ -321,6 +341,10 @@ func Load() (*Config, error) {
 		APIV1MaxSpecCols:           getEnvAsInt("API_V1_MAX_SPEC_COLS", 40),
 		APIV1SyncRenderTimeoutSecs: getEnvAsInt("API_V1_SYNC_RENDER_TIMEOUT", 20),
 		APIV1CallbackAllowPrivate:  getEnv("API_V1_CALLBACK_ALLOW_PRIVATE", "false") == "true",
+		APIV1ObsFlushSeconds:       getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
+		APIV1ObsRetentionDays:      getEnvAsInt("API_V1_OBS_RETENTION_DAYS", 30),
+
+		MetricsToken: getEnv("METRICS_TOKEN", ""),
 
 		// Object storage (MinIO / S3-compatible)
 		MinIOEndpoint:          getEnv("MINIO_ENDPOINT", ""),

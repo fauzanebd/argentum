@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, Mapping, Optional, Union
 
 import httpx
@@ -82,6 +83,29 @@ class Argentum:
         answerable.
         """
         return self.request_json("GET", "/v1/me")
+
+    def usage(
+        self,
+        *,
+        since: Optional[Union[str, datetime]] = None,
+        until: Optional[Union[str, datetime]] = None,
+    ) -> t.UsageReport:
+        """What this workspace spent over a window, and what is left.
+
+        Not ``me()`` with more fields: ``me()`` answers "can I call at all",
+        with no period attached to the number. This takes the period you bill
+        your own users for — both bounds default to the current UTC calendar
+        month — and breaks the spend down by model.
+
+        Needs the ``read:usage`` scope.
+
+        The parameters are ``since`` / ``until`` rather than ``from`` / ``to``
+        because ``from`` is a Python keyword and cannot be a parameter name.
+        They are sent as the API's own ``from`` and ``to``.
+        """
+        return self.request_json(
+            "GET", "/v1/usage", params={"from": _rfc3339(since), "to": _rfc3339(until)}
+        )
 
     # -- transport ---------------------------------------------------------
 
@@ -588,3 +612,16 @@ def _chat_body(message: str, user_ref: Optional[str], thread_id: Optional[str]) 
     if thread_id:
         body["thread_id"] = thread_id
     return body
+
+
+def _rfc3339(value: "Optional[Union[str, datetime]]") -> Optional[str]:
+    """Renders a window bound. RFC3339 is the only form the API accepts, and a
+    naive datetime is treated as UTC — the API's own default window is UTC, so
+    guessing the local zone would silently shift the period."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value
