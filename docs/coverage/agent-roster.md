@@ -1024,6 +1024,19 @@ header, so a presigned link minted by the *containerised* API reads
 host — the usual local flow, and what the runbook describes — uses
 `localhost:9000` and its links open in a browser.
 
+**The same five variables also point at a hosted provider**, which is how the
+other Go services in this workspace are deployed: `is3.cloudhost.id`
+(IDCloudHost), `MINIO_USE_SSL=true`, bucket `argentum`. Proven the same evening
+against the real account — a render returned a `https://is3.cloudhost.id/…`
+presigned URL that downloaded 103,927 bytes of PDF, the object is in the bucket,
+and the *unsigned* URL for the same object answers **403**. That last check is
+the point of the deviation from `gelael-member-api`'s uploader, which sets
+`x-amz-acl: public-read` and hands out permanent public URLs: a generated report
+is a tenant's numbers. Credentials for that account are account-wide rather than
+bucket-scoped, so a key that writes `argentum` reads every other bucket on it —
+noted in `.env.example` beside the block, and no credential is committed
+anywhere.
+
 ### 7. A known limit, from reading rather than from the gate
 
 A conversation can fork twice over two messages in one narrow case: a binding is
