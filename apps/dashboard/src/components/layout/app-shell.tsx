@@ -14,6 +14,7 @@ import { ScheduledTasksNav } from "@/components/layout/scheduled-tasks-nav";
 import { GeneratedDashboards } from "@/components/layout/generated-dashboards";
 import { NavUser } from "@/components/layout/nav-user";
 import { useThemeStore } from "@/store/theme";
+import { APP_VERSION, BUILD_DATE, BUILD_DAY } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -98,9 +99,14 @@ function AppSidebar() {
       <SidebarFooter className="px-2 shrink-0">
         <NavUser />
         {!isCollapsed && (
-          <p className="px-2 pb-1 text-[10px] text-muted-foreground/70 text-center">
-            by Smartsoft
-          </p>
+          <div className="px-2 pb-1 text-center text-[10px] text-muted-foreground/70">
+            <p>by Smartsoft</p>
+            {/* Which build is on screen — the first thing worth knowing when a
+                report says "it does not do that on my machine". */}
+            <p className="font-mono" title={`Built ${BUILD_DATE}`}>
+              {APP_VERSION} · {BUILD_DAY}
+            </p>
+          </div>
         )}
       </SidebarFooter>
     </Sidebar>
