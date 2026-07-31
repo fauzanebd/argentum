@@ -61,6 +61,41 @@ services:
       retries: 5
     networks: [ argentum_network ]
 
+  # Object storage for everything the product hands back as a file: the agent's
+  # generate_document, `/v1/reports` (T-A2), and the tenant logo T-R5 renders
+  # into a branded PDF.
+  #
+  # It is not optional decoration for a developer. `deps.docGen` is nil without
+  # MINIO_ENDPOINT, so `POST /v1/reports/render` answers `rendering_unavailable`,
+  # `generate_document` is absent from the tool registry, and T-A2b's eval case
+  # cannot pass — a whole track's worth of work that could not be exercised
+  # locally at all until this service existed (T-S4's gate, 2026-07-31).
+  #
+  # Root credentials are the MINIO_ACCESS_KEY / MINIO_SECRET_KEY the app reads,
+  # so one pair configures both ends. Defaults are MinIO's own well-known
+  # minioadmin pair, matching the other services here — every credential in this
+  # file is a local default and none of them belong in a deployment.
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: argentum_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    ports:
+      # 9000 is the S3 API the app talks to; 9001 is the browser console, which
+      # is how you check that a document really landed.
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks: [ argentum_network ]
+
   metabase:
     image: metabase/metabase:v0.60.x
     container_name: argentum_metabase
@@ -149,6 +184,18 @@ services:
       ARGENTUM_JWT_SECRET: ${ARGENTUM_JWT_SECRET}
       ARGENTUM_DSN_KEY: ${ARGENTUM_DSN_KEY}
 
+      # Object storage. The endpoint is the compose service, which is also the
+      # host a presigned download URL is signed for — SigV4 covers the Host
+      # header, so a link minted in here reads `http://minio:9000/...` and is
+      # only openable from inside this network. An API run on the host against
+      # this same MinIO (the usual local flow) uses localhost:9000 and its links
+      # work in a browser.
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-argentum-documents}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+
       # Frontend origin allowlist
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
@@ -156,6 +203,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     ports:
       - "8080:8080"
@@ -213,10 +262,21 @@ services:
       THREAD_IDLE_MINUTES: ${THREAD_IDLE_MINUTES:-30}
       SUMMARY_EVERY_N_TURNS: ${SUMMARY_EVERY_N_TURNS:-8}
       LLM_CLASSIFIER_MODEL: ${LLM_CLASSIFIER_MODEL:-gpt-5-nano}
+
+      # The worker is where generate_document actually runs: without these the
+      # tool is not registered at all and the agent answers that it cannot
+      # produce a file.
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-argentum-documents}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
       api:
         condition: service_started
@@ -280,6 +340,7 @@ volumes:
   postgres_demo_data:
   redis_data:
   metabase_data:
+  minio_data:
 
 networks:
   argentum_network:

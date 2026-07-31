@@ -1001,13 +1001,28 @@ wants a golden case rather than a threshold nudge: the rule's own suite
 (`T-02`'s `TestEveryRuleHasGoldenCases`) has no must-*pass* case shaped like an
 ordinary capability question.
 
-**A second, smaller one.** `POST /v1/reports/render` answers
-`rendering_unavailable` on this stack, so `docs/api/examples/run.sh
-deterministic` gets through `GET /v1/me` and `GET /v1/agents` and stops at the
-first render. There is **no MinIO service in `docker-compose.yml`** at all — the
-local stack cannot run any document path, which is the same environment gap that
-makes `T-A2b`'s eval case unpassable here (recorded 2026-07-30). It is worth a
-compose service; nobody can gate a report locally without one.
+**A second, smaller one — fixed the same evening.** `POST /v1/reports/render`
+answered `rendering_unavailable` because there was **no MinIO service in
+`docker-compose.yml`** at all: `deps.docGen` is nil without `MINIO_ENDPOINT`,
+`generate_document` never reaches the tool registry, and no document path could
+be exercised on a developer machine — the same gap that makes `T-A2b`'s eval
+case unpassable here (recorded 2026-07-30).
+
+`docker-compose.yml` now runs one (`minio` service, S3 on 9000, console on 9001,
+`mc ready local` healthcheck, `minio_data` volume), `api` and `worker` carry the
+`MINIO_*` block, `make infra` starts it, and `.env.example` documents it. Nothing
+in Go changed: `internal/adapters/storage` already creates the bucket on first
+use and the env names already matched the house shape. Proven immediately —
+`generate_document` appears in the worker's registry, `POST /v1/reports/render`
+returns a 103,927-byte two-page PDF, and **`docs/api/examples/run.sh
+deterministic` passes whole for the first time on this machine**: eight steps
+including both SDK installs, in 8 seconds.
+
+The one thing to know about it is in the compose comment: SigV4 signs the Host
+header, so a presigned link minted by the *containerised* API reads
+`http://minio:9000/…` and only opens from inside that network. An API run on the
+host — the usual local flow, and what the runbook describes — uses
+`localhost:9000` and its links open in a browser.
 
 ### 7. A known limit, from reading rather than from the gate
 

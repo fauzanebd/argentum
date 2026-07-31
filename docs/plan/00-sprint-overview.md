@@ -714,8 +714,10 @@ which is the third appearance of a class fixed twice before (`3891579`,
 `T-A2b`). It is `T-07b`'s, it is not filed as a track, and it now has a measured
 rate rather than an anecdote — see
 [`../coverage/agent-roster.md`](../coverage/agent-roster.md) §T-S4 §6. The same
-section records that `docker-compose.yml` ships no object storage, so no
-document path can be gated locally at all.
+section records the second finding — `docker-compose.yml` shipped no object
+storage — and that it was fixed the same evening: `make infra` now starts a
+MinIO, and `docs/api/examples/run.sh deterministic` passes whole for the first
+time on a developer machine.
 
 ### 8b. The order
 
@@ -773,9 +775,10 @@ through the UI fails one turn later after an agent has spent its budget
 discovering it. **Two more joined them on 2026-07-31** from `T-S4`'s gate: the
 injection guardrail refusing two of seven ordinary questions (`T-07b`'s, and now
 a measured rate rather than an anecdote), and `docker-compose.yml` shipping no
-object storage, which is why no document path can be gated on a developer
-machine. None is a track; all six are smaller than any row above and none has an
-owner.
+object storage — **that second one was fixed the same evening**, so the
+deterministic example suite now runs locally and a report can be gated on a
+developer machine for the first time. None of the remaining five is a track; all
+are smaller than any row above and none has an owner.
 
 ### 8c. The third insert, and what it slips
 
