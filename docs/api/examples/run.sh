@@ -128,6 +128,17 @@ run_curl_deterministic() {
   assert_contains "$me" '"api_version"'
   assert_contains "$me" '"scopes"'
 
+  step "curl: GET /v1/agents"
+  agents=$(bash -euo pipefail "$here/curl/agents.sh")
+  echo "$agents"
+  assert_contains "$agents" '"object":"agent"'
+  # Exactly one default, always. It is what a call with no `agent_id` runs as,
+  # and a tenant with none would make the field mandatory without saying so.
+  defaults=$(printf '%s' "$agents" | python3 -c 'import json,sys
+print(sum(1 for a in json.load(sys.stdin).get("data", []) if a.get("is_default")))')
+  [ "$defaults" = "1" ] || fail "the roster has $defaults default agents; expected exactly 1"
+  echo "  ok one default agent"
+
   step "curl: POST /v1/reports/render"
   bash -euo pipefail "$here/curl/render.sh"
   assert_pdf revenue.pdf

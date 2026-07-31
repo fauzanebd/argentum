@@ -158,6 +158,16 @@ type chatRequest struct {
 	// makes the spend attributable in `usage/by-user` — the report a tenant
 	// reads to police their own integration.
 	UserRef string `json:"user_ref,omitempty"`
+	// AgentID names which of the company's agents answers (T-S5). Omitted is
+	// the company default, which is what every call made before this field
+	// existed keeps meaning.
+	//
+	// It applies to the conversation, not to the turn: sent with a `thread_id`
+	// it must agree with what that conversation already runs as, and sent with
+	// a `user_ref` whose newest conversation runs as a different agent it
+	// starts a new one rather than reinterpreting a transcript produced under
+	// different tools and sources.
+	AgentID string `json:"agent_id,omitempty"`
 }
 
 // turnRecord is what the idempotency store remembers about a send: three
@@ -217,6 +227,7 @@ func (h *V1ChatHandler) send(c *gin.Context) {
 		CompanyID:  companyID(c),
 		APIUserRef: req.UserRef,
 		ThreadID:   req.ThreadID,
+		AgentID:    strings.TrimSpace(req.AgentID),
 		Message:    req.Message,
 		APIKeyID:   c.GetString(middleware.CtxAPIKeyID),
 	})
@@ -248,6 +259,14 @@ func (h *V1ChatHandler) abortEnqueue(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, domain.ErrInsufficientCredits):
 		apierr.Abort(c, apierr.TypeBudgetExhausted, "credits_exhausted", app.CreditsExhaustedMessage)
+	// Both agent cases go above the thread cases: they wrap the same two
+	// sentinels, and a caller who sent a bad `agent_id` must not be sent to
+	// look at their `thread_id`.
+	case errors.Is(err, app.ErrAgentNotFound):
+		abortAgentNotFound(c)
+	case errors.Is(err, app.ErrAgentChange):
+		apierr.AbortParam(c, apierr.TypeInvalidRequest, "agent_mismatch",
+			"That conversation already runs as a different agent. Start a new one by sending `user_ref` without a `thread_id`.", "agent_id")
 	case errors.Is(err, domain.ErrInvalidInput):
 		apierr.AbortParam(c, apierr.TypeInvalidRequest, "invalid_thread",
 			"That `thread_id` is not an API thread for this company.", "thread_id")

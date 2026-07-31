@@ -13,6 +13,41 @@ from typing import Any, Dict, List, Literal, TypedDict, Union
 
 API_VERSION = "2026-07-30"
 
+class Agent(TypedDict, total=False):
+    """One agent on the workspace's roster.
+
+    Its persona, its tool allowlist and the databases it can reach are
+    deliberately absent: those are the tenant's own configuration, editable
+    behind an admin session in the dashboard, and a machine credential has
+    no use for them. What is here is what a caller needs in order to choose
+    between agents and name one.
+
+    Always present: id, object, name, is_default, enabled.
+    """
+    id: str
+    object: Literal["agent"]
+    # What the workspace calls it — `Finance`, `Ops`.
+    name: str
+    # The tenant's own one-line summary.
+    description: str
+    # True for exactly one row.
+    is_default: bool
+    # False for an agent an admin has switched off.
+    enabled: bool
+
+
+class AgentPage(TypedDict, total=False):
+    """The whole roster, in the envelope every `/v1` list uses. `has_more` is
+    always `false` — a roster is small and there is nothing to page — but
+    the shape is the shared one so no client special-cases this route.
+
+    Always present: data, has_more.
+    """
+    data: List[Agent]
+    has_more: bool
+    next_cursor: str
+
+
 class ChatEventDelta(TypedDict, total=False):
     """A fragment of the answer as it is written. Never persisted; carries no
     `id:`.
@@ -68,6 +103,8 @@ class ChatRequest(TypedDict, total=False):
     thread_id: str
     # Your own identifier for the person asking.
     user_ref: str
+    # Which of the workspace's agents answers.
+    agent_id: str
 
 
 class ConflictError(TypedDict, total=False):
@@ -96,6 +133,8 @@ class CreateReportRequest(TypedDict, total=False):
     user_ref: str
     # Continue an existing `api` conversation instead of starting one.
     thread_id: str
+    # Which of the workspace's agents writes the report.
+    agent_id: str
     # Receives the signed `report.completed` body.
     callback_url: str
     # `id` or `en`.
@@ -545,6 +584,8 @@ Scope = Literal["read:metrics", "read:threads", "read:usage", "read:audit", "rea
 
 __all__ = [
     "API_VERSION",
+    "Agent",
+    "AgentPage",
     "ChatEvent",
     "ChatEventDelta",
     "ChatEventError",

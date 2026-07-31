@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, Mapping, Optional, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Union
 
 import httpx
 
@@ -83,6 +83,27 @@ class Argentum:
         answerable.
         """
         return self.request_json("GET", "/v1/me")
+
+    def agents(self) -> List[t.Agent]:
+        """The agents this workspace has, and which one answers by default.
+
+        A workspace can keep several — Finance, Ops, Support — each with its own
+        persona, tools and databases. Pass an ``id`` from here as ``agent_id``
+        to :meth:`Chat.send`, :meth:`Chat.stream` or :meth:`Reports.create`;
+        omit it and the one with ``is_default`` answers.
+
+        ::
+
+            finance = next(a for a in client.agents() if a["name"] == "Finance")
+            client.chat.send("Revenue last month?", user_ref="u_42", agent_id=finance["id"])
+
+        Needs no scope, like :meth:`me`. Returns the list rather than the API's
+        page envelope: the whole roster arrives at once and ``has_more`` is
+        always false, so handing back a page would invite a loop that can never
+        run twice.
+        """
+        page: t.AgentPage = self.request_json("GET", "/v1/agents")
+        return page.get("data", [])
 
     def usage(
         self,
@@ -294,6 +315,7 @@ class Reports:
         *,
         user_ref: Optional[str] = None,
         thread_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
         format: str = "pdf",
         callback_url: Optional[str] = None,
         locale: Optional[str] = None,
@@ -305,6 +327,7 @@ class Reports:
         for key, value in (
             ("user_ref", user_ref),
             ("thread_id", thread_id),
+            ("agent_id", agent_id),
             ("callback_url", callback_url),
             ("locale", locale),
             ("currency", currency),
@@ -499,6 +522,7 @@ class Chat:
         *,
         user_ref: Optional[str] = None,
         thread_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> t.Turn:
         """Ask, and wait for the answer on the connection.
@@ -512,7 +536,7 @@ class Chat:
         return self._client.request_json(
             "POST",
             "/v1/chat",
-            json=_chat_body(message, user_ref, thread_id),
+            json=_chat_body(message, user_ref, thread_id, agent_id),
             idempotency_key=idempotency_key,
         )
 
@@ -522,6 +546,7 @@ class Chat:
         *,
         user_ref: Optional[str] = None,
         thread_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
         last_event_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> Iterator[Event]:
@@ -536,7 +561,7 @@ class Chat:
         return self._client.events(
             "POST",
             "/v1/chat",
-            json=_chat_body(message, user_ref, thread_id),
+            json=_chat_body(message, user_ref, thread_id, agent_id),
             headers={"Last-Event-ID": last_event_id} if last_event_id else None,
             idempotency_key=idempotency_key,
         )
@@ -605,12 +630,19 @@ class Threads:
         self._client.request("DELETE", f"/v1/threads/{thread_id}")
 
 
-def _chat_body(message: str, user_ref: Optional[str], thread_id: Optional[str]) -> Dict[str, Union[str, None]]:
+def _chat_body(
+    message: str,
+    user_ref: Optional[str],
+    thread_id: Optional[str],
+    agent_id: Optional[str] = None,
+) -> Dict[str, Union[str, None]]:
     body: Dict[str, Any] = {"message": message}
     if user_ref:
         body["user_ref"] = user_ref
     if thread_id:
         body["thread_id"] = thread_id
+    if agent_id:
+        body["agent_id"] = agent_id
     return body
 
 

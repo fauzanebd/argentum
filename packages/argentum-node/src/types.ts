@@ -25,6 +25,9 @@ export type UsagePeriod = Schemas['UsagePeriod'];
 export type UsageSpend = Schemas['UsageSpend'];
 export type UsageModelSpend = Schemas['UsageModelSpend'];
 
+export type Agent = Schemas['Agent'];
+export type AgentPage = Schemas['AgentPage'];
+
 export type DocumentFormat = Schemas['DocumentFormat'];
 export type ArgentumDocument = Schemas['Document'];
 export type DocumentPage = Schemas['DocumentPage'];

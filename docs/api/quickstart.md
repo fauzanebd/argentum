@@ -346,9 +346,15 @@ import { Argentum } from '@argentum/sdk';
 
 const client = new Argentum();
 
+// Which agent answers. The default is first in the list, so passing its id does
+// the same thing as passing none — this is here to show where the id goes.
+const [agent] = await client.agents();
+if (agent) console.error(`asking ${agent.name}`);
+
 for await (const ev of client.chat.stream({
   message: 'What was total revenue in December 2024?',
   user_ref: 'quickstart',
+  ...(agent ? { agent_id: agent.id } : {}),
 })) {
   if (ev.event === 'delta') process.stdout.write(ev.data.content);
   if (ev.event === 'tool_call') process.stderr.write(`\n[${ev.data.tool}]\n`);
@@ -367,7 +373,16 @@ from argentum import Argentum
 
 client = Argentum()
 
-for ev in client.chat.stream("What was total revenue in December 2024?", user_ref="quickstart"):
+# Which agent answers. The default is first in the list, so passing its id does
+# the same thing as passing none — this is here to show where the id goes.
+agents = client.agents()
+agent_id = agents[0]["id"] if agents else None
+if agents:
+    print(f"asking {agents[0]['name']}", file=sys.stderr)
+
+for ev in client.chat.stream(
+    "What was total revenue in December 2024?", user_ref="quickstart", agent_id=agent_id
+):
     if ev.event == "delta":
         print(ev.data["content"], end="", flush=True)
     elif ev.event == "tool_call":
@@ -381,6 +396,44 @@ for ev in client.chat.stream("What was total revenue in December 2024?", user_re
 
 Continue a conversation by passing the `thread_id` back. Read the transcript
 with `GET /v1/threads/{id}/messages`.
+
+## 6. Choosing which agent answers
+
+A workspace can keep several agents — Finance, Ops, Support — each with its own
+persona, its own tools and its own databases. List them, then pass an `id` as
+`agent_id` on `POST /v1/chat` or `POST /v1/reports`:
+
+<!-- example: examples/curl/agents.sh -->
+```bash
+curl -sS "$ARGENTUM_BASE_URL/v1/agents" \
+  -H "Authorization: Bearer $ARGENTUM_API_KEY"
+```
+
+```json
+{
+  "data": [
+    { "id": "…", "object": "agent", "name": "General", "is_default": true, "enabled": true },
+    { "id": "…", "object": "agent", "name": "Finance", "description": "Ledger and receivables", "is_default": false, "enabled": true }
+  ],
+  "has_more": false
+}
+```
+
+Omit `agent_id` and the one marked `is_default` answers, which is what every
+call written before this field existed keeps doing. Four things worth knowing:
+
+- **It belongs to the conversation, not the turn.** Sent with a `thread_id` it
+  has to agree with what that conversation already runs as, or you get
+  `agent_mismatch`. Sent with a `user_ref` whose newest conversation runs as a
+  different agent, a new conversation starts — an agent change reinterprets a
+  transcript produced under different tools and data, so it forks for the same
+  reason a topic change does.
+- **An id this workspace cannot use is a `404`,** never a `403`. Unknown,
+  deleted, disabled and another tenant's are one answer on purpose.
+- **A disabled agent stays in the list** with `enabled: false`, so a call that
+  started failing has a visible reason.
+- **`GET /v1/agents` needs no scope,** like `GET /v1/me`: a key that can send a
+  turn has to be able to discover what to send it as.
 
 ## The five things worth knowing before you go to production
 

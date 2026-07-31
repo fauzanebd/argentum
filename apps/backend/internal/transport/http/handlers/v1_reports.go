@@ -395,6 +395,11 @@ type createReportRequest struct {
 	// the report a tenant reads to police their own integration.
 	UserRef  string `json:"user_ref,omitempty"`
 	ThreadID string `json:"thread_id,omitempty"`
+	// AgentID names which of the company's agents writes the report (T-S5).
+	// Omitted is the company default. The same field, the same rules and the
+	// same errors as `POST /v1/chat` — a report is an agent turn that ends in a
+	// document, and an integrator should not have to learn it twice.
+	AgentID string `json:"agent_id,omitempty"`
 	// CallbackURL receives the signed `report.completed` body. Optional: most
 	// callers poll or stream.
 	CallbackURL string `json:"callback_url,omitempty"`
@@ -473,6 +478,7 @@ func (h *V1ReportsHandler) createReport(c *gin.Context) {
 		CompanyID:  company,
 		APIUserRef: req.UserRef,
 		ThreadID:   req.ThreadID,
+		AgentID:    strings.TrimSpace(req.AgentID),
 		// The caller's prompt, and only the caller's prompt. What Argentum
 		// wants of this turn travels as a directive (T-A2b) — a message
 		// carrying both is a message the injection guardrail refuses.
@@ -522,6 +528,14 @@ func (h *V1ReportsHandler) abortEnqueue(c *gin.Context, rep *domain.APIReport, e
 	switch {
 	case errors.Is(err, domain.ErrInsufficientCredits):
 		apierr.Abort(c, apierr.TypeBudgetExhausted, "credits_exhausted", app.CreditsExhaustedMessage)
+	// Above the thread cases, and identical to `POST /v1/chat`'s: both wrap the
+	// same sentinels, and the two doors must not disagree about what a bad
+	// `agent_id` is called.
+	case errors.Is(err, app.ErrAgentNotFound):
+		abortAgentNotFound(c)
+	case errors.Is(err, app.ErrAgentChange):
+		apierr.AbortParam(c, apierr.TypeInvalidRequest, "agent_mismatch",
+			"That conversation already runs as a different agent. Start a new one by sending `user_ref` without a `thread_id`.", "agent_id")
 	case errors.Is(err, domain.ErrInvalidInput):
 		apierr.AbortParam(c, apierr.TypeInvalidRequest, "invalid_thread",
 			"That `thread_id` is not an API thread for this company.", "thread_id")

@@ -34,6 +34,11 @@ type fakeAPIReports struct {
 	mu       sync.Mutex
 	created  *domain.APIReport
 	threadID string
+	// completed is the terminal status a refused enqueue wrote. Recorded
+	// rather than panicked on (T-S5): closing the row is what keeps a job
+	// whose turn never started from sitting `queued` forever, and a fake that
+	// panicked there would make the refusal paths untestable.
+	completed domain.APIReportStatus
 }
 
 func (f *fakeAPIReports) Create(_ context.Context, r *domain.APIReport) error {
@@ -59,8 +64,11 @@ func (f *fakeAPIReports) Get(context.Context, string) (*domain.APIReport, error)
 	panic("unexpected Get")
 }
 func (f *fakeAPIReports) MarkRunning(context.Context, string) error { panic("unexpected MarkRunning") }
-func (f *fakeAPIReports) Complete(context.Context, string, domain.APIReportStatus, string, string, time.Time) error {
-	panic("unexpected Complete")
+func (f *fakeAPIReports) Complete(_ context.Context, _ string, status domain.APIReportStatus, _, _ string, _ time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.completed = status
+	return nil
 }
 
 type reportFixture struct {

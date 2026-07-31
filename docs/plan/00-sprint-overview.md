@@ -691,6 +691,13 @@ about numbers that stopped tracking what they summarised. §8c is what it cost.
 `T-B4` grew from persona drafting to the specified Generate-with-AI flow — two
 fields, create *and* edit, and an undo. Same lesson, four hours apart.)
 
+**`T-S5` landed the same day (1.5d): 53.0 days remain committed.** It ran ahead
+of `T-S4` because §8c's running order puts it there, and it takes row 10 of
+§8b's list off the table with it — which also removes the "cut 10 only after 9"
+knot, since `T-M3`'s dependency on it is now satisfied rather than pending.
+Code complete with the live gate outstanding, so the day is spent either way;
+what is not yet true is the acceptance.
+
 ### 8b. The order
 
 Cut from the top. One list, not four — the per-track markers (`#2a`, `#2b`,
@@ -715,7 +722,7 @@ citing the wrong ticket; cite the ticket id.
 | 7 | `T-B4` "Generate with AI" | 2.0 | — | The owner's specified create flow: type a description, press the button, get it improved plus a persona. Cutting it leaves `T-B3`'s six templates and the blank form — a good agent is still creatable, but the tenant who picks no template is back to writing a prompt, which is the behaviour this track exists to remove. **It deps `T-B1`/`T-B3` only**, so cutting `T-B2` at position 2 does not strand it. |
 | 8 | `T-S4` channel bindings | 2.0 | `#2a` | The roster stays dashboard-only. Discord/Lark/WhatsApp keep answering on the company default, which is today's behaviour — a cut here removes an improvement, not a capability. |
 | 9 | `T-M3` MCP legibility — **partially, never whole** | 1.0 | `#3a` | Cut the per-server usage breakout and the thread-view labelling. **Keep the agent↔server binding control.** `T-M1` creates servers and `T-M2` calls them, but the binding UI is in `T-M3`; cut whole, the track ships reachable only by writing `agent_mcp_servers` rows by hand. Same shape as Sprint 1's `T-22` cut. |
-| 10 | `T-S5` `agent_id` on `/v1` | 1.5 | `#2b` | **Cutting it strands `T-M3`, which deps it.** So it is below `T-M3` in cost despite being the cheaper ticket, and cutting it means cutting `T-M3` whole — which position 9 says never to do. Read this row as: cut 10 only after 9 is already gone. |
+| 10 | ~~`T-S5` `agent_id` on `/v1`~~ — **delivered 2026-07-31** | 1.5 | `#2b` | Was: cutting it strands `T-M3`, which deps it, so cut 10 only after 9 is already gone. Moot — the dependency is satisfied, and `T-M3` can now be cut or kept on its own terms. |
 | 11 | `T-23` widget config UI | 1.5 | Sprint 1 `#8` | Ship the widget on hardcoded defaults. |
 | 12 | `T-22` npm packages and examples | 2.0 | Sprint 1 `#9` | Only down to the vanilla example and the Go + Node signing snippets. **Never ship the widget with no integration docs.** |
 
@@ -757,6 +764,8 @@ visible afterwards. This is the third, written on the day it was made.
 
 **The running order becomes:** `T-S5` → `T-S4` → `T-B1` → `T-B2`/`T-B3` →
 `T-B4` → `T-M1` → `T-M2` → `T-M3` → `T-M4`.
+
+**`T-S5` delivered 2026-07-31**, so the order in flight is `T-S4` onwards.
 
 **What slips, in days:**
 

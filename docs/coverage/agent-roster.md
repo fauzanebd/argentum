@@ -12,7 +12,7 @@ names this file too, and each later ticket appends its own section.
 | `T-S2` | Turn composition and enforcement | 2.5d | **done — gate run live 2026-07-30** |
 | `T-S3` | Agent picker in the dashboard chat | 1.0d | **done — gate run live 2026-07-30** |
 | `T-S4` | Discord / Lark / WhatsApp channel bindings | 2.0d | not started |
-| `T-S5` | `agent_id` on `/v1`, plus `GET /v1/agents` | 1.5d | not started |
+| `T-S5` | `agent_id` on `/v1`, plus `GET /v1/agents` | 1.5d | **code complete — live gate outstanding** |
 
 ---
 
@@ -590,6 +590,159 @@ That is the stronger version of the acceptance item, and it is why probing for
 - The dashboard reads the roster through `useAgents()` on the `["agents"]` query
   key that Settings → Agents already populates. Anything else needing the roster
   in the frontend should use it rather than issue a second `GET /agents`.
+
+---
+
+## T-S5 · The roster on `/v1`
+
+> **Status 2026-07-31: code complete, gate outstanding.** `go build ./...` and
+> `go test ./...` clean, the four `T-A4` drift checks pass, both SDKs
+> regenerated, the quickstart's 13 example files verified byte-equal to the
+> blocks quoting them. **No migration** — every column this needs was added by
+> `031`. The live half needs a running API, a tenant with two agents and an LLM
+> that will answer a turn, and has not been run.
+
+### 1. What ships
+
+Until this, `/v1` meant "the company default agent", permanently. An integrator
+building a finance workflow could reach the Finance agent only by having someone
+with an admin session read a uuid out of the dashboard for them — and again
+every time the roster changed.
+
+| Layer | File |
+| ----- | ---- |
+| Roster route | `internal/transport/http/handlers/v1_agents.go` (new) — `GET /v1/agents`, `agentResponse`, `abortAgentNotFound` |
+| Chat door | `internal/transport/http/handlers/v1_chat.go` — `chatRequest.AgentID`, `abortEnqueue` |
+| Report door | `internal/transport/http/handlers/v1_reports.go` — `createReportRequest.AgentID`, `abortEnqueue` |
+| Pick + fork | `internal/app/chat_enqueuer.go` — the `ChannelAPI` branch, `forkForAgent`, `ErrAgentNotFound`, `ErrAgentChange` |
+| Thread creation | `internal/app/thread_service.go` — `ResolveForAPIUser` takes an agent, `CreateAPIThread` |
+| Wiring | `cmd/api/router.go` (`rosterListerOrNil`), `cmd/api/policy.go` |
+| Contract | `apps/backend/openapi/v1.yaml` — `listAgents`, `Agent`, `AgentPage`, `agent_id` on both request bodies |
+| SDKs | `packages/argentum-node` (`agents()`, regenerated types), `packages/argentum-python` (`agents()`, `agent_id` on chat and reports, sync and async) |
+| Docs | `docs/api/quickstart.md` §6, `docs/api/examples/curl/agents.sh` (new), `node/chat.mjs`, `python/chat.py`, `run.sh` |
+
+### 2. Decisions worth carrying forward
+
+- **`GET /v1/agents` carries no scope, and that is a third exemption.** The
+  ticket says "the same read scope `GET /v1/me` uses", and that is none. The bar
+  the list in `v1_scope_test.go` now states explicitly: gating it would hide
+  from a caller the very thing they need in order to make a scoped call
+  correctly. A key that can spend a turn but cannot discover what to spend it as
+  leaves `agent_id` usable only by an integrator who was handed a uuid out of
+  band.
+- **The published agent is a fraction of `domain.Agent`.** No persona, no tool
+  allowlist, no source ids, no `company_id`. Those are the tenant's own
+  configuration and belong behind the dashboard's admin session; what a machine
+  needs is enough to choose and to name. `openapi_schema_test.go` binds
+  `agentResponse` to the spec in both directions, which is what stops a later
+  edit from serializing the tenant's configuration by adding a field to the
+  convenient struct.
+- **`is_default` is published, and it is not decoration.** It is the only way a
+  caller can answer "which agent answered the call where I sent no `agent_id`?"
+- **A disabled agent is listed, not filtered.** Naming it is a 404, so an
+  integrator whose nightly job started failing can see the reason instead of
+  watching an id vanish from a list. This is the one place the `/v1` roster
+  deliberately differs from the dashboard picker, which *does* filter — a person
+  choosing needs the choices, a machine debugging needs the facts.
+- **404, never 403, and a `param` of `agent_id`.** The four refusals — unknown,
+  deleted, disabled, another tenant's — are one answer, because the status code
+  is the existence oracle. The `param` matters as much as the status: a bad
+  `agent_id` and a bad `thread_id` are both 404s wrapping `domain.ErrNotFound`,
+  and a caller sent to the wrong field goes looking for a bug that is not there.
+  That is why `app.ErrAgentNotFound` and `app.ErrAgentChange` are exported
+  sentinels rather than `fmt.Errorf` values matched on their text.
+- **On the `user_ref` door a disagreeing pick forks; on the `thread_id` door it
+  is refused.** Both follow from `T-S3`'s rule that a conversation cannot change
+  agent, and the difference is who drew the boundary. A caller who named a
+  thread named a conversation, so the contradiction is theirs to resolve. A
+  caller who named only their end user drew no boundary at all — the resolver
+  already forks such conversations on a topic shift, and an agent change is the
+  larger discontinuity of the two. Refusing there would break the caller who
+  sends `agent_id` on every request the moment their first conversation exists.
+- **Agreement is compared through `agentFor`, not against the stored column.**
+  A conversation with a NULL `agent_id` runs as the company default, so a caller
+  naming that default explicitly agrees with it. Comparing against the column
+  would have forked — or refused — on every turn of that entirely ordinary case.
+- **The pick runs before anything is written.** `pickAgent` sits at the top of
+  the `ChannelAPI` branch, above the thread resolver, so a refused `agent_id`
+  leaves no thread, no user message and no queued turn. The unit test builds the
+  enqueuer with a nil thread service on purpose: if that ordering is ever
+  reversed, the next line dereferences nil rather than quietly billing.
+- **`has_more` is always false and the envelope stays anyway.** The roster has
+  no keyset and is bounded by what an admin will configure, but a list route
+  answering a bare array would be the one `/v1` list an integrator special-cases
+  — and adding pagination later to a shape that never had it is exactly the
+  break `apiv1`'s additive-only rule exists to prevent. Both SDKs unwrap it to a
+  plain array, so the ergonomics do not pay for the caution.
+
+### 3. What is proven, and what is not
+
+Twenty tests across two packages, split on the same line `T-S3` drew — which
+picks are legal is an `internal/app` question, what a caller sees is a transport
+one:
+
+- `internal/app/api_agent_test.go` (new, 8): a new API thread is pinned and an
+  unpinned one stays NULL; a disagreeing pick forks and the fork keeps the
+  `user_ref`; agreement does not fork, in both shapes, including the
+  named-the-default case that a naive comparison would fork on every turn; a
+  fresh conversation is never forked; another company's agent starts nothing;
+  changing agent on an existing thread is `ErrAgentChange`, and naming the same
+  one gets through.
+- `internal/transport/http/handlers/v1_agents_test.go` (new, 12): the page
+  envelope and its ordering; that none of persona, tools, sources or
+  `company_id` appears in the body; a disabled agent listed as such; `data: []`
+  rather than null; the two degradation paths; `agent_id` reaching the enqueuer
+  trimmed; the 404 with `param: agent_id` on **both** doors and the closed
+  report row behind it; the 400 `agent_mismatch`; and a reused
+  `Idempotency-Key` with a changed `agent_id` answering 409 without a second
+  turn — the ticket's "verify, do not assume" item, verified.
+- The four `T-A4` drift checks all pass, which is the ticket saying the job is
+  complete rather than the ticket being hard: route parity, scope parity
+  (`x-argentum-scope: null` is behaviourally checked as "no scope refuses it"),
+  the response-field reflection diff for `Agent` and `AgentPage`, and
+  regenerate-and-diff on the Postman collection and the Python types.
+
+**What no test here establishes** is the ticket's gate: that the same question
+to two agents produces two answers under two scopes, that the cross-tenant 404
+bills nothing on a live meter, and that the generated Node and Python snippets
+run green against a real server passing agent ids. Those need an API, a tenant
+with two agents and an LLM.
+
+### 4. The gate, and how to run it
+
+Not run. The stack was down on the machine this landed on (`docker` daemon not
+running), and the agentic half spends real tokens on a tenant that has to have
+two differently-scoped agents. What it needs, in order:
+
+```bash
+make infra && make seed          # postgres, redis, then 030/031 already applied
+# api and worker on a private Redis DB index — see local-stack-runbook:
+#   REDIS_URL=redis://localhost:6385/3 ASYNQ_REDIS_URL=redis://localhost:6385/3
+export ARGENTUM_BASE_URL=http://localhost:8080 ARGENTUM_API_KEY=arg_…
+docs/api/examples/run.sh deterministic   # GET /v1/agents, and one default
+docs/api/examples/run.sh agentic         # node + python chat, both passing agent_id
+```
+
+and by hand, the three transcripts the ticket names: the same question to the
+Finance and People Ops agents with two different answers, an `agent_id` from
+another company answering 404 with the standard envelope while the thread count
+and the meter both stay put, and a second `POST /v1/chat` under a reused
+`Idempotency-Key` with a changed `agent_id` answering 409.
+
+**Check `asynq:servers` against `ps` first.** The finding below cost an hour on
+the last live gate for these tickets and applies unchanged.
+
+### 5. For T-S4
+
+- `ChatInput.AgentID` is now set by two callers rather than one, and both are
+  *picks* — something a caller asked for and may be refused. A channel binding
+  is not: it is configuration, and a Discord user who cannot spell an agent id
+  has nothing to be refused about. `T-S4` should set the payload's agent from
+  the binding rather than routing it through `pickAgent`, which is the same
+  distinction `T-S3`'s handover note drew.
+- `forkForAgent` is API-only on purpose. Discord and Lark key their threads on a
+  platform identity, and a binding that changed would fork every conversation on
+  that channel at once — which is a migration question, not a resolver one.
 
 ---
 

@@ -67,6 +67,14 @@ var schemaCases = []schemaCase{
 	{schema: "MessagePage", value: apiv1.Page[messageResponse]{}},
 	{schema: "ThreadPage", value: apiv1.Page[threadResponse]{}},
 
+	// T-S5's roster. The published shape is deliberately a fraction of
+	// domain.Agent — no persona, no tool allowlist, no source ids — so binding
+	// it here is what stops a later edit from serializing the tenant's own
+	// configuration onto a machine surface by adding a field to the wrong
+	// struct.
+	{schema: "Agent", value: agentResponse{}},
+	{schema: "AgentPage", value: apiv1.Page[agentResponse]{}},
+
 	{schema: "ChatRequest", value: chatRequest{}, request: true},
 	{schema: "CreateReportRequest", value: createReportRequest{}, request: true},
 

@@ -3493,11 +3493,11 @@ forever.
 
 ### Acceptance
 
-- [ ] `POST /v1/chat` with the Finance agent's id answers under its scope; the same call with no `agent_id` runs on the default
-- [ ] An `agent_id` from another company returns 404 with the standard envelope and starts no turn and bills nothing
-- [ ] `GET /v1/openapi.json` documents the field, and both SDKs expose it after regeneration
-- [ ] All four `T-A4` drift checks pass
-- [ ] Same key, changed `agent_id` → 409
+- [ ] `POST /v1/chat` with the Finance agent's id answers under its scope; the same call with no `agent_id` runs on the default — **live gate, not run**
+- [x] An `agent_id` from another company returns 404 with the standard envelope and starts no turn and bills nothing — tested; the "bills nothing" half is proven by the pick running above the resolver, not by a live meter
+- [x] `GET /v1/openapi.json` documents the field, and both SDKs expose it after regeneration
+- [x] All four `T-A4` drift checks pass
+- [x] Same key, changed `agent_id` → 409 — verified rather than assumed, per the implementer's note
 
 ### Gate
 

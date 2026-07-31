@@ -200,15 +200,36 @@ func (s *ChatEnqueuer) CreateDashboardThread(ctx context.Context, companyID, use
 	return s.threads.CreateDashboardThread(ctx, companyID, userID, "", pinned)
 }
 
+// ErrAgentNotFound is every refusal pickAgent can produce: unknown, another
+// company's, and disabled, deliberately indistinguishable.
+//
+// It wraps domain.ErrNotFound so callers that only care about "this is a 404"
+// keep mapping it without change. `/v1` needs more than that (T-S5): a thread
+// that does not exist is also a 404 there, and the two answers name different
+// request fields, so the public surface has to be able to tell them apart
+// without string-matching an error message.
+var ErrAgentNotFound = fmt.Errorf("%w: no such agent", domain.ErrNotFound)
+
+// ErrAgentChange is a caller naming both a conversation and an agent that
+// conversation does not run as.
+//
+// Refused rather than ignored (T-S3): silently dropping the pick would let a
+// client believe it had switched agents while every turn kept running as the
+// old one, and "the answer came from the wrong agent" is not a bug anyone finds
+// by reading a reply. Exported for the same reason as ErrAgentNotFound — `/v1`
+// names the offending request field, and `thread_id` and `agent_id` are
+// different fields to go and fix.
+var ErrAgentChange = fmt.Errorf("%w: a conversation cannot change agent", domain.ErrInvalidInput)
+
 // pickAgent validates an agent the caller named and returns what to store on
 // the thread. Empty in, empty out: "the company default", resolved per turn by
 // agentFor rather than frozen into the row, so a company that moves its default
 // moves every unpinned conversation with it.
 //
-// The three refusals are one error — domain.ErrNotFound — on purpose. Unknown,
+// The three refusals are one error — ErrAgentNotFound — on purpose. Unknown,
 // another company's, and disabled are distinguishable states to us and must not
-// be to a browser: two of them confirm a row exists that the caller has no
-// business knowing about.
+// be to a caller: two of them confirm a row exists that it has no business
+// knowing about.
 //
 // Disabled is checked **here and not at turn time**. A thread already bound to
 // an agent keeps its narrower scope even after an admin disables it, because
@@ -229,12 +250,12 @@ func (s *ChatEnqueuer) pickAgent(ctx context.Context, companyID, agentID string)
 	a, err := s.roster.GetByID(ctx, companyID, agentID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return "", fmt.Errorf("%w: no such agent", domain.ErrNotFound)
+			return "", ErrAgentNotFound
 		}
 		return "", fmt.Errorf("lookup agent: %w", err)
 	}
 	if !a.Enabled {
-		return "", fmt.Errorf("%w: no such agent", domain.ErrNotFound)
+		return "", ErrAgentNotFound
 	}
 	return a.ID, nil
 }
@@ -265,6 +286,13 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 	case domain.ChannelLark:
 		resolved, err = s.threads.ResolveForLark(ctx, in.CompanyID, in.LarkChatID, in.LarkThreadKey, in.LarkOpenID, in.Message)
 	case domain.ChannelAPI:
+		// Validated before the thread is touched, exactly as the budget is and
+		// as the dashboard's own pick is: a refused agent must leave no thread
+		// and no orphan user message behind.
+		pinned, perr := s.pickAgent(ctx, in.CompanyID, in.AgentID)
+		if perr != nil {
+			return nil, perr
+		}
 		if in.ThreadID != "" {
 			thread, err := s.threads.GetByID(ctx, in.ThreadID)
 			if err != nil {
@@ -282,9 +310,21 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 			if thread.Channel != domain.ChannelAPI {
 				return nil, fmt.Errorf("%w: thread was not started over the API", domain.ErrInvalidInput)
 			}
+			// The dashboard's rule, on the surface where it matters more
+			// (T-S5): a caller that names both a thread and an agent gets a
+			// refusal rather than a silently ignored pick. Compared against
+			// what the thread *runs as* rather than against the stored column,
+			// so naming the company default explicitly on an unpinned
+			// conversation is agreement and not a change.
+			if pinned != "" && pinned != s.agentFor(ctx, thread) {
+				return nil, ErrAgentChange
+			}
 			resolved = &ResolveResult{Thread: thread, IsNew: false}
 		} else {
-			resolved, err = s.threads.ResolveForAPIUser(ctx, in.CompanyID, in.APIUserRef, in.Message)
+			resolved, err = s.threads.ResolveForAPIUser(ctx, in.CompanyID, in.APIUserRef, in.Message, pinned)
+			if err == nil {
+				resolved, err = s.forkForAgent(ctx, in, resolved, pinned)
+			}
 		}
 	case domain.ChannelDashboard:
 		if in.ThreadID != "" {
@@ -302,7 +342,7 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 			// and "the answer came from the wrong agent" is not a bug anyone
 			// finds by reading a reply.
 			if in.AgentID != "" && in.AgentID != thread.AgentID {
-				return nil, fmt.Errorf("%w: a conversation cannot change agent", domain.ErrInvalidInput)
+				return nil, ErrAgentChange
 			}
 			resolved = &ResolveResult{Thread: thread, IsNew: false}
 		} else {
@@ -378,6 +418,34 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		out.BudgetWarning = &warning
 	}
 	return out, nil
+}
+
+// forkForAgent starts a new API conversation when the one the resolver picked
+// runs as a different agent (T-S5).
+//
+// The `user_ref` door is the one place a caller names an agent without naming
+// a thread, so the resolver can hand back a conversation that predates the
+// pick. Three things could happen there and only one of them is defensible:
+// ignore the pick and answer as the old agent — the "the answer came from the
+// wrong agent" failure T-S3 refused to ship; refuse the call — which would
+// break the caller that passes `agent_id` on every request the moment their
+// first thread exists; or fork, which is what the resolver already does when
+// the topic shifts. An agent change is a bigger discontinuity than a topic
+// change, so it forks for the same reason.
+//
+// Compared through agentFor rather than against thread.AgentID, so a caller
+// naming the company default on a conversation that was already running as the
+// default is agreement rather than a fork on every turn.
+func (s *ChatEnqueuer) forkForAgent(
+	ctx context.Context, in ChatInput, resolved *ResolveResult, pinned string,
+) (*ResolveResult, error) {
+	if pinned == "" || resolved == nil || resolved.IsNew {
+		return resolved, nil
+	}
+	if s.agentFor(ctx, resolved.Thread) == pinned {
+		return resolved, nil
+	}
+	return s.threads.CreateAPIThread(ctx, in.CompanyID, in.APIUserRef, in.Message, pinned)
 }
 
 // agentFor decides which agent this turn runs as: the thread's own, else the

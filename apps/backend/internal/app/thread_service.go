@@ -141,13 +141,19 @@ func (s *ThreadService) ResolveForLark(ctx context.Context, companyID, larkChatI
 // tracks conversations passes an explicit thread id and never reaches here,
 // while a caller that just forwards "our user asked X" has drawn no boundary
 // at all and gets the heuristic.
-func (s *ThreadService) ResolveForAPIUser(ctx context.Context, companyID, apiUserRef, userMessage string) (*ResolveResult, error) {
+//
+// agentID pins a *new* conversation to one roster agent (T-S5) and is empty
+// for "the company default". It reaches only the create path: whether a
+// conversation the resolver decided to continue may run as a different agent
+// is a question about that conversation rather than about where a message is
+// stored, and ChatEnqueuer.forkForAgent answers it.
+func (s *ThreadService) ResolveForAPIUser(ctx context.Context, companyID, apiUserRef, userMessage, agentID string) (*ResolveResult, error) {
 	if companyID == "" || apiUserRef == "" {
 		return nil, fmt.Errorf("companyID and apiUserRef required")
 	}
 
 	create := func() (*ResolveResult, error) {
-		return s.createAPIThread(ctx, companyID, apiUserRef, userMessage)
+		return s.createAPIThread(ctx, companyID, apiUserRef, userMessage, agentID)
 	}
 
 	latest, err := s.threads.LatestForAPIUser(ctx, companyID, apiUserRef)
@@ -301,14 +307,32 @@ func (s *ThreadService) createDashboardThread(
 	return &ResolveResult{Thread: t, IsNew: true}, nil
 }
 
+// CreateAPIThread opens a fresh API conversation for one `user_ref`, pinned to
+// one roster agent (T-S5).
+//
+// Exported beside the resolver because ChatEnqueuer needs a *second* create
+// after a resolve has already happened: a caller who named an agent the
+// resolved thread does not run as gets a new conversation rather than an answer
+// from the wrong agent. Like CreateDashboardThread, it does not validate
+// agentID — that is a pick-time question, answered before this is reached.
+func (s *ThreadService) CreateAPIThread(
+	ctx context.Context, companyID, apiUserRef, firstMessage, agentID string,
+) (*ResolveResult, error) {
+	if companyID == "" || apiUserRef == "" {
+		return nil, fmt.Errorf("companyID and apiUserRef required")
+	}
+	return s.createAPIThread(ctx, companyID, apiUserRef, firstMessage, agentID)
+}
+
 func (s *ThreadService) createAPIThread(
-	ctx context.Context, companyID, apiUserRef, firstMessage string,
+	ctx context.Context, companyID, apiUserRef, firstMessage, agentID string,
 ) (*ResolveResult, error) {
 	now := time.Now()
 	t := &domain.ConversationThread{
 		CompanyID:     companyID,
 		Channel:       domain.ChannelAPI,
 		APIUserRef:    apiUserRef,
+		AgentID:       agentID,
 		Title:         deriveTitle(firstMessage),
 		LastMessageAt: now,
 	}

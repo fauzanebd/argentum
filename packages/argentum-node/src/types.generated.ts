@@ -52,6 +52,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The agents this workspace has, and which one answers by default
+         * @description A workspace can keep several agents — Finance, Ops, Support — each with
+         *     its own persona, its own tools and its own databases. This is the list,
+         *     and the `id` of a row here is what goes in `agent_id` on
+         *     `POST /v1/chat` and `POST /v1/reports`.
+         *
+         *     It needs no scope, on the same terms as `GET /v1/me`: a key that can
+         *     send a turn has to be able to discover what to send it as.
+         *
+         *     `is_default` marks the one a call with no `agent_id` runs as. A row with
+         *     `enabled: false` has been switched off by an admin — it stays in the
+         *     list so a call that started failing has a visible reason, but naming it
+         *     answers `404 agent_not_found` like any other id this workspace cannot
+         *     use.
+         *
+         *     The whole roster arrives in one page. `has_more` is always `false`; the
+         *     envelope is the one every other `/v1` list uses so a client needs no
+         *     special case for this one.
+         */
+        get: operations["listAgents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/usage": {
         parameters: {
             query?: never;
@@ -550,6 +586,46 @@ export interface components {
          * @enum {string}
          */
         Scope: "read:metrics" | "read:threads" | "read:usage" | "read:audit" | "read:documents" | "write:chat" | "write:actions" | "write:reports";
+        /**
+         * @description One agent on the workspace's roster.
+         *
+         *     Its persona, its tool allowlist and the databases it can reach are
+         *     deliberately absent: those are the tenant's own configuration, editable
+         *     behind an admin session in the dashboard, and a machine credential has
+         *     no use for them. What is here is what a caller needs in order to choose
+         *     between agents and name one.
+         */
+        Agent: {
+            /** Format: uuid */
+            id: string;
+            /** @constant */
+            object: "agent";
+            /** @description What the workspace calls it — `Finance`, `Ops`. */
+            name: string;
+            /** @description The tenant's own one-line summary. Absent when they wrote none. */
+            description?: string;
+            /**
+             * @description True for exactly one row. It is the agent a call that omits
+             *     `agent_id` runs as.
+             */
+            is_default: boolean;
+            /**
+             * @description False for an agent an admin has switched off. It stays in the list —
+             *     naming it is a `404`, and an integrator whose call started failing
+             *     should be able to see why rather than watch an id vanish.
+             */
+            enabled: boolean;
+        };
+        /**
+         * @description The whole roster, in the envelope every `/v1` list uses. `has_more` is
+         *     always `false` — a roster is small and there is nothing to page — but the
+         *     shape is the shared one so no client special-cases this route.
+         */
+        AgentPage: {
+            data: components["schemas"]["Agent"][];
+            has_more: boolean;
+            next_cursor?: string;
+        };
         /** @enum {string} */
         DocumentFormat: "pdf" | "pptx" | "xlsx" | "csv";
         /** @description One generated file. */
@@ -625,6 +701,14 @@ export interface components {
              */
             thread_id?: string;
             /**
+             * Format: uuid
+             * @description Which of the workspace's agents writes the report. Omit it for the
+             *     default; list them with `GET /v1/agents`. Same field, same rules and
+             *     same errors as `POST /v1/chat` — a report is an agent turn that ends
+             *     in a document.
+             */
+            agent_id?: string;
+            /**
              * Format: uri
              * @description Receives the signed `report.completed` body. Optional — most callers
              *     poll or stream. A private-network target is refused unless the
@@ -681,6 +765,26 @@ export interface components {
             thread_id?: string;
             /** @description Your own identifier for the person asking. */
             user_ref?: string;
+            /**
+             * Format: uuid
+             * @description Which of the workspace's agents answers. Omit it for the default —
+             *     which is what every call written before this field existed keeps
+             *     meaning. List them with `GET /v1/agents`.
+             *
+             *     It belongs to the conversation rather than to the turn. Sent with a
+             *     `thread_id`, it has to agree with what that conversation already
+             *     runs as, or the call is refused with `agent_mismatch` — a pick that
+             *     was silently ignored would leave a client believing it had switched
+             *     agents while every answer still came from the old one. Sent with a
+             *     `user_ref` whose newest conversation runs as a different agent, a
+             *     new conversation starts, for the same reason a topic change forks
+             *     one.
+             *
+             *     An id this workspace does not have — unknown, deleted, disabled, or
+             *     another tenant's — is `404 agent_not_found`, never `403`. A 403
+             *     would confirm the row exists to someone guessing uuids.
+             */
+            agent_id?: string;
         };
         /**
          * @description One question and its answer. The same shape arrives as the `final` SSE
@@ -1329,6 +1433,34 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             429: components["responses"]["RateLimited"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listAgents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The roster, default first. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["ServerError"];
             503: components["responses"]["Unavailable"];
         };
     };

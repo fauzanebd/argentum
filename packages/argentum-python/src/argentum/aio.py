@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, Mapping, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Mapping, Optional, Union
 
 import httpx
 
@@ -75,6 +75,11 @@ class AsyncArgentum:
     async def me(self) -> t.Me:
         """Who this key is, what it can do, and what the tenant has left to spend."""
         return await self.request_json("GET", "/v1/me")
+
+    async def agents(self) -> List[t.Agent]:
+        """The workspace's agents. The async twin of ``Argentum.agents``."""
+        page: t.AgentPage = await self.request_json("GET", "/v1/agents")
+        return page.get("data", [])
 
     async def usage(
         self,
@@ -250,6 +255,7 @@ class AsyncReports:
         *,
         user_ref: Optional[str] = None,
         thread_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
         format: str = "pdf",
         callback_url: Optional[str] = None,
         locale: Optional[str] = None,
@@ -260,6 +266,7 @@ class AsyncReports:
         for key, value in (
             ("user_ref", user_ref),
             ("thread_id", thread_id),
+            ("agent_id", agent_id),
             ("callback_url", callback_url),
             ("locale", locale),
             ("currency", currency),
@@ -393,6 +400,7 @@ class AsyncChat:
         *,
         user_ref: Optional[str] = None,
         thread_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> t.Turn:
         """Ask, and wait for the answer.
@@ -404,7 +412,7 @@ class AsyncChat:
         return await self._client.request_json(
             "POST",
             "/v1/chat",
-            json=_chat_body(message, user_ref, thread_id),
+            json=_chat_body(message, user_ref, thread_id, agent_id),
             idempotency_key=idempotency_key,
         )
 
@@ -414,6 +422,7 @@ class AsyncChat:
         *,
         user_ref: Optional[str] = None,
         thread_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
         last_event_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> AsyncIterator[Event]:
@@ -428,7 +437,7 @@ class AsyncChat:
         return self._client.events(
             "POST",
             "/v1/chat",
-            json=_chat_body(message, user_ref, thread_id),
+            json=_chat_body(message, user_ref, thread_id, agent_id),
             headers={"Last-Event-ID": last_event_id} if last_event_id else None,
             idempotency_key=idempotency_key,
         )

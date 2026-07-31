@@ -2,7 +2,7 @@ import { Chat } from './chat.js';
 import { Documents } from './documents.js';
 import { HttpClient, type ArgentumOptions } from './http.js';
 import { Reports } from './reports.js';
-import type { Me, UsageReport } from './types.js';
+import type { Agent, AgentPage, Me, UsageReport } from './types.js';
 
 /** The window `usage()` reports on. Both bounds default to the current UTC month. */
 export interface UsageOptions {
@@ -65,6 +65,29 @@ export class Argentum {
    */
   async me(signal?: AbortSignal): Promise<Me> {
     return this.http.json<Me>({ method: 'GET', path: '/v1/me', ...(signal ? { signal } : {}) });
+  }
+
+  /**
+   * The agents this workspace has, and which one answers by default.
+   *
+   * A workspace can keep several — Finance, Ops, Support — each with its own
+   * persona, tools and databases. Pass an `id` from here as `agent_id` on
+   * `chat.send`, `chat.stream` or `reports.create`; omit it and the default
+   * answers.
+   *
+   * ```ts
+   * const finance = (await client.agents()).find((a) => a.name === 'Finance');
+   * await client.chat.send({ message: 'Revenue last month?', user_ref: 'u_42', agent_id: finance?.id });
+   * ```
+   *
+   * Needs no scope, like `me()`. Returns the array rather than the API's page
+   * envelope: the whole roster arrives at once and `has_more` is always false,
+   * so handing back a page object would invite a paging loop that can never
+   * run a second time.
+   */
+  async agents(signal?: AbortSignal): Promise<Agent[]> {
+    const page = await this.http.json<AgentPage>({ method: 'GET', path: '/v1/agents', ...(signal ? { signal } : {}) });
+    return page.data;
   }
 
   /**

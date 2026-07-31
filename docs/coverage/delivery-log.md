@@ -1272,6 +1272,45 @@ environment at all: no `MINIO_*`, so `generate_document` is not in the registry.
 The gates, the transcripts and both findings:
 [`agent-roster.md`](agent-roster.md).
 
+`T-S5` `/v1` learns the roster — 2026-07-31
+
+`GET /v1/agents` plus an optional `agent_id` on `POST /v1/chat` and
+`POST /v1/reports`. Before this the public API meant "the company default
+agent", permanently: the ids live in an admin-gated Settings tab, so an
+integrator could reach the Finance agent only by being handed a uuid out of
+band, and again whenever the tenant edited their roster.
+
+Three decisions the ticket did not contain:
+
+- **A disagreeing pick forks on the `user_ref` door and is refused on the
+  `thread_id` door.** `T-S3`'s rule is that a conversation cannot change agent,
+  and the difference is who drew the boundary: a caller who named a thread named
+  a conversation, a caller who named only their end user drew none. The resolver
+  already forks the second kind on a topic shift and an agent change is the
+  bigger discontinuity. Refusing there would have broken any caller that sends
+  `agent_id` on every request, the moment their first conversation exists.
+- **Agreement is compared through `agentFor`, not against the stored column.** A
+  conversation with a NULL `agent_id` runs as the company default, so naming that
+  default *is* agreement — comparing against the column would fork on every turn
+  of that ordinary case.
+- **The list publishes disabled agents.** The dashboard picker filters them; this
+  does not. A person choosing needs the choices, a machine debugging a job that
+  started 404ing needs the reason.
+
+The roster route carries no scope, which makes it the third entry in
+`v1_scope_test.go`'s exemption list — the bar, now written down there, is that
+gating it would hide from a caller the thing they need in order to make a scoped
+call correctly. And `app.ErrAgentNotFound` / `app.ErrAgentChange` became exported
+sentinels, because a bad `agent_id` and a bad `thread_id` are both 404s wrapping
+`domain.ErrNotFound` and the `param` a caller is sent to fix has to be the right
+one.
+
+`go test ./...` clean, 20 new tests, all four `T-A4` drift checks passing, both
+SDKs regenerated and the quickstart's 13 examples verified byte-equal. **The live
+gate has not run** — the Docker daemon was down and the agentic half spends real
+tokens on a tenant needing two differently-scoped agents. Commands and the three
+transcripts still owed: [`agent-roster.md`](agent-roster.md) §T-S5.
+
 ---
 
 ## What the history says about how this project is built

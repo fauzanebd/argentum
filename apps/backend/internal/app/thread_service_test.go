@@ -21,6 +21,11 @@ type fakeThreadRepo struct {
 	latest    *domain.ConversationThread
 	latestErr error
 	created   []*domain.ConversationThread
+	// byID serves the explicit-thread path a caller reaches by sending a
+	// `thread_id`. Nil for every test that does not use it, and GetByID still
+	// panics then — the point of the panics is that a change reaching for an
+	// unimplemented method is visible, not that this one is off limits.
+	byID map[string]*domain.ConversationThread
 }
 
 func (f *fakeThreadRepo) Create(_ context.Context, t *domain.ConversationThread) error {
@@ -51,8 +56,14 @@ func (f *fakeThreadRepo) LatestForLark(context.Context, string, string) (*domain
 func (f *fakeThreadRepo) LatestForAPIUser(context.Context, string, string) (*domain.ConversationThread, error) {
 	return f.latestOrErr()
 }
-func (f *fakeThreadRepo) GetByID(context.Context, string) (*domain.ConversationThread, error) {
-	panic("unexpected GetByID")
+func (f *fakeThreadRepo) GetByID(_ context.Context, id string) (*domain.ConversationThread, error) {
+	if f.byID == nil {
+		panic("unexpected GetByID")
+	}
+	if t, ok := f.byID[id]; ok {
+		return t, nil
+	}
+	return nil, domain.ErrNotFound
 }
 func (f *fakeThreadRepo) GetForCompany(context.Context, string, string) (*domain.ConversationThread, error) {
 	panic("unexpected GetForCompany")

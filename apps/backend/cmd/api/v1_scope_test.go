@@ -30,15 +30,27 @@ func (k scopelessKey) Authenticate(context.Context, string) (*domain.APIKey, err
 }
 
 // unscopedV1Routes are the `/v1` routes that must remain reachable by a key
-// with no scopes. There is exactly one, and it is deliberate: `/v1/me` is what
-// an integrator calls to find out *which* scopes their key has, and gating it
-// on one of them would make a key with none undiagnosable.
+// with no scopes. Every entry is a route that answers "what may I do?", and
+// none of them does anything: `/v1/me` is what an integrator calls to find out
+// *which* scopes their key has, and gating it on one of them would make a key
+// with none undiagnosable.
+//
+// Adding to this list is the one change in this file that is a decision rather
+// than a fact. Three routes qualify today, and the bar each one clears is that
+// gating it would hide from a caller the very thing they need in order to make
+// a scoped call correctly.
 var unscopedV1Routes = map[string]bool{
 	"GET /v1/me": true,
 	// The published contract (T-A4). It has no scope for the same reason it has
 	// no credential: it is what an integrator reads *before* they have a key,
 	// let alone one with the right scopes on it.
 	"GET /v1/openapi.json": true,
+	// The roster (T-S5). `agent_id` is optional on two write doors, and the ids
+	// that go in it are otherwise readable only through the dashboard's
+	// admin-gated Settings tab. A key that can send a turn but cannot discover
+	// what to send it as would leave the field usable only by an integrator who
+	// was handed a uuid out of band.
+	"GET /v1/agents": true,
 }
 
 // TestEveryV1RouteNamesAScope is the guard for the risk the sprint register

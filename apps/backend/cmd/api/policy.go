@@ -198,8 +198,9 @@ var unpolicedPaths = map[string]bool{
 	// route added here without a RequireScope reaches every key its tenant has
 	// ever minted, and that is the one failure this list cannot catch on its
 	// own.
-	"/v1/me":    true, // none — identity, and the one route a key with no scopes must reach
-	"/v1/usage": true, // read:usage (T-A5)
+	"/v1/me":     true, // none — identity, and the one route a key with no scopes must reach
+	"/v1/agents": true, // none — the roster, so `agent_id` is fillable from the API (T-S5)
+	"/v1/usage":  true, // read:usage (T-A5)
 
 	// T-A4's published contract. The only `/v1` route with no credential at
 	// all: an integrator reads the spec before they have a key.

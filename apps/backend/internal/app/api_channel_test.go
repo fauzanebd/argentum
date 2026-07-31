@@ -65,7 +65,7 @@ func TestResolveForAPIUserCreatesAThreadKeyedByTheCallersReference(t *testing.T)
 	repo := &fakeThreadRepo{latestErr: domain.ErrNotFound}
 	svc := newThreadService(repo, &fakeClassifierLLM{})
 
-	res, err := svc.ResolveForAPIUser(context.Background(), "co-1", "their-user-42", "sales last month?")
+	res, err := svc.ResolveForAPIUser(context.Background(), "co-1", "their-user-42", "sales last month?", "")
 	if err != nil {
 		t.Fatalf("ResolveForAPIUser: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestResolveForAPIUserContinuesAWarmThread(t *testing.T) {
 	repo := &fakeThreadRepo{latest: existing}
 	svc := newThreadService(repo, &fakeClassifierLLM{})
 
-	res, err := svc.ResolveForAPIUser(context.Background(), "co-1", "their-user-42", "and the month before?")
+	res, err := svc.ResolveForAPIUser(context.Background(), "co-1", "their-user-42", "and the month before?", "")
 	if err != nil {
 		t.Fatalf("ResolveForAPIUser: %v", err)
 	}
@@ -106,10 +106,10 @@ func TestResolveForAPIUserContinuesAWarmThread(t *testing.T) {
 func TestResolveForAPIUserRequiresBothIdentifiers(t *testing.T) {
 	svc := newThreadService(&fakeThreadRepo{}, &fakeClassifierLLM{})
 
-	if _, err := svc.ResolveForAPIUser(context.Background(), "", "u", "hi"); err == nil {
+	if _, err := svc.ResolveForAPIUser(context.Background(), "", "u", "hi", ""); err == nil {
 		t.Error("resolved with no company — a tenant-less lookup is the worst failure mode there is")
 	}
-	if _, err := svc.ResolveForAPIUser(context.Background(), "co-1", "", "hi"); err == nil {
+	if _, err := svc.ResolveForAPIUser(context.Background(), "co-1", "", "hi", ""); err == nil {
 		t.Error("resolved with no api_user_ref")
 	}
 }

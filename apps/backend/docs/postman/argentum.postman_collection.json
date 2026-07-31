@@ -53,6 +53,30 @@
       "description": "Who this key is, and what it may spend.",
       "item": [
         {
+          "name": "The agents this workspace has, and which one answers by default",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/agents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "agents"
+              ]
+            },
+            "description": "A workspace can keep several agents — Finance, Ops, Support — each with\nits own persona, its own tools and its own databases. This is the list,\nand the `id` of a row here is what goes in `agent_id` on\n`POST /v1/chat` and `POST /v1/reports`.\n\nIt needs no scope, on the same terms as `GET /v1/me`: a key that can\nsend a turn has to be able to discover what to send it as.\n\n`is_default` marks the one a call with no `agent_id` runs as. A row with\n`enabled: false` has been switched off by an admin — it stays in the\nlist so a call that started failing has a visible reason, but naming it\nanswers `404 agent_not_found` like any other id this workspace cannot\nuse.\n\nThe whole roster arrives in one page. `has_more` is always `false`; the\nenvelope is the one every other `/v1` list uses so a client needs no\nspecial case for this one.\n\nScope: none — any key reaches this route."
+          }
+        },
+        {
           "name": "The key, its scopes, its rate limit, and the tenant's credit position",
           "request": {
             "method": "GET",

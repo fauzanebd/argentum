@@ -122,6 +122,10 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewV1MeHandler(d.companyRepo, budgetReaderOrNil(d.usageSvc), cfg.APIV1RatePerMin).
 		WithWebhookSecrets(d.companyRepo).
 		Register(v1)
+	// `GET /v1/agents` (T-S5): the roster, so `agent_id` is a field an
+	// integrator can fill in from the API rather than from a uuid somebody with
+	// an admin session read out of the dashboard for them.
+	handlers.NewV1AgentsHandler(rosterListerOrNil(d.agentSvc)).Register(v1)
 	// `GET /v1/usage` (T-A5): the spend and the balance, over a window the
 	// caller chooses, so a tenant's own application can meter its own users
 	// instead of polling `/v1/me` for a number with no period attached.
@@ -219,6 +223,17 @@ func usageReaderOrNil(repo *pgctl.UsageRepo) handlers.V1UsageReader {
 		return nil
 	}
 	return repo
+}
+
+// rosterListerOrNil is budgetReaderOrNil for the roster (T-S5). Same trap: a
+// nil *app.AgentService assigned into the interface parameter arrives as a
+// non-nil interface holding nil, and `GET /v1/agents` would panic on a wiring
+// without a roster rather than answering the typed 503 its own guard writes.
+func rosterListerOrNil(svc *app.AgentService) handlers.V1RosterLister {
+	if svc == nil {
+		return nil
+	}
+	return svc
 }
 
 func requestSinkOrNil(rec *apiobs.Recorder) middleware.APIRequestSink {
