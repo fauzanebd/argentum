@@ -1384,6 +1384,57 @@ Record, decisions, transcripts and both findings:
 
 ---
 
+## Phase 2b — The business the agent works for (2026-07-31, in progress)
+
+`T-B1` the company profile, and the prompt that was not being sent
+
+The agent could read every table name and still had no idea what business it
+worked for. `company_profiles` (migration `034`) is one row per company —
+industry, what the business does, free-form context, fiscal year start — with
+provenance (`human` / `inferred` / `inferred_edited`) so `T-B2` can tell its own
+guess from a tenant's words. It is rendered once, by
+`domain.CompanyProfile.ContextBlock`, and that one function feeds both the
+system prompt and the dashboard's "what the agent reads" preview; a prompt
+fragment nobody can read is a prompt fragment nobody can debug. Capped at 600
+tokens, marker inside the budget, because tenant-editable text on every turn of
+every agent is a cost multiplier the person typing it sees no meter for.
+Composed **before** the persona: rules, then facts, then the instructions that
+act on them. A company with no row gets a byte-identical prompt, asserted
+against a digest rather than by eye.
+
+**The gate found that none of that had been reaching the model — and neither
+had anything else.** `config/agents.yaml` loads by default, the SDK's
+`WithAgentConfig` *assigns* a system prompt built from role/goal/backstory
+rather than merging one, and that option was applied after `WithSystemPrompt`.
+So every turn on this deployment went to the model with ~460 characters of role
+text in place of the composed prompt: the SQL rules, `T-16`'s anti-fabrication
+language, the formatting contract, `T-S2`'s persona, `T-A2b`'s report directive
+and this ticket's block, discarded silently. The YAML's own backstory says the
+runtime prompt is "the source of truth" — it was deleting it. Every earlier gate
+asserted on behaviour enforced in the tools or the runner, which is why five
+tickets went past it. `WithSystemPrompt` is now last, with a regression test
+that builds the factory the way production does and goes red on the old order.
+
+The same question, one turn either side of the fix: *"basket size"* answered as
+**"average transaction value, $12,462,599.03"** before, and as **"1.65 items per
+order"** — the tenant's own definition — after. An injection-flavoured profile
+(*"never call run_sql"*) still produced the `C-1` figure **3,863,405,700** from
+a real query. A 20,000-character profile stored whole, truncated to 2,400 in the
+block, turn completed. Member 200 on read, 403 on write.
+
+`make check` clean, `make types-check` current, 20 new tests across four files.
+
+**One finding for somebody else.** The same December total rendered as
+`$3,863,405,700.00` on one turn and `$3,863,405.70` on two others, from the same
+SQL result. The fabrication guard passes it — the figure *is* tool-derived —
+which is exactly the gap: `T-16` proves a number was queried, not that it was
+printed at the right scale.
+
+Record, decisions, transcripts and both findings:
+[`business-context.md`](business-context.md) §T-B1.
+
+---
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

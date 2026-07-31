@@ -708,7 +708,21 @@ that still calls the track "scheduled for Sprint 2, not deferred". Row 8 of
 evening — `033` applied, every acceptance item exercised live — so **the roster
 track is 9.5d delivered and gated**, with nothing owed.
 
-**What the gate found belongs to nobody in this list.** The
+**`T-B1` landed the same evening (2.0d): 49.0 days remain committed**, opening
+the business-context track and applying migration `034`. It is a never-cut row,
+so nothing comes off §8b's list with it; what comes off is the track's first
+dependency — `T-B2`, `T-B3` and `T-B4` all dep it and none of them was startable
+before tonight.
+
+**What its gate found belongs to five earlier tickets at once.** The composed
+system prompt — SQL rules, `T-16`'s anti-fabrication language, the formatting
+contract, `T-S2`'s persona, `T-A2b`'s report directive — was being replaced by
+`config/agents.yaml`'s role text before every request left the process, because
+the SDK's `WithAgentConfig` assigns the prompt and was applied last. Fixed and
+regression-tested in the same change. No estimate moves: those tickets shipped
+what they claimed, in code that was being discarded at the last option.
+
+**What the roster gate found belongs to nobody in this list.** The
 `semantic_prompt_injection` guardrail refused two of seven ordinary questions,
 which is the third appearance of a class fixed twice before (`3891579`,
 `T-A2b`). It is `T-07b`'s, it is not filed as a track, and it now has a measured
@@ -795,6 +809,17 @@ visible afterwards. This is the third, written on the day it was made.
 track is done and the order in flight is `T-B1` onwards. Unlike
 `T-S1`→`T-S3`, which sat a day at "code complete, gate outstanding", these two
 closed their gates the same evening.
+
+**`T-B1` delivered and gated live 2026-07-31** (migration `034`), same evening
+again. The business-context track has **6.5d left** — `T-B2`/`T-B3` in either
+order, then `T-B4`. The gate found that the composed system prompt had not been
+reaching the model on any deployment loading `config/agents.yaml`, which is a
+defect against `T-16`, `T-S2` and `T-A2b` rather than against this ticket; it is
+fixed and regression-tested, and the write-up is in
+[`../coverage/business-context.md`](../coverage/business-context.md) §T-B1 §3.
+Nothing about it changes the order or the estimates — the prompt-level
+protections those tickets shipped were simply not in force until now, and no
+estimate here assumed otherwise.
 
 **What slips, in days:**
 

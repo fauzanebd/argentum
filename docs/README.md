@@ -82,6 +82,8 @@ docs/
 │   ├── api-foundation.md         T-A1 /v1 envelope, request ids, idempotency, limits
 │   ├── api-reports.md            T-A2 both report doors, documents, signed callbacks
 │   ├── api-chat.md               T-A3 SSE + sync chat, the event schema, thread reads
+│   ├── agent-roster.md           T-S1→T-S5 the tenant's own agents, per channel and on /v1
+│   ├── business-context.md       T-B1→T-B4 what business the agent works for
 │   └── report-branding.md        T-R5 tenant logo, accent, contrast floor, preview
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals
