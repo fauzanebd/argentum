@@ -665,7 +665,8 @@ than from any phase table:
 | Widget (`T-19`→`T-23`) | 11.5 | 2.5 + 2 + 3.5 + 2 + 1.5 |
 | Roster (`T-S1`→`T-S5`) | 9.5 | 2.5 + 2.5 + 1 + 2 + 1.5 |
 | MCP-as-source (`T-M1`→`T-M4`) | 8.0 | 2.5 + 3 + 1 + 1.5 |
-| **Committed total** | **52.0** | |
+| Business context (`T-B1`→`T-B4`) — **added 2026-07-31** | 8.5 | 2 + 2.5 + 2 + 2 |
+| **Committed total** | **60.5** | |
 
 Two separate errors, not one. **`~40.5` is a 4.0-day arithmetic slip** against its
 own inputs — the three tracks it summed came to `44.5` by the figures available
@@ -681,6 +682,15 @@ the ticket headers.**
 **Less `T-S1`→`T-S3` (6.0d, delivered): 46.0 days remain committed** before
 anything new is considered.
 
+**Something new was considered the next day.** The business-context track was
+owner-set on 2026-07-31 and added 8.5d, so the table reads `60.5` where this
+section was written against `52.0`, and **54.5 days remain committed**. The
+row is dated rather than folded in silently, because the paragraph above it is
+about numbers that stopped tracking what they summarised. §8c is what it cost.
+(The track was filed at `8.0` earlier the same day and re-summed to `8.5` when
+`T-B4` grew from persona drafting to the specified Generate-with-AI flow — two
+fields, create *and* edit, and an undo. Same lesson, four hours apart.)
+
 ### 8b. The order
 
 Cut from the top. One list, not four — the per-track markers (`#2a`, `#2b`,
@@ -689,30 +699,39 @@ positions Sprint 1's list already used**, which is the concrete cost of not
 having written this in time. The markers are mapped here; where a ticket's own
 header disagrees with this table, **this table wins**.
 
+**Renumbered 2026-07-31** when the business-context track was inserted. Ten rows
+became twelve and eight of them moved — `T-15` was 2 and is 3, `T-S5` was 8 and
+is 10. Anything citing a bare number from the previous version of this table is
+citing the wrong ticket; cite the ticket id.
+
 | # | Ticket | Days | Old marker | What cutting it costs |
 | - | ------ | ---- | ---------- | --------------------- |
 | 1 | `T-M4` write-capable MCP tools | 1.5 | `#3b` | Read-only tenant tools are the value; writes are the second product. Also the only Sprint 2 ticket depending on `T-10`+`T-11`, so cutting it decouples the MCP track from the action track entirely. |
-| 2 | `T-15` outbound webhook subscriptions | 1.5 | Sprint 1 `#1` | The delivery core shipped inside `T-A2`. This is the subscription model, not the sender. |
-| 3 | `T-14` MCP server (us as server) | 2.0 | Sprint 1 `#2` | After `T-A1` an outside agent reaches Argentum over `/v1`. Costs convenience, not reachability. **Not `T-M1`** — see §5's confusion risk. |
-| 4 | `T-17` OTel tracing | 2.0 | Sprint 1 `#3` | Keep the `/metrics` half: it now carries an open finding of its own (§5, `/metrics` is on the public router) and `T-A5` added per-key labels behind `METRICS_TOKEN` rather than fixing it. Cutting the tracing does not cut that, and the header already scopes the cut to "tracing only". |
-| 5 | `T-12b` `http_action` | 1.5 | Sprint 1 `#4` | Keep `send_message` — it is what makes watchers useful. |
-| 6 | `T-S4` channel bindings | 2.0 | `#2a` | The roster stays dashboard-only. Discord/Lark/WhatsApp keep answering on the company default, which is today's behaviour — a cut here removes an improvement, not a capability. |
-| 7 | `T-M3` MCP legibility — **partially, never whole** | 1.0 | `#3a` | Cut the per-server usage breakout and the thread-view labelling. **Keep the agent↔server binding control.** `T-M1` creates servers and `T-M2` calls them, but the binding UI is in `T-M3`; cut whole, the track ships reachable only by writing `agent_mcp_servers` rows by hand. Same shape as Sprint 1's `T-22` cut. |
-| 8 | `T-S5` `agent_id` on `/v1` | 1.5 | `#2b` | **Cutting it strands `T-M3`, which deps it.** So it is below `T-M3` in cost despite being the cheaper ticket, and cutting it means cutting `T-M3` whole — which position 7 says never to do. Read this row as: cut 8 only after 7 is already gone. |
-| 9 | `T-23` widget config UI | 1.5 | Sprint 1 `#8` | Ship the widget on hardcoded defaults. |
-| 10 | `T-22` npm packages and examples | 2.0 | Sprint 1 `#9` | Only down to the vanilla example and the Go + Node signing snippets. **Never ship the widget with no integration docs.** |
+| 2 | `T-B2` business inference from the source | 2.5 | — | The tenant types their industry and description into `T-B1`'s form instead of reviewing a draft. Four fields, once — this cuts the onboarding, not the capability, and `T-B4` still generates from whatever they typed. **Held position 7 until 2026-07-31**, when the owner specified the Generate-with-AI flow and `T-B4` became the primary create path; the two swapped. |
+| 3 | `T-15` outbound webhook subscriptions | 1.5 | Sprint 1 `#1` | The delivery core shipped inside `T-A2`. This is the subscription model, not the sender. |
+| 4 | `T-14` MCP server (us as server) | 2.0 | Sprint 1 `#2` | After `T-A1` an outside agent reaches Argentum over `/v1`. Costs convenience, not reachability. **Not `T-M1`** — see §5's confusion risk. |
+| 5 | `T-17` OTel tracing | 2.0 | Sprint 1 `#3` | Keep the `/metrics` half: it now carries an open finding of its own (§5, `/metrics` is on the public router) and `T-A5` added per-key labels behind `METRICS_TOKEN` rather than fixing it. Cutting the tracing does not cut that, and the header already scopes the cut to "tracing only". |
+| 6 | `T-12b` `http_action` | 1.5 | Sprint 1 `#4` | Keep `send_message` — it is what makes watchers useful. |
+| 7 | `T-B4` "Generate with AI" | 2.0 | — | The owner's specified create flow: type a description, press the button, get it improved plus a persona. Cutting it leaves `T-B3`'s six templates and the blank form — a good agent is still creatable, but the tenant who picks no template is back to writing a prompt, which is the behaviour this track exists to remove. **It deps `T-B1`/`T-B3` only**, so cutting `T-B2` at position 2 does not strand it. |
+| 8 | `T-S4` channel bindings | 2.0 | `#2a` | The roster stays dashboard-only. Discord/Lark/WhatsApp keep answering on the company default, which is today's behaviour — a cut here removes an improvement, not a capability. |
+| 9 | `T-M3` MCP legibility — **partially, never whole** | 1.0 | `#3a` | Cut the per-server usage breakout and the thread-view labelling. **Keep the agent↔server binding control.** `T-M1` creates servers and `T-M2` calls them, but the binding UI is in `T-M3`; cut whole, the track ships reachable only by writing `agent_mcp_servers` rows by hand. Same shape as Sprint 1's `T-22` cut. |
+| 10 | `T-S5` `agent_id` on `/v1` | 1.5 | `#2b` | **Cutting it strands `T-M3`, which deps it.** So it is below `T-M3` in cost despite being the cheaper ticket, and cutting it means cutting `T-M3` whole — which position 9 says never to do. Read this row as: cut 10 only after 9 is already gone. |
+| 11 | `T-23` widget config UI | 1.5 | Sprint 1 `#8` | Ship the widget on hardcoded defaults. |
+| 12 | `T-22` npm packages and examples | 2.0 | Sprint 1 `#9` | Only down to the vanilla example and the Go + Node signing snippets. **Never ship the widget with no integration docs.** |
 
-Cutting all ten recovers at most **16.5 of the 46.0** — less than that in
-practice, because positions 4 and 7 are scoped cuts rather than whole tickets
+Cutting all twelve recovers at most **21.0 of the 54.5** — less than that in
+practice, because positions 5 and 9 are scoped cuts rather than whole tickets
 (`T-17` keeps the `/metrics` fix, `T-M3` keeps the binding control), and because
-positions 9–10 belong to the widget phase, which §6 says is cut whole or not at
+positions 11–12 belong to the widget phase, which §6 says is cut whole or not at
 all. Read the list as a sequence to stop partway down, not as a budget.
 
 **Never cut:** `T-06`/`T-07` (metric registry), `T-08`/`T-09` (watchers — twice
 displaced already, see §5), `T-10`/`T-11`/`T-12a` (the action framework and the
 one action that makes watchers useful), `T-19` (embed auth), `T-M1`/`T-M2` (the
 egress gate and the turn-time integration; a half-built MCP client is dead
-attack surface in the same way a half-built embed surface is).
+attack surface in the same way a half-built embed surface is), `T-B1`/`T-B3`
+(the business block every other `T-B` ticket deps, and the template gallery the
+track was set for; cutting `T-B3` leaves the blank textarea that motivated it).
 
 **Two rules carried forward from §6.** The widget phase is cut whole or not at
 all — `T-19`→`T-23` move together. And nothing is inserted ahead of `T-19` and
@@ -727,3 +746,36 @@ the unfiled `T-S3` gate finding — the dashboard's host/port connection form pi
 through the UI fails one turn later after an agent has spent its budget
 discovering it. None is a track; all four are smaller than any row above and
 none has an owner.
+
+### 8c. The third insert, and what it slips
+
+**Owner-set 2026-07-31: the business-context track (`T-B1`→`T-B4`, 8.5d) runs
+after the roster track and before `T-M1`.** This is the note §8b's second carried
+rule demands. Sprint 1 absorbed two priority inserts — the report track on
+2026-07-27 and the API track on 2026-07-28 — and the cost of each was only
+visible afterwards. This is the third, written on the day it was made.
+
+**The running order becomes:** `T-S5` → `T-S4` → `T-B1` → `T-B2`/`T-B3` →
+`T-B4` → `T-M1` → `T-M2` → `T-M3` → `T-M4`.
+
+**What slips, in days:**
+
+| What | Slips by | Note |
+| ---- | -------- | ---- |
+| MCP-as-source (`T-M1`→`T-M4`) | **8.5** | Nothing in it is blocked by the new track — this is queue position, not a dependency. `T-M3` still deps `T-S5`, which runs first either way. |
+| `T-08`/`T-09` watchers | **8.5** | **Third displacement.** §5 already records two; this is the one that makes it three, and watchers have now been the next thing since Sprint 1's week 3. |
+| `T-19`→`T-23` widget | **8.5** | Cut whole or not at all, so it moves whole. |
+| Roster remainder (`T-S5`, `T-S4`) | 0 | The insert is behind them. |
+
+**What does not slip:** nothing already in flight, because nothing is. The
+working tree at the time of writing holds one uncommitted dashboard change (a
+build-identity footer) that belongs to no ticket.
+
+**The honest read.** 54.5 days of committed work sits ahead of a sprint that has
+delivered 6.0, and this insert adds 8.5 of it while pushing watchers — a
+never-cut item — for the third time. Two ways out, and they are the owner's call
+rather than the implementer's: cut from §8b's list down to position 7, which
+recovers 13.0 and costs the MCP write tools, business inference, webhooks, the
+MCP server, tracing, `http_action` and Generate-with-AI; or accept that phases
+2–6 and the widget are Sprint 3. **Neither is decided here.** What is decided is
+that the number is 54.5 and not 46.0, and that watchers slipped again.

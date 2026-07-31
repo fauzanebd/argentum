@@ -48,6 +48,39 @@ every one of them still has to pass through `T-05`'s audit decorator and
 `T-16`'s budget guard. Plus a genuine SSRF surface: the tenant supplies the URL.
 **Estimate:** 8.0d (`T-M1` 2.5, `T-M2` 3.0, `T-M3` 1.0, `T-M4` 1.5).
 `T-M1`/`T-M2` never-cut; `T-M3`/`T-M4` are cuts #3a and #3b.
+**Slipped 8.5d on 2026-07-31** when the business-context track was inserted ahead
+of it. Queue position, not a dependency —
+[`00-sprint-overview.md`](00-sprint-overview.md) §8c.
+
+### Agent creation that knows the business (`T-B1` → `T-B4`) — **scheduled, tickets written**
+Two problems with one answer. Creating an agent means writing a system prompt in
+an empty textarea, which most tenants will not do; and an agent that has read
+`stores`, `skus` and `stock_movements` still answers as though the schema were
+abstract, because nothing tells it those tables belong to a retailer. `T-B1`
+gives the company a business profile that is composed into every turn's prompt
+as a framed block, `T-B2` drafts that profile from the connected source's
+metadata, `T-B3` replaces the blank form with a template gallery (and a
+first-class blank card), and `T-B4` is the **Generate with AI** button — the
+tenant types what they want the agent to do, presses it, and gets their own
+description improved plus the persona to run it with (their name is the input
+when the description is empty). Create and edit, applied straight into the
+fields with one Undo.
+**Status:** owner-set 2026-07-31. Filed as four tickets in
+[`01-tickets.md`](01-tickets.md), inserted ahead of the MCP track;
+[`00-sprint-overview.md`](00-sprint-overview.md) §8c records the 8.5d that
+slipped off MCP, watchers and the widget to pay for it.
+**Supersedes the "Agent templates" entry below**, whose deferral reason — four
+guessed personas become the default and freeze the guess — is answered rather
+than overruled: templates ship as `config/agent_templates.yaml` (fixable in a
+commit, not a per-tenant row), and the industry knowledge lives in `T-B1`'s
+profile so a template only has to describe a job.
+**Why not earlier:** the roster had to exist first. `T-B1` deps `T-S2`'s
+composition point and `T-B3` deps `T-S1`'s CRUD; both landed 2026-07-30.
+**Estimate:** 8.5d (`T-B1` 2.0, `T-B2` 2.5, `T-B3` 2.0, `T-B4` 2.0).
+`T-B1`/`T-B3` never-cut; `T-B2` and `T-B4` are cuts #2 and #7 of twelve — they
+swapped later the same day, when the specified Generate-with-AI flow made `T-B4`
+the primary create path and it was rewritten to degrade without `T-B2` instead
+of depending on it.
 
 ### Phases 2–6: metric registry, watchers, actions, MCP, hardening (T-06 → T-18)
 **Why deferred:** Scheduling, again, and this one is expensive. The API track
@@ -271,7 +304,7 @@ figures, so it needs its own eval run per configuration, not a settings field.
 agent.
 **Estimate:** 1.5d plus an eval matrix.
 
-### Agent templates
+### ~~Agent templates~~ — **superseded 2026-07-31 by `T-B3`**
 Prebuilt Marketing / Ops / HR / Finance personas a tenant can start from instead
 of writing a prompt in an empty textarea.
 **Why deferred:** we do not yet know what a good persona for these looks like in
@@ -279,6 +312,16 @@ production. Shipping four guesses as "templates" makes them the default and
 freezes the guess.
 **Trigger:** three tenants having written roughly the same persona by hand.
 **Estimate:** 1d.
+**What happened:** owner-set on 2026-07-31 against a product goal, so the trigger
+never fired as written — the same shape as the roster track and recorded for the
+same reason. The freeze objection stands and `T-B3` answers it: templates are a
+config file the binary loads rather than rows seeded per company, so a wrong
+guess is one commit; and with `T-B1`'s company profile carrying the business
+specifics, a template describes a job rather than an industry. **The 1d estimate
+did not survive** — `T-B3` alone is 2.0d, and it is one of four tickets in the
+track above. Follow-ons that remain deferred: tenant-saved templates ("save this
+agent as a template"), sharing or importing them, and per-template model
+defaults (see *Per-agent model, temperature, and budget*).
 
 ### Persisted run traces with replay
 **Why deferred:** Finding O-3. T-17's OTel spans cover live debugging; replay is a
