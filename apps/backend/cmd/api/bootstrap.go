@@ -204,9 +204,16 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// repository, constructed here because the enqueuer is built several
 	// hundred lines before the service that owns the CRUD surface.
 	agentRepo := pgctl.NewAgentRepo(controlDB)
+	// The bindings are read on the enqueue path of every WhatsApp, Discord and
+	// Lark turn (T-S4) and written by the Settings tab. The enqueuer takes the
+	// repository rather than the service for the same reason it takes agentRepo:
+	// its contract is two reads, and a write method it can reach is a write
+	// method somebody eventually calls from there.
+	bindingRepo := pgctl.NewAgentBindingRepo(controlDB)
 	deps.chatEnq = app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, deps.enqueuer).
 		WithBudget(deps.usageSvc).
-		WithRoster(agentRepo)
+		WithRoster(agentRepo).
+		WithChannelBindings(bindingRepo)
 	scheduledRepo := pgctl.NewScheduledTaskRepo(controlDB)
 	// The API process only creates and edits schedules — the worker fires
 	// them — but the service is the same type, and wiring it here keeps the
@@ -293,6 +300,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			MaxQueryResultBytes: cfg.MaxQueryResultBytes,
 		})),
 	)
+	deps.agentBindingSvc = app.NewAgentBindingService(bindingRepo, agentRepo)
 	// Signup seeds the new company's first agent. Wired after the roster
 	// exists rather than at NewAuthService, which runs several hundred lines
 	// earlier and before there is a connection repository to validate against.

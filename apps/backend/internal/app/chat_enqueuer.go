@@ -24,6 +24,17 @@ type ChatEnqueuer struct {
 	enqueuer  *queue.Enqueuer
 	budget    BudgetChecker
 	roster    RosterReader
+	bindings  ChannelBinder
+}
+
+// ChannelBinder resolves an inbound address to the agent an admin bound it to
+// (T-S4). Declared at the consumer, like RosterReader and BudgetChecker, and
+// read-only for the same reason: an enqueue path that could write a binding is
+// one that could be asked to.
+type ChannelBinder interface {
+	// AgentForChannel returns domain.ErrNotFound for an unbound address, which
+	// the caller reads as "the company default".
+	AgentForChannel(ctx context.Context, companyID string, channel domain.Channel, externalID string) (string, error)
 }
 
 // RosterReader is the half of the roster the enqueue path needs: which agent
@@ -76,6 +87,14 @@ func (s *ChatEnqueuer) WithRoster(r RosterReader) *ChatEnqueuer {
 	return s
 }
 
+// WithChannelBindings routes WhatsApp, Discord and Lark traffic by the address
+// it arrived on (T-S4). Optional: without it every channel turn resolves to the
+// company default, which is the behaviour of every turn before this ticket.
+func (s *ChatEnqueuer) WithChannelBindings(b ChannelBinder) *ChatEnqueuer {
+	s.bindings = b
+	return s
+}
+
 // ChatInput is the unified input shape across channels. It mirrors the
 // shape consumed by the old ChatService.HandleInput so existing callers
 // (handlers/chat.go, handlers/webhook.go) need only change the method.
@@ -85,7 +104,7 @@ type ChatInput struct {
 	UserID           string // dashboard only
 	PhoneNumber      string // whatsapp only
 	DiscordUserID    string // discord only
-	DiscordChannelID string // discord only; reply destination
+	DiscordChannelID string // discord only; reply destination, and T-S4's binding key
 	LarkOpenID       string // lark only; initiating user's open_id
 	LarkChatID       string // lark only; chat the @mention came from
 	LarkThreadKey    string // lark only; thread lookup key
@@ -104,8 +123,11 @@ type ChatInput struct {
 	// as the conversation the caller had rather than as our scaffolding.
 	Directive string
 	// AgentID is the roster agent the *caller* picked for a new conversation
-	// (T-S3). Dashboard only today; `/v1` is T-S5 and channel bindings are
-	// T-S4, and both will arrive here rather than beside here.
+	// (T-S3), on the dashboard and on `/v1` (T-S5).
+	//
+	// The chat channels never fill it: nobody picks an agent from a Discord
+	// message, so T-S4 resolves theirs from the address the message arrived on
+	// (boundAgent) rather than from a field a webhook would have to invent.
 	//
 	// It applies to thread creation and nothing else. On an existing thread it
 	// must either match what the thread already runs as or be absent —
@@ -279,12 +301,21 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 	var resolved *ResolveResult
 
 	switch in.Channel {
-	case domain.ChannelWhatsApp:
-		resolved, err = s.threads.ResolveForPhone(ctx, in.CompanyID, in.PhoneNumber, in.Message)
-	case domain.ChannelDiscord:
-		resolved, err = s.threads.ResolveForDiscordUser(ctx, in.CompanyID, in.DiscordUserID, in.Message)
-	case domain.ChannelLark:
-		resolved, err = s.threads.ResolveForLark(ctx, in.CompanyID, in.LarkChatID, in.LarkThreadKey, in.LarkOpenID, in.Message)
+	case domain.ChannelWhatsApp, domain.ChannelDiscord, domain.ChannelLark:
+		// One lookup for all three, here rather than in each inbound handler
+		// (T-S4). The ticket named three call sites — the WhatsApp webhook, the
+		// Lark webhook and Discord, which exists twice — and all four reach this
+		// function, so binding them here makes the count one and a channel added
+		// later inherits it rather than forgetting it.
+		var bound string
+		bound, err = s.boundAgent(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		resolved, err = s.resolveChannelThread(ctx, in, bound)
+		if err == nil {
+			resolved, err = s.rebindThread(ctx, in, resolved, bound)
+		}
 	case domain.ChannelAPI:
 		// Validated before the thread is touched, exactly as the budget is and
 		// as the dashboard's own pick is: a refused agent must leave no thread
@@ -448,6 +479,115 @@ func (s *ChatEnqueuer) forkForAgent(
 	return s.threads.CreateAPIThread(ctx, in.CompanyID, in.APIUserRef, in.Message, pinned)
 }
 
+// boundAgent asks the bindings which agent answers at this address (T-S4).
+// Empty means unbound, which the rest of the path reads as "the company
+// default" — the state every channel was in before this ticket.
+//
+// A lookup failure **stops the turn** rather than falling back, and that is the
+// opposite of what agentFor does two functions below. The difference is what
+// each failure costs: agentFor failing leaves the payload's agent empty and the
+// worker resolves the same default itself, so nothing widens. Falling back here
+// would answer a question asked in the finance room with an agent that can read
+// every source the company has, on the strength of one failed query — a scope
+// decision made by an outage. The lookup is on the same control database the
+// thread resolve two lines later needs, so a real failure costs nothing extra.
+func (s *ChatEnqueuer) boundAgent(ctx context.Context, in ChatInput) (string, error) {
+	if s.bindings == nil {
+		return "", nil
+	}
+	var ref string
+	switch in.Channel {
+	case domain.ChannelWhatsApp:
+		ref = in.PhoneNumber
+	case domain.ChannelDiscord:
+		// The channel the message arrived in, not the user who wrote it: a
+		// binding is a room configured for a job. Per-user bindings are a
+		// follow-on and would be a second lookup, not a different one.
+		ref = in.DiscordChannelID
+	case domain.ChannelLark:
+		ref = in.LarkChatID
+	default:
+		return "", nil
+	}
+	// Normalised through the same function the write path uses, or a number
+	// stored as `+62…` never matches inbound `whatsapp:+62…`.
+	ref = domain.NormalizeChannelRef(in.Channel, ref)
+	if ref == "" {
+		return "", nil
+	}
+	agentID, err := s.bindings.AgentForChannel(ctx, in.CompanyID, in.Channel, ref)
+	if errors.Is(err, domain.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve channel binding: %w", err)
+	}
+	return agentID, nil
+}
+
+// resolveChannelThread picks the conversation for an inbound chat message,
+// passing the binding through so a thread created now is pinned to it.
+func (s *ChatEnqueuer) resolveChannelThread(
+	ctx context.Context, in ChatInput, bound string,
+) (*ResolveResult, error) {
+	switch in.Channel {
+	case domain.ChannelWhatsApp:
+		return s.threads.ResolveForPhone(ctx, in.CompanyID, in.PhoneNumber, in.Message, bound)
+	case domain.ChannelDiscord:
+		return s.threads.ResolveForDiscordUser(ctx, in.CompanyID, in.DiscordUserID, in.Message, bound)
+	case domain.ChannelLark:
+		return s.threads.ResolveForLark(ctx, in.CompanyID, in.LarkChatID, in.LarkThreadKey,
+			in.LarkOpenID, in.Message, bound)
+	}
+	return nil, fmt.Errorf("%w: %q is not an inbound chat channel", domain.ErrInvalidInput, in.Channel)
+}
+
+// rebindThread forks the conversation when the address's binding disagrees with
+// the agent the resolved thread runs as (T-S4).
+//
+// Discord is why this exists. A thread is keyed by (company, discord user), so
+// one person asking in #ops and then in #finance is *one* thread — and without
+// this, the second question would be answered by whichever agent the first one
+// pinned, with the first agent's answers still in the memory the second reads.
+// Continuing is the "the answer came from the wrong agent" failure T-S3 refused
+// to ship, plus two scopes' history in one conversation.
+//
+// The comparison is against agentFor rather than against thread.AgentID, and
+// against the *default* when the address is unbound: an unbound room means the
+// company default, not "no opinion", so a thread pinned by a binding that has
+// since been removed comes back to the default on its next message instead of
+// keeping a scope nobody configured any more. Both sides resolve NULL the same
+// way, so the ordinary unbound company forks nothing, ever.
+func (s *ChatEnqueuer) rebindThread(
+	ctx context.Context, in ChatInput, resolved *ResolveResult, bound string,
+) (*ResolveResult, error) {
+	if resolved == nil || resolved.IsNew {
+		return resolved, nil
+	}
+	want := bound
+	if want == "" {
+		want = s.defaultAgent(ctx, resolved.Thread.CompanyID)
+	}
+	if s.agentFor(ctx, resolved.Thread) == want {
+		return resolved, nil
+	}
+	logrus.WithFields(logrus.Fields{
+		"company_id": in.CompanyID, "channel": in.Channel,
+		"thread_id": resolved.Thread.ID, "agent_id": want,
+	}).Info("channel binding changed the agent; forking the conversation")
+	return s.threads.CreateChannelThread(ctx, ChannelThreadInput{
+		CompanyID:     in.CompanyID,
+		Channel:       in.Channel,
+		PhoneNumber:   in.PhoneNumber,
+		DiscordUserID: in.DiscordUserID,
+		LarkChatID:    in.LarkChatID,
+		LarkThreadKey: in.LarkThreadKey,
+		LarkOpenID:    in.LarkOpenID,
+		FirstMessage:  in.Message,
+		AgentID:       want,
+	})
+}
+
 // agentFor decides which agent this turn runs as: the thread's own, else the
 // company default (T-S2).
 //
@@ -459,15 +599,26 @@ func (s *ChatEnqueuer) agentFor(ctx context.Context, thread *domain.Conversation
 	if thread != nil && thread.AgentID != "" {
 		return thread.AgentID
 	}
-	if s.roster == nil || thread == nil {
+	if thread == nil {
 		return ""
 	}
-	def, err := s.roster.GetDefault(ctx, thread.CompanyID)
+	return s.defaultAgent(ctx, thread.CompanyID)
+}
+
+// defaultAgent is the company's default, or empty when there is no roster or
+// the lookup failed. Split out of agentFor because T-S4 asks the same question
+// about a company rather than about a thread — an unbound channel address means
+// this agent, and there is no thread involved in saying so.
+func (s *ChatEnqueuer) defaultAgent(ctx context.Context, companyID string) string {
+	if s.roster == nil || companyID == "" {
+		return ""
+	}
+	def, err := s.roster.GetDefault(ctx, companyID)
 	if err != nil {
 		// ErrNotFound is ordinary: a company whose roster was never seeded.
 		// Everything else is worth a line, at the level that distinguishes them.
 		if !errors.Is(err, domain.ErrNotFound) {
-			logrus.WithError(err).WithField("company_id", thread.CompanyID).
+			logrus.WithError(err).WithField("company_id", companyID).
 				Warn("default agent lookup failed; the worker will resolve it")
 		}
 		return ""

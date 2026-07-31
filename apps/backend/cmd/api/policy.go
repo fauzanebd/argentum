@@ -68,6 +68,14 @@ var apiPolicy = middleware.RolePolicy{
 	"DELETE /api/agents/:id":      domain.RoleAdmin,
 	"PUT /api/agents/:id/default": domain.RoleAdmin,
 
+	// Channel bindings (T-S4). Admin on read too, unlike the roster above: a
+	// binding is routing configuration rather than a choice a member makes, and
+	// the rows are the identifiers of the company's own Discord channels and
+	// Lark chats.
+	"GET /api/agent-bindings":        domain.RoleAdmin,
+	"POST /api/agent-bindings":       domain.RoleAdmin,
+	"DELETE /api/agent-bindings/:id": domain.RoleAdmin,
+
 	// WhatsApp allowlist: adding a number grants a phone the company's agent.
 	"GET /api/phones":           domain.RoleMember,
 	"POST /api/phones":          domain.RoleAdmin,

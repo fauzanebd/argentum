@@ -2,8 +2,21 @@ package domain
 
 import (
 	"context"
+	"strings"
 	"time"
 )
+
+// NormalizePhone strips the `whatsapp:` prefix and surrounding whitespace so a
+// number is stored and compared in one canonical E.164 form.
+//
+// It lives in domain rather than beside the allowlist repository that used to
+// own it because T-S4 compares a *second* table's phone column against inbound
+// traffic: a `whatsapp:` prefix on one side of that comparison and not the
+// other is a binding that silently never matches, and the only way two writers
+// stay in one shape is one function.
+func NormalizePhone(p string) string {
+	return strings.TrimPrefix(strings.TrimSpace(p), "whatsapp:")
+}
 
 // AllowedPhoneNumber records which phone numbers are authorized to chat with
 // Argentum on behalf of a company. Phone numbers are globally unique across

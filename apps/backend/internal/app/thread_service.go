@@ -76,53 +76,58 @@ type ResolveResult struct {
 }
 
 // ResolveForPhone picks the thread for an inbound WhatsApp message.
-func (s *ThreadService) ResolveForPhone(ctx context.Context, companyID, phoneNumber, userMessage string) (*ResolveResult, error) {
+//
+// agentID is what the number is bound to (T-S4), empty for "the company
+// default". Like every other resolver that takes one, it is not validated here:
+// whether that agent exists, belongs to this company and is enabled is answered
+// before this is reached.
+func (s *ThreadService) ResolveForPhone(ctx context.Context, companyID, phoneNumber, userMessage, agentID string) (*ResolveResult, error) {
 	if companyID == "" || phoneNumber == "" {
 		return nil, fmt.Errorf("companyID and phoneNumber required")
 	}
 
 	latest, err := s.threads.LatestForPhone(ctx, companyID, phoneNumber)
 	if errors.Is(err, domain.ErrNotFound) {
-		return s.createThread(ctx, companyID, domain.ChannelWhatsApp, phoneNumber, "", "", userMessage)
+		return s.createThread(ctx, companyID, domain.ChannelWhatsApp, phoneNumber, "", "", userMessage, agentID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lookup thread: %w", err)
 	}
 
-	return s.continueOrFork(ctx, latest, userMessage, s.idleThreshold, domain.ChannelWhatsApp, phoneNumber, "", "")
+	return s.continueOrFork(ctx, latest, userMessage, s.idleThreshold, domain.ChannelWhatsApp, phoneNumber, "", "", agentID)
 }
 
 // ResolveForDiscordUser picks the thread for an inbound Discord message.
 // Threads are keyed by (companyID, discordUserID); a single user gets one
 // continuous thread regardless of which guild/channel they message from.
-func (s *ThreadService) ResolveForDiscordUser(ctx context.Context, companyID, discordUserID, userMessage string) (*ResolveResult, error) {
+func (s *ThreadService) ResolveForDiscordUser(ctx context.Context, companyID, discordUserID, userMessage, agentID string) (*ResolveResult, error) {
 	if companyID == "" || discordUserID == "" {
 		return nil, fmt.Errorf("companyID and discordUserID required")
 	}
 
 	latest, err := s.threads.LatestForDiscordUser(ctx, companyID, discordUserID)
 	if errors.Is(err, domain.ErrNotFound) {
-		return s.createThread(ctx, companyID, domain.ChannelDiscord, "", "", discordUserID, userMessage)
+		return s.createThread(ctx, companyID, domain.ChannelDiscord, "", "", discordUserID, userMessage, agentID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lookup thread: %w", err)
 	}
 
-	return s.continueOrFork(ctx, latest, userMessage, s.idleThreshold, domain.ChannelDiscord, "", "", discordUserID)
+	return s.continueOrFork(ctx, latest, userMessage, s.idleThreshold, domain.ChannelDiscord, "", "", discordUserID, agentID)
 }
 
 // ResolveForLark picks the thread for an inbound Lark message. Threads are
 // keyed by (companyID, larkThreadKey) with no idle/fork classification: one
 // Lark reply-thread is one persistent agent memory by definition. Missing
 // row → create.
-func (s *ThreadService) ResolveForLark(ctx context.Context, companyID, larkChatID, larkThreadKey, larkOpenID, userMessage string) (*ResolveResult, error) {
+func (s *ThreadService) ResolveForLark(ctx context.Context, companyID, larkChatID, larkThreadKey, larkOpenID, userMessage, agentID string) (*ResolveResult, error) {
 	if companyID == "" || larkThreadKey == "" {
 		return nil, fmt.Errorf("companyID and larkThreadKey required")
 	}
 
 	latest, err := s.threads.LatestForLark(ctx, companyID, larkThreadKey)
 	if errors.Is(err, domain.ErrNotFound) {
-		return s.createLarkThread(ctx, companyID, larkChatID, larkThreadKey, larkOpenID, userMessage)
+		return s.createLarkThread(ctx, companyID, larkChatID, larkThreadKey, larkOpenID, userMessage, agentID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lookup thread: %w", err)
@@ -180,13 +185,15 @@ func (s *ThreadService) ResolveForUser(ctx context.Context, companyID, userID, u
 
 	latest, err := s.threads.LatestForUser(ctx, companyID, userID)
 	if errors.Is(err, domain.ErrNotFound) {
-		return s.createThread(ctx, companyID, domain.ChannelDashboard, "", userID, "", userMessage)
+		return s.createThread(ctx, companyID, domain.ChannelDashboard, "", userID, "", userMessage, "")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lookup thread: %w", err)
 	}
 
-	return s.continueOrFork(ctx, latest, userMessage, s.dashboardIdleTTL, domain.ChannelDashboard, "", userID, "")
+	// No agent: this path has no picker in front of it and no binding behind it
+	// — the dashboard's own thread creation is CreateDashboardThread.
+	return s.continueOrFork(ctx, latest, userMessage, s.dashboardIdleTTL, domain.ChannelDashboard, "", userID, "", "")
 }
 
 // CreateDashboardThread creates a fresh dashboard thread for the given user.
@@ -209,12 +216,23 @@ func (s *ThreadService) CreateDashboardThread(ctx context.Context, companyID, us
 	return res.Thread, nil
 }
 
+// continueOrFork decides between the caller's latest thread and a new one.
+//
+// agentID is the channel's binding (T-S4) and wins when there is one; without
+// one, a fork **keeps the parent's agent** rather than resolving the default
+// again. A conversation that split because somebody came back an hour later is
+// the same conversation, and re-resolving would silently widen its scope back
+// to the default agent's — the failure direction T-S2 refused for a disabled
+// agent, arriving here through the idle gap instead.
 func (s *ThreadService) continueOrFork(
 	ctx context.Context, latest *domain.ConversationThread, userMessage string,
-	threshold time.Duration, channel domain.Channel, phone, userID, discordUserID string,
+	threshold time.Duration, channel domain.Channel, phone, userID, discordUserID, agentID string,
 ) (*ResolveResult, error) {
+	if agentID == "" {
+		agentID = latest.AgentID
+	}
 	return s.continueOrForkWith(ctx, latest, userMessage, threshold, func() (*ResolveResult, error) {
-		return s.createThread(ctx, latest.CompanyID, channel, phone, userID, discordUserID, userMessage)
+		return s.createThread(ctx, latest.CompanyID, channel, phone, userID, discordUserID, userMessage, agentID)
 	})
 }
 
@@ -247,7 +265,7 @@ func (s *ThreadService) continueOrForkWith(
 
 func (s *ThreadService) createThread(
 	ctx context.Context, companyID string, channel domain.Channel,
-	phone, userID, discordUserID, firstMessage string,
+	phone, userID, discordUserID, firstMessage, agentID string,
 ) (*ResolveResult, error) {
 	now := time.Now()
 	t := &domain.ConversationThread{
@@ -256,6 +274,7 @@ func (s *ThreadService) createThread(
 		PhoneNumber:   phone,
 		UserID:        userID,
 		DiscordUserID: discordUserID,
+		AgentID:       agentID,
 		Title:         deriveTitle(firstMessage),
 		LastMessageAt: now,
 	}
@@ -266,7 +285,7 @@ func (s *ThreadService) createThread(
 }
 
 func (s *ThreadService) createLarkThread(
-	ctx context.Context, companyID, larkChatID, larkThreadKey, larkOpenID, firstMessage string,
+	ctx context.Context, companyID, larkChatID, larkThreadKey, larkOpenID, firstMessage, agentID string,
 ) (*ResolveResult, error) {
 	now := time.Now()
 	t := &domain.ConversationThread{
@@ -275,6 +294,7 @@ func (s *ThreadService) createLarkThread(
 		LarkChatID:    larkChatID,
 		LarkThreadKey: larkThreadKey,
 		LarkOpenID:    larkOpenID,
+		AgentID:       agentID,
 		Title:         deriveTitle(firstMessage),
 		LastMessageAt: now,
 	}
@@ -305,6 +325,45 @@ func (s *ThreadService) createDashboardThread(
 		return nil, fmt.Errorf("create thread: %w", err)
 	}
 	return &ResolveResult{Thread: t, IsNew: true}, nil
+}
+
+// ChannelThreadInput identifies a conversation on one of the inbound chat
+// channels. It exists because those channels key on different things — a phone
+// number, a Discord user, a Lark reply-thread — and continueOrForkWith already
+// records why a fifth positional argument was the wrong direction.
+type ChannelThreadInput struct {
+	CompanyID     string
+	Channel       domain.Channel
+	PhoneNumber   string
+	DiscordUserID string
+	LarkChatID    string
+	LarkThreadKey string
+	LarkOpenID    string
+	FirstMessage  string
+	// AgentID pins the new conversation. Not validated here, for the reason
+	// CreateDashboardThread states.
+	AgentID string
+}
+
+// CreateChannelThread opens a fresh WhatsApp, Discord or Lark conversation
+// pinned to one roster agent (T-S4).
+//
+// Exported beside the resolvers for the same reason CreateAPIThread is: the
+// enqueuer needs a second create *after* a resolve, when the address's binding
+// disagrees with the agent the resolved thread runs as. Continuing that thread
+// would answer as the wrong agent and mix two scopes' history in one memory;
+// forking is what T-S5 already does when a caller names an agent the resolved
+// conversation does not run as.
+func (s *ThreadService) CreateChannelThread(ctx context.Context, in ChannelThreadInput) (*ResolveResult, error) {
+	if in.CompanyID == "" {
+		return nil, fmt.Errorf("companyID required")
+	}
+	if in.Channel == domain.ChannelLark {
+		return s.createLarkThread(ctx, in.CompanyID, in.LarkChatID, in.LarkThreadKey,
+			in.LarkOpenID, in.FirstMessage, in.AgentID)
+	}
+	return s.createThread(ctx, in.CompanyID, in.Channel,
+		in.PhoneNumber, "", in.DiscordUserID, in.FirstMessage, in.AgentID)
 }
 
 // CreateAPIThread opens a fresh API conversation for one `user_ref`, pinned to

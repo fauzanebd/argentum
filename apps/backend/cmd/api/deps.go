@@ -60,6 +60,11 @@ type apiDeps struct {
 	// by name, which is why it is built from the same tools.Registry the
 	// worker runs rather than from a list maintained beside the handler.
 	agentSvc *app.AgentService
+	// Channel bindings (T-S4): which agent answers in which Discord channel,
+	// Lark chat or WhatsApp number. Separate from agentSvc because the enqueuer
+	// reads the same table on every inbound message and must not be handed a
+	// service that can write to it.
+	agentBindingSvc *app.AgentBindingService
 	// The `/v1` report surface (T-A2). docGen and storageSvc are nil on a
 	// deployment without object storage — the same condition that leaves
 	// generate_document unregistered in the worker — and the routes that need

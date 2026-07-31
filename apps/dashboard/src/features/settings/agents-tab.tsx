@@ -14,10 +14,24 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api-error";
 import { useToast } from "@/hooks/use-toast";
-import type { Agent, AgentsResponse, AgentToolInfo } from "@argentum/api-types";
+import type {
+  Agent,
+  AgentBindingsResponse,
+  AgentChannelBinding,
+  AgentsResponse,
+  AgentToolInfo,
+  Channel,
+} from "@argentum/api-types";
 
 interface Connection {
   id: string;
@@ -354,7 +368,176 @@ export function AgentsTab() {
           ))}
         </CardContent>
       </Card>
+
+      <BindingsCard agents={agents} />
     </div>
+  );
+}
+
+/** What each channel calls the thing an admin has to paste, and where to find
+ *  it. "external_id" is a database column; nobody has one of those. */
+const CHANNEL_COPY: Record<string, { label: string; field: string; hint: string }> = {
+  discord: {
+    label: "Discord",
+    field: "Channel id",
+    hint: "Right-click the channel → Copy Channel ID (Developer Mode must be on).",
+  },
+  lark: {
+    label: "Lark",
+    field: "Chat id",
+    hint: "The chat id from the Lark group, usually starting oc_.",
+  },
+  whatsapp: {
+    label: "WhatsApp",
+    field: "Phone number",
+    hint: "The sender's number in E.164 form, e.g. +6281234567890.",
+  },
+};
+
+function channelCopy(c: Channel | string) {
+  return CHANNEL_COPY[c] ?? { label: String(c), field: "Identifier", hint: "" };
+}
+
+/** BindingsCard is T-S4: which agent answers in which Discord channel, Lark
+ *  chat or WhatsApp number. Everything else in this tab configures an agent;
+ *  this is the only thing that decides which one a message reaches. */
+function BindingsCard({ agents }: { agents: Agent[] }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [channel, setChannel] = useState<Channel | "">("");
+  const [externalId, setExternalId] = useState("");
+  const [agentId, setAgentId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["agent-bindings"],
+    queryFn: async () => (await api.get<AgentBindingsResponse>("/agent-bindings")).data,
+  });
+
+  // The channel list comes from the API, like the tool checkboxes above: which
+  // channels can be bound at all is the backend's decision.
+  const channels: Channel[] = data?.channels ?? [];
+  const bindings: AgentChannelBinding[] = (data?.bindings ?? []).filter(
+    (b): b is AgentChannelBinding => !!b,
+  );
+  const copy = channel ? channelCopy(channel) : null;
+
+  const create = useMutation({
+    mutationFn: async () =>
+      api.post("/agent-bindings", {
+        channel,
+        external_id: externalId.trim(),
+        agent_id: agentId,
+      }),
+    onSuccess: () => {
+      setExternalId("");
+      setError(null);
+      qc.invalidateQueries({ queryKey: ["agent-bindings"] });
+    },
+    onError: (e: unknown) => setError(apiErrorMessage(e, "Could not save that binding")),
+  });
+
+  const remove = useMutation({
+    mutationFn: async (id: string) => api.delete(`/agent-bindings/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agent-bindings"] }),
+    onError: (e: unknown) =>
+      toast({ title: "Nothing removed", description: apiErrorMessage(e), variant: "destructive" }),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Channel bindings</CardTitle>
+        <CardDescription>
+          Send a whole Discord channel, Lark chat or WhatsApp number to one agent. Anything not
+          bound here is answered by the default agent, which is what every channel does today.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-[10rem_1fr_12rem_auto] items-end gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="binding-channel">Channel</Label>
+            <Select value={channel} onValueChange={(v) => setChannel(v as Channel)}>
+              <SelectTrigger id="binding-channel">
+                <SelectValue placeholder="Choose" />
+              </SelectTrigger>
+              <SelectContent>
+                {channels.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {channelCopy(c).label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="binding-ref">{copy?.field ?? "Identifier"}</Label>
+            <Input
+              id="binding-ref"
+              value={externalId}
+              disabled={!channel}
+              onChange={(e) => setExternalId(e.target.value)}
+              placeholder={channel === "whatsapp" ? "+6281234567890" : "1234567890123456789"}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="binding-agent">Agent</Label>
+            <Select value={agentId} onValueChange={setAgentId}>
+              <SelectTrigger id="binding-agent">
+                <SelectValue placeholder="Choose" />
+              </SelectTrigger>
+              <SelectContent>
+                {agents
+                  .filter((a) => a.enabled)
+                  .map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            onClick={() => create.mutate()}
+            disabled={!channel || !externalId.trim() || !agentId || create.isPending}
+          >
+            {create.isPending ? "Binding…" : "Bind"}
+          </Button>
+        </div>
+        {copy?.hint && <p className="text-xs text-muted-foreground">{copy.hint}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <div className="divide-y divide-border/50 border-t border-border/50">
+          {isLoading && <div className="text-sm text-muted-foreground py-4">Loading…</div>}
+          {!isLoading && bindings.length === 0 && (
+            <div className="text-sm text-muted-foreground py-4">
+              No bindings. Every channel answers as the default agent.
+            </div>
+          )}
+          {bindings.map((b) => (
+            <div key={b.id} className="flex items-center justify-between gap-4 py-3">
+              <div className="min-w-0 space-y-1">
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <Badge variant="outline">{channelCopy(b.channel).label}</Badge>
+                  <code className="truncate text-xs">{b.external_id}</code>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Answered by {b.agent_name ?? "an agent"}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Remove the binding for ${b.external_id}`}
+                onClick={() => remove.mutate(b.id)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

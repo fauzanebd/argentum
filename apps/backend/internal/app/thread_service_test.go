@@ -199,7 +199,7 @@ func TestContinueOrForkDecisionTable(t *testing.T) {
 			svc := newThreadService(repo, llm)
 
 			res, err := svc.continueOrFork(context.Background(), latest, "how did we do?",
-				svc.idleThreshold, domain.ChannelWhatsApp, "+628123", "", "")
+				svc.idleThreshold, domain.ChannelWhatsApp, "+628123", "", "", "")
 			if err != nil {
 				t.Fatalf("continueOrFork: %v", err)
 			}
@@ -251,7 +251,7 @@ func TestForkCarriesTheChannelIdentity(t *testing.T) {
 			svc := newThreadService(repo, &fakeClassifierLLM{reply: "NEW"})
 
 			res, err := svc.continueOrFork(context.Background(), latest, "unrelated question",
-				svc.idleThreshold, tc.channel, tc.phone, tc.userID, tc.discordUserID)
+				svc.idleThreshold, tc.channel, tc.phone, tc.userID, tc.discordUserID, "")
 			if err != nil {
 				t.Fatalf("continueOrFork: %v", err)
 			}
@@ -282,7 +282,7 @@ func TestResolveForPhone(t *testing.T) {
 		llm := &fakeClassifierLLM{reply: "RELATED"}
 		svc := newThreadService(repo, llm)
 
-		res, err := svc.ResolveForPhone(context.Background(), "co-1", "+628123", "how were sales?")
+		res, err := svc.ResolveForPhone(context.Background(), "co-1", "+628123", "how were sales?", "")
 		if err != nil {
 			t.Fatalf("ResolveForPhone: %v", err)
 		}
@@ -299,10 +299,10 @@ func TestResolveForPhone(t *testing.T) {
 
 	t.Run("requires both identifiers", func(t *testing.T) {
 		svc := newThreadService(&fakeThreadRepo{}, &fakeClassifierLLM{})
-		if _, err := svc.ResolveForPhone(context.Background(), "", "+628123", "hi"); err == nil {
+		if _, err := svc.ResolveForPhone(context.Background(), "", "+628123", "hi", ""); err == nil {
 			t.Error("ResolveForPhone = nil error with no company id")
 		}
-		if _, err := svc.ResolveForPhone(context.Background(), "co-1", "", "hi"); err == nil {
+		if _, err := svc.ResolveForPhone(context.Background(), "co-1", "", "hi", ""); err == nil {
 			t.Error("ResolveForPhone = nil error with no phone number")
 		}
 	})
@@ -313,7 +313,7 @@ func TestResolveForPhone(t *testing.T) {
 		repo := &fakeThreadRepo{latestErr: errors.New("connection reset")}
 		svc := newThreadService(repo, &fakeClassifierLLM{})
 
-		if _, err := svc.ResolveForPhone(context.Background(), "co-1", "+628123", "hi"); err == nil {
+		if _, err := svc.ResolveForPhone(context.Background(), "co-1", "+628123", "hi", ""); err == nil {
 			t.Fatal("ResolveForPhone = nil error when the lookup failed")
 		}
 		if len(repo.created) != 0 {
@@ -332,7 +332,7 @@ func TestResolveForLarkNeverForks(t *testing.T) {
 	llm := &fakeClassifierLLM{reply: "NEW"}
 	svc := newThreadService(repo, llm)
 
-	res, err := svc.ResolveForLark(context.Background(), "co-1", "chat-1", "thread-key", "open-1", "anything")
+	res, err := svc.ResolveForLark(context.Background(), "co-1", "chat-1", "thread-key", "open-1", "anything", "")
 	if err != nil {
 		t.Fatalf("ResolveForLark: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestResolveForLarkCreatesWithItsKeys(t *testing.T) {
 	repo := &fakeThreadRepo{latestErr: domain.ErrNotFound}
 	svc := newThreadService(repo, &fakeClassifierLLM{})
 
-	res, err := svc.ResolveForLark(context.Background(), "co-1", "chat-1", "thread-key", "open-1", "how were sales?")
+	res, err := svc.ResolveForLark(context.Background(), "co-1", "chat-1", "thread-key", "open-1", "how were sales?", "")
 	if err != nil {
 		t.Fatalf("ResolveForLark: %v", err)
 	}

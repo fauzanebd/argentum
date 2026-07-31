@@ -100,11 +100,14 @@ func main() {
 		}, llmCredRepo, app.NewRedisBudgetCache(rdb))
 	// Same roster wiring as cmd/api (T-S2): this process enqueues turns too, so
 	// a Discord message resolves to the company's default agent rather than
-	// leaving the worker to guess. The bindings that would send it to a
-	// *different* agent are T-S4; the fallback is what has to be right first.
+	// leaving the worker to guess. And the same bindings (T-S4) — the gateway
+	// is the *other* Discord call site the ticket warned about, and a binding
+	// honoured by the webhook and not by the bot is a channel that answers as
+	// two different agents depending on how the message reached us.
 	chatEnq := app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, enq).
 		WithBudget(usageSvc).
-		WithRoster(pgctl.NewAgentRepo(controlDB))
+		WithRoster(pgctl.NewAgentRepo(controlDB)).
+		WithChannelBindings(pgctl.NewAgentBindingRepo(controlDB))
 
 	// --- Discord session manager ---
 	rootCtx, cancelRoot := context.WithCancel(context.Background())

@@ -1311,6 +1311,56 @@ gate has not run** — the Docker daemon was down and the agentic half spends re
 tokens on a tenant needing two differently-scoped agents. Commands and the three
 transcripts still owed: [`agent-roster.md`](agent-roster.md) §T-S5.
 
+`T-S4` the channels reach the roster — 2026-07-31
+
+The last ticket of the roster track. The dashboard picks an agent and `/v1`
+names one; Discord, Lark and WhatsApp had nobody to ask, so every message that
+arrived on them ran as the company default. A binding says *this Discord
+channel, this Lark chat, this number is answered by this agent*, and absence
+still means the default — a tenant who never opens the tab keeps today's
+behaviour exactly.
+
+The ticket asked for one resolver called from three places. It ships with **one
+call site**: the WhatsApp webhook, the Lark webhook and both Discord paths all
+reach `ChatEnqueuer.Enqueue`, so the lookup lives there and the specific failure
+the ticket warned about — the gateway bot and the interactions handler
+disagreeing about a channel — cannot be expressed.
+
+Three decisions the ticket did not contain:
+
+- **A failed binding lookup stops the turn**, which is the opposite of what
+  `agentFor` does twenty lines above it. That asymmetry is the whole of it:
+  `agentFor` failing leaves the field empty and the worker resolves the same
+  default, so nothing widens — while falling back here would answer a question
+  asked in the finance room with an agent that can read every source the company
+  has, on the strength of one failed query. A scope must not widen because of an
+  outage.
+- **`NormalizePhone` moved into `domain`.** The allowlist repository owned it
+  privately, and this gives a second table a phone column compared against the
+  same inbound traffic. Two copies of "strip the `whatsapp:` prefix" is a
+  binding that exists and never fires, with nothing to see in the table or the
+  log.
+- **It forks, against `T-S5`'s handover note.** That note said channel forking
+  was "a migration question, not a resolver one". What forces it is Discord's
+  own threading: a thread is keyed by `(company, discord_user)` and not by
+  channel, so one person asking in `#ops` and then in `#finance` is *one*
+  thread — and continuing it answers as the first room's agent with the first
+  room's answers still in memory. Nothing forks at once; a conversation forks on
+  its next message, and the ordinary company with no bindings forks nothing
+  ever, because both sides of the comparison resolve a NULL agent to the same
+  default.
+
+`make check` clean — vet, lint, test and build — `make types-check` current,
+18 new tests across two files, and the dashboard type-checks and lints with the
+bindings table in Settings → Agents. **Migration `033` has never been applied to
+a database**, so the live half — a message in a bound Discord channel proven
+from `agent_actions.agent_id`, the unique index refusing the second binding, and
+the FK cascade returning a channel to the default when its agent is deleted —
+is outstanding and named as such.
+
+Record, decisions and the outstanding gate: [`agent-roster.md`](agent-roster.md)
+§T-S4.
+
 ---
 
 ## What the history says about how this project is built

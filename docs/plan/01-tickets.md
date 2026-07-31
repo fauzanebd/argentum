@@ -40,7 +40,7 @@ with no number cannot drift.
 | T-S1   | `030_agents` | **applied** (this row said "not yet applied" until 2026-07-30; `T-S3`'s live gate ran against it) |
 | T-S2   | `031_thread_agent` | **applied** (same correction) |
 | T-A5   | `032_api_observability` | **applied** |
-| T-S4   | `033_agent_channel_bindings` | **reassigned 2026-07-30** — the ticket was written against `032`, which `T-A5` then took |
+| T-S4   | `033_agent_channel_bindings` | **written 2026-07-31, never applied** — reassigned from `032`, which `T-A5` took. `033` was free against the tree and the applied schema; the file exists and no database has run it |
 | T-06   | `*_metric_definitions` | next free on landing |
 | T-08   | `*_watchers` | next free on landing |
 | T-10   | `*_actions` | next free on landing |
@@ -3436,12 +3436,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_binding_channel_ref
 
 ### Acceptance
 
-- [ ] A message in the bound Discord channel runs under that agent — proven from `agent_actions.agent_id`
-- [ ] An unbound channel runs under the company default
-- [ ] Binding two agents to one channel is rejected by the unique index, and the API returns a clean 409
-- [ ] A binding cannot name another company's agent
-- [ ] A thread forked by the idle-gap classifier keeps the parent's agent
-- [ ] Deleting the agent removes the binding and the channel falls back to the default
+- [ ] A message in the bound Discord channel runs under that agent — proven from `agent_actions.agent_id` — **live gate, not run**; the enqueue seam is unit-tested in both directions
+- [x] An unbound channel runs under the company default — tested, and it is the same comparison that keeps an ordinary company forking nothing
+- [x] Binding two agents to one channel is rejected by the unique index, and the API returns a clean 409 — the index is in `033` and the service maps the violation; the index half needs a database and is **not live**
+- [x] A binding cannot name another company's agent — refused in the service and again inside the repository's `INSERT ... SELECT`, so a caller reaching the second layer still cannot
+- [x] A thread forked by the idle-gap classifier keeps the parent's agent — tested; a binding still outranks the parent, which is also tested
+- [ ] Deleting the agent removes the binding and the channel falls back to the default — the FK cascade is written; proving it needs a database, so **not live**
 
 ### Gate
 

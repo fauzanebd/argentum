@@ -61,6 +61,14 @@ Then grep every switch on `Channel` and handle the new case. At minimum:
 channel labels. **A missing case is a silent no-op — the agent answers and nobody
 receives it.**
 
+Two of those switches decide which *agent* answers (T-S4), and both are in
+`internal/app/chat_enqueuer.go`: `boundAgent` picks the address a binding is
+looked up by, and `resolveChannelThread` picks the resolver. Add the channel to
+`domain.BindableChannels` and to both switches, or the new channel silently
+answers as the company default forever — with a bindings form that offers it and
+a table that stores rows nothing reads. The dashboard needs no change: the
+channel list is served from that slice.
+
 ## Step 2 — Migrations
 
 Three migrations, matching the Discord/Lark precedent (claim numbers per
@@ -226,6 +234,8 @@ kill switch and the API base URL (for regional endpoints — this is why
 - [ ] Links render correctly on the platform
 - [ ] `/api/usage/by-channel` shows the new channel with non-zero cost
 - [ ] Kill switch off → webhook returns 503, no sessions opened
+- [ ] A binding on the new channel routes a message to that agent, and an
+      unbound address still answers on the company default (T-S4)
 
 ---
 

@@ -62,6 +62,8 @@ packages:
     type_mappings:
       app.BudgetState: "BudgetState"
       domain.Agent: "Agent"
+      domain.AgentChannelBinding: "AgentChannelBinding"
+      domain.Channel: "Channel"
       domain.APIKey: "APIKey"
       domain.APIKeyRequestStats: "APIKeyRequestStats"
       domain.APIRequestError: "APIRequestError"
@@ -70,7 +72,14 @@ packages:
       // `/api` response bodies that are not domain entities, from
       // apps/backend/internal/transport/http/handlers/wire.go.
       import type { BudgetState } from "./events.js";
-      import type { Agent, APIKey, APIKeyRequestStats, APIRequestError } from "./domain.js";
+      import type {
+        Agent,
+        AgentChannelBinding,
+        APIKey,
+        APIKeyRequestStats,
+        APIRequestError,
+        Channel,
+      } from "./domain.js";
 
   # Inbound webhook envelopes. Named by the ticket, and generated for the same
   # reason the rest is — but deliberately not re-exported from the package

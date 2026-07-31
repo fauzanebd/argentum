@@ -11,7 +11,7 @@ names this file too, and each later ticket appends its own section.
 | `T-S1` | `agents` + `agent_sources`, CRUD, Settings tab | 2.5d | **done — gate run live 2026-07-30** |
 | `T-S2` | Turn composition and enforcement | 2.5d | **done — gate run live 2026-07-30** |
 | `T-S3` | Agent picker in the dashboard chat | 1.0d | **done — gate run live 2026-07-30** |
-| `T-S4` | Discord / Lark / WhatsApp channel bindings | 2.0d | not started |
+| `T-S4` | Discord / Lark / WhatsApp channel bindings | 2.0d | **code complete — live gate outstanding** |
 | `T-S5` | `agent_id` on `/v1`, plus `GET /v1/agents` | 1.5d | **code complete — live gate outstanding** |
 
 ---
@@ -743,6 +743,182 @@ the last live gate for these tickets and applies unchanged.
 - `forkForAgent` is API-only on purpose. Discord and Lark key their threads on a
   platform identity, and a binding that changed would fork every conversation on
   that channel at once — which is a migration question, not a resolver one.
+
+---
+
+## T-S4 · The channels reach the roster
+
+> **Status 2026-07-31: code complete, gate outstanding.** `go build ./...`,
+> `go vet ./...` and `go test ./...` clean, `make types-check` current, the
+> dashboard type-checks and lints. **Migration `033` has never been applied to a
+> database**, so nothing below has been observed against live traffic.
+
+### 1. What ships
+
+The roster reached the dashboard by picker (`T-S3`) and `/v1` by request field
+(`T-S5`). Discord, Lark and WhatsApp had neither: an inbound message carries a
+person and a room and no place to put a picker, so every channel turn ran as the
+company default — and the ops team asking in the ops channel is the case those
+integrations exist for.
+
+A binding says *this address is answered by this agent*. Absence is the ordinary
+state and means the company default, so a tenant who never opens the tab keeps
+exactly today's behaviour.
+
+| Layer | File |
+| ----- | ---- |
+| Schema | `migrations/control/033_agent_channel_bindings.{up,down}.sql` (new) |
+| Entity | `internal/domain/agent_binding.go` (new) — `AgentChannelBinding`, `BindableChannels`, `Channel.Bindable`, `NormalizeChannelRef` |
+| Normalisation | `internal/domain/phone.go` — `NormalizePhone` moved up from the allowlist repository |
+| Persistence | `internal/adapters/postgres/agent_binding_repo.go` (new), `phone_repo.go` (delegates) |
+| CRUD | `internal/app/agent_binding_service.go` (new) |
+| The read that matters | `internal/app/chat_enqueuer.go` — `ChannelBinder`, `boundAgent`, `resolveChannelThread`, `rebindThread`, `defaultAgent` |
+| Thread pinning | `internal/app/thread_service.go` — the three channel resolvers take an agent, `continueOrFork` carries it, `CreateChannelThread` |
+| HTTP | `internal/transport/http/handlers/agent_bindings.go` (new), `wire.go` (`AgentBindingsResponse`) |
+| Wiring | `cmd/api/{bootstrap,deps,policy,router}.go`, `cmd/discord/main.go` |
+| Dashboard | `apps/dashboard/src/features/settings/agents-tab.tsx` — `BindingsCard` |
+| Types | `apps/backend/tygo.yaml`, `packages/api-types/src/{api,domain}.ts` |
+
+### 2. Decisions worth carrying forward
+
+- **One call site, not the three the ticket named.** The ticket lists the
+  WhatsApp webhook, the Lark webhook and Discord — which exists twice, in the
+  interactions handler's process and in the gateway bot. All four reach
+  `ChatEnqueuer.Enqueue`, so the lookup lives there and the count is one. A
+  channel added next year inherits the binding rather than forgetting it, and
+  the specific failure the ticket warned about — the two Discord paths
+  disagreeing — cannot be expressed.
+
+- **A failed binding lookup stops the turn.** This is the *opposite* of what
+  `agentFor` does two functions above it, and the asymmetry is the point.
+  `agentFor` failing leaves the payload's agent empty and the worker resolves
+  the same default itself, so nothing widens. Falling back here would answer a
+  question asked in the finance room with an agent that can read every source
+  the company has — a scope decision made by an outage. The lookup is on the
+  same control database the thread resolve two lines later needs, so a real
+  failure costs nothing extra.
+
+- **The binding is on the room, not on the person.** A Discord binding keys on
+  the channel id, which means the ops channel answers as Ops for everyone in it.
+  Per-user bindings are a follow-on and would be a second lookup, not a
+  different one.
+
+- **`NormalizePhone` had to move into `domain`.** The allowlist repository owned
+  it privately, and this ticket gives a second table a phone column compared
+  against the same inbound traffic. Two copies of "strip the `whatsapp:` prefix"
+  is a binding that exists and never fires, with nothing to see in either the
+  table or the log — so both ends now call one function, and the write path
+  normalises too.
+
+- **A disabled agent's binding falls back rather than failing.** The join in
+  `AgentForChannel` requires `agents.enabled`. Disabling is how an admin takes
+  an agent out of service; a channel still pointed at one would stop answering
+  with no visible cause. Note this is the reverse of `T-S2`'s rule for a thread
+  already pinned to a disabled agent, and deliberately: there, falling back
+  would *widen* a conversation's access at the moment an admin narrowed the
+  roster; here, the alternative is a dead room.
+
+- **Re-pointing a channel is a delete and a create.** The unique index refuses a
+  second binding on one address and the service says so with the address in the
+  message. An upsert would silently replace a routing rule an admin configured
+  earlier, and "who changed what the ops channel answers as?" would have no
+  answer at all.
+
+### 3. The fork, and why it contradicts `T-S5`'s handover note
+
+`T-S5` §5 left this: *"`forkForAgent` is API-only on purpose. Discord and Lark
+key their threads on a platform identity, and a binding that changed would fork
+every conversation on that channel at once — which is a migration question, not
+a resolver one."*
+
+**This ticket forks anyway**, and the note is worth answering rather than
+quietly overriding.
+
+What forces it is Discord's own threading. A thread is keyed by
+`(company, discord_user_id)` — not by channel — so one person asking in `#ops`
+and then in `#finance` is **one thread**. Without a fork, the second question is
+answered by whichever agent the first room pinned, with the first agent's
+answers still in the memory the second reads. That is `T-S3`'s "the answer came
+from the wrong agent" failure plus two scopes' history in one conversation, and
+it happens on ordinary traffic rather than on a rebinding.
+
+The note's actual worry does not materialise. Nothing forks *at once*: a
+conversation forks on its next message, one at a time, which is the same lazy
+shape the idle-gap classifier already has. And the comparison is made through
+`agentFor` against the *default* when an address is unbound, so the ordinary
+company — no bindings, no pinned threads — forks nothing, ever.
+
+The cost is real and belongs here: on Lark, one reply-thread is one memory by
+definition, and a rebinding splits that memory in two while the Lark thread
+carries on looking like one conversation. The alternative is a Lark chat bound
+to Ops that keeps answering as Analyst until somebody archives the thread, which
+fails the ticket's first acceptance item.
+
+### 4. What is proven, and what is not
+
+Proven, by `go test ./...` (18 new tests across two files):
+
+- A bound Discord channel resolves to its agent, and the lookup is keyed on the
+  channel id rather than on the user who wrote.
+- An inbound `whatsapp:+62…` matches a binding stored as `+62…`, in both
+  directions — the write normalises and the read normalises.
+- An unbound address asks for no agent; a deployment with no binder wired
+  behaves exactly as it did before this ticket.
+- A failed lookup stops the turn instead of widening it.
+- A binding that disagrees with the resolved thread forks, carrying the Discord
+  identity onto the new thread; one that agrees continues; a brand-new thread is
+  never forked (which would leave an empty conversation behind on every first
+  message).
+- Removing a binding returns the channel to the company default on its next
+  message.
+- An idle-gap fork keeps the parent's agent, and a binding outranks the parent.
+- The write refusals: another company's agent, an unbindable channel
+  (`dashboard`, `api`), an empty or oversized identifier, and a duplicate
+  address — with the refusal naming the identifier the channel actually wants.
+
+Not proven, and needing a database and a live channel:
+
+- `agent_actions.agent_id` on a real Discord turn in a bound channel.
+- The unique index rejecting the second binding (the service maps the violation;
+  nothing has raised one).
+- The FK cascade removing a binding when its agent is deleted.
+- Any Lark or WhatsApp traffic at all.
+
+### 5. The gate, and how to run it
+
+```bash
+make infra && make seed                    # then apply 033
+migrate -path apps/backend/migrations/control -database "$CONTROL_DB_URL" up
+```
+
+Then, in the dashboard as an admin: Settings → Agents → Channel bindings, bind
+the ops Discord channel to an Ops agent scoped to one source. Ask a scoped
+question in that channel, and paste the reply beside
+
+```sql
+SELECT agent_id, tool_name, status FROM agent_actions
+ WHERE company_id = $1 ORDER BY created_at DESC LIMIT 5;
+```
+
+Then the same question in an unbound channel — it must run on the default — and
+then delete the Ops agent and ask again: the binding goes with it and the
+channel answers on the default.
+
+**Check `asynq:servers` against `ps` first.** The finding below cost an hour on
+the last live gate for these tickets and applies unchanged: a stale worker on
+the same Redis will happily serve a turn with none of this code in it, and the
+result looks exactly like a resolver bug.
+
+### 6. For the next ticket in the track
+
+- `ChatEnqueuer` now has three sources of an agent — a caller's pick
+  (`pickAgent`), a channel binding (`boundAgent`) and the company default
+  (`defaultAgent`). Anything adding a fourth should go through `agentFor` for
+  the comparison, not against `thread.AgentID`: a thread with a NULL agent is
+  *running the default*, and comparing against the column forks the ordinary
+  case on every turn.
+- `domain.BindableChannels` is served to the dashboard rather than mirrored
+  there. A fifth channel becomes bindable by appending to that slice.
 
 ---
 

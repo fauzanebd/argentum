@@ -3,7 +3,14 @@
 // `/api` response bodies that are not domain entities, from
 // apps/backend/internal/transport/http/handlers/wire.go.
 import type { BudgetState } from "./events.js";
-import type { Agent, APIKey, APIKeyRequestStats, APIRequestError } from "./domain.js";
+import type {
+  Agent,
+  AgentChannelBinding,
+  APIKey,
+  APIKeyRequestStats,
+  APIRequestError,
+  Channel,
+} from "./domain.js";
 
 //////////
 // source: wire.go
@@ -32,6 +39,18 @@ export interface AgentToolInfo {
 export interface AgentsResponse {
   agents: (Agent | undefined)[];
   tools: AgentToolInfo[];
+}
+/**
+ * AgentBindingsResponse is the body of `GET /api/agent-bindings` (T-S4).
+ * Channels rides along for the same reason AgentsResponse carries the tool
+ * vocabulary: it is the vocabulary the form beside the table has to offer, and
+ * it is the backend that decides which channels can be bound at all — a
+ * frontend array would have to be edited the day a fifth channel is added, and
+ * nothing would report that it had not been.
+ */
+export interface AgentBindingsResponse {
+  bindings: (AgentChannelBinding | undefined)[];
+  channels: Channel[];
 }
 /**
  * APIKeysResponse is the body of `GET /api/api-keys` (T-13, extended by T-A5).

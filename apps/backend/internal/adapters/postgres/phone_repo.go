@@ -66,8 +66,8 @@ func (r *PhoneRepo) FindCompanyByPhone(ctx context.Context, phoneNumber string) 
 
 // normalizePhone strips whatsapp: prefix and surrounding whitespace so all
 // numbers are stored in a canonical E.164 form.
-func normalizePhone(p string) string {
-	p = strings.TrimSpace(p)
-	p = strings.TrimPrefix(p, "whatsapp:")
-	return p
-}
+//
+// The rule moved to domain.NormalizePhone when T-S4 gave a second table a phone
+// column to compare against inbound traffic. Two copies of "strip the prefix"
+// is a binding that matches on one path and not the other.
+func normalizePhone(p string) string { return domain.NormalizePhone(p) }

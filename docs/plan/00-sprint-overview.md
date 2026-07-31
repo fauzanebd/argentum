@@ -383,7 +383,7 @@ change no one's workflow. Watchers do.
 | Slack / Telegram / email channels  | Additive, low-risk, no workflow change. See `backlog.md`.            |
 | New DB drivers (BigQuery etc.)     | Additive against the driver registry. Pull-driven by demand.         |
 | Multi-agent / planner architecture | `T-16` raises the iteration budget; specialist agents **we** write need eval data first. This is the internal planner, not the tenant roster below. |
-| **The tenant agent roster (`T-S1`→`T-S5`)** | Owner-set 2026-07-29: the customer creates their own Marketing / Ops / HR / Finance agents. **Scheduled for Sprint 2, not deferred** — 9.5d of written tickets that would have displaced `T-A5` and overrun if inserted here. **`T-S1`→`T-S3` were then built out of that order and gated live on 2026-07-30**, so this row is a schedule the tree does not match: **6.0d of Sprint 2 is done**, leaving `T-S4` (2.0d) and `T-S5` (1.5d). `T-A5` — the ticket this row said the roster "would have displaced" — landed 2026-07-30 anyway, so nothing was displaced in the end; what happened is that Sprint 2 started early. Decide re-plan or note at sprint close — see [`../coverage/agent-roster.md`](../coverage/agent-roster.md) §0. |
+| **The tenant agent roster (`T-S1`→`T-S5`)** | Owner-set 2026-07-29: the customer creates their own Marketing / Ops / HR / Finance agents. **Scheduled for Sprint 2, not deferred** — 9.5d of written tickets that would have displaced `T-A5` and overrun if inserted here. **`T-S1`→`T-S3` were then built out of that order and gated live on 2026-07-30**, so this row is a schedule the tree does not match: **the whole 9.5d is done as of 2026-07-31** — `T-S5` and `T-S4` closed the track, both code complete with live gates outstanding. `T-A5` — the ticket this row said the roster "would have displaced" — landed 2026-07-30 anyway, so nothing was displaced in the end; what happened is that Sprint 2 started early. Decide re-plan or note at sprint close — see [`../coverage/agent-roster.md`](../coverage/agent-roster.md) §0. |
 | **Tenant MCP servers as a source (`T-M1`→`T-M4`)** | Owner-set 2026-07-29: the customer registers their own MCP server and their agents call its tools. **Scheduled for Sprint 2, not deferred** — 8.0d of written tickets, and it deps `T-S1`/`T-S2`, which are Sprint 2 themselves. **Not `T-14`**, which is the same protocol pointed the other way: `T-14` serves our tools to their agent, this consumes their tools into ours. |
 | Forecasting / anomaly ML           | Watchers ship with threshold + delta comparators. Statistical anomaly detection is Sprint 2. |
 | SSO / SOC2                         | No enterprise deal is blocked on it yet.                            |
@@ -609,6 +609,10 @@ and `T-S3` are done and gated live, so the roster track has 3.5d left (`T-S4`
 2.0d, `T-S5` 1.5d). That reduces whichever of the two figures below turns out to
 be right by the same 6.0 — it does not settle which one it is.
 
+**Updated 2026-07-31: the remaining 3.5 are delivered too.** `T-S5` and `T-S4`
+both landed, so the roster track is 9.5d complete and none of it is left. Both
+carry an unrun live gate and an unapplied migration (`033`) — see §8a.
+
 **And the ~40.5 above does not reconcile.** The same set of tickets totals 44.5
 by `01-tickets.md`'s own phase figures (23.5 + 11.5 + 9.5). One of the two is
 wrong, neither has been checked, and the gap is 4.0 days — a working week's
@@ -698,6 +702,15 @@ knot, since `T-M3`'s dependency on it is now satisfied rather than pending.
 Code complete with the live gate outstanding, so the day is spent either way;
 what is not yet true is the acceptance.
 
+**`T-S4` landed the same day too (2.0d): 51.0 days remain committed**, and the
+roster track is finished — 9.5d of it, all five tickets, against a row in §3
+that still calls the track "scheduled for Sprint 2, not deferred". Row 8 of
+§8b's list comes off with it. Same shape as `T-S5`: code complete, `make check`
+clean, and a live gate that needs migration `033` applied to a database. **Two
+of the track's five tickets are now carrying unrun gates**, which is a different
+thing from two days of unfinished work and should be read as such — the cheapest
+way to close both is one stack, one migration run, and an afternoon.
+
 ### 8b. The order
 
 Cut from the top. One list, not four — the per-track markers (`#2a`, `#2b`,
@@ -720,7 +733,7 @@ citing the wrong ticket; cite the ticket id.
 | 5 | `T-17` OTel tracing | 2.0 | Sprint 1 `#3` | Keep the `/metrics` half: it now carries an open finding of its own (§5, `/metrics` is on the public router) and `T-A5` added per-key labels behind `METRICS_TOKEN` rather than fixing it. Cutting the tracing does not cut that, and the header already scopes the cut to "tracing only". |
 | 6 | `T-12b` `http_action` | 1.5 | Sprint 1 `#4` | Keep `send_message` — it is what makes watchers useful. |
 | 7 | `T-B4` "Generate with AI" | 2.0 | — | The owner's specified create flow: type a description, press the button, get it improved plus a persona. Cutting it leaves `T-B3`'s six templates and the blank form — a good agent is still creatable, but the tenant who picks no template is back to writing a prompt, which is the behaviour this track exists to remove. **It deps `T-B1`/`T-B3` only**, so cutting `T-B2` at position 2 does not strand it. |
-| 8 | `T-S4` channel bindings | 2.0 | `#2a` | The roster stays dashboard-only. Discord/Lark/WhatsApp keep answering on the company default, which is today's behaviour — a cut here removes an improvement, not a capability. |
+| 8 | ~~`T-S4` channel bindings~~ — **delivered 2026-07-31** | 2.0 | `#2a` | Was: the roster stays dashboard-only, and Discord/Lark/WhatsApp keep answering on the company default. Moot — a bound channel now answers as its own agent, and an unbound one still answers as the default, so the cut's own fallback is the shipped behaviour. |
 | 9 | `T-M3` MCP legibility — **partially, never whole** | 1.0 | `#3a` | Cut the per-server usage breakout and the thread-view labelling. **Keep the agent↔server binding control.** `T-M1` creates servers and `T-M2` calls them, but the binding UI is in `T-M3`; cut whole, the track ships reachable only by writing `agent_mcp_servers` rows by hand. Same shape as Sprint 1's `T-22` cut. |
 | 10 | ~~`T-S5` `agent_id` on `/v1`~~ — **delivered 2026-07-31** | 1.5 | `#2b` | Was: cutting it strands `T-M3`, which deps it, so cut 10 only after 9 is already gone. Moot — the dependency is satisfied, and `T-M3` can now be cut or kept on its own terms. |
 | 11 | `T-23` widget config UI | 1.5 | Sprint 1 `#8` | Ship the widget on hardcoded defaults. |
@@ -765,7 +778,11 @@ visible afterwards. This is the third, written on the day it was made.
 **The running order becomes:** `T-S5` → `T-S4` → `T-B1` → `T-B2`/`T-B3` →
 `T-B4` → `T-M1` → `T-M2` → `T-M3` → `T-M4`.
 
-**`T-S5` delivered 2026-07-31**, so the order in flight is `T-S4` onwards.
+**`T-S5` and `T-S4` both delivered 2026-07-31**, so the roster track is done and
+the order in flight is `T-B1` onwards. What the two leave behind is not work but
+evidence: both are code complete with a live gate that has not run, and `033` is
+unapplied. That is the same debt `T-S1`→`T-S3` carried for a day and closed in
+one sitting on 2026-07-30.
 
 **What slips, in days:**
 
