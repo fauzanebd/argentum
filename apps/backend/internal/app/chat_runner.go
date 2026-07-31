@@ -49,6 +49,14 @@ type AgentSpec struct {
 	// language and the formatting contract, and a customer-authored prompt
 	// that could replace them would be a self-service route back to C-1.
 	Persona string
+	// CompanyContext is the tenant's business profile, rendered (T-B1). It is
+	// composed ahead of the persona: facts about the business, then the
+	// instructions that act on them, and both after the shared rules.
+	//
+	// Empty for a company that has never described itself, which is every
+	// company until somebody fills the form in — and an empty string composes
+	// to a byte-identical prompt.
+	CompanyContext string
 	// ToolNames restricts this turn to a subset of the registry, by name.
 	// Empty means every tool — the roster's rule, stated once in
 	// domain.Agent.AllowsTool and not restated here.
@@ -100,6 +108,17 @@ type AgentLoader interface {
 	GetDefault(ctx context.Context, companyID string) (*domain.Agent, error)
 }
 
+// CompanyContextLoader is the half of the business profile a turn needs
+// (T-B1): the company's row, or ErrNotFound when it has none.
+//
+// domain.CompanyProfileRepository satisfies it. Narrowed at the consumer for
+// the same reason AgentLoader is — a runner that could write the profile is a
+// runner that could be asked to — and nil stays legal: a turn with no profile
+// is what every turn was before this ticket, and it must keep working.
+type CompanyContextLoader interface {
+	GetByCompany(ctx context.Context, companyID string) (*domain.CompanyProfile, error)
+}
+
 // ScheduledRunMarker is the narrow contract ChatRunner uses to close out
 // a scheduled_task_runs row when the agent finishes (or errors). Defined
 // as an interface so the worker can pass *ScheduledTaskService while
@@ -137,6 +156,7 @@ type ChatRunner struct {
 	budgetFor    BudgetResolver
 	actions      domain.AgentActionRepository
 	roster       AgentLoader
+	profiles     CompanyContextLoader
 
 	// Embedding-based table picker. Both must be non-nil to inject hints;
 	// otherwise the runner silently skips and the agent falls back to the
@@ -221,6 +241,16 @@ func (r *ChatRunner) WithActionLog(repo domain.AgentActionRepository) *ChatRunne
 // a settings table is empty" is not an acceptable failure.
 func (r *ChatRunner) WithRoster(l AgentLoader) *ChatRunner {
 	r.roster = l
+	return r
+}
+
+// WithCompanyContext lets a turn read what business it is working for (T-B1).
+//
+// Optional in the same way WithRoster is, and for the same reason: a company
+// that has never filled the form in must get exactly the agent it has today,
+// and so must a deployment where this was never wired.
+func (r *ChatRunner) WithCompanyContext(l CompanyContextLoader) *ChatRunner {
+	r.profiles = l
 	return r
 }
 
@@ -330,6 +360,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		// not in p.Message, so the input guardrails never see it, and it is
 		// not in the shared system prompt, so it applies to this turn alone.
 		SystemAddendum: p.Directive,
+		CompanyContext: r.companyContext(ctx, p.CompanyID),
 		Persona:        personaOf(agentRow),
 		ToolNames:      toolNamesOf(agentRow),
 	})
@@ -434,6 +465,43 @@ func (r *ChatRunner) resolveAgent(ctx context.Context, p queue.ChatRunPayload) *
 		return nil
 	}
 	return def
+}
+
+// companyContext renders the tenant's business profile for this turn (T-B1),
+// or returns empty.
+//
+// Empty is the answer in every failure: no loader wired, no profile, or a
+// lookup that failed. A company description is context that makes an answer
+// better, never the thing that makes an answer possible — refusing to run a
+// turn because a settings row could not be read would trade a slightly less
+// informed answer for no answer at all. The failed read is logged so it is
+// visible; unlike the roster's, it is not fail-closed, because nothing about
+// this block is a permission.
+//
+// One read per turn, beside the agent lookup — not per tool call, not in a
+// middleware.
+func (r *ChatRunner) companyContext(ctx context.Context, companyID string) string {
+	if r.profiles == nil {
+		return ""
+	}
+	p, err := r.profiles.GetByCompany(ctx, companyID)
+	if err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			logrus.WithError(err).WithField("company_id", companyID).
+				Warn("business profile lookup failed; running this turn without the company block")
+		}
+		return ""
+	}
+	block, truncated := p.ContextBlock()
+	if truncated {
+		// The tenant sees this in the dashboard too. Logged here as well
+		// because the turn is where it costs something, and "the agent did not
+		// know X" is asked about a turn, not about a form.
+		logrus.WithFields(logrus.Fields{
+			"company_id": companyID, "cap_tokens": domain.CompanyContextMaxTokens,
+		}).Info("business profile truncated to the context cap")
+	}
+	return block
 }
 
 // scopeOf, personaOf and toolNamesOf are the three things a turn takes from an

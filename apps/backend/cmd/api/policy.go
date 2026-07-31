@@ -85,6 +85,15 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/settings": domain.RoleMember,
 	"PUT /api/settings": domain.RoleAdmin,
 
+	// The business profile (T-B1). Read is member because it is a description
+	// of the company every member already works for, and because the agents
+	// page next to it is member-readable for the same reason. Write is admin:
+	// this text joins the system prompt of every agent on every channel, so a
+	// member who could edit it could rewrite what all four agents believe the
+	// business is.
+	"GET /api/company/profile": domain.RoleMember,
+	"PUT /api/company/profile": domain.RoleAdmin,
+
 	// Report branding (T-R5). Read is admin rather than member, unlike the
 	// other settings reads: this is the one panel where the *read* is the
 	// interesting operation. GET returns nothing a member needs — no report

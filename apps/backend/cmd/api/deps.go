@@ -65,6 +65,11 @@ type apiDeps struct {
 	// reads the same table on every inbound message and must not be handed a
 	// service that can write to it.
 	agentBindingSvc *app.AgentBindingService
+	// The company business profile (T-B1): what this workspace does, in the
+	// tenant's own words. The API writes it; the worker reads the same table on
+	// every turn through its own repository, which is why nothing here is shared
+	// with the runner.
+	companyProfileSvc *app.CompanyProfileService
 	// The `/v1` report surface (T-A2). docGen and storageSvc are nil on a
 	// deployment without object storage — the same condition that leaves
 	// generate_document unregistered in the worker — and the routes that need

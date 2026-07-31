@@ -10,6 +10,7 @@ import type {
   APIKeyRequestStats,
   APIRequestError,
   Channel,
+  CompanyProfile,
 } from "./domain.js";
 
 //////////
@@ -51,6 +52,36 @@ export interface AgentsResponse {
 export interface AgentBindingsResponse {
   bindings: (AgentChannelBinding | undefined)[];
   channels: Channel[];
+}
+/**
+ * CompanyProfileResponse is the body of `GET|PUT /api/company/profile` (T-B1).
+ * RenderedBlock rides along because a prompt fragment the tenant cannot read is
+ * a prompt fragment they cannot debug: the form takes four fields and the model
+ * reads one composed string, and the only way "this is what your agent sees" is
+ * true is if the backend that composes it also returns it.
+ * Profile is present even when the company has no row — an empty form with the
+ * defaults, so the dashboard renders one shape rather than two.
+ */
+export interface CompanyProfileResponse {
+  profile?: CompanyProfile;
+  /**
+   * Exists distinguishes "never filled in" from "filled in and then
+   * emptied". The dashboard uses it to decide between a prompt to describe
+   * the business and a saved-but-blank state.
+   */
+  exists: boolean;
+  rendered_block: string;
+  /**
+   * Truncated is true when the block hit the cap. The UI says so; the turn
+   * carries the shortened text either way.
+   */
+  truncated: boolean;
+  /**
+   * BlockTokenLimit is the cap in tokens, echoed rather than duplicated in the
+   * frontend — the number is a backend policy and the warning beside the
+   * textarea should not have its own copy of it.
+   */
+  block_token_limit: number /* int */;
 }
 /**
  * APIKeysResponse is the body of `GET /api/api-keys` (T-13, extended by T-A5).

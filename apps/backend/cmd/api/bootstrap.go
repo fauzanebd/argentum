@@ -301,6 +301,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		})),
 	)
 	deps.agentBindingSvc = app.NewAgentBindingService(bindingRepo, agentRepo)
+	deps.companyProfileSvc = app.NewCompanyProfileService(pgctl.NewCompanyProfileRepo(controlDB))
 	// Signup seeds the new company's first agent. Wired after the roster
 	// exists rather than at NewAuthService, which runs several hundred lines
 	// earlier and before there is a connection repository to validate against.

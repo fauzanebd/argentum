@@ -518,6 +518,98 @@ export interface Company {
 }
 
 //////////
+// source: company_profile.go
+
+/**
+ * CompanyProfile is what business this workspace is, in the tenant's own words
+ * (T-B1).
+ * The agent already reads every table name through get_schema, and table names
+ * describe structure, not meaning. Nothing in `orders`, `stores` and
+ * `stock_movements` says a row in `stores` is a shop with a manager and a rent
+ * bill, or that a stock-out is the number the operations lead is actually
+ * asking about. This row is where that is written down once, for every agent —
+ * a company fact belongs to the company, not to five personas that drift five
+ * ways.
+ * It is facts, never instructions. The persona carries instructions and is
+ * kept in a separate block for exactly that reason (locked decision 1): a
+ * stale fact is corrected in one place for every agent, a wrong instruction is
+ * corrected on the agent that carries it.
+ * A company with no row is the ordinary case and produces no block at all —
+ * same rule as the roster's empty allowlist, for the same reason.
+ */
+export interface CompanyProfile {
+  company_id: string;
+  /**
+   * Industry is the one-line label: "grocery retail", "logistics", "SaaS".
+   */
+  industry: string;
+  /**
+   * Description is what the business does. The block's substance.
+   */
+  description: string;
+  /**
+   * ContextNotes is free-form: markets, seasonality, what "good" looks like.
+   * One field rather than six, because we do not yet know which six.
+   */
+  context_notes: string;
+  /**
+   * FiscalYearStartMonth is 1-12. It changes what "last quarter" means, which
+   * is the single most common way an analytics answer is right about the
+   * numbers and wrong about the period.
+   */
+  fiscal_year_start_month: number /* int */;
+  /**
+   * Source is provenance: who wrote this. T-B2 infers profiles, and an
+   * inferred profile the tenant has never looked at must be distinguishable
+   * from their own words — in the dashboard, and to the ticket that fills it
+   * in (locked decision 2).
+   */
+  source: ProfileSource;
+  /**
+   * InferredAt is when T-B2 last drafted this. Nil for a profile nobody
+   * inferred.
+   */
+  inferred_at?: string;
+  /**
+   * UpdatedBy is the admin who last saved it, or empty once that user is
+   * deleted — the column is ON DELETE SET NULL, because a departed admin
+   * must not take the company's profile with them.
+   */
+  updated_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+/**
+ * ProfileSource is how a profile came to say what it says.
+ */
+/**
+ * ProfileSourceHuman is a profile the tenant typed.
+ */
+export const ProfileSourceHuman = "human";
+/**
+ * ProfileSourceInferred is T-B2's draft, applied but not yet edited.
+ */
+export const ProfileSourceInferred = "inferred";
+/**
+ * ProfileSourceInferredEdited is a draft the tenant has since corrected.
+ * It is a third value rather than a flip to "human" because "they read our
+ * guess and kept most of it" and "they wrote this from scratch" are
+ * different facts about the same text.
+ */
+export const ProfileSourceInferredEdited = "inferred_edited";
+export type ProfileSource = typeof ProfileSourceHuman | typeof ProfileSourceInferred | typeof ProfileSourceInferredEdited;
+/**
+ * CompanyContextMaxTokens caps the rendered block. The profile is
+ * tenant-editable text that joins the system prompt on every turn of every
+ * agent and every channel: uncapped, it is both a cost multiplier the person
+ * typing it never sees a meter for and a way to push the real instructions out
+ * of a context window.
+ * 600 tokens is roughly a page — long enough to describe a business, short
+ * enough that nobody pastes their annual report into it.
+ */
+export const CompanyContextMaxTokens = 600;
+
+//////////
 // source: connection.go
 
 /**

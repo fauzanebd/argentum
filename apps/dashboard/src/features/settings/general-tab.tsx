@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2 } from "lucide-react";
 import { useModels } from "@/lib/use-models";
 import { apiErrorMessage } from "@/lib/api-error";
+import { BusinessProfileCard } from "./business-profile-card";
 
 export function GeneralTab() {
   const [currency, setCurrency] = useState("USD");
@@ -84,6 +85,8 @@ export function GeneralTab() {
           )}
         </CardFooter>
       </Card>
+
+      <BusinessProfileCard />
 
       {models && (
         <Card>

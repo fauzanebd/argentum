@@ -64,6 +64,7 @@ packages:
       domain.Agent: "Agent"
       domain.AgentChannelBinding: "AgentChannelBinding"
       domain.Channel: "Channel"
+      domain.CompanyProfile: "CompanyProfile"
       domain.APIKey: "APIKey"
       domain.APIKeyRequestStats: "APIKeyRequestStats"
       domain.APIRequestError: "APIRequestError"
@@ -79,6 +80,7 @@ packages:
         APIKeyRequestStats,
         APIRequestError,
         Channel,
+        CompanyProfile,
       } from "./domain.js";
 
   # Inbound webhook envelopes. Named by the ticket, and generated for the same
