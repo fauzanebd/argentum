@@ -10,7 +10,7 @@ appends its own section.
 | ------ | ---- | ---- | ----- |
 | `T-B1` | `company_profiles`, editing, and the live context block | 2.0d | **done — gate run live 2026-07-31** |
 | `T-B2` | Infer the business from the connected source | 2.5d | not started |
-| `T-B3` | Agent templates as a config file | 2.0d | not started |
+| `T-B3` | Agent templates as a config file | 2.0d | **done — gate run live 2026-08-01** |
 | `T-B4` | "Generate with AI" on the agent form | 2.0d | not started |
 
 ---
@@ -238,3 +238,177 @@ figure was queried, not that it was rendered.
 - The 600-token cap applies to whatever `T-B2` writes. An inference that
   produces two paragraphs is fine; one that pastes a schema summary will be cut
   in the middle, and the tenant will see the marker before they see the value.
+
+---
+
+## T-B3 · Agent templates and the guided create flow
+
+### 1. What ships
+
+Six starting points in a file the binary loads, a gallery in front of the create
+form, and a column recording which card an agent came from. Nothing else about a
+template survives the save.
+
+| Layer | File |
+| ----- | ---- |
+| The gallery | `apps/backend/config/agent_templates.yaml` |
+| Loader + validation | `internal/agenttemplates/templates.go` (+ `golden_test.go`) |
+| Release tool catalogue | `internal/tools/registry.go` — `AllNames()` |
+| Config | `internal/config/config.go` — `AgentTemplatesPath` (`AGENT_TEMPLATES_PATH`) |
+| Boot | `cmd/api/bootstrap.go` — load, or refuse to start |
+| Schema | `migrations/control/035_agents_template_key.{up,down}.sql` |
+| Entity | `internal/domain/agent.go` — `TemplateKey` |
+| Repository | `internal/adapters/postgres/agent_repo.go` — written on insert, never on update |
+| Service | `internal/app/agent_service.go` — `WithTemplates`, `Templates()`, create-only key validation |
+| Wire | `internal/transport/http/handlers/wire.go` — `AgentTemplate`, `AgentsResponse.Templates` |
+| Dashboard — gallery | `apps/dashboard/src/features/settings/agents-tab.tsx` — `TemplateGallery`, `draftFromTemplate`, `matchSources` |
+| Dashboard — chat | `features/chat/use-agents.ts` (`starterQuestionsFor`), `chat-page.tsx` (`StarterQuestions`) |
+
+No new route. The gallery rides on `GET /api/agents` beside the tool vocabulary,
+which is where `T-S1` put the same class of thing and is why a member reading
+templates needs no policy row of its own.
+
+### 2. The two lists a template is checked against, and why they differ
+
+This is the one non-obvious thing in the ticket, and getting it backwards
+either breaks a boot or breaks a save.
+
+- **`tools.AllNames()` — every tool this *release* can register.** What the
+  templates file is validated against at boot. A typo in a file we ship has to
+  fail everywhere, not only on the deployments that happen to run the tool it
+  misspelled.
+- **`tools.Names(tools.Registry(…))` — what *this deployment* registered.** What
+  a tenant's submitted allowlist is checked against, and what `Set.ForRegistry`
+  narrows each card's `suggested_tools` to before it reaches the browser.
+
+`generate_document` is the whole reason: it exists only where object storage
+does. Validating the file against the live registry would refuse to boot any
+deployment without MinIO; shipping the card unnarrowed would pre-tick a checkbox
+whose save the same service rejects, with an error naming a tool the admin never
+chose. Both halves were run — see §4.
+
+`AllNames()` is built from `Registry` with the one optional dependency present
+rather than being a second literal list, so it cannot drift from the registry
+above it.
+
+### 3. Decisions, and where each one lives in the code
+
+- **Templates are code, not tenant rows** (locked decision 4). One YAML file,
+  loaded at boot, golden test over the real file — `config/guardrails.yaml` is
+  the prior art down to the test's opening comment. Nothing seeds a row per
+  company, so a persona that turns out wrong is a one-line commit.
+- **`template_key` is analytics only, never read at turn time.** It is absent
+  from the `UPDATE` statement and absent from every turn-time path; the only
+  thing that reads it is the dashboard, deciding which starter questions to
+  offer. `agent_repo.go`'s comment says so beside the statement that omits it.
+- **A persona describes a job, never an industry.** The business specifics
+  arrive from `T-B1`'s block. `TestEveryPersonaDefersToTheCompanyProfile` pins
+  the handoff by asserting every persona contains *"described above"* — a card
+  that stops referring to the company block has started describing an industry,
+  which is wrong for the next tenant and tells them nothing.
+- **The blank path is a card, not a link.** Same size, same border, same
+  padding; only the icon differs. It shipped with a dashed border and that read
+  as the consolation prize, which is the one thing it must not be — changed
+  after looking at the rendered gallery.
+- **Source hints show their working.** A pre-ticked source silently scopes an
+  agent away from its data, so every tick carries a `matched invoice` badge and
+  one click clears the group. Touching a checkbox drops the attribution: after
+  that the tick is the admin's, and crediting a template for it would be a lie.
+
+### 4. Proven
+
+Live against `:8099` (Redis DB **4**, so the stale worker still registered on
+DB 3 from the `T-B1` gate could not pick a turn up — [`agent-roster.md`](agent-roster.md)
+§1 is why that check happens first now).
+
+| Acceptance | Evidence |
+| ---------- | -------- |
+| Picking Finance prefills name, persona, tools and matched sources | Form read back: `name=Finance`, persona = the card's, 4 tools ticked, 1 database ticked with badge `matched invoice` |
+| …saving produces an ordinary roster row and a turn runs on it | Row below; the turn answered with margin, profit margin and an explicit *"Definisi yang Digunakan"* section — the persona's own instruction to state the definition applied |
+| Start from blank produces today's empty form and today's agent | Blank form read back `{name:"", persona:"", ticked:1}` (the Enabled box); row stores `template_key=''`, `allowed_tools={}` |
+| Editing prefilled text before saving persists the edit | Operations agent stored `EDITED BY THE TENANT. You serve the operations…` |
+| Changing a template's persona and redeploying changes no existing agent | API restarted on a file whose finance persona began `REDEPLOYED TEXT —`; the card served the new text, both Finance agents still stored the old |
+| A template suggesting a tool absent from this deployment saves without it | Second API booted with `MINIO_ENDPOINT=`: registry lost `generate_document`, every card's `suggested_tools` narrowed to 3, creating from Finance saved `['get_schema','run_sql','create_visualization']` — 201, no error |
+| A malformed `agent_templates.yaml` fails at boot with a named error | Three fatals, quoted below |
+| A member gets 200 listing templates and 403 creating an agent | `GET /api/agents → 200`, 6 templates; `POST /api/agents → 403 {"error":"admin only"}` |
+| `make types-check` is red if the template payload type changes | Added a field to `AgentTemplate`: `1 file(s) differ from the Go structs: api.ts`, exit 1 |
+
+```
+     name    | template_key |             persona_head              |                   allowed_tools                    | srcs
+ ------------+--------------+---------------------------------------+----------------------------------------------------+------
+  Analyst    |              |                                       | {}                                                 |    0
+  Finance    | finance      | You serve the finance function of the | {get_schema,run_sql,create_visualization,generate…} |    1
+  Operations | operations   | EDITED BY THE TENANT. You serve the o | {get_schema,run_sql,create_visualization,generate…} |    0
+  People     | people       | You serve the people function of the  | {get_schema,run_sql,create_visualization}          |    0
+  Blank      |              |                                       | {}                                                 |    0
+```
+
+`Finance` holds one source because the connection is labelled *"Retail POS —
+invoice and order history"* and the card's `invoice` hint matched it. `People`
+and `Operations` matched nothing, so they hold none — which the roster reads as
+*all*, the rule `T-S1` already set for an empty allowlist.
+
+The three boot failures, verbatim:
+
+```
+agent templates: …/broken-dup.yaml: template "finance" is defined twice
+agent templates: …/broken-tool.yaml: template "finance" suggests unknown tool "send_invoice_email"
+agent templates: read agent templates: open …/missing.yaml: no such file or directory
+```
+
+### 5. What the same question got from three agents
+
+One question — *"How did we do last month?"* — to three agents on the same
+warehouse. The personas are visible in the shape of the answers, which is the
+only evidence that matters for a ticket whose product is prompt text.
+
+- **Finance** answered in P&L terms and closed with a *"Definisi yang
+  Digunakan"* section spelling out what it counted as revenue, as profit, and
+  which dates it used. That section exists because the persona says to state the
+  definition applied rather than choose one silently.
+- **Operations** answered in throughput: average daily sales, transactions per
+  day, best day (Dec 7, $199.7M) and weakest (Dec 25, $77.8M), channel volumes —
+  and flagged the two-unique-customers anomaly rather than averaging past it,
+  which is the persona's *name the exception* line.
+- **Blank** produced a competent, undirected summary of everything, and closed
+  by offering to build a dashboard. Nothing wrong with it; it is what the
+  product gave every tenant before this ticket, and it is the control.
+
+### 6. Known limits
+
+- **Source hints match the label and the generated description, not table
+  names.** The ticket asks for table names, and no `/api` route exposes a
+  source's tables to the browser. The connection's description is generated
+  *from* those tables by the connection describer, which is the closest this
+  screen gets without a schema round trip per connection — but a source whose
+  description has not been generated yet matches on its label alone. `T-B2`
+  puts real per-source entities in reach; a hint matcher on the backend, fed by
+  `source_profiles`, is the honest version of this.
+- **The wire type is a hand-written projection of the config type.** Six fields
+  copied in `templateInfo()`. Deliberate — the YAML shape is one the file's
+  authors may extend, and every field of it would otherwise reach the browser
+  the day it was added — but it is two structs, and adding a field to the card
+  means editing both.
+- **Nothing shows an agent's provenance in the roster list.** `template_key` is
+  stored and logged, and no UI reads it except the starter questions. A badge
+  saying *"from Finance"* was deliberately not added: it reads as a live link to
+  a file that has none.
+- **The Finance turn answered an English question in Indonesian.** Predates this
+  ticket and is unrelated to templates — the persona and the question were both
+  English. Worth a look by whoever owns the language selection; it is not a
+  regression from this change (the Operations and Blank turns, same tenant, same
+  minute, answered in English).
+
+### 7. Handover to T-B4
+
+- `Set.Has` and `Set.All` are the only lookups `T-B4` needs; the generate flow
+  writes into the same `AgentDraft` fields a template fills, and `template_key`
+  is orthogonal to it — an agent generated with AI from the blank card keeps
+  `template_key=''`, which stays true.
+- `AgentInput.TemplateKey` is create-only and validated against the loaded
+  gallery. `T-B4` must not start sending a key on update to record that a
+  persona was regenerated; that is a different fact and wants its own column if
+  it is worth recording at all.
+- The starter questions already render from `starterQuestionsFor(agent)`. A
+  generated agent has none, which is the correct empty state and not a gap to
+  fill with generated questions unless somebody asks for them.

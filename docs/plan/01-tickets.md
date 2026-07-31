@@ -4377,14 +4377,14 @@ templates:
 
 ### Acceptance
 
-- [ ] Picking "Finance" prefills name, persona, tools and matched sources; saving produces an ordinary roster row and a turn runs on it unchanged
-- [ ] "Start from blank" produces today's empty form and today's agent
-- [ ] Editing prefilled text before saving persists the edit — the stored persona is the tenant's text, not the template's
-- [ ] Changing a template's persona in `agent_templates.yaml` and redeploying changes **no existing agent**
-- [ ] A template suggesting a tool absent from this deployment's registry saves without it — verified by unsetting object storage and creating from a template that suggests `generate_document`
-- [ ] A malformed `agent_templates.yaml` (duplicate key, unknown tool) fails at boot with a named error
-- [ ] A member gets 200 listing templates and **403 creating an agent** from one
-- [ ] `make types-check` is red if the template payload type changes without regeneration
+- [x] Picking "Finance" prefills name, persona, tools and matched sources; saving produces an ordinary roster row and a turn runs on it unchanged *(4 tools ticked, one database ticked with the badge `matched invoice`; the turn answered in P&L terms and closed with the definitions it applied)*
+- [x] "Start from blank" produces today's empty form and today's agent *(form read back `{name:"", persona:"", ticked:1}` — the Enabled box; the row stores `template_key=''`, `allowed_tools={}`)*
+- [x] Editing prefilled text before saving persists the edit — the stored persona is the tenant's text, not the template's *(`EDITED BY THE TENANT. You serve the operations…`)*
+- [x] Changing a template's persona in `agent_templates.yaml` and redeploying changes **no existing agent** *(card served `REDEPLOYED TEXT — …`; both Finance agents still stored the old persona)*
+- [x] A template suggesting a tool absent from this deployment's registry saves without it — verified by unsetting object storage and creating from a template that suggests `generate_document` *(second API on `MINIO_ENDPOINT=`: every card narrowed to 3 tools, Finance saved 201 without it)*
+- [x] A malformed `agent_templates.yaml` (duplicate key, unknown tool) fails at boot with a named error *(three fatals — twice-defined key, unknown tool, missing file)*
+- [x] A member gets 200 listing templates and **403 creating an agent** from one *(200 with 6 templates; `{"error":"admin only"}`)*
+- [x] `make types-check` is red if the template payload type changes without regeneration *(added a field: `1 file(s) differ`, exit 1)*
 
 ### Gate
 
@@ -4392,6 +4392,19 @@ templates:
 from three templates and one from blank, paste the four rows from `agents`, and
 run one turn against each showing the persona took effect. Paste the boot
 failure for a deliberately broken templates file. Paste the member's 403.
+
+**Run live 2026-08-01** — transcripts, the two-registry rule and three known
+limits in [`../coverage/business-context.md`](../coverage/business-context.md)
+§T-B3. Two things the ticket did not anticipate. **The tool list a template is
+validated against is not the list its checkboxes are narrowed to** — validating
+the file against the live registry would refuse to boot every deployment without
+object storage, so validation uses a new `tools.AllNames()` (the release's tools)
+and narrowing uses the registry (this deployment's). **Source hints cannot match
+table names**: no `/api` route exposes a source's tables to the browser, so they
+match the connection's label and its generated description, which is derived from
+those tables. The gallery's blank card also shipped with a dashed border and was
+changed to the same border as the six after looking at it — "same size and
+weight" is in this ticket for a reason.
 
 ### Out of scope
 

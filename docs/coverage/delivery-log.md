@@ -1433,6 +1433,57 @@ printed at the right scale.
 Record, decisions, transcripts and both findings:
 [`business-context.md`](business-context.md) §T-B1.
 
+`T-B3` the agent nobody has to write a prompt for
+
+Creating an agent was a name, an empty textarea and two checkbox groups — which
+asked the customer to write a system prompt, a job this repo has spent `T-16`,
+`T-A2b` and one locked decision learning is not easy. The measurable failure was
+never a bad persona; it was an empty one, and an agent saved with
+`persona_prompt = ''` is the default agent with a different name. Now the create
+button opens a gallery: six templates — Finance, Sales, Operations, Marketing,
+People, Customer Support — and a **Start from blank** card of the same size,
+same border and same weight, because the blank path is a supported way to create
+an agent rather than the consolation prize. It shipped dashed and was changed
+after looking at it.
+
+Templates are **code, not tenant rows** — `config/agent_templates.yaml`, loaded
+at boot like `config/guardrails.yaml`, with a golden test over the real file.
+That is the answer to the backlog's objection that shipping four guesses freezes
+the guess: a persona that turns out wrong is a one-line commit reaching every
+tenant who has not edited theirs, not a migration that cannot reach the tenant
+who has. And the template no longer has to carry industry knowledge at all —
+`T-B1`'s block supplies the business, so a card describes a *job* and is right
+for a retailer and a bank at once. A test pins that handoff by failing any
+persona that stops saying "the business described above".
+
+Picking a card fills an ordinary draft — persona, suggested tools, and sources
+pre-ticked by hint with the matching word shown beside each one, because a
+silently pre-ticked source scopes an agent away from its own data. What saves is
+a plain `AgentDraft`; `agents.template_key` (migration `035`) records where it
+came from and is **never read at turn time**. Editing the file changes no agent
+that already exists, which the gate proved by redeploying a mangled persona and
+reading the old one back off both Finance agents.
+
+The ticket's one wrong assumption, found at boot: **the tool list a template is
+validated against is not the list its checkboxes are narrowed to.**
+`generate_document` exists only where object storage does, so validating the
+file against the live registry would refuse to boot every deployment without
+MinIO. Validation now uses `tools.AllNames()` — the release's tools, built from
+the same registry so it cannot drift — and the browser gets each card narrowed
+to what this process actually registered. Both halves ran: a second API on
+`MINIO_ENDPOINT=` served every card at three tools and saved a Finance agent
+without the fourth.
+
+One question to three agents on one warehouse: Finance answered in P&L and
+listed the definitions it applied, Operations answered in daily throughput and
+named December 25th as the weakest day rather than averaging it away, and the
+blank agent produced a competent undirected summary — the control, and what
+every tenant got before this. Three named boot failures for a broken file,
+member 200 on the gallery and 403 on create, `make check` clean.
+
+Record, the two-registry rule and three known limits:
+[`business-context.md`](business-context.md) §T-B3.
+
 ---
 
 ## What the history says about how this project is built
