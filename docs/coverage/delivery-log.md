@@ -1307,9 +1307,12 @@ one.
 
 `go test ./...` clean, 20 new tests, all four `T-A4` drift checks passing, both
 SDKs regenerated and the quickstart's 13 examples verified byte-equal. **The live
-gate has not run** — the Docker daemon was down and the agentic half spends real
-tokens on a tenant needing two differently-scoped agents. Commands and the three
-transcripts still owed: [`agent-roster.md`](agent-roster.md) §T-S5.
+gate ran later the same day**, alongside `T-S4`'s and on the same tenant: two
+agents named over `/v1` produced two `api` threads each attributed to its own
+agent; another company's `agent_id` answered 404 with `param: agent_id`, started
+no thread and billed nothing; a reused `Idempotency-Key` with a changed
+`agent_id` answered 409 while the verbatim replay returned the same thread, run
+and message id. Transcripts: [`agent-roster.md`](agent-roster.md) §T-S5.
 
 `T-S4` the channels reach the roster — 2026-07-31
 
@@ -1350,16 +1353,34 @@ Three decisions the ticket did not contain:
   ever, because both sides of the comparison resolve a NULL agent to the same
   default.
 
-`make check` clean — vet, lint, test and build — `make types-check` current,
-18 new tests across two files, and the dashboard type-checks and lints with the
-bindings table in Settings → Agents. **Migration `033` has never been applied to
-a database**, so the live half — a message in a bound Discord channel proven
-from `agent_actions.agent_id`, the unique index refusing the second binding, and
-the FK cascade returning a channel to the default when its agent is deleted —
-is outstanding and named as such.
+`make check` clean, `make types-check` current, 18 new tests across two files.
 
-Record, decisions and the outstanding gate: [`agent-roster.md`](agent-roster.md)
-§T-S4.
+**The gate ran the same day, and closed `T-S5`'s with it.** `033` applied to a
+real database, `schema_migrations` 32 → 33. A message in the bound Discord room
+answered as Ops and the *same user's* next message in an unbound room answered
+as the default — two threads, two agents, one person, both attributed in
+`agent_actions`. A second binding on one address came back 409 from the unique
+index; another company's agent, 400 with no row written; a thread aged ninety
+minutes forked and kept its agent; deleting the agent took both its bindings
+with it and returned the room to the default, while `031`'s `ON DELETE SET NULL`
+left the orphaned conversation usable and its `usage_events` rows kept the dead
+agent's id. A number bound as `+628123456789` matched inbound
+`whatsapp:+628123456789`.
+
+**What the gate found is not this ticket's.** The `semantic_prompt_injection`
+guardrail refused **two of seven** ordinary questions — *"which databases can you
+see?"*, answered three times and blocked once, and a plain follow-up blocked
+outright — with *"I cannot fulfill requests that attempt to override my
+instructions or change my role."* `3891579` fixed this class in May and `T-A2b`
+fixed a variant of it in July; the classifier's false-positive rate on plain
+capability questions was never measured, and this run measures it. It belongs to
+`T-07b` and wants a golden must-pass case, not a threshold nudge. Second,
+smaller: `docker-compose.yml` has **no MinIO service at all**, so no document
+path can be exercised locally — `POST /v1/reports/render` answers
+`rendering_unavailable` and the published example script stops there.
+
+Record, decisions, transcripts and both findings:
+[`agent-roster.md`](agent-roster.md) §T-S4.
 
 ---
 

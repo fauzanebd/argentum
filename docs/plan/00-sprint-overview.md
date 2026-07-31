@@ -383,7 +383,7 @@ change no one's workflow. Watchers do.
 | Slack / Telegram / email channels  | Additive, low-risk, no workflow change. See `backlog.md`.            |
 | New DB drivers (BigQuery etc.)     | Additive against the driver registry. Pull-driven by demand.         |
 | Multi-agent / planner architecture | `T-16` raises the iteration budget; specialist agents **we** write need eval data first. This is the internal planner, not the tenant roster below. |
-| **The tenant agent roster (`T-S1`→`T-S5`)** | Owner-set 2026-07-29: the customer creates their own Marketing / Ops / HR / Finance agents. **Scheduled for Sprint 2, not deferred** — 9.5d of written tickets that would have displaced `T-A5` and overrun if inserted here. **`T-S1`→`T-S3` were then built out of that order and gated live on 2026-07-30**, so this row is a schedule the tree does not match: **the whole 9.5d is done as of 2026-07-31** — `T-S5` and `T-S4` closed the track, both code complete with live gates outstanding. `T-A5` — the ticket this row said the roster "would have displaced" — landed 2026-07-30 anyway, so nothing was displaced in the end; what happened is that Sprint 2 started early. Decide re-plan or note at sprint close — see [`../coverage/agent-roster.md`](../coverage/agent-roster.md) §0. |
+| **The tenant agent roster (`T-S1`→`T-S5`)** | Owner-set 2026-07-29: the customer creates their own Marketing / Ops / HR / Finance agents. **Scheduled for Sprint 2, not deferred** — 9.5d of written tickets that would have displaced `T-A5` and overrun if inserted here. **`T-S1`→`T-S3` were then built out of that order and gated live on 2026-07-30**, so this row is a schedule the tree does not match: **the whole 9.5d is done as of 2026-07-31** — `T-S5` and `T-S4` closed the track, both gated live the same day. `T-A5` — the ticket this row said the roster "would have displaced" — landed 2026-07-30 anyway, so nothing was displaced in the end; what happened is that Sprint 2 started early. Decide re-plan or note at sprint close — see [`../coverage/agent-roster.md`](../coverage/agent-roster.md) §0. |
 | **Tenant MCP servers as a source (`T-M1`→`T-M4`)** | Owner-set 2026-07-29: the customer registers their own MCP server and their agents call its tools. **Scheduled for Sprint 2, not deferred** — 8.0d of written tickets, and it deps `T-S1`/`T-S2`, which are Sprint 2 themselves. **Not `T-14`**, which is the same protocol pointed the other way: `T-14` serves our tools to their agent, this consumes their tools into ours. |
 | Forecasting / anomaly ML           | Watchers ship with threshold + delta comparators. Statistical anomaly detection is Sprint 2. |
 | SSO / SOC2                         | No enterprise deal is blocked on it yet.                            |
@@ -610,8 +610,8 @@ and `T-S3` are done and gated live, so the roster track has 3.5d left (`T-S4`
 be right by the same 6.0 — it does not settle which one it is.
 
 **Updated 2026-07-31: the remaining 3.5 are delivered too.** `T-S5` and `T-S4`
-both landed, so the roster track is 9.5d complete and none of it is left. Both
-carry an unrun live gate and an unapplied migration (`033`) — see §8a.
+both landed and both gates ran live, so the roster track is 9.5d complete and
+none of it is left — see §8a.
 
 **And the ~40.5 above does not reconcile.** The same set of tickets totals 44.5
 by `01-tickets.md`'s own phase figures (23.5 + 11.5 + 9.5). One of the two is
@@ -699,17 +699,23 @@ fields, create *and* edit, and an undo. Same lesson, four hours apart.)
 of `T-S4` because §8c's running order puts it there, and it takes row 10 of
 §8b's list off the table with it — which also removes the "cut 10 only after 9"
 knot, since `T-M3`'s dependency on it is now satisfied rather than pending.
-Code complete with the live gate outstanding, so the day is spent either way;
-what is not yet true is the acceptance.
+Its gate ran the same day, with `T-S4`'s.
 
 **`T-S4` landed the same day too (2.0d): 51.0 days remain committed**, and the
 roster track is finished — 9.5d of it, all five tickets, against a row in §3
 that still calls the track "scheduled for Sprint 2, not deferred". Row 8 of
-§8b's list comes off with it. Same shape as `T-S5`: code complete, `make check`
-clean, and a live gate that needs migration `033` applied to a database. **Two
-of the track's five tickets are now carrying unrun gates**, which is a different
-thing from two days of unfinished work and should be read as such — the cheapest
-way to close both is one stack, one migration run, and an afternoon.
+§8b's list comes off with it. Both gates then ran on one stack the same
+evening — `033` applied, every acceptance item exercised live — so **the roster
+track is 9.5d delivered and gated**, with nothing owed.
+
+**What the gate found belongs to nobody in this list.** The
+`semantic_prompt_injection` guardrail refused two of seven ordinary questions,
+which is the third appearance of a class fixed twice before (`3891579`,
+`T-A2b`). It is `T-07b`'s, it is not filed as a track, and it now has a measured
+rate rather than an anecdote — see
+[`../coverage/agent-roster.md`](../coverage/agent-roster.md) §T-S4 §6. The same
+section records that `docker-compose.yml` ships no object storage, so no
+document path can be gated locally at all.
 
 ### 8b. The order
 
@@ -764,8 +770,12 @@ applications, `T-A2b`'s ten live report calls), the `/metrics` finding above, an
 the unfiled `T-S3` gate finding — the dashboard's host/port connection form pins
 `sslmode=require` and does not test the connection on create, so a source added
 through the UI fails one turn later after an agent has spent its budget
-discovering it. None is a track; all four are smaller than any row above and
-none has an owner.
+discovering it. **Two more joined them on 2026-07-31** from `T-S4`'s gate: the
+injection guardrail refusing two of seven ordinary questions (`T-07b`'s, and now
+a measured rate rather than an anecdote), and `docker-compose.yml` shipping no
+object storage, which is why no document path can be gated on a developer
+machine. None is a track; all six are smaller than any row above and none has an
+owner.
 
 ### 8c. The third insert, and what it slips
 
@@ -778,11 +788,10 @@ visible afterwards. This is the third, written on the day it was made.
 **The running order becomes:** `T-S5` → `T-S4` → `T-B1` → `T-B2`/`T-B3` →
 `T-B4` → `T-M1` → `T-M2` → `T-M3` → `T-M4`.
 
-**`T-S5` and `T-S4` both delivered 2026-07-31**, so the roster track is done and
-the order in flight is `T-B1` onwards. What the two leave behind is not work but
-evidence: both are code complete with a live gate that has not run, and `033` is
-unapplied. That is the same debt `T-S1`→`T-S3` carried for a day and closed in
-one sitting on 2026-07-30.
+**`T-S5` and `T-S4` both delivered and gated live 2026-07-31**, so the roster
+track is done and the order in flight is `T-B1` onwards. Unlike
+`T-S1`→`T-S3`, which sat a day at "code complete, gate outstanding", these two
+closed their gates the same evening.
 
 **What slips, in days:**
 

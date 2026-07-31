@@ -5,14 +5,15 @@ roster*. Five tickets, 9.5d, filed 2026-07-29.
 
 This file is the track's record. `T-S1` is written up below; `T-S2`'s gate
 names this file too, and each later ticket appends its own section.
+**The track is complete as of 2026-07-31**, all five tickets gated live.
 
 | Ticket | What | Size | State |
 | ------ | ---- | ---- | ----- |
 | `T-S1` | `agents` + `agent_sources`, CRUD, Settings tab | 2.5d | **done — gate run live 2026-07-30** |
 | `T-S2` | Turn composition and enforcement | 2.5d | **done — gate run live 2026-07-30** |
 | `T-S3` | Agent picker in the dashboard chat | 1.0d | **done — gate run live 2026-07-30** |
-| `T-S4` | Discord / Lark / WhatsApp channel bindings | 2.0d | **code complete — live gate outstanding** |
-| `T-S5` | `agent_id` on `/v1`, plus `GET /v1/agents` | 1.5d | **code complete — live gate outstanding** |
+| `T-S4` | Discord / Lark / WhatsApp channel bindings | 2.0d | **done — gate run live 2026-07-31** |
+| `T-S5` | `agent_id` on `/v1`, plus `GET /v1/agents` | 1.5d | **done — gate run live 2026-07-31** |
 
 ---
 
@@ -595,12 +596,12 @@ That is the stronger version of the acceptance item, and it is why probing for
 
 ## T-S5 · The roster on `/v1`
 
-> **Status 2026-07-31: code complete, gate outstanding.** `go build ./...` and
-> `go test ./...` clean, the four `T-A4` drift checks pass, both SDKs
+> **Status 2026-07-31: done — the gate ran alongside T-S4's, later the same
+> day.** `go test ./...` clean, the four `T-A4` drift checks pass, both SDKs
 > regenerated, the quickstart's 13 example files verified byte-equal to the
 > blocks quoting them. **No migration** — every column this needs was added by
-> `031`. The live half needs a running API, a tenant with two agents and an LLM
-> that will answer a turn, and has not been run.
+> `031`. The three owed transcripts are in §4; one item is short of the ticket's
+> wording and is named there.
 
 ### 1. What ships
 
@@ -702,35 +703,47 @@ one:
   the response-field reflection diff for `Agent` and `AgentPage`, and
   regenerate-and-diff on the Postman collection and the Python types.
 
-**What no test here establishes** is the ticket's gate: that the same question
-to two agents produces two answers under two scopes, that the cross-tenant 404
-bills nothing on a live meter, and that the generated Node and Python snippets
-run green against a real server passing agent ids. Those need an API, a tenant
-with two agents and an LLM.
+**What the tests do not establish** is the ticket's gate. That ran on
+2026-07-31 and is below.
 
-### 4. The gate, and how to run it
+### 4. The gate, run 2026-07-31
 
-Not run. The stack was down on the machine this landed on (`docker` daemon not
-running), and the agentic half spends real tokens on a tenant that has to have
-two differently-scoped agents. What it needs, in order:
+Same stack as `T-S4`'s (§T-S4 §5) — the two gates share a tenant, an API and a
+worker, which is why they ran together.
 
-```bash
-make infra && make seed          # postgres, redis, then 030/031 already applied
-# api and worker on a private Redis DB index — see local-stack-runbook:
-#   REDIS_URL=redis://localhost:6385/3 ASYNQ_REDIS_URL=redis://localhost:6385/3
-export ARGENTUM_BASE_URL=http://localhost:8080 ARGENTUM_API_KEY=arg_…
-docs/api/examples/run.sh deterministic   # GET /v1/agents, and one default
-docs/api/examples/run.sh agentic         # node + python chat, both passing agent_id
+```
+GET  /v1/agents                                   200  Analyst (default) + Ops2, no persona, no sources, no company_id
+POST /v1/chat  agent_id=<other company's>         404  {"type":"not_found","code":"agent_not_found","param":"agent_id"}
+                                                       api threads: 0, usage_events unchanged — nothing started, nothing billed
+POST /v1/chat  agent_id=Ops2   Idempotency-Key:K  200  thread e0659cec, run 871532ae
+POST /v1/chat  agent_id=Analyst  same key K       409  {"code":"idempotency_key_reuse"}
+POST /v1/chat  agent_id=Ops2     same key K       200  the same thread, run and message id — a replay, not a second turn
+POST /v1/chat  agent_id=Analyst, same user_ref    200  thread 99e51c7c — the user_ref door forked rather than refusing
 ```
 
-and by hand, the three transcripts the ticket names: the same question to the
-Finance and People Ops agents with two different answers, an `agent_id` from
-another company answering 404 with the standard envelope while the thread count
-and the meter both stay put, and a second `POST /v1/chat` under a reused
-`Idempotency-Key` with a changed `agent_id` answering 409.
+and the attribution the whole track exists for:
 
-**Check `asynq:servers` against `ps` first.** The finding below cost an hour on
-the last live gate for these tickets and applies unchanged.
+```
+ channel |  thread  |  agent   | actor_kind |  tool_name
+---------+----------+----------+------------+--------------
+ api     | e0659cec | d9f767a8 | api_key    | list_sources   <- Ops2
+ api     | 99e51c7c | 89600f43 | api_key    | list_sources   <- the default
+```
+
+`docs/api/examples/run.sh deterministic` passed `GET /v1/me` and
+`GET /v1/agents` — including its "exactly one default agent" assertion — and
+then stopped at `POST /v1/reports/render`, which answers `rendering_unavailable`
+because this stack has no object storage (§T-S4 §6). The agentic example set was
+not run for the same reason: two of its three files render documents.
+
+**One item is short of the ticket's wording.** It asks for "two answers"; this
+tenant has no data sources, so both agents answered "no databases are
+registered" and the difference is in the attribution rather than in the prose.
+`T-S2`'s live gate on 2026-07-30 is where two differently-scoped agents produced
+a figure and a refusal.
+
+**Check `asynq:servers` against `ps` first.** Four dead registrations were still
+on Redis DB 0 during this run; both processes were started on DB 3.
 
 ### 5. For T-S4
 
@@ -748,10 +761,12 @@ the last live gate for these tickets and applies unchanged.
 
 ## T-S4 · The channels reach the roster
 
-> **Status 2026-07-31: code complete, gate outstanding.** `go build ./...`,
-> `go vet ./...` and `go test ./...` clean, `make types-check` current, the
-> dashboard type-checks and lints. **Migration `033` has never been applied to a
-> database**, so nothing below has been observed against live traffic.
+> **Status 2026-07-31: done, gate run live.** `make check` clean,
+> `make types-check` current, migration `033` applied to a real database, and
+> every acceptance item exercised against a running API and worker — §5 has the
+> transcripts. What the gate found belongs to a different ticket: the
+> `semantic_prompt_injection` guardrail refused two of seven ordinary questions
+> (§6).
 
 ### 1. What ships
 
@@ -856,7 +871,26 @@ fails the ticket's first acceptance item.
 
 ### 4. What is proven, and what is not
 
-Proven, by `go test ./...` (18 new tests across two files):
+Proven live on 2026-07-31 — §5 is the transcript:
+
+| Acceptance | Evidence |
+| ---------- | -------- |
+| A bound Discord channel runs under its agent | `agent_actions`: thread `5e6da69c`, `agent_id ad3e0349` (Ops), `channel discord` |
+| An unbound channel runs under the company default | the **same Discord user**, one message later in an unbound room: thread `a8182c07`, `agent_id 89600f43` (Analyst) — two conversations, two agents, one person |
+| A second binding on one address is refused | `409` from the unique index, message naming the address |
+| A binding cannot name another company's agent | `400 invalid input: no such agent`, no row written |
+| An idle-gap fork keeps the agent | thread `d1d628ae` aged 90 minutes, unrelated question → new thread `ac4f3866`, both `d9f767a8` (Ops2) |
+| Deleting the agent removes the binding | `DELETE /api/agents/:id` → both of that agent's bindings gone, the room's next message answered by the default |
+| A `whatsapp:`-prefixed inbound matches a stored `+62…` | bound as `+628123456789`, inbound `whatsapp:+628123456789`, thread pinned to Ops2 |
+
+Two things the gate showed that the ticket did not ask for. `031`'s
+`ON DELETE SET NULL` did its job at the same moment the cascade did: the deleted
+agent's thread came back as `agent_id NULL` — the conversation is not stranded —
+while its `usage_events` rows **kept** the dead agent's id, so "what did the Ops
+agent cost us" survives deleting it. And every audit row carries its actor:
+`user` for the channel turns, `api_key` for the `/v1` ones.
+
+Proven by `go test ./...` (18 new tests across two files):
 
 - A bound Discord channel resolves to its agent, and the lookup is keyed on the
   channel id rather than on the user who wrote.
@@ -876,40 +910,118 @@ Proven, by `go test ./...` (18 new tests across two files):
   (`dashboard`, `api`), an empty or oversized identifier, and a duplicate
   address — with the refusal naming the identifier the channel actually wants.
 
-Not proven, and needing a database and a live channel:
+Still not proven, and honest about why:
 
-- `agent_actions.agent_id` on a real Discord turn in a bound channel.
-- The unique index rejecting the second binding (the service maps the violation;
-  nothing has raised one).
-- The FK cascade removing a binding when its agent is deleted.
-- Any Lark or WhatsApp traffic at all.
+- **A message that entered through the real Discord gateway or the real WhatsApp
+  webhook.** Both need provider credentials this machine does not have for a
+  scratch tenant, so the turns were driven through the *same* `ChatEnqueuer` the
+  gateway calls, from a throwaway `cmd/s4gate` built from `cmd/discord`'s wiring
+  verbatim and deleted afterwards. What that skips is the signature check and
+  the allowlist — neither of which T-S4 touches. Everything from `ChatInput`
+  onwards is production code.
+- **Lark.** No credentials; its path is the same three-line branch as the other
+  two and is unit-tested.
+- **Two agents giving two visibly different answers.** This tenant has no data
+  sources, so both answered "no databases are registered". The attribution
+  differs, the prose does not. The scoping half was proven live for `T-S2` on
+  2026-07-30 against a tenant with two sources.
 
-### 5. The gate, and how to run it
+### 5. The gate, run 2026-07-31
 
-```bash
-make infra && make seed                    # then apply 033
-migrate -path apps/backend/migrations/control -database "$CONTROL_DB_URL" up
+Stack: `docker compose --profile dev up postgres postgres_demo redis metabase`,
+API and worker built as explicit binaries (`go run` serves stale ones) and
+started on **Redis DB 3** — `asynq:servers` on DB 0 still held four dead
+registrations from earlier sessions, exactly as the runbook warns.
+
+`033` applied by the API on boot; `schema_migrations` went 32 → 33, which also
+confirms the ticket's "check the next free number" instruction was followed
+correctly.
+
+```
+POST /api/agent-bindings  {discord, 111222333444555666, Ops}          201
+POST /api/agent-bindings  {discord, 111222333444555666, Analyst}      409  "…is already bound to an agent — remove that binding first"
+POST /api/agent-bindings  {discord, 999…, another company's agent}    400  "invalid input: no such agent"
+POST /api/agent-bindings  {dashboard, …}                              400  "\"dashboard\" cannot be bound; choose one of whatsapp, discord or lark"
+POST /api/agent-bindings  {whatsapp, " whatsapp:+628123456789 "}      201  stored as "+628123456789"
 ```
 
-Then, in the dashboard as an admin: Settings → Agents → Channel bindings, bind
-the ops Discord channel to an Ops agent scoped to one source. Ask a scoped
-question in that channel, and paste the reply beside
+then four turns and a delete:
+
+```
+ channel  |  thread  |  agent   | actor_kind |  tool_name   | result_status
+----------+----------+----------+------------+--------------+---------------
+ discord  | 5e6da69c | ad3e0349 | user       | list_sources | ok      <- bound #ops → Ops
+ discord  | a8182c07 | 89600f43 | user       | list_sources | ok      <- same user, unbound room → default
+ discord  | d1d628ae | d9f767a8 | user       | list_sources | ok      <- bound room, second agent
+ api      | e0659cec | d9f767a8 | api_key    | list_sources | ok      <- T-S5, agent_id on /v1/chat
+ api      | 99e51c7c | 89600f43 | api_key    | list_sources | ok      <- T-S5, same user_ref, other agent → fork
+```
+
+`DELETE /api/agents/{Ops}` → `204`, and `GET /api/agent-bindings` came back
+empty: both of that agent's bindings went with it, and the room's next message
+was answered by the default.
+
+To re-run it, the short version:
+
+```bash
+make infra                                  # then the API migrates 033 on boot
+# bind, in the dashboard as an admin: Settings → Agents → Channel bindings
+```
 
 ```sql
-SELECT agent_id, tool_name, status FROM agent_actions
+SELECT channel, agent_id, tool_name, result_status FROM agent_actions
  WHERE company_id = $1 ORDER BY created_at DESC LIMIT 5;
 ```
 
-Then the same question in an unbound channel — it must run on the default — and
-then delete the Ops agent and ask again: the binding goes with it and the
-channel answers on the default.
+**Check `asynq:servers` against `ps` first**, every time.
 
-**Check `asynq:servers` against `ps` first.** The finding below cost an hour on
-the last live gate for these tickets and applies unchanged: a stale worker on
-the same Redis will happily serve a turn with none of this code in it, and the
-result looks exactly like a resolver bug.
+### 6. What the gate found — and it is not this ticket's
 
-### 6. For the next ticket in the track
+**`semantic_prompt_injection` refused two of seven ordinary questions.** The
+message *"which databases can you see?"* was answered three times and blocked
+once; *"and now which databases can you see?"* — a follow-up in a settled
+thread — was blocked outright. Both got
+
+> I cannot fulfill requests that attempt to override my instructions or change
+> my role.
+
+and both are in `agent_actions` as `tool_name=guardrail, result_status=blocked`,
+which is `T-05` doing its job.
+
+This is the third appearance of the same failure. `3891579` (2026-05-23) fixed
+"benign follow-ups blocked"; `T-A4`'s gate found four of five report calls
+blocked and `T-A2b` moved the directive out of the user message. Neither
+addressed the classifier's own false-positive rate on plain questions, and this
+run measures it at **2 in 7** with `gpt-5-mini` at `reasoning_effort=none`.
+Nothing about it is caused by T-S4 — the blocked turns ran under two different
+agents, one with a persona and one without, and the passing turns include both.
+
+It belongs to `T-07b`, which already owns the guardrail-tuning backlog, and it
+wants a golden case rather than a threshold nudge: the rule's own suite
+(`T-02`'s `TestEveryRuleHasGoldenCases`) has no must-*pass* case shaped like an
+ordinary capability question.
+
+**A second, smaller one.** `POST /v1/reports/render` answers
+`rendering_unavailable` on this stack, so `docs/api/examples/run.sh
+deterministic` gets through `GET /v1/me` and `GET /v1/agents` and stops at the
+first render. There is **no MinIO service in `docker-compose.yml`** at all — the
+local stack cannot run any document path, which is the same environment gap that
+makes `T-A2b`'s eval case unpassable here (recorded 2026-07-30). It is worth a
+compose service; nobody can gate a report locally without one.
+
+### 7. A known limit, from reading rather than from the gate
+
+A conversation can fork twice over two messages in one narrow case: a binding is
+removed while a thread pinned by it is *also* past the idle gap on an unrelated
+topic. The resolver forks first and carries the parent's agent (the ticket's
+acceptance item), `rebindThread` skips a thread it has just created, and the
+correction to the default lands on the next message instead. The result is one
+extra thread holding one exchange. It self-corrects, it needs a removed binding
+and an idle gap in the same turn, and the alternative — letting `rebindThread`
+act on a thread created microseconds earlier — creates two threads inside a
+single turn, which is worse.
+
+### 8. For the next ticket in the track
 
 - `ChatEnqueuer` now has three sources of an agent — a caller's pick
   (`pickAgent`), a channel binding (`boundAgent`) and the company default

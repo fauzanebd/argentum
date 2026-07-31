@@ -40,7 +40,7 @@ with no number cannot drift.
 | T-S1   | `030_agents` | **applied** (this row said "not yet applied" until 2026-07-30; `T-S3`'s live gate ran against it) |
 | T-S2   | `031_thread_agent` | **applied** (same correction) |
 | T-A5   | `032_api_observability` | **applied** |
-| T-S4   | `033_agent_channel_bindings` | **written 2026-07-31, never applied** — reassigned from `032`, which `T-A5` took. `033` was free against the tree and the applied schema; the file exists and no database has run it |
+| T-S4   | `033_agent_channel_bindings` | **applied 2026-07-31** — reassigned from `032`, which `T-A5` took. The gate's database went 32 → 33 on the API's boot, which is the check this column exists for |
 | T-06   | `*_metric_definitions` | next free on landing |
 | T-08   | `*_watchers` | next free on landing |
 | T-10   | `*_actions` | next free on landing |
@@ -3436,12 +3436,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_binding_channel_ref
 
 ### Acceptance
 
-- [ ] A message in the bound Discord channel runs under that agent — proven from `agent_actions.agent_id` — **live gate, not run**; the enqueue seam is unit-tested in both directions
-- [x] An unbound channel runs under the company default — tested, and it is the same comparison that keeps an ordinary company forking nothing
-- [x] Binding two agents to one channel is rejected by the unique index, and the API returns a clean 409 — the index is in `033` and the service maps the violation; the index half needs a database and is **not live**
-- [x] A binding cannot name another company's agent — refused in the service and again inside the repository's `INSERT ... SELECT`, so a caller reaching the second layer still cannot
-- [x] A thread forked by the idle-gap classifier keeps the parent's agent — tested; a binding still outranks the parent, which is also tested
-- [ ] Deleting the agent removes the binding and the channel falls back to the default — the FK cascade is written; proving it needs a database, so **not live**
+- [x] A message in the bound Discord channel runs under that agent — proven live from `agent_actions.agent_id`, driven through the gateway's own `ChatEnqueuer` wiring (no Discord credentials for a scratch tenant; the signature check and the allowlist are what that skips)
+- [x] An unbound channel runs under the company default — proven live with the *same* Discord user one message later: two rooms, two threads, two agents
+- [x] Binding two agents to one channel is rejected by the unique index, and the API returns a clean 409 — live, and the message names the address
+- [x] A binding cannot name another company's agent — live `400 invalid input: no such agent`, no row written; refused again inside the repository's `INSERT ... SELECT`
+- [x] A thread forked by the idle-gap classifier keeps the parent's agent — live: thread aged 90 minutes, unrelated question, new thread, same agent
+- [x] Deleting the agent removes the binding and the channel falls back to the default — live: `204`, both bindings gone, next message answered by the default, and `031`'s `ON DELETE SET NULL` left the old thread usable
 
 ### Gate
 
@@ -3493,11 +3493,11 @@ forever.
 
 ### Acceptance
 
-- [ ] `POST /v1/chat` with the Finance agent's id answers under its scope; the same call with no `agent_id` runs on the default — **live gate, not run**
-- [x] An `agent_id` from another company returns 404 with the standard envelope and starts no turn and bills nothing — tested; the "bills nothing" half is proven by the pick running above the resolver, not by a live meter
+- [x] `POST /v1/chat` with the Finance agent's id answers under its scope; the same call with no `agent_id` runs on the default — **live 2026-07-31**, proven by `agent_actions.agent_id` on two `api` threads for one `user_ref`. Short of the wording in one way, stated in the record: the gate tenant has no data sources, so the two answers differ in attribution rather than in prose
+- [x] An `agent_id` from another company returns 404 with the standard envelope and starts no turn and bills nothing — **proven live**: `{"code":"agent_not_found","param":"agent_id"}`, zero `api` threads and an unchanged `usage_events` count after the refusal
 - [x] `GET /v1/openapi.json` documents the field, and both SDKs expose it after regeneration
 - [x] All four `T-A4` drift checks pass
-- [x] Same key, changed `agent_id` → 409 — verified rather than assumed, per the implementer's note
+- [x] Same key, changed `agent_id` → 409 — verified in test and then **live**, with the verbatim replay returning the same thread, run and message id rather than a second turn
 
 ### Gate
 
