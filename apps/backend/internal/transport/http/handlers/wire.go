@@ -43,10 +43,44 @@ type AgentToolInfo struct {
 // The tool vocabulary rides along with the roster rather than sitting on its
 // own route: it is only ever read by the same form, and `GET /api/agents/tools`
 // beside `GET /api/agents/:id` is a static segment competing with a wildcard in
-// one method tree.
+// one method tree. Templates ride along for both reasons and a third — the chat
+// reads the same payload to find a thread's starter questions, so a separate
+// route would be a second request on a screen that already has the answer.
 type AgentsResponse struct {
 	Agents []*domain.Agent `json:"agents"`
 	Tools  []AgentToolInfo `json:"tools"`
+	// Templates is the create-an-agent gallery (T-B3), already narrowed to the
+	// tools this deployment runs. Empty on a deployment that loaded no gallery,
+	// which the dashboard renders as the blank form and nothing else — the
+	// product as it was before the templates existed.
+	Templates []AgentTemplate `json:"templates"`
+}
+
+// AgentTemplate is one gallery card in Settings → Agents (T-B3).
+//
+// A projection of agenttemplates.Template rather than the loader's own struct,
+// for the same reason AgentToolInfo is not a tools.Tool: the config type is a
+// YAML shape that the file's authors may extend — an editorial note, an ordering
+// hint, a card we ship but do not offer yet — and every field of it would reach
+// the browser the day it was added. This is the published half, and it is a
+// deliberate list.
+type AgentTemplate struct {
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Persona prefills the instructions field. It is sent to the browser
+	// because the tenant edits it before saving — nothing about a template is
+	// applied behind the form.
+	Persona        string   `json:"persona"`
+	SuggestedTools []string `json:"suggested_tools"`
+	// SourceHints pre-tick likely databases in the create form, matched against
+	// a connection's label and description. The dashboard shows which hint
+	// matched, because a silently pre-ticked source scopes an agent away from
+	// its own data.
+	SourceHints []string `json:"source_hints"`
+	// StarterQuestions are offered on a new conversation opened on an agent
+	// created from this template.
+	StarterQuestions []string `json:"starter_questions"`
 }
 
 // AgentBindingsResponse is the body of `GET /api/agent-bindings` (T-S4).

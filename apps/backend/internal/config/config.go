@@ -100,6 +100,12 @@ type Config struct {
 	// Agent SDK Configuration
 	AgentConfigPath      string // path to agents.yaml
 	GuardrailsConfigPath string // path to guardrails.yaml
+	// AgentTemplatesPath is the create-an-agent gallery (T-B3). Unlike the two
+	// above, an unreadable or malformed file here fails the boot rather than
+	// degrading: it is authored in this repo, so a bad one is a change somebody
+	// just made, and a deployment that started anyway would show every tenant an
+	// empty create screen with the reason in a log line nobody reads.
+	AgentTemplatesPath string // path to agent_templates.yaml
 
 	// Argentum control plane
 	JWTSecret            string
@@ -293,6 +299,7 @@ func Load() (*Config, error) {
 		// Agent SDK Configuration
 		AgentConfigPath:      getEnv("AGENT_CONFIG_PATH", "config/agents.yaml"),
 		GuardrailsConfigPath: getEnv("GUARDRAILS_CONFIG_PATH", "config/guardrails.yaml"),
+		AgentTemplatesPath:   getEnv("AGENT_TEMPLATES_PATH", "config/agent_templates.yaml"),
 
 		// Control plane
 		JWTSecret:            getEnv("ARGENTUM_JWT_SECRET", ""),

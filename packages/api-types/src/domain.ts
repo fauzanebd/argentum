@@ -45,6 +45,17 @@ export interface Agent {
    * allowlist with it.
    */
   source_ids: string[];
+  /**
+   * TemplateKey records which gallery card this agent was created from
+   * (T-B3), or "" for the blank path and for every agent that predates it.
+   * **Analytics only — never read at turn time** (locked decision 4). Nothing
+   * in the composed prompt consults it, and editing a template in
+   * config/agent_templates.yaml changes no agent that already exists: the
+   * text was copied into this row at create time and belongs to the tenant
+   * from that moment. The dashboard reads it for one thing only, which is
+   * which starter questions to offer on an empty thread.
+   */
+  template_key: string;
   is_default: boolean;
   enabled: boolean;
   created_at: string;

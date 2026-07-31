@@ -35,6 +35,14 @@ export function useAgents() {
   return useMemo(() => {
     const byId = new Map<string, Agent>();
     for (const a of agents) byId.set(a.id, a);
+    // The gallery rides on the same payload (T-B3), so the starter questions
+    // for a picked agent cost no second request. Keyed by template rather than
+    // by agent: `template_key` is the only thing a saved agent keeps of the
+    // card it came from, and it is provenance — nothing else here reads it.
+    const starterQuestions = new Map<string, string[]>();
+    for (const t of data?.templates ?? []) {
+      if (t?.key) starterQuestions.set(t.key, t.starter_questions ?? []);
+    }
     return {
       isLoading,
       /** Every agent, including disabled ones — for naming what a thread runs as. */
@@ -43,6 +51,16 @@ export function useAgents() {
       selectable: agents.filter((a) => a.enabled),
       /** The agent a new conversation runs as when the user picks nothing. */
       fallback: agents.find((a) => a.is_default) ?? null,
+      /**
+       * What to offer on an empty thread opened on this agent. Empty for an
+       * agent created from blank, for one created before templates existed, and
+       * on a deployment with no gallery — all three are the same screen as
+       * before, which is why this returns a list and not a placeholder.
+       */
+      starterQuestionsFor(agent: Agent | null | undefined): string[] {
+        if (!agent?.template_key) return [];
+        return starterQuestions.get(agent.template_key) ?? [];
+      },
     };
-  }, [agents, isLoading]);
+  }, [agents, data, isLoading]);
 }

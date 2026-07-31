@@ -1,0 +1,12 @@
+-- T-B3: which gallery card an agent was created from.
+--
+-- Analytics only. It is never read at turn time (locked decision 4): a created
+-- agent is an ordinary roster row that T-S2 runs without knowing where its text
+-- came from, so nothing here links a tenant's agent to the file that seeded it.
+-- What it answers is "which starting points do people actually pick", and — for
+-- the dashboard — which starter questions to offer on a new conversation.
+--
+-- Empty rather than NULL for the same reason allowed_tools is: every agent
+-- created before this column existed, and every one created from blank after
+-- it, is the same value, and "" needs no COALESCE at every read site.
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS template_key TEXT NOT NULL DEFAULT '';

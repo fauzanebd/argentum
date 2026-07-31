@@ -9,6 +9,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/agenttemplates"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -44,6 +45,11 @@ type AgentService struct {
 	// is what a submitted allowlist is checked against, so an agent cannot be
 	// scoped to a tool that does not exist here.
 	tools []string
+	// templates is the create-an-agent gallery (T-B3), or nil on a wiring that
+	// loaded no file. Nil means the blank path only — which is exactly what
+	// existed before this ticket, so a deployment without the file degrades to
+	// the previous product rather than to a broken one.
+	templates *agenttemplates.Set
 }
 
 // NewAgentService wires the roster. toolNames comes from tools.Names over the
@@ -55,9 +61,30 @@ func NewAgentService(
 	return &AgentService{repo: repo, conns: conns, tools: toolNames}
 }
 
+// WithTemplates installs the gallery an agent can be created from (T-B3).
+// Optional wiring rather than a constructor argument: the templates are a file
+// this repo ships, and every caller that only manages the roster — the policy
+// test, the seeding path — has no business loading one.
+func (s *AgentService) WithTemplates(set *agenttemplates.Set) *AgentService {
+	s.templates = set
+	return s
+}
+
 // ToolNames returns the registry this deployment actually has. The dashboard
 // renders one checkbox per entry.
 func (s *AgentService) ToolNames() []string { return s.tools }
+
+// Templates returns the gallery with each card's suggested tools narrowed to
+// what this deployment runs.
+//
+// The narrowing happens here rather than in the dashboard because the reason
+// for it is a backend fact: generate_document exists only where object storage
+// does, and a card that pre-ticks it would produce a form that fails on first
+// save — validated against the live registry by the same service — with an
+// error naming a tool the admin never chose.
+func (s *AgentService) Templates() []agenttemplates.Template {
+	return s.templates.ForRegistry(s.tools)
+}
 
 // AgentInput is one submitted agent. Empty AllowedTools and empty SourceIDs
 // both mean unrestricted — see domain.Agent.AllowsTool for why that is the
@@ -68,6 +95,10 @@ type AgentInput struct {
 	PersonaPrompt string   `json:"persona_prompt"`
 	AllowedTools  []string `json:"allowed_tools"`
 	SourceIDs     []string `json:"source_ids"`
+	// TemplateKey names the gallery card this agent was created from (T-B3),
+	// or "" for the blank path. Read on create and ignored on update: it
+	// records where the agent came from, which an edit cannot change.
+	TemplateKey string `json:"template_key"`
 	// Enabled is a pointer so an update that omits it leaves the flag alone.
 	// A plain bool would silently disable every agent edited by a client that
 	// did not know the field existed.
@@ -100,6 +131,15 @@ func (s *AgentService) Create(ctx context.Context, companyID string, in AgentInp
 	if err != nil {
 		return nil, err
 	}
+	// Checked rather than trusted, even though nothing reads it at turn time: a
+	// provenance column that accepts arbitrary strings answers no analytics
+	// question, and the dashboard's own starter questions are looked up by it.
+	key := strings.TrimSpace(in.TemplateKey)
+	if key != "" && !s.templates.Has(key) {
+		return nil, fmt.Errorf("%w: no agent template called %q", domain.ErrInvalidInput, key)
+	}
+	a.TemplateKey = key
+
 	existing, err := s.repo.ListByCompany(ctx, companyID)
 	if err != nil {
 		return nil, err
@@ -116,6 +156,10 @@ func (s *AgentService) Create(ctx context.Context, companyID string, in AgentInp
 	logrus.WithFields(logrus.Fields{
 		"company_id": companyID, "agent_id": a.ID, "name": a.Name,
 		"tools": len(a.AllowedTools), "sources": len(a.SourceIDs),
+		// Logged because it is the one question this column exists to answer:
+		// which starting points do tenants actually pick, and how many start
+		// from blank ("").
+		"template": a.TemplateKey,
 	}).Info("agent created")
 	return a, nil
 }
@@ -133,6 +177,10 @@ func (s *AgentService) Update(ctx context.Context, companyID, id string, in Agen
 	}
 	a.ID = current.ID
 	a.IsDefault = current.IsDefault
+	// Provenance survives every edit, including one that replaces all of the
+	// template's text. "Created from Finance" stays true; "still says what
+	// Finance said" was never claimed.
+	a.TemplateKey = current.TemplateKey
 	a.Enabled = current.Enabled
 	if in.Enabled != nil {
 		a.Enabled = *in.Enabled

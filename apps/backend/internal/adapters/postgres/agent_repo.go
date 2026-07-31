@@ -22,7 +22,7 @@ func NewAgentRepo(db *sql.DB) *AgentRepo { return &AgentRepo{db: db} }
 // means unrestricted — and the one a COALESCE around array_agg would have to
 // hand-repair.
 const agentColumns = `a.id, a.company_id, a.name, a.description, a.persona_prompt,
-	a.allowed_tools, a.is_default, a.enabled, a.created_at, a.updated_at,
+	a.allowed_tools, a.template_key, a.is_default, a.enabled, a.created_at, a.updated_at,
 	ARRAY(SELECT s.connection_id::text FROM agent_sources s
 		WHERE s.agent_id = a.id ORDER BY s.connection_id) AS source_ids`
 
@@ -46,13 +46,13 @@ func (r *AgentRepo) Create(ctx context.Context, a *domain.Agent) error {
 	defer tx.Rollback()
 
 	const q = `
-		INSERT INTO agents (company_id, name, description, persona_prompt, allowed_tools, is_default, enabled)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO agents (company_id, name, description, persona_prompt, allowed_tools, template_key, is_default, enabled)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at
 	`
 	if err := tx.QueryRowContext(ctx, q,
 		a.CompanyID, a.Name, a.Description, a.PersonaPrompt,
-		pq.Array(a.AllowedTools), a.IsDefault, a.Enabled,
+		pq.Array(a.AllowedTools), a.TemplateKey, a.IsDefault, a.Enabled,
 	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		if uniqueViolation(err) {
 			return domain.ErrAlreadyExists
@@ -121,6 +121,11 @@ func (r *AgentRepo) ListByCompany(ctx context.Context, companyID string) ([]*dom
 // which clears the previous holder in the same transaction. An UPDATE that set
 // is_default here would hit the partial unique index the moment a second agent
 // claimed it, and the error would name an index rather than the operation.
+//
+// template_key is not among them either, for a different reason: it records
+// where this agent *came from* (T-B3), which an edit cannot change. Editing
+// every field a template prefilled is the supported path — the text is the
+// tenant's from the moment they save — and it leaves the provenance intact.
 func (r *AgentRepo) Update(ctx context.Context, a *domain.Agent) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -231,7 +236,7 @@ func scanAgent(s rowScanner) (*domain.Agent, error) {
 	var tools, sources pq.StringArray
 	if err := s.Scan(
 		&a.ID, &a.CompanyID, &a.Name, &a.Description, &a.PersonaPrompt,
-		&tools, &a.IsDefault, &a.Enabled, &a.CreatedAt, &a.UpdatedAt, &sources,
+		&tools, &a.TemplateKey, &a.IsDefault, &a.Enabled, &a.CreatedAt, &a.UpdatedAt, &sources,
 	); err != nil {
 		return nil, err
 	}

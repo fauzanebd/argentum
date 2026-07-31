@@ -40,11 +40,21 @@ type Agent struct {
 	// AllowsSource. Stored in agent_sources rather than inline: these are real
 	// foreign keys, and a deleted connection has to leave every agent's
 	// allowlist with it.
-	SourceIDs []string  `json:"source_ids"`
-	IsDefault bool      `json:"is_default"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	SourceIDs []string `json:"source_ids"`
+	// TemplateKey records which gallery card this agent was created from
+	// (T-B3), or "" for the blank path and for every agent that predates it.
+	//
+	// **Analytics only — never read at turn time** (locked decision 4). Nothing
+	// in the composed prompt consults it, and editing a template in
+	// config/agent_templates.yaml changes no agent that already exists: the
+	// text was copied into this row at create time and belongs to the tenant
+	// from that moment. The dashboard reads it for one thing only, which is
+	// which starter questions to offer on an empty thread.
+	TemplateKey string    `json:"template_key"`
+	IsDefault   bool      `json:"is_default"`
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // AllowsTool reports whether this agent may call the named tool.

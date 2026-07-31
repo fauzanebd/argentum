@@ -89,6 +89,12 @@ export function ChatPage() {
    */
   const agents = useAgents();
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
+  // What a new conversation would run as — the picked agent, or the company
+  // default when nothing is picked, which is the same resolution the backend
+  // applies to a turn that names none.
+  const newChatAgent = pickedAgentId
+    ? (agents.byId.get(pickedAgentId) ?? null)
+    : agents.fallback;
 
   /**
    * The credit warning lives in the query cache, not in component state.
@@ -363,6 +369,14 @@ export function ChatPage() {
               onChange={setPickedAgentId}
               className="self-start"
             />
+            {/* What this agent was made to be asked (T-B3). Only an agent
+                created from a template has any, and clicking one fills the
+                composer rather than sending: the first turn a customer runs is
+                the one they should have read first. */}
+            <StarterQuestions
+              questions={agents.starterQuestionsFor(newChatAgent)}
+              onPick={setInput}
+            />
             {/* Composer */}
             <ChatComposer
               value={input}
@@ -491,6 +505,46 @@ function agentNameFor(
   if (!thread) return undefined;
   if (thread.agent_id) return agents.byId.get(thread.agent_id)?.name;
   return agents.fallback?.name;
+}
+
+/**
+ * The starter questions of the template an agent was created from (T-B3).
+ *
+ * The cheapest possible proof that the agent works: a customer who has just
+ * picked "Operations" out of a gallery has no idea what it can be asked, and
+ * three concrete questions answer that faster than any description. They fill
+ * the composer rather than sending — a first turn that runs before the customer
+ * has read it teaches them nothing and spends a credit.
+ *
+ * Renders nothing for an agent created from blank, one created before templates
+ * existed, or a deployment with no gallery. All three are the screen exactly as
+ * it was.
+ */
+function StarterQuestions({
+  questions,
+  onPick,
+}: {
+  questions: string[];
+  onPick: (q: string) => void;
+}) {
+  if (questions.length === 0) return null;
+  return (
+    <div className="w-full max-w-3xl self-start space-y-2">
+      <p className="px-1 text-xs text-muted-foreground">Try one of these:</p>
+      <div className="flex flex-wrap gap-2">
+        {questions.map((q) => (
+          <button
+            key={q}
+            type="button"
+            onClick={() => onPick(q)}
+            className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground shadow-sm transition-colors hover:border-primary/60 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {q}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /* ── Chat Header — floating, no border ───────────────────────────────── */

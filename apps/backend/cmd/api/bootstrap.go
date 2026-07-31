@@ -11,6 +11,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
+	"github.com/fauzanebd/argentum/internal/agenttemplates"
 	"github.com/fauzanebd/argentum/internal/apiobs"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
@@ -284,6 +285,17 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// two lists cannot drift. Docs is deps.docGen, so a deployment without
 	// object storage offers no generate_document checkbox for the same reason
 	// the worker registers no such tool.
+	//
+	// The gallery an agent can be created from (T-B3) is validated against
+	// tools.AllNames rather than the list below: a template naming a tool that
+	// does not exist is a typo in a file we ship, and it has to fail everywhere
+	// rather than only on the deployments that run the tool it misspelled. A
+	// malformed file stops the boot, which is why this error is returned and
+	// not warned about — see config.AgentTemplatesPath.
+	agentTemplates, err := agenttemplates.LoadFromFile(cfg.AgentTemplatesPath, tools.AllNames())
+	if err != nil {
+		return nil, fmt.Errorf("agent templates: %w", err)
+	}
 	deps.agentSvc = app.NewAgentService(
 		agentRepo, connRepo,
 		tools.Names(tools.Registry(tools.RegistryDeps{
@@ -299,7 +311,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			MaxQueryRows:        cfg.MaxQueryRows,
 			MaxQueryResultBytes: cfg.MaxQueryResultBytes,
 		})),
-	)
+	).WithTemplates(agentTemplates)
 	deps.agentBindingSvc = app.NewAgentBindingService(bindingRepo, agentRepo)
 	deps.companyProfileSvc = app.NewCompanyProfileService(pgctl.NewCompanyProfileRepo(controlDB))
 	// Signup seeds the new company's first agent. Wired after the roster

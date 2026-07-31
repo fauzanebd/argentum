@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/fauzanebd/argentum/internal/agenttemplates"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -439,5 +441,157 @@ func TestEnsureDefaultSeedsOnceAndSurvivesFailure(t *testing.T) {
 	svc.EnsureDefault(ctx, companyB)
 	if left, _ := svc.List(ctx, companyB); len(left) != 0 {
 		t.Errorf("company B roster = %d agents, want 0 after a failed seed", len(left))
+	}
+}
+
+// --- templates (T-B3) --------------------------------------------------------
+
+// A two-card gallery, one of which suggests a tool this fixture's registry
+// does not run. That second card is the generate_document case in miniature:
+// the release knows the tool, this deployment does not, and the difference has
+// to reach the form rather than the first save.
+func templateFixture(t *testing.T) *agenttemplates.Set {
+	t.Helper()
+	set, err := agenttemplates.New(agenttemplates.Config{Templates: []agenttemplates.Template{
+		{
+			Key: "finance", Name: "Finance", Description: "Money questions.",
+			Persona:          "You serve the finance function of the business described above.",
+			SuggestedTools:   []string{"get_schema", "run_sql", "generate_document"},
+			SourceHints:      []string{"invoice", "ledger"},
+			StarterQuestions: []string{"What was revenue last month?"},
+		},
+		{
+			Key: "ops", Name: "Operations", Description: "Throughput questions.",
+			Persona:        "You serve the operations function of the business described above.",
+			SuggestedTools: []string{"get_schema", "run_sql", "create_visualization"},
+		},
+	}}, []string{"get_schema", "run_sql", "generate_document", "create_visualization"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return set
+}
+
+func newTemplatedFixture(t *testing.T) (*AgentService, *fakeAgents) {
+	t.Helper()
+	svc, repo, _ := newAgentFixture()
+	return svc.WithTemplates(templateFixture(t)), repo
+}
+
+// What saves is an ordinary roster row. The key rides along for analytics and
+// for the starter questions the chat offers; nothing else reads it.
+func TestCreateFromATemplateRecordsItsKey(t *testing.T) {
+	svc, _ := newTemplatedFixture(t)
+
+	a := mustCreate(t, svc, companyA, AgentInput{
+		Name:          "Finance",
+		PersonaPrompt: "You serve the finance function of the business described above.",
+		AllowedTools:  []string{"get_schema", "run_sql"},
+		TemplateKey:   "finance",
+	})
+	if a.TemplateKey != "finance" {
+		t.Errorf("template_key = %q, want finance", a.TemplateKey)
+	}
+
+	// And the blank path stores nothing, which is also what every agent
+	// created before this column existed carries.
+	blank := mustCreate(t, svc, companyA, AgentInput{Name: "Analyst"})
+	if blank.TemplateKey != "" {
+		t.Errorf("blank agent template_key = %q, want empty", blank.TemplateKey)
+	}
+}
+
+// A provenance column that accepts arbitrary strings answers no analytics
+// question. The name is in the error because the caller sent it.
+func TestCreateRejectsUnknownTemplateKey(t *testing.T) {
+	svc, _ := newTemplatedFixture(t)
+
+	_, err := svc.Create(context.Background(), companyA, AgentInput{
+		Name: "Finance", TemplateKey: "marketing",
+	})
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("err = %v, want ErrInvalidInput", err)
+	}
+	if !strings.Contains(err.Error(), "marketing") {
+		t.Errorf("err = %q, want it to name the key", err)
+	}
+}
+
+// A wiring with no gallery is the product as it was before this ticket: the
+// blank path works, and a key nobody can have been offered is refused.
+func TestWithNoGalleryOnlyTheBlankPathWorks(t *testing.T) {
+	svc, _, _ := newAgentFixture()
+	ctx := context.Background()
+
+	if got := svc.Templates(); len(got) != 0 {
+		t.Errorf("Templates() = %v, want empty with no gallery loaded", got)
+	}
+	if _, err := svc.Create(ctx, companyA, AgentInput{Name: "Analyst"}); err != nil {
+		t.Fatalf("the blank path failed with no gallery: %v", err)
+	}
+	if _, err := svc.Create(ctx, companyA, AgentInput{Name: "Finance", TemplateKey: "finance"}); !errors.Is(err, domain.ErrInvalidInput) {
+		t.Errorf("err = %v, want ErrInvalidInput", err)
+	}
+}
+
+// The two halves of "the tenant owns the text from the moment they save":
+// edits persist, and the provenance does not change with them. An update that
+// carried a template_key from the client could relabel an agent's origin, and
+// one that dropped it would erase the only record of where it came from.
+func TestEditingATemplatedAgentKeepsItsProvenance(t *testing.T) {
+	svc, _ := newTemplatedFixture(t)
+	ctx := context.Background()
+
+	a := mustCreate(t, svc, companyA, AgentInput{
+		Name: "Finance", PersonaPrompt: "the template's words", TemplateKey: "finance",
+	})
+
+	edited, err := svc.Update(ctx, companyA, a.ID, AgentInput{
+		Name: "Finance", PersonaPrompt: "the tenant's own words",
+		// A client asserting a different origin is ignored rather than refused:
+		// the field is create-only, and an update that never meant to touch it
+		// must not fail because it echoed back what it read.
+		TemplateKey: "ops",
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if edited.PersonaPrompt != "the tenant's own words" {
+		t.Errorf("persona = %q, want the tenant's edit", edited.PersonaPrompt)
+	}
+	if edited.TemplateKey != "finance" {
+		t.Errorf("template_key = %q after an edit, want finance", edited.TemplateKey)
+	}
+}
+
+// The narrowing that keeps a card from pre-ticking a tool this deployment
+// cannot save. The fixture registry has no create_visualization, so the Ops
+// card must lose it — and the Finance card must keep generate_document, which
+// this deployment does run.
+func TestTemplatesAreNarrowedToThisDeploymentsRegistry(t *testing.T) {
+	svc, _ := newTemplatedFixture(t)
+
+	got := svc.Templates()
+	if len(got) != 2 {
+		t.Fatalf("Templates() = %d cards, want 2", len(got))
+	}
+	byKey := map[string][]string{}
+	for _, tpl := range got {
+		byKey[tpl.Key] = tpl.SuggestedTools
+	}
+	if slices.Contains(byKey["ops"], "create_visualization") {
+		t.Errorf("ops still suggests create_visualization, which this deployment does not run: %v", byKey["ops"])
+	}
+	if !slices.Contains(byKey["finance"], "generate_document") {
+		t.Errorf("finance lost generate_document, which this deployment does run: %v", byKey["finance"])
+	}
+
+	// The narrowed list has to be savable as-is — which is the whole point,
+	// since it is what the form submits.
+	a := mustCreate(t, svc, companyA, AgentInput{
+		Name: "Operations", TemplateKey: "ops", AllowedTools: byKey["ops"],
+	})
+	if len(a.AllowedTools) != len(byKey["ops"]) {
+		t.Errorf("saved tools = %v, want %v", a.AllowedTools, byKey["ops"])
 	}
 }

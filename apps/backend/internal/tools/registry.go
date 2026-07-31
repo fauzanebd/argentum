@@ -67,6 +67,20 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 	return ts
 }
 
+// AllNames is every tool name this *release* can register, including the ones
+// a given deployment leaves out. Built from the same Registry with the one
+// optional dependency present, so it cannot drift from what is above it.
+//
+// It exists for validating things written by us rather than by a deployment:
+// config/agent_templates.yaml names tools, and a typo there must fail the build
+// or the boot everywhere — not only on the deployments that happen to run the
+// tool it misspelled. Checking a template against Names would refuse to start
+// any deployment without object storage. Anything a *tenant* submits is checked
+// against Names instead, because a tenant cannot be offered what is not there.
+func AllNames() []string {
+	return Names(Registry(RegistryDeps{Docs: &docgen.Service{}}))
+}
+
 // Names is what the agents API serves as checkboxes. Order follows the
 // registry, which runs cheapest-and-most-general first — a list an admin reads
 // top to bottom in roughly the order an agent would use it.

@@ -35,11 +35,53 @@ export interface AgentToolInfo {
  * The tool vocabulary rides along with the roster rather than sitting on its
  * own route: it is only ever read by the same form, and `GET /api/agents/tools`
  * beside `GET /api/agents/:id` is a static segment competing with a wildcard in
- * one method tree.
+ * one method tree. Templates ride along for both reasons and a third — the chat
+ * reads the same payload to find a thread's starter questions, so a separate
+ * route would be a second request on a screen that already has the answer.
  */
 export interface AgentsResponse {
   agents: (Agent | undefined)[];
   tools: AgentToolInfo[];
+  /**
+   * Templates is the create-an-agent gallery (T-B3), already narrowed to the
+   * tools this deployment runs. Empty on a deployment that loaded no gallery,
+   * which the dashboard renders as the blank form and nothing else — the
+   * product as it was before the templates existed.
+   */
+  templates: AgentTemplate[];
+}
+/**
+ * AgentTemplate is one gallery card in Settings → Agents (T-B3).
+ * A projection of agenttemplates.Template rather than the loader's own struct,
+ * for the same reason AgentToolInfo is not a tools.Tool: the config type is a
+ * YAML shape that the file's authors may extend — an editorial note, an ordering
+ * hint, a card we ship but do not offer yet — and every field of it would reach
+ * the browser the day it was added. This is the published half, and it is a
+ * deliberate list.
+ */
+export interface AgentTemplate {
+  key: string;
+  name: string;
+  description: string;
+  /**
+   * Persona prefills the instructions field. It is sent to the browser
+   * because the tenant edits it before saving — nothing about a template is
+   * applied behind the form.
+   */
+  persona: string;
+  suggested_tools: string[];
+  /**
+   * SourceHints pre-tick likely databases in the create form, matched against
+   * a connection's label and description. The dashboard shows which hint
+   * matched, because a silently pre-ticked source scopes an agent away from
+   * its own data.
+   */
+  source_hints: string[];
+  /**
+   * StarterQuestions are offered on a new conversation opened on an agent
+   * created from this template.
+   */
+  starter_questions: string[];
 }
 /**
  * AgentBindingsResponse is the body of `GET /api/agent-bindings` (T-S4).

@@ -50,6 +50,27 @@ var agentToolLabels = map[string]string{
 	"generate_document":    "Generate a PDF or slide deck",
 }
 
+// templateInfo projects the loaded gallery onto the wire (T-B3). The service
+// has already narrowed each card's suggested tools to this deployment's
+// registry; what happens here is only the field-by-field choice of what a
+// browser gets.
+func (h *AgentsHandler) templateInfo() []AgentTemplate {
+	src := h.svc.Templates()
+	out := make([]AgentTemplate, 0, len(src))
+	for _, t := range src {
+		out = append(out, AgentTemplate{
+			Key:              t.Key,
+			Name:             t.Name,
+			Description:      t.Description,
+			Persona:          t.Persona,
+			SuggestedTools:   t.SuggestedTools,
+			SourceHints:      t.SourceHints,
+			StarterQuestions: t.StarterQuestions,
+		})
+	}
+	return out
+}
+
 func (h *AgentsHandler) toolInfo() []AgentToolInfo {
 	names := h.svc.ToolNames()
 	out := make([]AgentToolInfo, 0, len(names))
@@ -101,7 +122,9 @@ func (h *AgentsHandler) list(c *gin.Context) {
 		agentFail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, AgentsResponse{Agents: agents, Tools: h.toolInfo()})
+	c.JSON(http.StatusOK, AgentsResponse{
+		Agents: agents, Tools: h.toolInfo(), Templates: h.templateInfo(),
+	})
 }
 
 func (h *AgentsHandler) get(c *gin.Context) {
