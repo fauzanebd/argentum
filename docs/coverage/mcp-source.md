@@ -13,7 +13,7 @@ appends its own section.
 | Ticket | What | Size | State |
 | ------ | ---- | ---- | ----- |
 | `T-M1` | Schema, egress safety, CRUD, discovery | 2.5d | **done — gate run live 2026-08-01** |
-| `T-M2` | MCP tools at turn time | 3.0d | not started |
+| `T-M2` | MCP tools at turn time | 3.0d | **code complete + unit-tested — live gate outstanding** |
 | `T-M3` | MCP servers on the dashboard and `/v1` | 1.0d | not started |
 | `T-M4` | Write-capable tools behind approval | 1.5d | not started |
 
@@ -267,3 +267,117 @@ for `GET`/`POST /api/mcp-servers`, `GET`/`PUT`/`DELETE /api/mcp-servers/:id`,
 - The binding table (`agent_mcp_servers`, locked decision 5) does not exist yet.
   `T-M2` needs it, and `agentscope` is where the enforcement goes, exactly as
   `agent_sources` does it.
+
+---
+
+## T-M2 · MCP tools at turn time
+
+### 1. What ships
+
+An approved, read-only, in-scope MCP tool now reaches a turn, bounded and
+audited exactly as `run_sql` is. The tool set is per company and rebuilt every
+turn; nothing is cached across turns.
+
+| Layer | File |
+| ----- | ---- |
+| Schema | `migrations/control/038_agent_mcp_servers.{up,down}.sql` — the binding table + `agent_actions.mcp_server_id` |
+| Binding | `internal/domain/agent.go` — `Agent.MCPServerIDs`, `AllowsMCPServer` (**empty means none**) |
+| Scope | `internal/agentscope/scope.go` — `Scope.MCPServerIDs`, `AllowsMCPServer` |
+| Audit column | `internal/domain/agent_action.go` — `AgentAction.MCPServerID` |
+| Repo (read) | `internal/adapters/postgres/agent_repo.go` — `mcp_server_ids` folded into `agentColumns` |
+| Repo (write) | `internal/adapters/postgres/agent_repo.go` — `ReplaceMCPServers` (standalone; not folded into Create/Update — see §3) |
+| Audit repo | `internal/adapters/postgres/agent_action_repo.go` — insert/scan `mcp_server_id` |
+| Client call | `internal/adapters/mcp/client.go` — `CallTool`, sharing `connect` with `Probe` |
+| The tool | `internal/tools/mcp/tool.go` — `interfaces.Tool` + `MCPServerID`, namespacing, per-turn call cap, schema→params |
+| The provider | `internal/tools/mcp/source.go` — `Source.CompanyTools(ctx, companyID)`, wrapped |
+| Unwrap seam | `internal/agentbudget/guard.go` — `guarded.Unwrap`; `internal/tools/audit.go` — `mcpServerID` walk |
+| Merge | `internal/app/chat_runner.go` (`AgentSpec.CompanyTools`, `WithCompanyTools`, `scopeOf`) + `internal/bootstrap/stack.go` (factory merge, `Source` wiring) |
+| Validation | `internal/app/agent_service.go` — `normalizeTools` accepts `mcp__`-prefixed names |
+| Config | `internal/config/config.go` — `MCP_CALL_TIMEOUT_SECS`, `MCP_MAX_RESPONSE_BYTES`, `MCP_MAX_CALLS_PER_TURN` |
+
+Migration **038**, taken from `schema_migrations` at implementation time — the
+ticket's header says `034`, written before T-M1 (037) and three other
+migrations landed ahead of it.
+
+### 2. The wrapping is the security property
+
+`tools.Registry` stays the static, deployment-wide list, wrapped once at boot.
+`Source.CompanyTools` builds the per-turn MCP tools and wraps them with **the
+same two decorators in the same order** — `agentbudget.GuardAll` inside,
+`tools.WithAuditAll` outside — before returning. The factory appends the
+already-wrapped company tools to the already-wrapped static list, then filters
+by the agent's allowlist. So every tool on a turn is budget-guarded and audited,
+and there is no path that yields an unwrapped MCP tool: the ticket's "wrapping
+only the static half is the bug" is made structural rather than remembered.
+
+The audit row's `mcp_server_id` is read off the tool through an `Unwrap` chain,
+not off the context: one turn can call tools on several servers, so the id
+belongs to the tool. The budget guard embeds `interfaces.Tool` and so hides the
+tool's own `MCPServerID` method from promotion — `guarded.Unwrap` is what lets
+the audit decorator reach past it.
+
+### 3. Decisions
+
+- **Empty binding means NONE** (locked decision 5), enforced in
+  `Scope.AllowsMCPServer`. The zero scope — the eval harness, an unscoped
+  company, an agent nobody bound a server to — reaches no MCP server, which is
+  exactly what makes the no-MCP path byte-for-byte the tool list before this
+  ticket. `CompanyTools` takes a fast `nil` return on empty scope.
+- **Three gates, all required:** approved (an admin read it), read-only (what it
+  does — `T-M4` relaxes this), and not drifted (the text still matches what was
+  approved). Any one false and the tool is not offered.
+- **No cross-turn cache.** A server disabled, deleted, or whose tool drifted
+  since the last turn is simply absent from the next turn's rebuilt list — which
+  is what "removed mid-session, gone on the next turn" means, and why there is
+  never a stale tool to call.
+- **`ReplaceMCPServers` is standalone, not folded into agent Create/Update**
+  the way `replaceSources` is: the roster's edit input does not carry bindings
+  until `T-M3`'s UI, so folding it in would clear every binding on an unrelated
+  edit. Until `T-M3`, a binding is a hand-written `agent_mcp_servers` row (or
+  this method).
+- **`normalizeTools` validates the namespace, not the live set.** A per-company
+  MCP name cannot be checked against the static registry, so what is enforced
+  here is the reserved `mcp__` prefix; the turn-time provider is the real gate,
+  since a name bound to no approved tool never appears in the turn's list. Full
+  validation against the company's approved set lands with `T-M3`.
+- **Usage is not re-metered.** An MCP result enters the context and is billed on
+  the next LLM iteration by the already-metered client, which tags `agent_id`
+  from the scope (T-S2, `usage_service.go:177`). No second meter.
+
+### 4. What is verified, and what is not
+
+**Verified by unit tests** (`go test ./...` green, `go vet` clean, `gofmt`
+clean, both binaries build, `make types-check` regenerated and clean):
+
+- `Scope.AllowsMCPServer` — empty means none.
+- `Source.CompanyTools` — empty scope returns nil; only an approved, read-only,
+  non-drifted tool on an enabled, **bound** server is offered; unapproved,
+  write, drifted, disabled-server and unbound-server tools are all absent.
+- The returned tools are wrapped: executing one writes an `agent_actions` row
+  carrying the server id, and the stored token is decrypted before the call.
+- The budget guard refuses a call once the turn's tool-call budget is spent, and
+  the refused call never reaches the server.
+- The audit row names the server through the `Unwrap` chain, and is empty for a
+  static tool.
+- Namespacing prevents a tenant `run_sql` from shadowing ours; the call sends
+  the tenant's raw tool name, not the namespaced one; a tool error is surfaced
+  as a recoverable result and a transport failure as a Go error; the shared
+  per-turn call cap refuses across a turn's tools; JSON-Schema → parameters.
+
+**Outstanding — needs a running deployment (the live gate):** a transcript of a
+real question answered through a real MCP server's tool, the matching
+`agent_actions` and `usage_events` rows, the negative case from a second agent
+with no binding, and `make eval` at or above the `T-01` baseline with no MCP
+server configured. Same posture `T-S1`→`T-S3` sat in for a day: code complete
+and unit-tested, live gate to run against a stack.
+
+### 5. Handover to T-M3
+
+- The read path (`agentColumns` → `Agent.MCPServerIDs`) and the write method
+  (`AgentRepo.ReplaceMCPServers`) both exist; `T-M3`'s Settings control wires
+  the binding UI to the latter and should decide whether to fold it into the
+  agent edit flow (and preserve bindings on unrelated edits if so).
+- `GET /v1/agents` growing the bound server names, per-server usage breakout,
+  and the thread-view server label are `T-M3`.
+- The copy rule carries over from the CRUD side: **empty means none here**,
+  directly below a sources control where empty means all.
