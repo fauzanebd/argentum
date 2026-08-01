@@ -130,9 +130,44 @@ func (s *UsageService) RecordDocument(ctx context.Context, companyID, threadID, 
 	})
 }
 
+// usageFeatureKey carries which product feature is spending, for the passes
+// that are not a chat turn (T-B2).
+//
+// A context value rather than a parameter on six Record* methods, for the same
+// reason the agent id is one: the spender is MeteredLLM, four packages away
+// from anything that knows why it was called, and the alternative is threading
+// a string through every LLM wrapper so that one caller can label itself.
+type usageFeatureKey struct{}
+
+// WithUsageFeature labels every usage event recorded under ctx. Callers pass a
+// stable slug — UsageFeatureBusinessInference is the first — so the numbers can
+// be split by feature later without a migration.
+func WithUsageFeature(ctx context.Context, feature string) context.Context {
+	if feature == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, usageFeatureKey{}, feature)
+}
+
+func usageFeature(ctx context.Context) string {
+	s, _ := ctx.Value(usageFeatureKey{}).(string)
+	return s
+}
+
 func (s *UsageService) append(ctx context.Context, e *domain.UsageEvent) {
 	if e.CompanyID == "" {
 		return
+	}
+	// Which feature spent this (T-B2). Set here rather than at the call site so
+	// a pass that labels its context has every event it causes labelled — the
+	// LLM call, and anything else the same code path records.
+	if f := usageFeature(ctx); f != "" {
+		if e.Metadata == nil {
+			e.Metadata = map[string]interface{}{}
+		}
+		if _, ok := e.Metadata["feature"]; !ok {
+			e.Metadata["feature"] = f
+		}
 	}
 	// Which agent spent this (T-S2). One assignment here rather than a
 	// parameter on six Record* methods, for the same reason the audit

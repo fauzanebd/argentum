@@ -50,6 +50,144 @@ func profileSvc() (*CompanyProfileService, *fakeProfileRepo) {
 	return NewCompanyProfileService(repo), repo
 }
 
+// suggestingSvc is the same service with T-B2's half wired: the drafts
+// inference wrote, and the credit check that explains their absence.
+func suggestingSvc(verdict BudgetVerdict) (*CompanyProfileService, *fakeProfileRepo, *fakeSourceProfileRepo) {
+	repo := newProfileRepo()
+	sources := newSourceProfileRepo()
+	svc := NewCompanyProfileService(repo).WithSuggestions(sources, fakeBudget{verdict: verdict})
+	return svc, repo, sources
+}
+
+func storeDraft(sources *fakeSourceProfileRepo, connID string) {
+	sources.rows[connID] = &domain.SourceProfile{
+		ConnectionID: connID,
+		CompanyID:    "co-1",
+		Industry:     "grocery retail",
+		Summary:      "A chain of shops selling packaged goods.",
+		Entities:     []domain.SourceEntity{{Table: "stores", Means: "one shop"}},
+		InferredAt:   time.Now(),
+	}
+}
+
+// The suggestion is a draft and stays one until somebody presses Apply
+// (locked decision 2).
+func TestAnInferredDraftIsNotWrittenUntilApplied(t *testing.T) {
+	svc, repo, sources := suggestingSvc(BudgetOK)
+	storeDraft(sources, "conn-1")
+
+	sug, err := svc.Suggest(context.Background(), "co-1")
+	if err != nil {
+		t.Fatalf("suggest: %v", err)
+	}
+	switch {
+	case sug.Draft == nil:
+		t.Fatal("no draft offered for a company whose source was described")
+	case sug.Sources != 1:
+		t.Errorf("sources = %d, want 1", sug.Sources)
+	case repo.rows["co-1"] != nil:
+		t.Error("reading the suggestion wrote a profile")
+	}
+
+	p, err := svc.ApplySuggestion(context.Background(), "co-1", "user-1")
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	switch {
+	case repo.rows["co-1"] == nil:
+		t.Fatal("apply wrote nothing")
+	case p.Source != domain.ProfileSourceInferred:
+		t.Errorf("source = %q, want %q — an applied guess is still a guess", p.Source, domain.ProfileSourceInferred)
+	case p.InferredAt == nil:
+		t.Error("no inferred_at survived the apply")
+	case p.UpdatedBy != "user-1":
+		t.Errorf("updated_by = %q, want the admin who applied it", p.UpdatedBy)
+	}
+}
+
+// The tenant's own words win over a guess. A stale tab, or a second admin,
+// must not be able to replace a description somebody typed.
+func TestApplyRefusesToOverwriteWordsSomebodyChose(t *testing.T) {
+	svc, repo, sources := suggestingSvc(BudgetOK)
+	storeDraft(sources, "conn-1")
+	repo.rows["co-1"] = &domain.CompanyProfile{
+		CompanyID:   "co-1",
+		Description: "We run 38 grocery stores across Java.",
+		Source:      domain.ProfileSourceHuman,
+	}
+
+	_, err := svc.ApplySuggestion(context.Background(), "co-1", "user-1")
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("err = %v, want ErrConflict", err)
+	}
+	if repo.rows["co-1"].Description != "We run 38 grocery stores across Java." {
+		t.Error("the tenant's description was overwritten by a draft")
+	}
+}
+
+// Re-applying over a profile that is still an untouched guess is allowed: a
+// re-scan after a schema change is exactly when a tenant wants the newer draft.
+func TestApplyReplacesAnUntouchedGuess(t *testing.T) {
+	svc, repo, sources := suggestingSvc(BudgetOK)
+	storeDraft(sources, "conn-1")
+	repo.rows["co-1"] = &domain.CompanyProfile{
+		CompanyID:   "co-1",
+		Description: "an older guess",
+		Source:      domain.ProfileSourceInferred,
+	}
+
+	p, err := svc.ApplySuggestion(context.Background(), "co-1", "user-1")
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if p.Description == "an older guess" {
+		t.Error("the newer draft did not replace the stale one")
+	}
+}
+
+// Nothing to apply is a 404-shaped answer, not an empty profile.
+func TestApplyWithoutADraftWritesNothing(t *testing.T) {
+	svc, repo, _ := suggestingSvc(BudgetOK)
+	_, err := svc.ApplySuggestion(context.Background(), "co-1", "user-1")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+	if repo.rows["co-1"] != nil {
+		t.Error("an empty profile was written for a company with no draft")
+	}
+}
+
+// A company at zero balance gets silence from inference; the panel needs to be
+// able to say why rather than looking broken.
+func TestAnExhaustedBalanceIsReportedRatherThanSilent(t *testing.T) {
+	svc, _, _ := suggestingSvc(BudgetExhausted)
+	sug, err := svc.Suggest(context.Background(), "co-1")
+	if err != nil {
+		t.Fatalf("suggest: %v", err)
+	}
+	switch {
+	case sug.Draft != nil:
+		t.Error("a draft appeared for a company that never ran inference")
+	case !sug.CreditsExhausted:
+		t.Error("the empty panel does not say the balance is why")
+	}
+}
+
+// A deployment without inference wired keeps the T-B1 form exactly as it was.
+func TestSuggestionsAreOptional(t *testing.T) {
+	svc, _ := profileSvc()
+	sug, err := svc.Suggest(context.Background(), "co-1")
+	if err != nil {
+		t.Fatalf("suggest: %v", err)
+	}
+	if sug.Draft != nil || sug.Sources != 0 || sug.CreditsExhausted {
+		t.Errorf("suggestion = %+v, want an empty one", sug)
+	}
+	if _, err := svc.ApplySuggestion(context.Background(), "co-1", "user-1"); err == nil {
+		t.Error("apply succeeded on a deployment with no inference")
+	}
+}
+
 func TestAFirstSaveIsTheTenantsOwnWords(t *testing.T) {
 	svc, repo := profileSvc()
 	p, err := svc.Upsert(context.Background(), "co-1", "user-1", ProfileInput{

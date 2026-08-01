@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,6 +29,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/bootstrap"
 	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
@@ -107,6 +109,7 @@ func main() {
 	mux.HandleFunc(queue.TypeScheduledTaskRun, makeScheduledRunHandler(stack.ScheduledSvc))
 	mux.HandleFunc(queue.TypeReportRender, makeReportRenderHandler(reportSvc))
 	mux.HandleFunc(queue.TypeWebhookDeliver, makeWebhookDeliverHandler(webhookDeliverer))
+	mux.HandleFunc(queue.TypeBusinessInfer, makeBusinessInferHandler(stack.Inference))
 
 	// --- Periodic task manager ---
 	// Polls scheduled_tasks every SyncInterval and registers/refreshes one
@@ -204,6 +207,49 @@ func makeWebhookDeliverHandler(d *webhookout.Deliverer) asynq.HandlerFunc {
 			return asynq.SkipRetry
 		}
 		return d.Deliver(ctx, p.DeliveryID)
+	}
+}
+
+// makeBusinessInferHandler drafts what one connected source says the business
+// is (T-B2).
+//
+// Two outcomes are deliberately not retried. A skip — the company's credits are
+// exhausted — is the designed answer, not a failure: adding a data source must
+// never fail because of a balance, and asynq retrying it three times would
+// spend three log lines saying so. An unauthorized payload names a connection
+// that is not the company's, which no amount of retrying will change.
+//
+// Everything else returns the error and takes asynq's backoff: a source that
+// was unreachable for a minute is exactly the case a retry is for, and the
+// connection stays perfectly usable in the meantime.
+func makeBusinessInferHandler(svc *app.BusinessInferenceService) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var p queue.BusinessInferPayload
+		if err := json.Unmarshal(t.Payload(), &p); err != nil {
+			return asynq.SkipRetry
+		}
+		if p.CompanyID == "" || p.ConnectionID == "" || svc == nil {
+			return asynq.SkipRetry
+		}
+		// Force is the Re-scan button: re-introspect rather than read the
+		// cached schema. Only that path sets it.
+		infer := svc.InferSource
+		if p.Force {
+			infer = svc.RefreshSource
+		}
+		_, err := infer(ctx, p.CompanyID, p.ConnectionID)
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, app.ErrInferenceSkipped), errors.Is(err, domain.ErrUnauthorized):
+			return asynq.SkipRetry
+		default:
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"company_id": p.CompanyID,
+				"source_id":  p.ConnectionID,
+			}).Warn("business inference failed; the connection is unaffected and the tenant can type their own profile")
+			return err
+		}
 	}
 }
 

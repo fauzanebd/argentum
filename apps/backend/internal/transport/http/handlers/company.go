@@ -36,6 +36,7 @@ func (h *CompanyHandler) Register(rg *gin.RouterGroup) {
 	rg.PUT("/connections/:id/dsn", h.updateConnectionDSN)
 	rg.POST("/connections/:id/default", h.setDefault)
 	rg.POST("/connections/:id/regenerate-description", h.regenerateDescription)
+	rg.POST("/connections/:id/rescan", h.rescanSource)
 	rg.POST("/connections/:id/reindex-embeddings", h.reindexEmbeddings)
 	rg.POST("/connections/:id/test-rag", h.testRAG)
 	rg.DELETE("/connections/:id", h.deleteConnection)
@@ -319,6 +320,26 @@ func (h *CompanyHandler) regenerateDescription(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, conn)
+}
+
+// rescanSource re-reads what this source says the business is (T-B2).
+//
+// 202, not 200: the answer is written by the worker, and a tenant who pressed a
+// button that returned "done" while nothing had happened yet would reload the
+// form and find the old draft. The pass is a no-op when the schema has not
+// changed, so the button is safe to press twice.
+func (h *CompanyHandler) rescanSource(c *gin.Context) {
+	err := h.svc.RescanSource(c.Request.Context(), companyID(c), c.Param("id"))
+	switch {
+	case errors.Is(err, domain.ErrUnauthorized):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	case errors.Is(err, domain.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case err != nil:
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusAccepted, gin.H{"queued": true})
+	}
 }
 
 func (h *CompanyHandler) setDefault(c *gin.Context) {

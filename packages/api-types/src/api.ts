@@ -126,6 +126,33 @@ export interface CompanyProfileResponse {
   block_token_limit: number /* int */;
 }
 /**
+ * ProfileSuggestionResponse is the body of `GET /api/company/profile/suggestion`
+ * (T-B2): what the connected sources say the business is, before anybody has
+ * agreed to it.
+ * Draft is nil when there is nothing to review, which is the ordinary state of
+ * a company that has just signed up — the panel is absent rather than empty.
+ * The two counters beside it are what let the panel explain the absence instead
+ * of leaving a tenant to guess whether the feature is broken.
+ */
+export interface ProfileSuggestionResponse {
+  draft?: CompanyProfile;
+  /**
+   * Sources is how many connected sources have been described.
+   */
+  sources: number /* int */;
+  /**
+   * CreditsExhausted says the balance is why there is no draft. Adding a
+   * source never fails for credit, so without this the tenant sees silence.
+   */
+  credits_exhausted: boolean;
+  /**
+   * RenderedBlock is the draft as the agent would read it, composed by the
+   * same code the turn uses — so what a tenant approves is what they saw.
+   */
+  rendered_block?: string;
+  truncated: boolean;
+}
+/**
  * APIKeysResponse is the body of `GET /api/api-keys` (T-13, extended by T-A5).
  * Stats rides with the roster for the same reason AgentsResponse carries the
  * tool vocabulary: the tab never renders one without the other, and a key's

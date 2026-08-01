@@ -35,10 +35,26 @@ const (
 // profile.
 type CompanyProfileService struct {
 	repo domain.CompanyProfileRepository
+
+	// sources and budget are T-B2's half: the drafts inference wrote, and the
+	// credit check that explains their absence. Both optional — without them the
+	// form is exactly what T-B1 shipped.
+	sources domain.SourceProfileRepository
+	budget  InferenceBudget
 }
 
 func NewCompanyProfileService(repo domain.CompanyProfileRepository) *CompanyProfileService {
 	return &CompanyProfileService{repo: repo}
+}
+
+// WithSuggestions turns on the review panel (T-B2). budget may be nil; it is
+// only ever used to explain why there is nothing to review.
+func (s *CompanyProfileService) WithSuggestions(
+	sources domain.SourceProfileRepository, budget InferenceBudget,
+) *CompanyProfileService {
+	s.sources = sources
+	s.budget = budget
+	return s
 }
 
 // ProfileInput is one submitted profile. Every field is replaced on save: this
@@ -98,6 +114,121 @@ func (s *CompanyProfileService) Upsert(
 		"block_chars": len(block), "truncated": truncated,
 	}).Info("company profile saved")
 	return p, nil
+}
+
+// Suggestion is the drafted profile the tenant is asked to review (T-B2), and
+// why there is none when there is none.
+//
+// Draft is nil unless every part of the chain worked: a source is connected,
+// inference ran, and it produced something. The two flags exist so the panel
+// can say which link is missing instead of rendering nothing — "we have not
+// looked at your data yet" and "we could not, because the balance is at zero"
+// are different sentences, and only one of them is the tenant's to act on.
+type Suggestion struct {
+	Draft *domain.CompanyProfile `json:"draft,omitempty"`
+	// Sources is how many connected sources have a stored draft. Zero with a
+	// connection present means inference has not finished (or has not run).
+	Sources int `json:"sources"`
+	// CreditsExhausted reports that the balance is why nothing was drafted.
+	// Adding a data source never fails for credit, so this is the only place a
+	// tenant would otherwise see silence and assume a bug.
+	CreditsExhausted bool `json:"credits_exhausted"`
+}
+
+// Suggest folds the company's source drafts into one suggestion.
+//
+// Reads rows only — the inference itself runs in the worker — because the
+// dashboard asks for this on every render of the settings form.
+func (s *CompanyProfileService) Suggest(ctx context.Context, companyID string) (*Suggestion, error) {
+	out := &Suggestion{}
+	if s.sources == nil || companyID == "" {
+		return out, nil
+	}
+	rows, err := s.sources.ListByCompany(ctx, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("list source profiles: %w", err)
+	}
+	out.Sources = len(rows)
+	out.Draft = domain.DraftFromSources(companyID, rows)
+	if out.Draft == nil && s.budget != nil {
+		// Only asked when there is nothing to show. A credit check on every
+		// render of a settings form, for a fact that only matters in the empty
+		// case, is a Redis round-trip per page load for nothing.
+		if st, err := s.budget.CheckBudget(ctx, companyID); err == nil {
+			out.CreditsExhausted = st.Verdict == BudgetExhausted
+		}
+	}
+	return out, nil
+}
+
+// ApplySuggestion writes the drafted profile as the company's own, marked
+// 'inferred' (locked decision 2).
+//
+// The draft is recomputed here from the stored source profiles rather than
+// accepted from the request body: a client that could post its own "suggestion"
+// would be a second, unauthenticated way to write the block every agent reads.
+//
+// It refuses to overwrite a profile somebody has already written. Apply is
+// offered when the form is empty, and a request that arrives anyway is either a
+// tab that has been open since before the tenant typed their description or a
+// second admin racing the first — and in both cases the tenant's own words are
+// the ones to keep (locked decision 3).
+func (s *CompanyProfileService) ApplySuggestion(
+	ctx context.Context, companyID, userID string,
+) (*domain.CompanyProfile, error) {
+	if s.sources == nil {
+		return nil, fmt.Errorf("business inference is not configured")
+	}
+	sug, err := s.Suggest(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	if sug.Draft == nil {
+		return nil, domain.ErrNotFound
+	}
+
+	current, err := s.repo.GetByCompany(ctx, companyID)
+	switch {
+	case err == nil && describesSomething(current) && current.Source != domain.ProfileSourceInferred:
+		return nil, fmt.Errorf("%w: this workspace already describes itself; edit the form instead", domain.ErrConflict)
+	case err != nil && !errors.Is(err, domain.ErrNotFound):
+		return nil, err
+	}
+
+	p, err := s.validated(companyID, ProfileInput{
+		Industry:             sug.Draft.Industry,
+		Description:          sug.Draft.Description,
+		ContextNotes:         sug.Draft.ContextNotes,
+		FiscalYearStartMonth: sug.Draft.FiscalYearStartMonth,
+	})
+	if err != nil {
+		return nil, err
+	}
+	p.Source = domain.ProfileSourceInferred
+	p.InferredAt = sug.Draft.InferredAt
+	p.UpdatedBy = userID
+
+	if err := s.repo.Upsert(ctx, p); err != nil {
+		return nil, err
+	}
+	block, truncated := p.ContextBlock()
+	logrus.WithFields(logrus.Fields{
+		"company_id": companyID, "sources": sug.Sources,
+		"block_chars": len(block), "truncated": truncated,
+	}).Info("inferred business profile applied")
+	return p, nil
+}
+
+// describesSomething reports whether a stored profile has any content to lose.
+// A row that exists but is blank — saved once and emptied — is not text worth
+// protecting from a draft.
+func describesSomething(p *domain.CompanyProfile) bool {
+	if p == nil {
+		return false
+	}
+	return strings.TrimSpace(p.Industry) != "" ||
+		strings.TrimSpace(p.Description) != "" ||
+		strings.TrimSpace(p.ContextNotes) != ""
 }
 
 // editedSource is the provenance transition, written once. An inferred profile

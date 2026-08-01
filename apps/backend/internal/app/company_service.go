@@ -50,6 +50,69 @@ type CompanyService struct {
 	mb          *MetabaseWarehouseSync
 	schemaTool  *tools.GetSchemaTool // optional; nil in tests
 	describer   *ConnectionDescriber // optional; nil disables LLM autogen
+	inference   InferenceEnqueuer    // optional; nil disables business inference
+}
+
+// InferenceEnqueuer queues a business-inference pass for one source (T-B2).
+//
+// A queue rather than a goroutine, unlike the connection describer beside it:
+// this pass reads a whole schema and spends an LLM call, and doing that inside
+// the API process would tie a tenant's onboarding request to a warehouse's
+// introspection time. The API only ever asks; the worker decides whether there
+// is anything to do.
+type InferenceEnqueuer interface {
+	EnqueueBusinessInference(ctx context.Context, companyID, connectionID string, force bool) error
+}
+
+// WithInference turns on business inference. Optional wiring: a deployment
+// without it keeps every connection working and leaves the tenant typing their
+// own profile, which is what T-B1 alone gives them.
+func (s *CompanyService) WithInference(enq InferenceEnqueuer) *CompanyService {
+	s.inference = enq
+	return s
+}
+
+// inferSource asks for a draft of what this source says the business is.
+//
+// Best-effort by construction: a queue that will not take the task must not
+// fail the request that triggered it, because every caller here has just done
+// something the tenant cares about more (added a source, rotated a DSN) and
+// none of them is about the profile.
+func (s *CompanyService) inferSource(ctx context.Context, companyID, connID string) {
+	if s.inference == nil {
+		return
+	}
+	// force=false: these are the automatic triggers, and the cached schema is
+	// the right thing for them to read. The button is the exception.
+	if err := s.inference.EnqueueBusinessInference(ctx, companyID, connID, false); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": companyID,
+			"source_id":  connID,
+		}).Warn("could not queue business inference; the source is connected and the profile stays as it is")
+	}
+}
+
+// RescanSource re-runs inference for one source on demand — the Re-scan button
+// in Settings → Connections (T-B2).
+//
+// It queues rather than runs, and returns as soon as the task is accepted. The
+// task carries force=true, so the worker re-introspects rather than reading the
+// hour-old schema cache: a tenant who has just added a table and pressed this
+// is asking about their database, not about our copy of it. The fingerprint
+// check still applies afterwards, so a schema that really has not moved spends
+// no LLM call.
+func (s *CompanyService) RescanSource(ctx context.Context, companyID, connID string) error {
+	conn, err := s.connections.GetByID(ctx, connID)
+	if err != nil {
+		return err
+	}
+	if conn.CompanyID != companyID {
+		return domain.ErrUnauthorized
+	}
+	if s.inference == nil {
+		return fmt.Errorf("business inference is not configured")
+	}
+	return s.inference.EnqueueBusinessInference(ctx, companyID, connID, true)
 }
 
 func NewCompanyService(
@@ -131,6 +194,11 @@ func (s *CompanyService) AddConnection(ctx context.Context, companyID, dbType, l
 	if description == "" && s.describer != nil {
 		s.describer.DescribeAsync(companyID, c.ID)
 	}
+	// What this source says the business is (T-B2). Queued on create rather
+	// than waiting for a test to pass: the worker's own introspection is the
+	// test, and a source that cannot be read yet fails there — where it retries
+	// — instead of never being asked about.
+	s.inferSource(ctx, companyID, c.ID)
 	return c, nil
 }
 
@@ -171,6 +239,9 @@ func (s *CompanyService) UpdateConnectionDSN(ctx context.Context, companyID, con
 	if s.describer != nil && conn.DescriptionSource != domain.DescriptionSourceManual {
 		s.describer.DescribeAsync(companyID, conn.ID)
 	}
+	// A rotated DSN can point at a different database entirely. The fingerprint
+	// check decides whether that is true; asking is free when it is not (T-B2).
+	s.inferSource(ctx, companyID, conn.ID)
 	return nil
 }
 
@@ -323,7 +394,16 @@ func (s *CompanyService) TestConnectionByID(ctx context.Context, companyID, conn
 	if err != nil {
 		return fmt.Errorf("decrypt dsn: %w", err)
 	}
-	return s.TestConnection(ctx, conn.DBType, dsn)
+	if err := s.TestConnection(ctx, conn.DBType, dsn); err != nil {
+		return err
+	}
+	// A successful test is the other trigger for business inference (T-B2), and
+	// the one that catches the source added while its database was unreachable:
+	// the create-time pass failed and retired, and nothing else would ask again.
+	// Repeats are free — the enqueuer drops duplicates inside a two-minute
+	// window and an unchanged schema spends no LLM call.
+	s.inferSource(ctx, companyID, conn.ID)
+	return nil
 }
 
 // AddPhoneNumber adds a number to the company's allowlist.

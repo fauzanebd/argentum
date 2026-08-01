@@ -10,6 +10,9 @@
 //     synchronous window and became a job (T-A2).
 //   - `webhook:deliver`    — one attempt at handing a tenant's server a signed
 //     callback (T-A2).
+//   - `business:infer`     — read one connected source's schema and draft what
+//     the business appears to be (T-B2). Never runs inline
+//     in the request that added the connection.
 //
 // Payloads are JSON-marshalled into the asynq task body.
 package queue
@@ -26,7 +29,22 @@ const (
 	TypeScheduledTaskRun = "scheduled:run"
 	TypeReportRender     = "report:render"
 	TypeWebhookDeliver   = "webhook:deliver"
+	TypeBusinessInfer    = "business:infer"
 )
+
+// BusinessInferPayload names one source to describe (T-B2). Only the ids: the
+// schema is read at run time through the cache the agent's get_schema fills, and
+// a payload carrying a copy of it would be a second answer to "what tables are
+// there" — the thing the fingerprint check depends on there being one of.
+type BusinessInferPayload struct {
+	CompanyID    string `json:"company_id"`
+	ConnectionID string `json:"connection_id"`
+	// Force re-introspects instead of reading the hour-old schema cache. Set
+	// only by the Re-scan button: a tenant who just added a table and pressed it
+	// must not be told nothing changed because our copy of their schema is
+	// stale. The automatic triggers leave it false and read the cache.
+	Force bool `json:"force,omitempty"`
+}
 
 // ReportRenderPayload carries a spec whose synchronous render ran long
 // (T-A2). The whole spec travels rather than a reference to a stored copy:

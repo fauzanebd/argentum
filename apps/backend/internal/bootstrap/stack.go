@@ -77,6 +77,10 @@ type Stack struct {
 	// beside the agent and composed into the system prompt ahead of the
 	// persona. Also read-only here: the profile is written from the dashboard.
 	CompanyProfiles domain.CompanyProfileRepository
+	// SourceProfiles is what each connected source looks like it is for (T-B2).
+	// No turn reads it — it is a draft the tenant reviews — but the worker is
+	// where it is written, because writing it costs an LLM call.
+	SourceProfiles domain.SourceProfileRepository
 
 	TenantPool *db.TenantConnPool
 	UsageSvc   *app.UsageService
@@ -94,6 +98,12 @@ type Stack struct {
 	Tools        []interfaces.Tool
 	AgentFactory app.AgentFactory
 	Budget       agentbudget.Budget
+
+	// Inference drafts what a connected source says the business is (T-B2). It
+	// lives on the stack rather than in cmd/worker because it needs the same
+	// schema cache the agent's get_schema fills, and that instance is built
+	// here.
+	Inference *app.BusinessInferenceService
 
 	// Docs is the one path from a spec to a stored document (T-A2). Nil when
 	// the deployment has no object storage, which is the same condition that
@@ -141,6 +151,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.AgentActions = pgctl.NewAgentActionRepo(controlDB)
 	s.Agents = pgctl.NewAgentRepo(controlDB)
 	s.CompanyProfiles = pgctl.NewCompanyProfileRepo(controlDB)
+	s.SourceProfiles = pgctl.NewSourceProfileRepo(controlDB)
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
 
@@ -255,10 +266,16 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// with. A second list would have gone stale the first time a tool was
 	// added — and a tool missing from those checkboxes is a capability no
 	// agent can ever be given.
+	// Built here rather than inside Registry because two things need it: the
+	// agent, through the tool list, and business inference, which reads the same
+	// cache so that "what tables are there" has one answer (T-B2).
+	schemaTool := tools.NewGetSchemaToolWithRedis(s.TenantPool, s.Connections, s.Redis)
+
 	s.Tools = tools.Registry(tools.RegistryDeps{
 		Pool:                s.TenantPool,
 		Connections:         s.Connections,
 		Redis:               s.Redis,
+		Schema:              schemaTool,
 		Usage:               s.UsageSvc,
 		Metabase:            metabaseClient,
 		MetabaseSource:      s.Connections,
@@ -325,6 +342,14 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	if cfg.EmbeddingEnabled {
 		s.tableEmbeddings = pgctl.NewTableEmbeddingRepo(controlDB)
 	}
+
+	// Business inference on the light model (T-B2). It is one short structured
+	// call over table names, and it bills like everything else because the
+	// client it runs on is already the metered one.
+	s.Inference = app.NewBusinessInferenceService(
+		lightLLMClient, schemaTool, s.Connections, s.SourceProfiles,
+		cfg.EffectiveLightLLMModel(),
+	).WithBudget(s.UsageSvc)
 
 	return s, nil
 }

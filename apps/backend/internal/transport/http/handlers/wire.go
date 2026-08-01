@@ -120,6 +120,27 @@ type CompanyProfileResponse struct {
 	BlockTokenLimit int `json:"block_token_limit"`
 }
 
+// ProfileSuggestionResponse is the body of `GET /api/company/profile/suggestion`
+// (T-B2): what the connected sources say the business is, before anybody has
+// agreed to it.
+//
+// Draft is nil when there is nothing to review, which is the ordinary state of
+// a company that has just signed up — the panel is absent rather than empty.
+// The two counters beside it are what let the panel explain the absence instead
+// of leaving a tenant to guess whether the feature is broken.
+type ProfileSuggestionResponse struct {
+	Draft *domain.CompanyProfile `json:"draft,omitempty"`
+	// Sources is how many connected sources have been described.
+	Sources int `json:"sources"`
+	// CreditsExhausted says the balance is why there is no draft. Adding a
+	// source never fails for credit, so without this the tenant sees silence.
+	CreditsExhausted bool `json:"credits_exhausted"`
+	// RenderedBlock is the draft as the agent would read it, composed by the
+	// same code the turn uses — so what a tenant approves is what they saw.
+	RenderedBlock string `json:"rendered_block,omitempty"`
+	Truncated     bool   `json:"truncated"`
+}
+
 // APIKeysResponse is the body of `GET /api/api-keys` (T-13, extended by T-A5).
 //
 // Stats rides with the roster for the same reason AgentsResponse carries the

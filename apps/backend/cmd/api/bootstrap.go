@@ -166,7 +166,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// hooks (rotate DSN -> drop cache). Each process has its own cache.
 	apiSchemaTool := tools.NewGetSchemaTool(deps.tenant, connRepo)
 	describer := app.NewConnectionDescriber(lightLLMClient, deps.tenant, connRepo)
-	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse, apiSchemaTool, describer)
+	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse, apiSchemaTool, describer).
+		// Business inference runs in the worker (T-B2); this process only ever
+		// asks for it — when a source is added, when its DSN rotates, when a
+		// test passes, and when a tenant presses Re-scan.
+		WithInference(deps.enqueuer)
 	if cfg.DiscordEnabled {
 		reloadBus := eventbus.NewRedisBus(rdb)
 		deps.discordSvc = app.NewDiscordService(discordCredRepo, allowedDiscordRepo, dsnCipher, reloadBus)
@@ -313,7 +317,10 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		})),
 	).WithTemplates(agentTemplates)
 	deps.agentBindingSvc = app.NewAgentBindingService(bindingRepo, agentRepo)
-	deps.companyProfileSvc = app.NewCompanyProfileService(pgctl.NewCompanyProfileRepo(controlDB))
+	deps.companyProfileSvc = app.NewCompanyProfileService(pgctl.NewCompanyProfileRepo(controlDB)).
+		// The review panel (T-B2). The drafts are written by the worker; this
+		// side reads them, folds them, and applies one when a human says so.
+		WithSuggestions(pgctl.NewSourceProfileRepo(controlDB), deps.usageSvc)
 	// Signup seeds the new company's first agent. Wired after the roster
 	// exists rather than at NewAuthService, which runs several hundred lines
 	// earlier and before there is a connection repository to validate against.

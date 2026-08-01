@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -87,6 +88,37 @@ func (e *Enqueuer) EnqueueWebhookDelivery(ctx context.Context, deliveryID string
 	)
 	if err != nil {
 		return fmt.Errorf("enqueue webhook:deliver: %w", err)
+	}
+	return nil
+}
+
+// EnqueueBusinessInference queues one source description pass (T-B2).
+//
+// MaxRetry(2) and a Unique window: the triggers are deliberately loose — a
+// connection being added, a successful test, a tenant pressing Re-scan — so the
+// same source can be queued three times in a minute by a tenant clicking
+// through onboarding. The pass itself is idempotent (an unchanged fingerprint
+// spends no LLM call), and this keeps the queue from carrying the duplicates at
+// all. A rejected duplicate is not an error the caller should surface: the work
+// it asked for is already queued.
+func (e *Enqueuer) EnqueueBusinessInference(ctx context.Context, companyID, connectionID string, force bool) error {
+	body, err := json.Marshal(BusinessInferPayload{
+		CompanyID: companyID, ConnectionID: connectionID, Force: force,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal business inference payload: %w", err)
+	}
+	_, err = e.client.EnqueueContext(ctx, asynq.NewTask(TypeBusinessInfer, body),
+		asynq.MaxRetry(2),
+		asynq.Timeout(3*time.Minute),
+		asynq.Retention(24*time.Hour),
+		asynq.Unique(2*time.Minute),
+	)
+	if errors.Is(err, asynq.ErrDuplicateTask) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("enqueue business:infer: %w", err)
 	}
 	return nil
 }

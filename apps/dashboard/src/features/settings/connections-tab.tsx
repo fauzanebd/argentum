@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, Trash2, Star, PlugZap, Boxes, Search } from "lucide-react";
+import { RefreshCw, Trash2, Star, PlugZap, Boxes, Search, ScanSearch } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,6 +90,7 @@ export function ConnectionsTab() {
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [reindexingId, setReindexingId] = useState<string | null>(null);
+  const [rescanningId, setRescanningId] = useState<string | null>(null);
   const [ragConn, setRagConn] = useState<Connection | null>(null);
   const [ragQuery, setRagQuery] = useState("");
   const [ragTopK, setRagTopK] = useState("8");
@@ -270,6 +271,30 @@ export function ConnectionsTab() {
     }
   }
 
+  /** Re-read what this source says the business is (T-B2). The pass runs in the
+   *  worker and no-ops when the schema has not changed, so the toast promises a
+   *  queued job rather than a finished one. */
+  async function rescanSource(id: string) {
+    setRescanningId(id);
+    try {
+      await api.post(`/connections/${id}/rescan`);
+      qc.invalidateQueries({ queryKey: ["company-profile-suggestion"] });
+      toast({
+        title: "Re-scanning this source",
+        description:
+          "We are reading the table names again. Any new suggestion shows up under Settings → General → Business profile.",
+      });
+    } catch (e: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Could not start the re-scan",
+        description: apiErrorMessage(e),
+      });
+    } finally {
+      setRescanningId(null);
+    }
+  }
+
   const ready = isFormReady(mode, dsn, host, port, dbname);
 
   return (
@@ -426,6 +451,15 @@ export function ConnectionsTab() {
                   title="Test RAG"
                 >
                   <Search className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => rescanSource(c.id)}
+                  disabled={rescanningId === c.id}
+                  title="Re-scan for business context"
+                >
+                  <ScanSearch className={`h-4 w-4 ${rescanningId === c.id ? "animate-pulse" : ""}`} />
                 </Button>
                 <Button
                   variant="ghost"

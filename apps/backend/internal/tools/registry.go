@@ -33,6 +33,16 @@ type RegistryDeps struct {
 	// Redis backs the schema cache. Nil is legal — get_schema then reads
 	// through on every call.
 	Redis *redis.Client
+	// Schema is the get_schema tool, supplied when the caller also needs it
+	// directly. Nil builds one here, which is what AllNames and the API's
+	// name-only listing do.
+	//
+	// It is a field rather than a second construction at each call site because
+	// business inference (T-B2) reads the schema through this exact instance:
+	// two instances is two L1 caches, and the fingerprint that decides whether
+	// to spend an LLM call has to be computed from the same answer the agent
+	// gets.
+	Schema *GetSchemaTool
 	// Usage may be nil; each tool substitutes a no-op recorder.
 	Usage    UsageRecorder
 	Metabase *metabase.Client
@@ -53,9 +63,13 @@ type RegistryDeps struct {
 // Callers that run them are expected to add their own guards; callers that
 // only list them are expected to add nothing.
 func Registry(d RegistryDeps) []interfaces.Tool {
+	schema := d.Schema
+	if schema == nil {
+		schema = NewGetSchemaToolWithRedis(d.Pool, d.Connections, d.Redis)
+	}
 	ts := []interfaces.Tool{
 		NewListSourcesTool(d.Connections),
-		NewGetSchemaToolWithRedis(d.Pool, d.Connections, d.Redis),
+		schema,
 		NewRunSQLTool(d.Pool, d.Connections, d.Usage, d.MaxQueryRows, d.MaxQueryResultBytes),
 		NewCreateVisualizationTool(d.Pool, d.Connections, d.Metabase, d.MetabaseSource, d.Usage),
 		NewCreateDashboardTool(d.Metabase, d.Usage, d.Dashboards),

@@ -23,7 +23,10 @@ import {
 } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api-error";
-import type { CompanyProfileResponse } from "@argentum/api-types";
+import type {
+  CompanyProfileResponse,
+  ProfileSuggestionResponse,
+} from "@argentum/api-types";
 
 /** Mirrors app.ProfileInput. Every field is replaced on save — this is a form
  *  with four inputs, not a patch API. */
@@ -46,6 +49,15 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+/** Dismissal lives in the browser, not in a column (T-B2).
+ *
+ *  "I have seen this suggestion and do not want it" is a fact about a person
+ *  looking at a screen, not about the company — and the server has nowhere to
+ *  put it for a workspace that has never saved a profile. The key carries the
+ *  draft's timestamp so a re-scan that produces a newer draft asks again, which
+ *  is the whole point of pressing Re-scan. */
+const dismissKey = (inferredAt?: string) => `argentum.profile-suggestion.${inferredAt ?? "none"}`;
+
 /** Business profile — Settings → General (T-B1).
  *
  *  What the workspace does, in the tenant's own words, read by every agent on
@@ -57,6 +69,7 @@ export function BusinessProfileCard() {
   const [draft, setDraft] = useState<ProfileDraft>(EMPTY_DRAFT);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["company-profile"],
@@ -89,7 +102,56 @@ export function BusinessProfileCard() {
     onError: (e: unknown) => setError(apiErrorMessage(e, "Could not save the business profile")),
   });
 
+  // What the connected sources say the business is (T-B2). A draft, never the
+  // profile: nothing here is what the agent reads until Apply writes it.
+  const { data: suggestion } = useQuery({
+    queryKey: ["company-profile-suggestion"],
+    queryFn: async () =>
+      (await api.get<ProfileSuggestionResponse>("/company/profile/suggestion")).data,
+  });
+
+  const apply = useMutation({
+    mutationFn: async () =>
+      (await api.post<CompanyProfileResponse>("/company/profile/suggestion/apply")).data,
+    onSuccess: (res) => {
+      setError(null);
+      qc.setQueryData(["company-profile"], res);
+      qc.invalidateQueries({ queryKey: ["company-profile-suggestion"] });
+    },
+    onError: (e: unknown) =>
+      setError(apiErrorMessage(e, "Could not apply the suggested profile")),
+  });
+
+  // A draft dismissed in an earlier session stays dismissed; a newer draft —
+  // different timestamp, different key — comes back.
+  useEffect(() => {
+    if (!suggestion?.draft) return;
+    setDismissed(localStorage.getItem(dismissKey(suggestion.draft.inferred_at)) === "1");
+  }, [suggestion]);
+
+  function dismissSuggestion() {
+    localStorage.setItem(dismissKey(suggestion?.draft?.inferred_at), "1");
+    setDismissed(true);
+  }
+
   if (isLoading) return null;
+
+  // The panel is offered only while there is nothing of the tenant's to lose.
+  // Apply refuses to overwrite a description somebody typed, and a button that
+  // is going to be refused should not be on the screen.
+  const profileHasText = Boolean(
+    data?.profile?.industry || data?.profile?.description || data?.profile?.context_notes,
+  );
+  const ownWords = profileHasText && data?.profile?.source !== "inferred";
+  // …and it retires once this exact draft *is* the profile. Matched on
+  // inferred_at rather than on the source alone: a later re-scan produces a
+  // different timestamp, and that suggestion is a new one worth offering.
+  const appliedThisDraft =
+    data?.profile?.source === "inferred" &&
+    Boolean(suggestion?.draft?.inferred_at) &&
+    data?.profile?.inferred_at === suggestion?.draft?.inferred_at;
+  const showSuggestion =
+    Boolean(suggestion?.draft) && !ownWords && !appliedThisDraft && !dismissed;
 
   const inferred = data?.profile?.source !== "human" && data?.exists;
   const inferredAt = data?.profile?.inferred_at
@@ -106,6 +168,62 @@ export function BusinessProfileCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Suggested from the connected data (T-B2). It is a draft until the
+            tenant presses Apply — nothing here is what the agent reads, and the
+            block below the buttons is exactly what it would read if they did. */}
+        {showSuggestion && (
+          <div className="space-y-3 rounded-md border border-primary/30 bg-primary/5 p-3">
+            <div className="flex items-start gap-2">
+              <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Suggested from your data</p>
+                <p className="text-xs text-muted-foreground">
+                  We read the table and column names in your connected{" "}
+                  {suggestion?.sources === 1 ? "source" : `${suggestion?.sources} sources`} — never
+                  the rows — and drafted this. Nothing is saved until you apply it, and you can edit
+                  every word afterwards.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              {suggestion?.draft?.industry && (
+                <p>
+                  <span className="text-muted-foreground">Industry: </span>
+                  {suggestion.draft.industry}
+                </p>
+              )}
+              {suggestion?.draft?.description && (
+                <p className="whitespace-pre-wrap">{suggestion.draft.description}</p>
+              )}
+              {suggestion?.draft?.context_notes && (
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
+                  {suggestion.draft.context_notes}
+                </pre>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => apply.mutate()} disabled={apply.isPending}>
+                {apply.isPending ? "Applying…" : "Apply"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={dismissSuggestion}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* The balance is the one reason for silence a tenant can act on, and
+            the only one they would otherwise read as a broken feature. */}
+        {suggestion?.credits_exhausted && !suggestion?.draft && (
+          <p className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+            We could not read your connected data to suggest a profile — this workspace is out of
+            credit. Your sources still work; describe the business below in your own words, or top
+            up and press Re-scan under Settings → Connections.
+          </p>
+        )}
+
         {/* Provenance, when there is any to report. An inferred profile the
             tenant has never looked at must not read as something they wrote. */}
         {inferred && (

@@ -971,6 +971,84 @@ export interface ScheduledTaskRun {
 }
 
 //////////
+// source: source_profile.go
+
+/**
+ * SourceProfile is what one connected database looks like it is for (T-B2).
+ * The tenant already told us what their business is; they told us in DDL. A
+ * warehouse with `stores`, `skus`, `stock_movements` and `order_items` is a
+ * retailer, and asking the person who just connected it to type "we are a
+ * retailer" is asking them to do work we can do. This row is that work's
+ * output.
+ * It is a draft and only a draft. Nothing here reaches a turn: the agent reads
+ * CompanyProfile, and a SourceProfile becomes part of one only when a human
+ * presses Apply (locked decision 2). An inferred profile that silently became
+ * the agent's view of the business would be a fabrication with a UI.
+ * Everything in it is derived from names the tenant's DBA chose, which are
+ * untrusted input (locked decision 5) — see BusinessInference's prompt framing
+ * and the entity validation that drops tables the schema does not have.
+ */
+export interface SourceProfile {
+  connection_id: string;
+  company_id: string;
+  /**
+   * Industry is the one-line label this source suggests: "grocery retail".
+   * Per-source because a company's CRM and its warehouse can imply the same
+   * industry from different angles, and the fold picks one.
+   */
+  industry: string;
+  /**
+   * Summary is one short paragraph: what this database appears to be for.
+   */
+  summary: string;
+  /**
+   * Entities are the tables worth naming, with what a row in each means.
+   * Every Table here exists in the introspected schema — see
+   * keepKnownEntities for why that check is a security control and not
+   * tidiness.
+   */
+  entities: SourceEntity[];
+  /**
+   * SchemaFingerprint is the hash of the table and column names this was
+   * inferred from. Re-running against an unchanged schema must not spend a
+   * second LLM call, and this is the whole mechanism for that.
+   */
+  schema_fingerprint: string;
+  /**
+   * Model is which LLM wrote it, recorded because a draft that reads badly is
+   * a question about a model version six weeks later.
+   */
+  model: string;
+  inferred_at: string;
+}
+/**
+ * SourceEntity is one table and what a row in it means to the business.
+ */
+export interface SourceEntity {
+  table: string;
+  means: string;
+}
+/**
+ * DraftMaxEntities is how many table meanings the context-notes field
+ * carries. Twelve lines is a screen; a draft nobody reads to the end is a
+ * draft nobody can correct, and the profile block has a 600-token cap
+ * waiting for it either way.
+ */
+export const DraftMaxEntities = 12;
+/**
+ * DraftIndustryMax matches the industry field's own storage limit so an
+ * applied draft cannot be rejected by the validation that guards the form.
+ */
+export const DraftIndustryMax = 120;
+/**
+ * Draft limits. They bound what the fold puts in front of a tenant, not what
+ * the model may return — the service clamps its own output before storing, and
+ * these are what a *company* draft is allowed to grow to once several sources
+ * have each contributed.
+ */
+export type Draft = typeof DraftMaxEntities | typeof DraftIndustryMax;
+
+//////////
 // source: thread.go
 
 /**

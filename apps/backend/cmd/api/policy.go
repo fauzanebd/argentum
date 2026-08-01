@@ -94,6 +94,16 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/company/profile": domain.RoleMember,
 	"PUT /api/company/profile": domain.RoleAdmin,
 
+	// The inferred draft (T-B2). Read is member on the same reasoning as the
+	// profile above — it is a description of the company, and one nobody has
+	// agreed to yet. Apply is admin because it writes that profile, and a route
+	// that reaches the system prompt of every agent is admin however the text
+	// got there: "a machine wrote it" is not a smaller permission than "an admin
+	// typed it".
+	"GET /api/company/profile/suggestion":        domain.RoleMember,
+	"POST /api/company/profile/suggestion/apply": domain.RoleAdmin,
+	"POST /api/connections/:id/rescan":           domain.RoleAdmin,
+
 	// Report branding (T-R5). Read is admin rather than member, unlike the
 	// other settings reads: this is the one panel where the *read* is the
 	// interesting operation. GET returns nothing a member needs — no report
