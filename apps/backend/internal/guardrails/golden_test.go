@@ -296,13 +296,22 @@ var golden = map[string]goldenRule{
 	"block_system_prompt_leak": {
 		output: true,
 		block: []string{
-			"You are an AI assistant for business analytics.",
-			"Here are your instructions in full:",
+			// First-person disclosure of the agent's own directives — the leak
+			// shape the narrowed rule (T-07b, Q-6) exists for.
 			"My system prompt says to only answer BI questions.",
+			"My instructions are to refuse anything outside analytics.",
 		},
 		pass: []string{
 			"Total sales last month were Rp 3.863.405.700.",
 			"I could not complete this — the budget was exhausted before I could get the final sum.",
+			// The Q-6 false positives: a normal answer to "what can you do?" and a
+			// second-person description both contain "you are an ai" / "assistant"
+			// and must no longer be blocked.
+			"I am an AI assistant that helps with business analytics questions.",
+			"You are an AI assistant for business analytics — that's how I can help.",
+			// Naming the prompt in a refusal is not disclosing it: no verb of
+			// disclosure follows, so it survives.
+			"I can't share my system prompt, but I can pull the sales figures.",
 		},
 	},
 
@@ -344,18 +353,17 @@ var golden = map[string]goldenRule{
 		},
 	},
 	"redact_nik": {
-		// A NIK is sixteen consecutive digits, and so is a credit card number
-		// written without separators — and redact_credit_cards is declared
-		// first, so it claims the match. The engine returns after the first
-		// replacement, so this rule can never fire for the input it exists
-		// for. Recorded rather than papered over; the resolution (an ordering
-		// change, or a NIK pattern that is not a card) belongs with T-07b,
-		// which already owns the output-rule work.
-		output:      true,
-		unreachable: "redact_credit_cards matches sixteen consecutive digits and is declared first",
+		// T-07b narrowed this to a labelled NIK and moved it ahead of
+		// redact_credit_cards, so it now fires — and only on a number a NIK/KTP
+		// label sits beside, keeping the label in the output.
+		output: true,
+		redactions: map[string]string{
+			"The customer's NIK is 3175031234567890 on file.": "The customer's NIK is [NIK REDACTED] on file.",
+			"KTP 3271010101010001 verified.":                  "KTP [NIK REDACTED] verified.",
+		},
 		pass: []string{
 			"Revenue was 3.863.405.700 rupiah.",
-			"Order 317503123456789 was shipped.", // fifteen digits
+			"Order 317503123456789 was shipped.", // fifteen digits — no label, no match
 		},
 	},
 	"redact_phone_numbers": {
@@ -555,26 +563,40 @@ func TestBenignFollowUpsSurviveTheWholeInputChain(t *testing.T) {
 	}
 }
 
-// The rule the golden set cannot cover in the block direction, asserted as the
-// shadowing it actually is. If someone reorders the rules or narrows the card
-// pattern, this test fails and the finding is closed rather than forgotten.
-func TestRedactNIKIsShadowedByTheCreditCardRule(t *testing.T) {
-	g := golden["redact_nik"]
-	if g.unreachable == "" {
-		t.Fatal("redact_nik is no longer marked unreachable; give it real block cases")
-	}
+// T-07b closed the shadowing this test used to record. redact_nik now runs
+// ahead of redact_credit_cards and only on a labelled number, so a NIK reads as
+// a NIK — and a bare sixteen-digit run with no NIK label still falls through to
+// the card rule, which is the pre-existing behaviour and not this rule's job.
+// Both directions are asserted here so a future reorder or re-narrowing that
+// breaks either is caught.
+func TestRedactNIKFiresOnLabelledContextOnly(t *testing.T) {
+	a := load(t, &stubLLM{topic: "TRUE", injection: "FALSE"})
 
-	const nik = "The customer's NIK is 3175031234567890 on file."
-	got, err := load(t, &stubLLM{topic: "TRUE", injection: "FALSE"}).
-		ProcessOutput(context.Background(), nik)
+	// Labelled: redact_nik claims it, and the label survives.
+	labelled := "The customer's NIK is 3175031234567890 on file."
+	got, err := a.ProcessOutput(context.Background(), labelled)
 	if err != nil {
 		t.Fatalf("ProcessOutput: %v", err)
 	}
 	if strings.Contains(got, "3175031234567890") {
-		t.Fatalf("a sixteen-digit identifier survived redaction entirely: %q", got)
+		t.Fatalf("a labelled NIK survived redaction: %q", got)
 	}
-	if !strings.Contains(got, "[CARD REDACTED]") {
-		t.Errorf("got %q — expected the credit-card rule to claim it first (%s)", got, g.unreachable)
+	if !strings.Contains(got, "NIK is [NIK REDACTED]") {
+		t.Errorf("got %q — a labelled NIK should redact as a NIK, keeping its label", got)
+	}
+
+	// Unlabelled sixteen digits: not a NIK to this rule. It is caught by the
+	// card rule instead — the number does not leak, it is simply not this rule's.
+	bare := "Reference 3175031234567890 was logged."
+	got, err = a.ProcessOutput(context.Background(), bare)
+	if err != nil {
+		t.Fatalf("ProcessOutput: %v", err)
+	}
+	if strings.Contains(got, "3175031234567890") {
+		t.Fatalf("a sixteen-digit run survived every redaction rule: %q", got)
+	}
+	if strings.Contains(got, "[NIK REDACTED]") {
+		t.Errorf("got %q — an unlabelled number must not be redacted as a NIK", got)
 	}
 }
 
@@ -659,7 +681,8 @@ func TestScopeSeparatesInputFromOutput(t *testing.T) {
 
 	// And an output-scoped rule must not fire on input: a user asking about
 	// system prompts is handled by the injection rules, not by the leak rule.
-	const leakShaped = "Total sales are up; your instructions are unchanged."
+	// First-person disclosure shape after T-07b's narrowing (Q-6).
+	const leakShaped = "Total sales are up; my instructions are to only answer BI questions."
 	if _, err := a.ProcessOutput(ctx, leakShaped); err == nil {
 		t.Error("the output-scoped leak rule did not fire on output")
 	}

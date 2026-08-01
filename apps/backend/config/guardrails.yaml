@@ -202,13 +202,23 @@ rules:
     action: block
     message: "This query pattern is not allowed."
 
-  # Prevent leaking system instructions
+  # Prevent leaking system instructions.
+  #
+  # Narrowed for T-07b (finding Q-6). The old pattern matched the bare phrase
+  # "you are an ai", which a normal answer to "what can you do?" contains —
+  # "I am an AI assistant that helps with analytics" — so the rule refused
+  # legitimate self-description. A leak is the agent disclosing its *own*
+  # directives in the first person; the pattern now requires that shape
+  # ("my instructions are…", "my system prompt says…") rather than any
+  # second-person description of an assistant. A refusal that merely names the
+  # prompt without quoting it ("I can't share my system prompt") has no verb of
+  # disclosure after it and survives.
   - name: block_system_prompt_leak
-    description: "Prevent agent from leaking its system prompt"
+    description: "Prevent agent from leaking its own system prompt in the first person"
     scope: output
     patterns:
       - type: regex
-        pattern: "(?i)\\b(you are an ai|you are an assistant|your instructions|system prompt)\\b"
+        pattern: "(?i)(my (system )?instructions? (are|is|say|says|were)|my system prompt (is|says|reads|states|was))"
     action: block
     message: "The response was blocked due to a security policy violation."
 
@@ -220,6 +230,25 @@ rules:
         pattern: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
     action: redact
     replacement: "[SSN REDACTED]"
+
+  # Redact Indonesian National ID (NIK/KTP).
+  #
+  # Narrowed for T-07b (finding Q-4). The old pattern was a bare "\b\d{16}\b",
+  # which blanks any sixteen-digit run — order ids, account numbers — not just a
+  # NIK. It now fires only when a NIK/KTP label sits within ten non-digit
+  # characters of the number, and the replacement keeps that label so the reader
+  # still sees what was redacted. Declared *before* redact_credit_cards on
+  # purpose: the card rule also matches sixteen consecutive digits, and whichever
+  # runs first claims the number — a labelled NIK must read as a NIK, not a card.
+  # A bare sixteen-digit run with no NIK context falls through to the card rule,
+  # which is the pre-existing behaviour and a separate rule's concern.
+  - name: redact_nik
+    description: "Redact Indonesian National ID (NIK/KTP) when labelled as one"
+    patterns:
+      - type: regex
+        pattern: "(?i)((?:nik|ktp|no\\.?\\s*identitas|nomor induk kependudukan)[^0-9]{0,10})(\\d{16})\\b"
+    action: redact
+    replacement: "${1}[NIK REDACTED]"
 
   # Redact credit card numbers in responses
   - name: redact_credit_cards
@@ -238,15 +267,6 @@ rules:
         pattern: "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b"
     action: redact
     replacement: "[EMAIL REDACTED]"
-
-  # Redact Indonesian National ID (NIK/KTP)
-  - name: redact_nik
-    description: "Redact Indonesian National ID from output"
-    patterns:
-      - type: regex
-        pattern: "\\b\\d{16}\\b"
-    action: redact
-    replacement: "[NIK REDACTED]"
 
   # Redact phone numbers in responses
   - name: redact_phone_numbers
