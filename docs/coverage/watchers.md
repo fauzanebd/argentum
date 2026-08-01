@@ -16,7 +16,8 @@ false alarm off a flaky number would destroy trust permanently.
 | ------ | ---- | ---- | ----- |
 | `T-08` | Watchers: schema, evaluation loop, breach → agent turn → multi-channel delivery, dry-run gate | 3d | **code complete + unit-tested — live gate outstanding** |
 
-`T-09` (the dashboard UI) is a separate ticket and is not in this record.
+`T-09` (the dashboard UI) is a separate ticket with its own record:
+[`watchers-ui.md`](watchers-ui.md).
 
 ---
 
