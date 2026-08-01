@@ -2223,8 +2223,9 @@ non-breaching watcher showing silence.
 
 ## T-10 · Action framework
 **Repo:** BE · **Size:** 2.5d · **Deps:** T-05 · **Priority:** P1
-**Migration:** `*_actions` — next free on landing. **This line read `024` until
-2026-07-30; `024` has been `api_keys` since `T-13`.**
+**Migration:** landed as `041_company_actions` (company_actions + action_invocations).
+**This line read `024` until 2026-07-30; `024` has been `api_keys` since `T-13`,
+and the tree was at 040 (watchers) — the seventh reserved number already spent.**
 
 Write-capable agency, gated. **Never route this through `run_sql`** — tenant SQL
 stays read-only, permanently.
