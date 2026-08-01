@@ -14,7 +14,7 @@ appends its own section.
 | ------ | ---- | ---- | ----- |
 | `T-M1` | Schema, egress safety, CRUD, discovery | 2.5d | **done — gate run live 2026-08-01** |
 | `T-M2` | MCP tools at turn time | 3.0d | **code complete + unit-tested — live gate outstanding** |
-| `T-M3` | MCP servers on the dashboard and `/v1` | 1.0d | not started |
+| `T-M3` | MCP servers on the dashboard and `/v1` | 1.0d | **code complete + tests/drift-checks green — live gate outstanding; usage-per-server breakout deferred (cut #3a)** |
 | `T-M4` | Write-capable tools behind approval | 1.5d | not started |
 
 ---
@@ -381,3 +381,69 @@ and unit-tested, live gate to run against a stack.
   and the thread-view server label are `T-M3`.
 - The copy rule carries over from the CRUD side: **empty means none here**,
   directly below a sources control where empty means all.
+
+---
+
+## T-M3 · MCP servers on the dashboard and `/v1`
+
+### 1. What ships
+
+Binding is now legible: an admin binds servers to an agent in the dashboard, an
+integrator sees which servers an agent reaches over `/v1`, and a thread names the
+server on an MCP tool call.
+
+| Layer | File |
+| ----- | ---- |
+| Binding persistence | `internal/adapters/postgres/agent_repo.go` — `replaceMCPServers` folded into Create/Update (replacing T-M2's standalone method) |
+| Binding validation | `internal/app/agent_service.go` — `AgentInput.MCPServerIDs`, `normalizeMCPServers`, `MCPServerLister` + `WithMCPServers` |
+| Wiring | `cmd/api/bootstrap.go` — `WithMCPServers(NewMCPServerRepo(...))` |
+| `/v1/agents` | `internal/transport/http/handlers/v1_agents.go` — `agentResponse.mcp_servers []mcpServerRef`, resolved by name via `V1MCPServerLister`; `cmd/api/router.go` — `mcpListerOrNil` |
+| Contract | `openapi/v1.yaml` — `Agent.mcp_servers` + `MCPServerRef`; `openapi_schema_test.go` — parity case |
+| SDKs | `packages/argentum-python/src/argentum/types.py`, `packages/argentum-node/src/types.generated.ts` — regenerated |
+| Dashboard binding | `apps/dashboard/src/features/settings/agents-tab.tsx` — an MCP `ScopeGroup` beside the sources checklist, **empty means none** copy, `clearLabel="Unbind all"` |
+| Dashboard label | `apps/dashboard/src/features/chat/tool-call-card.tsx` — `mcpMeta` parses `mcp__<server>__<tool>` to a label naming the server |
+
+### 2. Decisions
+
+- **Binding is folded into agent Create/Update now**, where T-M2 kept it
+  standalone. The reason has flipped: the edit form now always sends the full
+  binding set (like `source_ids`), so folding it in is correct and a half-applied
+  save cannot leave an agent bound to a server an admin removed. The INSERT still
+  re-checks the server's `company_id`, so a cross-tenant id binds nothing.
+- **`GET /v1/agents.mcp_servers` publishes `{id, name}` only** — never the URL,
+  the token, or the probe state. Choosing an agent is choosing a capability set,
+  and the names are the visible half; the tools stay behind the admin session.
+  Always present, `[]` when bound to none, and an id that no longer resolves (a
+  server deleted between the two reads) is dropped rather than shown nameless.
+- **The dashboard copy says empty means none**, directly below a sources control
+  where empty means all — the one place in this form the two rules meet, and the
+  `ScopeGroup`'s clear button reads "Unbind all" there rather than "Use all".
+- **The thread label prettifies the server slug** from the tool name string
+  (`mcp__helpdesk__search_tickets` → "Helpdesk · Search Tickets") rather than
+  threading the server registry into the card. The slug is the backend's own
+  derivation of the server name, so it is a readable approximation, not an id —
+  exact-name resolution would need the registry passed into a deep component and
+  is not worth it for a label.
+
+### 3. What is verified, and what is not
+
+**Verified** (all green): `go test ./...`, `go vet`, `gofmt`; the four T-A4 drift
+checks (`TestEveryV1RouteIsSpecced`, `TestEverySpecEntryIsARoute`,
+`TestSpecScopeIsTheScopeTheRouterEnforces`, `TestSpecSchemasMatchTheGoStructs`);
+new `/v1/agents` tests (`TestListAgentsNamesBoundMCPServers`,
+`TestListAgentsDropsAnUnresolvableBinding`); `make types-check`; the OpenAPI
+validate / postman / python-types / examples checks; the Node SDK
+`types.generated.ts` regenerated and `tsc` clean; the dashboard `tsc -b` clean.
+
+**Deferred — the cut #3a scope.** `00-sprint-overview.md` §8b row 9 makes the
+**per-server usage breakout** the cuttable half of T-M3, alongside the
+thread-view labelling (which is done). The usage breakout — MCP calls grouped by
+server in the dashboard usage views — is **not** implemented; `agent_actions`
+now carries `mcp_server_id` (T-M2), so the data is there whenever it is picked
+up. It is outside every one of T-M3's four acceptance items, all of which the
+shipped code covers.
+
+**Outstanding — the live gate:** the screen recording (bind → ask → see the
+labelled call) and the two `curl` transcripts (`POST /v1/chat` with the Ops
+`agent_id` reaches the server; with the default agent's id it does not). Both
+need a running stack with a real MCP server, the same gate T-M2 owes.
