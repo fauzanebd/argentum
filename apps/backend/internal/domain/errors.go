@@ -29,4 +29,11 @@ var (
 	// because it maps to 402 rather than 403, and because every channel
 	// answers it with a plain sentence rather than a rejection.
 	ErrInsufficientCredits = errors.New("insufficient credits")
+
+	// ErrActionExpired is returned when a proposed action is decided on after
+	// its 24h window has passed (T-10). Distinct from ErrConflict because the
+	// proposal was valid to approve until it timed out — the caller did nothing
+	// wrong, the world just moved on — so the message is "this proposal has
+	// expired; ask the agent to propose it again" rather than a flat refusal.
+	ErrActionExpired = errors.New("action proposal expired")
 )

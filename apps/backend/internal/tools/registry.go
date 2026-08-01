@@ -63,6 +63,11 @@ type RegistryDeps struct {
 	Metrics             MetricStore
 	MaxQueryRows        int
 	MaxQueryResultBytes int
+	// Actions backs propose_action (T-10). Nil is legal and is what the API's
+	// name-only build passes: the tool still registers (so it appears in the
+	// agent allowlist and the template vocabulary) and reports "not configured"
+	// if ever executed without a proposer. The worker passes the real service.
+	Actions ActionProposer
 }
 
 // Registry returns the tools an agent may call on this deployment, unwrapped.
@@ -86,6 +91,11 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		NewCreateVisualizationTool(d.Pool, d.Connections, d.Metabase, d.MetabaseSource, d.Usage),
 		NewCreateDashboardTool(d.Metabase, d.Usage, d.Dashboards),
 		NewScheduleTaskTool(d.Scheduled),
+		// propose_action registers unconditionally, like the metric tools: a nil
+		// proposer still yields the name for the allowlist and the vocabulary, and
+		// reports "not configured" if executed. The one write-capable tool the
+		// agent has, and the only one it can propose but not perform (T-10).
+		NewProposeActionTool(d.Actions),
 	}
 	if d.Docs != nil {
 		ts = append(ts, NewGenerateDocumentTool(d.Docs))

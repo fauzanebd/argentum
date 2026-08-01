@@ -264,6 +264,28 @@ func redactValue(v interface{}) interface{} {
 	}
 }
 
+// RedactJSON strips credential-shaped values from a JSON value for storage
+// outside the audit path — the action ledger's params_redacted (T-10). It is the
+// same walk the audit decorator applies to a tool's arguments, exported so a
+// second store of tool-shaped data does not reimplement the one piece of this
+// package it most cannot afford to get subtly different. A non-object or
+// unparseable input collapses to `{}`, because a redactor that passes through
+// what it could not inspect is not a redactor.
+func RedactJSON(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage("{}")
+	}
+	var parsed interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return json.RawMessage("{}")
+	}
+	out, err := json.Marshal(redactValue(parsed))
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return out
+}
+
 // hashArgs fingerprints the arguments as the tool received them — before
 // redaction, so two calls that differ only inside a redacted field do not
 // collide, and a repeated call is recognisable even when its stored form shows

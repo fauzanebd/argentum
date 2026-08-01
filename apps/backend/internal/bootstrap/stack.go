@@ -34,6 +34,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/actions"
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	adaptersmcp "github.com/fauzanebd/argentum/internal/adapters/mcp"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
@@ -119,6 +120,14 @@ type Stack struct {
 	// provider.
 	Watchers    *app.WatcherService
 	WatcherRepo domain.WatcherRepository
+
+	// Actions is the write-capable framework (T-10): the agent proposes through
+	// propose_action, a human approves, and this service executes exactly once.
+	// Built with an empty action registry until T-12a registers send_message, so
+	// today every proposal is refused with "no such action" — the framework is in
+	// place, the actions are not yet. ActionRepo is exposed for T-11's endpoints.
+	Actions    *app.ActionService
+	ActionRepo domain.ActionRepository
 
 	// Inference drafts what a connected source says the business is (T-B2). It
 	// lives on the stack rather than in cmd/worker because it needs the same
@@ -307,6 +316,13 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		s.WatcherRepo, s.Metrics, s.ThreadSvc, s.Companies, s.scheduledEnq, cfg.WatcherMaxPerCompany,
 	).WithBudget(s.UsageSvc)
 
+	// The action framework (T-10). The registry is empty until T-12a wires the
+	// first concrete action; propose_action is registered regardless, so the
+	// capability and its audit trail exist before an action does. The audit log is
+	// the same append-only store every tool call writes to (T-05).
+	s.ActionRepo = pgctl.NewActionRepo(controlDB)
+	s.Actions = app.NewActionService(s.ActionRepo, actions.NewRegistry(), s.AgentActions)
+
 	s.Tools = tools.Registry(tools.RegistryDeps{
 		Pool:                s.TenantPool,
 		Connections:         s.Connections,
@@ -321,6 +337,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		Metrics:             s.Metrics,
 		MaxQueryRows:        cfg.MaxQueryRows,
 		MaxQueryResultBytes: cfg.MaxQueryResultBytes,
+		Actions:             s.Actions,
 	})
 
 	// Every tool runs behind the per-turn budget guard (T-16). Wrapping here
