@@ -3714,10 +3714,14 @@ numbered below the current version.
 
 ---
 
-## T-M1 · MCP servers: schema, egress safety, CRUD, and discovery
+## ~~T-M1~~ · MCP servers: schema, egress safety, CRUD, and discovery — **DONE 2026-08-01**
 **Repo:** BE, FE, PKG · **Size:** 2.5d · **Deps:** T-S1, T-04, T-02b · **Priority:** P0 · **Never cut**
-**Migration:** `*_mcp_servers` — next free on landing. **Was written as `033`,
-which is now `T-S4`'s.**
+**Migration:** `037_mcp_servers` — landed 2026-08-01. (Written as `033`, which
+became `T-S4`'s; the tree was at `036`.)
+**Record:** [`../coverage/mcp-source.md`](../coverage/mcp-source.md) §T-M1.
+**One scope change, owner-set 2026-08-01:** plaintext `http` is a second opt-in
+(`MCP_ALLOW_INSECURE_HTTP`) rather than only a development flag. Every address
+rule stays in force under it; see the record §2.
 
 ### Why
 
@@ -3804,12 +3808,12 @@ CREATE TABLE IF NOT EXISTS mcp_server_tools (
 
 ### Acceptance
 
-- [ ] A server saved with a valid URL probes, lists its tools, and shows them unapproved
-- [ ] `http://127.0.0.1:*`, `http://169.254.169.254/*`, and a public URL that 302s to either are all rejected, with the redirect case proving the check re-runs
-- [ ] A DNS name resolving to a private address is rejected even though the name is public
-- [ ] Non-admin cannot create, edit, or read the auth field of an MCP server
-- [ ] The auth token is never returned by any read route
-- [ ] Nothing in this ticket changes any agent turn — an existing chat behaves identically with a server registered
+- [x] A server saved with a valid URL probes, lists its tools, and shows them unapproved
+- [x] `http://127.0.0.1:*`, `http://169.254.169.254/*`, and a public URL that 302s to either are all rejected, with the redirect case proving the check re-runs
+- [x] A DNS name resolving to a private address is rejected even though the name is public
+- [x] Non-admin cannot create, edit, or read the auth field of an MCP server
+- [x] The auth token is never returned by any read route
+- [x] Nothing in this ticket changes any agent turn — an existing chat behaves identically with a server registered
 
 ### Gate
 

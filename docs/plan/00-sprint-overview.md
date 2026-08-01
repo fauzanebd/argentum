@@ -829,6 +829,16 @@ needed no migration. **The next thing in flight is `T-M1`**, and the running
 order below is unchanged: the insert cost the queue what §8c said it would and
 nothing more.
 
+**`T-M1` delivered and gated live 2026-08-01** (migration `037`), the same day
+the business-context track closed. The MCP track has **5.5d left** — `T-M2`,
+then `T-M3` and `T-M4` in either order. The gate produced three findings, all
+fixed in the ticket: a public hostname resolving to a private address was stored
+rather than refused, the development egress flag opened the cloud metadata
+endpoint, and an embedded pointer generated a useless TypeScript type. The
+write-up is in [`../coverage/mcp-source.md`](../coverage/mcp-source.md) §4.
+**One owner-set scope change:** plaintext `http` to a public address is now its
+own opt-in rather than only a development flag.
+
 **What slips, in days:**
 
 | What | Slips by | Note |
