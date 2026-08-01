@@ -52,6 +52,21 @@ type AgentService struct {
 	// existed before this ticket, so a deployment without the file degrades to
 	// the previous product rather than to a broken one.
 	templates *agenttemplates.Set
+	// mcpServers lists the company's MCP servers, for validating a binding set
+	// (T-M3). Nil is legal: a deployment that never wired it validates no
+	// bindings here and leaves the repository's own company check as the gate —
+	// a submitted id belonging to another tenant inserts nothing rather than
+	// binding across companies.
+	mcpServers MCPServerLister
+}
+
+// MCPServerLister is the one read the roster needs of the MCP registry (T-M3):
+// the company's servers, to check a submitted binding names one that exists.
+// domain.MCPServerRepository and *MCPServerService both satisfy it; narrowed at
+// the consumer because a roster that could register or delete a server is a
+// roster that could be asked to.
+type MCPServerLister interface {
+	ListByCompany(ctx context.Context, companyID string) ([]*domain.MCPServer, error)
 }
 
 // NewAgentService wires the roster. toolNames comes from tools.Names over the
@@ -69,6 +84,15 @@ func NewAgentService(
 // test, the seeding path — has no business loading one.
 func (s *AgentService) WithTemplates(set *agenttemplates.Set) *AgentService {
 	s.templates = set
+	return s
+}
+
+// WithMCPServers installs the lister used to validate a submitted MCP binding
+// set (T-M3). Optional in the same way WithTemplates is: a wiring without it
+// leaves the repository's company check as the only gate, which is enough to
+// prevent a cross-tenant binding but not to produce a good error for a stale id.
+func (s *AgentService) WithMCPServers(l MCPServerLister) *AgentService {
+	s.mcpServers = l
 	return s
 }
 
@@ -97,6 +121,11 @@ type AgentInput struct {
 	PersonaPrompt string   `json:"persona_prompt"`
 	AllowedTools  []string `json:"allowed_tools"`
 	SourceIDs     []string `json:"source_ids"`
+	// MCPServerIDs is the tenant MCP servers this agent may call (T-M3). Unlike
+	// SourceIDs, empty means NONE — an agent reaches an MCP server only when it
+	// is bound. The dashboard's binding control always sends the full set, the
+	// same contract SourceIDs relies on.
+	MCPServerIDs []string `json:"mcp_server_ids"`
 	// TemplateKey names the gallery card this agent was created from (T-B3),
 	// or "" for the blank path. Read on create and ignored on update: it
 	// records where the agent came from, which an edit cannot change.
@@ -320,6 +349,10 @@ func (s *AgentService) validated(ctx context.Context, companyID string, in Agent
 	if err != nil {
 		return nil, err
 	}
+	mcpServers, err := s.normalizeMCPServers(ctx, companyID, in.MCPServerIDs)
+	if err != nil {
+		return nil, err
+	}
 	return &domain.Agent{
 		CompanyID:     companyID,
 		Name:          name,
@@ -327,6 +360,7 @@ func (s *AgentService) validated(ctx context.Context, companyID string, in Agent
 		PersonaPrompt: persona,
 		AllowedTools:  tools,
 		SourceIDs:     sources,
+		MCPServerIDs:  mcpServers,
 	}, nil
 }
 
@@ -404,6 +438,48 @@ func (s *AgentService) normalizeSources(ctx context.Context, companyID string, i
 			// Same answer for a source that does not exist and one belonging
 			// to another company: this route must not confirm the second.
 			return nil, fmt.Errorf("%w: no such data source", domain.ErrInvalidInput)
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// normalizeMCPServers checks every id against the company's own MCP servers
+// (T-M3). Empty stays empty — for this binding empty means NONE, so there is no
+// widening to guard against; the check is purely to turn "that server is not
+// yours" into a sentence rather than a silently shorter binding.
+//
+// With no lister wired it dedupes and trusts the repository's INSERT, which only
+// binds servers whose company_id matches — so a stale or cross-tenant id drops
+// there rather than erroring here. That is the graceful-degradation path; the
+// wired path is the one that gives the admin an error they can act on.
+func (s *AgentService) normalizeMCPServers(ctx context.Context, companyID string, in []string) ([]string, error) {
+	if len(in) == 0 {
+		return []string{}, nil
+	}
+	var owned map[string]bool
+	if s.mcpServers != nil {
+		servers, err := s.mcpServers.ListByCompany(ctx, companyID)
+		if err != nil {
+			return nil, err
+		}
+		owned = make(map[string]bool, len(servers))
+		for _, srv := range servers {
+			owned[srv.ID] = true
+		}
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, id := range in {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		if owned != nil && !owned[id] {
+			// Same answer for a server that does not exist and one belonging to
+			// another company: this route must not confirm the second.
+			return nil, fmt.Errorf("%w: no such MCP server", domain.ErrInvalidInput)
 		}
 		seen[id] = true
 		out = append(out, id)

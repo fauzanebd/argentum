@@ -34,6 +34,8 @@ import type {
   AgentTemplate,
   AgentToolInfo,
   Channel,
+  MCPServer,
+  MCPServersResponse,
 } from "@argentum/api-types";
 
 interface Connection {
@@ -55,6 +57,10 @@ interface AgentDraft {
   persona_prompt: string;
   allowed_tools: string[];
   source_ids: string[];
+  /** Tenant MCP servers this agent may call (T-M3). Unlike source_ids, EMPTY
+   *  MEANS NONE — an agent reaches an MCP server only when it is bound. The
+   *  form always sends the full set, the same contract source_ids relies on. */
+  mcp_server_ids: string[];
   /** Which gallery card this came from, or "" for the blank path. Sent on
    *  create and ignored on update — the backend treats it as provenance. */
   template_key: string;
@@ -67,6 +73,7 @@ const EMPTY_DRAFT: AgentDraft = {
   persona_prompt: "",
   allowed_tools: [],
   source_ids: [],
+  mcp_server_ids: [],
   template_key: "",
   enabled: true,
 };
@@ -119,6 +126,9 @@ function draftFromTemplate(t: AgentTemplate, sources: Connection[]): AgentDraft 
     // Nothing matched means nothing ticked, which the backend reads as every
     // source — the same rule an empty allowlist has always carried.
     source_ids: [...matchSources(t.source_hints, sources).keys()],
+    // Templates never bind an MCP server: they describe a job, and a server is
+    // a per-tenant integration the admin binds deliberately. Empty means none.
+    mcp_server_ids: [],
     template_key: t.key,
     enabled: true,
   };
@@ -170,6 +180,13 @@ export function AgentsTab() {
       (await api.get<{ connections: Connection[] }>("/connections")).data.connections ?? [],
   });
 
+  // The company's MCP servers, for the binding checklist (T-M3). Same query key
+  // the MCP servers tab uses, so React Query serves one cached list to both.
+  const { data: mcpServersData } = useQuery({
+    queryKey: ["mcp-servers"],
+    queryFn: async () => (await api.get<MCPServersResponse>("/mcp-servers")).data,
+  });
+
   const agents: Agent[] = (data?.agents ?? []).filter((a): a is Agent => !!a);
   // The tool vocabulary comes from the API rather than a constant here: it is
   // the registry this deployment actually runs, so a tool added on the backend
@@ -184,6 +201,11 @@ export function AgentsTab() {
     (t): t is AgentTemplate => !!t,
   );
   const sources: Connection[] = connections ?? [];
+  // Only enabled servers can be bound to a meaningful effect — a disabled one
+  // reaches no turn — so the checklist offers the ones that would actually work.
+  const mcpServers: MCPServer[] = (mcpServersData?.servers ?? [])
+    .filter((s): s is MCPServer => !!s)
+    .filter((s) => s.enabled);
   // Whether the Generate button can be pressed at all, and why not. The backend
   // decides: it is the only side that knows whether an LLM is wired and what
   // the credit balance is.
@@ -217,6 +239,7 @@ export function AgentsTab() {
       persona_prompt: a.persona_prompt,
       allowed_tools: [...a.allowed_tools],
       source_ids: [...a.source_ids],
+      mcp_server_ids: [...a.mcp_server_ids],
       template_key: a.template_key,
       enabled: a.enabled,
     });
@@ -340,7 +363,7 @@ export function AgentsTab() {
       }),
   });
 
-  function toggleIn(key: "allowed_tools" | "source_ids", value: string) {
+  function toggleIn(key: "allowed_tools" | "source_ids" | "mcp_server_ids", value: string) {
     if (key === "source_ids" && hintedSources.has(value)) {
       // The tick is the admin's from here on, so stop crediting a template
       // for it.
@@ -548,6 +571,48 @@ export function AgentsTab() {
                     </Badge>
                   )}
                   <code className="block text-xs text-muted-foreground">{c.db_type}</code>
+                </span>
+              </label>
+            ))}
+          </ScopeGroup>
+
+          {/* MCP servers are the inverse of the two groups above: empty means
+              NONE (T-M3). The copy has to say so, because the control directly
+              above it means the opposite, and a tenant reading down the form
+              would otherwise carry the databases rule into this box. */}
+          <ScopeGroup
+            title="MCP servers"
+            summary={
+              draft.mcp_server_ids.length === 0
+                ? "None"
+                : `${draft.mcp_server_ids.length} of ${mcpServers.length} servers`
+            }
+            hint="Only ticked servers are reachable. Nothing ticked means none — unlike databases, an agent calls an MCP server only when you bind it here."
+            clearLabel="Unbind all"
+            onClear={
+              draft.mcp_server_ids.length > 0
+                ? () => setDraft({ ...draft, mcp_server_ids: [] })
+                : undefined
+            }
+          >
+            {mcpServers.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No MCP servers registered yet. Add one on the MCP servers tab.
+              </p>
+            )}
+            {mcpServers.map((s) => (
+              <label key={s.id} className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={draft.mcp_server_ids.includes(s.id)}
+                  onChange={() => toggleIn("mcp_server_ids", s.id)}
+                />
+                <span>
+                  {s.name}
+                  {s.description && (
+                    <code className="block text-xs text-muted-foreground">{s.description}</code>
+                  )}
                 </span>
               </label>
             ))}
@@ -921,12 +986,17 @@ function ScopeGroup({
   summary,
   hint,
   onClear,
+  clearLabel = "Use all",
   children,
 }: {
   title: string;
   summary: string;
   hint: string;
   onClear?: () => void;
+  /** What the clear button says. Defaults to "Use all" because clearing an
+   *  allowlist means unrestricted — but MCP bindings are the inverse (empty
+   *  means none), so that group passes "Unbind all". */
+  clearLabel?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -936,7 +1006,7 @@ function ScopeGroup({
         <Badge variant="outline">{summary}</Badge>
         {onClear && (
           <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={onClear}>
-            Use all
+            {clearLabel}
           </Button>
         )}
       </div>

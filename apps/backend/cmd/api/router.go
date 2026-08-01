@@ -130,7 +130,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// `GET /v1/agents` (T-S5): the roster, so `agent_id` is a field an
 	// integrator can fill in from the API rather than from a uuid somebody with
 	// an admin session read out of the dashboard for them.
-	handlers.NewV1AgentsHandler(rosterListerOrNil(d.agentSvc)).Register(v1)
+	handlers.NewV1AgentsHandler(rosterListerOrNil(d.agentSvc), mcpListerOrNil(d.mcpServerSvc)).Register(v1)
 	// `GET /v1/usage` (T-A5): the spend and the balance, over a window the
 	// caller chooses, so a tenant's own application can meter its own users
 	// instead of polling `/v1/me` for a number with no period attached.
@@ -235,6 +235,15 @@ func usageReaderOrNil(repo *pgctl.UsageRepo) handlers.V1UsageReader {
 // non-nil interface holding nil, and `GET /v1/agents` would panic on a wiring
 // without a roster rather than answering the typed 503 its own guard writes.
 func rosterListerOrNil(svc *app.AgentService) handlers.V1RosterLister {
+	if svc == nil {
+		return nil
+	}
+	return svc
+}
+
+// mcpListerOrNil is the same nil-interface guard for the MCP server registry
+// `GET /v1/agents` reads to name an agent's bound servers (T-M3).
+func mcpListerOrNil(svc *app.MCPServerService) handlers.V1MCPServerLister {
 	if svc == nil {
 		return nil
 	}

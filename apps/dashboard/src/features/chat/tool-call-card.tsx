@@ -5,6 +5,7 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  Plug,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -18,6 +19,34 @@ const TOOL_META: Record<string, { icon: LucideIcon; label: string }> = {
   create_dashboard: { icon: ExternalLink, label: "Dashboard" },
   schedule_task: { icon: CalendarClock, label: "Schedule task" },
 };
+
+/** MCP_PREFIX is the namespace the backend gives every tenant MCP tool
+ *  (tools/mcp.NamePrefix): `mcp__<serverslug>__<tool>`. */
+const MCP_PREFIX = "mcp__";
+
+/** mcpMeta turns a namespaced MCP tool name into a label that names the server,
+ *  not just the raw string (T-M3). The server is prettified from its slug —
+ *  which the backend derived from the server's own name — so "Helpdesk ·
+ *  search tickets" reads as what happened rather than as an internal id. Returns
+ *  null for every non-MCP tool, which falls through to TOOL_META. */
+function mcpMeta(name: string): { icon: LucideIcon; label: string } | null {
+  if (!name.startsWith(MCP_PREFIX)) return null;
+  const rest = name.slice(MCP_PREFIX.length);
+  const sep = rest.indexOf("__");
+  if (sep < 0) return { icon: Plug, label: prettifySlug(rest) };
+  const server = prettifySlug(rest.slice(0, sep));
+  const tool = prettifySlug(rest.slice(sep + 2));
+  return { icon: Plug, label: `${server} · ${tool}` };
+}
+
+/** prettifySlug turns a `lower_snake` slug into "Title Case" words. Best-effort:
+ *  the slug lost the original casing, so this recovers a readable approximation,
+ *  not the exact server name. */
+function prettifySlug(slug: string): string {
+  const words = slug.replace(/_/g, " ").trim();
+  if (!words) return slug;
+  return words.replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function humanCron(expr: string): string | null {
   try {
@@ -36,7 +65,7 @@ export function ToolCallCard({
   payload: unknown;
   loading?: boolean;
 }) {
-  const meta = TOOL_META[name] ?? { icon: Database, label: name };
+  const meta = mcpMeta(name) ?? TOOL_META[name] ?? { icon: Database, label: name };
   const Icon = meta.icon;
 
   let summary: string | null = null;

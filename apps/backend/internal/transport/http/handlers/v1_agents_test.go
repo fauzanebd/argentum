@@ -31,7 +31,22 @@ func (f *fakeRoster) List(context.Context, string) ([]*domain.Agent, error) {
 	return f.agents, f.err
 }
 
+// fakeMCPLister stands in for app.MCPServerService on the `/v1/agents` name
+// lookup (T-M3).
+type fakeMCPLister struct {
+	servers []*domain.MCPServer
+	err     error
+}
+
+func (f *fakeMCPLister) List(context.Context, string) ([]*domain.MCPServer, error) {
+	return f.servers, f.err
+}
+
 func rosterFixture(t *testing.T, roster V1RosterLister) *gin.Engine {
+	return rosterFixtureWithMCP(t, roster, nil)
+}
+
+func rosterFixtureWithMCP(t *testing.T, roster V1RosterLister, mcp V1MCPServerLister) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -41,7 +56,7 @@ func rosterFixture(t *testing.T, roster V1RosterLister) *gin.Engine {
 		c.Set("company_id", testCompany)
 		c.Set(middleware.CtxAPIKeyID, "key-1")
 	})
-	NewV1AgentsHandler(roster).Register(v1)
+	NewV1AgentsHandler(roster, mcp).Register(v1)
 	return r
 }
 
@@ -159,6 +174,56 @@ func TestARosterReadFailureIsAnEnvelopeAndNotAPanic(t *testing.T) {
 	// request id to quote.
 	if strings.Contains(w.Body.String(), "the database is down") {
 		t.Errorf("body = %q repeats an internal failure to a caller", w.Body.String())
+	}
+}
+
+// T-M3: an agent's bound MCP servers are published as {id, name} pairs, so
+// choosing an agent over `/v1` is choosing a capability set. An agent bound to
+// none lists `[]`, and the name is resolved from the company's registry.
+func TestListAgentsNamesBoundMCPServers(t *testing.T) {
+	roster := &fakeRoster{agents: []*domain.Agent{
+		{ID: "ag-ops", Name: "Ops", Enabled: true, MCPServerIDs: []string{"srv-help"}},
+		{ID: "ag-fin", Name: "Finance", Enabled: true},
+	}}
+	mcp := &fakeMCPLister{servers: []*domain.MCPServer{
+		{ID: "srv-help", Name: "Helpdesk"},
+		{ID: "srv-crm", Name: "CRM"},
+	}}
+	r := rosterFixtureWithMCP(t, roster, mcp)
+
+	var page apiv1.Page[agentResponse]
+	if err := json.Unmarshal(listAgents(t, r).Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	ops, fin := page.Data[0], page.Data[1]
+	if len(ops.MCPServers) != 1 || ops.MCPServers[0].ID != "srv-help" || ops.MCPServers[0].Name != "Helpdesk" {
+		t.Errorf("ops.mcp_servers = %+v, want the Helpdesk ref resolved by name", ops.MCPServers)
+	}
+	// An unbound agent lists an empty array, never null, and never a server it
+	// was not bound to.
+	if fin.MCPServers == nil || len(fin.MCPServers) != 0 {
+		t.Errorf("fin.mcp_servers = %+v, want []", fin.MCPServers)
+	}
+	if !strings.Contains(listAgents(t, r).Body.String(), `"mcp_servers":[]`) {
+		t.Error("an unbound agent must serialize mcp_servers as [], not null")
+	}
+}
+
+// A binding whose server has been deleted between the roster read and the name
+// read is dropped, not published as a nameless id — which would read as a
+// capability the agent no longer has.
+func TestListAgentsDropsAnUnresolvableBinding(t *testing.T) {
+	roster := &fakeRoster{agents: []*domain.Agent{
+		{ID: "ag-ops", Name: "Ops", Enabled: true, MCPServerIDs: []string{"srv-gone"}},
+	}}
+	r := rosterFixtureWithMCP(t, roster, &fakeMCPLister{servers: nil})
+
+	var page apiv1.Page[agentResponse]
+	if err := json.Unmarshal(listAgents(t, r).Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(page.Data[0].MCPServers) != 0 {
+		t.Errorf("mcp_servers = %+v, want the unresolvable binding dropped", page.Data[0].MCPServers)
 	}
 }
 

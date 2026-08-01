@@ -615,6 +615,23 @@ export interface components {
              *     should be able to see why rather than watch an id vanish.
              */
             enabled: boolean;
+            /**
+             * @description The tenant MCP servers this agent may call. Choosing an agent is
+             *     choosing a capability set, and this is its visible half — the tools
+             *     themselves stay behind the admin session. `[]` when the agent is
+             *     bound to none, which means it reaches no MCP server at all.
+             */
+            mcp_servers: components["schemas"]["MCPServerRef"][];
+        };
+        /**
+         * @description One MCP server an agent is bound to: enough to recognise it, and nothing
+         *     that is a credential. No URL, no auth, no probe state.
+         */
+        MCPServerRef: {
+            /** Format: uuid */
+            id: string;
+            /** @description What the workspace calls the server — `Helpdesk`, `CRM`. */
+            name: string;
         };
         /**
          * @description The whole roster, in the envelope every `/v1` list uses. `has_more` is

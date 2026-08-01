@@ -22,7 +22,7 @@ class Agent(TypedDict, total=False):
     no use for them. What is here is what a caller needs in order to choose
     between agents and name one.
 
-    Always present: id, object, name, is_default, enabled.
+    Always present: id, object, name, is_default, enabled, mcp_servers.
     """
     id: str
     object: Literal["agent"]
@@ -34,6 +34,8 @@ class Agent(TypedDict, total=False):
     is_default: bool
     # False for an agent an admin has switched off.
     enabled: bool
+    # The tenant MCP servers this agent may call.
+    mcp_servers: List[MCPServerRef]
 
 
 class AgentPage(TypedDict, total=False):
@@ -215,6 +217,17 @@ class ErrorDetail(TypedDict, total=False):
     param: str
     # The same value as the `X-Request-Id` header.
     request_id: str
+
+
+class MCPServerRef(TypedDict, total=False):
+    """One MCP server an agent is bound to: enough to recognise it, and nothing
+    that is a credential. No URL, no auth, no probe state.
+
+    Always present: id, name.
+    """
+    id: str
+    # What the workspace calls the server — `Helpdesk`, `CRM`.
+    name: str
 
 
 class Me(TypedDict, total=False):
@@ -603,6 +616,7 @@ __all__ = [
     "DocumentPage",
     "Error",
     "ErrorDetail",
+    "MCPServerRef",
     "Me",
     "Message",
     "MessagePage",

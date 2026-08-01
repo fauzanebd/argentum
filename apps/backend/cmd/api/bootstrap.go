@@ -316,7 +316,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			MaxQueryRows:        cfg.MaxQueryRows,
 			MaxQueryResultBytes: cfg.MaxQueryResultBytes,
 		})),
-	).WithTemplates(agentTemplates)
+	).WithTemplates(agentTemplates).
+		// Validate a submitted MCP binding set against the company's own servers
+		// (T-M3). The repo satisfies the lister directly, so this needs no
+		// ordering against mcpServerSvc, which is built later.
+		WithMCPServers(pgctl.NewMCPServerRepo(controlDB))
 	deps.agentBindingSvc = app.NewAgentBindingService(bindingRepo, agentRepo)
 	companyProfileRepo := pgctl.NewCompanyProfileRepo(controlDB)
 	sourceProfileRepo := pgctl.NewSourceProfileRepo(controlDB)

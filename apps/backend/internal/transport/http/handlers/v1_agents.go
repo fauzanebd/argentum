@@ -26,7 +26,10 @@ import (
 // persona, a tool allowlist and a source allowlist behind it, and a machine
 // credential that could mint one could mint one with every tool and every
 // source ticked.
-type V1AgentsHandler struct{ roster V1RosterLister }
+type V1AgentsHandler struct {
+	roster V1RosterLister
+	mcp    V1MCPServerLister
+}
 
 // V1RosterLister is the half of app.AgentService this route needs.
 //
@@ -37,12 +40,20 @@ type V1RosterLister interface {
 	List(ctx context.Context, companyID string) ([]*domain.Agent, error)
 }
 
+// V1MCPServerLister resolves the company's MCP servers so an agent's bound ids
+// can be published as `{id, name}` pairs (T-M3). Nil is legal — a deployment
+// with no MCP registry omits the names and every agent's `mcp_servers` is `[]`.
+// *app.MCPServerService satisfies it.
+type V1MCPServerLister interface {
+	List(ctx context.Context, companyID string) ([]*domain.MCPServer, error)
+}
+
 // NewV1AgentsHandler constructs the handler. roster may be nil; the route then
 // answers a typed 503 rather than panicking, which is the pattern every other
 // `/v1` handler follows — an absent route reads to an integrator as a wrong
-// path.
-func NewV1AgentsHandler(roster V1RosterLister) *V1AgentsHandler {
-	return &V1AgentsHandler{roster: roster}
+// path. mcp may be nil independently — an agent then lists no server names.
+func NewV1AgentsHandler(roster V1RosterLister, mcp V1MCPServerLister) *V1AgentsHandler {
+	return &V1AgentsHandler{roster: roster, mcp: mcp}
 }
 
 // Register installs the route on a group already carrying APIKeyAuth.
@@ -87,9 +98,35 @@ type agentResponse struct {
 	// whose call started failing should be able to see *why* rather than watch
 	// an id vanish from a list.
 	Enabled bool `json:"enabled"`
+	// MCPServers names the tenant MCP servers this agent may call (T-M3).
+	// Choosing an agent over `/v1` is choosing a capability set, and this is the
+	// visible half of it — the tools themselves stay behind the admin session,
+	// but which integrations an agent can reach is the thing an integrator picks
+	// between. Always present, `[]` when the agent is bound to none, which for
+	// this list means it reaches no MCP server at all.
+	MCPServers []mcpServerRef `json:"mcp_servers"`
 }
 
-func agentBody(a *domain.Agent) agentResponse {
+// mcpServerRef is the published shape of one bound server: enough to recognise
+// it, nothing that is a credential. No URL, no auth, no probe state.
+type mcpServerRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func agentBody(a *domain.Agent, mcpNames map[string]string) agentResponse {
+	// Always a non-nil slice so the field marshals to `[]` rather than null: a
+	// client should not have to distinguish "no servers" from "field absent".
+	servers := make([]mcpServerRef, 0, len(a.MCPServerIDs))
+	for _, id := range a.MCPServerIDs {
+		// A binding cascades away when its server is deleted, so an unresolved id
+		// here is not expected — but if one appears (a server deleted between the
+		// roster read and the name read), it is dropped rather than published as
+		// a nameless id, which would read as a capability the agent does not have.
+		if name, ok := mcpNames[id]; ok {
+			servers = append(servers, mcpServerRef{ID: id, Name: name})
+		}
+	}
 	return agentResponse{
 		ID:          a.ID,
 		Object:      "agent",
@@ -97,6 +134,7 @@ func agentBody(a *domain.Agent) agentResponse {
 		Description: a.Description,
 		IsDefault:   a.IsDefault,
 		Enabled:     a.Enabled,
+		MCPServers:  servers,
 	}
 }
 
@@ -138,9 +176,34 @@ func (h *V1AgentsHandler) list(c *gin.Context) {
 		apierr.Abort(c, apierr.TypeServer, "list_failed", "The agent roster could not be read.")
 		return
 	}
+	// One read of the company's servers, turned into an id→name map the bodies
+	// resolve their bindings against. A failure here degrades to no names rather
+	// than failing the roster: the ids are still enforced at turn time, and an
+	// integrator would rather see the agents than a 500 because the MCP registry
+	// hiccuped.
+	mcpNames := h.mcpNames(c)
 	items := make([]agentResponse, 0, len(agents))
 	for _, a := range agents {
-		items = append(items, agentBody(a))
+		items = append(items, agentBody(a, mcpNames))
 	}
 	c.JSON(http.StatusOK, apiv1.NewPage(items, false, ""))
+}
+
+// mcpNames builds the id→name map for the company's MCP servers, or nil when
+// there is no lister or the read fails.
+func (h *V1AgentsHandler) mcpNames(c *gin.Context) map[string]string {
+	if h.mcp == nil {
+		return nil
+	}
+	servers, err := h.mcp.List(c.Request.Context(), companyID(c))
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID(c)).
+			Warn("list api agents: could not read mcp servers; agents will list no server names")
+		return nil
+	}
+	names := make(map[string]string, len(servers))
+	for _, s := range servers {
+		names[s.ID] = s.Name
+	}
+	return names
 }

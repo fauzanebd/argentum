@@ -74,6 +74,10 @@ var schemaCases = []schemaCase{
 	// struct.
 	{schema: "Agent", value: agentResponse{}},
 	{schema: "AgentPage", value: apiv1.Page[agentResponse]{}},
+	// T-M3's bound-server ref, published on each agent so choosing one over `/v1`
+	// is choosing a capability set. A fraction of domain.MCPServer — id and name
+	// only, never the URL or the token.
+	{schema: "MCPServerRef", value: mcpServerRef{}},
 
 	{schema: "ChatRequest", value: chatRequest{}, request: true},
 	{schema: "CreateReportRequest", value: createReportRequest{}, request: true},
