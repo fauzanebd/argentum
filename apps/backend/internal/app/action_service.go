@@ -219,6 +219,62 @@ func (s *ActionService) Reject(ctx context.Context, companyID, id, decidedBy str
 	return inv, nil
 }
 
+// --- company_actions configuration (admin, T-11) ---
+
+// AvailableKinds is every action kind this deployment can run, sorted. The
+// Settings surface offers these as the kinds an admin may enable — a kind the
+// registry does not hold cannot be turned on, because nothing could execute it.
+func (s *ActionService) AvailableKinds() []string {
+	return s.registry.Kinds()
+}
+
+// ListConfig returns a company's per-kind configuration — what is enabled,
+// whether it still needs approval, and who may decide it.
+func (s *ActionService) ListConfig(ctx context.Context, companyID string) ([]*domain.CompanyAction, error) {
+	return s.repo.ListCompanyActions(ctx, companyID)
+}
+
+// ActionConfigInput is the admin-editable shape of one kind's configuration. It
+// deliberately excludes config_encrypted: send_message needs none, and the
+// encrypted-credential plumbing an http_action needs (T-12b) travels a separate
+// path that holds the DSN cipher, never a JSON body an admin PUTs.
+type ActionConfigInput struct {
+	Enabled          bool     `json:"enabled"`
+	RequiresApproval bool     `json:"requires_approval"`
+	AllowedRoles     []string `json:"allowed_roles"`
+}
+
+// ConfigureAction enables or reconfigures a kind for a company (admin). It
+// refuses a kind the deployment cannot run — enabling send_message on a build
+// that has no such action would let the agent propose something nothing can
+// carry out. Turning approval off is permitted here because the endpoint is
+// admin-only; it stays an explicit choice, never a default.
+func (s *ActionService) ConfigureAction(ctx context.Context, companyID, kind, actorID string, in ActionConfigInput) (*domain.CompanyAction, error) {
+	if _, ok := s.registry.Get(kind); !ok {
+		return nil, fmt.Errorf("%w: no action named %q is available on this deployment", domain.ErrInvalidInput, kind)
+	}
+	roles := in.AllowedRoles
+	if roles == nil {
+		roles = []string{}
+	}
+	cfg := &domain.CompanyAction{
+		CompanyID:        companyID,
+		Kind:             kind,
+		Enabled:          in.Enabled,
+		RequiresApproval: in.RequiresApproval,
+		AllowedRoles:     roles,
+		CreatedBy:        actorID,
+	}
+	if err := s.repo.UpsertCompanyAction(ctx, cfg); err != nil {
+		return nil, fmt.Errorf("configure action: %w", err)
+	}
+	logrus.WithFields(logrus.Fields{
+		"company_id": companyID, "action_kind": kind,
+		"enabled": in.Enabled, "requires_approval": in.RequiresApproval,
+	}).Info("action configured")
+	return s.repo.GetCompanyAction(ctx, companyID, kind)
+}
+
 // --- reads (for T-11's endpoints and the ledger view) ---
 
 // Get returns one invocation, company-scoped.

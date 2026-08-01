@@ -30,6 +30,10 @@ func NewActionsHandler(svc *app.ActionService) *ActionsHandler {
 // cmd/api; the per-kind allowed_roles refinement is applied in decide below.
 func (h *ActionsHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/actions/pending", h.pending)
+	// Configuration (admin) — which kinds are enabled and how. Registered before
+	// the /:id routes so "config" is never captured as an invocation id.
+	rg.GET("/actions/config", h.listConfig)
+	rg.PUT("/actions/config/:kind", h.configure)
 	rg.GET("/actions/:id", h.get)
 	rg.POST("/actions/:id/approve", h.approve)
 	rg.POST("/actions/:id/reject", h.reject)
@@ -84,6 +88,43 @@ func (h *ActionsHandler) pending(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, ActionsResponse{Actions: invs})
+}
+
+// ActionConfigResponse is the Settings → Actions payload: each configured kind
+// and the full list of kinds this deployment can run, so the UI can offer a kind
+// that has no row yet.
+type ActionConfigResponse struct {
+	Configured []*domain.CompanyAction `json:"configured"`
+	Available  []string                `json:"available"`
+}
+
+func (h *ActionsHandler) listConfig(c *gin.Context) {
+	if h.unavailable(c) {
+		return
+	}
+	cfg, err := h.svc.ListConfig(c.Request.Context(), companyID(c))
+	if err != nil {
+		actionFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, ActionConfigResponse{Configured: cfg, Available: h.svc.AvailableKinds()})
+}
+
+func (h *ActionsHandler) configure(c *gin.Context) {
+	if h.unavailable(c) {
+		return
+	}
+	var in app.ActionConfigInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	cfg, err := h.svc.ConfigureAction(c.Request.Context(), companyID(c), c.Param("kind"), userID(c), in)
+	if err != nil {
+		actionFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"config": cfg})
 }
 
 func (h *ActionsHandler) get(c *gin.Context) {

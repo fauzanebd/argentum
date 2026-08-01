@@ -127,10 +127,16 @@ var apiPolicy = middleware.RolePolicy{
 	// row's allowed_roles names who may decide that kind, and a caller outside it
 	// gets a 403 the card shows as read-only. Member here is the floor, not the
 	// grant — the per-kind check can only narrow it.
-	"GET /api/actions/pending":     domain.RoleMember,
-	"GET /api/actions/:id":         domain.RoleMember,
+	"GET /api/actions/pending":      domain.RoleMember,
+	"GET /api/actions/:id":          domain.RoleMember,
 	"POST /api/actions/:id/approve": domain.RoleMember,
 	"POST /api/actions/:id/reject":  domain.RoleMember,
+	// Enabling a kind and setting whether it needs approval is admin: it decides
+	// what the agent may set in motion for the whole company, the same line the
+	// connections and watchers rows draw. Turning approval off is reachable only
+	// here, which is why the off switch is admin-gated rather than a member field.
+	"GET /api/actions/config":       domain.RoleAdmin,
+	"PUT /api/actions/config/:kind": domain.RoleAdmin,
 
 	// WhatsApp allowlist: adding a number grants a phone the company's agent.
 	"GET /api/phones":           domain.RoleMember,
