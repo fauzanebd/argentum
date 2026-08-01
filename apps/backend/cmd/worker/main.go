@@ -88,11 +88,20 @@ func main() {
 
 	// Lark outbound: worker calls the Lark Open Platform REST API to post
 	// replies on the bot's behalf. Token caching is per-company, on-demand.
+	var larkProv lark.Provider
 	if cfg.LarkEnabled {
 		larkCredRepo := pgctl.NewCompanyLarkCredentialRepo(stack.ControlDB)
-		larkClient := lark.NewClient(larkCredRepo, stack.DSNCipher, cfg.LarkAPIBaseURL)
-		runner = runner.WithLark(larkClient)
+		larkProv = lark.NewClient(larkCredRepo, stack.DSNCipher, cfg.LarkAPIBaseURL)
+		runner = runner.WithLark(larkProv)
 	}
+
+	// Watcher delivery (T-08) uses the same outbound providers as chat replies:
+	// WhatsApp and Lark directly, Discord through the outbound bus cmd/discord
+	// consumes. Installed on the very service the runner already holds as its
+	// fire closer, so HandleFire and CompleteFire are one instance. larkProv is a
+	// true nil interface when Lark is disabled, which deliver() treats as
+	// "skipped" rather than dialling a nil client.
+	stack.Watchers.WithDelivery(waProvider, larkProv, bus)
 
 	// --- asynq.Server ---
 	srv := asynq.NewServer(stack.AsynqOpt, asynq.Config{
@@ -110,6 +119,7 @@ func main() {
 	mux.HandleFunc(queue.TypeReportRender, makeReportRenderHandler(reportSvc))
 	mux.HandleFunc(queue.TypeWebhookDeliver, makeWebhookDeliverHandler(webhookDeliverer))
 	mux.HandleFunc(queue.TypeBusinessInfer, makeBusinessInferHandler(stack.Inference))
+	mux.HandleFunc(queue.TypeWatcherEval, makeWatcherEvalHandler(stack.Watchers))
 
 	// --- Periodic task manager ---
 	// Polls scheduled_tasks every SyncInterval and registers/refreshes one
@@ -127,6 +137,29 @@ func main() {
 		logrus.Fatalf("periodic task manager start: %v", err)
 	}
 	defer pm.Shutdown()
+
+	// --- Watcher periodic task manager (T-08) ---
+	// A second manager over a second provider, not a second scheduler: the
+	// ticket's exact shape. It polls enabled `watchers` rows and emits one
+	// `watcher:eval` per cron tick. Gated by the kill switch — off means no
+	// evaluation ticks fire at all, without touching any tenant's rows.
+	if cfg.WatcherEnabled {
+		wpm, err := asynq.NewPeriodicTaskManager(asynq.PeriodicTaskManagerOpts{
+			PeriodicTaskConfigProvider: queue.NewWatcherConfigProvider(stack.WatcherRepo),
+			RedisConnOpt:               stack.AsynqOpt,
+			SyncInterval:               30 * time.Second,
+		})
+		if err != nil {
+			logrus.Fatalf("watcher periodic task manager: %v", err)
+		}
+		if err := wpm.Start(); err != nil {
+			logrus.Fatalf("watcher periodic task manager start: %v", err)
+		}
+		defer wpm.Shutdown()
+		logrus.Info("watcher subsystem enabled")
+	} else {
+		logrus.Info("watcher subsystem disabled (WATCHER_ENABLED=false)")
+	}
 
 	// Run blocks until OS signal. Capture signals here so we can shut
 	// the asynq server down gracefully (it will let in-flight tasks
@@ -250,6 +283,28 @@ func makeBusinessInferHandler(svc *app.BusinessInferenceService) asynq.HandlerFu
 			}).Warn("business inference failed; the connection is unaffected and the tenant can type their own profile")
 			return err
 		}
+	}
+}
+
+// makeWatcherEvalHandler dispatches a periodic `watcher:eval` tick (T-08). The
+// payload carries only the watcher id; the service reloads the row so a firing
+// always uses the latest condition, evaluates the metric, and on an
+// un-suppressed breach enqueues the chat:run that will explain it.
+//
+// A malformed or empty payload is archived rather than retried. Everything else
+// returns the service's error and takes asynq's one retry — a transient DB blip
+// between the tick and the query is exactly what that is for, and a watcher
+// fires again on its next cron tick regardless.
+func makeWatcherEvalHandler(svc *app.WatcherService) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var p queue.WatcherEvalPayload
+		if err := json.Unmarshal(t.Payload(), &p); err != nil {
+			return asynq.SkipRetry
+		}
+		if p.WatcherID == "" || svc == nil {
+			return asynq.SkipRetry
+		}
+		return svc.HandleFire(ctx, p.WatcherID)
 	}
 }
 

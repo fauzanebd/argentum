@@ -81,6 +81,10 @@ type apiDeps struct {
 	// The metric registry (T-06): the tenant's named, validated numbers, and the
 	// turn-time query path query_metric runs through.
 	metricSvc *app.MetricService
+	// Watchers (T-08): CRUD and the dry-run. The API never fires or delivers —
+	// that is the worker's WatcherService — so this instance carries no delivery
+	// providers and no budget checker.
+	watcherSvc *app.WatcherService
 	// The `/v1` report surface (T-A2). docGen and storageSvc are nil on a
 	// deployment without object storage — the same condition that leaves
 	// generate_document unregistered in the worker — and the routes that need

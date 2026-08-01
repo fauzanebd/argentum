@@ -375,6 +375,15 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// query_metric run the same SQL the same way.
 	deps.metricSvc = app.NewMetricService(pgctl.NewMetricRepo(controlDB), connRepo, deps.tenant)
 
+	// Watchers (T-08): CRUD and the dry-run. It shares the metric service above,
+	// so a dry-run evaluates the same number the worker's fire path will. No
+	// delivery providers and no budget: the API neither fires nor bills — the
+	// worker's WatcherService, built in the stack, does both.
+	deps.watcherSvc = app.NewWatcherService(
+		pgctl.NewWatcherRepo(controlDB), deps.metricSvc, threadSvc, companyRepo, deps.enqueuer,
+		cfg.WatcherMaxPerCompany,
+	)
+
 	// Signup seeds the new company's first agent. Wired after the roster
 	// exists rather than at NewAuthService, which runs several hundred lines
 	// earlier and before there is a connection repository to validate against.

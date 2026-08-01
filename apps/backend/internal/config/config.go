@@ -223,6 +223,17 @@ type Config struct {
 	// aimed at the failure they do not catch cheaply: a fast, small tool called
 	// in a tight loop, spending a turn on round trips.
 	MCPMaxCallsPerTurn int
+
+	// WatcherEnabled is the kill switch for the whole watcher subsystem (T-08).
+	// When off, the worker does not start the watcher periodic manager, so no
+	// evaluation ticks fire — the panic button for a deployment whose watchers
+	// are misbehaving, without editing every tenant's rows.
+	WatcherEnabled bool
+	// WatcherMaxPerCompany caps how many watchers one tenant may define (T-08).
+	// A watcher is a standing SQL evaluation on a cron; an unbounded count is an
+	// unbounded background load and, once each fires an agent turn, an unbounded
+	// bill.
+	WatcherMaxPerCompany int
 	// APIV1ObsFlushSeconds is how often the request recorder writes what it has
 	// buffered (T-A5). It is the staleness of the tenant's own error list and
 	// the write rate of the rollup, traded against each other: the acceptance
@@ -389,6 +400,8 @@ func Load() (*Config, error) {
 		MCPCallTimeoutSecs:         getEnvAsInt("MCP_CALL_TIMEOUT_SECS", 30),
 		MCPMaxResponseBytes:        getEnvAsInt("MCP_MAX_RESPONSE_BYTES", 262144),
 		MCPMaxCallsPerTurn:         getEnvAsInt("MCP_MAX_CALLS_PER_TURN", 20),
+		WatcherEnabled:             getEnv("WATCHER_ENABLED", "true") == "true",
+		WatcherMaxPerCompany:       getEnvAsInt("WATCHER_MAX_PER_COMPANY", 20),
 		APIV1ObsFlushSeconds:       getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
 		APIV1ObsRetentionDays:      getEnvAsInt("API_V1_OBS_RETENTION_DAYS", 30),
 

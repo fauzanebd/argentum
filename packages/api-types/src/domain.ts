@@ -1450,6 +1450,112 @@ export interface UserInvite {
 }
 
 //////////
+// source: watcher.go
+
+/**
+ * WatcherGrain is the period one watcher evaluation covers (T-08). A subset of
+ * MetricGrain: a watcher runs on a cron, and day/week/month are the cadences a
+ * human reads a business on. Quarter and year are metric grains for a report,
+ * not alert windows.
+ */
+export const WatcherGrainDay = "day";
+export const WatcherGrainWeek = "week";
+export const WatcherGrainMonth = "month";
+export type WatcherGrain = typeof WatcherGrainDay | typeof WatcherGrainWeek | typeof WatcherGrainMonth;
+/**
+ * WatcherComparator is the condition a watcher breaches on (T-08).
+ * The threshold comparators read the metric's value directly; the pct_change
+ * comparators read the delta against a comparison window and so require
+ * CompareTo; no_data breaches when the metric returns no usable row at all,
+ * which is how a watcher catches a stalled pipeline rather than a bad number.
+ */
+export const WatcherComparatorGT = "gt";
+export const WatcherComparatorLT = "lt";
+export const WatcherComparatorPctChangeGT = "pct_change_gt";
+export const WatcherComparatorPctChangeLT = "pct_change_lt";
+export const WatcherComparatorNoData = "no_data";
+export type WatcherComparator = typeof WatcherComparatorGT | typeof WatcherComparatorLT | typeof WatcherComparatorPctChangeGT | typeof WatcherComparatorPctChangeLT | typeof WatcherComparatorNoData;
+/**
+ * WatcherChannel is one delivery destination for a watcher's fire.
+ * Ref means whatever the channel keys delivery on: a WhatsApp phone number, a
+ * Discord channel id, a Lark chat id. The dashboard channel has no ref — the
+ * watcher's dedicated thread is where it lands — so Ref is empty there.
+ */
+export interface WatcherChannel {
+  channel: Channel;
+  ref?: string;
+}
+/**
+ * WatcherDelivery is one channel's outcome for one fire, stored in
+ * watcher_events.delivery_status.
+ */
+export interface WatcherDelivery {
+  channel: Channel;
+  ref?: string;
+  /**
+   * Status is "delivered", "failed", or "skipped" (a channel with no provider
+   * wired in this deployment).
+   */
+  status: string;
+  error?: string;
+}
+/**
+ * Watcher is a metric-condition trigger (T-08): evaluate MetricID on a cron, and
+ * when Comparator/Threshold breaches, fire an agent turn into Channels.
+ */
+export interface Watcher {
+  id: string;
+  company_id: string;
+  metric_id: string;
+  /**
+   * ThreadID is the dedicated thread each fire runs in, reused across fires so
+   * the dashboard shows one conversation per watcher.
+   */
+  thread_id: string;
+  name: string;
+  window_grain: WatcherGrain;
+  comparator: WatcherComparator;
+  threshold: number /* float64 */;
+  compare_to?: string;
+  cron_expression: string;
+  timezone: string;
+  channels: WatcherChannel[];
+  cooldown_minutes: number /* int */;
+  enabled: boolean;
+  last_fired_at?: string;
+  last_dry_run_at?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+/**
+ * WatcherEvent is one evaluation of a watcher, breached or not (T-08).
+ */
+export interface WatcherEvent {
+  id: string;
+  watcher_id: string;
+  company_id: string;
+  fired_at: string;
+  /**
+   * MetricValue/ComparisonValue/DeltaPct are nil when the evaluation had no
+   * number to record: a no_data breach, or a threshold breach with no
+   * comparison window.
+   */
+  metric_value?: number /* float64 */;
+  comparison_value?: number /* float64 */;
+  delta_pct?: number /* float64 */;
+  breached: boolean;
+  /**
+   * SuppressedReason is "cooldown" when a real breach did not fire; empty
+   * otherwise.
+   */
+  suppressed_reason?: string;
+  thread_id?: string;
+  message_id?: string;
+  delivery_status?: WatcherDelivery[];
+}
+
+//////////
 // source: webhook_delivery.go
 
 /**

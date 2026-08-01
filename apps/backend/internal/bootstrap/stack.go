@@ -112,6 +112,14 @@ type Stack struct {
 	// numbers are defined before it decides how to answer.
 	Metrics *app.MetricService
 
+	// Watchers is the eval/delivery half of T-08. The worker fires its
+	// HandleFire on each watcher:eval tick and installs it on the runner as the
+	// fire closer; it needs a real metric service, so it is built here beside the
+	// registry. WatcherRepo is exposed for the periodic manager's config
+	// provider.
+	Watchers    *app.WatcherService
+	WatcherRepo domain.WatcherRepository
+
 	// Inference drafts what a connected source says the business is (T-B2). It
 	// lives on the stack rather than in cmd/worker because it needs the same
 	// schema cache the agent's get_schema fills, and that instance is built
@@ -288,6 +296,16 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// real service; validate-on-save, the dashboard Test button and query_metric
 	// all render through this one path, so the number is the same everywhere.
 	s.Metrics = app.NewMetricService(pgctl.NewMetricRepo(controlDB), s.Connections, s.TenantPool)
+
+	// Watchers (T-08). Built with the real metric service, so a watcher fires off
+	// the same number query_metric returns, and with the budget checker, so an
+	// unattended breach on an exhausted tenant refuses like a scheduled tick
+	// does. Delivery providers are installed by the worker (WithDelivery) — the
+	// eval harness that also builds this stack never delivers.
+	s.WatcherRepo = pgctl.NewWatcherRepo(controlDB)
+	s.Watchers = app.NewWatcherService(
+		s.WatcherRepo, s.Metrics, s.ThreadSvc, s.Companies, s.scheduledEnq, cfg.WatcherMaxPerCompany,
+	).WithBudget(s.UsageSvc)
 
 	s.Tools = tools.Registry(tools.RegistryDeps{
 		Pool:                s.TenantPool,
@@ -613,7 +631,8 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 		WithRoster(s.Agents).
 		WithCompanyContext(s.CompanyProfiles).
 		WithCompanyTools(s.CompanyToolSource).
-		WithMetrics(s.Metrics)
+		WithMetrics(s.Metrics).
+		WithWatchers(s.Watchers)
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)
 		logrus.WithFields(logrus.Fields{

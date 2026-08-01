@@ -60,3 +60,57 @@ func (p *DBConfigProvider) GetConfigs() ([]*asynq.PeriodicTaskConfig, error) {
 	}
 	return cfgs, nil
 }
+
+// WatcherConfigProvider is the watcher half of the same bridge (T-08): it turns
+// enabled `watchers` rows into `watcher:eval` periodic configs. A second provider
+// rather than a second scheduler — the ticket's exact instruction. It runs under
+// its own PeriodicTaskManager because the two tables are read by two repositories
+// and diffed against two independent snapshots; the entries never collide because
+// they carry different task types.
+type WatcherConfigProvider struct {
+	repo domain.WatcherRepository
+}
+
+func NewWatcherConfigProvider(repo domain.WatcherRepository) *WatcherConfigProvider {
+	return &WatcherConfigProvider{repo: repo}
+}
+
+// GetConfigs returns one PeriodicTaskConfig per enabled watcher. Each emits a
+// `watcher:eval` carrying just the watcher id; the handler reloads the row so a
+// firing always uses the latest condition.
+func (p *WatcherConfigProvider) GetConfigs() ([]*asynq.PeriodicTaskConfig, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	watchers, err := p.repo.ListEnabledForScheduler(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("scheduler list enabled watchers: %w", err)
+	}
+
+	cfgs := make([]*asynq.PeriodicTaskConfig, 0, len(watchers))
+	for _, w := range watchers {
+		spec := w.CronExpression
+		if w.Timezone != "" && w.Timezone != "UTC" {
+			spec = "CRON_TZ=" + w.Timezone + " " + spec
+		}
+		body, err := json.Marshal(WatcherEvalPayload{WatcherID: w.ID})
+		if err != nil {
+			logrus.WithError(err).WithField("watcher_id", w.ID).Warn("scheduler: marshal watcher payload")
+			continue
+		}
+		cfgs = append(cfgs, &asynq.PeriodicTaskConfig{
+			Cronspec: spec,
+			Task:     asynq.NewTask(TypeWatcherEval, body),
+			Opts: []asynq.Option{
+				// One retry: a breach evaluation that failed on a transient DB blip
+				// is worth one more attempt, but a watcher fires again on its next
+				// cron tick regardless, so a long retry chain only delays the next
+				// clean evaluation.
+				asynq.MaxRetry(1),
+				asynq.Timeout(5 * time.Minute),
+				asynq.Retention(7 * 24 * time.Hour),
+			},
+		})
+	}
+	return cfgs, nil
+}

@@ -106,6 +106,20 @@ var apiPolicy = middleware.RolePolicy{
 	"DELETE /api/metrics/:id": domain.RoleAdmin,
 	"POST /api/metrics/test":  domain.RoleAdmin,
 
+	// Watchers (T-08). Same split and same reasoning as metrics: reads are
+	// member because a watcher is company configuration and its event history is
+	// how anyone confirms it is working, while writes, the dry-run, and enabling
+	// are admin — a watcher runs tenant SQL unattended and delivers to the
+	// company's channels, and the dry-run runs that SQL directly like the metric
+	// Test button does.
+	"GET /api/watchers":              domain.RoleMember,
+	"GET /api/watchers/:id":          domain.RoleMember,
+	"GET /api/watchers/:id/events":   domain.RoleMember,
+	"POST /api/watchers":             domain.RoleAdmin,
+	"PUT /api/watchers/:id":          domain.RoleAdmin,
+	"DELETE /api/watchers/:id":       domain.RoleAdmin,
+	"POST /api/watchers/:id/dry-run": domain.RoleAdmin,
+
 	// WhatsApp allowlist: adding a number grants a phone the company's agent.
 	"GET /api/phones":           domain.RoleMember,
 	"POST /api/phones":          domain.RoleAdmin,

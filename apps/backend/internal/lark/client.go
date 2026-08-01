@@ -72,10 +72,39 @@ func (c *Client) Reply(ctx context.Context, companyID, messageID, content string
 	return nil
 }
 
+// Send posts a new message into chatID, not a reply to an existing one (T-08).
+// A watcher fires proactively — there is no parent message — so it uses the
+// create endpoint with receive_id_type=chat_id rather than the reply endpoint.
+func (c *Client) Send(ctx context.Context, companyID, chatID, content string) error {
+	if companyID == "" || chatID == "" {
+		return errors.New("lark: company_id and chat_id required")
+	}
+	inner, err := json.Marshal(TextContent{Text: content})
+	if err != nil {
+		return fmt.Errorf("marshal text content: %w", err)
+	}
+	body, err := json.Marshal(sendBody{
+		ReceiveID: chatID,
+		MsgType:   "text",
+		Content:   string(inner),
+	})
+	if err != nil {
+		return fmt.Errorf("marshal send body: %w", err)
+	}
+	endpoint := fmt.Sprintf("%s/open-apis/im/v1/messages?receive_id_type=chat_id", c.baseURL)
+	return c.do(ctx, companyID, http.MethodPost, endpoint, body)
+}
+
 type replyBody struct {
 	MsgType       string `json:"msg_type"`
 	Content       string `json:"content"`
 	ReplyInThread bool   `json:"reply_in_thread"`
+}
+
+type sendBody struct {
+	ReceiveID string `json:"receive_id"`
+	MsgType   string `json:"msg_type"`
+	Content   string `json:"content"`
 }
 
 func buildTextReply(content string) ([]byte, error) {

@@ -319,6 +319,38 @@ export interface MetricResponse {
   metric?: MetricDefinition;
 }
 /**
+ * WatchersResponse is the body of `GET /api/watchers` (T-08).
+ * Grains, Comparators, Channels and CompareOptions ride along for the same
+ * reason MetricsResponse carries Grains and Units: which values this release
+ * understands is a backend fact, and a frontend that hard-codes the dropdowns is
+ * the one that goes stale — or wrong — the day the backend's list changes.
+ */
+export interface WatchersResponse {
+  watchers: (any /* domain.Watcher */ | undefined)[];
+  grains: unknown /* domain.WatcherGrain */[];
+  comparators: unknown /* domain.WatcherComparator */[];
+  channels: Channel[];
+  /**
+   * CompareOptions are the compare_to values the pct_change comparators accept.
+   * A plain string list rather than a domain enum: compare_to is a bare column
+   * on the watcher, shared verbatim with query_metric's Comparison.
+   */
+  compare_options: string[];
+}
+/**
+ * WatcherResponse is one watcher — the shape every write route answers with.
+ */
+export interface WatcherResponse {
+  watcher?: unknown /* domain.Watcher */;
+}
+/**
+ * WatcherEventsResponse is the body of `GET /api/watchers/:id/events` (T-08):
+ * a watcher's recent evaluations, newest first, breached or not.
+ */
+export interface WatcherEventsResponse {
+  events: (any /* domain.WatcherEvent */ | undefined)[];
+}
+/**
  * MetricTestResponse is what the "Test" button shows: the rendered SQL and the
  * number it returned over the validation window, without saving anything (T-06).
  */

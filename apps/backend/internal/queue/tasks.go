@@ -13,6 +13,10 @@
 //   - `business:infer`     — read one connected source's schema and draft what
 //     the business appears to be (T-B2). Never runs inline
 //     in the request that added the connection.
+//   - `watcher:eval`       — fired by a second asynq.PeriodicTaskManager for each
+//     cron tick of an enabled watchers row (T-08); the
+//     worker evaluates the metric and, on a breach, enqueues
+//     a `chat:run` to explain it.
 //
 // Payloads are JSON-marshalled into the asynq task body.
 package queue
@@ -30,7 +34,15 @@ const (
 	TypeReportRender     = "report:render"
 	TypeWebhookDeliver   = "webhook:deliver"
 	TypeBusinessInfer    = "business:infer"
+	TypeWatcherEval      = "watcher:eval"
 )
+
+// WatcherEvalPayload is the body of a `watcher:eval` task (T-08). Only the id,
+// like scheduled:run: the worker reloads the watcher so a cron firing always
+// evaluates the latest condition, threshold and channel list.
+type WatcherEvalPayload struct {
+	WatcherID string `json:"watcher_id"`
+}
 
 // BusinessInferPayload names one source to describe (T-B2). Only the ids: the
 // schema is read at run time through the cache the agent's get_schema fills, and
@@ -108,6 +120,12 @@ type ChatRunPayload struct {
 	DefaultCurrency string `json:"default_currency,omitempty"` // ISO 4217
 	ScheduledTaskID string `json:"scheduled_task_id,omitempty"`
 	ScheduledRunID  string `json:"scheduled_run_id,omitempty"`
+	// WatcherEventID ties a breach's briefing turn to the watcher_events row it
+	// explains (T-08). The worker delivers the turn's answer to the watcher's
+	// channels and records the outcome on that row when the turn finishes; a
+	// thread id would not do, because the dedicated thread outlives the fire and
+	// accumulates more of them. Set only by WatcherService.HandleFire.
+	WatcherEventID string `json:"watcher_event_id,omitempty"`
 	// APIReportID ties this turn to the report job `POST /v1/reports` handed
 	// the caller (T-A2). The worker marks that row terminal when the turn
 	// finishes, which is how "is my report ready?" gets an answer — a thread

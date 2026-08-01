@@ -287,6 +287,34 @@ type MetricResponse struct {
 	Metric *domain.MetricDefinition `json:"metric"`
 }
 
+// WatchersResponse is the body of `GET /api/watchers` (T-08).
+//
+// Grains, Comparators, Channels and CompareOptions ride along for the same
+// reason MetricsResponse carries Grains and Units: which values this release
+// understands is a backend fact, and a frontend that hard-codes the dropdowns is
+// the one that goes stale — or wrong — the day the backend's list changes.
+type WatchersResponse struct {
+	Watchers    []*domain.Watcher          `json:"watchers"`
+	Grains      []domain.WatcherGrain      `json:"grains"`
+	Comparators []domain.WatcherComparator `json:"comparators"`
+	Channels    []domain.Channel           `json:"channels"`
+	// CompareOptions are the compare_to values the pct_change comparators accept.
+	// A plain string list rather than a domain enum: compare_to is a bare column
+	// on the watcher, shared verbatim with query_metric's Comparison.
+	CompareOptions []string `json:"compare_options"`
+}
+
+// WatcherResponse is one watcher — the shape every write route answers with.
+type WatcherResponse struct {
+	Watcher *domain.Watcher `json:"watcher"`
+}
+
+// WatcherEventsResponse is the body of `GET /api/watchers/:id/events` (T-08):
+// a watcher's recent evaluations, newest first, breached or not.
+type WatcherEventsResponse struct {
+	Events []*domain.WatcherEvent `json:"events"`
+}
+
 // MetricTestResponse is what the "Test" button shows: the rendered SQL and the
 // number it returned over the validation window, without saving anything (T-06).
 type MetricTestResponse struct {

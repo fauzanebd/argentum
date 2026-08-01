@@ -165,6 +165,16 @@ type APIReportCompleter interface {
 	CompleteReport(ctx context.Context, reportID, threadID string, runErr error)
 }
 
+// WatcherFireCloser is the narrow contract ChatRunner uses to close out a
+// watcher's briefing turn (T-08). Shaped like ScheduledRunMarker and installed
+// the same way, because it is the same idea one step further: a turn nobody is
+// watching, whose answer has to be pushed to the channels the watcher names.
+// The runner owns the outbound providers but not the watcher domain, so it hands
+// off both the message id and the text and lets the service deliver.
+type WatcherFireCloser interface {
+	CompleteFire(ctx context.Context, eventID, assistantMsgID, response string)
+}
+
 // ChatRunner is the worker-side half of the chat pipeline. It runs the
 // agent against a queued ChatRunPayload, persists the assistant turn,
 // publishes streaming events through the EventBus, and (for WhatsApp
@@ -182,6 +192,7 @@ type ChatRunner struct {
 	pool         *db.TenantConnPool
 	scheduled    ScheduledRunMarker
 	apiReports   APIReportCompleter
+	watchers     WatcherFireCloser
 	historyLimit int
 	budgetFor    BudgetResolver
 	actions      domain.AgentActionRepository
@@ -246,6 +257,15 @@ func (r *ChatRunner) WithBudget(resolve BudgetResolver) *ChatRunner {
 // and every turn behaves exactly as it did before.
 func (r *ChatRunner) WithAPIReports(c APIReportCompleter) *ChatRunner {
 	r.apiReports = c
+	return r
+}
+
+// WithWatchers lets the runner deliver a watcher's briefing turn to its channels
+// when the turn ends (T-08). Optional: a stack with no watcher subsystem — the
+// eval harness, a deployment without the worker — passes nothing, and a turn
+// carrying no WatcherEventID never reaches it regardless.
+func (r *ChatRunner) WithWatchers(c WatcherFireCloser) *ChatRunner {
+	r.watchers = c
 	return r
 }
 
@@ -666,6 +686,12 @@ func actorOf(p queue.ChatRunPayload) (kind, ref string) {
 	if p.ScheduledTaskID != "" {
 		return string(domain.ActorKindSchedule), p.ScheduledTaskID
 	}
+	// A watcher fire is unattended, like a schedule — nobody was at the keyboard.
+	// It gets its own actor kind so the audit log can tell an alert's queries
+	// apart from a cron report's (T-08).
+	if p.WatcherEventID != "" {
+		return string(domain.ActorKindWatcher), p.WatcherEventID
+	}
 	// An API key outranks any user reference on the payload for the same
 	// reason a schedule does: the turn ran because a script called us, and the
 	// tenant's own `user_ref` on a /v1 chat request is a label they chose, not
@@ -917,6 +943,18 @@ func (r *ChatRunner) completeWith(
 	// here is what lets the SSE bridge be a forwarder rather than a poll loop.
 	if p.APIReportID != "" && r.apiReports != nil {
 		r.apiReports.CompleteReport(ctx, p.APIReportID, p.ThreadID, nil)
+	}
+	// A watcher's briefing turn (T-08): record the assistant message on the
+	// event and push the answer to every channel the watcher names. After the
+	// message is persisted (so the id is real) and before the `final` event is
+	// not required — delivery to WhatsApp/Discord/Lark is proactive and
+	// independent of the dashboard stream.
+	if p.WatcherEventID != "" && r.watchers != nil {
+		var msgID string
+		if assistantMsg != nil {
+			msgID = assistantMsg.ID
+		}
+		r.watchers.CompleteFire(ctx, p.WatcherEventID, msgID, response)
 	}
 	if err := r.bus.Publish(p.ThreadID, ChatEvent{
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "final",
