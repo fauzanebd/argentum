@@ -41,6 +41,11 @@ type Agent struct {
 	// foreign keys, and a deleted connection has to leave every agent's
 	// allowlist with it.
 	SourceIDs []string `json:"source_ids"`
+	// MCPServerIDs is the tenant MCP servers this agent may call (T-M2). Unlike
+	// SourceIDs, **empty means NONE** — see AllowsMCPServer. Stored in
+	// agent_mcp_servers, and a deleted server leaves every agent's binding with
+	// it, exactly as a deleted connection leaves SourceIDs.
+	MCPServerIDs []string `json:"mcp_server_ids"`
 	// TemplateKey records which gallery card this agent was created from
 	// (T-B3), or "" for the blank path and for every agent that predates it.
 	//
@@ -78,6 +83,19 @@ func (a *Agent) AllowsTool(name string) bool {
 // use the finance database" is a wish.
 func (a *Agent) AllowsSource(connectionID string) bool {
 	return len(a.SourceIDs) == 0 || slices.Contains(a.SourceIDs, connectionID)
+}
+
+// AllowsMCPServer reports whether this agent may call the tools of the given
+// MCP server (T-M2).
+//
+// **Empty means NONE**, which is the opposite of AllowsTool and AllowsSource
+// and is the whole point of locked decision 5: a warehouse the tenant connected
+// is already theirs, but a tool that acts on a third-party system we hold a
+// token for reaches an agent only when an admin bound it. An agent with no
+// binding gets no MCP tools, which is also why the eval harness and every
+// pre-T-M2 turn are unaffected — they carry no binding and so reach nothing.
+func (a *Agent) AllowsMCPServer(serverID string) bool {
+	return slices.Contains(a.MCPServerIDs, serverID)
 }
 
 // AgentRepository is the persistence contract for the roster.

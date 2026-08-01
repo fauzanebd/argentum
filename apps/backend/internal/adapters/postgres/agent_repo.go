@@ -24,7 +24,9 @@ func NewAgentRepo(db *sql.DB) *AgentRepo { return &AgentRepo{db: db} }
 const agentColumns = `a.id, a.company_id, a.name, a.description, a.persona_prompt,
 	a.allowed_tools, a.template_key, a.is_default, a.enabled, a.created_at, a.updated_at,
 	ARRAY(SELECT s.connection_id::text FROM agent_sources s
-		WHERE s.agent_id = a.id ORDER BY s.connection_id) AS source_ids`
+		WHERE s.agent_id = a.id ORDER BY s.connection_id) AS source_ids,
+	ARRAY(SELECT m.server_id::text FROM agent_mcp_servers m
+		WHERE m.agent_id = a.id ORDER BY m.server_id) AS mcp_server_ids`
 
 // uniqueViolation is Postgres 23505. The roster has two unique indexes an
 // ordinary request can collide with — (company_id, lower(name)) and the
@@ -233,10 +235,11 @@ func replaceSources(ctx context.Context, tx *sql.Tx, companyID, agentID string, 
 
 func scanAgent(s rowScanner) (*domain.Agent, error) {
 	a := &domain.Agent{}
-	var tools, sources pq.StringArray
+	var tools, sources, mcpServers pq.StringArray
 	if err := s.Scan(
 		&a.ID, &a.CompanyID, &a.Name, &a.Description, &a.PersonaPrompt,
 		&tools, &a.TemplateKey, &a.IsDefault, &a.Enabled, &a.CreatedAt, &a.UpdatedAt, &sources,
+		&mcpServers,
 	); err != nil {
 		return nil, err
 	}
@@ -251,5 +254,61 @@ func scanAgent(s rowScanner) (*domain.Agent, error) {
 	if a.SourceIDs == nil {
 		a.SourceIDs = []string{}
 	}
+	a.MCPServerIDs = []string(mcpServers)
+	if a.MCPServerIDs == nil {
+		a.MCPServerIDs = []string{}
+	}
 	return a, nil
+}
+
+// ReplaceMCPServers rewrites one agent's MCP-server bindings (T-M2).
+//
+// Deliberately not folded into Create/Update the way replaceSources is: the
+// roster's create/edit input does not carry bindings yet (that arrives with
+// T-M3's Settings control), so calling it there would clear every binding on an
+// unrelated edit — the same wipe-on-save trap the token column avoids. It is a
+// standalone write the binding UI calls, and until that lands it is how the
+// gate and tests attach a server to an agent.
+//
+// The INSERT re-checks company ownership on both sides — the agent's company
+// and the server's — so a binding across tenants inserts nothing rather than
+// letting one company's agent reach another's server. This is the layer where
+// being wrong would hand over a credentialed egress destination.
+func (r *AgentRepo) ReplaceMCPServers(ctx context.Context, companyID, agentID string, serverIDs []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Scope the agent to the company before touching bindings: a caller with a
+	// guessed agent uuid must not be able to bind servers onto another tenant's
+	// agent.
+	var owned bool
+	if err := tx.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM agents WHERE id = $1 AND company_id = $2)`,
+		agentID, companyID,
+	).Scan(&owned); err != nil {
+		return fmt.Errorf("check agent ownership: %w", err)
+	}
+	if !owned {
+		return domain.ErrNotFound
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM agent_mcp_servers WHERE agent_id = $1`, agentID); err != nil {
+		return fmt.Errorf("clear agent mcp servers: %w", err)
+	}
+	if len(serverIDs) > 0 {
+		const q = `
+			INSERT INTO agent_mcp_servers (agent_id, server_id)
+			SELECT $1, s.id FROM mcp_servers s
+			WHERE s.id = ANY($2::uuid[]) AND s.company_id = $3
+			ON CONFLICT DO NOTHING
+		`
+		if _, err := tx.ExecContext(ctx, q, agentID, pq.Array(serverIDs), companyID); err != nil {
+			return fmt.Errorf("set agent mcp servers: %w", err)
+		}
+	}
+	return tx.Commit()
 }

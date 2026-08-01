@@ -97,3 +97,19 @@ func TestAScopeNamingNothingPresentFiltersToNothing(t *testing.T) {
 		t.Errorf("FilterSources = %v, want nothing", idsOf(got))
 	}
 }
+
+// MCP bindings are the inverse of sources: empty means NONE (T-M2, locked
+// decision 5). A turn with no binding — the eval harness, an unscoped company,
+// an agent nobody bound a server to — reaches no MCP server, which is what makes
+// the company-tools path a no-op and today's tool list unchanged.
+func TestEmptyMCPBindingMeansNone(t *testing.T) {
+	if (Scope{}).AllowsMCPServer("srv-1") {
+		t.Error("an empty binding must allow no MCP server")
+	}
+	if (Scope{MCPServerIDs: []string{"srv-1"}}).AllowsMCPServer("srv-2") {
+		t.Error("a binding to one server must not allow another")
+	}
+	if !(Scope{MCPServerIDs: []string{"srv-1"}}).AllowsMCPServer("srv-1") {
+		t.Error("a bound server must be allowed")
+	}
+}

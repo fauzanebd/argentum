@@ -65,25 +65,24 @@ func (c *Client) CheckURL(raw string) error { return c.guard.CheckResolvedURL(ra
 // costs an admin a support ticket.
 func (c *Client) AllowsInsecureHTTP() bool { return c.guard.AllowInsecureHTTP || c.guard.AllowPrivate }
 
-// Probe connects, completes the handshake, and lists the server's tools.
+// connect completes the handshake and returns a live session, or the reason it
+// could not. The URL is checked before anything is dialled — a plainly bad URL
+// is an error the caller reads rather than a connection they wait on — and the
+// dial-time Control check in Guard.HTTPClient is what actually enforces the
+// address rules on every hop.
 //
-// Everything it returns is the tenant's server's text — a tool description is
-// written by whoever runs that server and lands, after approval, in our agent's
-// context. Nothing here is trusted; it is stored for a human to read, which is
-// what the review screen exists for.
-func (c *Client) Probe(ctx context.Context, url string, transport domain.MCPTransport, token string) ([]DiscoveredTool, error) {
+// One transport per session and no reuse across calls: a session carries the
+// guard's pinned dialer and the tenant's token, and sharing one between turns
+// would mean caching a credentialed connection to an address a redirect could
+// have moved. Probe and CallTool both pay one handshake; that is the cost of
+// the egress guarantee holding on every request.
+func (c *Client) connect(ctx context.Context, url string, transport domain.MCPTransport, token string) (*sdk.ClientSession, error) {
 	if !transport.Valid() {
 		return nil, fmt.Errorf("unsupported transport %q", transport)
 	}
-	// Checked before anything is dialled, so a plainly bad URL is an error the
-	// admin reads rather than a connection attempt they wait for. The dial-time
-	// check in Guard.HTTPClient is what actually enforces this.
 	if err := c.guard.CheckURL(url); err != nil {
 		return nil, err
 	}
-
-	ctx, cancel := c.guard.contextWithTimeout(ctx)
-	defer cancel()
 
 	httpClient := c.guard.HTTPClient(token)
 	var t sdk.Transport
@@ -94,13 +93,13 @@ func (c *Client) Probe(ctx context.Context, url string, transport domain.MCPTran
 		t = &sdk.StreamableClientTransport{
 			Endpoint:   url,
 			HTTPClient: httpClient,
-			// One attempt. A probe is a question an admin is waiting on, and
-			// five reconnects against a server that is down turns Save into a
-			// minute of silence.
+			// One attempt. A probe is a question an admin is waiting on, and a
+			// call is one an agent's turn is waiting on; five reconnects against
+			// a server that is down turns either into a minute of silence.
 			MaxRetries: -1,
-			// We ask and they answer; nothing in discovery needs the server to
-			// push. The standalone stream is optional in the spec and is one
-			// more thing to hang on a server that half-implements it.
+			// We ask and they answer; nothing here needs the server to push. The
+			// standalone stream is optional in the spec and is one more thing to
+			// hang on a server that half-implements it.
 			DisableStandaloneSSE: true,
 		}
 	}
@@ -109,6 +108,23 @@ func (c *Client) Probe(ctx context.Context, url string, transport domain.MCPTran
 		Connect(ctx, t, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
+	}
+	return session, nil
+}
+
+// Probe connects, completes the handshake, and lists the server's tools.
+//
+// Everything it returns is the tenant's server's text — a tool description is
+// written by whoever runs that server and lands, after approval, in our agent's
+// context. Nothing here is trusted; it is stored for a human to read, which is
+// what the review screen exists for.
+func (c *Client) Probe(ctx context.Context, url string, transport domain.MCPTransport, token string) ([]DiscoveredTool, error) {
+	ctx, cancel := c.guard.contextWithTimeout(ctx)
+	defer cancel()
+
+	session, err := c.connect(ctx, url, transport, token)
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = session.Close() }()
 
@@ -134,4 +150,76 @@ func (c *Client) Probe(ctx context.Context, url string, transport domain.MCPTran
 		})
 	}
 	return out, nil
+}
+
+// CallResult is one tool call's outcome, as the agent should see it.
+//
+// IsError is the tenant tool's own business error (MCP puts it inside the
+// result, not on the wire, precisely so the model can read it and self-correct)
+// — the Text still carries the message. A transport or protocol failure is a Go
+// error instead, because the agent cannot self-correct a server that is down.
+type CallResult struct {
+	Text    string
+	IsError bool
+}
+
+// CallTool runs one tool on the tenant's server and returns its text (T-M2).
+//
+// It goes through the same guarded client Probe does, so the pinned dialer, the
+// per-hop redirect check and the bearer token all apply to a call exactly as
+// they do to discovery — this is the handover T-M1 spelled out: the guard lives
+// on the client, so the call path gets it for free as long as it does not build
+// an http.Client of its own.
+//
+// maxBytes bounds the assembled result. A server that answers a tool call with
+// 40 MB of JSON is a context-window incident and a bill; past the cap this is a
+// Go error the agent recovers from, not a result that reaches the model. The
+// bytes are read into memory once before the cap is applied — the SDK owns the
+// response body — so the cap is a ceiling on what enters the context, and the
+// caller's context deadline is what bounds a server that streams slowly forever.
+func (c *Client) CallTool(
+	ctx context.Context, url string, transport domain.MCPTransport, token, toolName string,
+	args map[string]any, maxBytes int,
+) (CallResult, error) {
+	session, err := c.connect(ctx, url, transport, token)
+	if err != nil {
+		return CallResult{}, err
+	}
+	defer func() { _ = session.Close() }()
+
+	res, err := session.CallTool(ctx, &sdk.CallToolParams{Name: toolName, Arguments: args})
+	if err != nil {
+		return CallResult{}, fmt.Errorf("call tool %q: %w", toolName, err)
+	}
+
+	var b strings.Builder
+	for _, content := range res.Content {
+		if tc, ok := content.(*sdk.TextContent); ok {
+			b.WriteString(tc.Text)
+			continue
+		}
+		// A non-text block (an image, an embedded resource) is described rather
+		// than dropped: the model should know something came back it cannot read
+		// inline, and a silently empty result reads as "the tool returned
+		// nothing" when it did not.
+		raw, mErr := content.MarshalJSON()
+		if mErr == nil {
+			b.Write(raw)
+		}
+	}
+	text := b.String()
+	// Structured-only results (Content unset by a server that populated only
+	// StructuredContent) still have to reach the model.
+	if text == "" && res.StructuredContent != nil {
+		if raw, mErr := json.Marshal(res.StructuredContent); mErr == nil {
+			text = string(raw)
+		}
+	}
+
+	if maxBytes > 0 && len(text) > maxBytes {
+		return CallResult{}, fmt.Errorf(
+			"tool %q returned %d bytes, over the %d-byte limit; ask it for a narrower result",
+			toolName, len(text), maxBytes)
+	}
+	return CallResult{Text: text, IsError: res.IsError}, nil
 }

@@ -142,6 +142,55 @@ func TestAuditRowCarriesTheAgentTheTurnRanAs(t *testing.T) {
 	}
 }
 
+// mcpFakeTool is a fake that also names a server, the way tools/mcp.Tool does.
+type mcpFakeTool struct {
+	fakeTool
+	serverID string
+}
+
+func (m *mcpFakeTool) MCPServerID() string { return m.serverID }
+
+// T-M2: the audit row for an MCP call names the server it went to, and it stays
+// readable through the budget guard — which embeds interfaces.Tool and so hides
+// MCPServerID from ordinary promotion. The decorator walks the Unwrap chain
+// past the guard to find it. Wrapped in the boot order (guard inside, audit
+// outside) so the test exercises the real stack, not a shortcut.
+func TestAuditRowNamesTheMCPServerThroughTheGuard(t *testing.T) {
+	rec := &fakeAuditor{}
+	raw := []interfaces.Tool{&mcpFakeTool{
+		fakeTool: fakeTool{name: "mcp__helpdesk__search_tickets", result: `{}`},
+		serverID: "srv-42",
+	}}
+	tool := WithAuditAll(agentbudget.GuardAll(raw), rec)[0]
+
+	ctx := agentbudget.WithTracker(turnCtx(), agentbudget.New(agentbudget.Default()))
+	if _, err := tool.Execute(ctx, `{"query":"printer"}`); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if got := rec.only(t).MCPServerID; got != "srv-42" {
+		t.Errorf("mcp_server_id = %q, want srv-42", got)
+	}
+}
+
+// The same field is empty for a static tool: nothing but an MCP call should
+// ever populate it, and an ordinary tool does not implement MCPServerID.
+func TestAuditRowHasNoMCPServerForAStaticTool(t *testing.T) {
+	rec := &fakeAuditor{}
+	tool := WithAuditAll(agentbudget.GuardAll([]interfaces.Tool{
+		&fakeTool{name: "run_sql", result: `{"row_count":1}`},
+	}), rec)[0]
+
+	ctx := agentbudget.WithTracker(turnCtx(), agentbudget.New(agentbudget.Default()))
+	if _, err := tool.Execute(ctx, `{"sql":"SELECT 1"}`); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if got := rec.only(t).MCPServerID; got != "" {
+		t.Errorf("mcp_server_id = %q, want empty", got)
+	}
+}
+
 // A tool call made outside a chat turn — the schema-cache refresh, a reindex —
 // belongs to no agent, and recording one would be a fabrication in the one
 // table whose value is that it is not.

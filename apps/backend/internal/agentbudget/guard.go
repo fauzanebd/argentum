@@ -33,6 +33,13 @@ type guarded struct {
 	interfaces.Tool
 }
 
+// Unwrap exposes the wrapped tool. It embeds interfaces.Tool, which hides any
+// method the interface does not declare — so a decorator further out that wants
+// an optional capability of the underlying tool (the audit log reading an MCP
+// tool's server id, T-M2) has to walk in past this wrapper rather than rely on
+// promotion. errors.Unwrap-shaped on purpose.
+func (g *guarded) Unwrap() interfaces.Tool { return g.Tool }
+
 func (g *guarded) Run(ctx context.Context, input string) (string, error) {
 	return g.Execute(ctx, input)
 }

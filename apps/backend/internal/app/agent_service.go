@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/agenttemplates"
 	"github.com/fauzanebd/argentum/internal/domain"
+	mcptools "github.com/fauzanebd/argentum/internal/tools/mcp"
 )
 
 // The agent roster (T-S1).
@@ -333,9 +335,22 @@ func (s *AgentService) validated(ctx context.Context, companyID string, in Agent
 // rows shows a real difference.
 func (s *AgentService) normalizeTools(in []string) ([]string, error) {
 	want := map[string]bool{}
+	mcp := map[string]bool{}
 	for _, t := range in {
 		t = strings.TrimSpace(t)
 		if t == "" {
+			continue
+		}
+		if strings.HasPrefix(t, mcptools.NamePrefix) {
+			// A per-company MCP tool (T-M2). Its name cannot be checked against
+			// the static registry — the set is per company and discovered at
+			// runtime — so what is validated here is the reserved namespace, and
+			// the turn-time provider is what actually gates it: a name bound to no
+			// approved, read-only, in-scope tool never appears in the turn's list,
+			// so scoping to a stale one silently reaches nothing rather than
+			// erroring. Validation against the company's live approved set arrives
+			// with T-M3's binding UI, which has the company in hand.
+			mcp[t] = true
 			continue
 		}
 		if !slices.Contains(s.tools, t) {
@@ -345,13 +360,21 @@ func (s *AgentService) normalizeTools(in []string) ([]string, error) {
 		}
 		want[t] = true
 	}
-	out := make([]string, 0, len(want))
+	out := make([]string, 0, len(want)+len(mcp))
 	for _, t := range s.tools {
 		if want[t] {
 			out = append(out, t)
 		}
 	}
-	return out, nil
+	// MCP names after the static ones and sorted, so two agents scoped to the
+	// same set store the same array and a diff of the two rows shows a real
+	// difference — the same reason the static half is ordered by the registry.
+	mcpNames := make([]string, 0, len(mcp))
+	for t := range mcp {
+		mcpNames = append(mcpNames, t)
+	}
+	sort.Strings(mcpNames)
+	return append(out, mcpNames...), nil
 }
 
 // normalizeSources checks every id against the company's own connections. The

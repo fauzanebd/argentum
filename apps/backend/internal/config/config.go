@@ -207,6 +207,22 @@ type Config struct {
 	// MCPProbeTimeoutSecs bounds one discovery attempt. An admin is waiting on
 	// it, so it is shorter than a turn and longer than a healthy round trip.
 	MCPProbeTimeoutSecs int
+	// MCPCallTimeoutSecs bounds one tool call at turn time (T-M2). Separate from
+	// the probe timeout because the two have different waiters — an admin
+	// pressing Save versus an agent mid-turn — and a turn that spends its whole
+	// wall-clock budget on one slow MCP server is a turn that answers nothing.
+	MCPCallTimeoutSecs int
+	// MCPMaxResponseBytes caps one MCP tool result before it enters the context
+	// (T-M2). A server that answers with 40 MB of JSON is a context-window
+	// incident and a bill; past this the call is a tool error the agent recovers
+	// from. Generous relative to a run_sql result, because an MCP tool's output
+	// is not a table this deployment shaped.
+	MCPMaxResponseBytes int
+	// MCPMaxCallsPerTurn caps how many MCP calls one turn may make across all its
+	// MCP tools (T-M2). A backstop beside T-16's token and tool-call budgets,
+	// aimed at the failure they do not catch cheaply: a fast, small tool called
+	// in a tight loop, spending a turn on round trips.
+	MCPMaxCallsPerTurn int
 	// APIV1ObsFlushSeconds is how often the request recorder writes what it has
 	// buffered (T-A5). It is the staleness of the tenant's own error list and
 	// the write rate of the rollup, traded against each other: the acceptance
@@ -370,6 +386,9 @@ func Load() (*Config, error) {
 		MCPAllowPrivateEgress:      getEnv("MCP_ALLOW_PRIVATE_EGRESS", "false") == "true",
 		MCPAllowInsecureHTTP:       getEnv("MCP_ALLOW_INSECURE_HTTP", "false") == "true",
 		MCPProbeTimeoutSecs:        getEnvAsInt("MCP_PROBE_TIMEOUT_SECS", 15),
+		MCPCallTimeoutSecs:         getEnvAsInt("MCP_CALL_TIMEOUT_SECS", 30),
+		MCPMaxResponseBytes:        getEnvAsInt("MCP_MAX_RESPONSE_BYTES", 262144),
+		MCPMaxCallsPerTurn:         getEnvAsInt("MCP_MAX_CALLS_PER_TURN", 20),
 		APIV1ObsFlushSeconds:       getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
 		APIV1ObsRetentionDays:      getEnvAsInt("API_V1_OBS_RETENTION_DAYS", 30),
 

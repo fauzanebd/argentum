@@ -65,6 +65,11 @@ type AgentAction struct {
 	AgentID  string `json:"agent_id,omitempty"`
 	ToolName string `json:"tool_name"`
 	SourceID string `json:"source_id,omitempty"`
+	// MCPServerID names the tenant MCP server a call went to (T-M2), for the
+	// rows an MCP tool writes and empty for every other tool. Like AgentID it
+	// carries no foreign key and is never cleared: "which server ran this" is
+	// asked about deleted servers more often than live ones.
+	MCPServerID string `json:"mcp_server_id,omitempty"`
 	// ArgsRedacted is json.RawMessage rather than []byte so the audit endpoint
 	// returns the object itself; encoding/json renders a []byte as base64, and
 	// a log whose arguments have to be decoded before they can be read is a

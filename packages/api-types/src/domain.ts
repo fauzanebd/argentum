@@ -46,6 +46,13 @@ export interface Agent {
    */
   source_ids: string[];
   /**
+   * MCPServerIDs is the tenant MCP servers this agent may call (T-M2). Unlike
+   * SourceIDs, **empty means NONE** — see AllowsMCPServer. Stored in
+   * agent_mcp_servers, and a deleted server leaves every agent's binding with
+   * it, exactly as a deleted connection leaves SourceIDs.
+   */
+  mcp_server_ids: string[];
+  /**
    * TemplateKey records which gallery card this agent was created from
    * (T-B3), or "" for the blank path and for every agent that predates it.
    * **Analytics only — never read at turn time** (locked decision 4). Nothing
@@ -118,6 +125,13 @@ export interface AgentAction {
   agent_id?: string;
   tool_name: string;
   source_id?: string;
+  /**
+   * MCPServerID names the tenant MCP server a call went to (T-M2), for the
+   * rows an MCP tool writes and empty for every other tool. Like AgentID it
+   * carries no foreign key and is never cleared: "which server ran this" is
+   * asked about deleted servers more often than live ones.
+   */
+  mcp_server_id?: string;
   /**
    * ArgsRedacted is json.RawMessage rather than []byte so the audit endpoint
    * returns the object itself; encoding/json renders a []byte as base64, and

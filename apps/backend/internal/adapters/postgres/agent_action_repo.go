@@ -15,7 +15,8 @@ type AgentActionRepo struct{ db *sql.DB }
 func NewAgentActionRepo(db *sql.DB) *AgentActionRepo { return &AgentActionRepo{db: db} }
 
 const agentActionColumns = `id, company_id, thread_id, message_id, actor_kind, actor_ref, channel,
-	COALESCE(agent_id::text, ''), tool_name, source_id, args_redacted, args_hash,
+	COALESCE(agent_id::text, ''), tool_name, source_id, COALESCE(mcp_server_id::text, ''),
+	args_redacted, args_hash,
 	result_status, error_text, rows_returned, duration_ms, request_id, created_at`
 
 // Create writes one action. NULLIF(...)::uuid is what lets the caller pass an
@@ -26,12 +27,12 @@ func (r *AgentActionRepo) Create(ctx context.Context, a *domain.AgentAction) err
 	const q = `
 		INSERT INTO agent_actions (
 			company_id, thread_id, message_id, actor_kind, actor_ref, channel,
-			agent_id, tool_name, source_id, args_redacted, args_hash, result_status,
+			agent_id, tool_name, source_id, mcp_server_id, args_redacted, args_hash, result_status,
 			error_text, rows_returned, duration_ms, request_id
 		) VALUES (
 			$1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, $5, $6,
-			NULLIF($7, '')::uuid, $8, $9, $10::jsonb, $11, $12,
-			NULLIF($13, ''), $14, $15, $16
+			NULLIF($7, '')::uuid, $8, $9, NULLIF($10, '')::uuid, $11::jsonb, $12, $13,
+			NULLIF($14, ''), $15, $16, $17
 		)
 		RETURNING id, created_at
 	`
@@ -45,7 +46,7 @@ func (r *AgentActionRepo) Create(ctx context.Context, a *domain.AgentAction) err
 	}
 	if err := r.db.QueryRowContext(ctx, q,
 		a.CompanyID, a.ThreadID, a.MessageID, string(a.ActorKind), a.ActorRef, string(a.Channel),
-		a.AgentID, a.ToolName, a.SourceID, string(args), a.ArgsHash, string(a.ResultStatus),
+		a.AgentID, a.ToolName, a.SourceID, a.MCPServerID, string(args), a.ArgsHash, string(a.ResultStatus),
 		a.ErrorText, rows, a.DurationMS, a.RequestID,
 	).Scan(&a.ID, &a.CreatedAt); err != nil {
 		return fmt.Errorf("insert agent action: %w", err)
@@ -112,7 +113,7 @@ func scanAgentAction(s rowScanner) (*domain.AgentAction, error) {
 	var rowsReturned sql.NullInt64
 	if err := s.Scan(
 		&a.ID, &a.CompanyID, &threadID, &messageID, &actorKind, &a.ActorRef, &channel,
-		&a.AgentID, &a.ToolName, &a.SourceID, &a.ArgsRedacted, &a.ArgsHash, &status, &errText,
+		&a.AgentID, &a.ToolName, &a.SourceID, &a.MCPServerID, &a.ArgsRedacted, &a.ArgsHash, &status, &errText,
 		&rowsReturned, &a.DurationMS, &a.RequestID, &a.CreatedAt,
 	); err != nil {
 		return nil, err

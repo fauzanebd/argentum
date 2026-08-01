@@ -43,6 +43,13 @@ type Scope struct {
 	// states, and the reason a scoped agent whose only source was deleted
 	// widens rather than breaks.
 	SourceIDs []string
+	// MCPServerIDs is the tenant MCP servers this turn's agent may call (T-M2).
+	// **Empty means NONE**, the opposite of SourceIDs — see AllowsMCPServer and
+	// domain.Agent.AllowsMCPServer. The zero Scope therefore reaches no MCP
+	// server, which is exactly what an unscoped turn or the eval harness wants:
+	// the company-tools path returns empty and the turn is byte-for-byte what it
+	// was before this ticket.
+	MCPServerIDs []string
 }
 
 type scopeKey struct{}
@@ -68,6 +75,15 @@ func AgentID(ctx context.Context) string { return FromContext(ctx).AgentID }
 // Empty allowlist means every source; see the field comment.
 func (s Scope) AllowsSource(connectionID string) bool {
 	return len(s.SourceIDs) == 0 || slices.Contains(s.SourceIDs, connectionID)
+}
+
+// AllowsMCPServer reports whether this turn's agent may call the given MCP
+// server's tools (T-M2). **Empty allowlist means none**, the inverse of
+// AllowsSource: a binding is the only thing that reaches an MCP server, so a
+// turn with none reaches nothing. This is the choke point tools/mcp.Source
+// filters on, the same way tools.ResolveSource filters on AllowsSource.
+func (s Scope) AllowsMCPServer(serverID string) bool {
+	return slices.Contains(s.MCPServerIDs, serverID)
 }
 
 // FilterSources narrows a company's connections to what this agent may see.

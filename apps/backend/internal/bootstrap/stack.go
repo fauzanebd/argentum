@@ -35,6 +35,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
+	adaptersmcp "github.com/fauzanebd/argentum/internal/adapters/mcp"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/agentbudget"
@@ -51,6 +52,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/theme"
 	"github.com/fauzanebd/argentum/internal/tools"
+	mcptools "github.com/fauzanebd/argentum/internal/tools/mcp"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
 
@@ -98,6 +100,12 @@ type Stack struct {
 	Tools        []interfaces.Tool
 	AgentFactory app.AgentFactory
 	Budget       agentbudget.Budget
+
+	// CompanyToolSource builds a turn's tenant MCP tools (T-M2). Nil is legal
+	// and common — a turn with no bound server gets the static registry alone —
+	// and NewChatRunner installs it regardless, because the provider itself
+	// takes the empty-binding fast path.
+	CompanyToolSource *mcptools.Source
 
 	// Inference drafts what a connected source says the business is (T-B2). It
 	// lives on the stack rather than in cmd/worker because it needs the same
@@ -304,6 +312,31 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// was stopped" is the line an incident review reads first.
 	s.Tools = tools.WithAuditAll(s.Tools, s.AgentActions)
 
+	// The tenant's own MCP tools, resolved per turn (T-M2). It shares the egress
+	// guard's rules with the CRUD side — the same address pinning and redirect
+	// re-checks — but its own timeout, because a call is on a turn's clock rather
+	// than an admin's. AllowPrivate is refused outside development for the same
+	// reason cmd/api refuses it: the tenant types the URL and we hold their
+	// token, so trusting a production operator who set it is trusting an SSRF.
+	mcpAllowPrivate := cfg.MCPAllowPrivateEgress
+	if mcpAllowPrivate && !cfg.IsDevelopment() {
+		logrus.Warn("MCP_ALLOW_PRIVATE_EGRESS is set outside development and is being ignored")
+		mcpAllowPrivate = false
+	}
+	mcpClient := adaptersmcp.NewClient(adaptersmcp.Guard{
+		AllowPrivate:      mcpAllowPrivate,
+		AllowInsecureHTTP: cfg.MCPAllowInsecureHTTP,
+		Timeout:           time.Duration(cfg.MCPCallTimeoutSecs) * time.Second,
+	})
+	s.CompanyToolSource = mcptools.NewSource(
+		pgctl.NewMCPServerRepo(controlDB), dsnCipher, mcpClient, s.AgentActions,
+		mcptools.Caps{
+			CallTimeout:      time.Duration(cfg.MCPCallTimeoutSecs) * time.Second,
+			MaxResponseBytes: cfg.MCPMaxResponseBytes,
+			MaxCallsPerTurn:  cfg.MCPMaxCallsPerTurn,
+		},
+	)
+
 	mem := buildMemory(cfg)
 	guardrailsTpl := buildGuardrails(cfg, lightLLMClient)
 
@@ -414,9 +447,20 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 		if logrus.IsLevelEnabled(logrus.TraceLevel) {
 			entry.WithField("prompt", turnPrompt).Trace("composed system prompt (full)")
 		}
+		// Static registry plus this turn's tenant MCP tools (T-M2), then
+		// filtered by the agent's allowlist. The company tools arrive already
+		// budget-guarded and audited, so appending them here — after the static
+		// half was wrapped at boot — leaves the whole slice bounded and audited,
+		// which is the security property the ticket warns is easy to half-ship.
+		// Empty CompanyTools is the common path and leaves d.tools untouched.
+		turnTools := d.tools
+		if len(spec.CompanyTools) > 0 {
+			turnTools = append(append(make([]interfaces.Tool, 0, len(d.tools)+len(spec.CompanyTools)),
+				d.tools...), spec.CompanyTools...)
+		}
 		opts := []sdkagent.Option{
 			sdkagent.WithLLM(spec.Primary),
-			sdkagent.WithTools(filterTools(d.tools, spec.ToolNames)...),
+			sdkagent.WithTools(filterTools(turnTools, spec.ToolNames)...),
 			sdkagent.WithMemory(d.memory),
 			sdkagent.WithName("Argentum"),
 			sdkagent.WithDescription("Conversational analytics agent for B2B owners."),
@@ -556,7 +600,8 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 	).WithBudget(func(context.Context, string) agentbudget.Budget { return s.Budget }).
 		WithActionLog(s.AgentActions).
 		WithRoster(s.Agents).
-		WithCompanyContext(s.CompanyProfiles)
+		WithCompanyContext(s.CompanyProfiles).
+		WithCompanyTools(s.CompanyToolSource)
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)
 		logrus.WithFields(logrus.Fields{

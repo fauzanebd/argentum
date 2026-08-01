@@ -61,10 +61,19 @@ type AgentSpec struct {
 	// Empty means every tool — the roster's rule, stated once in
 	// domain.Agent.AllowsTool and not restated here.
 	ToolNames []string
+	// CompanyTools is the tenant MCP tools this turn's agent may call (T-M2),
+	// already budget-guarded and audited by the provider. The factory appends
+	// them to the static registry before it filters by ToolNames, so a
+	// namespaced MCP name in an agent's allowlist resolves like any other. Empty
+	// for every turn with no bound MCP server, which is the common case and
+	// composes to today's exact tool list.
+	CompanyTools []interfaces.Tool
 
 	// Primitives rather than a *domain.Agent on purpose: the factory lives in
 	// bootstrap, and it should not have to learn a domain entity in order to
-	// append a string and filter a slice.
+	// append a string and filter a slice. CompanyTools is the exception — it is
+	// interfaces already, built and wrapped outside the factory so the wrapping
+	// stays in one layer.
 }
 
 // AgentFactory builds a sdkagent.Agent for one chat turn. The worker captures
@@ -119,6 +128,18 @@ type CompanyContextLoader interface {
 	GetByCompany(ctx context.Context, companyID string) (*domain.CompanyProfile, error)
 }
 
+// CompanyToolProvider builds the tenant MCP tools one turn may call (T-M2),
+// already wrapped. It is read once per turn, after the scope is installed, and
+// returns nil for an agent with no MCP binding — which is every turn until a
+// server is bound, so nil is the fast, common path.
+//
+// Declared at the consumer and narrowed to one method for the same reason
+// AgentLoader is: a runner that could register or review MCP servers is a runner
+// that could be asked to. tools/mcp.Source satisfies it.
+type CompanyToolProvider interface {
+	CompanyTools(ctx context.Context, companyID string) []interfaces.Tool
+}
+
 // ScheduledRunMarker is the narrow contract ChatRunner uses to close out
 // a scheduled_task_runs row when the agent finishes (or errors). Defined
 // as an interface so the worker can pass *ScheduledTaskService while
@@ -157,6 +178,7 @@ type ChatRunner struct {
 	actions      domain.AgentActionRepository
 	roster       AgentLoader
 	profiles     CompanyContextLoader
+	companyTools CompanyToolProvider
 
 	// Embedding-based table picker. Both must be non-nil to inject hints;
 	// otherwise the runner silently skips and the agent falls back to the
@@ -254,6 +276,18 @@ func (r *ChatRunner) WithCompanyContext(l CompanyContextLoader) *ChatRunner {
 	return r
 }
 
+// WithCompanyTools lets a turn call the tenant's own MCP tools (T-M2).
+//
+// Optional in the same way WithRoster is: a deployment with no MCP servers, or
+// an agent with no binding, gets exactly the static registry it does today. The
+// provider returns already-wrapped tools, so this runner never touches the
+// budget guard or the audit decorator — the wrapping stays where the static
+// half's does.
+func (r *ChatRunner) WithCompanyTools(p CompanyToolProvider) *ChatRunner {
+	r.companyTools = p
+	return r
+}
+
 // WithLark attaches a Lark outbound provider so the runner can post replies
 // for chat:run tasks on the Lark channel. Returning the receiver mirrors
 // WithTablePicker so the worker can chain configuration on construction.
@@ -340,6 +374,16 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	agentRow := r.resolveAgent(ctx, p)
 	ctx = agentscope.WithScope(ctx, scopeOf(agentRow))
 
+	// The tenant's own MCP tools for this turn (T-M2), resolved from the scope
+	// just installed: empty binding means none, so this is nil for every turn
+	// until a server is bound. Built here, before the factory, because it needs
+	// the context — the scope, the tenant, the deadline — and the factory takes
+	// only what a turn composed from.
+	var companyTools []interfaces.Tool
+	if r.companyTools != nil {
+		companyTools = r.companyTools.CompanyTools(ctx, p.CompanyID)
+	}
+
 	// Resolve the per-tenant LLMs for this turn. Primary is required; light
 	// falls back to primary if resolution fails (preserves today's behavior
 	// where missing LIGHT_LLM_API_KEY means "use primary").
@@ -363,6 +407,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		CompanyContext: r.companyContext(ctx, p.CompanyID),
 		Persona:        personaOf(agentRow),
 		ToolNames:      toolNamesOf(agentRow),
+		CompanyTools:   companyTools,
 	})
 	if err != nil {
 		return r.handleRunError(ctx, p, fmt.Errorf("build agent: %w", err))
@@ -512,7 +557,12 @@ func scopeOf(a *domain.Agent) agentscope.Scope {
 	if a == nil {
 		return agentscope.Scope{}
 	}
-	return agentscope.Scope{AgentID: a.ID, Name: a.Name, SourceIDs: a.SourceIDs}
+	return agentscope.Scope{
+		AgentID:      a.ID,
+		Name:         a.Name,
+		SourceIDs:    a.SourceIDs,
+		MCPServerIDs: a.MCPServerIDs,
+	}
 }
 
 func personaOf(a *domain.Agent) string {

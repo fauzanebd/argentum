@@ -121,9 +121,15 @@ func (a *audited) record(ctx context.Context, tool, args, out string, execErr er
 		// Which of the tenant's agents made this call (T-S2). Off the context
 		// rather than a constructor argument: this decorator wraps the whole
 		// registry once at boot, and the agent is per turn.
-		AgentID:      agentscope.AgentID(ctx),
-		ToolName:     tool,
-		SourceID:     sourceID,
+		AgentID:  agentscope.AgentID(ctx),
+		ToolName: tool,
+		SourceID: sourceID,
+		// Which tenant MCP server this call went to (T-M2), and empty for every
+		// non-MCP tool. Read through the Unwrap chain rather than off the context:
+		// one turn can call tools on several servers, so the id belongs to the
+		// tool, not the turn — and this decorator wraps the budget guard, which
+		// embeds the interface and hides the tool's own MCPServerID method.
+		MCPServerID:  mcpServerID(a.Tool),
 		ArgsRedacted: redacted,
 		ArgsHash:     hashArgs(args),
 		ResultStatus: status,
@@ -145,6 +151,26 @@ func (a *audited) record(ctx context.Context, tool, args, out string, execErr er
 			"tool":       tool,
 		}).Warn("agent action audit write failed; the call itself succeeded")
 	}
+}
+
+// mcpServerID walks the decorator chain to the underlying tool and, if it is an
+// MCP tool, returns the server it calls (T-M2). Returns "" for every ordinary
+// tool. The walk is needed because the budget guard sits between this decorator
+// and the tool and embeds interfaces.Tool, which does not surface the tool's own
+// MCPServerID method — so it is reached through Unwrap, errors.Unwrap-style, with
+// a small bound so a pathological chain cannot loop.
+func mcpServerID(t interfaces.Tool) string {
+	for i := 0; i < 8 && t != nil; i++ {
+		if m, ok := t.(interface{ MCPServerID() string }); ok {
+			return m.MCPServerID()
+		}
+		u, ok := t.(interface{ Unwrap() interfaces.Tool })
+		if !ok {
+			return ""
+		}
+		t = u.Unwrap()
+	}
+	return ""
 }
 
 // classify maps a tool's return into a status. The ordering matters: a refused
