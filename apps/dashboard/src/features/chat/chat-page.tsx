@@ -27,6 +27,8 @@ import { useAgents } from "./use-agents";
 import { AgentBadge, AgentPicker } from "./agent-picker";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
+import { PendingApprovals } from "@/features/actions/approval-card";
+import { PENDING_ACTIONS_KEY } from "@/features/actions/use-actions";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { formatLatencySeconds, formatMessageTimestamp } from "./format";
 import { apiErrorMessage } from "@/lib/api-error";
@@ -250,6 +252,11 @@ export function ChatPage() {
       qc.invalidateQueries({ queryKey: ["messages", evt.thread_id] });
       qc.invalidateQueries({ queryKey: ["threads"] });
       stopPolling();
+    } else if (evt.type === "action_proposed") {
+      // The agent proposed a write-capable action (T-11). Refresh the pending
+      // list so its approval card appears in the strip above the composer live,
+      // without waiting for the 60s backstop poll.
+      qc.invalidateQueries({ queryKey: PENDING_ACTIONS_KEY });
     } else if (evt.type === "error") {
       finalReceivedRef.current = true;
       setLiveAssistant(null);
@@ -430,6 +437,9 @@ export function ChatPage() {
               {error}
             </div>
           )}
+          <div className="mx-3 sm:mx-4 shrink-0">
+            <PendingApprovals threadId={activeThreadId} />
+          </div>
           <ChatComposer
             value={input}
             onChange={setInput}

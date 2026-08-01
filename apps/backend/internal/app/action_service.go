@@ -231,6 +231,36 @@ func (s *ActionService) ListPending(ctx context.Context, companyID string) ([]*d
 	return s.repo.ListPending(ctx, companyID)
 }
 
+// PermittedToDecide reports whether a caller in role may approve or reject an
+// invocation. The gate is the invocation's kind, not the invocation: a kind's
+// company_actions.allowed_roles names who may decide it, and an empty list means
+// any member — the migration's stated default. Enforced here rather than in the
+// coarse role policy table because the permitted set is per company per kind, a
+// shape a static route→role map cannot express (T-11). A kind whose config has
+// gone missing is decided by admins only, the safe reading of an absent rule.
+func (s *ActionService) PermittedToDecide(ctx context.Context, companyID, invocationID, role string) (bool, error) {
+	inv, err := s.repo.GetInvocation(ctx, companyID, invocationID)
+	if err != nil {
+		return false, err
+	}
+	cfg, err := s.repo.GetCompanyAction(ctx, companyID, inv.Kind)
+	if errors.Is(err, domain.ErrNotFound) {
+		return role == string(domain.RoleAdmin), nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if len(cfg.AllowedRoles) == 0 {
+		return true, nil
+	}
+	for _, r := range cfg.AllowedRoles {
+		if r == role {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // List returns a company's invocations newest first.
 func (s *ActionService) List(ctx context.Context, companyID string, limit, offset int) ([]*domain.ActionInvocation, error) {
 	return s.repo.ListInvocations(ctx, companyID, limit, offset)

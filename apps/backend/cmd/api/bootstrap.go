@@ -14,6 +14,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/agenttemplates"
 	"github.com/fauzanebd/argentum/internal/apiobs"
+	"github.com/fauzanebd/argentum/internal/actions"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
 	"github.com/fauzanebd/argentum/internal/branding"
@@ -383,6 +384,16 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		pgctl.NewWatcherRepo(controlDB), deps.metricSvc, threadSvc, companyRepo, deps.enqueuer,
 		cfg.WatcherMaxPerCompany,
 	)
+
+	// The action framework's execution side (T-10/T-11/T-12a). The registry holds
+	// the same actions the worker proposes against, so a kind the agent can
+	// propose is a kind this process can carry out when a human approves it. The
+	// messenger reuses the WhatsApp provider and the phone allowlist already built
+	// above — send_message delivers only to numbers this company has authorized.
+	actionRegistry := actions.NewRegistry(
+		actions.NewSendMessageAction(app.NewActionMessenger(phoneRepo, deps.wa)),
+	)
+	deps.actionSvc = app.NewActionService(pgctl.NewActionRepo(controlDB), actionRegistry, deps.actionRepo)
 
 	// Signup seeds the new company's first agent. Wired after the roster
 	// exists rather than at NewAuthService, which runs several hundred lines

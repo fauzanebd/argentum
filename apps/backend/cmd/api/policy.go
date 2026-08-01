@@ -120,6 +120,18 @@ var apiPolicy = middleware.RolePolicy{
 	"DELETE /api/watchers/:id":       domain.RoleAdmin,
 	"POST /api/watchers/:id/dry-run": domain.RoleAdmin,
 
+	// The action framework's human side (T-11). Reads are member because the
+	// approval card renders in the chat stream every member of a thread sees, so
+	// the pending list has to be member-visible. Approve and reject are member in
+	// this coarse table and refined per kind in the handler: a company_actions
+	// row's allowed_roles names who may decide that kind, and a caller outside it
+	// gets a 403 the card shows as read-only. Member here is the floor, not the
+	// grant — the per-kind check can only narrow it.
+	"GET /api/actions/pending":     domain.RoleMember,
+	"GET /api/actions/:id":         domain.RoleMember,
+	"POST /api/actions/:id/approve": domain.RoleMember,
+	"POST /api/actions/:id/reject":  domain.RoleMember,
+
 	// WhatsApp allowlist: adding a number grants a phone the company's agent.
 	"GET /api/phones":           domain.RoleMember,
 	"POST /api/phones":          domain.RoleAdmin,

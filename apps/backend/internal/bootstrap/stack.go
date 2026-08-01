@@ -123,11 +123,12 @@ type Stack struct {
 
 	// Actions is the write-capable framework (T-10): the agent proposes through
 	// propose_action, a human approves, and this service executes exactly once.
-	// Built with an empty action registry until T-12a registers send_message, so
-	// today every proposal is refused with "no such action" — the framework is in
-	// place, the actions are not yet. ActionRepo is exposed for T-11's endpoints.
-	Actions    *app.ActionService
-	ActionRepo domain.ActionRepository
+	// Its registry holds send_message (T-12a); ActionRepo is exposed for T-11's
+	// endpoints. The messenger is built here provider-less and completed in
+	// NewChatRunner, where the WhatsApp provider arrives.
+	Actions         *app.ActionService
+	ActionRepo      domain.ActionRepository
+	actionMessenger *app.ActionMessenger
 
 	// Inference drafts what a connected source says the business is (T-B2). It
 	// lives on the stack rather than in cmd/worker because it needs the same
@@ -316,12 +317,19 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		s.WatcherRepo, s.Metrics, s.ThreadSvc, s.Companies, s.scheduledEnq, cfg.WatcherMaxPerCompany,
 	).WithBudget(s.UsageSvc)
 
-	// The action framework (T-10). The registry is empty until T-12a wires the
-	// first concrete action; propose_action is registered regardless, so the
-	// capability and its audit trail exist before an action does. The audit log is
-	// the same append-only store every tool call writes to (T-05).
+	// The action framework (T-10/T-12a). send_message is the one registered kind;
+	// propose_action resolves it at propose time, and the worker's auto-execute
+	// path (an admin-opt-out kind) runs it here. The messenger reuses the phone
+	// allowlist and — set in NewChatRunner — the WhatsApp provider, so an
+	// unattended send reaches only a number this company authorized. The audit log
+	// is the same append-only store every tool call writes to (T-05).
 	s.ActionRepo = pgctl.NewActionRepo(controlDB)
-	s.Actions = app.NewActionService(s.ActionRepo, actions.NewRegistry(), s.AgentActions)
+	s.actionMessenger = app.NewActionMessenger(pgctl.NewPhoneRepo(controlDB), nil)
+	s.Actions = app.NewActionService(
+		s.ActionRepo,
+		actions.NewRegistry(actions.NewSendMessageAction(s.actionMessenger)),
+		s.AgentActions,
+	)
 
 	s.Tools = tools.Registry(tools.RegistryDeps{
 		Pool:                s.TenantPool,
@@ -639,6 +647,12 @@ func filterTools(all []interfaces.Tool, allowed []string) []interfaces.Tool {
 // not). Table-picker embeddings are attached when the config enables them,
 // matching worker behaviour.
 func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatRunner {
+	// Complete the action messenger with the provider that just arrived, so an
+	// auto-executed send_message can deliver to WhatsApp (T-12a). A no-op when wa
+	// is nil, as it is in the eval harness.
+	if s.actionMessenger != nil {
+		s.actionMessenger.SetWhatsApp(wa)
+	}
 	runner := app.NewChatRunner(
 		s.ThreadSvc, s.Messages, s.Threads, s.Connections,
 		s.AgentFactory, s.LLMCache, bus, wa, s.TenantPool,

@@ -160,3 +160,74 @@ are code-complete but not exercised against a running database, the same state
   `Action.Execute(ctx, params)` takes only the context and params — the tenant is
   on the context; per-company config (`config_encrypted`) plumbing is added with
   the first action that needs it (`http_action`, T-12b).
+
+---
+
+## T-11 · Approval UI + events — 2026-08-02
+
+### What shipped
+
+- **Endpoints** (`internal/transport/http/handlers/actions.go`, member in
+  `cmd/api/policy.go`): `GET /api/actions/pending`, `GET /api/actions/:id`,
+  `POST /api/actions/:id/approve`, `POST /api/actions/:id/reject`. `actionFail`
+  maps the state machine's sentinels — `ErrActionExpired`→409, double-decide
+  `ErrConflict`→409, `ErrNotFound`→404.
+- **`action_proposed` WS event** (`chat_runner.go`, `AgentEventToolResult`): when
+  `propose_action` returns `status:"proposed"`, an event of `type:"action_proposed"`
+  is published on the thread's Redis channel carrying the tool result
+  (`invocation_id`, `action_kind`, `status`, `description`, `requires_approval`) in
+  `Metadata`. Only a proposal awaiting a decision gets one — an admin-opt-out kind
+  already carries its outcome on the `tool_result`.
+- **Per-kind role gate** (`ActionService.PermittedToDecide`): the coarse policy
+  table cannot express `company_actions.allowed_roles` (per company, per kind), so
+  the handler calls this before every decision. Empty allowed_roles → any member;
+  a missing config row → admin only.
+- **Dashboard**: `features/actions/use-actions.ts` (pending query + decide
+  mutation, invalidated live by the `action_proposed` event), `approval-card.tsx`
+  (inline Approve/Reject card + `PendingApprovals` strip above the composer), and
+  `components/layout/approvals-nav.tsx` (the app-shell pending-count badge, hidden
+  at zero).
+
+### Verified
+
+- `go build ./...`, `go test ./internal/actions/... ./internal/app/... ./cmd/api/...`
+  green (state-machine tests unchanged; policy diff test accepts the four new
+  routes). `make types` regenerated. `make lint-web` green (0 errors).
+
+### Known limits / outstanding
+
+- **Live gate (propose→approve→executed screenshot) not run** — needs a running
+  stack. Structurally complete and unit/type-checked; the recording is owed.
+- **Read-only-for-non-permitted-role is enforced server-side (403), not yet
+  rendered as a disabled card.** The pending payload does not carry the caller's
+  decidability, so the card shows buttons to everyone and surfaces the 403 inline.
+  Surfacing `allowed_roles`/`can_decide` on the pending item is the follow-up.
+
+## T-12a · Action `send_message` — 2026-08-02
+
+### What shipped
+
+- `internal/actions/send_message.go`: the `send_message` action — `channel`,
+  `target_ref`, `body`, optional `attach_document_id` (accepted, not yet
+  delivered). The allowlist check in `Execute` runs **before** delivery and is the
+  whole guardrail: an approved proposal to an un-allowlisted target still does not
+  send.
+- `internal/app/action_messenger.go`: `ActionMessenger` satisfies
+  `actions.Messenger`, reusing the phone allowlist (`FindCompanyByPhone`, scoped to
+  the calling company) and the WhatsApp provider. Wired in both processes — the API
+  in `cmd/api/bootstrap.go`, the worker in `bootstrap/stack.go` with the provider
+  set in `NewChatRunner` where it arrives.
+- Tests (`send_message_test.go`): validate (channel/target/body), describe,
+  **un-allowlisted target refused with nothing sent**, allowlisted target
+  delivered.
+
+### Known limits / outstanding
+
+- **WhatsApp only.** Discord and Lark allowlist *inbound users*, while delivery on
+  those channels addresses a *channel*/*chat* — a different identifier space, so
+  "send only to an allowlisted ref" has no safe meaning there without a
+  channel-level allowlist that does not exist. Adding them is additive against
+  `actions.Messenger`; scoped out here rather than closed with an unsafe guess.
+- **`attach_document_id` is accepted but not delivered** (forward-compat for the
+  backlog's scheduled-report delivery). `Describe` says so on the card.
+- **Live delivery gate not run** — needs a real WhatsApp number on the allowlist.

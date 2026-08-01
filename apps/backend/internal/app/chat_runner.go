@@ -836,6 +836,21 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 					ToolCall:  &ToolCallEvent{Name: evt.ToolCall.Name, Result: res},
 					Timestamp: time.Now(),
 				})
+				// A proposed action gets its own event on top of the tool_result
+				// (T-11), so the dashboard can render an inline approval card in
+				// the stream without pattern-matching on a tool name it otherwise
+				// treats opaquely. Only a proposal awaiting a human decision needs
+				// one: an admin-opt-out kind (status executed/failed) has nothing
+				// to approve, and the tool_result already carries its outcome.
+				if evt.ToolCall.Name == "propose_action" && res["status"] == string(domain.InvocationProposed) {
+					_ = r.bus.Publish(p.ThreadID, ChatEvent{
+						JobID:     p.UserMsgID,
+						ThreadID:  p.ThreadID,
+						Type:      "action_proposed",
+						Metadata:  res,
+						Timestamp: time.Now(),
+					})
+				}
 			}
 
 		case interfaces.AgentEventError:

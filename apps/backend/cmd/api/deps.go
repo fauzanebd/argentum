@@ -46,6 +46,12 @@ type apiDeps struct {
 	userRepo     *pgctl.UserRepo
 	companyRepo  *pgctl.CompanyRepo
 	actionRepo   *pgctl.AgentActionRepo
+	// actionSvc is the human side of the action framework (T-10/T-11): the
+	// approval endpoints call Approve/Reject on it, and it executes an approved
+	// action exactly once. Built with the same action registry the worker
+	// proposes against, so a kind the agent can propose is a kind this process
+	// can carry out.
+	actionSvc *app.ActionService
 	// usageRepo is read directly by `/v1/chat` for one thing UsageService does
 	// not expose: what a single turn cost, over a window bounded by time.Time
 	// rather than by the dashboard's string dates.

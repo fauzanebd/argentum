@@ -3,6 +3,83 @@
 // Entities, from apps/backend/internal/domain.
 
 //////////
+// source: action.go
+
+/**
+ * InvocationStatus is where an action proposal sits in its lifecycle (T-10).
+ * 	proposed ─approve─▶ approved ─execute─▶ executed
+ * 	   │                                └──▶ failed
+ * 	   ├─reject──▶ rejected
+ * 	   └─(24h)───▶ expired
+ * Named InvocationStatus, not ActionStatus: ActionStatus already exists on the
+ * audit log (agent_action.go) and means how a *tool call* ended. These are
+ * different alphabets for different tables, and collapsing them would let a
+ * value legal in one row leak into the other.
+ */
+export type InvocationStatus = string;
+export const InvocationProposed: InvocationStatus = "proposed";
+export const InvocationApproved: InvocationStatus = "approved";
+export const InvocationRejected: InvocationStatus = "rejected";
+export const InvocationExecuted: InvocationStatus = "executed";
+export const InvocationFailed: InvocationStatus = "failed";
+export const InvocationExpired: InvocationStatus = "expired";
+/**
+ * CompanyAction is one tenant's configuration of one action kind (T-10): whether
+ * it is enabled, whether a proposal of it still needs a human decision, the roles
+ * that may make that decision, and the sealed configuration the action carries.
+ * Nothing can be proposed for a kind that is not enabled here — the agent's
+ * write-capable surface is exactly what the admin has switched on, and no wider.
+ */
+export interface CompanyAction {
+  id: string;
+  company_id: string;
+  action_kind: string;
+  enabled: boolean;
+  /**
+   * RequiresApproval defaults true. False is an explicit admin opt-in that lets
+   * a proposal execute immediately — it never becomes the default a company
+   * drifts into, and it does not turn off the audit trail.
+   */
+  requires_approval: boolean;
+  /**
+   * AllowedRoles are the roles permitted to approve this kind. Empty means any
+   * member. Enforced at the approval endpoint (T-11).
+   */
+  allowed_roles: string[];
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+/**
+ * ActionInvocation is one proposal moving through the lifecycle above (T-10).
+ * ParamsRedacted holds the parameters with credential-shaped values stripped;
+ * because an action's real secret lives in CompanyAction.ConfigEncrypted, a
+ * well-formed proposal's parameters carry nothing redaction removes, and the
+ * executor runs off this field rather than a second unredacted one that would
+ * put secrets in the ledger.
+ */
+export interface ActionInvocation {
+  id: string;
+  company_id: string;
+  thread_id?: string;
+  message_id?: string;
+  action_kind: string;
+  /**
+   * ParamsRedacted is json.RawMessage so the pending-approvals endpoint returns
+   * the object itself rather than a base64 blob (see AgentAction.ArgsRedacted).
+   */
+  params_redacted: unknown;
+  idempotency_key: string;
+  status: InvocationStatus;
+  proposed_at: string;
+  decided_at?: string;
+  decided_by?: string;
+  executed_at?: string;
+  result?: unknown;
+  error_text?: string;
+}
+
+//////////
 // source: agent.go
 
 /**
