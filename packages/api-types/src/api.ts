@@ -11,6 +11,8 @@ import type {
   APIRequestError,
   Channel,
   CompanyProfile,
+  MCPServer,
+  MCPTransport,
 } from "./domain.js";
 
 //////////
@@ -243,4 +245,55 @@ export interface SendMessageResponse {
    * ordinary case there is no object to read it from.
    */
   budget_warning?: BudgetState;
+}
+/**
+ * MCPServersResponse is the body of `GET /api/mcp-servers` (T-M1).
+ * Transports rides along for the reason AgentsResponse carries the tool
+ * vocabulary: which transports this release speaks is a backend fact, and a
+ * frontend `["http", "sse"]` would be the array nobody edits the day a third
+ * one is added — or, worse, the array somebody adds "stdio" to, which is a
+ * decision the backend has made and will not revisit.
+ */
+export interface MCPServersResponse {
+  servers: (MCPServer | undefined)[];
+  transports: MCPTransport[];
+  /**
+   * AllowsInsecureHTTP is whether this deployment accepts a plaintext http
+   * URL. The form's hint is written from it, because "must be https" printed
+   * beside a deployment that accepts http is a sentence that costs an admin a
+   * support ticket — and the reverse is worse.
+   */
+  allows_insecure_http: boolean;
+}
+/**
+ * MCPServerResponse is one server and the tools discovery found on it — the
+ * shape every write route answers with, so a browser never holds two views of
+ * the same server.
+ */
+export interface MCPServerResponse {
+  server?: MCPServer;
+  tools: MCPToolView[];
+}
+/**
+ * MCPToolView is one discovered tool plus the fact a browser cannot compute.
+ * Drifted means an approved tool's description or argument schema has changed
+ * since the admin approved it. It is the cheapest injection vector this track
+ * opens — a description is text that enters the agent's context — so it is
+ * surfaced rather than silently adopted, which is locked decision 6 arriving in
+ * the UI.
+ * The fields are spelled out rather than embedded: Go would promote them onto
+ * the wire either way, but `packages/api-types` is generated from these
+ * declarations and an embedded pointer generates `MCPServerTool?: unknown`,
+ * which is a browser type that describes nothing.
+ */
+export interface MCPToolView {
+  id: string;
+  server_id: string;
+  tool_name: string;
+  description: string;
+  input_schema: unknown;
+  read_only: boolean;
+  approved: boolean;
+  drifted: boolean;
+  discovered_at: string;
 }

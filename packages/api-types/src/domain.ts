@@ -863,6 +863,91 @@ export interface CompanyLLMCredential {
 }
 
 //////////
+// source: mcp_server.go
+
+/**
+ * MCPTransport is how we reach the server. HTTP only, forever: stdio would mean
+ * spawning the tenant's process inside our worker, which is arbitrary code
+ * execution wearing a config field (locked decision 3).
+ */
+/**
+ * MCPTransportHTTP is the streamable HTTP transport (2025-03-26 spec).
+ */
+export const MCPTransportHTTP = "http";
+/**
+ * MCPTransportSSE is the older HTTP+SSE transport, still what most
+ * deployed servers speak.
+ */
+export const MCPTransportSSE = "sse";
+export type MCPTransport = typeof MCPTransportHTTP | typeof MCPTransportSSE;
+/**
+ * MCPServer is one registered server.
+ * AuthEncrypted never leaves the backend: it is `json:"-"` for the same reason
+ * DBConnection.DSNEncrypted is, and the read routes additionally report only
+ * whether a token is set. A credential a read route returns is a credential any
+ * admin session leak hands over.
+ */
+export interface MCPServer {
+  id: string;
+  company_id: string;
+  name: string;
+  description: string;
+  url: string;
+  transport: MCPTransport;
+  /**
+   * HasAuth is what the dashboard renders instead of the token: "a token is
+   * set" is the only fact about it a browser needs, and it is the fact an
+   * admin editing the row is actually looking for.
+   */
+  has_auth: boolean;
+  enabled: boolean;
+  /**
+   * LastProbedAt and ProbeError are the last discovery attempt. A failure is
+   * a saved row with a reason, not a rejected save — a server that is down at
+   * 4pm is not a configuration error.
+   */
+  last_probed_at?: string;
+  probe_error: string;
+  created_at: string;
+  updated_at: string;
+}
+/**
+ * MCPServerTool is one discovered tool, and the review an admin gave it.
+ * Nothing here is callable until Approved is true. That is the opposite of the
+ * agent roster's rule, where an empty allowlist means every tool, and it is
+ * deliberate: there the failure is an agent that cannot answer a question, and
+ * here it is a write against a system we do not own.
+ */
+export interface MCPServerTool {
+  id: string;
+  server_id: string;
+  tool_name: string;
+  description: string;
+  /**
+   * InputSchema is the tool's JSON Schema, as the server gave it. Stored raw
+   * because it is what T-M2 hands the model, and rewriting it here would mean
+   * two descriptions of one tool's arguments.
+   */
+  input_schema: unknown;
+  /**
+   * ReadOnly is the admin's classification, not the server's claim. A server
+   * that described `delete_everything` as read-only would be believed
+   * otherwise, and the tenant's admin is the only party with standing to say
+   * what a tool does to their own system.
+   */
+  read_only: boolean;
+  approved: boolean;
+  /**
+   * ApprovedDigest is MCPToolDigest at the moment of approval. Discovery
+   * compares against it: a server that rewrites a tool's description after
+   * approval has changed the text that enters the agent's context, and that
+   * shows as drift rather than being adopted silently.
+   */
+  approved_digest: string;
+  discovered_at: string;
+}
+
+//////////
 // source: message.go
 
 /**

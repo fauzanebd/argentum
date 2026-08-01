@@ -68,6 +68,8 @@ packages:
       domain.APIKey: "APIKey"
       domain.APIKeyRequestStats: "APIKeyRequestStats"
       domain.APIRequestError: "APIRequestError"
+      domain.MCPServer: "MCPServer"
+      domain.MCPTransport: "MCPTransport"
     frontmatter: |
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
@@ -81,6 +83,8 @@ packages:
         APIRequestError,
         Channel,
         CompanyProfile,
+        MCPServer,
+        MCPTransport,
       } from "./domain.js";
 
   # Inbound webhook envelopes. Named by the ticket, and generated for the same

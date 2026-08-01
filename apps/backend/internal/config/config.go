@@ -188,6 +188,25 @@ type Config struct {
 	// somebody else's credentials. True is for local development and for this
 	// ticket's own gate, where the receiver is a script on localhost.
 	APIV1CallbackAllowPrivate bool
+	// MCPAllowPrivateEgress permits a tenant MCP server URL that resolves to an
+	// address only this deployment can reach, and permits plaintext http to it
+	// (T-M1). It is the same escape hatch APIV1CallbackAllowPrivate is, for the
+	// same two users — a developer with a server on their laptop, and this
+	// ticket's gate — and it is refused outside development for a stronger
+	// reason than the callback flag: the tenant types this URL, we hold their
+	// token, and we make the request from inside our own network.
+	MCPAllowPrivateEgress bool
+	// MCPAllowInsecureHTTP permits a tenant MCP server URL on plaintext http
+	// (T-M1). Separate from MCPAllowPrivateEgress and honoured in every
+	// environment, because "my MCP server has no TLS" and "my MCP server is on
+	// your private network" are different requests: this one keeps every
+	// address rule in force and only accepts the cost of the bearer token and
+	// the tool results crossing the network in the clear. Off by default; the
+	// boot log says so when it is on.
+	MCPAllowInsecureHTTP bool
+	// MCPProbeTimeoutSecs bounds one discovery attempt. An admin is waiting on
+	// it, so it is shorter than a turn and longer than a healthy round trip.
+	MCPProbeTimeoutSecs int
 	// APIV1ObsFlushSeconds is how often the request recorder writes what it has
 	// buffered (T-A5). It is the staleness of the tenant's own error list and
 	// the write rate of the rollup, traded against each other: the acceptance
@@ -348,6 +367,9 @@ func Load() (*Config, error) {
 		APIV1MaxSpecCols:           getEnvAsInt("API_V1_MAX_SPEC_COLS", 40),
 		APIV1SyncRenderTimeoutSecs: getEnvAsInt("API_V1_SYNC_RENDER_TIMEOUT", 20),
 		APIV1CallbackAllowPrivate:  getEnv("API_V1_CALLBACK_ALLOW_PRIVATE", "false") == "true",
+		MCPAllowPrivateEgress:      getEnv("MCP_ALLOW_PRIVATE_EGRESS", "false") == "true",
+		MCPAllowInsecureHTTP:       getEnv("MCP_ALLOW_INSECURE_HTTP", "false") == "true",
+		MCPProbeTimeoutSecs:        getEnvAsInt("MCP_PROBE_TIMEOUT_SECS", 15),
 		APIV1ObsFlushSeconds:       getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
 		APIV1ObsRetentionDays:      getEnvAsInt("API_V1_OBS_RETENTION_DAYS", 30),
 

@@ -74,6 +74,10 @@ type apiDeps struct {
 	// agentSvc because it spends the tenant's credit and reads the two profile
 	// tables, and the roster's CRUD should be able to reach neither.
 	agentGenSvc *app.AgentGenerateService
+	// The tenant's own MCP servers (T-M1). It holds the egress guard this
+	// process makes outbound requests through, which is why it is built in
+	// bootstrap from config rather than at the handler.
+	mcpServerSvc *app.MCPServerService
 	// The `/v1` report surface (T-A2). docGen and storageSvc are nil on a
 	// deployment without object storage — the same condition that leaves
 	// generate_document unregistered in the worker — and the routes that need

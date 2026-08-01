@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"encoding/json"
+	"time"
+
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
@@ -216,4 +219,53 @@ type SendMessageResponse struct {
 	// signal — a client must not read `verdict === "ok"`, because in the
 	// ordinary case there is no object to read it from.
 	BudgetWarning *app.BudgetState `json:"budget_warning,omitempty"`
+}
+
+// MCPServersResponse is the body of `GET /api/mcp-servers` (T-M1).
+//
+// Transports rides along for the reason AgentsResponse carries the tool
+// vocabulary: which transports this release speaks is a backend fact, and a
+// frontend `["http", "sse"]` would be the array nobody edits the day a third
+// one is added — or, worse, the array somebody adds "stdio" to, which is a
+// decision the backend has made and will not revisit.
+type MCPServersResponse struct {
+	Servers    []*domain.MCPServer   `json:"servers"`
+	Transports []domain.MCPTransport `json:"transports"`
+	// AllowsInsecureHTTP is whether this deployment accepts a plaintext http
+	// URL. The form's hint is written from it, because "must be https" printed
+	// beside a deployment that accepts http is a sentence that costs an admin a
+	// support ticket — and the reverse is worse.
+	AllowsInsecureHTTP bool `json:"allows_insecure_http"`
+}
+
+// MCPServerResponse is one server and the tools discovery found on it — the
+// shape every write route answers with, so a browser never holds two views of
+// the same server.
+type MCPServerResponse struct {
+	Server *domain.MCPServer `json:"server"`
+	Tools  []MCPToolView     `json:"tools"`
+}
+
+// MCPToolView is one discovered tool plus the fact a browser cannot compute.
+//
+// Drifted means an approved tool's description or argument schema has changed
+// since the admin approved it. It is the cheapest injection vector this track
+// opens — a description is text that enters the agent's context — so it is
+// surfaced rather than silently adopted, which is locked decision 6 arriving in
+// the UI.
+//
+// The fields are spelled out rather than embedded: Go would promote them onto
+// the wire either way, but `packages/api-types` is generated from these
+// declarations and an embedded pointer generates `MCPServerTool?: unknown`,
+// which is a browser type that describes nothing.
+type MCPToolView struct {
+	ID           string          `json:"id"`
+	ServerID     string          `json:"server_id"`
+	ToolName     string          `json:"tool_name"`
+	Description  string          `json:"description"`
+	InputSchema  json.RawMessage `json:"input_schema"`
+	ReadOnly     bool            `json:"read_only"`
+	Approved     bool            `json:"approved"`
+	Drifted      bool            `json:"drifted"`
+	DiscoveredAt time.Time       `json:"discovered_at"`
 }

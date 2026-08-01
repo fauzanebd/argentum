@@ -9,6 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
+	mcpclient "github.com/fauzanebd/argentum/internal/adapters/mcp"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/agenttemplates"
@@ -332,6 +333,39 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	).WithSourceProfiles(sourceProfileRepo).
 		WithTemplates(agentTemplates).
 		WithBudget(deps.usageSvc)
+	// The tenant's MCP servers (T-M1). The egress guard is built here, once,
+	// from config — a Guard constructed at a call site is a Guard somebody
+	// constructs with the wrong flag, and the flag in question is the one that
+	// decides whether a tenant can point us at our own metadata endpoint.
+	//
+	// AllowPrivate is refused outside development rather than trusted: an
+	// operator who sets MCP_ALLOW_PRIVATE_EGRESS in production has almost
+	// certainly copied it from a developer's .env, and the failure mode of
+	// believing them is an SSRF with our network position behind it.
+	allowPrivateEgress := cfg.MCPAllowPrivateEgress
+	if allowPrivateEgress && !cfg.IsDevelopment() {
+		logrus.Warn("MCP_ALLOW_PRIVATE_EGRESS is set outside development and is being ignored")
+		allowPrivateEgress = false
+	}
+	// Plaintext http is a separate opt-in and is honoured everywhere: it keeps
+	// every address rule and trades only TLS, which is a call an operator whose
+	// tenants run MCP servers without certificates gets to make. It is logged
+	// because a token crossing the network in the clear should be a thing
+	// somebody can find in a boot log rather than a thing they infer later.
+	if cfg.MCPAllowInsecureHTTP {
+		logrus.Warn("MCP_ALLOW_INSECURE_HTTP is on: tenant MCP servers may be reached over plaintext http, " +
+			"which sends their bearer token and their tool results unencrypted")
+	}
+	mcpGuard := mcpclient.Guard{
+		AllowPrivate:      allowPrivateEgress,
+		AllowInsecureHTTP: cfg.MCPAllowInsecureHTTP,
+		Timeout:           time.Duration(cfg.MCPProbeTimeoutSecs) * time.Second,
+	}
+	deps.mcpServerSvc = app.NewMCPServerService(
+		pgctl.NewMCPServerRepo(controlDB), dsnCipher,
+		mcpclient.NewClient(mcpGuard),
+	)
+
 	// Signup seeds the new company's first agent. Wired after the roster
 	// exists rather than at NewAuthService, which runs several hundred lines
 	// earlier and before there is a connection repository to validate against.

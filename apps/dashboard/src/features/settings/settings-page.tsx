@@ -3,6 +3,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { GeneralTab } from "./general-tab";
 import { ConnectionsTab } from "./connections-tab";
 import { AgentsTab } from "./agents-tab";
+import { MCPServersTab } from "./mcp-servers-tab";
 import { PhonesTab } from "./phones-tab";
 import { IntegrationsTab } from "./integrations-tab";
 import { TeamTab } from "./team-tab";
@@ -25,6 +26,10 @@ export function SettingsPage() {
     { id: "general", label: "General" },
     { id: "connections", label: "Databases" },
     { id: "agents", label: "Agents" },
+    // Admin-only on every route, including the read — a server is a credential
+    // plus an egress destination — so the tab is hidden rather than disabled,
+    // like Team and API keys above.
+    ...(isAdmin ? [{ id: "mcp-servers", label: "MCP servers" }] : []),
     { id: "phones", label: "Phone numbers" },
     { id: "integrations", label: "Integrations" },
     ...(isAdmin ? [{ id: "reports", label: "Reports" }] : []),
@@ -75,6 +80,11 @@ export function SettingsPage() {
               <AgentsTab />
             </AdminGate>
           </Tabs.Content>
+          {isAdmin && (
+            <Tabs.Content value="mcp-servers">
+              <MCPServersTab />
+            </Tabs.Content>
+          )}
           <Tabs.Content value="phones">
             <AdminGate>
               <PhonesTab />

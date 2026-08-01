@@ -82,6 +82,20 @@ var apiPolicy = middleware.RolePolicy{
 	"POST /api/agent-bindings":       domain.RoleAdmin,
 	"DELETE /api/agent-bindings/:id": domain.RoleAdmin,
 
+	// The tenant's MCP servers (T-M1). **Admin on read too**, which is stricter
+	// than the roster above and matches the connections rows instead: a server
+	// is a bearer credential for a system we do not own plus an address we will
+	// open a connection to, which is a DSN-class object. Approving one of its
+	// tools decides what an agent may do to that system, so the review route is
+	// on the same line by construction.
+	"GET /api/mcp-servers":                   domain.RoleAdmin,
+	"POST /api/mcp-servers":                  domain.RoleAdmin,
+	"GET /api/mcp-servers/:id":               domain.RoleAdmin,
+	"PUT /api/mcp-servers/:id":               domain.RoleAdmin,
+	"DELETE /api/mcp-servers/:id":            domain.RoleAdmin,
+	"POST /api/mcp-servers/:id/refresh":      domain.RoleAdmin,
+	"PUT /api/mcp-servers/:id/tools/:toolId": domain.RoleAdmin,
+
 	// WhatsApp allowlist: adding a number grants a phone the company's agent.
 	"GET /api/phones":           domain.RoleMember,
 	"POST /api/phones":          domain.RoleAdmin,
