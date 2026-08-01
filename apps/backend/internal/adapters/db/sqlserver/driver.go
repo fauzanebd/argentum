@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,3 +67,8 @@ func (dialect) ReadOnlyPragma() string { return "SET TRANSACTION ISOLATION LEVEL
 func (dialect) QuoteIdentifier(name string) string {
 	return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
 }
+
+// Placeholder is `@pN` — go-mssqldb's named-parameter syntax, which the driver
+// matches to sql.Named or positional args. The renderer appends one arg per
+// occurrence, so `@p1`, `@p2`, … each get their own value.
+func (dialect) Placeholder(n int) string { return "@p" + strconv.Itoa(n) }

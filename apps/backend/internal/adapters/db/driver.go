@@ -33,6 +33,14 @@ type Conn interface {
 	// maxRows means "no cap" (drivers stream every matching row).
 	ExecuteReadOnly(ctx context.Context, sql string, maxRows int) (*QueryResult, error)
 
+	// ExecuteReadOnlyParams is ExecuteReadOnly with bound query parameters. It
+	// exists for the metric registry (T-06/T-07): a metric's window bounds are
+	// passed as args and referenced in the SQL through the dialect's placeholder
+	// syntax, so a `'; DROP …` in a window value is data the driver escapes
+	// rather than SQL it runs. args are positional and match the placeholders
+	// Dialect.Placeholder produced, left to right.
+	ExecuteReadOnlyParams(ctx context.Context, sql string, args []any, maxRows int) (*QueryResult, error)
+
 	// ExtractSchema introspects the database's information_schema (or the
 	// driver's equivalent) and returns table + column + relationship metadata
 	// for the agent's `get_schema` tool.
@@ -63,6 +71,13 @@ type Dialect interface {
 	// QuoteIdentifier wraps a column / table identifier in the appropriate
 	// quoting characters for this dialect.
 	QuoteIdentifier(name string) string
+
+	// Placeholder returns the bound-parameter marker for the n-th argument
+	// (1-based), in this dialect's syntax: `$1` for Postgres, `?` for MySQL,
+	// `@p1` for SQL Server. The metric renderer walks a template left to right
+	// and asks for one per {{from}}/{{to}} occurrence, appending the value each
+	// time, so no dialect has to support reusing a marker by position.
+	Placeholder(n int) string
 }
 
 // QueryResult is the canonical return type of read-only queries across all

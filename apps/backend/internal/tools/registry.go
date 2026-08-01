@@ -54,7 +54,13 @@ type RegistryDeps struct {
 	Scheduled      ScheduledTaskCreator
 	// Docs nil means this deployment has no object storage, and
 	// generate_document is left out rather than registered and broken.
-	Docs                *docgen.Service
+	Docs *docgen.Service
+	// Metrics backs list_metrics and query_metric (T-07). Nil is legal and is
+	// what the API's name-only build passes: the two tools still register (so
+	// they appear in the agent allowlist and the template vocabulary) and report
+	// "not configured" if ever executed without a store. The worker passes a real
+	// store, which is where they run.
+	Metrics             MetricStore
 	MaxQueryRows        int
 	MaxQueryResultBytes int
 }
@@ -70,6 +76,12 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 	ts := []interfaces.Tool{
 		NewListSourcesTool(d.Connections),
 		schema,
+		// The metric tools rank ahead of run_sql in the list because the system
+		// prompt tells the agent to prefer them: an authoritative number over a
+		// re-derived one (T-07). They register unconditionally — nil Metrics
+		// still yields their names for the allowlist and the vocabulary.
+		NewListMetricsTool(d.Metrics),
+		NewQueryMetricTool(d.Metrics, d.Usage),
 		NewRunSQLTool(d.Pool, d.Connections, d.Usage, d.MaxQueryRows, d.MaxQueryResultBytes),
 		NewCreateVisualizationTool(d.Pool, d.Connections, d.Metabase, d.MetabaseSource, d.Usage),
 		NewCreateDashboardTool(d.Metabase, d.Usage, d.Dashboards),

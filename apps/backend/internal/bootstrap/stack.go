@@ -107,6 +107,11 @@ type Stack struct {
 	// takes the empty-binding fast path.
 	CompanyToolSource *mcptools.Source
 
+	// Metrics is the registry (T-06/T-07): the tools run through it, and
+	// ChatRunner reads its catalog into each turn so the agent knows which
+	// numbers are defined before it decides how to answer.
+	Metrics *app.MetricService
+
 	// Inference drafts what a connected source says the business is (T-B2). It
 	// lives on the stack rather than in cmd/worker because it needs the same
 	// schema cache the agent's get_schema fills, and that instance is built
@@ -279,6 +284,11 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// cache so that "what tables are there" has one answer (T-B2).
 	schemaTool := tools.NewGetSchemaToolWithRedis(s.TenantPool, s.Connections, s.Redis)
 
+	// The metric registry (T-06/T-07). The worker runs its tools, so it gets a
+	// real service; validate-on-save, the dashboard Test button and query_metric
+	// all render through this one path, so the number is the same everywhere.
+	s.Metrics = app.NewMetricService(pgctl.NewMetricRepo(controlDB), s.Connections, s.TenantPool)
+
 	s.Tools = tools.Registry(tools.RegistryDeps{
 		Pool:                s.TenantPool,
 		Connections:         s.Connections,
@@ -290,6 +300,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		Dashboards:          app.NewDashboardService(dashboardRepo, metabaseClient),
 		Scheduled:           s.ScheduledSvc,
 		Docs:                s.Docs,
+		Metrics:             s.Metrics,
 		MaxQueryRows:        cfg.MaxQueryRows,
 		MaxQueryResultBytes: cfg.MaxQueryResultBytes,
 	})
@@ -601,7 +612,8 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 		WithActionLog(s.AgentActions).
 		WithRoster(s.Agents).
 		WithCompanyContext(s.CompanyProfiles).
-		WithCompanyTools(s.CompanyToolSource)
+		WithCompanyTools(s.CompanyToolSource).
+		WithMetrics(s.Metrics)
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)
 		logrus.WithFields(logrus.Fields{

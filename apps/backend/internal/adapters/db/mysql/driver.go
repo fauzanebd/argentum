@@ -60,3 +60,8 @@ func (dialect) ReadOnlyPragma() string {
 func (dialect) QuoteIdentifier(name string) string {
 	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 }
+
+// Placeholder ignores n: MySQL binds positionally by `?`, and the metric
+// renderer appends one arg per occurrence so a repeated {{from}} still has an
+// arg of its own.
+func (dialect) Placeholder(int) string { return "?" }

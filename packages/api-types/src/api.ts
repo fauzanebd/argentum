@@ -13,6 +13,9 @@ import type {
   CompanyProfile,
   MCPServer,
   MCPTransport,
+  MetricDefinition,
+  MetricGrain,
+  MetricUnit,
 } from "./domain.js";
 
 //////////
@@ -296,4 +299,32 @@ export interface MCPToolView {
   approved: boolean;
   drifted: boolean;
   discovered_at: string;
+}
+/**
+ * MetricsResponse is the body of `GET /api/metrics` (T-06).
+ * Grains and Units ride along for the same reason MCPServersResponse carries
+ * Transports: which values this release understands is a backend fact, and a
+ * frontend that hard-codes the dropdown is the one that goes stale the day a
+ * grain is added — or wrong the day the backend's list and the form's disagree.
+ */
+export interface MetricsResponse {
+  metrics: (MetricDefinition | undefined)[];
+  grains: MetricGrain[];
+  units: MetricUnit[];
+}
+/**
+ * MetricResponse is one metric — the shape every write route answers with.
+ */
+export interface MetricResponse {
+  metric?: MetricDefinition;
+}
+/**
+ * MetricTestResponse is what the "Test" button shows: the rendered SQL and the
+ * number it returned over the validation window, without saving anything (T-06).
+ */
+export interface MetricTestResponse {
+  value: number /* float64 */;
+  from: string;
+  to: string;
+  rendered_sql: string;
 }

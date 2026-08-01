@@ -2,6 +2,7 @@ import { useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { GeneralTab } from "./general-tab";
 import { ConnectionsTab } from "./connections-tab";
+import { MetricsTab } from "./metrics-tab";
 import { AgentsTab } from "./agents-tab";
 import { MCPServersTab } from "./mcp-servers-tab";
 import { PhonesTab } from "./phones-tab";
@@ -25,6 +26,7 @@ export function SettingsPage() {
   const tabs = [
     { id: "general", label: "General" },
     { id: "connections", label: "Databases" },
+    { id: "metrics", label: "Metrics" },
     { id: "agents", label: "Agents" },
     // Admin-only on every route, including the read — a server is a credential
     // plus an egress destination — so the tab is hidden rather than disabled,
@@ -70,6 +72,13 @@ export function SettingsPage() {
           <Tabs.Content value="connections">
             <AdminGate>
               <ConnectionsTab />
+            </AdminGate>
+          </Tabs.Content>
+          {/* Reads are member-level, but defining and testing a metric is admin
+              (Test runs tenant SQL), so the panel is gated like the others. */}
+          <Tabs.Content value="metrics">
+            <AdminGate>
+              <MetricsTab />
             </AdminGate>
           </Tabs.Content>
           {/* Reads are member-level here — T-S3 puts the roster in the chat

@@ -370,6 +370,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		mcpclient.NewClient(mcpGuard),
 	)
 
+	// The metric registry (T-06). It renders each definition against the tenant
+	// pool with the window bound as parameters, so validate-on-save and
+	// query_metric run the same SQL the same way.
+	deps.metricSvc = app.NewMetricService(pgctl.NewMetricRepo(controlDB), connRepo, deps.tenant)
+
 	// Signup seeds the new company's first agent. Wired after the roster
 	// exists rather than at NewAuthService, which runs several hundred lines
 	// earlier and before there is a connection repository to validate against.

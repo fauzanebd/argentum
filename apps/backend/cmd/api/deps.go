@@ -78,6 +78,9 @@ type apiDeps struct {
 	// process makes outbound requests through, which is why it is built in
 	// bootstrap from config rather than at the handler.
 	mcpServerSvc *app.MCPServerService
+	// The metric registry (T-06): the tenant's named, validated numbers, and the
+	// turn-time query path query_metric runs through.
+	metricSvc *app.MetricService
 	// The `/v1` report surface (T-A2). docGen and storageSvc are nil on a
 	// deployment without object storage — the same condition that leaves
 	// generate_document unregistered in the worker — and the routes that need

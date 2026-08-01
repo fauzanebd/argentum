@@ -96,6 +96,16 @@ var apiPolicy = middleware.RolePolicy{
 	"POST /api/mcp-servers/:id/refresh":      domain.RoleAdmin,
 	"PUT /api/mcp-servers/:id/tools/:toolId": domain.RoleAdmin,
 
+	// Metric registry (T-06). Reads are open to members — a member asking a
+	// question gets the same authoritative number — and writes plus Test are
+	// admin, because defining one is a privileged act and Test runs tenant SQL.
+	"GET /api/metrics":        domain.RoleMember,
+	"GET /api/metrics/:id":    domain.RoleMember,
+	"POST /api/metrics":       domain.RoleAdmin,
+	"PUT /api/metrics/:id":    domain.RoleAdmin,
+	"DELETE /api/metrics/:id": domain.RoleAdmin,
+	"POST /api/metrics/test":  domain.RoleAdmin,
+
 	// WhatsApp allowlist: adding a number grants a phone the company's agent.
 	"GET /api/phones":           domain.RoleMember,
 	"POST /api/phones":          domain.RoleAdmin,

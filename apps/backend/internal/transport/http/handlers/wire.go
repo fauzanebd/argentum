@@ -269,3 +269,29 @@ type MCPToolView struct {
 	Drifted      bool            `json:"drifted"`
 	DiscoveredAt time.Time       `json:"discovered_at"`
 }
+
+// MetricsResponse is the body of `GET /api/metrics` (T-06).
+//
+// Grains and Units ride along for the same reason MCPServersResponse carries
+// Transports: which values this release understands is a backend fact, and a
+// frontend that hard-codes the dropdown is the one that goes stale the day a
+// grain is added — or wrong the day the backend's list and the form's disagree.
+type MetricsResponse struct {
+	Metrics []*domain.MetricDefinition `json:"metrics"`
+	Grains  []domain.MetricGrain       `json:"grains"`
+	Units   []domain.MetricUnit        `json:"units"`
+}
+
+// MetricResponse is one metric — the shape every write route answers with.
+type MetricResponse struct {
+	Metric *domain.MetricDefinition `json:"metric"`
+}
+
+// MetricTestResponse is what the "Test" button shows: the rendered SQL and the
+// number it returned over the validation window, without saving anything (T-06).
+type MetricTestResponse struct {
+	Value       float64   `json:"value"`
+	From        time.Time `json:"from"`
+	To          time.Time `json:"to"`
+	RenderedSQL string    `json:"rendered_sql"`
+}

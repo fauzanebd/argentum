@@ -140,6 +140,15 @@ type CompanyToolProvider interface {
 	CompanyTools(ctx context.Context, companyID string) []interfaces.Tool
 }
 
+// MetricCatalog is the half of the metric registry a turn reads (T-07): the
+// company's enabled metrics, injected into the turn context so the agent knows
+// which authoritative numbers exist before it reaches for run_sql. Narrowed at
+// the consumer, and nil stays legal — a turn with no catalog behaves exactly as
+// it did before the registry existed. app.MetricService satisfies it.
+type MetricCatalog interface {
+	ListEnabled(ctx context.Context, companyID string) ([]*domain.MetricDefinition, error)
+}
+
 // ScheduledRunMarker is the narrow contract ChatRunner uses to close out
 // a scheduled_task_runs row when the agent finishes (or errors). Defined
 // as an interface so the worker can pass *ScheduledTaskService while
@@ -179,6 +188,7 @@ type ChatRunner struct {
 	roster       AgentLoader
 	profiles     CompanyContextLoader
 	companyTools CompanyToolProvider
+	metrics      MetricCatalog
 
 	// Embedding-based table picker. Both must be non-nil to inject hints;
 	// otherwise the runner silently skips and the agent falls back to the
@@ -285,6 +295,14 @@ func (r *ChatRunner) WithCompanyContext(l CompanyContextLoader) *ChatRunner {
 // half's does.
 func (r *ChatRunner) WithCompanyTools(p CompanyToolProvider) *ChatRunner {
 	r.companyTools = p
+	return r
+}
+
+// WithMetrics lets a turn read the company's metric catalog (T-07). Optional:
+// a deployment or a company with no metrics gets exactly today's turn, because
+// withMetricsContext adds nothing for an empty catalog.
+func (r *ChatRunner) WithMetrics(c MetricCatalog) *ChatRunner {
+	r.metrics = c
 	return r
 }
 
@@ -441,6 +459,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	agentMsg := withCompanyNameContext(p.Message, p.CompanyName)
 	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency)
 	agentMsg = withSourcesContext(agentMsg, sources)
+	agentMsg = r.withMetricsContext(ctx, agentMsg, p.CompanyID)
 	agentMsg = r.withRelevantTablesContext(ctx, agentMsg, p.Message, sources)
 
 	// Try streaming first; fall back to blocking Run if the LLM doesn't
@@ -1150,6 +1169,42 @@ func withSourcesContext(msg string, sources []*domain.DBConnection) string {
 		b.WriteString("If unsure which source the user means, ASK before querying.")
 	} else {
 		b.WriteString("Only one source exists, so source_id is optional.")
+	}
+	b.WriteString("]\n\n")
+	b.WriteString(msg)
+	return b.String()
+}
+
+// withMetricsContext prepends the company's enabled metric catalog to the turn
+// (T-07), the same way withSourcesContext prepends the source catalog. It is
+// what makes "prefer query_metric" actionable: the agent cannot choose a defined
+// number over a re-derived one if it does not know which numbers are defined.
+//
+// A read failure is swallowed to a no-op — a turn that cannot list metrics still
+// answers via run_sql, which is strictly the pre-registry behaviour.
+func (r *ChatRunner) withMetricsContext(ctx context.Context, msg, companyID string) string {
+	if r.metrics == nil {
+		return msg
+	}
+	defs, err := r.metrics.ListEnabled(ctx, companyID)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("metric catalog prefetch failed; the turn falls back to run_sql")
+		return msg
+	}
+	if len(defs) == 0 {
+		return msg
+	}
+	var b strings.Builder
+	b.WriteString("[System context: Defined metrics for this organization — authoritative, pre-validated numbers. ")
+	b.WriteString("If one of these answers the question, call query_metric with its key rather than composing run_sql; ")
+	b.WriteString("only fall back to run_sql for questions no metric covers, and say so.\n")
+	for _, m := range defs {
+		desc := m.Description
+		if desc == "" {
+			desc = "(no description)"
+		}
+		fmt.Fprintf(&b, " - %s | %s (%s, per %s) — %s\n", m.Key, m.Label, m.Unit, m.Grain, desc)
 	}
 	b.WriteString("]\n\n")
 	b.WriteString(msg)

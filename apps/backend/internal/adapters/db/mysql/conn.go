@@ -20,6 +20,15 @@ func (c *conn) Ping(ctx context.Context) error { return c.sqlDB.PingContext(ctx)
 func (c *conn) Close() error                   { return c.sqlDB.Close() }
 
 func (c *conn) ExecuteReadOnly(ctx context.Context, query string, maxRows int) (*db.QueryResult, error) {
+	return c.executeReadOnly(ctx, query, nil, maxRows)
+}
+
+// ExecuteReadOnlyParams runs query with bound parameters (T-06).
+func (c *conn) ExecuteReadOnlyParams(ctx context.Context, query string, args []any, maxRows int) (*db.QueryResult, error) {
+	return c.executeReadOnly(ctx, query, args, maxRows)
+}
+
+func (c *conn) executeReadOnly(ctx context.Context, query string, args []any, maxRows int) (*db.QueryResult, error) {
 	tx, err := c.sqlDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
@@ -31,7 +40,7 @@ func (c *conn) ExecuteReadOnly(ctx context.Context, query string, maxRows int) (
 		_ = err
 	}
 
-	rows, err := tx.QueryContext(ctx, query)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
 	}

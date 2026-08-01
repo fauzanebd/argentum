@@ -1000,6 +1000,82 @@ export interface MessageFilter {
 }
 
 //////////
+// source: metric.go
+
+/**
+ * MetricGrain is the natural period one metric value covers. It is what a
+ * comparison is measured in ("previous period" = one grain back) and what a
+ * watcher evaluates on.
+ */
+export const MetricGrainDay = "day";
+export const MetricGrainWeek = "week";
+export const MetricGrainMonth = "month";
+export const MetricGrainQuarter = "quarter";
+export const MetricGrainYear = "year";
+export type MetricGrain = typeof MetricGrainDay | typeof MetricGrainWeek | typeof MetricGrainMonth | typeof MetricGrainQuarter | typeof MetricGrainYear;
+/**
+ * MetricUnit decides how a value reads: whether it is money, a headcount, a
+ * rate, or a bare ratio.
+ */
+export const MetricUnitCurrency = "currency";
+export const MetricUnitCount = "count";
+export const MetricUnitPercent = "percent";
+export const MetricUnitRatio = "ratio";
+export type MetricUnit = typeof MetricUnitCurrency | typeof MetricUnitCount | typeof MetricUnitPercent | typeof MetricUnitRatio;
+/**
+ * MetricDefinition is one named, validated, parameterised number (T-06).
+ * It exists so the same question returns the same answer twice: instead of the
+ * agent re-deriving SQL for "revenue last month" on every turn, it runs this
+ * definition's template through query_metric with the window bound as
+ * parameters. v1 is one number, one source, one window — no dimensions, joins,
+ * or DSL.
+ */
+export interface MetricDefinition {
+  id: string;
+  company_id: string;
+  source_id: string;
+  key: string;
+  label: string;
+  /**
+   * Description is what the agent reads to decide whether this metric answers
+   * the question, so it is specific rather than decorative.
+   */
+  description: string;
+  /**
+   * SQLTemplate is a single SELECT that must contain {{from}} and {{to}}. Those
+   * tokens are bound as query parameters at run time, never interpolated — the
+   * property that keeps a window value from becoming an injection. Stored with
+   * the tokens intact; the dialect's placeholder syntax is applied when it runs.
+   */
+  sql_template: string;
+  /**
+   * ValueColumn names the column of the single result row that carries the
+   * number. Named rather than positional so a template may select more than
+   * the value and stay unambiguous.
+   */
+  value_column: string;
+  grain: MetricGrain;
+  unit: MetricUnit;
+  /**
+   * Currency is set when Unit is currency, empty otherwise.
+   */
+  currency?: string;
+  /**
+   * HigherIsBetter is whether a rise is good news — revenue up is good, churn
+   * up is not. A delta and a watcher both read it to decide which way alarms.
+   */
+  higher_is_better: boolean;
+  enabled: boolean;
+  /**
+   * CreatedBy is the admin who defined it, or empty. Unreferenced: a metric
+   * outlives the user who wrote it.
+   */
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+//////////
 // source: phone.go
 
 /**

@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,3 +59,5 @@ func (dialect) ReadOnlyPragma() string { return "SET TRANSACTION READ ONLY" }
 func (dialect) QuoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
+
+func (dialect) Placeholder(n int) string { return "$" + strconv.Itoa(n) }

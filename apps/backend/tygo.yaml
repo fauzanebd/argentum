@@ -70,6 +70,9 @@ packages:
       domain.APIRequestError: "APIRequestError"
       domain.MCPServer: "MCPServer"
       domain.MCPTransport: "MCPTransport"
+      domain.MetricDefinition: "MetricDefinition"
+      domain.MetricGrain: "MetricGrain"
+      domain.MetricUnit: "MetricUnit"
     frontmatter: |
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
@@ -85,6 +88,9 @@ packages:
         CompanyProfile,
         MCPServer,
         MCPTransport,
+        MetricDefinition,
+        MetricGrain,
+        MetricUnit,
       } from "./domain.js";
 
   # Inbound webhook envelopes. Named by the ticket, and generated for the same
