@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, FilePlus2, Pencil, Star, Trash2, X } from "lucide-react";
+import { Bot, FilePlus2, Pencil, Sparkles, Star, Trash2, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,8 @@ import type {
   Agent,
   AgentBindingsResponse,
   AgentChannelBinding,
+  AgentGenerationInfo,
+  AgentGenerationResult,
   AgentsResponse,
   AgentTemplate,
   AgentToolInfo,
@@ -146,6 +148,16 @@ export function AgentsTab() {
   // Cleared the moment the admin touches the group, because after that the
   // ticks are theirs and attributing them to a template would be a lie.
   const [hintedSources, setHintedSources] = useState<Map<string, string>>(new Map());
+  // What Generate replaced (T-B4). One step, not a stack: it holds what the
+  // *tenant* last typed, so a second generation still undoes to their words
+  // rather than to the first generation's — get that wrong and the button eats
+  // their work. Typing into either field clears it, because from that moment
+  // the contents are theirs again and there is nothing left to undo.
+  const [undo, setUndo] = useState<{ description: string; persona_prompt: string } | null>(null);
+  // Which fallback the backend reported, when its own validator rejected what
+  // the model wrote. A tenant about to save this text should know whether a
+  // model wrote it.
+  const [fallback, setFallback] = useState<string>("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["agents"],
@@ -172,6 +184,21 @@ export function AgentsTab() {
     (t): t is AgentTemplate => !!t,
   );
   const sources: Connection[] = connections ?? [];
+  // Whether the Generate button can be pressed at all, and why not. The backend
+  // decides: it is the only side that knows whether an LLM is wired and what
+  // the credit balance is.
+  const generation: AgentGenerationInfo = data?.generation ?? {
+    available: false,
+    credits_exhausted: false,
+  };
+
+  /** Clearing the undo snapshot belongs to every path that starts the form over
+   *  — an undo held across a Cancel would restore one agent's text into
+   *  another's. */
+  function clearGeneration() {
+    setUndo(null);
+    setFallback("");
+  }
 
   function resetForm() {
     setEditing(null);
@@ -179,6 +206,7 @@ export function AgentsTab() {
     setError(null);
     setShowForm(false);
     setHintedSources(new Map());
+    clearGeneration();
   }
 
   function startEdit(a: Agent) {
@@ -195,6 +223,7 @@ export function AgentsTab() {
     setError(null);
     setShowForm(true);
     setHintedSources(new Map());
+    clearGeneration();
   }
 
   function startFromTemplate(t: AgentTemplate) {
@@ -203,6 +232,7 @@ export function AgentsTab() {
     setHintedSources(matchSources(t.source_hints, sources));
     setError(null);
     setShowForm(true);
+    clearGeneration();
   }
 
   /** The blank path is a supported way to create an agent, not a fallback —
@@ -213,6 +243,7 @@ export function AgentsTab() {
     setHintedSources(new Map());
     setError(null);
     setShowForm(true);
+    clearGeneration();
   }
 
   const save = useMutation({
@@ -227,6 +258,66 @@ export function AgentsTab() {
     },
     onError: (e: unknown) => setError(apiErrorMessage(e, "Could not save that agent")),
   });
+
+  /** Generate with AI (T-B4): improve what is in the form into a description
+   *  and instructions.
+   *
+   *  Nothing is written — the response lands in the two inputs and the tenant
+   *  saves the form, or does not. The snapshot is taken with `?? prev` rather
+   *  than overwritten so that regenerating twice still undoes to what the
+   *  tenant typed, not to the first generation. */
+  const generate = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<AgentGenerationResult>("/agents/generate", {
+          name: draft.name.trim(),
+          description: draft.description,
+          persona: draft.persona_prompt,
+          template_key: draft.template_key,
+          source_ids: draft.source_ids,
+        })
+      ).data,
+    onSuccess: (res) => {
+      setUndo((prev) => prev ?? {
+        description: draft.description,
+        persona_prompt: draft.persona_prompt,
+      });
+      setDraft((d) => ({
+        ...d,
+        // A field the backend left empty keeps what is on screen: a generation
+        // that returned half an answer must not blank the half the tenant has
+        // already written.
+        description: res.description || d.description,
+        persona_prompt: res.persona || d.persona_prompt,
+      }));
+      setFallback(res.fallback ?? "");
+      setError(null);
+    },
+    onError: (e: unknown) => setError(apiErrorMessage(e, "Could not generate that agent")),
+  });
+
+  /** Typing into a generated field makes it the tenant's again, so there is
+   *  nothing left to undo and no generation left to explain. */
+  function editGenerated(patch: Partial<AgentDraft>) {
+    setDraft((d) => ({ ...d, ...patch }));
+    if (undo) setUndo(null);
+    if (fallback) setFallback("");
+  }
+
+  function undoGeneration() {
+    if (!undo) return;
+    setDraft((d) => ({ ...d, ...undo }));
+    clearGeneration();
+  }
+
+  // Both empty is the one rung of the ladder with no input to improve: the
+  // button is disabled and no request is sent.
+  const canGenerate = !!(draft.name.trim() || draft.description.trim());
+  const generateOffReason = !generation.available
+    ? "Generating is not configured on this deployment."
+    : generation.credits_exhausted
+      ? "This workspace has used all of its Argentum credits. An admin can top up the balance — you can still write the agent yourself."
+      : "";
 
   const remove = useMutation({
     mutationFn: async (id: string) => api.delete(`/agents/${id}`),
@@ -332,10 +423,56 @@ export function AgentsTab() {
               <Input
                 id="agent-description"
                 value={draft.description}
-                onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                onChange={(e) => editGenerated({ description: e.target.value })}
                 placeholder="Revenue, margin and cash questions"
               />
             </div>
+          </div>
+
+          {/* Generate with AI (T-B4). It sits above the two fields it writes,
+              because that is the pair it replaces — and beside Undo, because a
+              button that overwrites what somebody typed has to show the way
+              back in the same glance. */}
+          <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => generate.mutate()}
+                disabled={!canGenerate || !!generateOffReason || generate.isPending}
+              >
+                <Sparkles className="mr-1 h-4 w-4" />
+                {generate.isPending ? "Generating…" : "Generate with AI"}
+              </Button>
+              {undo && (
+                <Button type="button" variant="ghost" size="sm" onClick={undoGeneration}>
+                  <Undo2 className="mr-1 h-4 w-4" />
+                  Undo
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {generateOffReason ||
+                  (canGenerate
+                    ? "Improves the description and instructions below from what you have written."
+                    : "Type a name or a description first — this improves your words rather than inventing an agent.")}
+              </p>
+            </div>
+            {/* Which text is on screen, when it is not the model's. Rejected
+                instructions are the one outcome a tenant cannot see by reading
+                the box, and they are about to save it. */}
+            {fallback === "template" && (
+              <p className="text-xs text-muted-foreground">
+                The generated instructions did not pass our checks, so the template's own
+                instructions are back in the box. Try again, or edit them yourself.
+              </p>
+            )}
+            {fallback === "input" && (
+              <p className="text-xs text-muted-foreground">
+                The generated instructions did not pass our checks, so your own text is back
+                unchanged. Try again, or write them yourself.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -344,7 +481,7 @@ export function AgentsTab() {
               id="agent-persona"
               rows={5}
               value={draft.persona_prompt}
-              onChange={(e) => setDraft({ ...draft, persona_prompt: e.target.value })}
+              onChange={(e) => editGenerated({ persona_prompt: e.target.value })}
               placeholder="Answer in the finance team's vocabulary. Revenue means recognised revenue, not bookings."
             />
             <p className="text-xs text-muted-foreground">

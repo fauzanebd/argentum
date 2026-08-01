@@ -583,9 +583,18 @@ func sanitizeText(s string) string {
 	return strings.TrimSpace(stripFrameMarkers(s))
 }
 
+// stripFrameMarkers removes every framed prompt's markers, not only this
+// file's: sanitizeLine and sanitizeText are shared with agent generation
+// (T-B4), and a sanitiser that knew about one frame would let a table named
+// `--- END FORM ---` through into the other one.
 func stripFrameMarkers(s string) string {
-	s = strings.ReplaceAll(s, inferenceEndMarker, "")
-	return strings.ReplaceAll(s, inferenceBeginMarker, "")
+	for _, marker := range []string{
+		inferenceEndMarker, inferenceBeginMarker,
+		generateEndMarker, generateBeginMarker,
+	} {
+		s = strings.ReplaceAll(s, marker, "")
+	}
+	return s
 }
 
 func collapseSpaces(s string) string {

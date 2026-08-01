@@ -70,6 +70,10 @@ type apiDeps struct {
 	// every turn through its own repository, which is why nothing here is shared
 	// with the runner.
 	companyProfileSvc *app.CompanyProfileService
+	// "Generate with AI" (T-B4): the create form's one LLM call. Separate from
+	// agentSvc because it spends the tenant's credit and reads the two profile
+	// tables, and the roster's CRUD should be able to reach neither.
+	agentGenSvc *app.AgentGenerateService
 	// The `/v1` report surface (T-A2). docGen and storageSvc are nil on a
 	// deployment without object storage — the same condition that leaves
 	// generate_document unregistered in the worker — and the routes that need

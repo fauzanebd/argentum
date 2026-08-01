@@ -49,6 +49,42 @@ export interface AgentsResponse {
    * product as it was before the templates existed.
    */
   templates: AgentTemplate[];
+  /**
+   * Generation is whether the create form may offer "Generate with AI"
+   * (T-B4), and why not when it may not.
+   */
+  generation: AgentGenerationInfo;
+}
+/**
+ * AgentGenerationInfo is the state of the Generate button before it is pressed
+ * (T-B4).
+ * Two booleans rather than one, because "this deployment has no generator" and
+ * "this workspace has no credit left" are different sentences and only the
+ * second is the tenant's to act on. Both leave the form perfectly able to save
+ * an agent — generation is a shortcut past the empty textarea, never the way in.
+ */
+export interface AgentGenerationInfo {
+  available: boolean;
+  credits_exhausted: boolean;
+}
+/**
+ * AgentGenerationResult is the body of `POST /api/agents/generate` (T-B4): the
+ * two fields, improved, for the tenant to review in the form.
+ * Nothing was written when this was produced. The agent row changes when the
+ * tenant presses Save and not before, which is what makes regenerating and
+ * undoing free.
+ */
+export interface AgentGenerationResult {
+  description: string;
+  persona: string;
+  /**
+   * Fallback names what happened when the generated persona was rejected by
+   * the output validator: "template" when the picked card's persona came back
+   * instead, "input" when the tenant's own text did, and empty when the model
+   * wrote what is above. The dashboard says so — a tenant about to save this
+   * text should know whether a model wrote it.
+   */
+  fallback?: string;
 }
 /**
  * AgentTemplate is one gallery card in Settings → Agents (T-B3).

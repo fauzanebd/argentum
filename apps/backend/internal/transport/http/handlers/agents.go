@@ -16,7 +16,13 @@ import (
 // Reads are open to members because T-S3 puts this list in the chat picker.
 // Every write is admin, on the same line policy.go draws for connections: an
 // agent's allowlist is "what the agent can reach".
-type AgentsHandler struct{ svc *app.AgentService }
+type AgentsHandler struct {
+	svc *app.AgentService
+	// gen is "Generate with AI" (T-B4), or nil where no LLM is wired. It is a
+	// separate service because it spends money and reads two other tickets'
+	// tables, none of which the roster's CRUD has any business reaching.
+	gen *app.AgentGenerateService
+}
 
 // NewAgentsHandler constructs the handler. svc may be nil in stripped-down
 // wirings; the routes then answer 503 rather than panicking.
@@ -24,11 +30,22 @@ func NewAgentsHandler(svc *app.AgentService) *AgentsHandler {
 	return &AgentsHandler{svc: svc}
 }
 
+// WithGenerator installs the generate route's service (T-B4). Optional wiring:
+// without it the route answers 503 and the create form renders the button as
+// unavailable rather than as broken.
+func (h *AgentsHandler) WithGenerator(gen *app.AgentGenerateService) *AgentsHandler {
+	h.gen = gen
+	return h
+}
+
 // Register installs the routes. Call after Auth; apiPolicy in cmd/api is what
 // makes the writes admin-only.
 func (h *AgentsHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/agents", h.list)
 	rg.POST("/agents", h.create)
+	// Static segment on POST, where the only other entry is /agents itself —
+	// there is no POST /agents/:id for it to compete with in gin's method tree.
+	rg.POST("/agents/generate", h.generate)
 	rg.GET("/agents/:id", h.get)
 	rg.PUT("/agents/:id", h.update)
 	rg.DELETE("/agents/:id", h.remove)
@@ -124,7 +141,57 @@ func (h *AgentsHandler) list(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, AgentsResponse{
 		Agents: agents, Tools: h.toolInfo(), Templates: h.templateInfo(),
+		Generation: h.generationInfo(c),
 	})
+}
+
+// generationInfo tells the form whether the Generate button can be pressed, and
+// why not when it cannot (T-B4). It rides on the roster payload for the reason
+// the tool list does: the same screen reads both, and a second request to learn
+// whether a button is enabled is a round trip for a disabled state.
+func (h *AgentsHandler) generationInfo(c *gin.Context) AgentGenerationInfo {
+	if h.gen == nil {
+		return AgentGenerationInfo{}
+	}
+	st := h.gen.State(c.Request.Context(), companyID(c))
+	return AgentGenerationInfo{
+		Available:        st.Available,
+		CreditsExhausted: st.CreditsExhausted,
+	}
+}
+
+// generate improves what is in the create form into a description and a persona
+// (T-B4). It writes nothing: the tenant saves the form, or does not.
+//
+// 402 for an exhausted balance rather than 400 or 500, the same answer the chat
+// routes give: the request was well-formed and the caller can fix it by topping
+// up. The dashboard disables the button before it gets here, so a request that
+// arrives is a tab that was open when the balance ran out.
+func (h *AgentsHandler) generate(c *gin.Context) {
+	if h.gen == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent generation is not configured"})
+		return
+	}
+	var in app.AgentGenerateInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	out, err := h.gen.Generate(c.Request.Context(), companyID(c), in)
+	switch {
+	case errors.Is(err, domain.ErrInsufficientCredits):
+		c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditsExhaustedMessage})
+	case errors.Is(err, domain.ErrInvalidInput):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusOK, AgentGenerationResult{
+			Description: out.Description,
+			Persona:     out.Persona,
+			Fallback:    out.Fallback,
+		})
+	}
 }
 
 func (h *AgentsHandler) get(c *gin.Context) {

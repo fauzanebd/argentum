@@ -55,7 +55,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewAPIKeysHandler(d.apiKeySvc).
 		WithTraffic(trafficReaderOrNil(d.requestRepo)).
 		Register(authed)
-	handlers.NewAgentsHandler(d.agentSvc).Register(authed)
+	handlers.NewAgentsHandler(d.agentSvc).
+		WithGenerator(d.agentGenSvc).
+		Register(authed)
 	handlers.NewAgentBindingsHandler(d.agentBindingSvc).Register(authed)
 	handlers.NewCompanyProfileHandler(d.companyProfileSvc).Register(authed)
 	if d.dashboardSvc != nil {

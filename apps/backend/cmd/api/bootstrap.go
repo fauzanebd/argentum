@@ -317,10 +317,21 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		})),
 	).WithTemplates(agentTemplates)
 	deps.agentBindingSvc = app.NewAgentBindingService(bindingRepo, agentRepo)
-	deps.companyProfileSvc = app.NewCompanyProfileService(pgctl.NewCompanyProfileRepo(controlDB)).
+	companyProfileRepo := pgctl.NewCompanyProfileRepo(controlDB)
+	sourceProfileRepo := pgctl.NewSourceProfileRepo(controlDB)
+	deps.companyProfileSvc = app.NewCompanyProfileService(companyProfileRepo).
 		// The review panel (T-B2). The drafts are written by the worker; this
 		// side reads them, folds them, and applies one when a human says so.
-		WithSuggestions(pgctl.NewSourceProfileRepo(controlDB), deps.usageSvc)
+		WithSuggestions(sourceProfileRepo, deps.usageSvc)
+	// "Generate with AI" (T-B4) on the light model, like inference: one short
+	// structured call, billed because the client is already the metered one.
+	// It reads both profile tables and the gallery — the ladder it degrades
+	// down when a tenant has none of them is in AgentGenerateService.
+	deps.agentGenSvc = app.NewAgentGenerateService(
+		lightLLMClient, companyProfileRepo, cfg.EffectiveLightLLMModel(),
+	).WithSourceProfiles(sourceProfileRepo).
+		WithTemplates(agentTemplates).
+		WithBudget(deps.usageSvc)
 	// Signup seeds the new company's first agent. Wired after the roster
 	// exists rather than at NewAuthService, which runs several hundred lines
 	// earlier and before there is a connection repository to validate against.

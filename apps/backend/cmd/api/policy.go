@@ -67,6 +67,12 @@ var apiPolicy = middleware.RolePolicy{
 	"PUT /api/agents/:id":         domain.RoleAdmin,
 	"DELETE /api/agents/:id":      domain.RoleAdmin,
 	"PUT /api/agents/:id/default": domain.RoleAdmin,
+	// "Generate with AI" (T-B4) sits on the same admin row as the agent writes
+	// it feeds, for both of that row's reasons: it spends the company's credit,
+	// and what it returns becomes prompt text every member gets answered by.
+	// A read-shaped verb would have been the mistake here — nothing is stored,
+	// but a member who could call it could bill the workspace in a loop.
+	"POST /api/agents/generate": domain.RoleAdmin,
 
 	// Channel bindings (T-S4). Admin on read too, unlike the roster above: a
 	// binding is routing configuration rather than a choice a member makes, and
