@@ -40,6 +40,17 @@ type Set struct {
 	// a customer forwards to their board, our name is a provenance note, not a
 	// co-signature.
 	Credit string
+
+	// CellsTruncated is appended to a table's caption when the table was too
+	// wide for the page and cells were cut to fit.
+	//
+	// The ellipsis inside a cell says that cell was cut. It does not say the
+	// table was too wide to carry its own figures, and a reader looking at
+	// "$918,273.…" has no way to tell a long value from a narrow column. A
+	// chart that drops series already says so in its caption
+	// (chart/labels.go); a table that drops digits said nothing, which is the
+	// worse of the two because the number is still there and still wrong.
+	CellsTruncated string
 }
 
 func For(loc format.Locale) Set {
@@ -52,6 +63,9 @@ func For(loc format.Locale) Set {
 			Continued:   "(lanjutan)",
 			Source:      "Sumber",
 			Credit:      "Dibuat dengan Argentum",
+
+			CellsTruncated: "Tabel ini terlalu lebar untuk halaman; sel yang " +
+				"diakhiri … dipotong. Kurangi jumlah kolom untuk melihat angka lengkapnya.",
 		}
 	}
 	return Set{
@@ -62,5 +76,8 @@ func For(loc format.Locale) Set {
 		Continued:   "(cont.)",
 		Source:      "Source",
 		Credit:      "Made with Argentum",
+
+		CellsTruncated: "This table is wider than the page; cells ending in … " +
+			"were cut. Use fewer columns to see the full figures.",
 	}
 }

@@ -90,14 +90,26 @@ func (r *renderer) renderTable(t *spec.Table) error {
 		header[i] = fitText(header[i], theme.FontMedium, fontstyle.Normal, theme.TypeScale.Body,
 			colWidth(cols[i].units)-2*cellPadX, 2)
 	}
+	cutFigures := false
 	for i := range body {
-		body[i] = truncateRow(body[i], cols)
+		var cut bool
+		body[i], cut = truncateRow(body[i], cols)
+		cutFigures = cutFigures || cut
 	}
 	if totals != nil {
-		totals = truncateRow(totals, cols)
+		var cut bool
+		totals, cut = truncateRow(totals, cols)
+		cutFigures = cutFigures || cut
 	}
 
-	if caption := strings.TrimSpace(t.Caption); caption != "" {
+	caption := strings.TrimSpace(t.Caption)
+	if cutFigures {
+		// Appended to the caption the model wrote rather than replacing it, and
+		// appended rather than prepended: the caption says what the table is,
+		// which is what a reader needs first.
+		caption = strings.TrimSpace(caption + " " + r.words.CellsTruncated)
+	}
+	if caption != "" {
 		l := &rowList{}
 		l.text(caption, props.Text{
 			Family: theme.FontMedium,
@@ -165,10 +177,7 @@ func (r *renderer) resolveColumns(t *spec.Table) []tableColumn {
 		if c.Fmt != "" || kind != format.KindText {
 			// One decimal count for the whole column: 1,5 stacked above 1,50
 			// above 2 is what a dumped table looks like.
-			opts.Decimals = format.InferDecimals(values)
-			if kind == format.KindCurrency || kind == format.KindPercent {
-				opts.Decimals = format.AutoDecimals
-			}
+			opts.Decimals = format.ColumnDecimals(values, kind, opts.Currency)
 		}
 		// Dates are abbreviated inside tables and nowhere else. See
 		// format.Options.ShortDate.
@@ -339,8 +348,18 @@ func rowHeightFor(cells []string, cols []tableColumn, family string) float64 {
 	return max(theme.Page.TableRowHeight, float64(lines)*lh*bodyLeading+2*cellPadX*0.6)
 }
 
-func truncateRow(cells []string, cols []tableColumn) []string {
+// truncateRow fits every cell to its column, and reports whether it had to cut
+// a figure to do it.
+//
+// Only numeric columns count towards that second return. A text cell cut to
+// three lines is this renderer working as designed (see maxCellLines) and
+// happens in tables that are otherwise perfectly readable — captioning those
+// would make the disclosure noise, and noise is how a disclosure stops being
+// read. A number cut at any length has lost digits, and the reader cannot tell
+// "$918,273.…" from a value that legitimately ends there.
+func truncateRow(cells []string, cols []tableColumn) ([]string, bool) {
 	out := make([]string, len(cells))
+	cutFigure := false
 	for i, c := range cells {
 		if i >= len(cols) {
 			out[i] = c
@@ -348,8 +367,11 @@ func truncateRow(cells []string, cols []tableColumn) []string {
 		}
 		out[i] = fitText(c, theme.FontBody, fontstyle.Normal, theme.TypeScale.Body,
 			colWidth(cols[i].units)-2*cellPadX, maxCellLines)
+		if out[i] != c && cols[i].kind.Numeric() {
+			cutFigure = true
+		}
 	}
-	return out
+	return out, cutFigure
 }
 
 func (r *renderer) emitTableHeader(header []string, cols []tableColumn, height float64) {

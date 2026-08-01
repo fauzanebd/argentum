@@ -179,6 +179,17 @@ var currencyDecimals = map[string]int{
 	"VND": 0,
 }
 
+// CurrencyMinorUnits is how many decimal places a currency is written with when
+// nothing more specific is known. Two unless the code says otherwise, and two
+// for an unrecognised code — guessing zero would silently drop cents from a
+// currency this table has not heard of.
+func CurrencyMinorUnits(code string) int {
+	if d, ok := currencyDecimals[strings.ToUpper(strings.TrimSpace(code))]; ok {
+		return d
+	}
+	return 2
+}
+
 // Decimal writes a plain magnitude with locale grouping.
 //
 // Named Decimal rather than Number because Number is already the parse
@@ -699,6 +710,87 @@ func InferDecimals(values []any) int {
 		return 2
 	}
 	return 0
+}
+
+// ColumnDecimals is the one decimal count a whole table column is written with.
+// Both renderers call it so a figure cannot be written two ways in two formats
+// of the same report.
+//
+// Percent keeps AutoDecimals, because Percent has a rule a fixed count cannot
+// express: below 1% it widens to two places, so a damage rate of 0.42% does
+// not print as "0.4%" in a paragraph that is about the two basis points.
+//
+// Currency is where the judgement is. Handing it AutoDecimals makes it print
+// the currency's minor units on every row whatever the figures are, and a
+// column of nine-figure revenue then reads "$486,000,000.00" — a cents field
+// that is not merely noise but implies a precision the query never had. The
+// obvious fix, "drop the cents when every value is whole", is wrong in the
+// other direction: an invoice whose lines happen to land on round dollars
+// still shows "$2,400.00", because that is what an invoice does.
+//
+// So the test is materiality, not roundness. Cents come off only when every
+// figure in the column is whole *and* the column is denominated in magnitudes
+// where a cent cannot matter — the same 1e6 line Compact already draws between
+// a figure and a magnitude. An invoice keeps its cents; a revenue-by-region
+// table loses a decimal field that was never anything but zeroes.
+//
+// The cap is separate and unconditional: a currency's own minor units bound
+// whatever the data asks for, so a fractional rupiah average still prints
+// "Rp 1.235". A rupiah subunit in a report is machine-generated output, not
+// precision.
+func ColumnDecimals(values []any, k Kind, currency string) int {
+	if k == KindPercent {
+		return AutoDecimals
+	}
+	d := InferDecimals(values)
+	if k != KindCurrency || strings.TrimSpace(currency) == "" {
+		return d
+	}
+	d = min(d, CurrencyMinorUnits(currency))
+	if d > 0 {
+		return d
+	}
+	// InferDecimals said the data is whole. Only then is the magnitude
+	// question worth asking, and only a column whose every figure clears the
+	// threshold answers it — one $40 line in a table of millions is a line
+	// where the cents still read as missing.
+	if !allAtLeast(values, compactFloor) {
+		return CurrencyMinorUnits(currency)
+	}
+	return 0
+}
+
+// compactFloor is the magnitude at which a cent stops being material. It is
+// Compact's own default threshold rather than a second number: the point where
+// this package already stops writing a figure in full is the same point where
+// its minor units stop carrying information.
+const compactFloor = 1e6
+
+// allAtLeast reports whether every parseable value in the column is at least
+// threshold in absolute terms. An empty column is false — a table with no rows
+// gives no evidence that its figures are large, and the conservative answer
+// for a currency is to keep its minor units.
+func allAtLeast(values []any, threshold float64) bool {
+	seen := 0
+	for _, v := range values {
+		f, ok := toFloat(v)
+		if !ok {
+			s, isStr := v.(string)
+			if !isStr {
+				continue
+			}
+			n, parsed := Parse(strings.TrimSpace(s))
+			if !parsed {
+				continue
+			}
+			f = n.Value
+		}
+		seen++
+		if math.Abs(f) < threshold {
+			return false
+		}
+	}
+	return seen > 0
 }
 
 // isYear reports whether v is a plausible calendar year. The range is wide

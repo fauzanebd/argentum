@@ -422,6 +422,13 @@ func (r *renderer) headerRows() []core.Row {
 	if title == "" {
 		title = strings.TrimSpace(r.doc.Meta.Subject)
 	}
+	// The header is the fourth place a title is drawn and the one with the
+	// least room — the brand mark already owns markUnits of the grid. A title
+	// with no spaces in it cannot wrap, so without this it is drawn from the
+	// right edge of the mark straight off the page. It does not go through
+	// rowList.text, which is what clips the other three.
+	title = clipToWidth(title, theme.FontBody, fontstyle.Normal, theme.TypeScale.Caption,
+		colWidth(theme.GridCols-markUnits))
 
 	head := row.New(titleHeight).Add(
 		r.brandMark(markUnits, titleHeight, theme.TypeScale.Caption+1),

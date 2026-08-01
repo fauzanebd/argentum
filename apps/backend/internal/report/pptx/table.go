@@ -140,10 +140,7 @@ func (r *renderer) buildTable(t *spec.Table) *tableModel {
 		if c.Fmt != "" || kind != format.KindText {
 			// One decimal count for the whole column: 1,5 stacked above 1,50
 			// above 2 is what a dumped table looks like.
-			o.Decimals = format.InferDecimals(values)
-			if kind == format.KindCurrency || kind == format.KindPercent {
-				o.Decimals = format.AutoDecimals
-			}
+			o.Decimals = format.ColumnDecimals(values, kind, o.Currency)
 		}
 		o.ShortDate = kind == format.KindDate
 		opts[i] = o

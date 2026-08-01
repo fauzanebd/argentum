@@ -198,6 +198,129 @@ func TestInferDecimals(t *testing.T) {
 	}
 }
 
+// TestColumnDecimals is the materiality rule stated as cases. The two that
+// matter most are adjacent on purpose: the same shape of data — whole amounts,
+// no cents anywhere — keeps its cents on an invoice and loses them on a
+// revenue table, and the only thing separating them is magnitude.
+func TestColumnDecimals(t *testing.T) {
+	cases := []struct {
+		name     string
+		values   []any
+		kind     Kind
+		currency string
+		want     int
+	}{
+		{
+			name:     "nine-figure revenue drops a cents field that was only ever zeroes",
+			values:   []any{486000000.0, 401000000.0, 254000000.0},
+			kind:     KindCurrency,
+			currency: "USD",
+			want:     0,
+		},
+		{
+			name:     "an invoice's round dollars keep their cents",
+			values:   []any{2400.0, 720.0, 240.0},
+			kind:     KindCurrency,
+			currency: "USD",
+			want:     2,
+		},
+		{
+			name:     "one small line in a large column keeps cents on the whole column",
+			values:   []any{486000000.0, 40.0},
+			kind:     KindCurrency,
+			currency: "USD",
+			want:     2,
+		},
+		{
+			name:     "cents in the data are never dropped, however large the column",
+			values:   []any{486000000.5, 401000000.0},
+			kind:     KindCurrency,
+			currency: "USD",
+			want:     2,
+		},
+		{
+			name:     "rupiah never carries a subunit, whole or not",
+			values:   []any{3863405700.0, 268431200.0},
+			kind:     KindCurrency,
+			currency: "IDR",
+			want:     0,
+		},
+		{
+			name:     "a fractional rupiah average is still capped at the currency's minor units",
+			values:   []any{1234.5, 998.25},
+			kind:     KindCurrency,
+			currency: "IDR",
+			want:     0,
+		},
+		{
+			name:     "an unknown code is assumed to have cents",
+			values:   []any{486000000.0},
+			kind:     KindCurrency,
+			currency: "XAF",
+			want:     0,
+		},
+		{
+			name:     "no currency means no minor-unit question to answer",
+			values:   []any{486000000.0},
+			kind:     KindCurrency,
+			currency: "",
+			want:     0,
+		},
+		{
+			name:   "percent keeps the automatic count for its sub-1% rule",
+			values: []any{0.42, 12.5},
+			kind:   KindPercent,
+			want:   AutoDecimals,
+		},
+		{
+			name:   "a plain number column is unaffected",
+			values: []any{1.0, 2.5},
+			kind:   KindNumber,
+			want:   2,
+		},
+		{
+			name:     "an empty column keeps the currency's minor units",
+			values:   nil,
+			kind:     KindCurrency,
+			currency: "USD",
+			want:     2,
+		},
+		{
+			name:     "strings the model pre-formatted are read, not ignored",
+			values:   []any{"$486,000,000", "$401,000,000"},
+			kind:     KindCurrency,
+			currency: "USD",
+			want:     0,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ColumnDecimals(c.values, c.kind, c.currency); got != c.want {
+				t.Errorf("got %d, want %d", got, c.want)
+			}
+		})
+	}
+}
+
+// TestColumnDecimalsReachesTheRenderedString is the same rule one level up: the
+// count is only worth anything if Currency honours it, and Currency is the
+// function that used to overwrite it.
+func TestColumnDecimalsReachesTheRenderedString(t *testing.T) {
+	large := []any{486000000.0, 401000000.0}
+	o := enOpts()
+	o.Decimals = ColumnDecimals(large, KindCurrency, "USD")
+	if got := Currency(486000000, o); got != "$486,000,000" {
+		t.Errorf("large whole column: got %q, want %q", got, "$486,000,000")
+	}
+
+	invoice := []any{2400.0, 720.0}
+	o = enOpts()
+	o.Decimals = ColumnDecimals(invoice, KindCurrency, "USD")
+	if got := Currency(2400, o); got != "$2,400.00" {
+		t.Errorf("invoice column: got %q, want %q", got, "$2,400.00")
+	}
+}
+
 func TestNonFiniteRendersAsADash(t *testing.T) {
 	for _, v := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
 		if got := Decimal(v, enOpts()); got != "—" {

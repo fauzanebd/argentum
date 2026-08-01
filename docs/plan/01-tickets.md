@@ -781,6 +781,110 @@ Artifacts: [`../coverage/report-branding.md`](../coverage/report-branding.md).
 
 ---
 
+## T-R6 · Three ways a document loses its content silently
+**Repo:** BE · **Size:** 1d · **Deps:** T-R2 · **Priority:** P1
+
+### Why
+Three findings from a render audit on 2026-08-01. All three pass the current
+suite, because no fixture has a non-IDR currency column, a table past seven
+columns, or a heading without spaces in it. Each one loses information the
+reader cannot tell is missing, which is the failure mode `measure.go:160-163`
+already names as unacceptable ("silent clipping is an acceptance failure").
+
+1. **Currency columns force minor units they were told not to.**
+   `pdf/table.go:168` computes `format.InferDecimals(values)` — 0 when every
+   value in the column is whole — then `:169-171` discards it and substitutes
+   `AutoDecimals`, which `format.Currency:209-215` turns into USD's 2 places.
+   A column of whole dollars renders `$486,000,000.00`. IDR hides the bug
+   completely (`currencyDecimals["IDR"] = 0`), which is why it shipped.
+2. **The `.00` costs two columns of table headroom.** Measured on one table
+   rendered in both currencies, count of ellipsis-truncated cells:
+
+   | cols | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+   | ---- | - | - | - | - | -- | -- | -- |
+   | USD  | 0 | 5 | 5 | 6 | 6  | 16 | 16 |
+   | IDR  | 0 | 0 | 0 | 5 | 6  | 6  | 11 |
+
+   At 8 columns USD figures read `$918,273.…`; at 11 the row labels go too
+   (`Ja…`, `Bar…`). `API_V1_MAX_SPEC_COLS` is 40, so `/v1/reports/render`
+   accepts this without comment. Charts already append a sentence when they
+   truncate (`chart/labels.go:27-29`); tables say nothing.
+3. **A heading with no spaces in it runs off the sheet.** `rowList.text`
+   (`cover.go:64-74`) measures height for row sizing, then hands the raw
+   string to `text.New`. gofpdf breaks on whitespace only, so an unbroken
+   token is drawn past the right margin and lost to the paper — no ellipsis,
+   no wrap. Hits the cover title, H1 and H2. Realistic input: a SKU, a URL, a
+   concatenated column name. The running header on the same page handles it
+   correctly, so the fix already exists in this package.
+
+### Do
+- `internal/report/format/format.go`: add `ColumnDecimals(values, kind, currency)`,
+  the one place that decides a column's decimal count, and call it from both
+  renderers so a figure cannot be written two ways in two formats of the same
+  report. Percent returns `AutoDecimals` — `format.Percent:254-262` has a
+  sub-1% rule a fixed count would break.
+- **Currency drops its minor units on materiality, not on roundness.** The
+  first attempt at this ticket used "every value is whole → 0 decimals" and it
+  is wrong: `invoice.json`'s amounts are all round dollars, and an invoice
+  showing `$2,400` instead of `$2,400.00` is a worse document than the one the
+  ticket set out to fix. Cents come off only when every figure in the column is
+  whole **and** every figure clears `1e6` — reuse `Compact`'s own threshold
+  rather than inventing a second number. A currency's minor units cap whatever
+  `InferDecimals` asks for, unconditionally, so a fractional rupiah average
+  still prints `Rp 1.235`.
+- `internal/report/pdf/table.go:164-172` and `internal/report/pptx/table.go:141-146`:
+  call `ColumnDecimals`.
+- `internal/report/pdf/table.go`: when `truncateRow` cut any cell, append a
+  sentence to the table caption. Wording follows `chart/labels.go`, per locale,
+  in `internal/report/labels`.
+- `internal/report/pdf/cover.go:64-74`: route `rowList.text` through
+  `measure.Clip` so an unbroken token ends in `…` inside the measure. This is
+  the shared helper for the cover title, cover subtitle and both heading levels.
+
+### Notes for the implementer
+- Do not "fix" `format.Currency` by making `AutoDecimals` drop the decimals on
+  whole values. That is per-value, and it would print `$1,234` above
+  `$1,234.50` in one column — the exact inconsistency `InferDecimals` exists to
+  prevent. The column decides; the formatter obeys.
+- Do not add a landscape or column-splitting fallback for wide tables. That is
+  a layout feature and a separate ticket. This one only makes the loss visible.
+- `pdf/render_test.go:120 TestDeterministicBytes` and the fixtures under
+  `pdf/testdata/` will move if the caption or the decimals change for any of
+  them. Check which fixture changed and why before regenerating anything.
+- `measure_test.go:59` already asserts body text ends in `…`. Copy that shape
+  for headings rather than inventing a new assertion.
+
+### Acceptance
+- [ ] A whole-dollar USD column in the millions renders `$486,000,000`, not `$486,000,000.00`
+- [ ] `invoice.json`'s `$2,400.00` is **unchanged** — round dollars below the threshold keep their cents
+- [ ] One sub-threshold value in an otherwise large column keeps cents on every row of it
+- [ ] The same column in IDR is unchanged from today
+- [ ] A currency column that does contain cents still renders 2 places, on every row
+- [ ] A percent column below 1% still renders 2 places (no regression from the shared path)
+- [ ] A table whose **figures** were truncated says so in its caption, in the document's locale
+- [ ] A table whose long *text* cell wrapped to the 3-line cap does **not** get the caption
+- [ ] A 100-character unbroken heading ends in `…` and draws inside the right margin
+- [ ] The same heading with spaces still wraps to two lines rather than being clipped
+- [ ] No fixture PDF changes except where the ticket predicts it
+
+### Gate
+```bash
+cd apps/backend
+go build ./... && go vet ./...
+go test -race -count=1 ./internal/report/... ./internal/docgen/... ./internal/tools/document/...
+```
+Then render a 10-column USD table and a SKU heading, extract text with
+`pdftotext -layout`, and paste: zero `…` inside a numeric cell at 10 columns,
+and a heading that ends in `…`.
+
+### Out of scope
+- Landscape pages, column splitting, or a "continued" table across widths
+- The `$0.00` axis tick on a currency chart (`chart/draw.go:47-53`) — same root
+  cause, cosmetic, and touching `chart` re-renders the contact-sheet goldens
+- Native OOXML charts, editable decks — already in the backlog
+
+---
+
 # Week 1c — Callable: the tenant-facing API
 
 **Priority insert, added 2026-07-28 at the repo owner's request, and the highest

@@ -69,6 +69,9 @@ func (l *rowList) text(value string, p props.Text, width float64) {
 	if style == "" {
 		style = fontstyle.Normal
 	}
+	// Clip before measuring, not after: the height of a row has to be the
+	// height of the string that is actually drawn into it.
+	value = clipToWidth(value, family, style, p.Size, width-p.Left-p.Right)
 	h := textHeight(value, family, style, p.Size, width, p)
 	l.add(h, col.New(theme.GridCols).Add(text.New(value, p)))
 }

@@ -242,6 +242,55 @@ exists to prevent — the eval comparator (`T-01`) and the renderer disagreeing
 about what a number is — and it was present from the moment the formatting
 direction was written.
 
+## `T-R6` — three ways a document lost content quietly, 2026-08-01
+
+A render audit put adversarial specs through `pdf.Render` rather than the
+fixtures. All three findings passed the full suite before the audit, because no
+fixture had a non-IDR currency column of large whole figures, a table past seven
+columns, or a heading with no spaces in it.
+
+**A currency column printed minor units the data never had.**
+`pdf/table.go` computed `format.InferDecimals` for the column and then
+discarded it for currency, substituting `AutoDecimals` — which `format.Currency`
+turns into the currency's minor units. A column of nine-figure revenue read
+`$486,000,000.00`. IDR hid it completely, since rupiah is already zero-decimal,
+which is why it shipped and stayed.
+
+The fix is `format.ColumnDecimals`, called by both renderers, and the rule it
+encodes is materiality rather than roundness. The first attempt — "every value
+is whole, so drop the cents" — was wrong in the other direction and
+`invoice.json` caught it: those amounts are all round dollars, and an invoice
+reading `$2,400` is a worse document than the one this set out to fix. Cents
+come off only when every figure in the column is whole **and** every figure
+clears `1e6`, reusing `Compact`'s own threshold rather than inventing a second
+number. A currency's minor units cap the count unconditionally, so a fractional
+rupiah average still prints `Rp 1.235`.
+
+**A table that ran out of measure cut the figures and said nothing.** At eight
+USD columns cells already read `$918,273.…`; at eleven the row labels went too.
+A chart that drops series appends a sentence to its caption; a table that drops
+digits appended nothing, and that is the worse of the two, because the number is
+still there and still wrong. `truncateRow` now reports whether it cut a cell in
+a **numeric** column, and the caption carries `labels.Set.CellsTruncated` when
+it did. Text cells hitting the three-line cap deliberately do not raise it — that
+is the renderer working as designed, it happens on perfectly readable tables,
+and a notice that fires on ordinary tables stops being read.
+
+**A heading with no spaces in it ran off the sheet.** `rowList.text` measured a
+string's height and then handed the raw text to maroto, which breaks lines at
+spaces and nowhere else — so a SKU, a URL or a concatenated key was drawn past
+the right margin and lost to the paper, with no ellipsis and no way for a reader
+to know. This is the same class as the `SO-2026-4100` finding above, on the one
+path that never went through `fitText`. Four sites had it: the cover title, `h1`,
+`h2`, and the running header, which did not measure at all. `clipToWidth` fixes
+the first three at their shared helper and `headerRows` calls it directly.
+
+Wrapping is untouched — a heading long enough to need two lines still gets two
+lines. Clipping is only for what wrapping cannot do.
+
+Tests: `format.TestColumnDecimals` (12 cases, invoice and revenue adjacent on
+purpose), `pdf/disclosure_test.go` (6 tests). Ticket: `T-R6`.
+
 ## Known limits
 
 **Eight columns of long text do not fit on A4 portrait, and the renderer does
@@ -252,6 +301,12 @@ ellipsis. That priority is deliberate — a truncated customer name is a
 readability problem, a truncated order number is a wrong document — but the
 result is still a cramped table, and the honest fix is fewer columns. The tool
 description asks for under eight.
+
+Since `T-R6` the document at least says so when the cells it cut were figures.
+It still does not reflow, split or rotate the table; a landscape page and a
+column-splitting continuation are both deliberately out of scope, because the
+disclosure is what makes the current behaviour honest and the layout work is a
+separate ticket.
 
 **Table dates are abbreviated and nothing else is.** `1 Jan 2026` in a cell,
 `27 Juli 2026` on a cover and in a footer. A date column written out in full

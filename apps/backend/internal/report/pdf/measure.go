@@ -60,3 +60,23 @@ func truncateToLines(s string, family string, style fontstyle.Type, size, colWid
 func fitText(s string, family string, style fontstyle.Type, size, colWidth float64, maxLines int) string {
 	return measure.Fit(s, family, measure.Style(style), size, colWidth, maxLines)
 }
+
+// unboundedLines is a line cap high enough to never fire. It is what a block of
+// running text passes when it wants the per-line clipping in measure.Fit and
+// not the line-count truncation: a heading may legitimately wrap onto a second
+// line, and only the width of each line is in question.
+const unboundedLines = 1 << 30
+
+// clipToWidth cuts any line still wider than its column, leaving the number of
+// lines alone.
+//
+// Line breaking happens at spaces, so a heading like
+// "SKU-JKT-2026-ELEKTRONIK-KIPASANGIN-16INCH" is one line wider than the page.
+// maroto hands it to gofpdf, which draws it past the right margin and off the
+// sheet — the reader sees a heading that stops at the paper's edge with no
+// ellipsis and no way to know how much is missing. That is the silent clipping
+// measure.Truncate's doc comment calls an acceptance failure, and it reached
+// the cover title and both heading levels because they never went through it.
+func clipToWidth(s string, family string, style fontstyle.Type, size, colWidth float64) string {
+	return measure.Fit(s, family, measure.Style(style), size, colWidth, unboundedLines)
+}
