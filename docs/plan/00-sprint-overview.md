@@ -821,6 +821,14 @@ Nothing about it changes the order or the estimates — the prompt-level
 protections those tickets shipped were simply not in force until now, and no
 estimate here assumed otherwise.
 
+**`T-B2`, `T-B3` and `T-B4` all delivered and gated live 2026-08-01, so the
+business-context track is done** — 8.5d of tickets closed in the two days after
+it was inserted, and the whole record is in
+[`../coverage/business-context.md`](../coverage/business-context.md). `T-B4`
+needed no migration. **The next thing in flight is `T-M1`**, and the running
+order below is unchanged: the insert cost the queue what §8c said it would and
+nothing more.
+
 **What slips, in days:**
 
 | What | Slips by | Note |

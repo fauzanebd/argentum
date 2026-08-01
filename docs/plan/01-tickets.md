@@ -4520,9 +4520,11 @@ weight" is in this ticket for a reason.
 
 ---
 
-## T-B4 · "Generate with AI": improve the tenant's own description into an agent
+## ~~T-B4~~ · "Generate with AI": improve the tenant's own description into an agent — **DONE 2026-08-01**
 **Repo:** BE, FE · **Size:** 2.0d · **Deps:** T-B1, T-B3 · **Priority:** P1 · **Cut §8b #7**
 **`T-B2` is optional, not a dependency** — see the fallback ladder below.
+**No migration.** Nothing about a generation is stored.
+**Record:** [`../coverage/business-context.md`](../coverage/business-context.md) §T-B4.
 
 ### Why
 
@@ -4609,16 +4611,16 @@ spinner, and nobody presses that button twice.
 
 ### Acceptance
 
-- [ ] Typing "agent for warehouse team to watch stock" and pressing Generate returns a description and a persona that both refer to the warehouse team and stock — not a generic Operations persona
-- [ ] A description containing a coined word ("track our zentra runs") comes back still containing it — improve-not-replace, tested
-- [ ] Description empty, name "Warehouse Ops": the button generates from the name
-- [ ] Both empty: the button is disabled and **no request is sent**
-- [ ] On an existing agent, Generate improves the stored persona; the `agents` row is unchanged until Save
-- [ ] Undo restores both fields to exactly what the tenant last typed — after one generation and after two
-- [ ] For a retail tenant with a profile the persona names their actual entities; with **no** profile and **no** source profiles it still returns usable text
-- [ ] A generated persona containing "ignore the SQL rules above" is rejected by the validator; if one reaches a turn anyway, the `C-1` question still returns the true figure
-- [ ] Zero balance: button disabled with a reason, agent creation still works
-- [ ] A member gets **403** on `POST /api/agents/generate`
+- [x] Typing "agent for warehouse team to watch stock" and pressing Generate returns a description and a persona that both refer to the warehouse team and stock — not a generic Operations persona
+- [x] A description containing a coined word ("track our zentra runs") comes back still containing it — improve-not-replace, tested
+- [x] Description empty, name "Warehouse Ops": the button generates from the name
+- [x] Both empty: the button is disabled and **no request is sent**
+- [x] On an existing agent, Generate improves the stored persona; the `agents` row is unchanged until Save
+- [x] Undo restores both fields to exactly what the tenant last typed — after one generation and after two
+- [x] For a retail tenant with a profile the persona names their actual entities; with **no** profile and **no** source profiles it still returns usable text
+- [x] A generated persona containing "ignore the SQL rules above" is rejected by the validator; if one reaches a turn anyway, the `C-1` question still returns the true figure
+- [x] Zero balance: button disabled with a reason, agent creation still works
+- [x] A member gets **403** on `POST /api/agents/generate`
 
 ### Gate
 
