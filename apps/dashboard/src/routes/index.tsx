@@ -15,6 +15,7 @@ import { ChatPage } from "@/features/chat/chat-page";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { UsagePage } from "@/features/usage/usage-page";
 import { ScheduledTasksPage } from "@/features/scheduled-tasks/scheduled-tasks-page";
+import { WatchersPage } from "@/features/watchers/watchers-page";
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -105,6 +106,12 @@ const scheduledTasksRoute = createRoute({
   }),
 });
 
+const watchersRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/watchers",
+  component: WatchersPage,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -117,5 +124,6 @@ export const routeTree = rootRoute.addChildren([
       settingsRoute,
       usageRoute,
       scheduledTasksRoute,
+      watchersRoute,
     ]),
 ]);
