@@ -1652,8 +1652,13 @@ comparison with the 97.0% baseline — five cases added, ten assertions widened,
 one prompt line — and each of those three is recorded with the measurement that
 motivated it.
 
-**What is still owed, and why.** `make eval` for
-`T-M2` with no server configured. The non-admin
+**`T-M2`'s eval item closed on the same run.** Its acceptance asks for
+`make eval` at or above baseline *with no MCP server configured*, and the eval
+tenant has none — so the 40/40 above is that measurement, not a separate one
+still owed. A deployment without a tenant MCP server behaves exactly as it did
+before the track existed, and now there is a number saying so.
+
+**What is still owed, and why.** The non-admin
 renderings of both UIs (both refusals are proven at the API, neither disabled
 control was photographed). And `T-12a`'s delivery, deferred by the repo owner:
 the gate is *the message arrives*, `.env` holds live Twilio credentials, and

@@ -13,7 +13,7 @@ appends its own section.
 | Ticket | What | Size | State |
 | ------ | ---- | ---- | ----- |
 | `T-M1` | Schema, egress safety, CRUD, discovery | 2.5d | **done — gate run live 2026-08-01** |
-| `T-M2` | MCP tools at turn time | 3.0d | **gated live 2026-08-02** — `make eval` with no server configured is still owed |
+| `T-M2` | MCP tools at turn time | 3.0d | **done — gated live and eval-clean 2026-08-02** |
 | `T-M3` | MCP servers on the dashboard and `/v1` | 1.0d | **gated live 2026-08-02** — usage-per-server breakout still deferred (cut #3a) |
 | `T-M4` | Write-capable tools behind approval | 1.5d | not started |
 
@@ -435,9 +435,15 @@ for the Ops agent and an empty list for the default one.
   default agent. Fourth in this gate run; recorded under `T-07b` in
   [`guardrail-overreach.md`](guardrail-overreach.md).
 
-**Still outstanding:** `make eval` at or above the `T-01` baseline with no MCP
-server configured. The empty-binding fast path is unit-tested and the eval tenant
-has no server, but the scored run has not been made.
+**The eval item is closed, by the run `T-07` made on 2026-08-02.** That run
+scores the golden set against the `Argentum Eval` tenant, which has **no MCP
+server registered** — the acceptance item's exact condition — and it came back
+**40/40**, above the 97.0% baseline rather than merely at it. So the property
+this ticket had to prove, that a deployment with no tenant MCP server behaves
+exactly as it did before `T-M2` existed, is measured rather than argued: the
+company-tools path returns empty, and nothing downstream can tell the difference.
+Numbers and the three set changes behind them:
+[`metric-registry.md`](metric-registry.md) §6.
 
 ### 5. Handover to T-M3
 

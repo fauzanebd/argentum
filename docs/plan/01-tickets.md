@@ -3962,7 +3962,8 @@ Two findings: an agent whose tools are narrowed **in the dashboard** silently
 loses its MCP tools (the form's options come from the static registry, so no
 checkbox for a namespaced name exists — the API accepts one), and an MCP call
 writes **no `usage_events` row** though this ticket asks for one.
-`make eval` with no server configured is still owed.
+The eval item is closed too: the 2026-08-02 run scores 40/40 against a tenant
+with no MCP server registered, which is the condition it asks for.
 [`../coverage/mcp-source.md`](../coverage/mcp-source.md) §4a.
 **Migration:** `*_agent_mcp_servers` — next free on landing, after `T-M1`'s.
 
