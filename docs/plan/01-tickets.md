@@ -2300,8 +2300,22 @@ non-allowlisted target and show the rejection.
 
 ---
 
-## T-12b · Action: `http_action`
+## T-12b · Action: `http_action` — **CODE COMPLETE 2026-08-02, live gate outstanding**
 **Repo:** BE · **Size:** 1.5d · **Deps:** T-10 · **Priority:** P2 · **Cut #4**
+**Migration:** landed as `042_http_endpoints` — a separate table, not
+`company_actions.config_encrypted`, because http_action needs many named
+endpoints per company, each with a sealed credential.
+
+Shipped. Record, decisions, gate output and the outstanding live half:
+[`../coverage/action-framework.md`](../coverage/action-framework.md) §T-12b.
+
+Two deviations from the text below, both recorded: the endpoint carries a
+`body_template` rather than a `body_schema` (a template the agent fills, so the
+model never constructs a free-form body), and the "allowlist of hosts" is the
+single literal host each endpoint registers — a placeholder may fill the path or
+query but never the authority, enforced at registration and re-checked at execute.
+The SSRF guard is `mcp.Guard` reused (its `StrictClient`, redirects refused
+outright), not a second implementation.
 
 Generic authenticated outbound call, so a company can wire Argentum into
 whatever they already run (ticket systems, ERP, internal endpoints).

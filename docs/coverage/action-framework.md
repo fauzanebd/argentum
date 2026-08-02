@@ -231,3 +231,154 @@ are code-complete but not exercised against a running database, the same state
 - **`attach_document_id` is accepted but not delivered** (forward-compat for the
   backlog's scheduled-report delivery). `Describe` says so on the card.
 - **Live delivery gate not run** — needs a real WhatsApp number on the allowlist.
+
+## T-12b · Action `http_action` — 2026-08-02
+
+The second shipped action, and the one that closes phase 4. A generic
+authenticated outbound call so a company can wire Argentum into whatever they
+already run — a ticket queue, an ERP, an internal service. The safety property
+the whole ticket rests on is that **the agent never types a URL**: it names a
+*registered* endpoint, and the method, the host and the credentials were fixed by
+an admin, not by the model at turn time.
+
+### What shipped
+
+| Layer | File |
+| ----- | ---- |
+| Schema | `migrations/control/042_http_endpoints.{up,down}.sql` — `http_endpoints`: name, method, `url_template`, `header_encrypted` (BYTEA), `body_template`, unique `(company_id, name)` |
+| Entity | `internal/domain/http_endpoint.go` — `HTTPEndpoint`, `HTTPEndpointRepository` |
+| Repository | `internal/adapters/postgres/http_endpoint_repo.go` — company-scoped CRUD, header stored and returned sealed (`HasHeader` derived on read) |
+| Action | `internal/actions/http_action.go` — `HTTPAction`, and the `EndpointStore` + `Egress` interfaces it consumes |
+| Turn-time deps | `internal/app/http_action_deps.go` — `httpEndpointResolver` (decrypts the header) and `guardEgress` (the guarded call) |
+| Admin CRUD | `internal/app/http_endpoint_service.go` + `internal/transport/http/handlers/http_endpoints.go` — `GET/POST/DELETE /api/http-endpoints`, admin-only in `cmd/api/policy.go` |
+| Egress guard | `internal/adapters/mcp/egress.go` — `StrictClient()` added: the address-pinned transport, redirects refused outright |
+| Wiring | `cmd/api/bootstrap.go` + `internal/bootstrap/stack.go` — `http_action` registered in both processes' action registries |
+
+### The decisions worth carrying forward
+
+- **The endpoint registry is a separate table, not `company_actions.config_encrypted`.**
+  `action_service.go`'s `ActionConfigInput` already said this would be so: an
+  admin PUTs enable/approval/roles as JSON, and "the encrypted-credential plumbing
+  an http_action needs travels a separate path that holds the DSN cipher, never a
+  JSON body an admin PUTs." http_action needs *many* named endpoints per company,
+  each with a sealed credential — a DSN-class object — so it gets a table and an
+  admin CRUD of its own, like MCP servers, rather than a blob on the switchboard row.
+
+- **The host is un-forgeable because the authority is literal.** A `url_template`
+  may carry `{{.placeholders}}` in its path and query, never in its scheme or host —
+  registration refuses a `{{` before the first `/` after the scheme. At execute
+  time the rendered URL is parsed and its scheme+host must equal the template's, so
+  a value like `rest = "@169.254.169.254/…"` that tries to smuggle a new authority
+  is refused *before* egress. That is what makes "the agent picks a name, never a
+  URL" true even when the name carries free-form values. The SSRF address guard is
+  the second line, not the first.
+
+- **The SSRF guard is `mcp.Guard`, reused, not re-implemented.** "Reach a tenant's
+  own system" and "reach a tenant's MCP server" are one threat model — a URL a
+  tenant supplied, fetched from our network position — so http_action dials with
+  the same `checkIP` allowlist, address-pinned `Control` dialer, and private-range
+  refusal. `StrictClient()` was added to the guard (an additive refactor extracting
+  the shared `safeTransport`) so the two share one `checkIP` with one test table,
+  which is the thing `egress.go` exists to avoid. The one difference is redirects:
+  the MCP transport follows up to five with a re-check; http_action refuses them
+  outright, because a registered endpoint has one fixed host and a 3xx is a call
+  trying to leave it. The egress flags (`MCP_ALLOW_PRIVATE_EGRESS`,
+  `MCP_ALLOW_INSECURE_HTTP`) are shared; the timeout is the ticket's fixed **10s**.
+
+- **`Validate`/`Describe` are params-only, and that is the interface, not a
+  shortcut.** The `Action` contract's inspection methods take no context, so they
+  cannot do a company-scoped endpoint lookup at propose time — the tenant is only
+  on the context `Execute` gets. So a proposal for an unknown endpoint is recorded
+  and fails at execute, after approval, with a plain "no endpoint named X"; the
+  approval card names the endpoint (which the approver registered) and the values
+  the agent supplied. Everything that decides safety — endpoint existence, host
+  match, method, the SSRF verdict — is enforced in `Execute` where the company is
+  known.
+
+- **Registration validates what execute will check, at admin time.** A private
+  host, a non-https URL, a bad method, a templated host, a broken `{{`, a header
+  that is not a JSON object — each is a rejected save with the reason attached,
+  rather than a proposal that fails after a human approved it. The URL passes the
+  same egress guard the turn-time dial will, so an unreachable endpoint cannot be
+  stored.
+
+- **A non-2xx is a recorded outcome, not an execution failure.** The far end
+  answering `404` means the call was made; the invocation stores the status and the
+  (capped) body so the agent and the approver can see it. A *failure* is the guard
+  refusing the address or the network dropping — the call never happening.
+
+### Note on redacted params
+
+`ActionService.execute` runs `Action.Execute(ctx, inv.ParamsRedacted)` — the
+executor deliberately runs off the redacted parameters (T-10), because a
+well-formed proposal's own params carry no secret. That holds here: http_action's
+credentials live in the endpoint's sealed `header_encrypted`, never in the values
+the agent fills, so redaction of a path or query value (an id, a date) is
+harmless. A credential does not belong in an http_action param, and the header is
+where it goes.
+
+### Acceptance — how each is met
+
+| Acceptance | Where |
+| ---------- | ----- |
+| Per-company registered endpoints only; agent picks a name, never a raw URL | `httpActionParams` carries `endpoint` + `params`; `Execute` resolves the name through `EndpointStore`, and there is no field for a URL |
+| Credentials encrypted with the DSN cipher | `header_encrypted` sealed by `crypto.DSNCipher` in `HTTPEndpointService.Register`, decrypted only by `httpEndpointResolver` at call time; never on a list |
+| Host allowlist | literal authority enforced at registration + `sameAuthority` at execute (`TestHTTPActionExecuteRefusesTemplatedHost`, `TestHTTPActionExecuteRefusesHostChange`) |
+| 10s timeout | `httpActionEgressTimeout`/`StrictClient` `Client.Timeout` |
+| No redirects | `StrictClient` `CheckRedirect` refuses every hop (`TestGuardEgressRefusesRedirect`) |
+| Block private/link-local (SSRF) | reuses `mcp.Guard.checkIP` (`TestGuardEgressBlocksMetadataEndpoint`, `TestGuardEgressBlocksLoopbackWhenPrivateDisallowed`) |
+
+### Gate output
+
+```
+$ go test ./internal/actions/ -run 'HTTPAction' -v
+--- PASS: TestHTTPActionValidate
+--- PASS: TestHTTPActionDescribeNamesEndpointAndParams
+--- PASS: TestHTTPActionExecuteRendersAndCalls
+--- PASS: TestHTTPActionExecuteUnknownEndpoint
+--- PASS: TestHTTPActionExecuteMissingPlaceholderRefused
+--- PASS: TestHTTPActionExecuteRefusesTemplatedHost
+--- PASS: TestHTTPActionExecuteRefusesHostChange
+--- PASS: TestHTTPActionExecutePropagatesEgressRefusal
+--- PASS: TestHTTPActionExecuteNon2xxIsNotAnError
+ok  	github.com/fauzanebd/argentum/internal/actions
+
+$ go test ./internal/app/ -run 'GuardEgress|RegisterEndpoint|DeleteEndpoint' -v
+--- PASS: TestGuardEgressReachesAllowedHostWithHeaders
+--- PASS: TestGuardEgressBlocksMetadataEndpoint
+--- PASS: TestGuardEgressBlocksLoopbackWhenPrivateDisallowed
+--- PASS: TestGuardEgressRefusesRedirect
+--- PASS: TestGuardEgressCapsResponseBody
+--- PASS: TestRegisterEndpointValidAndSealed
+--- PASS: TestRegisterEndpointRejections (7 subtests)
+--- PASS: TestRegisterEndpointCaseInsensitiveCollision
+--- PASS: TestDeleteEndpoint
+ok  	github.com/fauzanebd/argentum/internal/app
+```
+
+Whole backend: `go build ./...` clean, `go vet ./...` clean, `go test ./...`
+green across all packages, `gofmt` clean, `make types-check` current (the new
+`domain.HTTPEndpoint` regenerated into `packages/api-types/src/domain.ts`).
+
+### Known limits / outstanding
+
+- **Live gate (migration apply + register→propose→approve→observe) not run** —
+  the implementation environment has no Docker/Postgres, the same state
+  `T-06`→`T-11` are in. `042_http_endpoints.{up,down}.sql` has not been applied to
+  a live control DB, and the ticket's gate — *register a local test endpoint,
+  propose, approve, observe the request; then attempt `http://169.254.169.254/`
+  and show it blocked* — needs a running stack. The 169.254 block **is** proven at
+  the egress layer by `TestGuardEgressBlocksMetadataEndpoint`; what is owed is the
+  end-to-end run through a real proposal.
+- **Backend-only, no dashboard UI.** The ticket is `Repo: BE`; endpoints are
+  registered through `POST /api/http-endpoints` (admin). A Settings tab is additive
+  and is not in scope here — the same shape `T-12a` shipped in.
+- **No update, by design.** An endpoint is a credential plus an egress
+  destination; editing one already named by in-flight proposals changes what they
+  point at, so a change is delete-then-register. This mirrors `T-13`'s "scopes are
+  fixed at creation, so the repository has no `Update`."
+- **The agent does not yet discover endpoint names automatically.** `propose_action`
+  is generic; the agent is told which endpoint to use (by the user, or by guidance)
+  rather than reading a per-turn list of registered names. Surfacing the names to
+  the model is additive against this surface and is left for when a tenant has more
+  than a handful.
