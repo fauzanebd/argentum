@@ -2222,8 +2222,16 @@ non-breaching watcher showing silence.
 
 ---
 
-## T-09 · Watchers UI
+## ~~T-09~~ · Watchers UI — **GATED LIVE 2026-08-02**
 **Repo:** FE · **Size:** 2d · **Deps:** T-08 · **Priority:** P0 · **Never cut**
+
+Create → dry-run → enable → fired event, photographed through headless Chrome.
+`Enable` renders disabled until a dry-run returns *"Would have fired 14 times in
+the last 14 periods"*, and the events sheet marks a **breached / delivered**
+entry apart from **suppressed / cooldown** ones. The gate found that a row per
+silent evaluation fills the sheet's 50-row window inside an hour, pushing the
+only delivery off screen.
+[`../coverage/watchers-ui.md`](../coverage/watchers-ui.md) §5.
 
 **Do:**
 - `src/features/watchers/`: list page, create/edit form, event history sheet.
@@ -2297,8 +2305,19 @@ Paste output.
 
 ---
 
-## T-11 · Approval UI + events
+## ~~T-11~~ · Approval UI + events — **GATED LIVE 2026-08-02**
 **Repo:** BE, FE · **Size:** 1.5d · **Deps:** T-10 · **Priority:** P1
+
+A proposal enqueued from outside the browser rendered its card in an open chat
+without a reload (proven by a `window` marker that survives a route change and
+dies on a refresh), badged the sidebar `Approvals 1`, and executed on `Approve`
+— the sink received the call and the badge cleared.
+The gate found the card shows **only the action kind**: `describe()` in
+`approval-card.tsx` special-cases `send_message` and falls back to the bare kind
+for everything else, so a human authorising an outbound HTTP call sees
+"http_action" and neither the endpoint nor the payload. The backend's
+`Describe()` already writes that sentence.
+[`../coverage/action-framework.md`](../coverage/action-framework.md) §T-11.
 
 **Do:**
 - New WS event type `action_proposed` carrying the invocation id and

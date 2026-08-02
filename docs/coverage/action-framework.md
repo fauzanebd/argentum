@@ -233,16 +233,60 @@ name) is the fix, in the place the other two catalogs already live.
 
 ### Known limits / outstanding
 
-- **The endpoints were gated live on 2026-08-02; the UI was not.** Against a
-  running API: `GET /api/actions/pending` returned the proposal with its
-  `describe` payload, `approve` executed it, a second `approve` returned the same
-  row without re-executing, `reject` was terminal (409 on a later approve), an
-  aged proposal answered 409 `expired`, and a member got
-  `[403] your role is not permitted to decide this action` while still reading
-  the proposal. What is still owed is the half this ticket is named for: the
-  `action_proposed` event arriving in the chat stream **without a refresh**, the
-  card reflecting the outcome, and the pending badge — none of which an HTTP
-  transcript can show. That is a browser session, not a stack.
+### The live gate — run 2026-08-02
+
+The endpoints first, against a running API: `GET /api/actions/pending` returned
+the proposal, `approve` executed it, a second `approve` returned the same row
+without re-executing, `reject` was terminal (409 on a later approve), an aged
+proposal answered 409 `expired`, and a member got `[403] your role is not
+permitted to decide this action` while still reading the proposal.
+
+Then the half only a browser can show. The dashboard was opened on a thread over
+CDP and a marker set on `window`; the proposal was then enqueued **from outside
+the browser** (a `POST /api/chat` naming that thread). With no interaction and no
+navigation:
+
+- an **`Approval needed` card** rendered inline above the composer, carrying
+  `Approve` / `Reject`;
+- the sidebar grew an **`Approvals` entry badged `1`**;
+- the `window` marker was still set, so the page had not reloaded — the card
+  arrived over the socket, which is the acceptance item's whole point.
+
+Clicking `Approve` in the UI executed the action: the sink logged a third
+request — `{"title":"UI approval gate","severity":"low"}` with the admin's
+`Authorization` header — the invocation moved to `executed` with the far end's
+`{"ok": true, "ticket": "GATE-1"}`, and the sidebar badge disappeared.
+
+#### What the gate found
+
+- **The card names the kind and nothing else.** It read, in full:
+  *"Approval needed / http_action / Approve / Reject"*. No endpoint, no title, no
+  severity — the human is asked to authorise an outbound authenticated HTTP call
+  and shown only that it is one. `approval-card.tsx`'s `describe()` special-cases
+  `send_message` and falls back to `inv.action_kind` for everything else, which
+  was true when `T-11` shipped and stopped being true one ticket later. The
+  sentence already exists: `HTTPAction.Describe` renders *"Call the registered
+  HTTP endpoint "ops_ticket" with title=…, severity=…"*, and the `action_proposed`
+  event carries it. The fix is to put `description` on the pending payload and
+  render that, deleting the TS reconstruction — this repo has twice paid for two
+  copies of one truth (design tokens, generated types), and this is a third,
+  with a human's authorisation on the end of it.
+- **Raw tool-call scaffolding reached the rendered message.** The assistant
+  bubble contains repeated `<|DSML|function_calls|><|DSML|invoke
+  name="propose_action">…` markup as visible text, followed by four empty
+  `propose_action` tool cards, before the proposal that worked. deepseek-v3.2
+  over OpenRouter emitted its tool dialect as prose and the dashboard rendered it
+  verbatim. Two things to decide separately: whether the SDK should be parsing
+  that dialect, and whether the message renderer should ever show text matching
+  the tool-call markers.
+- **Three of the gate's turns were refused by `semantic_prompt_injection`**,
+  including the same dictated-JSON phrasing that had been accepted minutes
+  earlier. Recorded under `T-07b` in
+  [`guardrail-overreach.md`](guardrail-overreach.md).
+
+**Not covered:** the non-permitted-role card. The 403 is proven at the API; the
+known limit below (buttons rendered for everyone, refusal surfaced inline) was
+not photographed.
 - **Read-only-for-non-permitted-role is enforced server-side (403), not yet
   rendered as a disabled card.** The pending payload does not carry the caller's
   decidability, so the card shows buttons to everyone and surfaces the 403 inline.

@@ -8,7 +8,7 @@ back what it has done. The backend it drives is [`watchers.md`](watchers.md)
 
 | Ticket | What | Size | State |
 | ------ | ---- | ---- | ----- |
-| `T-09` | Watchers UI: list, create/edit form, dry-run-gated enable, event history sheet, sidebar nav | 2d | **code complete — `pnpm build` + `pnpm lint` clean; live gate outstanding** |
+| `T-09` | Watchers UI: list, create/edit form, dry-run-gated enable, event history sheet, sidebar nav | 2d | **gated live 2026-08-02** — the non-admin disabled-with-tooltip view is the one item not photographed |
 
 ---
 
@@ -85,17 +85,65 @@ back what it has done. The backend it drives is [`watchers.md`](watchers.md)
   pre-existing and in unrelated files (`ui/*`, `chat-page`, `onboarding`, `main`).
   No new file adds a warning.
 
-**Outstanding — the live gate.** Needs the dashboard against a running API with
-the demo tenant — unavailable here (no Docker), the same reason T-06/T-07/T-08
-left their gates open. When it runs, per the ticket:
+## 5. The live gate — run 2026-08-02
 
-1. Create a watcher → run a dry-run → confirm Enable is locked until the dry-run
-   returns and unlocks, and that the "would have fired N times" panel shows.
-2. Screenshot create → dry-run → enable → a fired event with its thread link.
-3. Confirm the events sheet renders a suppressed event (cooldown) and a delivered
-   event distinguishably.
-4. Confirm a non-admin sees Enable/Delete disabled with the explaining tooltip.
+Dashboard dev server on :5173 against the gate API on :8080, driven through
+headless Chrome over CDP (the recipe in `../agents/` — a synthetic `click()` does
+not open a Radix select, so every click is a real `Input.dispatchMouseEvent`).
+Screenshots in the session scratchpad; the sequence below is what they show.
 
-Given this project's record — the live half of the gate has found something the
-build could not on every ticket so far — expect it to surface at least one thing,
-and run it before T-09 is called landed.
+**Create.** `New watcher` opens the form with the metric picker populated from
+`/api/metrics` (`Average order value`, `Order count`, `Revenue`,
+`Revenue (Dec 2024 fixture)`), comparators reading as sentences
+(`is greater than`, `rises by more than (%)`, `returns no data`), a cron preset
+that writes `0 9 * * *` into the expression field and explains it underneath
+(`At 09:00`), and `Deliver to` with **Dashboard thread checked by default**.
+Saving produced a watcher badged **off** with the toast *"Watcher created — Run a
+dry-run to check it against recent history, then enable it."*
+
+**The dry-run gate holds, in the UI as well as the API.** On the new row the
+`Enable` button is rendered **disabled**. Clicking `Dry-run` returned, in a panel
+above the row and *before* the toggle unlocked:
+
+> Would have fired 14 times in the last 14 periods.
+> You can enable this watcher now.
+
+`Enable` then became clickable; clicking it flipped the badge to `enabled` and
+the button to `Pause`. Read as booleans: `enableDisabled: true` → dry-run →
+`enableDisabled: false`.
+
+**The events sheet distinguishes the three outcomes.** Opened on the watcher that
+fired during `T-08`'s gate, the top entry is a red **breached** badge with
+`value 3,863,405,700` and **`Dashboard thread: delivered`**; every entry below it
+is a grey **suppressed / cooldown** with the same value; a second watcher's sheet
+shows silent evaluations. `Open thread` links to the conversation the briefing
+landed in.
+
+#### What the gate found
+
+- **A one-line-per-evaluation history is mostly noise, and the cap hides the
+  event that matters.** The sheet shows "the last 50 evaluations". A watcher on a
+  per-minute cron inside a 720-minute cooldown produces 50 identical
+  `suppressed / cooldown` rows in under an hour, and the delivery that started
+  the cooldown scrolls out of the window — so the screen that exists to show what
+  a watcher *did* showed nothing but what it declined to do. Reproduced exactly:
+  the fire at 08:30 was invisible by 09:20, and the gate had to drop the cooldown
+  to zero and let it deliver again to photograph a delivered row. Collapsing
+  consecutive suppressions into one line ("suppressed 47× since 08:31"), or a
+  filter, would put the deliveries back on screen. The 50-row cap is not the
+  problem; a row per silent evaluation is.
+- **The default channel is a trap for a scripted click.** `Dashboard thread`
+  arrives checked, so a driver that "checks the box" un-checks the only channel
+  and `Create watcher` stays disabled with no message explaining why. Noted for
+  whoever writes the next browser gate rather than as a product defect — though
+  the disabled button never says which requirement is unmet, which is worth a
+  tooltip.
+
+**Not covered:** the non-admin view (Enable/Delete disabled with a tooltip).
+The member role's refusal is proven at the API (`403` on every watcher write),
+but the disabled-with-tooltip rendering was not photographed.
+
+## 4a. Verified after the gate
+
+`pnpm build` clean; `pnpm lint` 0 errors, 6 pre-existing warnings, none in the
+watcher files.

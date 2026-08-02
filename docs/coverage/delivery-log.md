@@ -1556,18 +1556,41 @@ after accepting a near-identical one. Second consecutive gate to measure this
 (`T-S4` saw two in seven). It belongs to `T-07b`, and wants a golden must-pass
 case shaped like an imperative instruction rather than a capability question.
 
+**The two UI gates ran the same day, through headless Chrome.** `T-09`: the
+`Enable` button is rendered disabled until a dry-run answers *"Would have fired
+14 times in the last 14 periods"*, and the events sheet marks a breached,
+delivered evaluation apart from the cooldown-suppressed ones. `T-11`: a proposal
+enqueued from *outside* the browser rendered its approval card in an open chat
+with no reload — proven by a `window` marker that survives a route change and
+dies on a refresh — badged the sidebar `Approvals 1`, and executed on `Approve`,
+with the sink receiving the call and the badge clearing.
+
+Both found something. The watcher events sheet shows one row per evaluation, so
+a per-minute watcher inside a 12-hour cooldown fills its 50-row window with
+identical `suppressed` lines in under an hour and pushes the delivery that
+started the cooldown off screen — the screen that exists to show what a watcher
+did showed only what it declined to do. And the approval card names the action
+*kind* and nothing else: `describe()` in `approval-card.tsx` special-cases
+`send_message` and falls back to the bare kind, so the human authorising an
+outbound authenticated HTTP call sees "http_action" — not the endpoint, not the
+payload — while `HTTPAction.Describe` has been writing that exact sentence since
+`T-12b`. Same two-copies-of-one-truth shape as the design tokens and the
+hand-written types, this time with an authorisation on the end of it.
+
 **What is still owed, and why.** `T-07`'s scored half — the golden set has no
 metric cases and the eval tenant seeds no metrics, so the before/after pass rate
-and token delta need fixtures written first. `T-09` and `T-11`'s screenshots.
-`T-M2`/`T-M3`. And `T-12a`'s delivery, deferred by the repo owner on the day:
+and token delta need fixtures written first. `T-M2`/`T-M3`. The non-admin
+renderings of both UIs (both refusals are proven at the API, neither disabled
+control was photographed). And `T-12a`'s delivery, deferred by the repo owner:
 the gate is *the message arrives*, `.env` holds live Twilio credentials, and
 closing it means sending a real WhatsApp message to a real handset. Both halves
 of that ticket's gate are owed, because the un-allowlisted-target refusal is
 only reachable by approving a proposal.
 
 Records: [`metric-registry.md`](metric-registry.md) §4 and §3,
-[`watchers.md`](watchers.md) §3a, [`action-framework.md`](action-framework.md)
-§6 and §T-12b, [`guardrail-overreach.md`](guardrail-overreach.md).
+[`watchers.md`](watchers.md) §3a, [`watchers-ui.md`](watchers-ui.md) §5,
+[`action-framework.md`](action-framework.md) §6, §T-11 and §T-12b,
+[`guardrail-overreach.md`](guardrail-overreach.md).
 
 ---
 
