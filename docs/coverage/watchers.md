@@ -14,7 +14,7 @@ false alarm off a flaky number would destroy trust permanently.
 
 | Ticket | What | Size | State |
 | ------ | ---- | ---- | ----- |
-| `T-08` | Watchers: schema, evaluation loop, breach → agent turn → multi-channel delivery, dry-run gate | 3d | **code complete + unit-tested — live gate outstanding** |
+| `T-08` | Watchers: schema, evaluation loop, breach → agent turn → multi-channel delivery, dry-run gate | 3d | **gated live 2026-08-02** — dashboard channel only; a fire delivered to WhatsApp/Discord/Lark is still owed |
 
 `T-09` (the dashboard UI) is a separate ticket with its own record:
 [`watchers-ui.md`](watchers-ui.md).
@@ -119,20 +119,68 @@ the `T-04` policy/route diff passes with the seven new routes):
   the task type is correct, a non-UTC timezone is folded into the cron spec, and
   the payload names only the watcher.
 
-**Outstanding — the live gate.** Needs a running stack with the demo warehouse,
-Redis and a worker — unavailable in this environment (no Docker), the same reason
-`T-06`/`T-07` left their gates open. When it runs:
+### 3a. The live gate — run 2026-08-02
 
-1. On the demo tenant, define a watcher guaranteed to breach
-   (`revenue lt 999999999`), let it fire, and paste (a) the `watcher_events` row,
-   (b) the agent's generated message, (c) the `delivery_status` JSON.
-2. A non-breaching watcher showing a recorded event and silence.
-3. A cooldown-suppressed second fire, and an enable rejected without a dry-run.
-4. Deleting the metric and showing the watcher cascaded away.
+Local stack (postgres, demo warehouse, redis, MinIO), API on :8099 and a worker
+on a private Redis DB index, both from explicitly built binaries. Two watchers on
+a metric pinned to December 2024, cron `* * * * *`, cooldown 720m, one
+`dashboard` channel each.
 
-Given this project's record — the live half of the gate has found something the
-unit tests could not on eight consecutive tickets — the live gate is expected to
-surface at least one thing, and it should be run before `T-08` is called landed.
+**Enable is gated, and the dry-run is what opens it.** `PUT` with
+`enabled: true` before any dry-run:
+
+```
+[400] {"error":"invalid input: run a dry-run within the last 24h before enabling this watcher"}
+```
+
+`POST /watchers/:id/dry-run` then answered
+`{"periods_evaluated":14,"would_have_fired":14,…}` for the breaching condition
+and `would_have_fired: 0` for the impossible one — the number `T-09`'s form puts
+in front of the toggle. Both enabled 200 afterwards.
+
+**The wedge, working.** Three `watcher_events` rows inside two minutes:
+
+```
+ name                                        | fired_at | metric_value | breached | suppressed | delivery
+ December revenue above 1M                   | 08:30:00 |   3863405700 | t        | -          | [{"status":"delivered","channel":"dashboard"}]
+ December revenue above 999 trillion         | 08:31:00 |   3863405700 | f        | -          | -
+ December revenue above 1M                   | 08:31:00 |   3863405700 | t        | cooldown   | -
+```
+
+Row 1 enqueued a turn into the watcher's own thread, which the worker logged as
+`watcher breached; agent turn enqueued`. The briefing prompt it received:
+
+> [Watcher alert: December revenue above 1M] The metric "Revenue (Dec 2024
+> fixture)" (revenue_dec_fixture) for the period 2026-08-01 to 2026-08-02 has
+> breached its condition. - Current value: 3863405700.00 - Condition: gt
+> 1000000.00 … Explain the likely drivers of this move in 120 words or fewer, and
+> name what to check next.
+
+The agent answered with `run_sql` breakdowns by day, channel and payment method —
+an explanation rather than a restatement, which is what the prompt asks for.
+Row 2 is the acceptance item "writes an event row and sends nothing". Row 3 is
+the cooldown, recorded rather than silent.
+
+**Cascade:** deleting the metric returned the watcher's `GET` 404 and left zero
+rows.
+
+#### What the gate found
+
+- **The briefing states the figure at the wrong scale.** The reply's last line
+  reads *"The current value of $3,863,405,700 (approximately $3.86 million)"* —
+  three orders out, and a `$` on an IDR metric. `T-16`'s check passes it,
+  correctly: the figure *is* tool-derived. This is the same defect `T-B1`'s gate
+  recorded on 2026-07-31 (`$3,863,405,700` vs `$3,863,405.70` from one SQL
+  result), and it matters more here than there. A chat reply is read by the
+  person who asked, in front of the thread that produced it; a watcher briefing
+  arrives unprompted, in a channel, as the first thing anyone sees. The gap is
+  precisely stated: `T-16` proves a number was queried, not that it was printed
+  at the right scale. The metric carries `unit` and `currency` and the renderer
+  already formats correctly for documents (`internal/report/format`); the model
+  is retyping a figure it was handed.
+- **Nothing else.** The evaluation loop, the cooldown, the dry-run gate, the
+  cascade and the delivery record all behaved as the unit tests said — the first
+  ticket in nine where the live half did not contradict them.
 
 ### 4. Deviations from the ticket, and why
 

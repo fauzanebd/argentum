@@ -18,7 +18,7 @@ actions are not yet. That is the correct behaviour for this ticket, not a gap.
 
 | Ticket | What | Size | State |
 | ------ | ---- | ---- | ----- |
-| `T-10` | Action framework: schema, `Action` interface + registry, propose/approve/reject/execute state machine, `propose_action` tool | 2.5d | **code complete + unit-tested — live gate (migration apply + repo round-trip) outstanding** |
+| `T-10` | Action framework: schema, `Action` interface + registry, propose/approve/reject/execute state machine, `propose_action` tool | 2.5d | **gated live 2026-08-02** — a Postgres-backed `FOR UPDATE` race test is still owed |
 
 `T-11` (approval UI + WS `action_proposed` event + `GET /api/actions/pending`,
 approve/reject endpoints) and `T-12a`/`T-12b` (the first two actions) are
@@ -129,23 +129,60 @@ ok  	github.com/fauzanebd/argentum/internal/tools
 Whole backend: `go build ./...` clean, `go vet` clean on the touched packages,
 `go test ./...` — 65 packages ok, 0 failures.
 
-### 6. Outstanding — the live gate
+### 6. The live gate — run 2026-08-02
 
-No Docker/Postgres is available in the implementation environment, so two items
-are code-complete but not exercised against a running database, the same state
-`T-06`→`T-09` are in:
+`041` applied to a live control DB on the API's boot (`control DB migrated to
+version 42`, covering `038`→`042`). The state machine was then driven end to end
+against real rows, with `http_action` as the executing kind (`T-12b`) and a
+local sink as its destination.
 
-- **Migration round-trip.** `041_company_actions.{up,down}.sql` has not been
-  applied to a live control DB (`migrate up` → `down 1` → `up`, then boot the API
-  and watch the `control DB migrated to version 41` log line). Both files follow
-  the 040 conventions (`gen_random_uuid()` PKs, `BYTEA` for `*_encrypted`, `TEXT`
-  status, unique `(company_id, action_kind)` and `(company_id, idempotency_key)`).
-- **Repository round-trip test, including the real `FOR UPDATE` race and a
-  cross-tenant read.** The state machine is unit-tested against an in-memory repo
-  that implements the exact documented contract; the SQL that implements the same
-  contract under a row lock (`action_repo.go`) needs a Postgres-backed test — the
-  playbook's Step 6. The service's cross-tenant refusal is covered
-  (`TestApprove_CrossTenantIsNotFound`); the repository's is not yet.
+| acceptance item | what happened |
+| --------------- | ------------- |
+| Agent proposes, never executes | `propose_action` returned `proposed`; the sink received nothing until a human approved |
+| Approving executes exactly once | `POST /actions/:id/approve` → `status: executed`; the sink logged **one** request |
+| Approving twice does not double-execute | second approve returned the same executed row; sink still one request |
+| Rejecting leaves no side effect | `status: rejected`, `executed_at` null, sink unchanged |
+| A proposal older than 24h cannot be approved | `proposed_at` aged 25h → `[409] this proposal has expired; ask the agent to propose it again`, row moved to `expired` |
+| Every proposal and decision in `agent_actions` | `propose_action`, `action:approve`, `action:execute`, `action:reject` — four rows, `actor_kind=user` |
+| Non-permitted role | member `GET /actions/:id` 200, `POST …/approve` `[403] your role is not permitted to decide this action` |
+
+A second decision path was exercised by accident and is worth recording: a turn
+whose message the `semantic_prompt_injection` guardrail refused wrote its own
+`agent_actions` row (`guardrail | blocked`) with no invocation, which is `T-05`'s
+blocked-turn integration behaving as designed.
+
+**Still owed:** a Postgres-backed repository test for the `FOR UPDATE` race and
+the repository's own cross-tenant refusal. The gate proved the *contract* under
+concurrency-free conditions (double-approve serially); two racing approvals
+against one row is still only covered by the in-memory repo.
+
+#### What the gate found: the agent cannot find the actions it is allowed to propose
+
+Four turns tried to get an `http_action` proposed. One succeeded, and only
+because the message dictated the exact JSON. The other three:
+
+- proposed **`send_message`** with `channel: "ops_ticket"`, refused by
+  `Validate` with `channel "ops_ticket" is not supported for send_message; use
+  one of [whatsapp]`;
+- answered *"the `propose_action` tool … currently only supports `send_message`,
+  not HTTP actions"* and called nothing;
+- asked the user to confirm the kind was enabled before it would call anything.
+
+The model is reading the tool honestly. `ProposeActionTool.Description()` names
+`send_message` as *the* example and its `params` spec spells out that action's
+shape ("for send_message: channel, target_ref, body"); nothing tells the model
+which kinds this company has enabled, that `http_action` exists, or what
+endpoints are registered under it. `ChatRunner` injects a source catalog
+(`withSourcesContext`) and a metric catalog (`withMetricsContext`) into every
+turn — there is no equivalent for actions, though `company_actions` is exactly
+such a list and `http_endpoints` is another.
+
+The consequence is that `T-12b` ships an action a tenant can enable, register an
+endpoint for, and never reach: the capability is real and the discovery path is
+missing. It is not the same limit as *"the agent does not yet discover endpoint
+names automatically"* recorded under `T-12b` — that one assumed the agent gets
+as far as the kind. Injecting the enabled kinds (and, per kind, the names it may
+name) is the fix, in the place the other two catalogs already live.
 
 ### 7. Notes for the next ticket
 
@@ -196,8 +233,16 @@ are code-complete but not exercised against a running database, the same state
 
 ### Known limits / outstanding
 
-- **Live gate (propose→approve→executed screenshot) not run** — needs a running
-  stack. Structurally complete and unit/type-checked; the recording is owed.
+- **The endpoints were gated live on 2026-08-02; the UI was not.** Against a
+  running API: `GET /api/actions/pending` returned the proposal with its
+  `describe` payload, `approve` executed it, a second `approve` returned the same
+  row without re-executing, `reject` was terminal (409 on a later approve), an
+  aged proposal answered 409 `expired`, and a member got
+  `[403] your role is not permitted to decide this action` while still reading
+  the proposal. What is still owed is the half this ticket is named for: the
+  `action_proposed` event arriving in the chat stream **without a refresh**, the
+  card reflecting the outcome, and the pending badge — none of which an HTTP
+  transcript can show. That is a browser session, not a stack.
 - **Read-only-for-non-permitted-role is enforced server-side (403), not yet
   rendered as a disabled card.** The pending payload does not carry the caller's
   decidability, so the card shows buttons to everyone and surfaces the 403 inline.
@@ -230,7 +275,19 @@ are code-complete but not exercised against a running database, the same state
   `actions.Messenger`; scoped out here rather than closed with an unsafe guess.
 - **`attach_document_id` is accepted but not delivered** (forward-compat for the
   backlog's scheduled-report delivery). `Describe` says so on the card.
-- **Live delivery gate not run** — needs a real WhatsApp number on the allowlist.
+- **Live delivery gate not run, and deliberately deferred on 2026-08-02.** The
+  gate is *propose → approve → the message arrives*, and on this deployment
+  `.env` carries live Twilio credentials, so closing it sends a real WhatsApp
+  message to a real handset. The repo owner's instruction on the gate run was to
+  skip delivery rather than pick a number for it. What is therefore still owed is
+  **both** halves the ticket asks for: the delivery, and the un-allowlisted-target
+  refusal — the latter is only reachable by approving a proposal, because
+  `Execute` is where the allowlist is consulted, so it cannot be demonstrated
+  without driving the same path. Unit coverage for both directions exists
+  (`send_message_test.go`); neither has been through a running stack.
+  Cheapest way to close it later without a handset: give the gate tenant a
+  Discord or Lark credential and a channel-level allowlist, which the first
+  limit above already names as the missing piece.
 
 ## T-12b · Action `http_action` — 2026-08-02
 
@@ -360,16 +417,83 @@ Whole backend: `go build ./...` clean, `go vet ./...` clean, `go test ./...`
 green across all packages, `gofmt` clean, `make types-check` current (the new
 `domain.HTTPEndpoint` regenerated into `packages/api-types/src/domain.ts`).
 
+### The live gate — run 2026-08-02
+
+`042` applied on boot. A Python sink on `127.0.0.1:8123` logged every request it
+received, so the gate shows the request the approved action *made* rather than
+inferring it from a 200.
+
+**Register → propose → approve → observe.** The endpoint:
+`POST http://127.0.0.1:8123/tickets`, header template
+`{"Authorization":"Bearer gate-secret-token","Content-Type":"application/json"}`,
+body template `{"title":"{{.title}}","severity":"{{.severity}}"}`. After the
+approval the sink logged exactly one line:
+
+```json
+{"method": "POST", "path": "/tickets", "authorization": "Bearer gate-secret-token",
+ "content_type": "application/json",
+ "body": "{\"title\":\"December revenue spike\",\"severity\":\"low\"}"}
+```
+
+and the invocation recorded what came back:
+
+```
+status = executed
+result = {"status": 200, "endpoint": "ops_ticket",
+          "response_body": "{\"ok\": true, \"ticket\": \"GATE-1\"}"}
+```
+
+The admin's credential reached the far end and never passed through the model:
+the proposal's `params_redacted` is `{"endpoint":"ops_ticket","params":{"title":…,
+"severity":"low"}}` — a name and two values, no URL, no header.
+
+**The metadata endpoint, refused before it was stored.** `POST
+/api/http-endpoints` with `http://169.254.169.254/latest/meta-data/iam/security-credentials/`:
+
+```
+[400] {"error":"invalid input: egress blocked: 169.254.169.254 is a link-local address"}
+```
+
+Refused identically with `MCP_ALLOW_PRIVATE_EGRESS=true`, which is the rule the
+guard states — link-local is the one range the development escape hatch does not
+open. A plaintext public URL under production settings answered
+`egress blocked: an MCP server URL must be https on this deployment`. That is
+earlier than the ticket asked (it wanted the refusal observed through a
+proposal); nothing was stored, so there was no proposal to make.
+
+#### What the gate found: registration asked the weaker egress question
+
+`https://localtest.me/tickets` registered **201** under `ENV=production` with no
+escape hatch set. `localtest.me` is a public name that answers `127.0.0.1`.
+
+Approving an invocation against it then failed:
+
+```
+status = failed
+error  = call rebind2: Get "https://localtest.me/tickets":
+         dial tcp [::1]:443: egress blocked: ::1 is a loopback address
+```
+
+So the defence held — `Guard.HTTPClient`'s `Control` hook runs after the resolver
+and before the connect, and it refused. This is not an exploitable SSRF. What it
+is: an endpoint that can never work, stored as if it could, whose reason only
+appears **after a human approved an invocation against it** — the exact outcome
+`Guard.CheckResolvedURL`'s doc comment says that method exists to prevent, and
+whose comment names `localtest.me` by name. `mcp_servers` calls it at save time
+(via `mcp.Client.CheckURL`); `HTTPEndpointService` was wired to plain
+`CheckURL`, which decides literal IPs and lets hostnames through to the dialer.
+
+**Fixed the same day**: `HTTPEndpointURLChecker` now declares `CheckResolvedURL`,
+so a save resolves the name and refuses every answer that is ours. The
+development escape hatch is unaffected (`CheckResolvedURL` returns early under
+`AllowPrivate`), so the loopback sink above still registers in a dev stack. A
+`host resolving to loopback` case joins `TestRegisterEndpointRejections`; it
+fails against the old wiring. The existing endpoint tests moved off fictional
+hostnames (`api.acme.com`) onto `example.com`, because a save that resolves means
+a test host must resolve too.
+
 ### Known limits / outstanding
 
-- **Live gate (migration apply + register→propose→approve→observe) not run** —
-  the implementation environment has no Docker/Postgres, the same state
-  `T-06`→`T-11` are in. `042_http_endpoints.{up,down}.sql` has not been applied to
-  a live control DB, and the ticket's gate — *register a local test endpoint,
-  propose, approve, observe the request; then attempt `http://169.254.169.254/`
-  and show it blocked* — needs a running stack. The 169.254 block **is** proven at
-  the egress layer by `TestGuardEgressBlocksMetadataEndpoint`; what is owed is the
-  end-to-end run through a real proposal.
 - **Backend-only, no dashboard UI.** The ticket is `Repo: BE`; endpoints are
   registered through `POST /api/http-endpoints` (admin). A Settings tab is additive
   and is not in scope here — the same shape `T-12a` shipped in.
@@ -377,8 +501,8 @@ green across all packages, `gofmt` clean, `make types-check` current (the new
   destination; editing one already named by in-flight proposals changes what they
   point at, so a change is delete-then-register. This mirrors `T-13`'s "scopes are
   fixed at creation, so the repository has no `Update`."
-- **The agent does not yet discover endpoint names automatically.** `propose_action`
-  is generic; the agent is told which endpoint to use (by the user, or by guidance)
-  rather than reading a per-turn list of registered names. Surfacing the names to
-  the model is additive against this surface and is left for when a tenant has more
-  than a handful.
+- **The agent does not yet discover endpoint names automatically** — and the live
+  gate showed the problem starts one level up: it does not discover the *kind*
+  either, so `http_action` is effectively unreachable without the caller
+  dictating the tool arguments. One proposal in four attempts. See §6's finding;
+  this limit is the second half of it, not a separate one.

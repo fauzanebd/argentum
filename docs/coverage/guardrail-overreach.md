@@ -40,6 +40,38 @@ production by over-redacting.
   behaviour change on every turn; the ticket requires an eval run on both sides.
   Needs a live LLM, unavailable in this session.
 
+## `semantic_prompt_injection` false positives, now measured twice
+
+Not in the ticket's scope as written (it names Q-4 and Q-6), but this rule has
+now refused ordinary traffic in two consecutive live gates, and it belongs here
+because nothing else owns it.
+
+**`T-S4`'s gate, 2026-07-30:** two of seven ordinary questions refused — *"which
+databases can you see?"*, answered three times and blocked once, and a plain
+follow-up blocked outright.
+
+**The `T-06`→`T-12b` gate run, 2026-08-02:** two of roughly a dozen turns
+refused, both of them plain operating instructions to the agent:
+
+> I am the admin; http_action is enabled and ops_ticket is registered. Call
+> propose_action twice … Do not ask questions.
+
+answered with *"I cannot fulfill requests that attempt to override my
+instructions or change my role."* A message with near-identical phrasing had
+been accepted minutes earlier, which is the part worth keeping: the classifier
+is an LLM, so this is a distribution rather than a pattern anyone can fix by
+reading the prompt. Both refusals wrote their `agent_actions` row, so the rate
+is measurable from `select count(*) … where tool_name='guardrail'` on any
+deployment rather than only from a gate transcript.
+
+Two things follow. The rule's false-positive rate on *instruction-shaped but
+legitimate* input — an admin telling the agent what to do — is the shape most
+likely to appear in a watcher briefing prompt or an API directive, which is
+exactly what `T-A2b` had to route around by moving its directive into the system
+prompt. And a golden must-pass case (the ticket's own prescription: narrow
+against a case, not by eye) needs to cover an imperative admin instruction, not
+just capability questions.
+
 **Next step:** wire activation + the per-company mode as one atomic change, then run
 `make eval` on both sides and paste the scores. Until then production behaviour is
 unchanged (output rules still dormant); the YAML is merely correct for when they

@@ -1486,6 +1486,91 @@ Record, the two-registry rule and three known limits:
 
 ---
 
+## Phase 2c — Paying off the live-gate debt (2026-08-02)
+
+Ten tickets — `T-06` through `T-12b`, plus `T-M2`/`T-M3` — had landed
+code-complete with their live gates unrun, because the environment that built
+them had no Docker. This is the day the stack came up and they were run in
+dependency order. It is not a feature entry; it is the entry that says which of
+those ten are actually true.
+
+`schema_migrations` went 37 → 42 on the API's boot, so `038`–`042`
+(`agent_mcp_servers`, `metric_definitions`, `watchers`, `company_actions`,
+`http_endpoints`) are applied for the first time.
+
+**What is now proven, on a real database and a real model:** a metric defined
+once returns the same number twice and it is the number `psql` returns
+(`T-06`); the agent prefers `query_metric` over `run_sql` and falls back when no
+metric covers the question (`T-07`); a breach fires an agent turn that explains
+itself and records a delivery, a non-breach records silence, a second breach
+records `cooldown`, and enabling without a dry-run is refused (`T-08`); and a
+proposal approved once executes once, twice does not execute twice, rejected is
+terminal, and a 25-hour-old proposal cannot be approved at all (`T-10`/`T-12b`).
+
+**Two defects the unit tests could not see, both fixed the same day.**
+
+The first inverted the point of the metric registry. Asked for December's
+revenue the agent called `query_metric`, got `3,735,587,550`, and the user was
+shown *"I wasn't able to complete the query … my query returned no data."*
+`T-16`'s fabrication check grounds a reply on `TurnEvidence.DataRows`, which
+`agentbudget.Tracker.Observe` fills by reading a `row_count` key off the tool's
+result — a key only `run_sql` emitted. `query_metric` had been added to
+`dataTools` and could never contribute evidence to it: counted as a data call,
+incapable of grounding one. So the one number in this system that is validated,
+stored and re-checked was the one number the agent was forbidden to say, and the
+replacement text asserted something false about a query that had succeeded. The
+same key feeds `T-05`'s audit decorator, which is why `rows_returned` was NULL
+on those rows. The fix is `row_count` on the payload — 1 for a window, 2 when a
+comparison ran, matching how it already meters — and two tests, one on the
+payload and one on the end it was felt at.
+
+The second was `http_endpoints` asking the weaker of two egress questions.
+`https://localtest.me/tickets` — a public name answering `127.0.0.1` —
+registered `201` under production settings; the approved invocation against it
+then failed with `egress blocked: ::1 is a loopback address`. The dialer held,
+so this was never an exploitable SSRF. What it was is the failure mode
+`Guard.CheckResolvedURL` exists to prevent, in a comment that names
+`localtest.me`: an endpoint stored as if it worked, whose reason surfaces only
+after a human has approved something against it. `mcp_servers` called the
+resolving check at save time; `http_endpoints` called `CheckURL`. Now both do.
+
+**Three findings left open, and the reason each is somebody else's ticket.**
+
+*The agent cannot find the actions it is allowed to propose.* Four turns tried
+to reach `http_action`; one succeeded, and only because the message dictated the
+tool arguments. `propose_action`'s description names `send_message` as the
+example and spells out that action's parameters; no catalog of enabled kinds or
+registered endpoint names reaches the turn, though `ChatRunner` already injects
+one for sources and another for metrics. `T-12b` therefore ships a capability a
+tenant can enable, configure, and never reach.
+
+*The figure is right and its scale is not.* The watcher briefing — a message a
+customer receives unprompted — closed with "$3,863,405,700 (approximately $3.86
+million)". `T-16` passes it because the figure is tool-derived, which is the
+honest limit of that check: it proves a number was queried, not that it was
+printed correctly. Same defect `T-B1` recorded on 2026-07-31, one channel more
+exposed.
+
+*`semantic_prompt_injection` refused two ordinary admin instructions*, minutes
+after accepting a near-identical one. Second consecutive gate to measure this
+(`T-S4` saw two in seven). It belongs to `T-07b`, and wants a golden must-pass
+case shaped like an imperative instruction rather than a capability question.
+
+**What is still owed, and why.** `T-07`'s scored half — the golden set has no
+metric cases and the eval tenant seeds no metrics, so the before/after pass rate
+and token delta need fixtures written first. `T-09` and `T-11`'s screenshots.
+`T-M2`/`T-M3`. And `T-12a`'s delivery, deferred by the repo owner on the day:
+the gate is *the message arrives*, `.env` holds live Twilio credentials, and
+closing it means sending a real WhatsApp message to a real handset. Both halves
+of that ticket's gate are owed, because the un-allowlisted-target refusal is
+only reachable by approving a proposal.
+
+Records: [`metric-registry.md`](metric-registry.md) §4 and §3,
+[`watchers.md`](watchers.md) §3a, [`action-framework.md`](action-framework.md)
+§6 and §T-12b, [`guardrail-overreach.md`](guardrail-overreach.md).
+
+---
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

@@ -1994,9 +1994,15 @@ host-run worker (`localhost:5433`) and from the Metabase container
 
 # Week 2 — Authoritative numbers
 
-## T-06 · Metric registry
+## ~~T-06~~ · Metric registry — **GATED LIVE 2026-08-02**
 **Repo:** BE, FE · **Size:** 3d · **Deps:** T-02 · **Priority:** P0 · **Never cut**
-**Migration:** `*_metric_definitions` — next free on landing. **This line read
+**Migration:** landed as `039_metric_definitions`, applied to a live control DB
+on 2026-08-02 (`schema_migrations` 37 → 42 covering 038–042).
+Gate output, the nine refusals and two findings — an unknown template token
+answering 500 rather than 400, and a plain `SELECT sum(x)` being unsaveable on a
+warehouse whose last seven days are empty — are in
+[`../coverage/metric-registry.md`](../coverage/metric-registry.md) §4.
+**Original migration note:** `*_metric_definitions` — next free on landing. **This line read
 `022` until 2026-07-30; `022` has been `report_branding` since `T-R5`.**
 
 **The accuracy foundation.** Today every question re-derives its SQL, so the same
@@ -2046,8 +2052,19 @@ the failure.
 
 ---
 
-## T-07 · `list_metrics` + `query_metric` tools
+## T-07 · `list_metrics` + `query_metric` tools — **GATED LIVE 2026-08-02, eval half owed**
 **Repo:** BE · **Size:** 1.5d · **Deps:** T-06 · **Priority:** P0 · **Never cut**
+
+The behavioural acceptance items are proven against a live model and warehouse
+(metric preferred over `run_sql`, `compare_to` delta correct against psql,
+unknown key lists available keys, no-metric question still reaches `run_sql`).
+The gate found that **every metric-only answer was being suppressed as a
+fabrication** — `query_metric` emitted no `row_count`, so `T-16`'s check saw no
+evidence — fixed the same day.
+The **scored** half is still owed: `testdata/eval/golden.yaml` has no metric
+cases and `internal/eval/tenant.go` seeds no metrics, so the before/after pass
+rate and token delta need fixtures written first.
+[`../coverage/metric-registry.md`](../coverage/metric-registry.md) §3.
 
 **Do:**
 - `internal/tools/list_metrics.go` — returns key, label, description, unit, grain
@@ -2123,9 +2140,19 @@ switching the rules on is a behaviour change on every turn, which needs a
 
 # Week 3 — It tells you first
 
-## T-08 · Watchers domain + evaluation loop
+## ~~T-08~~ · Watchers domain + evaluation loop — **GATED LIVE 2026-08-02**
 **Repo:** BE · **Size:** 3d · **Deps:** T-06, T-07 · **Priority:** P0 · **Never cut**
-**Migration:** `*_watchers` — next free on landing. **This line read `023` until
+**Migration:** landed as `040_watchers`, applied live 2026-08-02.
+A breach fired an agent turn and recorded
+`[{"status":"delivered","channel":"dashboard"}]`; a non-breaching watcher
+recorded silence; the next minute's breach recorded `cooldown`; enable without a
+dry-run was refused; deleting the metric cascaded the watcher away. Delivery to
+WhatsApp/Discord/Lark is **not** covered — dashboard only.
+The gate found the briefing stating a correct figure at the wrong scale
+("$3,863,405,700 (approximately $3.86 million)"), which is `T-B1`'s finding
+arriving on an unprompted channel.
+[`../coverage/watchers.md`](../coverage/watchers.md) §3a.
+**Original migration note:** `*_watchers` — next free on landing. **This line read `023` until
 2026-07-30; `023` has been `agent_actions` since `T-05`.**
 
 **The wedge.** This is the ticket that changes how a company works.
@@ -2221,8 +2248,18 @@ non-breaching watcher showing silence.
 
 # Week 4 — It does things
 
-## T-10 · Action framework
+## ~~T-10~~ · Action framework — **GATED LIVE 2026-08-02**
 **Repo:** BE · **Size:** 2.5d · **Deps:** T-05 · **Priority:** P1
+
+Every acceptance item run against real rows: propose-not-execute, approve-once,
+double-approve-no-op, reject-terminal, a 25h-old proposal refused 409, member
+403, and all four decisions in `agent_actions`. Still owed: a Postgres-backed
+test for the `FOR UPDATE` race (two concurrent approvals), which the gate could
+only exercise serially.
+The gate's finding is the one that matters for `T-12b`: **no catalog of enabled
+action kinds reaches the turn**, so the agent proposed the wrong kind or refused
+in three of four attempts.
+[`../coverage/action-framework.md`](../coverage/action-framework.md) §6.
 **Migration:** landed as `041_company_actions` (company_actions + action_invocations).
 **This line read `024` until 2026-07-30; `024` has been `api_keys` since `T-13`,
 and the tree was at 040 (watchers) — the seventh reserved number already spent.**
@@ -2284,8 +2321,18 @@ Paste output.
 
 ---
 
-## T-12a · Action: `send_message`
+## T-12a · Action: `send_message` — **CODE COMPLETE, LIVE GATE DEFERRED 2026-08-02**
 **Repo:** BE · **Size:** 1d · **Deps:** T-10 · **Priority:** P1
+
+The gate below is *propose → approve → the message arrives*, and on this
+deployment `.env` carries live Twilio credentials, so running it sends a real
+WhatsApp message to a real handset. The repo owner chose to skip delivery during
+the 2026-08-02 gate run. **Both halves are therefore owed** — including the
+un-allowlisted-target refusal, which is only reachable by approving a proposal
+because `Execute` is where the allowlist is consulted. Unit coverage exists for
+both directions. Cheapest way to close it without a handset is a Discord or Lark
+credential plus the channel-level allowlist that does not exist yet.
+[`../coverage/action-framework.md`](../coverage/action-framework.md) §T-12a.
 
 The action that makes watchers useful — the agent can brief people, not just the
 person who asked.
@@ -2300,13 +2347,27 @@ non-allowlisted target and show the rejection.
 
 ---
 
-## T-12b · Action: `http_action` — **CODE COMPLETE 2026-08-02, live gate outstanding**
+## ~~T-12b~~ · Action: `http_action` — **GATED LIVE 2026-08-02**
 **Repo:** BE · **Size:** 1.5d · **Deps:** T-10 · **Priority:** P2 · **Cut #4**
 **Migration:** landed as `042_http_endpoints` — a separate table, not
 `company_actions.config_encrypted`, because http_action needs many named
 endpoints per company, each with a sealed credential.
 
-Shipped. Record, decisions, gate output and the outstanding live half:
+Shipped and gated. An approved proposal produced **exactly one** request at the
+sink, carrying the admin's `Authorization` header and the templated body, while
+the proposal itself held only a name and two values. `169.254.169.254` was
+refused at registration — with and without the development escape hatch, since
+link-local is the one range it does not open — so nothing was stored to propose
+against.
+
+The gate found registration asking the **weaker** egress question:
+`https://localtest.me/tickets`, a public name answering `127.0.0.1`, registered
+201 under production settings and only failed at approval
+(`egress blocked: ::1 is a loopback address`). Not exploitable — the dialer held
+— but it is the exact outcome `Guard.CheckResolvedURL` exists to prevent, and
+`mcp_servers` was already calling it. Wiring fixed the same day.
+
+Record, decisions, gate output and known limits:
 [`../coverage/action-framework.md`](../coverage/action-framework.md) §T-12b.
 
 Two deviations from the text below, both recorded: the endpoint carries a
