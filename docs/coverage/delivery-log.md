@@ -1597,10 +1597,33 @@ tool is then called — so what is missing is the ticket's own instruction appli
 to the form's *options*. And an MCP call writes no `usage_events` row, though
 `T-M2` asks for one in as many words: the audit has the call, the meter does not.
 
-**What is still owed, and why.** `T-07`'s scored half — the golden set has no
-metric cases and the eval tenant seeds no metrics, so the before/after pass rate
-and token delta need fixtures written first. `make eval` for `T-M2` with no
-server configured. The non-admin
+**`T-07`'s scored half closed, and cost more than it paid.** Five
+`metric_registry` cases and an `ensureMetrics` that removes as well as creates,
+so `-metrics=false` is a real control. On the five questions: **1/5 → 5/5**,
+mean input tokens **12,711 → 3,296**, and the month-on-month comparison fell
+from 30,053 tokens and 85 seconds to 1,707 and 15. That is the ticket's "should
+reduce mean input tokens measurably" arriving as a factor of eighteen on the
+question a business asks every month.
+
+Then the full set: **17/40**. Ten of the failures were the golden set encoding a
+fact that stopped being true — `must_call: [run_sql]` on "what were our total
+sales?" was written when `run_sql` was the only tool that could answer, and
+`query_metric` is now the better answer failing an assertion about the worse one.
+`Expect.MustCallAny` fixes that properly and the re-run takes the set to 25/40.
+
+**Thirteen of the remaining fifteen are one regression, and it is the registry's.**
+English questions answered in Indonesian: six of the eight tested flip back to
+English with `-metrics=false`, two fail either way and owe nothing to this
+ticket. The obvious hypothesis — the catalog is prepended to the *user* message,
+burying the caller's sentence, which is the shape `T-A2b` already fixed once —
+was implemented, measured, and **refuted**: three of six, indistinguishable from
+noise at temperature 0.2. It was reverted rather than shipped, because a
+prompt-delivery change with no measured benefit is the exact thing this harness
+exists to prevent. What survives is a narrowed problem, a written next step, and
+a number nobody has to guess at.
+
+**What is still owed, and why.** The language regression above. `make eval` for
+`T-M2` with no server configured. The non-admin
 renderings of both UIs (both refusals are proven at the API, neither disabled
 control was photographed). And `T-12a`'s delivery, deferred by the repo owner:
 the gate is *the message arrives*, `.env` holds live Twilio credentials, and

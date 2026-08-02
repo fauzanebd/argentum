@@ -199,6 +199,19 @@ func scoreToolCalls(c Case, calls []ToolInvocation) []string {
 			failures = append(failures, fmt.Sprintf("expected a %s call, got %s", want, describeCalls(calls)))
 		}
 	}
+	if len(c.Expect.MustCallAny) > 0 {
+		var any bool
+		for _, want := range c.Expect.MustCallAny {
+			if called[want] {
+				any = true
+				break
+			}
+		}
+		if !any {
+			failures = append(failures, fmt.Sprintf("expected one of %s, got %s",
+				strings.Join(c.Expect.MustCallAny, "/"), describeCalls(calls)))
+		}
+	}
 	for _, unwanted := range c.Expect.MustNotCall {
 		if called[unwanted] {
 			failures = append(failures, fmt.Sprintf("called %s and should not have", unwanted))

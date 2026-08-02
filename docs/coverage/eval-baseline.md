@@ -7,6 +7,15 @@ change from here is compared against this number.
 (96.8%, 31 cases) is preserved below, because the comparison between them is
 most of what this file is for.
 
+**The set is 40 cases as of 2026-08-02** (`T-07`'s five `metric_registry` cases),
+and a run against it with the metric registry defined scores **25/40 (62.5%)**.
+That is not a comparable number and it is not a new baseline: thirteen of the
+fifteen failures are one open regression — an English question answered in
+Indonesian whenever metrics are defined — which is measured, attributed, and
+unfixed. The arithmetic and the control runs are in
+[`metric-registry.md`](metric-registry.md) §5. Until that closes, 97.0% remains
+the number to beat and 62.5% is the number to explain.
+
 ---
 
 # Current — after `T-16`

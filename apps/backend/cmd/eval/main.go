@@ -48,6 +48,10 @@ func main() {
 			"host:port Metabase should use to reach the demo database")
 		timeout     = flag.Duration("case-timeout", 3*time.Minute, "per-case timeout")
 		dryRun      = flag.Bool("dry-run", false, "validate the set and the tenant, then exit without calling the LLM")
+		// The metric registry is state on the reused eval tenant, so a run that
+		// wants it absent has to say so — otherwise "with metrics" and "without"
+		// are the same run twice (T-07's before/after).
+		withMetrics = flag.Bool("metrics", true, "define the tenant's metrics before running; -metrics=false removes them first")
 		allowRemote = flag.Bool("allow-remote-db", false, "permit running against a non-local control database")
 		verbose     = flag.Bool("v", false, "keep the agent SDK's debug logging on stdout")
 	)
@@ -108,7 +112,7 @@ func main() {
 	}
 	defer stack.Close()
 
-	tenant, err := eval.EnsureTenant(ctx, stack, *demoDSN, *metabaseHost)
+	tenant, err := eval.EnsureTenant(ctx, stack, *demoDSN, *metabaseHost, *withMetrics)
 	if err != nil {
 		fatalf("seed eval tenant: %v", err)
 	}

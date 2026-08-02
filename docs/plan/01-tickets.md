@@ -2052,7 +2052,7 @@ the failure.
 
 ---
 
-## T-07 · `list_metrics` + `query_metric` tools — **GATED LIVE 2026-08-02, eval half owed**
+## ~~T-07~~ · `list_metrics` + `query_metric` tools — **GATED LIVE + SCORED 2026-08-02**
 **Repo:** BE · **Size:** 1.5d · **Deps:** T-06 · **Priority:** P0 · **Never cut**
 
 The behavioural acceptance items are proven against a live model and warehouse
@@ -2061,10 +2061,26 @@ unknown key lists available keys, no-metric question still reaches `run_sql`).
 The gate found that **every metric-only answer was being suppressed as a
 fabrication** — `query_metric` emitted no `row_count`, so `T-16`'s check saw no
 evidence — fixed the same day.
-The **scored** half is still owed: `testdata/eval/golden.yaml` has no metric
-cases and `internal/eval/tenant.go` seeds no metrics, so the before/after pass
-rate and token delta need fixtures written first.
-[`../coverage/metric-registry.md`](../coverage/metric-registry.md) §3.
+**The scored half ran 2026-08-02.** Five `metric_registry` cases and
+`eval.ensureMetrics` (which also *removes* metrics, so `-metrics=false` is a
+real control rather than the same run twice). Same five questions, twenty
+minutes apart: **1/5 → 5/5**, mean input tokens **12,711 → 3,296 (−74%)**, and
+the month-on-month comparison question went from 30,053 tokens and 85s to 1,707
+and 15s.
+
+**It also found the regression the ticket forbids.** The full set scores 25/40
+after the harness fix below, and thirteen of the fifteen failures are English
+questions answered in **Indonesian** — six of eight tested flip back to English
+with `-metrics=false`, so the registry causes it. Moving the catalog to a
+system-prompt addendum (T-A2b's fix for the same shape) was tried and **refuted**
+— three of six, indistinguishable from noise — and reverted. Open, with next
+steps written down.
+
+Two things changed in the harness rather than in the agent: `Expect.MustCallAny`,
+because `must_call: [run_sql]` on an aggregate question meant "the agent fetched
+the number" and `query_metric` is now the better way to fetch it; and the ten
+cases that said `run_sql` now name both.
+[`../coverage/metric-registry.md`](../coverage/metric-registry.md) §3–§5.
 
 **Do:**
 - `internal/tools/list_metrics.go` — returns key, label, description, unit, grain

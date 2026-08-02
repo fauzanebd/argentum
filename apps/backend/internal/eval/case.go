@@ -125,6 +125,18 @@ type Expect struct {
 	// MustCall / MustNotCall apply to every kind.
 	MustCall    []string `yaml:"must_call,omitempty"`
 	MustNotCall []string `yaml:"must_not_call,omitempty"`
+
+	// MustCallAny passes when **at least one** of the named tools was called.
+	//
+	// It exists because `must_call: [run_sql]` on an aggregate question stopped
+	// meaning what it was written to mean. The intent was always "the agent
+	// went and got the number rather than inventing it"; `run_sql` was simply
+	// the only tool that could. With the metric registry (T-06/T-07) defined,
+	// the correct behaviour on "what were our total sales?" is `query_metric`,
+	// so the old assertion fails a *better* answer — five cases did exactly
+	// that on 2026-08-02. Naming both keeps the guarantee without pinning the
+	// agent to the pre-registry tool choice.
+	MustCallAny []string `yaml:"must_call_any,omitempty"`
 }
 
 // Set is a loaded golden file.

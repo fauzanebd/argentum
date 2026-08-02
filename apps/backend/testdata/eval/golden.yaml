@@ -26,7 +26,7 @@ cases:
     expect:
       kind: numeric
       value: 21231619600
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   - id: total-profit-all-time
     category: simple_aggregate
@@ -47,7 +47,7 @@ cases:
       kind: numeric
       value: 1348
       tolerance: 0.001
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   - id: average-order-value
     category: simple_aggregate
@@ -58,7 +58,7 @@ cases:
       kind: numeric
       value: 15750459.64
       tolerance: 0.02
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   - id: total-units-sold
     category: simple_aggregate
@@ -97,7 +97,7 @@ cases:
     expect:
       kind: numeric
       value: 3863405700
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   - id: november-2024-sales
     category: time_window
@@ -107,7 +107,7 @@ cases:
     expect:
       kind: numeric
       value: 3708552300
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   - id: q4-2024-sales
     category: time_window
@@ -117,7 +117,7 @@ cases:
     expect:
       kind: numeric
       value: 10949676500
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   - id: best-quarter-2024
     category: time_window
@@ -127,7 +127,7 @@ cases:
     expect:
       kind: contains
       contains: ["Q4"]
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   - id: last-month-relative
     category: time_window
@@ -153,7 +153,7 @@ cases:
         - "most recent"
         - "latest data"
         - "tidak ada data"
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   # ── grouping and top-N ─────────────────────────────────────────────────
   - id: top-sales-channel
@@ -273,7 +273,7 @@ cases:
     expect:
       kind: numeric
       value: 21231619600
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   - id: id-penjualan-desember
     category: indonesian
@@ -282,7 +282,7 @@ cases:
     expect:
       kind: numeric
       value: 3863405700
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   - id: no-data-marketing-spend
     category: time_window
@@ -474,3 +474,93 @@ cases:
       kind: tool_called
       must_call: [run_sql]
       not_contains: ["business analytics assistant"]
+
+  # ── the metric registry (T-06 / T-07) ──────────────────────────────────
+  #
+  # These five score the property the registry exists for: a number defined
+  # once is the number the agent gives back, through query_metric rather than
+  # through SQL it re-derives per question. They are the only cases whose
+  # result depends on tenant *configuration* rather than on data, so the
+  # harness seeds the three metrics itself (eval.ensureMetrics) and
+  # `-metrics=false` removes them — which is how the before/after in
+  # coverage/metric-registry.md was measured.
+  #
+  # Under -metrics=false every case here fails its must_call, on purpose:
+  # that is the "before" half, and its token counts are the comparison the
+  # ticket asks for.
+
+  - id: metric-revenue-december
+    category: metric_registry
+    lang: en
+    question: "What was our revenue in December 2024?"
+    notes: |
+      select sum(sales_amount) from fact_sales fs join dim_date d
+      on d.date_id = fs.date_id where d.year = 2024 and d.month_number = 12
+      → 3,863,405,700. The `revenue` metric answers exactly this, so the
+      agent must reach for it rather than write the join again.
+    expect:
+      kind: numeric
+      value: 3863405700
+      must_call: [query_metric]
+      must_not_call: [run_sql]
+
+  - id: metric-order-count-december
+    category: metric_registry
+    lang: en
+    question: "How many orders did we take in December 2024?"
+    notes: |
+      count(distinct transaction_id) over December 2024 → 310. Distinct
+      transactions, not line items: the definition lives in the metric, which
+      is the whole argument for the registry — two people asking this in two
+      threads get one number.
+    expect:
+      kind: numeric
+      value: 310
+      must_call: [query_metric]
+      must_not_call: [run_sql]
+
+  - id: metric-aov-december
+    category: metric_registry
+    lang: en
+    question: "What was our average order value in December 2024?"
+    notes: |
+      3,863,405,700 / 310 = 12,462,599.03. AOV is the case where re-derivation
+      goes wrong quietly — sum/count(*) over line items gives a different,
+      defensible-looking number — so the metric is the difference between one
+      answer and several.
+    expect:
+      kind: numeric
+      value: 12462599.03
+      must_call: [query_metric]
+      must_not_call: [run_sql]
+
+  - id: metric-comparison-december-vs-november
+    category: metric_registry
+    lang: en
+    question: "How did revenue in December 2024 compare with November 2024?"
+    notes: |
+      December 3,863,405,700 against November 3,708,552,300 — a rise of
+      154,853,400, or 4.2%. Whether the agent passes compare_to or calls the
+      metric twice is its business; what this case pins is that both figures
+      came from the registry and neither was re-derived.
+    expect:
+      kind: numeric
+      value: 3863405700
+      or_values: [3708552300]
+      must_call: [query_metric]
+      must_not_call: [run_sql]
+
+  - id: metric-uncovered-question-falls-back
+    category: metric_registry
+    lang: en
+    question: "Which payment method did customers use most often in December 2024?"
+    notes: |
+      Bank Transfer, 69 of the month's transactions. No metric covers payment
+      methods, and the registry must not become a wall: the agent has to fall
+      back to run_sql rather than answer "there is no metric for that". This
+      is the case that fails if the system prompt's metric guidance is written
+      too strongly.
+    expect:
+      kind: contains
+      contains: ["bank transfer"]
+      must_call: [run_sql]

@@ -9,7 +9,7 @@ than one the LLM re-derived.
 | Ticket | What | Size | State |
 | ------ | ---- | ---- | ----- |
 | `T-06` | Metric registry: schema, validation, CRUD, dashboard tab | 3d | **gated live 2026-08-02** |
-| `T-07` | `list_metrics` + `query_metric` tools | 1.5d | **gated live 2026-08-02 — the eval-set half (metric cases, before/after pass rate and token delta) is still owed** |
+| `T-07` | `list_metrics` + `query_metric` tools | 1.5d | **gated live and scored 2026-08-02** — the eval found a language regression the registry causes, open (§5) |
 
 ---
 
@@ -230,8 +230,114 @@ that returns any other number and treats a null as an error. Regression tests in
 felt at (a tracker that stays ungrounded); both fail against the old code. The
 transcripts above are the re-run.
 
-**Outstanding — the eval-set half.** The golden set (`testdata/eval/golden.yaml`)
-has no metric cases and `internal/eval/tenant.go` seeds no metrics, so the
-before/after pass rate and the token delta the ticket asks for need cases
-authored and the eval tenant taught to define them first. The behavioural
-claims above are proven; the *scored* claim is not.
+### 4. The eval gate — run 2026-08-02
+
+Five cases in a new `metric_registry` category, and `eval.ensureMetrics`, which
+brings the eval tenant's registry to the state a run asks for: the three metrics
+when `-metrics` is true (the default), **none of them** when it is false. The
+removing half is what makes the comparison honest — the eval tenant is reused
+across runs by design, so without it "with metrics" and "without" would be the
+same run twice.
+
+Same five questions, same model, same tenant, twenty minutes apart:
+
+|  | before (`-metrics=false`) | after |
+| --- | --- | --- |
+| passed | **1/5** | **5/5** |
+| mean input tokens | **12,711** | **3,296** (−74%) |
+| mean output tokens | 778 | 473 |
+| cost for the five | $0.0219 | $0.0122 |
+
+Per case, and the tool calls are the story:
+
+| case | input tokens | latency | tools after |
+| ---- | ------------ | ------- | ----------- |
+| `metric-revenue-december` | 8,880 → 7,637 (−14%) | 42.3s → 11.5s | `query_metric` |
+| `metric-order-count-december` | 5,254 → 1,160 (−78%) | 39.0s → 10.6s | `list_metrics`, `query_metric` |
+| `metric-aov-december` | 2,802 → 1,333 (−52%) | 76.0s → 13.0s | `query_metric` |
+| `metric-comparison-december-vs-november` | 30,053 → 1,707 (−94%) | 85.3s → 14.9s | `query_metric` ×2 |
+| `metric-uncovered-question-falls-back` | 16,565 → 4,641 (−72%) | 31.7s → 23.3s | `get_schema`, `run_sql` |
+
+The comparison case is the one worth reading twice. Without the registry the
+agent spent **30,053** input tokens walking the schema twice and writing two
+joins; with it, two `query_metric` calls and 1,707. That is the ticket's
+"should reduce mean input tokens measurably" arriving as a factor of eighteen on
+the question a business actually asks every month.
+
+The fifth case is the guard against over-correction: no metric covers payment
+methods, and the agent still reached `run_sql` and answered *Bank Transfer* —
+in **both** runs. It is the one case that passed before, and it is why the
+category is not simply "does it call `query_metric`".
+
+**What the before run also showed**, and it is worth keeping: with the registry
+empty the agent called `list_metrics` first, said *"There are no defined metrics
+available, so I'll need to query the retail sales database directly"*, and did.
+The fallback is not a silent one.
+
+### 5. The full set, and the regression the gate exists to catch
+
+The ticket's other half — *the eval suite must not regress* — is where this run
+stops being good news. **40 cases with metrics defined: 17 passed (42.5%)**
+against a 97.0% baseline. The 23 failures are three unrelated things, and
+separating them was most of the work:
+
+| cause | count | verdict |
+| ----- | ----- | ------- |
+| `must_call: [run_sql]` where `query_metric` answered | 10 | the set was wrong, not the agent |
+| an English question answered in Indonesian | 11 | a real regression, cause not yet found |
+| a chart case with no Metabase running | 1 | environment, not code |
+| `id-jumlah-transaksi` stated no figure | 1 | one-off |
+
+**The ten tool-choice failures were the golden set encoding a fact that stopped
+being true.** `must_call: [run_sql]` on *"what were our total sales?"* was
+written when `run_sql` was the only tool that could answer it; the assertion's
+intent was always "the agent went and got the number rather than inventing it".
+With a registry defined, `query_metric` is the *better* answer and the case
+failed it. `Expect.MustCallAny` is the fix — at least one of the named tools —
+and the ten cases now name both. Re-run: **8 of 10 pass**, and the two that do
+not fail on language alone.
+
+That leaves the merged set at **25/40 (62.5%)**, with 13 language failures,
+one chart and one number.
+
+#### The finding: defining metrics makes the agent answer in the wrong language
+
+Eleven English cases came back in Indonesian. The baseline had none, so the
+first question is whether the registry caused it or six days of model drift did.
+Eight of them re-run with `-metrics=false`:
+
+| | with metrics | without |
+| --- | --- | --- |
+| `total-profit-all-time`, `total-units-sold`, `top-sales-channel`, `sales-by-category`, `people-total-salary`, `guardrail-false-positive-margin` | Indonesian ✗ | English ✓ |
+| `no-data-marketing-spend`, `guardrail-off-topic-recipe` | Indonesian ✗ | Indonesian ✗ |
+
+So six of eight are **caused by defining metrics**, and two are a smaller
+pre-existing problem that owes nothing to this ticket.
+
+**A hypothesis, tested and refuted — recorded because the next person will have
+the same one.** `withMetricsContext` prepends its `[System context: …]` block to
+the *user message*, so the caller's sentence ends up buried under our
+scaffolding; the obvious reading is that "reply in the user's language" degrades
+when the message is mostly not the user's. `T-A2b` fixed exactly that shape by
+moving the report directive into a per-turn system-prompt addendum, so the same
+move was made here and the six cases re-run against it.
+
+**It fixed three and left three.** At that sample size, with an LLM at
+temperature 0.2, that is indistinguishable from noise — the delivery position is
+not the mechanism. The change was reverted rather than shipped: a prompt-delivery
+edit with no measured benefit is precisely what this harness exists to prevent,
+and keeping it would have meant carrying a comment that claims a result the data
+does not support.
+
+**What is still true, and what to try next.** The correlation with the catalog's
+*presence* is strong and reproducible. The remaining suspects are the catalog's
+content rather than its position — it is the second such block on every turn
+(the source catalog is the first), and the language rule now competes with two
+of them. Worth trying, in order: restating the language rule *after* the
+catalogs rather than before; shortening the block to keys and labels without
+descriptions; and a golden case that asserts language on a turn with metrics
+defined, so whatever lands is measured rather than argued.
+
+Until then the registry ships with a known behaviour change on multilingual
+tenants, and that sentence belongs in front of the owner rather than in a
+backlog.

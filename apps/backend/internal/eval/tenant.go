@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
+	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
 	"github.com/fauzanebd/argentum/internal/bootstrap"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -43,7 +44,7 @@ const (
 // whether it asks instead of guessing — and that behaviour cannot be
 // measured against a tenant with one source, because the system prompt
 // explicitly says not to ask when only one exists.
-func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN, metabaseHostPort string) (Tenant, error) {
+func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN, metabaseHostPort string, withMetrics bool) (Tenant, error) {
 	users := pgctl.NewUserRepo(stack.ControlDB)
 
 	company, err := stack.Companies.GetBySlug(ctx, tenantSlug)
@@ -89,6 +90,7 @@ func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN, metabase
 		return Tenant{}, err
 	}
 	ensureDefaultAgent(ctx, stack, company.ID)
+	ensureMetrics(ctx, stack, company.ID, user.ID, withMetrics)
 
 	return Tenant{
 		CompanyID:   company.ID,
@@ -132,6 +134,127 @@ func ensureDefaultAgent(ctx context.Context, stack *bootstrap.Stack, companyID s
 		return
 	}
 	logrus.WithField("agent_id", a.ID).Info("eval: seeded the tenant's default agent")
+}
+
+// evalMetrics are the three metrics the metric_registry cases are scored
+// against (T-07). They are the ones a retailer would actually define, and their
+// numbers are the ones the golden file asserts.
+//
+// **Every aggregate is wrapped in COALESCE, and it is not decoration.**
+// Validate-on-save runs the template over a trailing-7-day window; the demo
+// warehouse stops on 31 December 2024, so a bare `sum(...)` returns NULL there
+// and the save is refused with "column value is not a number (value is null)".
+// That is a real edge recorded in coverage/metric-registry.md §4 — a metric
+// nobody could save against historical data — and until it is fixed the
+// workaround belongs here, visibly, rather than as a mystery in the SQL.
+var evalMetrics = []struct {
+	key, label, description, template, unit, currency string
+}{
+	{
+		key: "revenue", label: "Revenue",
+		description: "Total sales amount over the window, from fact_sales joined to dim_date. The authoritative revenue figure.",
+		template: "SELECT COALESCE(sum(fs.sales_amount),0) AS value FROM fact_sales fs " +
+			"JOIN dim_date d ON d.date_id = fs.date_id WHERE d.full_date >= {{from}} AND d.full_date <= {{to}}",
+		unit: "currency", currency: tenantCurrency,
+	},
+	{
+		key: "order_count", label: "Order count",
+		description: "Distinct transactions in the window — how many orders were placed, not how many line items.",
+		template: "SELECT count(DISTINCT fs.transaction_id) AS value FROM fact_sales fs " +
+			"JOIN dim_date d ON d.date_id = fs.date_id WHERE d.full_date >= {{from}} AND d.full_date <= {{to}}",
+		unit: "count",
+	},
+	{
+		key: "aov", label: "Average order value",
+		description: "Revenue divided by distinct transactions in the window — the average value of one order.",
+		template: "SELECT COALESCE(sum(fs.sales_amount)/NULLIF(count(DISTINCT fs.transaction_id),0),0) AS value " +
+			"FROM fact_sales fs JOIN dim_date d ON d.date_id = fs.date_id " +
+			"WHERE d.full_date >= {{from}} AND d.full_date <= {{to}}",
+		unit: "currency", currency: tenantCurrency,
+	},
+}
+
+// ensureMetrics brings the eval tenant's metric registry to the state this run
+// wants: the three metrics above when want is true, none of them when it is
+// false.
+//
+// It removes as well as creates because the registry is *state on the tenant*,
+// and the tenant is reused across runs by design. Without the removing half,
+// "run once with metrics, once without" would silently be "run twice with
+// metrics" — the before/after this ticket asks for would compare a run to
+// itself, and the token delta would read as zero for a reason that has nothing
+// to do with the feature.
+//
+// Non-fatal, like ensureDefaultAgent: a metric that will not save costs the
+// metric_registry cases, not the run, and the failure is named in the log.
+func ensureMetrics(ctx context.Context, stack *bootstrap.Stack, companyID, userID string, want bool) {
+	if stack.Metrics == nil {
+		if want {
+			logrus.Warn("eval: no metric service on the stack; metric_registry cases will fail")
+		}
+		return
+	}
+	existing, err := stack.Metrics.List(ctx, companyID)
+	if err != nil {
+		logrus.WithError(err).Warn("eval: could not list metrics; metric_registry cases may not score what they claim")
+		return
+	}
+	have := make(map[string]string, len(existing))
+	for _, m := range existing {
+		have[m.Key] = m.ID
+	}
+
+	if !want {
+		for key, id := range have {
+			if err := stack.Metrics.Delete(ctx, companyID, id); err != nil {
+				logrus.WithError(err).WithField("key", key).Warn("eval: could not remove metric for a no-metrics run")
+				continue
+			}
+			logrus.WithField("key", key).Info("eval: removed metric (running without the registry)")
+		}
+		return
+	}
+
+	source, err := primarySourceID(ctx, stack, companyID)
+	if err != nil {
+		logrus.WithError(err).Warn("eval: no primary source to define metrics against")
+		return
+	}
+	for _, m := range evalMetrics {
+		if _, ok := have[m.key]; ok {
+			continue
+		}
+		if _, err := stack.Metrics.Create(ctx, companyID, userID, app.MetricInput{
+			SourceID:    source,
+			Key:         m.key,
+			Label:       m.label,
+			Description: m.description,
+			SQLTemplate: m.template,
+			ValueColumn: "value",
+			Grain:       domain.MetricGrainMonth,
+			Unit:        domain.MetricUnit(m.unit),
+			Currency:    m.currency,
+		}); err != nil {
+			// Create validates by executing, so this is also the check that the
+			// template still works against the demo warehouse.
+			logrus.WithError(err).WithField("key", m.key).Warn("eval: could not define metric")
+			continue
+		}
+		logrus.WithField("key", m.key).Info("eval: defined metric")
+	}
+}
+
+func primarySourceID(ctx context.Context, stack *bootstrap.Stack, companyID string) (string, error) {
+	sources, err := stack.Connections.ListByCompany(ctx, companyID)
+	if err != nil {
+		return "", fmt.Errorf("list sources: %w", err)
+	}
+	for _, c := range sources {
+		if c.Label == primarySourceLabel {
+			return c.ID, nil
+		}
+	}
+	return "", fmt.Errorf("no source labelled %q", primarySourceLabel)
 }
 
 func ensureSources(ctx context.Context, stack *bootstrap.Stack, companyID, demoDSN, metabaseHostPort string) error {
