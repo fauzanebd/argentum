@@ -1577,9 +1577,30 @@ payload — while `HTTPAction.Describe` has been writing that exact sentence sin
 `T-12b`. Same two-copies-of-one-truth shape as the design tokens and the
 hand-written types, this time with an authorisation on the end of it.
 
+**The MCP track was gated against a real server, not a mock.** `T-M2`/`T-M3`
+closed the same day against a Go binary on the official SDK's streamable handler,
+serving two read tools and one write tool behind a bearer token it checks. A
+bound agent answered *"what is the delivery status of SHP-1042?"* from the
+courier's own `tools/call`, the thread rendered the call as **`Kirim Cepat ·
+Quote Shipping`**, and `POST /v1/chat` reached the server with that agent's id
+and not with the default agent's. The approved **write** tool was never offered
+— asked to cancel a shipment, the agent named back only its two reads, and the
+courier logged no cancel — which is `T-M4`'s scope holding as behaviour rather
+than as an assertion.
+
+Two findings there too. An agent whose tools are narrowed **in the dashboard**
+loses every MCP tool it is bound to, silently: `/api/agents` builds the form's
+tool list from the static registry, so no checkbox exists for a namespaced MCP
+name, while `filterTools` applies the allowlist to the combined slice. The API
+half already works — a namespaced name in `allowed_tools` is accepted and the
+tool is then called — so what is missing is the ticket's own instruction applied
+to the form's *options*. And an MCP call writes no `usage_events` row, though
+`T-M2` asks for one in as many words: the audit has the call, the meter does not.
+
 **What is still owed, and why.** `T-07`'s scored half — the golden set has no
 metric cases and the eval tenant seeds no metrics, so the before/after pass rate
-and token delta need fixtures written first. `T-M2`/`T-M3`. The non-admin
+and token delta need fixtures written first. `make eval` for `T-M2` with no
+server configured. The non-admin
 renderings of both UIs (both refusals are proven at the API, neither disabled
 control was photographed). And `T-12a`'s delivery, deferred by the repo owner:
 the gate is *the message arrives*, `.env` holds live Twilio credentials, and
@@ -1590,7 +1611,14 @@ only reachable by approving a proposal.
 Records: [`metric-registry.md`](metric-registry.md) §4 and §3,
 [`watchers.md`](watchers.md) §3a, [`watchers-ui.md`](watchers-ui.md) §5,
 [`action-framework.md`](action-framework.md) §6, §T-11 and §T-12b,
+[`mcp-source.md`](mcp-source.md) §4a and §T-M3,
 [`guardrail-overreach.md`](guardrail-overreach.md).
+
+**Nine tickets went in with their gates unrun and came out gated.** What that
+bought, counted honestly: two defects fixed the same day, six findings written
+down with an owner, and four acceptance items still owed. The pattern this log
+has been noting since `T-13` held again — the live half found something the unit
+tests could not on every one of them.
 
 ---
 

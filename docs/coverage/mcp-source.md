@@ -13,8 +13,8 @@ appends its own section.
 | Ticket | What | Size | State |
 | ------ | ---- | ---- | ----- |
 | `T-M1` | Schema, egress safety, CRUD, discovery | 2.5d | **done — gate run live 2026-08-01** |
-| `T-M2` | MCP tools at turn time | 3.0d | **code complete + unit-tested — live gate outstanding** |
-| `T-M3` | MCP servers on the dashboard and `/v1` | 1.0d | **code complete + tests/drift-checks green — live gate outstanding; usage-per-server breakout deferred (cut #3a)** |
+| `T-M2` | MCP tools at turn time | 3.0d | **gated live 2026-08-02** — `make eval` with no server configured is still owed |
+| `T-M3` | MCP servers on the dashboard and `/v1` | 1.0d | **gated live 2026-08-02** — usage-per-server breakout still deferred (cut #3a) |
 | `T-M4` | Write-capable tools behind approval | 1.5d | not started |
 
 ---
@@ -364,12 +364,80 @@ clean, both binaries build, `make types-check` regenerated and clean):
   as a recoverable result and a transport failure as a Go error; the shared
   per-turn call cap refuses across a turn's tools; JSON-Schema → parameters.
 
-**Outstanding — needs a running deployment (the live gate):** a transcript of a
-real question answered through a real MCP server's tool, the matching
-`agent_actions` and `usage_events` rows, the negative case from a second agent
-with no binding, and `make eval` at or above the `T-01` baseline with no MCP
-server configured. Same posture `T-S1`→`T-S3` sat in for a day: code complete
-and unit-tested, live gate to run against a stack.
+### 4a. The live gate — run 2026-08-02
+
+The tenant's server for this gate is a real MCP server, not a mock: a Go binary
+on the official SDK's `StreamableHTTPHandler` at `http://127.0.0.1:8765/mcp`,
+serving `lookup_shipment` and `quote_shipping` (read) and `cancel_shipment`
+(write), behind a bearer token it actually checks — an unauthenticated probe gets
+401, so the stored-token path is exercised rather than assumed.
+
+Registering it discovered all three tools, each `approved: false`; the admin then
+approved the two reads as `read_only: true` and `cancel_shipment` as a write.
+
+**A question answered through the tenant's own server.** Asked *"What is the
+delivery status of shipment SHP-1042?"*, the bound agent answered:
+
+> Berdasarkan informasi dari kurir Kirim Cepat, status pengiriman untuk
+> **SHP-1042** adalah **"delivered"** … Pengiriman ini diperkirakan telah sampai
+> pada tanggal **1 Agustus 2026**.
+
+with the courier's own log line — `tools/call lookup_shipment order_id=SHP-1042`
+— and the audit row:
+
+```
+ tool_name                         | result_status | mcp_server_id
+ mcp__kirim_cepat__lookup_shipment | ok            | b9d91676-…
+```
+
+**The negative case, twice.** The default agent, which has no binding, answered
+the same question by probing the warehouse (`get_schema` ×2) and reporting that
+no shipment tables exist; the courier's request count did not move. Over `/v1`
+the same split held: `POST /v1/chat` with the Ops `agent_id` reached the server,
+the same call with the default agent's id did not, and every row is on the `api`
+channel.
+
+**The write tool stayed out of reach.** Asked to cancel SHP-1042, the bound agent
+answered that it can only *track shipments* and *quote shipping* — the two
+approved reads, named back — and `cancel_shipment` was never called: the
+courier's log has zero cancel lines. That is `T-M4`'s scope holding as a
+behaviour rather than as an assertion.
+
+`GET /v1/agents` names the binding (`mcp_servers: [{id, name: "Kirim Cepat"}]`)
+for the Ops agent and an empty list for the default one.
+
+#### What the gate found
+
+- **An agent whose tools are narrowed in the dashboard silently loses every MCP
+  tool it is bound to.** `filterTools` applies `agents.allowed_tools` to the
+  combined static + MCP slice, which is correct; the gap is the vocabulary the
+  admin is offered. `/api/agents` builds the form's tool list from
+  `svc.ToolNames()` — the **static** registry — so no checkbox exists for
+  `mcp__kirim_cepat__lookup_shipment`, and an agent created through the UI with
+  any tool ticked drops its MCP tools with no warning anywhere. Observed exactly:
+  an Ops agent with four static tools ticked was offered `tools=4`, never saw the
+  courier, and told the user it had no access to shipment data.
+  The API half already works — `PUT /api/agents/:id` accepts a namespaced MCP
+  name in `allowed_tools` and the tool then survives the filter and is called —
+  so what is missing is the ticket's own instruction, *"validate against
+  `static ∪ this company's approved MCP tools`"*, applied to the **form's
+  options** rather than to validation. `mcp_server_tools` already holds the
+  approved rows.
+- **An MCP call writes no `usage_events` row.** The ticket asks for it in as many
+  words — *"Record it on the existing `usage_events` path … do not invent a
+  second meter"* — and the turn that called the courier recorded only its two
+  `llm_call` rows. `agent_actions` has the call (with the server id), so the
+  audit is complete and the meter is not: a tenant whose agents lean on their own
+  MCP servers shows the LLM cost of those turns and nothing about the calls
+  themselves. There is no `UsageRecorder` in `internal/tools/mcp`.
+- **`semantic_prompt_injection` refused one of the gate's negative-case turns**
+  — an ordinary *"What is the delivery status of shipment SHP-1042?"* to the
+  default agent. Fourth in this gate run; recorded under `T-07b` in
+  [`guardrail-overreach.md`](guardrail-overreach.md).
+
+**Still outstanding:** `make eval` at or above the `T-01` baseline with no MCP
+server configured. The empty-binding fast path is unit-tested and the eval tenant
+has no server, but the scored run has not been made.
 
 ### 5. Handover to T-M3
 
@@ -443,7 +511,24 @@ now carries `mcp_server_id` (T-M2), so the data is there whenever it is picked
 up. It is outside every one of T-M3's four acceptance items, all of which the
 shipped code covers.
 
-**Outstanding — the live gate:** the screen recording (bind → ask → see the
-labelled call) and the two `curl` transcripts (`POST /v1/chat` with the Ops
-`agent_id` reaches the server; with the default agent's id it does not). Both
-need a running stack with a real MCP server, the same gate T-M2 owes.
+**The live gate ran 2026-08-02**, against the same real MCP server described in
+§4a. Both items are met.
+
+*Bind → ask → see the labelled call.* With the server bound to the Ops agent, a
+question routed to it rendered a tool card reading **`Kirim Cepat · Quote
+Shipping`** — the server's name, then the tool's, with the MCP icon — beside the
+answer, and the thread header shows `Dashboard · Ops`. `mcpMeta` in
+`tool-call-card.tsx` is what produces that label, and this is the first time it
+has been seen against a real namespaced name.
+
+*The two `curl` transcripts.* `POST /v1/chat` with the Ops `agent_id` produced an
+answer sourced from the courier and an `agent_actions` row carrying the server
+id on the `api` channel; the same request with the default agent's id ran
+`get_schema`/`run_sql` against the warehouse and never touched the server.
+`GET /v1/agents` names the binding for one agent and returns an empty list for
+the other.
+
+One caution for whoever reads the recording: a turn that makes **no** MCP call
+renders no card, obviously, but the model may still *type* the namespaced tool
+name into its prose when explaining what it can do — so a text search for
+`mcp__…` is not evidence that a call happened. Read the card, or the audit row.

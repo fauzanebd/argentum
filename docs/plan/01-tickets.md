@@ -3925,8 +3925,20 @@ after registering a server showing identical tool availability.
 
 ---
 
-## T-M2 · MCP tools at turn time
+## ~~T-M2~~ · MCP tools at turn time — **GATED LIVE 2026-08-02**
 **Repo:** BE · **Size:** 3.0d · **Deps:** T-M1, T-S2 · **Priority:** P0 · **Never cut**
+
+A real MCP server (the SDK's streamable handler, bearer-checked) was registered,
+its reads approved, and a bound agent answered *"what is the delivery status of
+SHP-1042?"* from the courier's own `tools/call`, with `mcp_server_id` on the
+audit row. An unbound agent could not see the tool, and the approved **write**
+tool was never offered — the agent named back only its two reads.
+Two findings: an agent whose tools are narrowed **in the dashboard** silently
+loses its MCP tools (the form's options come from the static registry, so no
+checkbox for a namespaced name exists — the API accepts one), and an MCP call
+writes **no `usage_events` row** though this ticket asks for one.
+`make eval` with no server configured is still owed.
+[`../coverage/mcp-source.md`](../coverage/mcp-source.md) §4a.
 **Migration:** `*_agent_mcp_servers` — next free on landing, after `T-M1`'s.
 
 ### Why
@@ -4017,7 +4029,13 @@ against the baseline.
 
 ---
 
-## T-M3 · MCP servers on the dashboard and `/v1`
+## ~~T-M3~~ · MCP servers on the dashboard and `/v1` — **GATED LIVE 2026-08-02**
+
+The thread renders the call as **`Kirim Cepat · Quote Shipping`** — server, then
+tool — and `POST /v1/chat` reaches the server with the bound agent's `agent_id`
+and does not with the default agent's. `GET /v1/agents` names the binding.
+The usage-per-server breakout stays deferred (cut #3a).
+[`../coverage/mcp-source.md`](../coverage/mcp-source.md) §T-M3.
 **Repo:** BE, FE · **Size:** 1.0d · **Deps:** T-M2, T-S5 · **Priority:** P1 · **Cut #3a**
 
 ### Why
