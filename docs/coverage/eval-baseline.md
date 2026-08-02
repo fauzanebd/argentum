@@ -7,14 +7,22 @@ change from here is compared against this number.
 (96.8%, 31 cases) is preserved below, because the comparison between them is
 most of what this file is for.
 
-**The set is 40 cases as of 2026-08-02** (`T-07`'s five `metric_registry` cases),
-and a run against it with the metric registry defined scores **25/40 (62.5%)**.
-That is not a comparable number and it is not a new baseline: thirteen of the
-fifteen failures are one open regression — an English question answered in
-Indonesian whenever metrics are defined — which is measured, attributed, and
-unfixed. The arithmetic and the control runs are in
-[`metric-registry.md`](metric-registry.md) §5. Until that closes, 97.0% remains
-the number to beat and 62.5% is the number to explain.
+**New: 100% (40/40)** — `T-07`'s eval half, 2026-08-02. `deepseek/deepseek-v3.2`,
+mean 5,385 input tokens, $0.115. Every category clean, including
+`ambiguous-headcount`, the single failure this file has carried since July.
+
+Three things changed underneath it and none should be read past: the set grew by
+five `metric_registry` cases; ten `must_call: [run_sql]` assertions became
+`must_call_any: [run_sql, query_metric]`, because with a registry defined the
+metric tool is the better answer failing an assertion about the worse one; and
+one line was added to every turn (`withLanguageReminder`) to close a regression
+the same run found — English questions answered in Indonesian whenever metrics
+were defined, six of eight flipping back with the registry emptied. The
+measurement behind each is in [`metric-registry.md`](metric-registry.md) §3–§6,
+including a hypothesis that was implemented, measured at three-of-six, and
+reverted.
+
+So: comparable to 97.0% in spirit, not in arithmetic.
 
 ---
 

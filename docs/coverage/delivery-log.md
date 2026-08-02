@@ -1622,7 +1622,37 @@ prompt-delivery change with no measured benefit is the exact thing this harness
 exists to prevent. What survives is a narrowed problem, a written next step, and
 a number nobody has to guess at.
 
-**What is still owed, and why.** The language regression above. `make eval` for
+**The language regression closed the same day, and the second hypothesis was the
+right one.** Dumping the composed turn ended the guessing: the message the model
+receives is *entirely English* — ~1,500 characters of `[System context: …]`
+blocks and the user's sentence last — so nothing was being mis-detected. The
+model was **defaulting** to Indonesian, which is the failure guideline 1 already
+names in so many words, and the metric catalog simply widened the gap between
+that rule and the question until it stopped holding. That also explains why
+moving the catalog into the system prompt did nothing: the distance was
+unchanged.
+
+`withLanguageReminder` restates the rule as the last block before the user's own
+words — ~70 characters, both directions named. All six registry-caused English
+failures pass; one of the two failures that were never the registry's does too;
+and **not one** of the five Indonesian cases replies in the wrong language,
+which is the half that mattered, because a fix that dragged Indonesian answers
+into English would have been worse than the bug.
+
+The Indonesian side also showed, **once**, the registry becoming a wall: asked
+for sales across all time, the agent found the `revenue` metric, worked out that
+a `per month` grain cannot answer an unbounded question, and stopped without a
+figure rather than falling back to `run_sql`. It did not reproduce in the final
+run, so it is written down at that strength — an observation, not a defect —
+with the golden case that would settle it named.
+
+**The set then scored 40/40.** Every category, including `ambiguous-headcount`,
+which has been this file's one standing failure since July. Not a like-for-like
+comparison with the 97.0% baseline — five cases added, ten assertions widened,
+one prompt line — and each of those three is recorded with the measurement that
+motivated it.
+
+**What is still owed, and why.** `make eval` for
 `T-M2` with no server configured. The non-admin
 renderings of both UIs (both refusals are proven at the API, neither disabled
 control was photographed). And `T-12a`'s delivery, deferred by the repo owner:

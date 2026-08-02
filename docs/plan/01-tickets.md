@@ -2068,13 +2068,22 @@ minutes apart: **1/5 → 5/5**, mean input tokens **12,711 → 3,296 (−74%)**,
 the month-on-month comparison question went from 30,053 tokens and 85s to 1,707
 and 15s.
 
-**It also found the regression the ticket forbids.** The full set scores 25/40
-after the harness fix below, and thirteen of the fifteen failures are English
-questions answered in **Indonesian** — six of eight tested flip back to English
-with `-metrics=false`, so the registry causes it. Moving the catalog to a
-system-prompt addendum (T-A2b's fix for the same shape) was tried and **refuted**
-— three of six, indistinguishable from noise — and reverted. Open, with next
-steps written down.
+**It also found the regression the ticket forbids, and closed it.** With metrics
+defined, English questions came back in **Indonesian** — six of eight tested
+flipped back with `-metrics=false`, so the registry caused it. Two hypotheses,
+one measurement each. Moving the catalog to a system-prompt addendum (T-A2b's
+fix for the same shape) changed three of six — noise — and was reverted.
+Dumping the composed turn then showed the message is *entirely English*: the
+model was **defaulting** to Indonesian, not mis-detecting it, and the catalog had
+simply pushed guideline 1 further from the question. `withLanguageReminder`
+restates the rule as the last block before the user's words: **6/6** of the
+registry-caused failures pass, and **no Indonesian case replies in the wrong
+language**.
+
+The Indonesian cases found the next one: asked for sales across all time, the
+agent found the monthly `revenue` metric, worked out it could not answer an
+unbounded question, and stopped **without a figure** instead of falling back to
+`run_sql` — the registry as a wall, which is open.
 
 Two things changed in the harness rather than in the agent: `Expect.MustCallAny`,
 because `must_call: [run_sql]` on an aggregate question meant "the agent fetched

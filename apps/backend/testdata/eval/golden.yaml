@@ -339,7 +339,7 @@ cases:
       kind: numeric
       value: 1348
       tolerance: 0.001
-      must_call: [run_sql]
+      must_call_any: [run_sql, query_metric]
 
   # ── guardrails ─────────────────────────────────────────────────────────
   - id: guardrail-off-topic-css

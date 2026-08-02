@@ -476,7 +476,8 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// Prepend organization, currency, source-catalog, and (optionally) the
 	// embedding-based table-picker hint. Order matters: the table hint sits
 	// closest to the top so the agent reads it before the source catalog.
-	agentMsg := withCompanyNameContext(p.Message, p.CompanyName)
+	agentMsg := withLanguageReminder(p.Message)
+	agentMsg = withCompanyNameContext(agentMsg, p.CompanyName)
 	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency)
 	agentMsg = withSourcesContext(agentMsg, sources)
 	agentMsg = r.withMetricsContext(ctx, agentMsg, p.CompanyID)
@@ -1068,6 +1069,31 @@ func (r *ChatRunner) hydrateMemory(ctx context.Context, agent *sdkagent.Agent, p
 
 // withCompanyNameContext prepends the tenant organization name so the
 // agent can personalize references. If name is empty, msg is unchanged.
+// withLanguageReminder restates guideline 1 immediately above the user's own
+// sentence.
+//
+// The system prompt already opens with "LANGUAGE IS THE TOP PRIORITY … never
+// default to Indonesian when the user wrote in English", and that rule held
+// until T-07 gave every turn a metric catalog. The eval gate of 2026-08-02
+// measured what changed: eleven English questions answered in Indonesian with
+// metrics defined, six of eight flipping back with the registry emptied. The
+// composed message contains **no Indonesian at all** — 1,500 characters of
+// English scaffolding and the question — so this was never language detection
+// going wrong. It is the rule losing its grip as the distance between it and
+// the question grows, which is why moving the catalog into the system prompt
+// (tried first, on T-A2b's precedent) changed three of six and settled nothing.
+//
+// So the fix is position, not content: the reminder is prepended FIRST, which
+// leaves it LAST — the final line before the user's own words, on every turn,
+// for ~70 characters. It names both directions, because the failure this
+// project has shipped runs one way and the fix must not cause the other.
+func withLanguageReminder(msg string) string {
+	return "[System context: Reply in the same language the user writes below — " +
+		"English question, English answer; Indonesian question, Indonesian answer. " +
+		"The context blocks above are always English and say nothing about which " +
+		"language to reply in.]\n\n" + msg
+}
+
 func withCompanyNameContext(msg, companyName string) string {
 	if companyName == "" {
 		return msg

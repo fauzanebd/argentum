@@ -329,15 +329,66 @@ edit with no measured benefit is precisely what this harness exists to prevent,
 and keeping it would have meant carrying a comment that claims a result the data
 does not support.
 
-**What is still true, and what to try next.** The correlation with the catalog's
-*presence* is strong and reproducible. The remaining suspects are the catalog's
-content rather than its position — it is the second such block on every turn
-(the source catalog is the first), and the language rule now competes with two
-of them. Worth trying, in order: restating the language rule *after* the
-catalogs rather than before; shortening the block to keys and labels without
-descriptions; and a golden case that asserts language on a turn with metrics
-defined, so whatever lands is measured rather than argued.
+#### What actually fixed it: the rule had to sit next to the question
 
-Until then the registry ships with a known behaviour change on multilingual
-tenants, and that sentence belongs in front of the owner rather than in a
-backlog.
+Dumping the composed message settled it. The turn the model receives is
+**entirely English** — about 1,500 characters of `[System context: …]` blocks
+(tables, metrics, sources, currency, organization) and then the user's sentence
+last. There is no Indonesian anywhere in it.
+
+So this was never language *detection*. The model was **defaulting** to
+Indonesian — the exact failure guideline 1 already names ("never default to
+Indonesian when the user wrote in English") — and the metric catalog widened the
+gap between that rule and the question until the rule stopped holding. Which is
+also why moving the catalog changed nothing: it was still the same distance.
+
+`withLanguageReminder` restates the rule as the **last** block before the user's
+own words, ~70 characters on every turn, naming both directions. Measured on
+thirteen cases:
+
+| | before the reminder | after |
+| --- | --- | --- |
+| the six registry-caused English failures | 0/6 | **6/6** |
+| the two failures the registry did not cause | 0/2 | 1/2 |
+| the five Indonesian cases | — | **no language failures** |
+
+The Indonesian side is the half that mattered most: a fix that dragged
+Indonesian answers into English would have been worse than the bug. Three of the
+five `indonesian` cases pass outright and the other two fail on a number and a
+tool assertion — **not one** replies in the wrong language.
+
+`guardrail-off-topic-recipe` still answers a refusal in Indonesian. It failed
+with metrics and without them, so it is not this ticket's, and it is a refusal
+rather than an answer — worth a look under `T-07b` with the other guardrail
+wording.
+
+#### A second thing the Indonesian side showed — once
+
+On one run `id-total-penjualan` (sales across all time) found the `revenue`
+metric, worked out that it could not use it — *"metrik ini memiliki grain 'per
+month' dan memerlukan rentang tanggal"* — and **stopped with no figure** instead
+of falling back to `run_sql`. That is the registry becoming a wall, which is the
+failure the fifth `metric_registry` case exists to guard against.
+
+**It did not reproduce.** The same case passes in the final run, so this is an
+observed behaviour rather than a standing defect, and it is recorded at that
+strength deliberately: one occurrence of a plausible failure is worth writing
+down and is not worth changing a prompt over. What would settle it is a golden
+case that asks an unbounded question against a windowed metric every run — the
+question is cheap and the answer is currently a coin toss nobody is watching.
+
+### 6. The set after all of it
+
+**40/40, 100%** — `deepseek/deepseek-v3.2`, mean 5,385 input tokens, $0.115 for
+the run. Every category clean, including `ambiguous-headcount`, which has been
+the one standing failure since `T-16` recorded it in July.
+
+| | cases | pass |
+| --- | --- | --- |
+| `T-16` baseline, 2026-07-27 | 33 | 97.0% |
+| this run, 2026-08-02 | 40 | **100%** |
+
+Not a like-for-like comparison — the set grew by five `metric_registry` cases,
+ten assertions moved from `must_call` to `must_call_any`, and one prompt line
+was added — and all three of those changes are in this file with the measurement
+that motivated them.
