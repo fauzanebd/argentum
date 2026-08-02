@@ -49,12 +49,21 @@ type HTTPEndpointCipherRW interface {
 	Encrypt(plain string) ([]byte, error)
 }
 
-// HTTPEndpointURLChecker is the egress guard's URL check, narrowed to what
-// registration asks of it: reject a URL that is not https (unless the deployment
-// permits plaintext) or whose literal host is our own network, before the row is
+// HTTPEndpointURLChecker is the egress guard's save-time URL check: reject a URL
+// that is not https (unless the deployment permits plaintext), whose literal host
+// is our own network, or whose *hostname resolves* into it, before the row is
 // stored. Satisfied by mcp.Guard.
+//
+// It is CheckResolvedURL rather than CheckURL, and the difference is a hostname.
+// `localtest.me` is a public name that answers 127.0.0.1: it passes the string
+// check and is refused by Control at dial time, so registering it stored an
+// endpoint that could never work and moved the reason to an execute-time failure
+// on an invocation a human had already approved — observed on 2026-08-02, where
+// it registered 201 and the approved call came back "egress blocked: ::1 is a
+// loopback address". mcp_servers already asked the resolving question at save
+// time; http_endpoints asked the weaker one.
 type HTTPEndpointURLChecker interface {
-	CheckURL(raw string) error
+	CheckResolvedURL(raw string) error
 }
 
 // HTTPEndpointService is the admin-only CRUD behind Settings → HTTP endpoints, and
@@ -193,12 +202,13 @@ func (s *HTTPEndpointService) validateURLTemplate(urlTemplate string) error {
 	if err := checkTemplateSyntax("url", urlTemplate); err != nil {
 		return err
 	}
-	// The guard decides https-vs-plaintext and rejects a literal host that is our
-	// own network — the same verdict the turn-time dial will reach, surfaced now so
-	// an unreachable endpoint is a rejected save rather than a proposal that fails
-	// after a human approved it.
+	// The guard decides https-vs-plaintext and rejects a host that is our own
+	// network — literally, or by what its name resolves to — which is the same
+	// verdict the turn-time dial will reach, surfaced now so an unreachable
+	// endpoint is a rejected save rather than a proposal that fails after a human
+	// approved it.
 	if s.checker != nil {
-		if err := s.checker.CheckURL(urlTemplate); err != nil {
+		if err := s.checker.CheckResolvedURL(urlTemplate); err != nil {
 			return fmt.Errorf("%w: %v", domain.ErrInvalidInput, err)
 		}
 	}

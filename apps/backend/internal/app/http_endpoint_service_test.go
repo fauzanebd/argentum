@@ -82,7 +82,7 @@ func TestRegisterEndpointValidAndSealed(t *testing.T) {
 	ep, err := svc.Register(context.Background(), "co1", "admin1", HTTPEndpointInput{
 		Name:         "create_ticket",
 		Method:       "post",
-		URLTemplate:  "https://tickets.acme.com/v2/tickets/{{.id}}",
+		URLTemplate:  "https://example.com/v2/tickets/{{.id}}",
 		Header:       `{"Authorization":"Bearer s3cr3t"}`,
 		BodyTemplate: `{"subject":"{{.subject}}"}`,
 	})
@@ -110,12 +110,18 @@ func TestRegisterEndpointRejections(t *testing.T) {
 		in   HTTPEndpointInput
 	}{
 		{"templated host", HTTPEndpointInput{Name: "a", Method: "GET", URLTemplate: "https://{{.host}}/x"}},
-		{"bad method", HTTPEndpointInput{Name: "a", Method: "FETCH", URLTemplate: "https://api.acme.com/x"}},
-		{"non-https", HTTPEndpointInput{Name: "a", Method: "GET", URLTemplate: "http://api.acme.com/x"}},
+		{"bad method", HTTPEndpointInput{Name: "a", Method: "FETCH", URLTemplate: "https://example.com/x"}},
+		{"non-https", HTTPEndpointInput{Name: "a", Method: "GET", URLTemplate: "http://example.com/x"}},
 		{"private host", HTTPEndpointInput{Name: "a", Method: "GET", URLTemplate: "https://127.0.0.1/x"}},
-		{"empty name", HTTPEndpointInput{Name: "", Method: "GET", URLTemplate: "https://api.acme.com/x"}},
-		{"header not object", HTTPEndpointInput{Name: "a", Method: "GET", URLTemplate: "https://api.acme.com/x", Header: `["nope"]`}},
-		{"broken template", HTTPEndpointInput{Name: "a", Method: "GET", URLTemplate: "https://api.acme.com/{{.id"}},
+		// A public name that answers 127.0.0.1. It passes the string-only check and
+		// is refused by the dialer, so registering it stored an endpoint that could
+		// never work — observed live on 2026-08-02, where the approved invocation
+		// came back "egress blocked: ::1 is a loopback address" after a human had
+		// already approved it. The save has to ask the resolving question.
+		{"host resolving to loopback", HTTPEndpointInput{Name: "a", Method: "GET", URLTemplate: "https://localtest.me/x"}},
+		{"empty name", HTTPEndpointInput{Name: "", Method: "GET", URLTemplate: "https://example.com/x"}},
+		{"header not object", HTTPEndpointInput{Name: "a", Method: "GET", URLTemplate: "https://example.com/x", Header: `["nope"]`}},
+		{"broken template", HTTPEndpointInput{Name: "a", Method: "GET", URLTemplate: "https://example.com/{{.id"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -130,11 +136,11 @@ func TestRegisterEndpointRejections(t *testing.T) {
 
 func TestRegisterEndpointCaseInsensitiveCollision(t *testing.T) {
 	svc, _, _ := newEndpointSvc()
-	base := HTTPEndpointInput{Name: "Create_Ticket", Method: "GET", URLTemplate: "https://api.acme.com/x"}
+	base := HTTPEndpointInput{Name: "Create_Ticket", Method: "GET", URLTemplate: "https://example.com/x"}
 	if _, err := svc.Register(context.Background(), "co1", "a", base); err != nil {
 		t.Fatalf("first Register = %v; want nil", err)
 	}
-	dup := HTTPEndpointInput{Name: "create_ticket", Method: "GET", URLTemplate: "https://api.acme.com/y"}
+	dup := HTTPEndpointInput{Name: "create_ticket", Method: "GET", URLTemplate: "https://example.com/y"}
 	_, err := svc.Register(context.Background(), "co1", "a", dup)
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("duplicate Register = %v; want ErrAlreadyExists", err)
@@ -144,7 +150,7 @@ func TestRegisterEndpointCaseInsensitiveCollision(t *testing.T) {
 func TestDeleteEndpoint(t *testing.T) {
 	svc, _, _ := newEndpointSvc()
 	ep, err := svc.Register(context.Background(), "co1", "a",
-		HTTPEndpointInput{Name: "x", Method: "GET", URLTemplate: "https://api.acme.com/x"})
+		HTTPEndpointInput{Name: "x", Method: "GET", URLTemplate: "https://example.com/x"})
 	if err != nil {
 		t.Fatal(err)
 	}
