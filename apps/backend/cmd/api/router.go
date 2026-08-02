@@ -64,6 +64,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewMetricsHandler(d.metricSvc).Register(authed)
 	handlers.NewWatchersHandler(d.watcherSvc).Register(authed)
 	handlers.NewActionsHandler(d.actionSvc).Register(authed)
+	handlers.NewHTTPEndpointsHandler(d.httpEndpointSvc).Register(authed)
 	if d.dashboardSvc != nil {
 		handlers.NewDashboardHandler(d.dashboardSvc).Register(authed)
 	}

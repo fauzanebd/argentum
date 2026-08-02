@@ -903,6 +903,57 @@ export interface TableHit {
 }
 
 //////////
+// source: http_endpoint.go
+
+/**
+ * HTTPEndpoint is one target an http_action may call (T-12b).
+ * It is the registered half of the http_action feature: an admin sets up a named
+ * endpoint here — a method, a URL whose host is fixed and whose path may carry
+ * placeholders, the headers that authenticate it, and an optional body template —
+ * and the agent proposes a call by *name*, never by URL. Everything that decides
+ * where a call goes and how it is authorized was set by a human; the model only
+ * fills the declared holes.
+ * The credential lives in Header, sealed at rest. A repository returns it
+ * encrypted (HeaderEncrypted) to every caller except the turn-time resolver, which
+ * decrypts it into Header for the one moment a request is built. HasHeader is the
+ * fact a list view is allowed to see — that a header template is set — without the
+ * bytes.
+ */
+export interface HTTPEndpoint {
+  id: string;
+  company_id: string;
+  /**
+   * Name is the stable, company-scoped identifier the agent proposes against,
+   * e.g. "create_ticket".
+   */
+  name: string;
+  /**
+   * Method is the HTTP verb, upper-cased and validated to a known set at
+   * registration.
+   */
+  method: string;
+  /**
+   * URLTemplate has a literal scheme://host authority and optional
+   * {{.placeholders}} in its path and query. The literal authority is what makes
+   * the host un-forgeable from turn-time input.
+   */
+  url_template: string;
+  /**
+   * HasHeader reports whether a header template is set, derived on read so no
+   * second column can disagree with the bytes.
+   */
+  has_header: boolean;
+  /**
+   * BodyTemplate is an optional request-body template, filled from the same
+   * values as the URL. Empty for a call with no body.
+   */
+  body_template: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+//////////
 // source: lark_credential.go
 
 /**

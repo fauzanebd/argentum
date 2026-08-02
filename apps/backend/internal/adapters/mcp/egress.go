@@ -166,6 +166,27 @@ func (g Guard) CheckResolvedURL(raw string) error {
 //     than by each call site — a header that has to be remembered is a header
 //     somebody forgets.
 func (g Guard) HTTPClient(token string) *http.Client {
+	return &http.Client{
+		Transport: &authTransport{base: g.safeTransport(), token: token},
+		// No overall client timeout: the streamable transport holds a long-
+		// lived SSE stream open on purpose, and a Client.Timeout would cut it.
+		// The dial, handshake and response-header timeouts above are what bound
+		// a server that accepts and then goes quiet.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("%w: too many redirects", ErrEgressBlocked)
+			}
+			return g.CheckURL(req.URL.String())
+		},
+	}
+}
+
+// safeTransport is the SSRF-pinned transport both clients dial with: a dialer
+// whose Control hook re-checks the address the kernel is about to connect to,
+// against the same allowlist as everything else. Extracted so http_action's
+// StrictClient and the MCP client share one checkIP with one test table rather
+// than each growing its own copy — the thing this whole file exists to avoid.
+func (g Guard) safeTransport() *http.Transport {
 	timeout := g.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
@@ -185,7 +206,7 @@ func (g Guard) HTTPClient(token string) *http.Client {
 			return g.checkIP(ip)
 		},
 	}
-	transport := &http.Transport{
+	return &http.Transport{
 		DialContext:           dialer.DialContext,
 		TLSHandshakeTimeout:   timeout,
 		ResponseHeaderTimeout: timeout,
@@ -196,17 +217,27 @@ func (g Guard) HTTPClient(token string) *http.Client {
 		MaxIdleConnsPerHost: 2,
 		IdleConnTimeout:     30 * time.Second,
 	}
+}
+
+// StrictClient is what http_action (T-12b) dials with. It carries this guard's
+// address pinning and refuses redirects outright, rather than following up to five
+// with a re-check the way HTTPClient does for the MCP transport. The difference is
+// the caller: an admin registers one endpoint with one fixed host, so a 3xx is a
+// call trying to leave that host — a refusal, not a hop to re-validate. It sets no
+// bearer token; http_action supplies the endpoint's own headers per request. A
+// whole-exchange Client.Timeout is right here too, because an http_action is one
+// request and one response, not the long-lived SSE stream HTTPClient must not cut.
+func (g Guard) StrictClient() *http.Client {
+	timeout := g.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
 	return &http.Client{
-		Transport: &authTransport{base: transport, token: token},
-		// No overall client timeout: the streamable transport holds a long-
-		// lived SSE stream open on purpose, and a Client.Timeout would cut it.
-		// The dial, handshake and response-header timeouts above are what bound
-		// a server that accepts and then goes quiet.
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("%w: too many redirects", ErrEgressBlocked)
-			}
-			return g.CheckURL(req.URL.String())
+		Transport: g.safeTransport(),
+		Timeout:   timeout,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			return fmt.Errorf("%w: the endpoint returned a redirect to %s; http_action does not follow redirects",
+				ErrEgressBlocked, req.URL.Redacted())
 		},
 	}
 }

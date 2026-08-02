@@ -8,13 +8,13 @@ import (
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/fauzanebd/argentum/internal/actions"
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	mcpclient "github.com/fauzanebd/argentum/internal/adapters/mcp"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/agenttemplates"
 	"github.com/fauzanebd/argentum/internal/apiobs"
-	"github.com/fauzanebd/argentum/internal/actions"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
 	"github.com/fauzanebd/argentum/internal/branding"
@@ -35,6 +35,12 @@ import (
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 	"github.com/sirupsen/logrus"
 )
+
+// httpActionEgressTimeout bounds one http_action outbound call (T-12b). Fixed at
+// the ticket's 10s rather than made configurable: it is a call to a tenant's own
+// system on a human-approved proposal, and a system that has not answered in ten
+// seconds is one the agent should report as unresponsive, not wait on.
+const httpActionEgressTimeout = 10 * time.Second
 
 // bootstrap wires control-plane DB, tenant pool, Redis, queue, services, and WhatsApp.
 // On failure, partial resources are torn down before returning.
@@ -385,15 +391,40 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		cfg.WatcherMaxPerCompany,
 	)
 
-	// The action framework's execution side (T-10/T-11/T-12a). The registry holds
-	// the same actions the worker proposes against, so a kind the agent can
+	// http_action's egress (T-12b) reuses the MCP egress guard's rules — the same
+	// address pinning, the same private-range refusal — because "reach a tenant's
+	// own system" and "reach a tenant's MCP server" are one threat model: a URL a
+	// tenant supplied, fetched from our network position. The timeout is the
+	// ticket's fixed 10s rather than the MCP probe's, and StrictClient refuses
+	// redirects outright. allowPrivateEgress was already resolved above (and forced
+	// off outside development), so a laptop endpoint is reachable for the gate and
+	// nothing in production is.
+	httpEndpointRepo := pgctl.NewHTTPEndpointRepo(controlDB)
+	httpActionGuard := mcpclient.Guard{
+		AllowPrivate:      allowPrivateEgress,
+		AllowInsecureHTTP: cfg.MCPAllowInsecureHTTP,
+		Timeout:           httpActionEgressTimeout,
+	}
+
+	// The action framework's execution side (T-10/T-11/T-12a/T-12b). The registry
+	// holds the same actions the worker proposes against, so a kind the agent can
 	// propose is a kind this process can carry out when a human approves it. The
 	// messenger reuses the WhatsApp provider and the phone allowlist already built
-	// above — send_message delivers only to numbers this company has authorized.
+	// above — send_message delivers only to numbers this company has authorized;
+	// http_action resolves a registered endpoint (decrypting its header) and calls
+	// it through the guarded egress.
 	actionRegistry := actions.NewRegistry(
 		actions.NewSendMessageAction(app.NewActionMessenger(phoneRepo, deps.wa)),
+		actions.NewHTTPAction(
+			app.NewHTTPEndpointResolver(httpEndpointRepo, dsnCipher),
+			app.NewHTTPActionEgress(httpActionGuard, 0),
+		),
 	)
 	deps.actionSvc = app.NewActionService(pgctl.NewActionRepo(controlDB), actionRegistry, deps.actionRepo)
+
+	// The admin CRUD for those endpoints. It shares the egress guard so a host it
+	// rejects at registration is the host the turn-time dial would reject too.
+	deps.httpEndpointSvc = app.NewHTTPEndpointService(httpEndpointRepo, dsnCipher, httpActionGuard)
 
 	// Signup seeds the new company's first agent. Wired after the roster
 	// exists rather than at NewAuthService, which runs several hundred lines

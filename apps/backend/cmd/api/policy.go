@@ -138,6 +138,14 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/actions/config":       domain.RoleAdmin,
 	"PUT /api/actions/config/:kind": domain.RoleAdmin,
 
+	// Registered HTTP endpoints (T-12b): the targets an http_action may call.
+	// Admin throughout, including the list, for the reason the MCP rows give — a
+	// row is an egress destination plus a credential, a DSN-class object, so who
+	// can see and change them is the connections line, not the actions line.
+	"GET /api/http-endpoints":        domain.RoleAdmin,
+	"POST /api/http-endpoints":       domain.RoleAdmin,
+	"DELETE /api/http-endpoints/:id": domain.RoleAdmin,
+
 	// WhatsApp allowlist: adding a number grants a phone the company's agent.
 	"GET /api/phones":           domain.RoleMember,
 	"POST /api/phones":          domain.RoleAdmin,

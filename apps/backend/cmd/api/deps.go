@@ -52,6 +52,11 @@ type apiDeps struct {
 	// proposes against, so a kind the agent can propose is a kind this process
 	// can carry out.
 	actionSvc *app.ActionService
+	// httpEndpointSvc is the admin CRUD behind the http_action targets (T-12b):
+	// the registered endpoints an approved http_action calls. Built in bootstrap
+	// with the DSN cipher and the egress guard, so a header is sealed at rest and a
+	// private host is refused at registration rather than at execute time.
+	httpEndpointSvc *app.HTTPEndpointService
 	// usageRepo is read directly by `/v1/chat` for one thing UsageService does
 	// not expose: what a single turn cost, over a window bounded by time.Time
 	// rather than by the dashboard's string dates.

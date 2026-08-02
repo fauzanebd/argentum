@@ -317,17 +317,37 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		s.WatcherRepo, s.Metrics, s.ThreadSvc, s.Companies, s.scheduledEnq, cfg.WatcherMaxPerCompany,
 	).WithBudget(s.UsageSvc)
 
-	// The action framework (T-10/T-12a). send_message is the one registered kind;
-	// propose_action resolves it at propose time, and the worker's auto-execute
-	// path (an admin-opt-out kind) runs it here. The messenger reuses the phone
-	// allowlist and — set in NewChatRunner — the WhatsApp provider, so an
-	// unattended send reaches only a number this company authorized. The audit log
-	// is the same append-only store every tool call writes to (T-05).
+	// The action framework (T-10/T-12a/T-12b). send_message and http_action are the
+	// registered kinds; propose_action resolves one at propose time, and the
+	// worker's auto-execute path (an admin-opt-out kind) runs it here. The messenger
+	// reuses the phone allowlist and — set in NewChatRunner — the WhatsApp provider,
+	// so an unattended send reaches only a number this company authorized. The audit
+	// log is the same append-only store every tool call writes to (T-05).
 	s.ActionRepo = pgctl.NewActionRepo(controlDB)
 	s.actionMessenger = app.NewActionMessenger(pgctl.NewPhoneRepo(controlDB), nil)
+	// http_action's egress reuses the MCP guard's address rules — same threat, a
+	// tenant-supplied URL fetched from our network — with the ticket's fixed 10s
+	// timeout. AllowPrivate is refused outside development exactly as the MCP client
+	// below refuses it, so an unattended action can no more reach our metadata
+	// endpoint than a probe can.
+	httpActionAllowPrivate := cfg.MCPAllowPrivateEgress
+	if httpActionAllowPrivate && !cfg.IsDevelopment() {
+		httpActionAllowPrivate = false
+	}
+	httpActionEgress := app.NewHTTPActionEgress(adaptersmcp.Guard{
+		AllowPrivate:      httpActionAllowPrivate,
+		AllowInsecureHTTP: cfg.MCPAllowInsecureHTTP,
+		Timeout:           10 * time.Second,
+	}, 0)
 	s.Actions = app.NewActionService(
 		s.ActionRepo,
-		actions.NewRegistry(actions.NewSendMessageAction(s.actionMessenger)),
+		actions.NewRegistry(
+			actions.NewSendMessageAction(s.actionMessenger),
+			actions.NewHTTPAction(
+				app.NewHTTPEndpointResolver(pgctl.NewHTTPEndpointRepo(controlDB), dsnCipher),
+				httpActionEgress,
+			),
+		),
 		s.AgentActions,
 	)
 
