@@ -173,10 +173,26 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 		t.recorder.RecordSQL(ctx, companyID, tenantctx.ThreadID(ctx))
 	}
 
+	// row_count is what the rest of the system reads to decide whether a tool
+	// produced evidence: agentbudget.Tracker.Observe grounds T-16's fabrication
+	// check on it, and T-05's audit decorator records it as rows_returned. Both
+	// parse the key off the tool's own result, and a metric result that omitted
+	// it counted as no evidence at all — so a reply carrying a figure this tool
+	// had just returned was replaced with "my query returned no data", which is
+	// the opposite of what happened. One evaluation is exactly one row by
+	// construction: the registry refuses to save a template that returns any
+	// other number, and a null value is an error rather than a zero. A compared
+	// call ran the template twice, and says two, on the same reasoning that
+	// meters it twice above.
+	rows := 1
+	if res.Comparison != nil {
+		rows = 2
+	}
 	payload := map[string]any{
 		"metric_key": res.Metric.Key,
 		"label":      res.Metric.Label,
 		"unit":       string(res.Metric.Unit),
+		"row_count":  rows,
 		"value":      res.Primary.Value,
 		"window":     map[string]string{"from": res.Primary.From.Format(time.RFC3339), "to": res.Primary.To.Format(time.RFC3339)},
 	}
