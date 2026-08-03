@@ -274,9 +274,11 @@ func suggestionLine(missing string, candidates []string) string {
 // nameTokens splits an identifier into lowercase alphanumeric runs, so
 // JLS_SJLH_QRIS and jls-sjlh-qris compare equal token for token.
 func nameTokens(s string) []string {
-	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
-	})
+	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !isASCIIAlnum(r) })
+}
+
+func isASCIIAlnum(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
 }
 
 func overlap(want, got []string) int {

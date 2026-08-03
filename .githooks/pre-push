@@ -1,0 +1,42 @@
+#!/bin/sh
+# Run the backend linter before a push that touches Go, because CI runs it too
+# and a lint failure found after the push costs a round trip through the runner
+# plus a follow-up commit for something `make lint-go` answers in four seconds.
+#
+# Enabled per clone: git config core.hooksPath .githooks
+# Skipped for one push: git push --no-verify
+#
+# Deliberately only the linter. `make check` also runs the race tests and the
+# web build, which is a minute or more — a pre-push hook that people learn to
+# skip protects nothing.
+
+set -e
+
+root=$(git rev-parse --show-toplevel)
+zero=$(git hash-object --stdin </dev/null | tr '[:alnum:]' '0')
+touches_go=false
+
+# One line per ref being pushed: <local ref> <local sha> <remote ref> <remote sha>
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+	# Deleting a remote branch pushes no content.
+	[ "$local_sha" = "$zero" ] && continue
+
+	if [ "$remote_sha" = "$zero" ]; then
+		# A branch the remote has never seen: compare against wherever it
+		# forked from, and fall back to the tip's parent if that is unknown.
+		base=$(git merge-base "$local_sha" origin/main 2>/dev/null || echo "$local_sha^")
+	else
+		base=$remote_sha
+	fi
+
+	if git diff --name-only "$base" "$local_sha" | grep -q '^apps/backend/.*\.go$'; then
+		touches_go=true
+	fi
+done
+
+if [ "$touches_go" = false ]; then
+	exit 0
+fi
+
+echo "pre-push: linting the backend (skip with --no-verify)"
+make -C "$root" lint-go

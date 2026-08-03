@@ -86,6 +86,11 @@ lint: lint-go lint-web ## Lint the backend and every workspace app
 .PHONY: check
 check: vet lint test build ## Everything CI runs, locally
 
+.PHONY: hooks
+hooks: ## Enable .githooks (pre-push runs lint-go when a push touches Go)
+	git config core.hooksPath .githooks
+	@echo "core.hooksPath = .githooks — skip a single push with: git push --no-verify"
+
 # ---------------------------------------------------------------------------
 # Agent quality
 # ---------------------------------------------------------------------------
