@@ -368,7 +368,7 @@ change no one's workflow. Watchers do.
 | --------------------------------- | ------------------------------------------------------------------ |
 | **The whole widget phase (T-19→T-23)** | Moved to Sprint 2 to pay for the report track. Nothing depends on it; it slides whole. See §6. |
 | **Phases 2–6: metric registry, watchers, actions, MCP, hardening** | Moved to Sprint 2 to pay for the API track (2026-07-28). This is the expensive half of the decision and includes the sprint's original wedge. See §6. |
-| Go SDK, hosted API docs site, API playground | Node and Python are where the demand is. Markdown in the repo until someone complains. |
+| Go SDK, hosted API docs site, API playground | Node and Python are where the demand is. Markdown in the repo until someone complains. **The docs site was filed in [`backlog.md`](backlog.md) on 2026-08-02** with a trigger and an estimate, because this row deferred three things and only the Go SDK had either — see the entry for why that matters. The playground stays here with neither, deliberately. |
 | OAuth / per-end-user API tokens    | `/v1` keys are company-scoped machine credentials. Per-user identity in a browser is `T-19`'s embed key, which is a different threat model. |
 | WebSocket transport on `/v1`       | The consumer is a server. SSE works through every HTTP library and proxy; a WS client in a backend is a reconnect state machine the integrator has to write. |
 | Per-key spend caps                 | The company budget (`T-03`) is the limit in v1. Per-key caps need a quota model that belongs with pricing. |

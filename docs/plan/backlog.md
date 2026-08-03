@@ -366,6 +366,33 @@ is Node and Python, and a third generated client with no consumer is inventory.
 **Trigger for the Go client:** a customer integrating from Go.
 **Estimate:** 1d once `T-A4`'s spec exists.
 
+### Hosted API docs site
+`docs/api/quickstart.md`, `apps/backend/openapi/v1.yaml` and both SDK READMEs are
+complete and CI-verified, and every one of them is reachable only by someone who
+already has the repository. `apps/landing/src/components/nav.tsx:43` is still
+`href="#"`, the dashboard's API Keys tab links to nothing, and
+`GET /v1/openapi.json` serves a published contract with no page in front of it.
+**Why deferred:** stated in [`00-sprint-overview.md`](00-sprint-overview.md) §3
+and in `T-A4`'s out-of-scope list — *"Markdown in the repo until it hurts"*. That
+is the right call for an integrator we hand the repo to, and it stops being right
+the first time a key is issued to somebody who has never seen it.
+**Why this entry exists:** the deferral had no trigger anywhere. This file's own
+opening rule is that an item without one is a wish, and the Go SDK — which shares
+its row in §3's out-of-scope table — has had a trigger and an estimate since it
+was written. This one did not, so nothing would ever have pulled it forward.
+**Trigger:** the first API key issued to someone outside this repo. Earlier and
+more likely in practice: anyone asking where the docs are, or whoever gives the
+landing nav a real **Docs** link and needs somewhere to point it.
+**Estimate:** 0.5d for the honest version — the quickstart and the spec served as
+static pages off the landing domain, with `docs/api/examples/run.sh` and the
+block-equals-file check unchanged, so a published page cannot drift from the
+files CI executes. 1.5d with Redoc or Scalar rendering `v1.yaml`, which is what
+makes fifteen operations browsable rather than scrollable.
+**Do not fold the playground in with it.** They share a row in §3's table and
+they are different problems: a playground needs a key in a browser — the exact
+conflation `T-19`'s embed key exists to avoid — plus a demo tenant to spend
+against. It stays deferred with no trigger, deliberately.
+
 ---
 
 ## Enterprise readiness
