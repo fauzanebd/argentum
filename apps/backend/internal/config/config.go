@@ -255,6 +255,12 @@ type Config struct {
 	// ticket adding a tenant identifier to an open endpoint on the way.
 	MetricsToken string
 
+	// MCPServerAddr is where cmd/mcp listens (T-14). A separate process on a
+	// separate port: an MCP session is long-lived and speaks its own protocol,
+	// and one that hangs must not be able to exhaust the dashboard's connection
+	// budget. Authentication is the same API key `/v1` takes.
+	MCPServerAddr string
+
 	// Object storage (MinIO / S3-compatible). Used by the generate_document
 	// tool to persist generated PDF/XLSX/CSV files and to issue presigned
 	// download URLs.
@@ -405,7 +411,8 @@ func Load() (*Config, error) {
 		APIV1ObsFlushSeconds:       getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
 		APIV1ObsRetentionDays:      getEnvAsInt("API_V1_OBS_RETENTION_DAYS", 30),
 
-		MetricsToken: getEnv("METRICS_TOKEN", ""),
+		MetricsToken:  getEnv("METRICS_TOKEN", ""),
+		MCPServerAddr: getEnv("MCP_SERVER_ADDR", ":8081"),
 
 		// Object storage (MinIO / S3-compatible)
 		MinIOEndpoint:          getEnv("MINIO_ENDPOINT", ""),

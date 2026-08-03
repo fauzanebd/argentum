@@ -42,6 +42,29 @@ format); the histogram is already shaped for the second half of that — cumulat
 buckets keyed by upper bound with a `+Inf` overflow — so the conversion is a
 serializer, not a remodelling.
 
+**Superseded 2026-08-03 — the endpoint itself now has a credential.** Serving
+route-level numbers "as before" was still serving `llm.cost_total_usd`, token
+totals and query volumes to anyone who could reach the pod, which is the residual
+risk §5 of the sprint overview recorded and left to `T-17`. `T-17`'s first
+bullet — *"move `/metrics` off the public router — bind an internal listener on a
+separate port, **or require an admin JWT / metrics token**"* — is taken in its
+second form, which is the half `§8b` keeps even when the tracing is cut:
+
+| `METRICS_TOKEN` | Caller | Result |
+| --------------- | ------ | ------ |
+| set | correct token | 200, with the per-key block |
+| set | wrong or absent | **401** — no longer a downgrade to the public view |
+| unset | loopback peer | 200, without the per-key block |
+| unset | anyone else | **404** |
+
+Loopback is read from `http.Request.RemoteAddr`, the TCP peer, and never from
+`c.ClientIP()` — gin resolves that through `X-Forwarded-For` by default, so a
+remote caller would name themselves `127.0.0.1` and be believed. A test asserts
+that both `X-Forwarded-For` and `X-Real-Ip` fail to make a caller local. Behind
+the chart's Traefik the peer is the proxy's pod IP, so a deployment that wants
+scrapes sets the token — which is the point. What is left for `T-17` is the
+Prometheus exposition format and the separate listener.
+
 The `internal/metrics` package comment also claimed the endpoint served
 "Prometheus-format counters and histograms". It never has. That is corrected
 rather than inherited.
@@ -328,8 +351,12 @@ GET /v1/usage latency_ms: { "5": 10, "10": 10, "25": 11, "50": 13, … "+Inf": 1
                             "sum_ms": 99, "count": 13, "max_ms": 42 }
 ```
 
-A wrong token, and an unset `METRICS_TOKEN` with any bearer, both get the
-stripped snapshot.
+A wrong token, and an unset `METRICS_TOKEN` with any bearer, both got the
+stripped snapshot. **That was the gate's behaviour on 2026-07-30 and is no
+longer current** — this run had `METRICS_TOKEN` set and scraped over loopback,
+which is exactly the shape that still answers. Since 2026-08-03 a wrong token is
+`401` and a credential-less remote scrape is `404`; the transcript above stands
+as a record of what the numbers looked like, not of who may read them.
 
 ### The shutdown flush
 

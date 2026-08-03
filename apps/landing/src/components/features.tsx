@@ -19,12 +19,12 @@ const FEATURES: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: Database,
     title: "Plug into any database",
-    body: "Postgres, MySQL, BigQuery, Snowflake, Mongo. Connect once with read-only creds — schema awareness baked in, no modeling required.",
+    body: "Postgres, MySQL and SQL Server. Connect once with read-only credentials — schema awareness baked in, no modelling required.",
   },
   {
     icon: MessagesSquare,
     title: "Lives where your team works",
-    body: "Web widget, WhatsApp, Telegram, Slack, Discord. One brain across every channel. Ask from your phone, get the answer in your inbox.",
+    body: "Dashboard, WhatsApp, Discord, Lark. One brain across every channel, and an API and MCP server for your own agents to call.",
   },
   {
     icon: Zap,
@@ -33,8 +33,8 @@ const FEATURES: { icon: LucideIcon; title: string; body: string }[] = [
   },
   {
     icon: Workflow,
-    title: "Schedules + automations",
-    body: "Daily revenue digest? Weekly churn report? Argentum runs them on cron and ships the output to the channel of your choice.",
+    title: "It tells you first",
+    body: "Set a watcher on any metric and Argentum checks it on a schedule — when it breaches, you get a message explaining what moved and why, before anybody thought to ask.",
   },
   {
     icon: ShieldCheck,

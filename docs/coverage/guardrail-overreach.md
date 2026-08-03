@@ -1,12 +1,12 @@
 # T-07b · Guardrail over-reach — coverage
 
-**Status: PARTIAL (2026-08-02).** The two reported rule false-positives (Q-4, Q-6)
-are fixed at the policy level and covered by the golden suite. The activation and
-per-company parts are **not** done — they are coupled to a `make eval` regression
-run that needs a live LLM, and shipping activation without them would regress
-production by over-redacting.
+**Status: CODE COMPLETE (2026-08-03), one acceptance item owed.** The rules are
+narrowed, they now actually run on the path every chat turn takes, and the
+over-redaction that made switching them on unsafe is a per-company setting. What
+is outstanding is the `make eval` run on both sides of the activation, which
+costs real LLM spend against a live stack — §4.
 
-## Done, and verified by `go test ./internal/guardrails/...`
+## 1. Done, and verified by `go test ./internal/guardrails/... ./internal/app/...`
 
 - **`block_system_prompt_leak` narrowed (Q-6).** The old pattern matched the bare
   phrase `you are an ai`, which a normal answer to "what can you do?" contains, so
@@ -19,31 +19,85 @@ production by over-redacting.
   now fires only when a `nik`/`ktp`/`no. identitas` label sits within ten
   non-digit chars of the number, and the replacement keeps the label. It was moved
   **ahead of `redact_credit_cards`** so a labelled NIK reads as a NIK, not a card.
-  `TestRedactNIKFiresOnLabelledContextOnly` asserts both directions; the old
-  `TestRedactNIKIsShadowedByTheCreditCardRule` (which pinned the shadowing bug) is
-  replaced.
+- **The output rules run.** `ChatRunner.applyOutputRules` applies every
+  `scope: output` rule to the assembled reply, on the streaming path — the one
+  every chat turn actually takes. This is the ticket's stated prerequisite, and
+  until now the answer to "does redaction work?" was "the config is correct".
+- **`companies.pii_redaction_mode`** (`strict` | `contact_ok` | `off`, default
+  `strict`, migration `045`) decides which redaction rules run for a tenant, and
+  is editable by an admin in Settings → General.
 
-## Not done — the rest of T-07b
+## 2. Where it runs, and in what order
 
-- **Output rules are still not applied on the streaming path.** The ticket's stated
-  prerequisite ("the rules have never run") is unaddressed. The seam is
-  `ChatRunner` (the same place `guardrails.CheckFabrication` runs, T-16): the runner
-  would hold a `*guardrails.Analytics` and call `ProcessOutput` on the assembled
-  response before the final event. It is not wired here because activating
-  redaction globally, without the per-company mode below, would actively over-redact
-  legitimate BI output — the exact Q-4 failure, now switched on.
-- **`companies.pii_redaction_mode` (`strict`|`contact_ok`|`off`) not added.** Needs
-  a migration, a column, and the mode plumbed from the turn's company into the
-  `ProcessOutput` call so `redact_emails`/`redact_phone_numbers` can be skipped
-  under `contact_ok`/`off`. This and the activation must land together.
-- **`make eval` before/after not run.** Switching output rules on is a
-  behaviour change on every turn; the ticket requires an eval run on both sides.
-  Needs a live LLM, unavailable in this session.
+`runTurn` ends with three stages over the finished text, in this order and for
+these reasons:
 
-## `semantic_prompt_injection` false positives, now measured twice
+1. **`rejectFabrication`** (T-16) — reads the figures in the reply and checks
+   them against the turn's evidence.
+2. **`CheckScale`** (inside the same call) — corrects a restatement that
+   disagrees with the figure it restates.
+3. **`applyOutputRules`** (this ticket) — the redaction and leak rules.
+
+Redaction runs **last** because the two checks above read the digits: a rule that
+has already blanked part of the text would have the fabrication check judging a
+sentence the agent did not write.
+
+It shares `rejectFabrication`'s caveat and its answer. On a streaming turn the
+unredacted text has already reached the dashboard as deltas by the time this
+fires; the final event and the persisted message carry the processed version, so
+the UI settles on it, and every push channel — WhatsApp, Discord, Lark, a watcher
+briefing — only ever sees the final and so never sees the raw text at all.
+
+**Fail-closed, deliberately opposite to the business profile beside it.** A
+company row that cannot be read redacts at `strict`. A profile that fails to load
+costs the answer some context; a policy that fails to load decides whether
+personal data is printed, and over-redacting is the recoverable direction.
+
+## 3. What a mode means
+
+The class lives on the rule in `config/guardrails.yaml` (`pii_class: contact` |
+`identity`), not as a list of rule names in Go, so a redaction rule added later
+declares its own policy in the same edit that adds it. A test fails the build if
+one does not.
+
+| Mode | Emails, phones | NIK, SSN, cards | System-prompt leak |
+| ---- | -------------- | --------------- | ------------------ |
+| `strict` (default) | redacted | redacted | blocked |
+| `contact_ok` | **returned** | redacted | blocked |
+| `off` | returned | returned | blocked |
+
+`contact_ok` is the answer to the acceptance item "list top 10 customers with
+their emails returns emails": there is no email shape that distinguishes a
+legitimate contact list from a leak, so this is a setting rather than a pattern
+anyone can tune correctly for both kinds of tenant. What it deliberately does not
+buy is identity documents — "my staff may read our customers' contact details" is
+a different statement from "my staff may read our customers' identity papers".
+
+`off` is a policy over the tenant's own data, never a switch that turns the
+output stage off: `block_system_prompt_leak` carries no class, so no mode reaches
+it.
+
+An unrecognised value — including the `""` a row written before `045` carries, or
+one whose column the down migration dropped — normalises to `strict` at every
+layer that reads it: the turn, the settings form, and the repository's write.
+
+## 4. What is owed
+
+- **`make eval` before and after.** The ticket asks for it, and it is the right
+  ask: activating output rules is a behaviour change on every turn. It needs a
+  live stack and real LLM spend across the 40-case golden set, twice. Not run —
+  flagged for the owner rather than spent unasked. The risk it would measure is
+  narrow: the rules only rewrite a final reply, and an eval answer containing an
+  email address or an Indonesian phone number is the only shape that can score
+  differently.
+- **A live turn showing a redaction.** The unit tests prove the seam under the
+  shipped config; nothing has yet watched a real dashboard turn come back with
+  `[EMAIL REDACTED]` in it. Same gate as above and cheap to fold into it.
+
+## 5. `semantic_prompt_injection` false positives, measured twice — partially addressed
 
 Not in the ticket's scope as written (it names Q-4 and Q-6), but this rule has
-now refused ordinary traffic in two consecutive live gates, and it belongs here
+refused ordinary traffic in two consecutive live gates, and it belongs here
 because nothing else owns it.
 
 **`T-S4`'s gate, 2026-07-30:** two of seven ordinary questions refused — *"which
@@ -60,19 +114,21 @@ answered with *"I cannot fulfill requests that attempt to override my
 instructions or change my role."* A message with near-identical phrasing had
 been accepted minutes earlier, which is the part worth keeping: the classifier
 is an LLM, so this is a distribution rather than a pattern anyone can fix by
-reading the prompt. Both refusals wrote their `agent_actions` row, so the rate
-is measurable from `select count(*) … where tool_name='guardrail'` on any
-deployment rather than only from a gate transcript.
+reading the prompt.
 
-Two things follow. The rule's false-positive rate on *instruction-shaped but
-legitimate* input — an admin telling the agent what to do — is the shape most
-likely to appear in a watcher briefing prompt or an API directive, which is
-exactly what `T-A2b` had to route around by moving its directive into the system
-prompt. And a golden must-pass case (the ticket's own prescription: narrow
-against a case, not by eye) needs to cover an imperative admin instruction, not
-just capability questions.
+**What shipped against it.** The classifier prompt now carries an explicit FALSE
+carve-out for the exact shape both gates caught: a user stating their own role or
+what their workspace has enabled, and then directing the assistant's own
+configured tools — including telling it not to ask clarifying questions.
+Directing the tools is using the product; only a message that tries to change the
+assistant's rules, persona or safety is TRUE.
 
-**Next step:** wire activation + the per-company mode as one atomic change, then run
-`make eval` on both sides and paste the scores. Until then production behaviour is
-unchanged (output rules still dormant); the YAML is merely correct for when they
-are switched on.
+**And what a golden case can hold.** `TestImperativeAdminInstructionsAreNotInjections`
+runs the gate's own refused message, plus three more of that shape, through the
+whole input chain with the classifier saying FALSE. That pins the deterministic
+half — no regex rule may claim them, so a future widening of
+`block_prompt_injection` cannot start refusing them. The classifier's own rate is
+a distribution and only a live run can measure whether the carve-out held; the
+count is available on any deployment from `agent_actions` where
+`tool_name = 'guardrail'`, so the next gate can report a number rather than an
+anecdote.

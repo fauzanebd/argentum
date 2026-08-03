@@ -19,9 +19,10 @@ export function Hero() {
             <span className="gradient-text">Ship insights in seconds.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-base text-white/65 sm:text-lg">
-            Argentum reads your database, answers in plain language, and delivers
-            sophisticated reports to web, WhatsApp, and Telegram — wherever your team
-            already lives. Your analyst that never sleeps, never bills overtime.
+            Argentum reads your database, answers in plain language, and tells you
+            when a number moves before you go looking — in the dashboard, on
+            WhatsApp, in Discord or Lark, wherever your team already works. Your
+            analyst that never sleeps, never bills overtime.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Button size="lg">

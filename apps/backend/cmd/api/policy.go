@@ -88,6 +88,14 @@ var apiPolicy = middleware.RolePolicy{
 	// open a connection to, which is a DSN-class object. Approving one of its
 	// tools decides what an agent may do to that system, so the review route is
 	// on the same line by construction.
+	// Outbound webhook subscriptions (T-15). Admin on every route including the
+	// reads, like MCP servers: the list is a map of where a workspace's events
+	// go, and each row is an egress destination we POST to unattended.
+	"GET /api/webhooks":        domain.RoleAdmin,
+	"POST /api/webhooks":       domain.RoleAdmin,
+	"PUT /api/webhooks/:id":    domain.RoleAdmin,
+	"DELETE /api/webhooks/:id": domain.RoleAdmin,
+
 	"GET /api/mcp-servers":                   domain.RoleAdmin,
 	"POST /api/mcp-servers":                  domain.RoleAdmin,
 	"GET /api/mcp-servers/:id":               domain.RoleAdmin,

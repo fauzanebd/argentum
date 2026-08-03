@@ -1181,9 +1181,14 @@ components:
       additionalProperties: false
     Scope:
       type: string
-      description: One capability a key may carry. Fixed at mint time.
+      description: >-
+        One capability a key may carry. Fixed at mint time. `read:data` and
+        `write:visualizations` gate the MCP server (T-14) rather than any route
+        in this document — a key that will only ever call `/v1` does not need
+        them, and one used from an MCP client does.
       enum:
         - read:metrics
+        - read:data
         - read:threads
         - read:usage
         - read:audit
@@ -1191,6 +1196,7 @@ components:
         - write:chat
         - write:actions
         - write:reports
+        - write:visualizations
 
     Agent:
       type: object

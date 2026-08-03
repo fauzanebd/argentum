@@ -32,6 +32,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/tracing"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
 	"github.com/fauzanebd/argentum/internal/webhookout"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
@@ -49,6 +50,20 @@ func main() {
 
 	rootCtx, cancelRoot := context.WithCancel(context.Background())
 	defer cancelRoot()
+
+	// OTel (T-17). A no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set, so a
+	// deployment with no collector runs exactly as it did.
+	shutdownTracing, err := tracing.Init(rootCtx, "argentum-worker", "1")
+	if err != nil {
+		logrus.WithError(err).Warn("otel: tracing not enabled")
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(ctx); err != nil {
+			logrus.WithError(err).Warn("otel: exporter did not flush cleanly")
+		}
+	}()
 
 	stack, err := bootstrap.New(rootCtx, cfg)
 	if err != nil {
@@ -81,8 +96,23 @@ func main() {
 	deliveryRepo := pgctl.NewWebhookDeliveryRepo(stack.ControlDB)
 	companyRepo := pgctl.NewCompanyRepo(stack.ControlDB)
 	webhookSender := webhookout.NewSender(deliveryRepo, companyRepo, stack.Enqueuer(), cfg.APIV1CallbackAllowPrivate)
-	webhookDeliverer := webhookout.NewDeliverer(deliveryRepo, companyRepo, cfg.APIV1CallbackAllowPrivate, webhookMaxAttempts)
+	// T-15: standing subscriptions, and the fan-out that feeds them. The sender
+	// above is the delivery half and is not duplicated — this decides who gets
+	// told, webhookout decides how it travels. The deliverer counts terminal
+	// outcomes against the subscription that produced them, which is what
+	// disables one after twenty consecutive failures.
+	subscriptionRepo := pgctl.NewWebhookSubscriptionRepo(stack.ControlDB)
+	webhookSubs := app.NewWebhookSubscriptionService(subscriptionRepo, webhookSender)
+	webhookDeliverer := webhookout.NewDeliverer(deliveryRepo, companyRepo, cfg.APIV1CallbackAllowPrivate, webhookMaxAttempts).
+		WithSubscriptions(subscriptionRepo, domain.WebhookAutoDisableAfter)
 	reportSvc := app.NewAPIReportService(reportRepo, stack.Documents, stack.Docs, webhookSender)
+
+	// The three publishers. All on the worker, because all three events happen
+	// here: a watcher fires on a tick, an action executes after approval is
+	// relayed to this process, and a scheduled run ends when its turn does.
+	stack.Watchers.WithWebhooks(webhookSubs)
+	stack.Actions.WithWebhooks(webhookSubs)
+	stack.ScheduledSvc.WithWebhooks(webhookSubs)
 
 	runner := stack.NewChatRunner(bus, waProvider).WithAPIReports(reportSvc)
 

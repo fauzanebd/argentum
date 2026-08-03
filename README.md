@@ -12,7 +12,7 @@ By [Smartsoft](https://smartsoft.co.id).
 
 ```
 apps/
-  backend/      Go 1.26 — cmd/{api,worker,discord}, internal/, migrations/
+  backend/      Go 1.26 — cmd/{api,worker,discord,mcp}, internal/, migrations/
   dashboard/    React 18 + Vite + TanStack — the customer web app
   landing/      React 18 + Vite — marketing site
 packages/       Shared TypeScript packages (see docs/plan for what lands here)

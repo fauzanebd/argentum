@@ -143,6 +143,12 @@ type Stack struct {
 	Docs      *docgen.Service
 	Documents domain.DocumentRepository
 
+	// Guardrails is the loaded policy set. The agent factory binds a per-tenant
+	// copy of it for the input rules; the runner keeps this one for the output
+	// rules, which are regex-only and need no LLM (T-07b). Nil when the
+	// deployment configures no guardrails path, which switches both off.
+	Guardrails *guardrails.Analytics
+
 	tableEmbeddings domain.TableEmbeddingRepository
 	scheduledEnq    *queue.Enqueuer
 	closers         []func()
@@ -339,6 +345,28 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		AllowInsecureHTTP: cfg.MCPAllowInsecureHTTP,
 		Timeout:           10 * time.Second,
 	}, 0)
+
+	// The tenant's own MCP tools share one client and one repository across both
+	// halves of the track: the read half (T-M2) calls it from inside the turn,
+	// and the write half (T-M4) calls it from the action framework after a human
+	// approved. Built here, above the action registry, because `mcp_call` is a
+	// registered action and the registry is constructed once.
+	//
+	// AllowPrivate is refused outside development for the same reason cmd/api
+	// refuses it: the tenant types the URL and we hold their token, so trusting a
+	// production operator who set it is trusting an SSRF.
+	mcpAllowPrivate := cfg.MCPAllowPrivateEgress
+	if mcpAllowPrivate && !cfg.IsDevelopment() {
+		logrus.Warn("MCP_ALLOW_PRIVATE_EGRESS is set outside development and is being ignored")
+		mcpAllowPrivate = false
+	}
+	mcpClient := adaptersmcp.NewClient(adaptersmcp.Guard{
+		AllowPrivate:      mcpAllowPrivate,
+		AllowInsecureHTTP: cfg.MCPAllowInsecureHTTP,
+		Timeout:           time.Duration(cfg.MCPCallTimeoutSecs) * time.Second,
+	})
+	mcpRepo := pgctl.NewMCPServerRepo(controlDB)
+
 	s.Actions = app.NewActionService(
 		s.ActionRepo,
 		actions.NewRegistry(
@@ -346,6 +374,15 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 			actions.NewHTTPAction(
 				app.NewHTTPEndpointResolver(pgctl.NewHTTPEndpointRepo(controlDB), dsnCipher),
 				httpActionEgress,
+			),
+			// T-M4. Registered unconditionally, like the other two: a company that
+			// has not enabled `mcp_call` cannot propose it (ProposeAction refuses an
+			// unenabled kind), and a company with no write tool has nothing to name.
+			actions.NewMCPCall(
+				app.NewMCPCallStore(mcpRepo, dsnCipher),
+				mcpClient,
+				time.Duration(cfg.MCPCallTimeoutSecs)*time.Second,
+				cfg.MCPMaxResponseBytes,
 			),
 		),
 		s.AgentActions,
@@ -389,30 +426,25 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// The tenant's own MCP tools, resolved per turn (T-M2). It shares the egress
 	// guard's rules with the CRUD side — the same address pinning and redirect
 	// re-checks — but its own timeout, because a call is on a turn's clock rather
-	// than an admin's. AllowPrivate is refused outside development for the same
-	// reason cmd/api refuses it: the tenant types the URL and we hold their
-	// token, so trusting a production operator who set it is trusting an SSRF.
-	mcpAllowPrivate := cfg.MCPAllowPrivateEgress
-	if mcpAllowPrivate && !cfg.IsDevelopment() {
-		logrus.Warn("MCP_ALLOW_PRIVATE_EGRESS is set outside development and is being ignored")
-		mcpAllowPrivate = false
-	}
-	mcpClient := adaptersmcp.NewClient(adaptersmcp.Guard{
-		AllowPrivate:      mcpAllowPrivate,
-		AllowInsecureHTTP: cfg.MCPAllowInsecureHTTP,
-		Timeout:           time.Duration(cfg.MCPCallTimeoutSecs) * time.Second,
-	})
+	// than an admin's.
+	//
+	// WithProposer is the write half (T-M4): an approved tool an admin classified
+	// as not read-only is offered as a proposing tool rather than withheld. It
+	// reaches the tenant's server only through s.Actions, which is the same state
+	// machine send_message and http_action run under — approve once, execute
+	// once.
 	s.CompanyToolSource = mcptools.NewSource(
-		pgctl.NewMCPServerRepo(controlDB), dsnCipher, mcpClient, s.AgentActions, s.UsageSvc,
+		mcpRepo, dsnCipher, mcpClient, s.AgentActions, s.UsageSvc,
 		mcptools.Caps{
 			CallTimeout:      time.Duration(cfg.MCPCallTimeoutSecs) * time.Second,
 			MaxResponseBytes: cfg.MCPMaxResponseBytes,
 			MaxCallsPerTurn:  cfg.MCPMaxCallsPerTurn,
 		},
-	)
+	).WithProposer(s.Actions)
 
 	mem := buildMemory(cfg)
 	guardrailsTpl := buildGuardrails(cfg, lightLLMClient)
+	s.Guardrails = guardrailsTpl
 
 	var agentCfgOpt sdkagent.Option
 	if cfg.AgentConfigPath != "" {
@@ -725,6 +757,13 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 		WithMetrics(s.Metrics).
 		WithActionCatalog(s.Actions).
 		WithWatchers(s.Watchers)
+	// Explicitly, not as another chained call: buildGuardrails returns a typed
+	// nil when the deployment configures no path, and a typed nil handed to an
+	// interface parameter is not nil — the runner's own guard would not catch it
+	// and every turn would panic on the first reply.
+	if s.Guardrails != nil && s.Companies != nil {
+		runner = runner.WithOutputRules(s.Guardrails, s.Companies)
+	}
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)
 		logrus.WithFields(logrus.Fields{

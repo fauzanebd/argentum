@@ -15,7 +15,9 @@ import (
 	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
+	"github.com/fauzanebd/argentum/internal/tracing"
 )
 
 // ActionAuditor is the narrow contract the audit decorator needs: one write,
@@ -71,9 +73,19 @@ func (a *audited) Run(ctx context.Context, input string) (string, error) {
 }
 
 func (a *audited) Execute(ctx context.Context, args string) (string, error) {
+	// One span per tool call (T-17), started at the same seam as the audit row
+	// and the counter — three records of one call, and none of them can cover a
+	// different set of calls than the others.
+	ctx, span := tracing.Tool(ctx, a.Tool.Name())
 	start := time.Now()
 	out, err := a.Tool.Execute(ctx, args)
-	a.record(ctx, a.Tool.Name(), args, out, err, time.Since(start))
+	tracing.End(span, err)
+	took := time.Since(start)
+	a.record(ctx, a.Tool.Name(), args, out, err, took)
+	// The same seam, one line later (T-17). Every tool call passes through here
+	// — that is why the audit row is written here — so the counter cannot drift
+	// from the log by covering a different set of calls.
+	metrics.Default().RecordToolCall(a.Tool.Name(), took, err != nil)
 	return out, err
 }
 

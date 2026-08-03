@@ -30,6 +30,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/actions"
 	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/fauzanebd/argentum/internal/tools"
 )
@@ -49,6 +50,10 @@ type ActionAudit interface {
 
 // ActionService is the propose/approve/reject/execute state machine (T-10).
 type ActionService struct {
+	// webhooks tells the tenant's own subscribers what ran (T-15). Nil is the
+	// ordinary case for a deployment without the subscription model, and Publish
+	// is nil-safe regardless.
+	webhooks *WebhookSubscriptionService
 	repo     domain.ActionRepository
 	registry *actions.Registry
 	audit    ActionAudit
@@ -71,6 +76,14 @@ func NewActionService(repo domain.ActionRepository, registry *actions.Registry, 
 		now:      time.Now,
 		newKey:   uuid.NewString,
 	}
+}
+
+// WithWebhooks publishes `action.executed` for every execution, successful or
+// not (T-15). Optional, and installed by bootstrap after both services exist —
+// they cannot be constructor arguments to each other.
+func (s *ActionService) WithWebhooks(w *WebhookSubscriptionService) *ActionService {
+	s.webhooks = w
+	return s
 }
 
 // --- propose (agent path) ---
@@ -448,6 +461,11 @@ func (s *ActionService) execute(ctx context.Context, inv *domain.ActionInvocatio
 		logrus.WithError(err).WithFields(logrus.Fields{
 			"company_id": inv.CompanyID, "invocation_id": inv.ID, "action_kind": inv.Kind,
 		}).Warn("action execution failed")
+		// Published for a failure too (T-15). "We tried to file your ticket and
+		// the far end refused" is the case an integration most needs to hear,
+		// and a subscriber that only wants successes reads `status`.
+		metrics.Default().RecordActionExecution(inv.Kind, false)
+		s.publishExecuted(ctx, inv, domain.InvocationFailed, err.Error())
 		return
 	}
 	if mErr := s.repo.MarkExecuted(ctx, inv.CompanyID, inv.ID, result, now); mErr != nil {
@@ -458,6 +476,30 @@ func (s *ActionService) execute(ctx context.Context, inv *domain.ActionInvocatio
 		}).Error("action executed but the ledger was not updated")
 	}
 	s.auditDecision(ctx, inv, actionToolExecute, actorKind, actorRef, domain.ActionStatusOK, "")
+	metrics.Default().RecordActionExecution(inv.Kind, true)
+	s.publishExecuted(ctx, inv, domain.InvocationExecuted, "")
+}
+
+// publishExecuted fans one execution out to the tenant's subscriptions (T-15).
+//
+// It reads the status from the caller rather than from `inv`, because the copy
+// in hand is the one loaded before the transition and re-reading the row to
+// send a webhook would be a database round trip for a message.
+func (s *ActionService) publishExecuted(ctx context.Context, inv *domain.ActionInvocation, status domain.InvocationStatus, errText string) {
+	if s.webhooks == nil {
+		return
+	}
+	sent := *inv
+	sent.Status = status
+	sent.ErrorText = errText
+	description := ""
+	if action, ok := s.registry.Get(inv.Kind); ok {
+		if d, err := action.Describe(inv.ParamsRedacted); err == nil {
+			description = d
+		}
+	}
+	s.webhooks.Publish(ctx, inv.CompanyID, domain.WebhookActionExecuted,
+		newActionExecutedPayload(&sent, description, s.now()))
 }
 
 // --- audit ---

@@ -370,11 +370,29 @@ export const ScopeWriteActions = "write:actions";
  */
 export const ScopeWriteReports = "write:reports";
 /**
+ * ScopeReadData — read the tenant's own warehouse: the source catalog, a
+ * table's schema, and a read-only query (T-14). It gates the MCP server's
+ * data tools and no `/v1` route: the API answers questions *about* a turn,
+ * and this is the surface where somebody else's agent queries directly.
+ * Separate from read:metrics on purpose. A metric is a number an admin
+ * defined, validated and named; `run_sql` is arbitrary SQL against every
+ * table the connection can see, and a key trusted with the first is not
+ * thereby trusted with the second — which is the acceptance criterion T-14
+ * states in as many words.
+ */
+export const ScopeReadData = "read:data";
+/**
+ * ScopeWriteVisualizations — create a Metabase card or dashboard (T-14).
+ * The only MCP tool that writes anything, and it writes to Metabase rather
+ * than to a tenant's own system, which is why it is not write:actions.
+ */
+export const ScopeWriteVisualizations = "write:visualizations";
+/**
  * ScopeReadDocuments — list generated documents and re-presign their
  * download URLs (T-A2). Read-only over the tenant's own output.
  */
 export const ScopeReadDocuments = "read:documents";
-export type Scope = typeof ScopeReadMetrics | typeof ScopeReadThreads | typeof ScopeWriteChat | typeof ScopeReadUsage | typeof ScopeReadAudit | typeof ScopeWriteActions | typeof ScopeWriteReports | typeof ScopeReadDocuments;
+export type Scope = typeof ScopeReadMetrics | typeof ScopeReadThreads | typeof ScopeWriteChat | typeof ScopeReadUsage | typeof ScopeReadAudit | typeof ScopeWriteActions | typeof ScopeWriteReports | typeof ScopeReadData | typeof ScopeWriteVisualizations | typeof ScopeReadDocuments;
 /**
  * APIKey is a company-scoped machine credential. It authenticates a script,
  * not a person: there is no role on it, only scopes, because "admin" is a
@@ -618,6 +636,27 @@ export interface ReportBranding {
 // source: company.go
 
 /**
+ * PIIRedactionMode is a company's policy for the output redaction rules
+ * (T-07b). The values match guardrails.PIIMode, which is where they are acted
+ * on; this is the storage and validation half, so the domain does not have to
+ * import the policy engine to describe a column.
+ */
+export type PIIRedactionMode = string;
+/**
+ * PIIRedactionStrict redacts every kind of personal data the rules find.
+ */
+export const PIIRedactionStrict: PIIRedactionMode = "strict";
+/**
+ * PIIRedactionContactOK lets emails and phone numbers through, so a tenant
+ * can get the customer contact list they asked for. Identity documents and
+ * card numbers are still redacted.
+ */
+export const PIIRedactionContactOK: PIIRedactionMode = "contact_ok";
+/**
+ * PIIRedactionOff runs no redaction rule at all.
+ */
+export const PIIRedactionOff: PIIRedactionMode = "off";
+/**
  * Company is a tenant of Argentum. Every user, phone number, DB connection,
  * thread, and usage event is owned by exactly one company.
  */
@@ -627,6 +666,12 @@ export interface Company {
   slug: string;
   default_currency: string; // ISO 4217, e.g. "IDR", "USD"
   created_at: string;
+  /**
+   * PIIRedactionMode governs the output redaction rules for this tenant's
+   * turns. Empty on a row written before migration 045 and read as strict,
+   * which is the column's default.
+   */
+  pii_redaction_mode: PIIRedactionMode;
 }
 
 //////////
@@ -1739,4 +1784,90 @@ export interface WebhookDelivery {
   last_error?: string;
   created_at: string;
   delivered_at?: string;
+  /**
+   * SubscriptionID is the standing subscription this delivery came from
+   * (T-15), and empty for a `report.completed` callback, which belongs to the
+   * one request that named its URL. It is what lets the worker count a
+   * terminal failure against the subscription that caused it rather than
+   * guessing by URL — two subscriptions may legitimately share one.
+   */
+  subscription_id?: string;
+}
+
+//////////
+// source: webhook_subscription.go
+
+/**
+ * WebhookWatcherBreached fires when a watcher's condition is met and the
+ * briefing turn has been enqueued (T-08).
+ */
+export const WebhookWatcherBreached = "watcher.breached";
+/**
+ * WebhookActionExecuted fires when an approved action ran — including one
+ * that ran and failed, because "we tried and it did not work" is the event
+ * an integration most needs (T-10).
+ */
+export const WebhookActionExecuted = "action.executed";
+/**
+ * WebhookScheduledTaskCompleted fires when a scheduled task's turn ends.
+ */
+export const WebhookScheduledTaskCompleted = "scheduled_task.completed";
+/**
+ * Webhook event names (T-15). The vocabulary is closed and lives here, because
+ * a subscription to an event nobody publishes is a tenant waiting for a
+ * delivery that will never come — and the failure is silent at every layer
+ * below this one.
+ * Report callbacks are deliberately absent. `POST /v1/reports` takes a
+ * `callback_url` per request (T-A2): the caller is waiting on that one report
+ * and named the URL in the same breath, which is a different thing from a
+ * standing subscription to what a workspace does.
+ */
+export type Webhook = typeof WebhookWatcherBreached | typeof WebhookActionExecuted | typeof WebhookScheduledTaskCompleted;
+/**
+ * WebhookAutoDisableAfter is how many consecutive failed deliveries disable a
+ * subscription (T-15).
+ * Twenty rather than three: a tenant's server being down for an hour is
+ * ordinary, and disabling on the first blip would make this feature something
+ * people stop trusting. Twenty consecutive terminal failures — each of which is
+ * already five delivery attempts with backoff — is a server that is not coming
+ * back without someone looking at it.
+ */
+export const WebhookAutoDisableAfter = 20;
+/**
+ * WebhookSubscription is one tenant's standing request to be told when
+ * something happens (T-15).
+ * The signing secret is not here: it is the company's, on `companies.
+ * webhook_secret`, minted on first use and shared by every callback we send
+ * them — a receiver verifying two subscriptions with one secret is the shape
+ * every webhook integration expects, and rotating per subscription would mean a
+ * tenant holding a table of secrets.
+ */
+export interface WebhookSubscription {
+  id: string;
+  company_id: string;
+  url: string;
+  /**
+   * Events is what this subscription wants. Empty is not "everything" — it is
+   * a subscription that matches nothing, and the service refuses to store one.
+   * The opposite rule to an agent's tool allowlist, and deliberately: there,
+   * an empty list widens what an agent may do inside Argentum; here it would
+   * widen what leaves it.
+   */
+  events: string[];
+  enabled: boolean;
+  /**
+   * ConsecutiveFailures counts terminal delivery failures since the last
+   * success. Reset to zero by any delivery that lands.
+   */
+  consecutive_failures: number /* int */;
+  /**
+   * DisabledReason is set when this system disabled the subscription rather
+   * than the tenant. Empty for one an admin switched off, so the settings
+   * screen can tell "you turned this off" from "we did, and here is why".
+   */
+  disabled_reason?: string;
+  last_success_at?: string;
+  last_failure_at?: string;
+  created_at: string;
+  updated_at: string;
 }

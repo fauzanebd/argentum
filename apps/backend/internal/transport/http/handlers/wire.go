@@ -49,6 +49,10 @@ type AgentToolInfo struct {
 	// an admin narrowed its tools in the dashboard.
 	MCPServerID   string `json:"mcp_server_id,omitempty"`
 	MCPServerName string `json:"mcp_server_name,omitempty"`
+	// RequiresApproval marks an MCP tool an admin classified as a write (T-M4).
+	// The agent may call it, and the call proposes rather than runs — so the
+	// checkbox grants a capability, not a licence, and the form says which.
+	RequiresApproval bool `json:"requires_approval,omitempty"`
 }
 
 // AgentsResponse is the body of `GET /api/agents`.
@@ -332,4 +336,21 @@ type MetricTestResponse struct {
 	From        time.Time `json:"from"`
 	To          time.Time `json:"to"`
 	RenderedSQL string    `json:"rendered_sql"`
+}
+
+// WebhooksResponse is the body of `GET /api/webhooks` (T-15).
+//
+// It carries the vocabulary and the signing contract beside the rows, so the
+// settings form offers what this deployment actually publishes and an admin can
+// read how to verify a delivery without opening the API docs. Both are facts
+// about the backend, and a copy of either in the frontend is a copy that goes
+// stale.
+type WebhooksResponse struct {
+	Subscriptions []*domain.WebhookSubscription `json:"subscriptions"`
+	Events        []string                      `json:"events"`
+	// DisableAfter is how many consecutive failed deliveries switch a
+	// subscription off by itself.
+	DisableAfter     int    `json:"disable_after"`
+	SignatureHeader  string `json:"signature_header"`
+	SignatureMessage string `json:"signature_message"`
 }

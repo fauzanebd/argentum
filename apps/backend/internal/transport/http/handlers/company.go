@@ -523,14 +523,29 @@ func (h *CompanyHandler) getSettings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	mode := company.PIIRedactionMode
+	if !mode.Valid() {
+		// A row written before migration 045, or one whose column was dropped by
+		// the down migration. The turn reads it as strict; the form has to show
+		// the same thing, or an admin is looking at a setting that is not the one
+		// in force.
+		mode = domain.PIIRedactionStrict
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"default_currency":     company.DefaultCurrency,
 		"supported_currencies": app.SupportedCurrencies(),
+		"pii_redaction_mode":   mode,
+		"pii_redaction_modes":  domain.PIIRedactionModes(),
 	})
 }
 
+// updateSettingsReq carries whichever settings the caller is changing. Both
+// fields are optional so a client that only knows about one of them — the
+// dashboard before this ticket, any integrator's script — keeps working; a body
+// with neither is a bad request rather than a silent no-op.
 type updateSettingsReq struct {
-	DefaultCurrency string `json:"default_currency" binding:"required"`
+	DefaultCurrency  string                  `json:"default_currency"`
+	PIIRedactionMode domain.PIIRedactionMode `json:"pii_redaction_mode"`
 }
 
 func (h *CompanyHandler) updateSettings(c *gin.Context) {
@@ -539,13 +554,29 @@ func (h *CompanyHandler) updateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.svc.UpdateCurrency(c.Request.Context(), companyID(c), req.DefaultCurrency); err != nil {
-		if errors.Is(err, domain.ErrInvalidInput) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if req.DefaultCurrency == "" && req.PIIRedactionMode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no settings in request: send default_currency, pii_redaction_mode, or both"})
 		return
 	}
+	if req.DefaultCurrency != "" {
+		if err := h.svc.UpdateCurrency(c.Request.Context(), companyID(c), req.DefaultCurrency); err != nil {
+			writeSettingsErr(c, err)
+			return
+		}
+	}
+	if req.PIIRedactionMode != "" {
+		if err := h.svc.UpdatePIIRedactionMode(c.Request.Context(), companyID(c), req.PIIRedactionMode); err != nil {
+			writeSettingsErr(c, err)
+			return
+		}
+	}
 	c.Status(http.StatusNoContent)
+}
+
+func writeSettingsErr(c *gin.Context, err error) {
+	if errors.Is(err, domain.ErrInvalidInput) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 }

@@ -5,6 +5,7 @@ import { ConnectionsTab } from "./connections-tab";
 import { MetricsTab } from "./metrics-tab";
 import { AgentsTab } from "./agents-tab";
 import { MCPServersTab } from "./mcp-servers-tab";
+import { WebhooksTab } from "./webhooks-tab";
 import { PhonesTab } from "./phones-tab";
 import { IntegrationsTab } from "./integrations-tab";
 import { TeamTab } from "./team-tab";
@@ -35,6 +36,9 @@ export function SettingsPage() {
     { id: "phones", label: "Phone numbers" },
     { id: "integrations", label: "Integrations" },
     ...(isAdmin ? [{ id: "reports", label: "Reports" }] : []),
+    // Admin-only on every route including the read, like MCP servers: the list
+    // is a map of where this workspace's events go.
+    ...(isAdmin ? [{ id: "webhooks", label: "Webhooks" }] : []),
     ...(isAdmin ? [{ id: "api-keys", label: "API keys" }] : []),
     ...(isAdmin ? [{ id: "team", label: "Team" }] : []),
     { id: "about", label: "About" },
@@ -92,6 +96,11 @@ export function SettingsPage() {
           {isAdmin && (
             <Tabs.Content value="mcp-servers">
               <MCPServersTab />
+            </Tabs.Content>
+          )}
+          {isAdmin && (
+            <Tabs.Content value="webhooks">
+              <WebhooksTab />
             </Tabs.Content>
           )}
           <Tabs.Content value="phones">

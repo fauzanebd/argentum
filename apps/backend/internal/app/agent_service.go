@@ -117,6 +117,12 @@ type AgentToolOption struct {
 	MCPServerID   string `json:"mcp_server_id,omitempty"`
 	MCPServerName string `json:"mcp_server_name,omitempty"`
 	Description   string `json:"description,omitempty"`
+	// RequiresApproval marks an MCP tool an admin classified as a write (T-M4).
+	// Ticking it does not give the agent the power to run it — every call becomes
+	// a proposal a human decides on — and the form says so, because an admin who
+	// thinks a checkbox grants a write will not tick it, and one who thinks it
+	// grants nothing will.
+	RequiresApproval bool `json:"requires_approval,omitempty"`
 }
 
 // CompanyToolOptions is every tool an agent of this company may be narrowed to:
@@ -130,10 +136,12 @@ type AgentToolOption struct {
 // bound to, with nothing said and nothing to see. The API half already worked:
 // a namespaced name in `allowed_tools` was accepted, stored and called.
 //
-// Same three gates as the turn-time provider — approved, read-only, not drifted
-// — because a checkbox for a tool the turn would refuse to build is a checkbox
-// that scopes an agent to nothing. A server that is disabled offers nothing
-// either, for the same reason.
+// The same gates as the turn-time provider, and they moved with it (T-M4):
+// approved and not drifted are absolute, while read-only now decides how a tool
+// is offered rather than whether. A write tool gets a checkbox and a flag,
+// because the turn-time provider builds one — and a checkbox for a tool the turn
+// would refuse to build is a checkbox that scopes an agent to nothing. A server
+// that is disabled offers nothing either, for the same reason.
 func (s *AgentService) CompanyToolOptions(ctx context.Context, companyID string) []AgentToolOption {
 	out := make([]AgentToolOption, 0, len(s.tools))
 	for _, n := range s.tools {
@@ -162,14 +170,15 @@ func (s *AgentService) CompanyToolOptions(ctx context.Context, companyID string)
 			continue
 		}
 		for _, tr := range toolRows {
-			if !tr.Approved || !tr.ReadOnly || tr.Drifted() {
+			if !tr.Approved || tr.Drifted() {
 				continue
 			}
 			out = append(out, AgentToolOption{
-				Name:          mcptools.ToolName(srv.Name, tr.ToolName),
-				MCPServerID:   srv.ID,
-				MCPServerName: srv.Name,
-				Description:   tr.Description,
+				Name:             mcptools.ToolName(srv.Name, tr.ToolName),
+				MCPServerID:      srv.ID,
+				MCPServerName:    srv.Name,
+				Description:      tr.Description,
+				RequiresApproval: !tr.ReadOnly,
 			})
 		}
 	}

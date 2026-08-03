@@ -18,7 +18,7 @@ func NewWebhookDeliveryRepo(db *sql.DB) *WebhookDeliveryRepo {
 
 const webhookDeliveryColumns = `
 	id, company_id, event, url, payload, status, attempts, last_status, last_error,
-	created_at, delivered_at`
+	created_at, delivered_at, COALESCE(subscription_id::text, '')`
 
 func scanWebhookDelivery(s interface{ Scan(...any) error }) (*domain.WebhookDelivery, error) {
 	d := &domain.WebhookDelivery{}
@@ -26,7 +26,7 @@ func scanWebhookDelivery(s interface{ Scan(...any) error }) (*domain.WebhookDeli
 	var deliveredAt sql.NullTime
 	if err := s.Scan(
 		&d.ID, &d.CompanyID, &d.Event, &d.URL, &d.Payload, &status,
-		&d.Attempts, &d.LastStatus, &d.LastError, &d.CreatedAt, &deliveredAt,
+		&d.Attempts, &d.LastStatus, &d.LastError, &d.CreatedAt, &deliveredAt, &d.SubscriptionID,
 	); err != nil {
 		return nil, err
 	}
@@ -40,15 +40,15 @@ func scanWebhookDelivery(s interface{ Scan(...any) error }) (*domain.WebhookDeli
 
 func (r *WebhookDeliveryRepo) Create(ctx context.Context, d *domain.WebhookDelivery) error {
 	const q = `
-		INSERT INTO webhook_deliveries (id, company_id, event, url, payload, status)
-		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6)
+		INSERT INTO webhook_deliveries (id, company_id, event, url, payload, status, subscription_id)
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, NULLIF($7, '')::uuid)
 		RETURNING id, created_at
 	`
 	if d.Status == "" {
 		d.Status = domain.WebhookPending
 	}
 	return r.db.QueryRowContext(ctx, q,
-		d.ID, d.CompanyID, d.Event, d.URL, d.Payload, string(d.Status),
+		d.ID, d.CompanyID, d.Event, d.URL, d.Payload, string(d.Status), d.SubscriptionID,
 	).Scan(&d.ID, &d.CreatedAt)
 }
 

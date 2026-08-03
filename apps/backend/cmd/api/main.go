@@ -21,6 +21,7 @@ import (
 	_ "github.com/fauzanebd/argentum/internal/adapters/db/postgres"
 	_ "github.com/fauzanebd/argentum/internal/adapters/db/sqlserver"
 	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/tracing"
 )
 
 func main() {
@@ -32,6 +33,20 @@ func main() {
 	logrus.Info("Argentum API server starting")
 
 	rootCtx := context.Background()
+
+	// OTel (T-17). A no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
+	shutdownTracing, err := tracing.Init(rootCtx, "argentum-api", "1")
+	if err != nil {
+		logrus.WithError(err).Warn("otel: tracing not enabled")
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(ctx); err != nil {
+			logrus.WithError(err).Warn("otel: exporter did not flush cleanly")
+		}
+	}()
+
 	deps, err := bootstrap(rootCtx, cfg)
 	if err != nil {
 		logrus.Fatal(err)

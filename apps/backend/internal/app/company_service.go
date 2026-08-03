@@ -458,3 +458,18 @@ func (s *CompanyService) UpdateCurrency(ctx context.Context, companyID, currency
 	c.DefaultCurrency = currencyCode
 	return s.companies.Update(ctx, c)
 }
+
+// UpdatePIIRedactionMode validates and persists the tenant's redaction policy
+// (T-07b). Admin-gated at the router like every other company setting: this
+// widens what the agent may print, and it is not a per-user preference.
+func (s *CompanyService) UpdatePIIRedactionMode(ctx context.Context, companyID string, mode domain.PIIRedactionMode) error {
+	if !mode.Valid() {
+		return fmt.Errorf("%w: unsupported pii_redaction_mode %q", domain.ErrInvalidInput, mode)
+	}
+	c, err := s.companies.GetByID(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	c.PIIRedactionMode = mode
+	return s.companies.Update(ctx, c)
+}

@@ -27,6 +27,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/metric"
+	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
@@ -97,6 +98,11 @@ type WatcherService struct {
 	// watcher:eval tick never passes through ChatEnqueuer.
 	budget BudgetChecker
 
+	// webhooks fans a breach out to the tenant's own subscribers (T-15). Nil on
+	// the API's instance, which never fires, and on any deployment without the
+	// subscription model — Publish is nil-safe either way.
+	webhooks *WebhookSubscriptionService
+
 	now func() time.Time
 }
 
@@ -136,6 +142,14 @@ func (s *WatcherService) WithDelivery(wa whatsapp.Provider, larkProv lark.Provid
 // WithBudget gates each fire on the tenant's credit balance.
 func (s *WatcherService) WithBudget(b BudgetChecker) *WatcherService {
 	s.budget = b
+	return s
+}
+
+// WithWebhooks fans each breach out to the tenant's subscriptions (T-15).
+// Optional: without it a breach behaves exactly as it did before, and Publish
+// is nil-safe so nothing here has to branch.
+func (s *WatcherService) WithWebhooks(w *WebhookSubscriptionService) *WatcherService {
+	s.webhooks = w
 	return s
 }
 
@@ -538,6 +552,7 @@ func (s *WatcherService) HandleFire(ctx context.Context, watcherID string) error
 		if err := s.repo.AppendEvent(ctx, event); err != nil {
 			return fmt.Errorf("record watcher event: %w", err)
 		}
+		metrics.Default().RecordWatcherFire("quiet")
 		return nil
 	}
 
@@ -547,6 +562,10 @@ func (s *WatcherService) HandleFire(ctx context.Context, watcherID string) error
 		if err := s.repo.AppendEvent(ctx, event); err != nil {
 			return fmt.Errorf("record suppressed watcher event: %w", err)
 		}
+		// Counted apart from a fire (T-17). A watcher firing constantly and a
+		// watcher suppressing constantly are different problems, and the events
+		// sheet had to be fixed to tell them apart for the same reason.
+		metrics.Default().RecordWatcherFire("suppressed")
 		return nil
 	}
 
@@ -561,6 +580,7 @@ func (s *WatcherService) HandleFire(ctx context.Context, watcherID string) error
 			if err := s.repo.AppendEvent(ctx, event); err != nil {
 				return fmt.Errorf("record refused watcher event: %w", err)
 			}
+			metrics.Default().RecordWatcherFire("credits_exhausted")
 			return nil
 		}
 	}
@@ -606,6 +626,14 @@ func (s *WatcherService) HandleFire(ctx context.Context, watcherID string) error
 	logrus.WithFields(logrus.Fields{
 		"watcher_id": w.ID, "event_id": event.ID, "company_id": w.CompanyID,
 	}).Info("watcher breached; agent turn enqueued")
+	metrics.Default().RecordWatcherFire("breached")
+
+	// After the turn is enqueued, never before: the webhook says a breach
+	// happened, and the thing that makes it true is the event row plus the turn
+	// that will explain it. A subscriber told about a breach we then failed to
+	// act on would be told something we did not do.
+	s.webhooks.Publish(ctx, w.CompanyID, domain.WebhookWatcherBreached,
+		newWatcherBreachedPayload(w, event, s.now()))
 	return nil
 }
 

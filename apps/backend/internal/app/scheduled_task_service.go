@@ -46,6 +46,15 @@ type ScheduledTaskService struct {
 	companies domain.CompanyRepository
 	enqueuer  *queue.Enqueuer
 	budget    BudgetChecker
+	// webhooks tells the tenant's subscribers when a run ends (T-15). Nil-safe.
+	webhooks *WebhookSubscriptionService
+}
+
+// WithWebhooks publishes `scheduled_task.completed` for every run that ends,
+// successful or not (T-15).
+func (s *ScheduledTaskService) WithWebhooks(w *WebhookSubscriptionService) *ScheduledTaskService {
+	s.webhooks = w
+	return s
 }
 
 // WithBudget gates each fire on the tenant's credit balance. This is a second
@@ -367,6 +376,25 @@ func (s *ScheduledTaskService) MarkRunResult(ctx context.Context, runID, assista
 	if err := s.repo.UpdateRun(ctx, run); err != nil {
 		logrus.WithError(err).WithField("run_id", runID).Warn("scheduled run update failed")
 	}
+
+	// T-15. Published for a failed run as well as a successful one: a nightly
+	// report that stopped arriving is exactly what a tenant wants told rather
+	// than left to notice.
+	payload := ScheduledTaskCompletedPayload{
+		WebhookEnvelope: envelope(domain.WebhookScheduledTaskCompleted, run.CompanyID, now),
+		TaskID:          run.TaskID,
+		RunID:           run.ID,
+		Status:          string(run.Status),
+		ErrorText:       run.ErrorMessage,
+	}
+	if run.AssistantMsgID != nil {
+		payload.MessageID = *run.AssistantMsgID
+	}
+	if task, err := s.repo.GetTask(ctx, run.TaskID); err == nil && task != nil && task.CompanyID == run.CompanyID {
+		payload.TaskName = task.Name
+		payload.ThreadID = task.ThreadID
+	}
+	s.webhooks.Publish(ctx, run.CompanyID, domain.WebhookScheduledTaskCompleted, payload)
 }
 
 func (s *ScheduledTaskService) failRun(ctx context.Context, run *domain.ScheduledTaskRun, err error) {

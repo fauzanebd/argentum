@@ -45,6 +45,12 @@ export interface AgentToolInfo {
    */
   mcp_server_id?: string;
   mcp_server_name?: string;
+  /**
+   * RequiresApproval marks an MCP tool an admin classified as a write (T-M4).
+   * The agent may call it, and the call proposes rather than runs — so the
+   * checkbox grants a capability, not a licence, and the form says which.
+   */
+  requires_approval?: boolean;
 }
 /**
  * AgentsResponse is the body of `GET /api/agents`.
@@ -370,4 +376,23 @@ export interface MetricTestResponse {
   from: string;
   to: string;
   rendered_sql: string;
+}
+/**
+ * WebhooksResponse is the body of `GET /api/webhooks` (T-15).
+ * It carries the vocabulary and the signing contract beside the rows, so the
+ * settings form offers what this deployment actually publishes and an admin can
+ * read how to verify a delivery without opening the API docs. Both are facts
+ * about the backend, and a copy of either in the frontend is a copy that goes
+ * stale.
+ */
+export interface WebhooksResponse {
+  subscriptions: (any /* domain.WebhookSubscription */ | undefined)[];
+  events: string[];
+  /**
+   * DisableAfter is how many consecutive failed deliveries switch a
+   * subscription off by itself.
+   */
+  disable_after: number /* int */;
+  signature_header: string;
+  signature_message: string;
 }

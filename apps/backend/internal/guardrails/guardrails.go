@@ -26,7 +26,18 @@ type Rule struct {
 	Description string `yaml:"description"`
 	// Scope controls when the rule is applied: "input" (user messages only),
 	// "output" (agent responses only), or "" / omitted (both).
-	Scope    string    `yaml:"scope"`
+	Scope string `yaml:"scope"`
+	// PIIClass says what kind of personal data this rule removes, and is what
+	// a tenant's PIIMode switches off. "contact" is an email address or a phone
+	// number — the fields a customer list is *made of*, and the ones a tenant
+	// asking for one has to be able to see. "identity" is a national id, a
+	// social security number or a card number, which no BI question needs and
+	// only `off` removes.
+	//
+	// Empty means the rule is not PII policy at all and no mode touches it:
+	// block_system_prompt_leak is an output rule a tenant may not switch off,
+	// because it protects Argentum rather than the tenant's own data.
+	PIIClass string    `yaml:"pii_class"`
 	Patterns []Pattern `yaml:"patterns"`
 	// Action is one of: "block" (block if any pattern matches),
 	// "require" (block if NO pattern matches), "redact", "filter".
@@ -102,16 +113,80 @@ func New(cfg Config, llm interfaces.LLM) (*Analytics, error) {
 	return &Analytics{config: cfg, compiledRules: compiled, llm: llm}, nil
 }
 
+// PIIMode is a tenant's policy for the redaction rules, stored on the company
+// row and passed in per turn (T-07b).
+//
+// The rules themselves are the same for everybody; what a mode decides is which
+// of them run. A tenant whose agent exists to pull a customer contact list
+// cannot work under a policy that blanks every email address in the answer, and
+// a tenant in a regulated industry needs exactly that policy — so this is a
+// setting rather than a pattern anyone can tune correctly for both.
+type PIIMode string
+
+const (
+	// PIIStrict redacts everything the rules can find. The default, and what a
+	// company with no explicit setting gets.
+	PIIStrict PIIMode = "strict"
+	// PIIContactOK lets email addresses and phone numbers through. National
+	// ids, SSNs and card numbers are still redacted: "my staff may read our
+	// customers' contact details" is a different statement from "my staff may
+	// read our customers' identity documents", and one does not imply the other.
+	PIIContactOK PIIMode = "contact_ok"
+	// PIIOff runs no redaction rule at all. Blocking output rules still apply —
+	// a mode is a policy over the tenant's own data, not a switch that turns the
+	// output stage off.
+	PIIOff PIIMode = "off"
+)
+
+// Normalize maps anything unrecognised — including the empty string a row
+// written before migration 045 carries — onto strict. The unknown value is the
+// one case where guessing wrong matters, and over-redacting is the recoverable
+// direction.
+func (m PIIMode) Normalize() PIIMode {
+	switch m {
+	case PIIContactOK, PIIOff:
+		return m
+	default:
+		return PIIStrict
+	}
+}
+
+// skips reports whether this mode switches off a rule of the given class.
+func (m PIIMode) skips(class string) bool {
+	if class == "" {
+		return false
+	}
+	switch m.Normalize() {
+	case PIIContactOK:
+		return class == "contact"
+	case PIIOff:
+		return true
+	default:
+		return false
+	}
+}
+
 // ProcessInput checks user input against guardrail rules.
 // Implements interfaces.Guardrails.
 func (a *Analytics) ProcessInput(ctx context.Context, input string) (string, error) {
-	return a.process(ctx, input, "input", input)
+	return a.process(ctx, input, "input", input, PIIStrict)
 }
 
 // ProcessOutput checks agent output against guardrail rules.
 // Implements interfaces.Guardrails.
+//
+// This is the SDK's entry point, which reaches it only on the blocking path, so
+// it has no company to read a mode from and runs the strictest one. Callers that
+// know whose turn this is — ChatRunner, on the streaming path every chat turn
+// actually takes — use ProcessOutputFor instead.
 func (a *Analytics) ProcessOutput(ctx context.Context, output string) (string, error) {
-	return a.process(ctx, output, "output", "")
+	return a.process(ctx, output, "output", "", PIIStrict)
+}
+
+// ProcessOutputFor applies the output-scope rules under one company's PII
+// policy.
+func (a *Analytics) ProcessOutputFor(ctx context.Context, output string, mode PIIMode) (string, error) {
+	return a.process(ctx, output, "output", "", mode)
 }
 
 // resolveMessage picks the right language-specific message for a rule based
@@ -140,11 +215,15 @@ func looksIndonesian(text string) bool {
 	return indonesianMarkers.MatchString(strings.ToLower(text))
 }
 
-func (a *Analytics) process(ctx context.Context, text string, stage string, userInput string) (string, error) {
+func (a *Analytics) process(ctx context.Context, text string, stage string, userInput string, mode PIIMode) (string, error) {
 	result := text
 	for _, cr := range a.compiledRules {
 		// Skip rules scoped to a different stage.
 		if cr.rule.Scope != "" && cr.rule.Scope != stage {
+			continue
+		}
+		// Skip rules this company's PII policy switches off.
+		if mode.skips(cr.rule.PIIClass) {
 			continue
 		}
 

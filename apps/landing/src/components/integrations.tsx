@@ -1,36 +1,37 @@
 import {
   Globe,
   MessageCircle,
-  Send,
-  Slack,
-  Mail,
+  MessageSquareText,
+  Terminal,
   Hash,
   Database,
   Layers,
-  CloudCog,
-  Snowflake,
-  Leaf,
-  CircleDot,
+  Server,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { SectionHeading } from "@/components/section-heading";
 
+/* T-18: this grid is what ships, not what is planned.
+ *
+ * It listed Telegram, Slack and Email beside WhatsApp, and BigQuery, Snowflake,
+ * MongoDB and Redshift beside Postgres — none of those four exist, and Telegram
+ * was the one a customer would try first because it is the cheapest to set up.
+ * A landing page that names an integration is a promise a salesperson repeats.
+ *
+ * Anything added here needs a driver or a channel behind it. The deferred ones
+ * are in docs/plan/backlog.md with a trigger each. */
 const CHANNELS: { icon: LucideIcon; label: string }[] = [
-  { icon: Globe, label: "Web widget" },
+  { icon: Globe, label: "Web dashboard" },
   { icon: MessageCircle, label: "WhatsApp" },
-  { icon: Send, label: "Telegram" },
-  { icon: Slack, label: "Slack" },
   { icon: Hash, label: "Discord" },
-  { icon: Mail, label: "Email" },
+  { icon: MessageSquareText, label: "Lark / Feishu" },
+  { icon: Terminal, label: "API + MCP" },
 ];
 
 const DATABASES: { icon: LucideIcon; label: string }[] = [
   { icon: Database, label: "PostgreSQL" },
   { icon: Layers, label: "MySQL" },
-  { icon: CloudCog, label: "BigQuery" },
-  { icon: Snowflake, label: "Snowflake" },
-  { icon: Leaf, label: "MongoDB" },
-  { icon: CircleDot, label: "Redshift" },
+  { icon: Server, label: "SQL Server" },
 ];
 
 export function Integrations() {

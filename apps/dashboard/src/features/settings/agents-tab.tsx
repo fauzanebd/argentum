@@ -567,6 +567,15 @@ export function AgentsTab() {
                     />
                     <span>
                       {t.label}
+                      {/* T-M4: a write tool an admin classified as such. Ticking
+                          it does not let the agent run it — every call becomes a
+                          proposal somebody approves — and saying so is what stops
+                          an admin reading this box as "may change our systems". */}
+                      {t.requires_approval && (
+                        <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                          needs approval
+                        </span>
+                      )}
                       <code className="block text-xs text-muted-foreground">{t.name}</code>
                     </span>
                   </label>

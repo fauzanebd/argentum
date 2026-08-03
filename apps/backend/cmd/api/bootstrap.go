@@ -32,6 +32,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
+	"github.com/fauzanebd/argentum/internal/webhookout"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 	"github.com/sirupsen/logrus"
 )
@@ -372,10 +373,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		AllowInsecureHTTP: cfg.MCPAllowInsecureHTTP,
 		Timeout:           time.Duration(cfg.MCPProbeTimeoutSecs) * time.Second,
 	}
-	deps.mcpServerSvc = app.NewMCPServerService(
-		pgctl.NewMCPServerRepo(controlDB), dsnCipher,
-		mcpclient.NewClient(mcpGuard),
-	)
+	mcpRepo := pgctl.NewMCPServerRepo(controlDB)
+	// One client for this process: the probe the CRUD makes, and the call an
+	// approved `mcp_call` action makes (T-M4), go out through the same guard.
+	mcpHTTPClient := mcpclient.NewClient(mcpGuard)
+	deps.mcpServerSvc = app.NewMCPServerService(mcpRepo, dsnCipher, mcpHTTPClient)
 
 	// The metric registry (T-06). It renders each definition against the tenant
 	// pool with the window bound as parameters, so validate-on-save and
@@ -419,8 +421,33 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			app.NewHTTPEndpointResolver(httpEndpointRepo, dsnCipher),
 			app.NewHTTPActionEgress(httpActionGuard, 0),
 		),
+		// T-M4. This process is where approval executes, so a registry without it
+		// would accept the approval and fail the invocation closed with "action
+		// kind no longer available" — the agent proposes in the worker and the
+		// human approves here, and the two registries have to agree.
+		actions.NewMCPCall(
+			app.NewMCPCallStore(mcpRepo, dsnCipher),
+			mcpHTTPClient,
+			time.Duration(cfg.MCPCallTimeoutSecs)*time.Second,
+			cfg.MCPMaxResponseBytes,
+		),
 	)
 	deps.actionSvc = app.NewActionService(pgctl.NewActionRepo(controlDB), actionRegistry, deps.actionRepo)
+
+	// Outbound webhooks (T-15). The API holds the subscription CRUD and — because
+	// this is where a human approves an action — the publisher for
+	// `action.executed`. Delivery is webhookout's, the same package T-A2 built for
+	// report callbacks: this process registers a delivery row and queues it, and
+	// the worker makes the attempts.
+	deps.webhookSubsSvc = app.NewWebhookSubscriptionService(
+		pgctl.NewWebhookSubscriptionRepo(controlDB),
+		webhookout.NewSender(
+			pgctl.NewWebhookDeliveryRepo(controlDB), companyRepo, deps.enqueuer,
+			cfg.APIV1CallbackAllowPrivate,
+		),
+	)
+	deps.actionSvc = deps.actionSvc.WithWebhooks(deps.webhookSubsSvc)
+	deps.scheduledSvc = deps.scheduledSvc.WithWebhooks(deps.webhookSubsSvc)
 
 	// The admin CRUD for those endpoints. It shares the egress guard so a host it
 	// rejects at registration is the host the turn-time dial would reject too.

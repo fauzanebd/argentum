@@ -1,0 +1,37 @@
+{{- if and .Values.api.enabled .Values.metrics.serviceMonitor.enabled -}}
+# T-17: tells a Prometheus Operator to scrape the API's /metrics.
+#
+# Off by default, and gated on the operator's CRD being installed — a chart that
+# renders a ServiceMonitor into a cluster without the CRD fails the whole
+# release, which is a bad trade for a metric.
+#
+# The endpoint is authenticated. `/metrics` answers to METRICS_TOKEN or, with no
+# token set, to loopback only — and a scrape arrives from the Prometheus pod,
+# which is not loopback. So a deployment that enables this must also set the
+# token and name the secret it lives in below, or every scrape reads 401.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "argentum.api.fullname" . }}
+  labels:
+    {{- include "argentum.api.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "argentum.api.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+      {{- with .Values.metrics.serviceMonitor.tokenSecret }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ .name }}
+          key: {{ .key }}
+      {{- end }}
+{{- end }}

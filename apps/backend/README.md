@@ -37,27 +37,42 @@ builds Metabase dashboards, and replies in the user's language.
                                                       │   - run agent, persist messages│
                                                       │   - publish events to Redis    │
                                                       │   - send WhatsApp on WA threads│
+                                                      │   - fire watchers, deliver     │
+                                                      │   - MCP tools from the tenant's│
+                                                      │     own registered servers     │
                                                       └──────┬───────────────────────┘
                                                              │
                                                              ▼
                                                       Tenant analytical DBs
-                                                       (Postgres / MySQL)
+                                            (Postgres / MySQL / SQL Server)
 
-   Postgres (control)        Metabase (dashboards)
+   Postgres (control)   Redis   MinIO / S3   Metabase (dashboards)
 ```
+
+Two more processes hang off the same stack, each speaking a protocol of its own:
+
+```
+   cmd/discord — gateway process, one bot session per tenant, enqueues chat:run
+   cmd/mcp     — :8081, Argentum's own tools over MCP for a customer's agent,
+                 authenticated by the same API key /v1 takes (T-14)
+```
+
+Everything above `cmd/` is built by `internal/bootstrap`, which is why the eval
+harness scores the same agent the worker runs and why an MCP client calls the
+same tool a turn does.
 
 ## Tech stack
 
-**Backend (Go 1.25)**
+**Backend (Go 1.26)**
 
 - Gin for HTTP, Gorilla WebSocket for streaming
 - `agent-sdk-go` (Ingenimax) for LLM orchestration, memory, guardrails
-- `database/sql` with `lib/pq` and `go-sql-driver/mysql`
+- `database/sql` with `lib/pq`, `go-sql-driver/mysql` and `microsoft/go-mssqldb`
 - `golang-migrate/migrate` for control plane schema
 - `golang-jwt/jwt/v5` and Argon2id (`x/crypto/argon2`) for auth
 - AES-256-GCM for DSN encryption at rest
 
-**Frontend (`../argentum-dashboard`)**
+**Frontend (`../dashboard`)**
 
 - React 18 + TypeScript + Vite
 - TanStack Router + TanStack Query

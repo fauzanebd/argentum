@@ -38,6 +38,23 @@ securityContext:
 # ----------------------------------------------------------------------------
 # API deployment (HTTP server)
 # ----------------------------------------------------------------------------
+# Prometheus scraping (T-17). `/metrics` serves the exposition format by
+# default and the JSON snapshot on `?format=json`.
+#
+# serviceMonitor.enabled requires the Prometheus Operator's CRD in the cluster:
+# rendering the resource without it fails the release. tokenSecret names an
+# existing secret holding METRICS_TOKEN — without it the scrape reads 401,
+# because the endpoint has needed a credential since 2026-08-03.
+metrics:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    # tokenSecret:
+    #   name: argentum-metrics-token
+    #   key: token
+
 api:
   enabled: true
   replicaCount: 1

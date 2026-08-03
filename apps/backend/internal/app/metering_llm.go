@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 	"github.com/sirupsen/logrus"
@@ -35,29 +36,35 @@ func NewMeteredLLM(inner interfaces.LLM, model string, usage *UsageService) *Met
 func (m *MeteredLLM) Model() string { return m.model }
 
 func (m *MeteredLLM) Generate(ctx context.Context, prompt string, opts ...interfaces.GenerateOption) (string, error) {
+	start := time.Now()
 	resp, err := m.inner.GenerateDetailed(ctx, prompt, opts...)
 	if err != nil {
 		return "", err
 	}
 	m.record(ctx, resp.Usage)
+	m.observe(start, resp.Usage)
 	return resp.Content, nil
 }
 
 func (m *MeteredLLM) GenerateWithTools(ctx context.Context, prompt string, tools []interfaces.Tool, opts ...interfaces.GenerateOption) (string, error) {
+	start := time.Now()
 	resp, err := m.inner.GenerateWithToolsDetailed(ctx, prompt, tools, opts...)
 	if err != nil {
 		return "", err
 	}
 	m.record(ctx, resp.Usage)
+	m.observe(start, resp.Usage)
 	return resp.Content, nil
 }
 
 func (m *MeteredLLM) GenerateDetailed(ctx context.Context, prompt string, opts ...interfaces.GenerateOption) (*interfaces.LLMResponse, error) {
+	start := time.Now()
 	resp, err := m.inner.GenerateDetailed(ctx, prompt, opts...)
 	if err != nil {
 		return nil, err
 	}
 	m.record(ctx, resp.Usage)
+	m.observe(start, resp.Usage)
 	return resp, nil
 }
 
@@ -253,6 +260,31 @@ func toInt(v interface{}) int {
 		return int(n)
 	}
 	return 0
+}
+
+// observe feeds the process-wide counters (T-17): latency by model, and the
+// request and token totals `/metrics` has been reporting as zero.
+//
+// That zero is worth naming. `Collector.RecordLLMRequest` has existed since the
+// endpoint did and had **no call site** — every LLM call in this product goes
+// through this wrapper, and this wrapper only ever wrote a usage_event. So
+// `llm_requests_total`, `llm_tokens_total` and `llm_cost_usd_total` were three
+// counters that could not move. The tenant-facing numbers were always right;
+// the operator-facing ones were always zero.
+//
+// It is separate from record() because they answer to different owners:
+// record() bills a tenant and needs a company on the context, while this is the
+// deployment's own view and counts a call made with no tenant — an eval run, a
+// probe — exactly as it counts one made in a turn.
+func (m *MeteredLLM) observe(start time.Time, usage *interfaces.TokenUsage) {
+	model := m.model
+	if model == "" {
+		model = m.inner.Name()
+	}
+	metrics.Default().RecordLLMLatency(model, time.Since(start))
+	if usage != nil {
+		metrics.Default().RecordLLMRequest(usage.InputTokens, usage.OutputTokens, 0)
+	}
 }
 
 func (m *MeteredLLM) record(ctx context.Context, usage *interfaces.TokenUsage) {

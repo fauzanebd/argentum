@@ -1678,6 +1678,175 @@ down with an owner, and four acceptance items still owed. The pattern this log
 has been noting since `T-13` held again — the live half found something the unit
 tests could not on every one of them.
 
+## Phase 2d — Answering the gate (2026-08-03)
+
+Eighteen commits, none of them a new ticket. The day after ten tickets were
+gated live, this is the day their findings were closed — plus one capability the
+gate did not ask for and two defects a user reported while it was going on.
+
+**The six findings the 2026-08-02 gate wrote down are all fixed.** The agent is
+now told which action kinds its workspace enabled and which endpoints are
+registered (`ca5e58b`), so `T-12b` is no longer a capability a tenant can
+configure and never reach. The approval card renders `HTTPAction.Describe`'s
+sentence rather than the bare kind (`cdea9ba`) — the human authorising an
+outbound authenticated call reads what it will do. The watcher events sheet
+shows what the watcher *did*, not the cooldown-suppressed evaluations that were
+crowding the deliveries off screen (`be23758`). The dashboard's tool picker
+offers the tenant's own MCP tools (`1e9073a`), so narrowing an agent's tools in
+the UI no longer silently drops every MCP tool it is bound to. An MCP call writes
+its `usage_events` row (`33e4f9c`) — the audit had the call and the meter did
+not. And a figure and its own restatement have to agree (`af54e89`), which is the
+`$3,863,405,700 (approximately $3.86 million)` shape, corrected as arithmetic
+over digits already in the reply.
+
+**Two live defects, both reported rather than found by a test.** A PDF reply
+streamed to the dashboard and was then replaced with *"I did not get as far as
+running a query"* — `CheckFabrication`'s restatement carve-out read
+`ToolCalls == 0`, so the one follow-up shape that must call a tool ("yes, make
+that PDF") defeated it, and the user was left holding a download whose covering
+message denied it existed (`6d369d5`). And the SDK was running each turn under
+the boot-time iteration cap while the tracker had installed the turn's own, so
+`ForDocument`'s headroom was unreachable and the budget's final-iteration
+protection could never fire (`45c1142`). Both are C-1's failure mode arriving by
+a new road.
+
+**One capability, unasked for and cheap.** `docs/api/quickstart.md`, the OpenAPI
+contract and the Postman collection are now served under `/docs/` on the landing
+domain (`c39bd57`), generated at build time and never committed, with every
+relative link resolved against the files actually emitted so a published page
+cannot drift from the files CI executes.
+
+**And T-07b, which had been open since week 1.** The output guardrails — four
+redaction rules and the system-prompt leak guard — had never executed on a real
+turn: agent-sdk-go applies `ProcessOutput` on its blocking path and every chat
+turn streams. They now run in `ChatRunner`, after the fabrication check and never
+before it, because that check reads the figures a redaction would blank.
+
+Switching them on was blocked on the thing that made it unsafe, so both shipped
+together: `companies.pii_redaction_mode` (`strict` | `contact_ok` | `off`,
+migration `045`) decides which rules run for a tenant. There is no email shape
+that tells a legitimate customer-contact query apart from a leak, so this is a
+setting rather than a pattern anyone can tune correctly for both kinds of tenant
+— and `contact_ok` deliberately does not extend to identity documents, because
+"my staff may read our customers' contact details" is not the same statement as
+"my staff may read their identity papers". The class lives on the rule in the
+YAML, not as a list of names in Go, and a test fails the build if a redaction
+rule declares none.
+
+`semantic_prompt_injection` — refused ordinary admin instructions in two
+consecutive gates — got an explicit FALSE carve-out for the shape both caught,
+and a golden case that pins the deterministic half: no regex rule may claim an
+operating instruction, whatever the classifier does. The classifier's own rate
+stays a distribution, measurable from `agent_actions` on any deployment.
+
+What is owed is the `make eval` pair the ticket asks for on both sides of the
+activation: live spend across the 40-case set, twice, flagged for the owner
+rather than spent unasked ([`guardrail-overreach.md`](guardrail-overreach.md) §4).
+
+**And the last thing on the open-findings list that did not need a live stack.**
+`/metrics` had never had a credential — it is in `cmd/api/policy.go`'s
+`unpolicedPaths`, and `T-A5` narrowed the per-key labels it was adding rather
+than the exposure it was adding them to, saying so at the time. What it was
+serving to anyone who could reach the pod was `llm.cost_total_usd`, token totals
+and query volumes: this deployment's spend. `T-17`'s first bullet offers two
+forms and the cheap one is now taken — the token when `METRICS_TOKEN` is set
+(`401` otherwise, no longer a quiet downgrade to the public view), and loopback
+only when it is not (`404` for everyone else). Loopback is the socket peer:
+`c.ClientIP()` resolves `X-Forwarded-For` by default, so using it would have let
+a remote caller name themselves `127.0.0.1`, and a test asserts that both
+forwarding headers fail to make a caller local. The internal listener and the
+Prometheus format stay with `T-17`, which is now a format problem rather than a
+disclosure one.
+
+**And the MCP track closed.** `T-M4` was cut position #1 — the first thing to
+drop — and it went in because the shape it wanted turned out to be cheap: not a
+write path, one more action. A tool an admin classified as a write is now
+offered to the model like any other, with the server's own schema on it, and
+calling it records a proposal for the new `mcp_call` action instead of reaching
+the server. Approving is `ActionRepository.Approve`'s row lock, which `T-10`'s
+gate proved exactly-once the day before, so idempotency, the 24-hour TTL, the
+audit rows and the approval card all arrive for free. The card renders the whole
+argument object rather than a summary — an approval is only meaningful against
+the literal payload — and the four gates are re-read when the human says yes,
+because a proposal is approvable for a day and a tool un-approved or
+re-classified in between must not run on yesterday's permission. The dashboard's
+tool picker had the same silent-un-scoping bug one classification further along;
+write tools now appear there with a `needs approval` badge. Its live gate —
+propose, approve, the courier showing the effect once — needs the stack and is
+outstanding.
+
+**And webhooks got their subscription model.** `T-15` was cut position #3 and,
+like `T-M4` above it, went in because the expensive half already existed:
+`T-A2`'s sender signs, retries, refuses our own network and logs every attempt,
+and the ticket's instruction was to subscribe events to it rather than write a
+second one. So what landed is a table, a fan-out at three call sites, and a
+counter. `watcher.breached` publishes after the briefing turn is enqueued —
+the webhook claims a breach happened, and what makes that true is the event row
+plus the turn that will explain it — while `action.executed` and
+`scheduled_task.completed` publish on failure as well as success, because "we
+tried to file your ticket and the far end refused" is the case an integration
+most needs to hear. Twenty consecutive failures disable a subscription, counted
+in one statement so two failures at once cannot both read nineteen, and
+re-enabling clears the count. Publishing swallows every error it meets: a
+tenant's unreachable server must not turn a completed piece of work into a
+failed one.
+
+**And the last of the cut list's top four: Argentum became an MCP server.**
+`T-14` was re-scoped in July to "a thin adapter, not a new surface" once `T-A1`
+existed, and that is what it cost. `internal/mcpserver` adapts `internal/tools`
+— the same instances the agent runs, already wrapped by the budget guard and the
+audit decorator — so an MCP call writes its `agent_actions` row because the HTTP
+middleware sets three context values and the existing decorator reads them. No
+audit code was written for this ticket, and no tool was reimplemented, which was
+the ticket's own hard rule.
+
+Two decisions worth keeping. The surface is a deliberate list, not the registry:
+`generate_document`, `schedule_task` and `propose_action` are absent, because an
+MCP client is an agent we did not write, reasoning without our system prompt and
+without the guardrails a turn runs under — it gets the reads plus the two
+Metabase writes, and everything that changes the world stays behind a turn or
+behind `/v1`. And `read:data` is a new scope rather than a reuse of
+`read:metrics`, which is the ticket's own acceptance criterion read as a design
+constraint: a metric is a number an admin defined and validated, `run_sql` is
+arbitrary SQL against every table the connection can see, and trust in the first
+is not trust in the second.
+
+**And `/metrics` finally became a metrics endpoint.** `T-17`'s disclosure half
+went in that morning; the rest followed. The exposition is a serializer over the
+existing snapshot rather than `promhttp` — the counters are a hand-rolled struct
+behind a mutex, and converting them would have been a rewrite of `collector.go`
+rather than the serializer the package comment had been promising since it was
+written. The histogram needed nothing: cumulative buckets keyed by upper bound
+with a `+Inf` overflow is exactly `_bucket{le="…"}`, which is what `T-A5` chose
+that shape for.
+
+What a library would have enforced is enforced by tests, and one of them caught a
+real bug before it shipped — the first version interleaved three metric names by
+emitting each route's buckets, sum and count together, which the format forbids.
+
+The counters the ticket asked for are recorded where the audit row already is:
+turn duration in `ChatRunner`, per-tool duration in the audit decorator, LLM
+latency in `MeteredLLM`, watcher fires by outcome, action executions by kind.
+Wiring the LLM one turned up a counter that had never moved:
+`RecordLLMRequest` had existed since the endpoint did and had **no call site**,
+so `llm_requests_total`, `llm_tokens_total` and `llm_cost_usd_total` were three
+zeroes on an operator's dashboard while the tenant-facing numbers beside them
+were right.
+
+Tracing shipped as the cheap version of itself. `OTEL_EXPORTER_OTLP_ENDPOINT`
+unset installs no provider, so a span is a struct copy and a context value —
+which is what makes it acceptable to instrument the turn path unconditionally,
+because an `if` at every call site is how instrumentation ends up covering only
+the paths somebody remembered. One span per turn, one per tool call, no message
+text on any of them. Queue depth and the sub-tool spans are written down as not
+done rather than half-wired.
+
+**The day's other lesson was about CI.** `pnpm docs` is a built-in and ran
+instead of the script (`edbce27`), and a `!(a && b) && !(c && d)` that passed
+build, vet and the whole test suite failed staticcheck (`b3562e7`) — so
+`.githooks/pre-push` now runs `make lint-go` when a push touches backend Go.
+Four seconds against a runner round trip plus a follow-up commit.
+
 ---
 
 ## What the history says about how this project is built

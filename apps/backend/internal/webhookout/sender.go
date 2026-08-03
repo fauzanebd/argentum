@@ -65,6 +65,14 @@ func (s *Sender) AllowPrivate() bool { return s.allowPrivate }
 // different key order that verifies against nothing — the single most common
 // way a webhook signature implementation is wrong.
 func (s *Sender) Send(ctx context.Context, companyID, event, url string, payload any) (string, error) {
+	return s.SendFrom(ctx, companyID, "", event, url, payload)
+}
+
+// SendFrom is Send with the standing subscription that asked for this event
+// (T-15), so a terminal outcome can be counted against it. An empty
+// subscriptionID is a one-off callback — `report.completed`, whose URL came in
+// on the request that produced it — and behaves exactly as Send always has.
+func (s *Sender) SendFrom(ctx context.Context, companyID, subscriptionID, event, url string, payload any) (string, error) {
 	if s == nil || s.deliveries == nil {
 		return "", fmt.Errorf("webhook delivery is not configured on this deployment")
 	}
@@ -80,11 +88,12 @@ func (s *Sender) Send(ctx context.Context, companyID, event, url string, payload
 	}
 
 	rec := &domain.WebhookDelivery{
-		CompanyID: companyID,
-		Event:     event,
-		URL:       url,
-		Payload:   body,
-		Status:    domain.WebhookPending,
+		CompanyID:      companyID,
+		SubscriptionID: subscriptionID,
+		Event:          event,
+		URL:            url,
+		Payload:        body,
+		Status:         domain.WebhookPending,
 	}
 	if err := s.deliveries.Create(ctx, rec); err != nil {
 		return "", fmt.Errorf("record webhook delivery: %w", err)
@@ -98,6 +107,18 @@ func (s *Sender) Send(ctx context.Context, companyID, event, url string, payload
 	return rec.ID, nil
 }
 
+// SubscriptionHealth is the counter a standing subscription carries (T-15):
+// zeroed by a delivery that lands, incremented by one that finally does not,
+// and at the threshold the subscription switches itself off.
+//
+// Declared at the consumer and optional. A deployment with no subscription
+// model — and every `report.completed` callback, which belongs to one request
+// rather than to a subscription — delivers exactly as it did before.
+type SubscriptionHealth interface {
+	RecordSuccess(ctx context.Context, id string, at time.Time) error
+	RecordFailure(ctx context.Context, id string, at time.Time, disableAt int) (disabled bool, err error)
+}
+
 // Deliverer performs one attempt. It lives in the worker, where a retry budget
 // and a ten-second wall clock belong.
 type Deliverer struct {
@@ -106,6 +127,21 @@ type Deliverer struct {
 	client       *http.Client
 	allowPrivate bool
 	maxAttempts  int
+	health       SubscriptionHealth
+	disableAt    int
+}
+
+// WithSubscriptions makes terminal outcomes count against the subscription that
+// produced them (T-15). disableAt <= 0 uses domain.WebhookAutoDisableAfter.
+func (d *Deliverer) WithSubscriptions(h SubscriptionHealth, disableAt int) *Deliverer {
+	if h == nil {
+		return d
+	}
+	if disableAt <= 0 {
+		disableAt = domain.WebhookAutoDisableAfter
+	}
+	d.health, d.disableAt = h, disableAt
+	return d
 }
 
 // NewDeliverer wires the worker side. maxAttempts is the point at which the
@@ -149,7 +185,7 @@ func (d *Deliverer) Deliver(ctx context.Context, deliveryID string) error {
 	// and a name that answers with an internal address is only discoverable by
 	// asking immediately before the request.
 	if err := CheckResolvedTarget(rec.URL, d.allowPrivate); err != nil {
-		d.record(ctx, rec.ID, domain.WebhookFailed, 0, err.Error())
+		d.record(ctx, rec, domain.WebhookFailed, 0, err.Error())
 		return nil
 	}
 
@@ -160,7 +196,7 @@ func (d *Deliverer) Deliver(ctx context.Context, deliveryID string) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rec.URL, bytes.NewReader(rec.Payload))
 	if err != nil {
-		d.record(ctx, rec.ID, domain.WebhookFailed, 0, err.Error())
+		d.record(ctx, rec, domain.WebhookFailed, 0, err.Error())
 		return nil
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -184,14 +220,14 @@ func (d *Deliverer) Deliver(ctx context.Context, deliveryID string) error {
 	snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		d.record(ctx, rec.ID, domain.WebhookDelivered, resp.StatusCode, "")
+		d.record(ctx, rec, domain.WebhookDelivered, resp.StatusCode, "")
 		return nil
 	}
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
 		// A receiver that rejected this body will reject it identically in ten
 		// minutes. 429 is the exception — it is a request to come back later,
 		// which is exactly what a retry is.
-		d.record(ctx, rec.ID, domain.WebhookFailed, resp.StatusCode, string(snippet))
+		d.record(ctx, rec, domain.WebhookFailed, resp.StatusCode, string(snippet))
 		return nil
 	}
 	return d.retryOrFail(ctx, rec, resp.StatusCode, string(snippet))
@@ -203,7 +239,7 @@ func (d *Deliverer) retryOrFail(ctx context.Context, rec *domain.WebhookDelivery
 	// below increments. So the last permitted attempt is the one where the
 	// prior count has already reached maxAttempts-1.
 	if rec.Attempts+1 >= d.maxAttempts {
-		d.record(ctx, rec.ID, domain.WebhookFailed, status, msg)
+		d.record(ctx, rec, domain.WebhookFailed, status, msg)
 		logrus.WithFields(logrus.Fields{
 			"company_id":  rec.CompanyID,
 			"delivery_id": rec.ID,
@@ -212,16 +248,45 @@ func (d *Deliverer) retryOrFail(ctx context.Context, rec *domain.WebhookDelivery
 		}).Warn("webhook delivery gave up after the retry budget")
 		return nil
 	}
-	d.record(ctx, rec.ID, domain.WebhookPending, status, msg)
+	d.record(ctx, rec, domain.WebhookPending, status, msg)
 	return fmt.Errorf("webhook delivery to %s answered %d", rec.URL, status)
 }
 
-func (d *Deliverer) record(ctx context.Context, id string, status domain.WebhookDeliveryStatus, httpStatus int, msg string) {
+// record writes the attempt and, when the outcome is terminal, moves the
+// subscription's health with it. Both live here rather than at the five call
+// sites above so a new terminal branch cannot forget the second half.
+func (d *Deliverer) record(ctx context.Context, rec *domain.WebhookDelivery, status domain.WebhookDeliveryStatus, httpStatus int, msg string) {
 	if len(msg) > 1024 {
 		msg = msg[:1024]
 	}
-	if err := d.deliveries.RecordAttempt(ctx, id, status, httpStatus, msg, time.Now()); err != nil {
-		logrus.WithError(err).WithField("delivery_id", id).
+	if err := d.deliveries.RecordAttempt(ctx, rec.ID, status, httpStatus, msg, time.Now()); err != nil {
+		logrus.WithError(err).WithField("delivery_id", rec.ID).
 			Warn("webhook attempt not recorded; the delivery log is now incomplete")
+	}
+	if d.health == nil || rec.SubscriptionID == "" {
+		return
+	}
+	now := time.Now()
+	switch status {
+	case domain.WebhookDelivered:
+		if err := d.health.RecordSuccess(ctx, rec.SubscriptionID, now); err != nil {
+			logrus.WithError(err).WithField("subscription_id", rec.SubscriptionID).
+				Warn("webhook subscription health not updated after a delivery")
+		}
+	case domain.WebhookFailed:
+		disabled, err := d.health.RecordFailure(ctx, rec.SubscriptionID, now, d.disableAt)
+		if err != nil {
+			logrus.WithError(err).WithField("subscription_id", rec.SubscriptionID).
+				Warn("webhook subscription health not updated after a failure")
+			return
+		}
+		if disabled {
+			logrus.WithFields(logrus.Fields{
+				"company_id":      rec.CompanyID,
+				"subscription_id": rec.SubscriptionID,
+				"url":             rec.URL,
+				"consecutive":     d.disableAt,
+			}).Warn("webhook subscription disabled after consecutive failed deliveries")
+		}
 	}
 }

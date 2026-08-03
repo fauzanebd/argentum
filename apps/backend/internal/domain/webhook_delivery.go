@@ -42,6 +42,12 @@ type WebhookDelivery struct {
 	LastError   string     `json:"last_error,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
+	// SubscriptionID is the standing subscription this delivery came from
+	// (T-15), and empty for a `report.completed` callback, which belongs to the
+	// one request that named its URL. It is what lets the worker count a
+	// terminal failure against the subscription that caused it rather than
+	// guessing by URL — two subscriptions may legitimately share one.
+	SubscriptionID string `json:"subscription_id,omitempty"`
 }
 
 // WebhookDeliveryRepository persists the delivery log.

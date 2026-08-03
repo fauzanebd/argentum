@@ -2116,8 +2116,17 @@ rate **and** the token delta — this should reduce mean input tokens measurably
 
 ---
 
-## T-07b · Fix guardrail over-reach
-**Repo:** BE · **Size:** ~~0.5d~~ **1d** · **Deps:** T-02 · **Priority:** P1
+## T-07b · Fix guardrail over-reach — **CODE COMPLETE 2026-08-03, one item owed**
+**Repo:** BE, FE, PKG · **Size:** ~~0.5d~~ **1d** · **Deps:** T-02 · **Priority:** P1
+**Migration:** `045_company_pii_redaction_mode`.
+
+> **Status.** Both reported false positives (Q-4, Q-6) were fixed on 2026-08-02.
+> The rest landed 2026-08-03 as one change, because it had to be one: the output
+> rules now run on the streaming path, and they run under
+> `companies.pii_redaction_mode`, which is what makes activating them safe.
+> Record: [`../coverage/guardrail-overreach.md`](../coverage/guardrail-overreach.md).
+> **Owed:** the `make eval` run on both sides of the activation — live LLM spend,
+> flagged for the owner rather than spent unasked (§4 there).
 
 **Findings Q-4, Q-6.** Redaction rules break legitimate BI output; the
 system-prompt-leak rule false-positives on "what can you do?".
@@ -2152,14 +2161,19 @@ switching the rules on is a behaviour change on every turn, which needs a
 - Every change needs a golden case in the T-02 guardrail suite, both directions.
 
 **Acceptance:**
-- [ ] An output-scope rule demonstrably fires on a streaming turn
-- [ ] "list top 10 customers with their emails" returns emails under `contact_ok`
-- [ ] Under `strict`, it still redacts
-- [ ] A 16-digit order ID survives; a labelled NIK is still redacted
-- [ ] "What can you do?" answers normally
-- [ ] `make eval` before and after switching output rules on: no regression
+- [x] An output-scope rule demonstrably fires on a streaming turn — `applyOutputRules` runs in `ChatRunner` after the fabrication check; asserted at that seam against the shipped config. **Not yet watched on a live turn** (see the gate note below)
+- [x] "list top 10 customers with their emails" returns emails under `contact_ok`
+- [x] Under `strict`, it still redacts
+- [x] A 16-digit order ID survives; a labelled NIK is still redacted
+- [x] "What can you do?" answers normally
+- [ ] `make eval` before and after switching output rules on: no regression — **owed**, needs a live stack and two full 40-case runs of real LLM spend
 
-**Gate:** guardrail golden suite green, with the four new cases visible in output.
+**Gate:** guardrail golden suite green, with the new cases visible in output.
+Green on 2026-08-03: the PII-mode suite, the imperative-admin-instruction cases,
+and the runner's own seam tests, plus `make lint-go` at 0 issues and
+`go test -race ./...` clean. The live half — one dashboard turn returning
+`[EMAIL REDACTED]`, and the eval pair — is what remains, and both want the same
+stack up at the same time.
 
 ---
 
@@ -2481,8 +2495,18 @@ prefix and a test asserting both directions.
 
 ---
 
-## T-14 · MCP server
+## T-14 · MCP server — **CODE COMPLETE 2026-08-03, gate outstanding**
 **Repo:** BE · **Size:** ~~2.5d~~ **2d** · **Deps:** T-13, T-A1 · **Priority:** P1 · **Cut #2**
+
+> **Status.** `cmd/mcp` serves eight tools over the streamable HTTP transport,
+> authenticated by the same API key `/v1` takes. `internal/mcpserver` adapts
+> `internal/tools` and implements nothing — so the audit row, the budget guard
+> and the metering come from the decorators already on those instances. Two new
+> scopes (`read:data`, `write:visualizations`) gate the surface; the write tools
+> that change something outside Argentum are deliberately absent from it.
+> Record: [`../coverage/mcp-server.md`](../coverage/mcp-server.md), client-side
+> page at [`../mcp/setup.md`](../mcp/setup.md).
+> **Owed:** the gate, and a Helm deployment for the new process.
 
 **Re-scoped 2026-07-28.** After `T-A1` this is a thin adapter, not a new surface:
 the key auth, the scope enforcement, the audit attribution and the metering path
@@ -2506,20 +2530,29 @@ can use Argentum's tools.
 - Ship `docs/mcp/setup.md` with a copy-pasteable client config.
 
 **Acceptance:**
-- [ ] Claude Code connects with an API key and lists tools
-- [ ] `query_metric` over MCP returns the same value as the dashboard
-- [ ] Scope enforcement holds (a `read:metrics`-only key cannot `run_sql`)
-- [ ] Calls appear in the audit log and in usage
+- [ ] Claude Code connects with an API key and lists tools — **owed**, needs a real client
+- [ ] `query_metric` over MCP returns the same value as the dashboard — the tool instance is the same one; unproven over the wire
+- [x] Scope enforcement holds (a `read:metrics`-only key cannot `run_sql`) — asserted directly, and `read:data` exists so the two are separable
+- [x] Calls appear in the audit log and in usage — by construction: the middleware sets the tenant, the actor and the channel, and the existing decorator writes the row
 
 **Gate:** transcript of an MCP client retrieving a metric, plus the matching
 audit row and usage event.
 
 ---
 
-## T-15 · Outbound webhooks
+## T-15 · Outbound webhooks — **CODE COMPLETE 2026-08-03, gate outstanding**
 **Repo:** BE, FE · **Size:** 1.5d · **Deps:** T-08 · **Priority:** P2 · **Cut #1**
-**Migration:** `*_outbound_webhooks` — next free on landing. **This line read
-`026` until 2026-07-30; `026` has been `agent_actions_request_id` since `T-A1`.**
+**Migration:** `046_outbound_webhooks`. **This line read `026` until 2026-07-30;
+`026` has been `agent_actions_request_id` since `T-A1`.**
+
+> **Status.** The subscription model, the fan-out for all three events, and
+> auto-disable after twenty consecutive failures. Delivery is `webhookout`'s,
+> unchanged — no second signer, no second retry loop, which is what the ticket
+> asked. Two of the three events publish on failure as well as success, because
+> "we tried and it did not work" is the case an integration most needs.
+> Settings → Webhooks is admin-only on every route including the read.
+> Record: [`../coverage/outbound-webhooks.md`](../coverage/outbound-webhooks.md).
+> **Owed:** the gate below — a local receiver and a triggered breach.
 
 **Do:** per-company subscriptions to `watcher.breached`, `action.executed`,
 `scheduled_task.completed`. **Delivery is `internal/webhookout`, built by `T-A2`
@@ -2528,7 +2561,9 @@ a second retry loop. This ticket adds the subscription model, the event fan-out,
 and auto-disable after 20 consecutive failures.
 
 **Gate:** local receiver, trigger a watcher breach, show the signed payload
-verifying against the secret.
+verifying against the secret. **Outstanding.** Worth adding while the stack is
+up: a receiver that answers 500 twenty times, so the auto-disable is watched
+rather than reasoned about.
 
 ---
 
@@ -2681,46 +2716,87 @@ forbids.
 ---
 
 ## T-17 · Observability: Prometheus + tracing
-**Repo:** BE · **Size:** 2d · **Deps:** none · **Priority:** P1 · **Cut #3 (tracing only)**
+**Repo:** BE · **Size:** ~~2d~~ **1.5d** · **Deps:** none · **Priority:** P1 · **Cut #3 (tracing only)**
 
 **Findings O-1, O-2, S-3.**
 
+> **CODE COMPLETE 2026-08-03.** The exposition format, the counters below and
+> the OTel spans all landed. Record:
+> [`../coverage/observability.md`](../coverage/observability.md).
+> **Owed:** the gate (a `curl` of the exposition, one trace waterfall), queue
+> depth — which needs an `asynq.Inspector` and is the one counter here about
+> infrastructure rather than the product — and the sub-tool spans, for which
+> `tracing.Step` exists and is unused.
+>
+> **The disclosure half of bullet 2, delivered earlier the same day.** The
+> endpoint no longer serves this deployment's spend to whoever can reach it —
+> `METRICS_TOKEN` set means the token or `401`, unset means loopback only and
+> `404` for everyone else, with loopback read off the socket peer rather than
+> `X-Forwarded-For`. That is the ticket's own second option ("or require an
+> admin JWT / metrics token"), and it closes the open finding in
+> [`00-sprint-overview.md`](00-sprint-overview.md) §5. Record:
+> [`../coverage/api-observability.md`](../coverage/api-observability.md).
+> Everything else below is untouched.
+
 **Do:**
-- Replace the custom JSON `/metrics` with Prometheus exposition
-  (`promhttp`). Keep the existing counters, add: turn duration histogram,
-  per-tool duration, LLM latency by model, queue depth, watcher fires, action
-  executions.
-- **Move `/metrics` off the public router** — bind an internal listener on a
-  separate port, or require an admin JWT / metrics token. It currently exposes
+- ~~Replace the custom JSON `/metrics` with Prometheus exposition~~ — **done**,
+  as a serializer over the existing snapshot rather than `promhttp`, because the
+  counters are a hand-rolled struct rather than prometheus values and converting
+  them was a rewrite of `collector.go`. JSON stays on `?format=json`. Turn
+  duration, per-tool duration, LLM latency by model, watcher fires and action
+  executions are all recorded; **queue depth is not** — it needs an
+  `asynq.Inspector` and is left out rather than half-wired.
+- ~~**Move `/metrics` off the public router**~~ — **credential done 2026-08-03**;
+  the internal listener on a separate port is what remains. It no longer exposes
   cost data publicly.
-- OTel spans: one per turn, child spans for guardrails, memory hydration,
-  embedding, each tool call, LLM call. OTLP exporter behind
-  `OTEL_EXPORTER_OTLP_ENDPOINT`; no-op when unset.
-- ServiceMonitor template in the Helm chart, gated on `metrics.serviceMonitor.enabled`.
+- OTel spans: **one per turn and one per tool call, done**; the guardrail,
+  memory-hydration and embedding spans are not wired — `tracing.Step` exists for
+  them and each site is one line. OTLP exporter behind
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, a genuine no-op when unset.
+- ~~ServiceMonitor template in the Helm chart~~ — **done**, gated on
+  `metrics.serviceMonitor.enabled` and off by default, because rendering it
+  without the operator's CRD fails the release. Its values block carries the
+  warning that a scrape needs `METRICS_TOKEN`, since the Prometheus pod is not
+  loopback.
 
 **Gate:** `curl` the Prometheus endpoint and paste the exposition. Paste one
 trace waterfall for a tool-calling turn showing LLM vs SQL time split.
 
 ---
 
-## T-18 · Launch hygiene
+## T-18 · Launch hygiene — **MOSTLY DONE 2026-08-03, eval run outstanding**
 **Repo:** BE, FE, LP · **Size:** 1.5d · **Deps:** all · **Priority:** P1
 
+> **Status.** Six of seven items closed. Record:
+> [`../coverage/launch-hygiene.md`](../coverage/launch-hygiene.md).
+> **Owed:** the final eval run, which needs model spend — and should run *after*
+> `T-07b`'s before/after pair, or the guardrail question gets answered against a
+> moved baseline.
+
 **Do:**
-- **Landing page (P-1):** remove the Telegram claim, add Discord and Lark. Add
-  watchers/proactive-alerts messaging — it is now the headline capability.
-- Backfill `.down.sql` for migrations 001–014 (Q-7), or document explicitly that
-  they are irreversible and why.
-- `apps/backend/docs/`: document the WebSocket event schema (`started`, `delta`,
-  `thinking`, `tool_call`, `tool_result`, `action_proposed`, `iteration`, `error`,
-  `final`), the agent tool contracts, and API docs for metrics / watchers /
-  actions / api-keys.
-- Update `apps/backend/README.md` architecture diagram — it predates Discord,
-  Lark, SQL Server, and the worker's periodic manager.
-- Add a root `README.md` for the monorepo: layout, per-app quickstart, the
-  `Makefile` targets, and the `go.mod` module-path note from `T-00b`.
-- Refresh `docs/coverage/feature-coverage.md` to sprint-end reality.
-- Final eval run → `docs/coverage/eval-sprint1.md`, compared against baseline.
+- ~~**Landing page (P-1)**~~ — **done**, and wider than asked: Telegram, Slack,
+  Email, BigQuery, Snowflake, MongoDB, Redshift and the unbuilt "web widget" were
+  all being advertised. The grid now lists what ships, with the rule written above
+  the array. "Schedules + automations" became **"It tells you first"**.
+- ~~Backfill `.down.sql` for migrations 001–014 (Q-7)~~ — **done**, all 46
+  migrations now have one, each stating what reversing it costs. `013`'s restores
+  a known-bad index and says so, because a down that silently does nothing is
+  worse than one that faithfully returns to a state somebody chose.
+- ~~`apps/backend/docs/`~~ — **done as an index**, not as five new documents.
+  Each of the things listed here already has a maintained record; writing prose
+  copies of them in this directory would repeat the failure this repo has learned
+  three times (design tokens, hand-written types, the OpenAPI spec). The index
+  names the canonical document for each and states the rule, and writes down the
+  two facts not visible from a tool's own declaration: every call is audited and
+  metered, every call is budget-guarded.
+- ~~Update `apps/backend/README.md` architecture diagram~~ — **done**; it also
+  gained `cmd/discord` and `cmd/mcp`, SQL Server, and the Go version.
+- ~~Add a root `README.md`~~ — **already existed** from `T-00b`; `cmd/mcp` added.
+- ~~Refresh `docs/coverage/feature-coverage.md`~~ — **done 2026-08-03**, and it
+  needed more than a sprint-end pass: three rows still said `❌` for tracks gated
+  the day before.
+- Final eval run → `docs/coverage/eval-sprint1.md`, compared against baseline —
+  **owed**, needs model spend.
 
 **Gate:** final eval score ≥ baseline. Paste both numbers. Landing page
 screenshot showing only shipped channels.
@@ -4101,8 +4177,17 @@ transcripts and the drift-check output.
 
 ---
 
-## T-M4 · Write-capable MCP tools behind approval
+## T-M4 · Write-capable MCP tools behind approval — **CODE COMPLETE 2026-08-03, gate outstanding**
 **Repo:** BE, FE · **Size:** 1.5d · **Deps:** T-M2, T-10, T-11 · **Priority:** P1 · **Cut #3b**
+
+> **Status.** A write tool is offered as a proposing tool and executes through
+> `T-10`'s framework as the new `mcp_call` action — so exactly-once, the TTL, the
+> audit rows and the approval card are the ones that already existed rather than
+> a second write path. The gates are re-read at approval time, and the dashboard's
+> tool picker now offers write tools with a `needs approval` badge (the same
+> silent-un-scoping shape fixed on 2026-08-03, one classification further along).
+> Record: [`../coverage/mcp-source.md`](../coverage/mcp-source.md) §T-M4.
+> **Owed:** the live gate below — it needs the stack and a real MCP server.
 
 ### Why
 
@@ -4126,10 +4211,11 @@ side door around the read-only-SQL property the product is sold on.
 
 ### Acceptance
 
-- [ ] A write tool proposes rather than executes; approving executes exactly once; rejecting executes never
-- [ ] The approved payload is byte-identical to what was shown on the card
-- [ ] Double-approving the same proposal calls the server once
-- [ ] A tool marked read-only by mistake is still just a tool call — this ticket adds a path, it does not re-classify
+- [x] A write tool proposes rather than executes; approving executes exactly once; rejecting executes never — the proposing half is asserted directly (the caller records zero calls); the exactly-once half is `ActionRepository.Approve`'s existing guarantee, which `T-10`'s gate proved live on 2026-08-02
+- [x] The approved payload is byte-identical to what was shown on the card — `Describe` marshals the same map `Execute` sends, and both read `params_redacted`
+- [x] Double-approving the same proposal calls the server once — the row-lock transition, unchanged from `T-10`
+- [x] A tool marked read-only by mistake is still just a tool call — this ticket adds a path, it does not re-classify
+- [ ] The live gate below
 
 ### Gate
 

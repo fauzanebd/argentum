@@ -36,6 +36,21 @@ const (
 	// have different costs and a tenant may well want a key that can produce
 	// documents and cannot hold a conversation.
 	ScopeWriteReports Scope = "write:reports"
+	// ScopeReadData — read the tenant's own warehouse: the source catalog, a
+	// table's schema, and a read-only query (T-14). It gates the MCP server's
+	// data tools and no `/v1` route: the API answers questions *about* a turn,
+	// and this is the surface where somebody else's agent queries directly.
+	//
+	// Separate from read:metrics on purpose. A metric is a number an admin
+	// defined, validated and named; `run_sql` is arbitrary SQL against every
+	// table the connection can see, and a key trusted with the first is not
+	// thereby trusted with the second — which is the acceptance criterion T-14
+	// states in as many words.
+	ScopeReadData Scope = "read:data"
+	// ScopeWriteVisualizations — create a Metabase card or dashboard (T-14).
+	// The only MCP tool that writes anything, and it writes to Metabase rather
+	// than to a tenant's own system, which is why it is not write:actions.
+	ScopeWriteVisualizations Scope = "write:visualizations"
 	// ScopeReadDocuments — list generated documents and re-presign their
 	// download URLs (T-A2). Read-only over the tenant's own output.
 	ScopeReadDocuments Scope = "read:documents"
@@ -54,6 +69,7 @@ const (
 // today reaches nothing, because nothing asks for it yet.
 var AllScopes = []Scope{
 	ScopeReadMetrics,
+	ScopeReadData,
 	ScopeReadThreads,
 	ScopeReadUsage,
 	ScopeReadAudit,
@@ -61,6 +77,7 @@ var AllScopes = []Scope{
 	ScopeWriteChat,
 	ScopeWriteActions,
 	ScopeWriteReports,
+	ScopeWriteVisualizations,
 }
 
 // Valid reports whether s is a scope this system issues.

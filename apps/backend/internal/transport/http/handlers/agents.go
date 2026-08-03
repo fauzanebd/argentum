@@ -113,6 +113,7 @@ func (h *AgentsHandler) toolInfo(c *gin.Context) []AgentToolInfo {
 		out = append(out, AgentToolInfo{
 			Name: o.Name, Label: label,
 			MCPServerID: o.MCPServerID, MCPServerName: o.MCPServerName,
+			RequiresApproval: o.RequiresApproval,
 		})
 	}
 	return out

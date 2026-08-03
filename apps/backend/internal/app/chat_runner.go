@@ -24,8 +24,10 @@ import (
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
+	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
+	"github.com/fauzanebd/argentum/internal/tracing"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
 
@@ -138,6 +140,30 @@ type CompanyContextLoader interface {
 	GetByCompany(ctx context.Context, companyID string) (*domain.CompanyProfile, error)
 }
 
+// OutputPolicy applies the `scope: output` guardrail rules to a finished reply
+// under one company's PII policy (T-07b). *guardrails.Analytics satisfies it.
+//
+// It exists because agent-sdk-go calls Guardrails.ProcessOutput on its blocking
+// path only, and every chat turn streams — so the redaction and leak rules in
+// config/guardrails.yaml have never executed on a real turn. The runner is the
+// same seam rejectFabrication uses, and for the same reason: it is the last
+// place that holds both the finished text and the turn's context.
+type OutputPolicy interface {
+	ProcessOutputFor(ctx context.Context, output string, mode guardrails.PIIMode) (string, error)
+}
+
+// CompanyPolicyLoader reads the company row a turn's output policy comes from.
+// domain.CompanyRepository satisfies it.
+//
+// Read here rather than carried on the payload because a policy has to be the
+// one in force when the answer is produced, not when the question was queued —
+// a watcher briefing can sit in Redis for a minute, and an admin who has just
+// switched the tenant to `strict` means the next answer, not the next answer
+// enqueued after now.
+type CompanyPolicyLoader interface {
+	GetByID(ctx context.Context, id string) (*domain.Company, error)
+}
+
 // CompanyToolProvider builds the tenant MCP tools one turn may call (T-M2),
 // already wrapped. It is read once per turn, after the scope is installed, and
 // returns nil for an agent with no MCP binding — which is every turn until a
@@ -220,6 +246,8 @@ type ChatRunner struct {
 	companyTools CompanyToolProvider
 	metrics      MetricCatalog
 	actionCat    ActionCatalog
+	outputRules  OutputPolicy
+	companyPol   CompanyPolicyLoader
 
 	// Embedding-based table picker. Both must be non-nil to inject hints;
 	// otherwise the runner silently skips and the agent falls back to the
@@ -300,6 +328,23 @@ func (r *ChatRunner) WithWatchers(c WatcherFireCloser) *ChatRunner {
 // stopped from saying that" is the entry an auditor most wants to find.
 func (r *ChatRunner) WithActionLog(repo domain.AgentActionRepository) *ChatRunner {
 	r.actions = repo
+	return r
+}
+
+// WithOutputRules switches the `scope: output` guardrails on for streaming
+// turns, under the tenant's own PII policy (T-07b).
+//
+// Both arguments are optional and either being nil disables the stage, which is
+// the behaviour every turn has had until now — the rules were configured, tested
+// by eye, and never executed. A runner with rules but no policy loader would run
+// them at `strict` for everybody, which is precisely the over-redaction the
+// per-company mode exists to prevent, so it is not an accepted combination.
+func (r *ChatRunner) WithOutputRules(p OutputPolicy, c CompanyPolicyLoader) *ChatRunner {
+	if p == nil || c == nil {
+		return r
+	}
+	r.outputRules = p
+	r.companyPol = c
 	return r
 }
 
@@ -486,6 +531,13 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		logrus.WithError(err).Warn("memory hydration failed; continuing with empty context")
 	}
 
+	// The turn's own span (T-17), parent of every tool span below it. Started
+	// after the agent is built and before the first event, so its duration is
+	// the turn as the user experiences it rather than as the process schedules
+	// it.
+	ctx, turnSpan := tracing.Turn(ctx, p.CompanyID, p.ThreadID, string(p.Channel))
+	defer turnSpan.End()
+
 	now := time.Now()
 	_ = r.bus.Publish(p.ThreadID, ChatEvent{
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "started", Timestamp: now,
@@ -538,7 +590,13 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	}
 
 	latency := time.Since(start)
+	metrics.Default().RecordTurn(latency)
 	response = r.rejectFabrication(ctx, p, response, tracker)
+	// After the fabrication check, never before it: that check reads the figures
+	// in the reply and compares them against the turn's evidence, and a redaction
+	// that has already blanked part of the text would have it judging a sentence
+	// the agent did not write.
+	response = r.applyOutputRules(ctx, p, response)
 	r.completeWith(ctx, p, response, 0, 0, latency)
 	return nil
 }
@@ -723,6 +781,58 @@ func (r *ChatRunner) rejectFabrication(
 	}).Warn("reply stated a figure no tool returned this turn; replaced with an incomplete-answer message")
 	r.recordBlockedTurn(ctx, p, "final_answer", "reply stated a figure no tool returned this turn")
 	return replacement
+}
+
+// applyOutputRules runs the `scope: output` guardrails over the finished reply
+// (T-07b): the redaction rules, under the tenant's own policy, and the
+// system-prompt leak rule, which no policy switches off.
+//
+// It shares rejectFabrication's caveat and its answer. On a streaming turn the
+// unredacted text has already reached the dashboard as deltas; the final event
+// and the persisted message carry the processed version, so the UI settles on
+// it, and every push channel — WhatsApp, Discord, Lark, a watcher briefing —
+// only ever sees the final and so never sees the raw text at all.
+//
+// A turn whose company row cannot be read runs at `strict`. That is the
+// recoverable failure: a tenant on `contact_ok` loses email addresses from one
+// answer during a database blip, where the other direction prints personal data
+// the tenant asked us not to.
+func (r *ChatRunner) applyOutputRules(ctx context.Context, p queue.ChatRunPayload, response string) string {
+	if r.outputRules == nil || response == "" {
+		return response
+	}
+
+	mode := guardrails.PIIStrict
+	if c, err := r.companyPol.GetByID(ctx, p.CompanyID); err != nil {
+		logrus.WithError(err).WithField("company_id", p.CompanyID).
+			Warn("pii policy lookup failed; this turn's output is redacted at strict")
+	} else {
+		mode = guardrails.PIIMode(c.PIIRedactionMode).Normalize()
+	}
+
+	processed, err := r.outputRules.ProcessOutputFor(ctx, response, mode)
+	if err != nil {
+		// A blocking output rule fired. The error text is the rule's own message
+		// to the user, which is what the caller gets instead of the reply.
+		logrus.WithFields(logrus.Fields{
+			"company_id":    p.CompanyID,
+			"thread_id":     p.ThreadID,
+			"pii_mode":      string(mode),
+			"blocked_reply": response,
+		}).Warn("reply was blocked by an output guardrail; replaced with the rule's message")
+		r.recordBlockedTurn(ctx, p, "final_answer", "reply was blocked by an output guardrail")
+		return err.Error()
+	}
+	if processed != response {
+		// Not the text — that is what was redacted, and logging it would put the
+		// personal data in the log the redaction just took out of the answer.
+		logrus.WithFields(logrus.Fields{
+			"company_id": p.CompanyID,
+			"thread_id":  p.ThreadID,
+			"pii_mode":   string(mode),
+		}).Info("output guardrails redacted part of the reply")
+	}
+	return processed
 }
 
 // actorOf decides who a turn is attributable to. A scheduled run is not the

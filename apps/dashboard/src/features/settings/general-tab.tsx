@@ -10,9 +10,29 @@ import { useModels } from "@/lib/use-models";
 import { apiErrorMessage } from "@/lib/api-error";
 import { BusinessProfileCard } from "./business-profile-card";
 
+// What each redaction policy means, in the terms the person choosing it thinks
+// in. The values come from the API (`pii_redaction_modes`); the copy is here,
+// because a mode with no explanation is a setting nobody dares change.
+const PII_MODE_COPY: Record<string, { label: string; hint: string }> = {
+  strict: {
+    label: "Strict — redact all personal data",
+    hint: "Emails, phone numbers, national IDs and card numbers are removed from every answer.",
+  },
+  contact_ok: {
+    label: "Contact details allowed",
+    hint: "Customer emails and phone numbers appear in answers, so a contact list is usable. National IDs and card numbers are still removed.",
+  },
+  off: {
+    label: "Off — no redaction",
+    hint: "Answers are returned as the agent wrote them. Choose this only if your warehouse holds no personal data you need protected.",
+  },
+};
+
 export function GeneralTab() {
   const [currency, setCurrency] = useState("USD");
   const [currencies, setCurrencies] = useState<string[]>([]);
+  const [piiMode, setPiiMode] = useState("strict");
+  const [piiModes, setPiiModes] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +43,8 @@ export function GeneralTab() {
     api.get("/settings").then((r) => {
       setCurrency(r.data.default_currency ?? "USD");
       setCurrencies((r.data.supported_currencies ?? []).sort());
+      setPiiMode(r.data.pii_redaction_mode ?? "strict");
+      setPiiModes(r.data.pii_redaction_modes ?? []);
       setLoaded(true);
     });
   }, []);
@@ -32,7 +54,10 @@ export function GeneralTab() {
     setSaved(false);
     setError(null);
     try {
-      await api.put("/settings", { default_currency: currency });
+      await api.put("/settings", {
+        default_currency: currency,
+        pii_redaction_mode: piiMode,
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e: unknown) {
@@ -72,6 +97,27 @@ export function GeneralTab() {
               ISO 4217 code used by the agent to format monetary values in responses.
             </p>
           </div>
+          {piiModes.length > 0 && (
+            <div className="space-y-1.5 max-w-md">
+              <Label>Personal data in answers</Label>
+              <Select value={piiMode} onValueChange={setPiiMode}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a policy" />
+                </SelectTrigger>
+                <SelectContent>
+                  {piiModes.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {PII_MODE_COPY[m]?.label ?? m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {PII_MODE_COPY[piiMode]?.hint ??
+                  "Controls which personal data the agent may include in an answer."}
+              </p>
+            </div>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </CardContent>
         <CardFooter className="gap-2">

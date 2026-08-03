@@ -98,8 +98,14 @@ func TestCompanyToolOptionsOffersTheTenantsOwnTools(t *testing.T) {
 	}
 }
 
-// The same three gates the turn-time provider applies. A checkbox for a tool
-// the turn would refuse to build is a checkbox that scopes an agent to nothing.
+// The same gates the turn-time provider applies. A checkbox for a tool the turn
+// would refuse to build is a checkbox that scopes an agent to nothing —
+// unapproved, drifted, and anything on a disabled server are all absent.
+//
+// **A write is not one of those (T-M4).** It is offered, flagged, because the
+// turn-time provider now builds a proposing tool for it; withholding the
+// checkbox would re-create the silent un-scoping this method exists to fix, one
+// classification further along.
 func TestCompanyToolOptionsAppliesTheSameGates(t *testing.T) {
 	unapproved := approvedTool("srv-1", "unapproved", "x")
 	unapproved.Approved = false
@@ -120,16 +126,49 @@ func TestCompanyToolOptionsAppliesTheSameGates(t *testing.T) {
 		},
 	})
 
-	names := toolNames(svc.CompanyToolOptions(context.Background(), companyA))
-	for _, unwanted := range []string{"unapproved", "cancel_shipment", "drifted", "search"} {
+	opts := svc.CompanyToolOptions(context.Background(), companyA)
+	names := toolNames(opts)
+	for _, unwanted := range []string{"unapproved", "drifted", "search"} {
 		for _, got := range names {
 			if got == "mcp__helpdesk__"+unwanted || got == "mcp__disabled__"+unwanted {
 				t.Errorf("%q is offered; it should be gated out", got)
 			}
 		}
 	}
-	if len(names) != len(registry) {
-		t.Errorf("options = %v, want only the static registry", names)
+	if len(names) != len(registry)+1 {
+		t.Errorf("options = %v, want the static registry plus the one write tool", names)
+	}
+
+	var found bool
+	for _, o := range opts {
+		if o.Name != "mcp__helpdesk__cancel_shipment" {
+			continue
+		}
+		found = true
+		if !o.RequiresApproval {
+			t.Error("the write tool is offered without the flag that says it needs approval")
+		}
+	}
+	if !found {
+		t.Errorf("the write tool is missing from %v; the turn offers it, so the form has to", names)
+	}
+}
+
+// And the read tool beside it is not flagged — the form must not tell an admin
+// that every MCP tool needs a human.
+func TestCompanyToolOptionsFlagsOnlyWrites(t *testing.T) {
+	svc, _, _ := newAgentFixture()
+	svc = svc.WithMCPServers(&fakeMCPLister{
+		servers: []*domain.MCPServer{{ID: "srv-1", CompanyID: companyA, Name: "Helpdesk", Enabled: true}},
+		tools: map[string][]*domain.MCPServerTool{
+			"srv-1": {approvedTool("srv-1", "search_tickets", "Search.")},
+		},
+	})
+
+	for _, o := range svc.CompanyToolOptions(context.Background(), companyA) {
+		if o.RequiresApproval {
+			t.Errorf("%q is flagged as needing approval and is read-only", o.Name)
+		}
 	}
 }
 

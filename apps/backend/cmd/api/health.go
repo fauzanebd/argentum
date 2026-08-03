@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/metrics"
 )
@@ -35,27 +37,73 @@ func registerHealthRoutes(
 		}
 		c.JSON(http.StatusOK, gin.H{"ready": true})
 	})
-	// `/metrics` is unauthenticated when METRICS_TOKEN is unset, which is how it
-	// has always been served and which T-17 is the ticket for fixing properly —
-	// off the public router, on an internal listener.
+	// `/metrics` answers to a credential or to nobody (T-17's first bullet, the
+	// half §8b keeps even when the tracing is cut).
 	//
-	// What T-A5 must not do in the meantime is *widen* it. Its new per-key block
-	// is labelled by API key id — a tenant's own identifier for a credential
-	// they hold — so those labels go out only to a caller that presented the
-	// token. Everyone else gets the endpoint they already had, plus route-level
-	// numbers, which name no tenant.
+	// It used to be served to anyone who asked, minus the per-key labels T-A5
+	// added. That was never only route counts: the snapshot carries
+	// `llm.cost_total_usd`, token totals and query volumes — this deployment's
+	// spend, readable by anyone who can reach the pod. T-A5 narrowed the labels
+	// it was adding rather than the exposure it was adding them to, and said so.
 	//
-	// T-A5's own ticket says "`/metrics` is secured by `T-05`; do not add this
-	// before that lands". T-05 was the agent audit log and secured nothing here;
-	// the sentence was wrong when it was written. This is the smallest thing
-	// that makes the instruction true for the data being added.
+	// The rule now:
+	//
+	//	METRICS_TOKEN set    — the token, or 401. An authorized scrape gets the
+	//	                       per-key labels; there is no other way in.
+	//	METRICS_TOKEN unset  — loopback only, and without the key labels. 404 to
+	//	                       everyone else, because an endpoint that cannot
+	//	                       authenticate anybody should not advertise itself.
+	//
+	// Loopback is decided from the socket's peer address, never from
+	// `c.ClientIP()`: gin resolves that through `X-Forwarded-For` by default, so
+	// a remote caller would name themselves 127.0.0.1 and be believed. Behind
+	// the chart's Traefik the peer is the proxy's pod IP, which is not loopback
+	// — a deployment that wants scrapes sets the token, which is the point.
 	r.GET("/metrics", func(c *gin.Context) {
+		authorized := metricsAuthorized(c, metricsToken)
+		if metricsToken != "" && !authorized {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "metrics token required"})
+			return
+		}
+		if metricsToken == "" && !fromLoopback(c.Request.RemoteAddr) {
+			c.Status(http.StatusNotFound)
+			return
+		}
 		snapshot := m.GetSnapshot()
-		if !metricsAuthorized(c, metricsToken) {
+		if !authorized {
 			snapshot = snapshot.WithoutKeyLabels()
 		}
-		c.JSON(http.StatusOK, snapshot)
+		// Prometheus exposition is the default (T-17). The JSON snapshot is
+		// still served, on `?format=json` or an explicit `Accept:
+		// application/json`, because it is what a human reads when debugging
+		// and what this endpoint has answered since it existed — a scraper
+		// asks for the default, and nobody's curl breaks.
+		if wantsJSONMetrics(c) {
+			c.JSON(http.StatusOK, snapshot)
+			return
+		}
+		c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		c.Status(http.StatusOK)
+		if err := snapshot.WriteProm(c.Writer); err != nil {
+			logrus.WithError(err).Warn("metrics: exposition write failed mid-scrape")
+		}
 	})
+	if metricsToken == "" {
+		logrus.Warn("METRICS_TOKEN is unset: /metrics answers on loopback only and serves no per-key labels")
+	}
+}
+
+// wantsJSONMetrics reports whether this caller asked for the JSON snapshot
+// rather than the exposition format.
+func wantsJSONMetrics(c *gin.Context) bool {
+	if c.Query("format") == "json" {
+		return true
+	}
+	// Only an explicit application/json counts. A browser sends
+	// `Accept: text/html,…,*/*`, and a wildcard is not a request for JSON — it
+	// is a request for whatever the endpoint's default is, which is the
+	// exposition.
+	return strings.Contains(c.GetHeader("Accept"), "application/json")
 }
 
 // metricsAuthorized reports whether the caller presented the metrics token.
@@ -69,4 +117,19 @@ func metricsAuthorized(c *gin.Context, token string) bool {
 	}
 	presented := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
 	return subtle.ConstantTimeCompare([]byte(presented), []byte(token)) == 1
+}
+
+// fromLoopback reports whether a request's peer address is the local machine.
+//
+// The argument is `http.Request.RemoteAddr` — the TCP peer, which the caller
+// cannot choose — and never a header. An address that will not parse is not
+// loopback: this decides whether to serve cost data, so the unparseable case
+// closes rather than opens.
+func fromLoopback(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }

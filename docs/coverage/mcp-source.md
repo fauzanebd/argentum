@@ -588,3 +588,83 @@ One caution for whoever reads the recording: a turn that makes **no** MCP call
 renders no card, obviously, but the model may still *type* the namespaced tool
 name into its prose when explaining what it can do — so a text search for
 `mcp__…` is not evidence that a call happened. Read the card, or the audit row.
+
+---
+
+## T-M4 · Write-capable MCP tools behind approval
+
+**Status: CODE COMPLETE 2026-08-03.** The gate — a recording of propose →
+approve → the tenant's system showing the effect once, plus the reject case —
+needs the live stack and a real MCP server, and is outstanding.
+
+### What the read half left, and why it could not be widened
+
+`T-M2` shipped three gates in one condition: *approved, read-only, not drifted*.
+The 2026-08-02 gate photographed the consequence — asked to cancel a shipment,
+the agent named back only its two reads and the courier logged no cancel — and
+recorded it as "`T-M4`'s scope holding as behaviour rather than as an assertion".
+
+The reason a customer registers their ticketing system is to have a ticket
+created, so the missing third of that condition is the whole ticket. What it
+could not become is a second write path: locked decision 2 keeps the source
+read-only, and `run_sql` is read-only permanently. So the write goes through the
+one write path this product already has.
+
+### The shape
+
+*Read-only decides **how** a tool is offered, not whether.* `mcptools.Source`
+still refuses an unapproved or drifted tool outright. A write becomes a
+`WriteTool` — same namespaced name, same argument schema, same audit decorator
+and budget guard — whose `Execute` records a proposal for the new `mcp_call`
+action and answers with the sentence that says so. Nothing on that path reaches
+the tenant's server.
+
+*Offered as a tool, not as a propose_action payload.* The same gate that
+motivated the action catalog watched four turns try to reach `http_action`
+through `propose_action` and one succeed — the turn whose user message dictated
+the arguments. A model that can see `mcp__kirim_cepat__cancel_shipment` in its
+tool list, carrying the server's own schema, has nothing to work out.
+
+*The description carries the one fact that changes the model's behaviour.* Without
+"do not report it as done", a model told only what a tool does will tell the user
+the shipment is cancelled the moment the call returns.
+
+*Execution is `actions.MCPCall`, registered like `send_message` and
+`http_action`.* So the exactly-once guarantee is not new code: it is
+`ActionRepository.Approve`, the row lock that tells exactly one caller it may
+execute. Idempotency, the 24-hour TTL, the audit rows for proposal and decision,
+and the approval card all come with it.
+
+*The card shows the payload, not a summary.* `Describe` renders the tool name and
+the whole argument object as JSON, marshalled from the same map `Execute` sends.
+An approval is only meaningful against the literal payload, and the executor runs
+off `params_redacted` — the field the card renders — so what was approved is what
+goes on the wire.
+
+*The gates are re-read at approval time.* A proposal is approvable for a day.
+`MCPCallStore.FindWriteTool` checks enabled / approved / not-read-only /
+not-drifted at the moment a human says yes, against the company on the context —
+so a tool un-approved, re-classified, or whose description drifted in between
+does not run because it was legal yesterday. A misclassification is corrected by
+the admin; nothing here re-classifies for itself, which is the ticket's own
+out-of-scope line.
+
+*A tool an admin has since marked read-only is not runnable through the action.*
+It is an ordinary tool call again — the same tool, the other path.
+
+### One thing the ticket did not list
+
+The dashboard's tool picker filtered on `read_only` as well, which is the exact
+shape of the finding fixed on 2026-08-03: an option the turn builds but the form
+does not offer un-scopes an agent from it the moment an admin narrows its tools.
+Write tools are now offered with a `needs approval` badge, and the badge is the
+point — an admin who thinks the checkbox grants a write will not tick it, and one
+who thinks it grants nothing will.
+
+### Not done
+
+The live gate. It wants the courier server from `T-M2`'s run with its write tool
+enabled, `mcp_call` enabled in Settings → Actions, and a recording of: the agent
+proposing, the card showing the payload, approve executing once, a second approve
+executing nothing, and reject executing never. The audit rows for both decisions
+are written by the framework and should be pasted with it.

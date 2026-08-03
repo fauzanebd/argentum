@@ -66,6 +66,24 @@ type Source struct {
 	recorder tools.ActionAuditor
 	meter    Meter
 	caps     Caps
+	proposer Proposer
+}
+
+// WithProposer switches on the write half (T-M4): an approved tool an admin
+// classified as **not** read-only is offered as a WriteTool, which proposes
+// through the action framework instead of calling the server.
+//
+// Optional, and a Source without one behaves exactly as T-M2 shipped — a write
+// tool is simply not offered, which is what the 2026-08-02 gate photographed
+// ("asked to cancel a shipment, the agent named back only its two reads"). That
+// is the correct behaviour for a deployment with no action framework wired, and
+// it stays the fallback rather than becoming a hole.
+func (s *Source) WithProposer(p Proposer) *Source {
+	if s == nil || p == nil {
+		return s
+	}
+	s.proposer = p
+	return s
 }
 
 // NewSource wires the provider. recorder is the audit sink every MCP call's row
@@ -134,11 +152,29 @@ func (s *Source) CompanyTools(ctx context.Context, companyID string) []interface
 			continue
 		}
 		for _, tr := range toolRows {
-			// Three gates, all required (T-M1 handover): approved says an admin
-			// read it, read_only says what it does (T-M4 is what relaxes that),
-			// and not-drifted says the text has not changed since the admin read
-			// it. Any one false and the tool is not offered.
-			if !tr.Approved || !tr.ReadOnly || tr.Drifted() {
+			// Two gates are absolute (T-M1 handover): approved says an admin read
+			// it, and not-drifted says the text has not changed since they did.
+			// Either one false and the tool is not offered at all.
+			if !tr.Approved || tr.Drifted() {
+				continue
+			}
+			// The third decides *how* it is offered rather than whether (T-M4). A
+			// write with no proposer wired is still not offered — the read-only
+			// deployment T-M2 shipped.
+			if !tr.ReadOnly {
+				if s.proposer == nil {
+					continue
+				}
+				name := s.uniqueName(seen, srv.Name, tr.ToolName)
+				raw = append(raw, &WriteTool{
+					serverID:   srv.ID,
+					serverName: srv.Name,
+					rawName:    tr.ToolName,
+					name:       name,
+					desc:       tr.Description,
+					params:     paramsFromSchema(tr.InputSchema),
+					proposer:   s.proposer,
+				})
 				continue
 			}
 			name := s.uniqueName(seen, srv.Name, tr.ToolName)

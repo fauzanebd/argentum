@@ -52,6 +52,11 @@ type apiDeps struct {
 	// proposes against, so a kind the agent can propose is a kind this process
 	// can carry out.
 	actionSvc *app.ActionService
+
+	// webhookSubsSvc is Settings → Webhooks and the `action.executed` fan-out
+	// (T-15). Nil is legal — the routes then answer 503 — but this process always
+	// builds one.
+	webhookSubsSvc *app.WebhookSubscriptionService
 	// httpEndpointSvc is the admin CRUD behind the http_action targets (T-12b):
 	// the registered endpoints an approved http_action calls. Built in bootstrap
 	// with the DSN cipher and the egress guard, so a header is sealed at rest and a
