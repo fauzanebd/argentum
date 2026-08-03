@@ -149,6 +149,15 @@ type MetricCatalog interface {
 	ListEnabled(ctx context.Context, companyID string) ([]*domain.MetricDefinition, error)
 }
 
+// ActionCatalog is the half of the action framework a turn reads: which kinds
+// this company has enabled and what each one's params must hold. Same shape and
+// same reason as MetricCatalog — an agent cannot choose a capability it has not
+// been told exists, and `propose_action`'s static description can only ever name
+// one example. *ActionService satisfies it.
+type ActionCatalog interface {
+	CatalogForTurn(ctx context.Context, companyID string) ([]ActionCatalogEntry, error)
+}
+
 // ScheduledRunMarker is the narrow contract ChatRunner uses to close out
 // a scheduled_task_runs row when the agent finishes (or errors). Defined
 // as an interface so the worker can pass *ScheduledTaskService while
@@ -200,6 +209,7 @@ type ChatRunner struct {
 	profiles     CompanyContextLoader
 	companyTools CompanyToolProvider
 	metrics      MetricCatalog
+	actionCat    ActionCatalog
 
 	// Embedding-based table picker. Both must be non-nil to inject hints;
 	// otherwise the runner silently skips and the agent falls back to the
@@ -323,6 +333,14 @@ func (r *ChatRunner) WithCompanyTools(p CompanyToolProvider) *ChatRunner {
 // withMetricsContext adds nothing for an empty catalog.
 func (r *ChatRunner) WithMetrics(c MetricCatalog) *ChatRunner {
 	r.metrics = c
+	return r
+}
+
+// WithActionCatalog tells a turn which actions the company has enabled. Optional
+// in the same way WithMetrics is: a company that has enabled none gets exactly
+// today's turn, because withActionsContext adds nothing for an empty catalog.
+func (r *ChatRunner) WithActionCatalog(c ActionCatalog) *ChatRunner {
+	r.actionCat = c
 	return r
 }
 
@@ -481,6 +499,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency)
 	agentMsg = withSourcesContext(agentMsg, sources)
 	agentMsg = r.withMetricsContext(ctx, agentMsg, p.CompanyID)
+	agentMsg = r.withActionsContext(ctx, agentMsg, p.CompanyID)
 	agentMsg = r.withRelevantTablesContext(ctx, agentMsg, p.Message, sources)
 
 	// Try streaming first; fall back to blocking Run if the LLM doesn't
@@ -1284,6 +1303,54 @@ func (r *ChatRunner) withMetricsContext(ctx context.Context, msg, companyID stri
 			desc = "(no description)"
 		}
 		fmt.Fprintf(&b, " - %s | %s (%s, per %s) — %s\n", m.Key, m.Label, m.Unit, m.Grain, desc)
+	}
+	b.WriteString("]\n\n")
+	b.WriteString(msg)
+	return b.String()
+}
+
+// withActionsContext prepends the kinds this company has enabled, the same way
+// withMetricsContext prepends the metric catalog and for the same reason: a
+// capability the agent is not told about is one it cannot choose.
+//
+// `propose_action`'s description can only ever name one example — it is a static
+// string on a tool shared by every tenant — so before this, an agent asked to
+// file a ticket had to guess that `http_action` existed and that an endpoint was
+// called `ops_ticket`. The 2026-08-02 gate measured what guessing is worth: four
+// turns tried to reach it and one landed, the one whose user message dictated
+// the arguments.
+//
+// A read failure is swallowed to a no-op. The turn then behaves exactly as it
+// did before this block existed — it can still propose, it just has to guess.
+func (r *ChatRunner) withActionsContext(ctx context.Context, msg, companyID string) string {
+	if r.actionCat == nil {
+		return msg
+	}
+	entries, err := r.actionCat.CatalogForTurn(ctx, companyID)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("action catalog prefetch failed; the turn proposes without knowing what is enabled")
+		return msg
+	}
+	if len(entries) == 0 {
+		return msg
+	}
+	var b strings.Builder
+	b.WriteString("[System context: Actions this workspace has enabled. ")
+	b.WriteString("To do one, call propose_action with the action_kind and the params shown; ")
+	b.WriteString("it records a proposal for a human to approve and performs nothing itself. ")
+	b.WriteString("Do not propose a kind that is not listed here — say plainly that it is not available.\n")
+	for _, e := range entries {
+		fmt.Fprintf(&b, " - %s — %s", e.Kind, e.Usage)
+		if len(e.Options) > 0 {
+			fmt.Fprintf(&b, " Registered names: %s.", strings.Join(e.Options, ", "))
+		}
+		if !e.RequiresApproval {
+			// Worth saying: this kind executes on proposal, so the model should
+			// not tell the user to go and approve something that already ran.
+			b.WriteString(" This kind runs immediately on proposal, with no approval step.")
+		}
+		b.WriteString("\n")
 	}
 	b.WriteString("]\n\n")
 	b.WriteString(msg)

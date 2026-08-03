@@ -25,6 +25,14 @@ type EndpointStore interface {
 	FindByName(ctx context.Context, name string) (*domain.HTTPEndpoint, error)
 }
 
+// EndpointLister is the read a *catalog* needs rather than a call: the names,
+// with no URL, no method and above all no header template, since nothing about
+// this read is building a request. Kept separate from EndpointStore and probed
+// for at runtime so a store that predates it still satisfies the action.
+type EndpointLister interface {
+	ListNames(ctx context.Context) ([]string, error)
+}
+
 // Egress is the guarded outbound call. Its whole job is the SSRF property: it
 // pins the resolved address against the same allowlist the MCP client uses,
 // refuses redirects, and bounds the call by a timeout. Declared here so
@@ -101,6 +109,28 @@ func (a *HTTPAction) parse(params json.RawMessage) (httpActionParams, error) {
 func (a *HTTPAction) Validate(params json.RawMessage) error {
 	_, err := a.parse(params)
 	return err
+}
+
+// Usage says what the agent supplies and — as importantly — what it does not.
+// A model that thinks it may pass a URL will pass one, get a refusal, and try a
+// different URL; the safety property is that only a *name* is on its surface, so
+// the line says that outright.
+func (a *HTTPAction) Usage() string {
+	return `call one of the endpoints an admin registered for this workspace. ` +
+		`params: {"endpoint": "<a registered endpoint name>", "params": {"<placeholder>": "<value>"}}. ` +
+		`You choose the name only — the method, the host and the credentials are the admin's and cannot be set from here.`
+}
+
+// TurnOptions lists the endpoint names this company has registered, so a turn is
+// told which names exist instead of guessing one. A store that cannot list is not
+// an error the turn should fail on: the catalog degrades to the Usage line above,
+// which is what a deployment on an older store also gets.
+func (a *HTTPAction) TurnOptions(ctx context.Context) ([]string, error) {
+	lister, ok := a.store.(EndpointLister)
+	if !ok {
+		return nil, nil
+	}
+	return lister.ListNames(ctx)
 }
 
 // Describe renders the approval sentence. It names the endpoint the admin

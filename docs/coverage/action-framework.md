@@ -184,6 +184,43 @@ names automatically"* recorded under `T-12b` — that one assumed the agent gets
 as far as the kind. Injecting the enabled kinds (and, per kind, the names it may
 name) is the fix, in the place the other two catalogs already live.
 
+##### Fixed 2026-08-03
+
+`ChatRunner.withActionsContext` is that place — beside `withMetricsContext`, in
+the same order, with the same three properties: enabled kinds only, a read
+failure swallowed to a no-op, and a company with nothing enabled getting a
+byte-identical turn.
+
+**Where the text lives is the decision.** A parameter contract written in the
+prompt builder would be the second copy of something `Validate` already knows,
+and the copy the model reads is the one that goes stale — the shape this file
+records twice already (the approval card's `describe()`, the design tokens). So
+`actions.Action` grew `Usage() string`, beside `Validate`, and each action
+authors its own line. `propose_action`'s description no longer enumerates
+`send_message`'s parameters; it points at the catalog.
+
+**The tenant's own vocabulary needed a second seam.** `http_action`'s useful
+half is not "pass an endpoint name", it is *which* names exist, and that is
+per-company data no static string can carry. `actions.Optioner` is an optional
+interface — `TurnOptions(ctx)` — that only a kind with a per-tenant vocabulary
+implements, so `send_message` is not made to answer a question it has no answer
+to. `HTTPAction` implements it over a new `EndpointLister.ListNames`, which
+reads the same rows `FindByName` does and decrypts nothing: a name is all a
+prompt needs, and the header template is a credential.
+
+Three degradations, each with a test: a kind enabled in the database but absent
+from this build is skipped (the propose path refuses it anyway); an options
+lookup that fails still lists the kind, so the turn can propose if the user
+names the endpoint — which is exactly where this feature was before; and a
+catalog read that fails leaves the message untouched. A catalog is a hint, not
+a gate.
+
+**What is not closed:** the live half. This is proven in unit tests, and the
+finding was measured live — four turns, one landing. The re-run needs a stack
+with `http_action` enabled and an endpoint registered, asking the same question
+that failed, and it is the honest way to know whether the block changes the
+number.
+
 ### 7. Notes for the next ticket
 
 - **T-11** wires `ActionService.ListPending`/`Approve`/`Reject`/`Get` to

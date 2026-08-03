@@ -60,6 +60,7 @@ func (t *ProposeActionTool) Description() string {
 	return "Propose a write-capable action — one that changes something outside Argentum, such as sending a message. " +
 		"This tool does NOT perform the action: it records a proposal that a human must approve from the dashboard before anything happens. " +
 		"Use it when the user has clearly asked for something to be done (not just answered), and only for an action kind the workspace has enabled. " +
+		"The kinds this workspace has enabled, the params each one takes, and any names they may reference are listed under 'Actions this workspace has enabled' in the turn's system context. " +
 		"Returns the proposal id and tells the user their approval is needed. If the requested action is not available, say so plainly rather than trying to do it another way."
 }
 
@@ -67,12 +68,17 @@ func (t *ProposeActionTool) Parameters() map[string]interfaces.ParameterSpec {
 	return map[string]interfaces.ParameterSpec{
 		"action_kind": {
 			Type:        "string",
-			Description: "The kind of action to propose, e.g. 'send_message'. Must be an action the workspace has enabled; if unsure, do not guess.",
+			Description: "The kind of action to propose. Must be one of the kinds listed in the turn's system context; if none is listed, no action is available and you should say so rather than guess.",
 			Required:    true,
 		},
 		"params": {
-			Type:        "object",
-			Description: "The action's parameters, as a JSON object whose shape depends on the action_kind (for send_message: channel, target_ref, body). Include everything the action needs.",
+			Type: "object",
+			// The shapes used to be enumerated here — "for send_message:
+			// channel, target_ref, body" — which is one tool description shared
+			// by every tenant, so it could name one kind's parameters and never
+			// the tenant's own endpoint names. The contract now travels with the
+			// catalog, from each action's own Usage().
+			Description: "The action's parameters, as a JSON object. Its shape depends on the action_kind and is given beside that kind in the turn's system context. Include everything the action needs.",
 			Required:    true,
 		},
 	}

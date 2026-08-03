@@ -71,6 +71,26 @@ func (r *httpEndpointResolver) FindByName(ctx context.Context, name string) (*do
 	return ep, nil
 }
 
+// ListNames returns the company's registered endpoint names for the turn-time
+// catalog (actions.EndpointLister). It reads the same rows FindByName does and
+// keeps every one of them sealed: a name is all a prompt needs, and the header
+// template is not decrypted on this path at all.
+func (r *httpEndpointResolver) ListNames(ctx context.Context) ([]string, error) {
+	companyID := tenantctx.CompanyID(ctx)
+	if companyID == "" {
+		return nil, fmt.Errorf("no tenant in context")
+	}
+	eps, err := r.repo.ListByCompany(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(eps))
+	for _, ep := range eps {
+		names = append(names, ep.Name)
+	}
+	return names, nil
+}
+
 // guardEgress makes http_action's outbound call through the SSRF guard shared with
 // the MCP client. The guard pins the resolved address and refuses redirects; this
 // adapter adds the endpoint's own headers, bounds the response, and turns the

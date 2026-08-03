@@ -103,6 +103,18 @@ func (a *SendMessageAction) Validate(params json.RawMessage) error {
 	return err
 }
 
+// Usage names the channel restriction as well as the parameters, because the
+// refusal a model gets for proposing a Discord message is "channel must be
+// whatsapp" — a rule it can only learn from a round trip it should not have to
+// spend. The allowlist is not stated as a list: recipients are the tenant's, and
+// enumerating them into every turn's prompt would put phone numbers in a context
+// window to save one refusal.
+func (a *SendMessageAction) Usage() string {
+	return `send a message on a chat channel to an already-allowlisted recipient. ` +
+		`params: {"channel": "whatsapp", "target_ref": "<the allowlisted recipient>", "body": "<the message>"}. ` +
+		`Only "whatsapp" is deliverable in this version, and only to a recipient an admin has allowlisted.`
+}
+
 func (a *SendMessageAction) Describe(params json.RawMessage) (string, error) {
 	p, _, err := a.parse(params)
 	if err != nil {

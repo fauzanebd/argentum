@@ -250,17 +250,26 @@ func (a *memDecisionAudit) countTool(name string) int {
 }
 
 // stubAction is a concrete action that counts executions and can be told to fail.
+// options / optionsErr drive the actions.Optioner half, which only a kind with a
+// per-tenant vocabulary implements — set them and the stub answers as
+// http_action does.
 type stubAction struct {
 	kind        string
 	validateErr error
 	executeErr  error
 	execCount   int
 	lastParams  json.RawMessage
+	options     []string
+	optionsErr  error
 }
 
 func (a *stubAction) Kind() string                               { return a.kind }
 func (a *stubAction) Describe(_ json.RawMessage) (string, error) { return "send a test message", nil }
 func (a *stubAction) Validate(_ json.RawMessage) error           { return a.validateErr }
+func (a *stubAction) Usage() string                              { return "params: {\"body\": \"<text>\"}" }
+func (a *stubAction) TurnOptions(context.Context) ([]string, error) {
+	return a.options, a.optionsErr
+}
 func (a *stubAction) Execute(_ context.Context, p json.RawMessage) (json.RawMessage, error) {
 	a.execCount++
 	a.lastParams = p
@@ -521,5 +530,70 @@ func TestApprove_CrossTenantIsNotFound(t *testing.T) {
 	}
 	if h.act.execCount != 0 {
 		t.Fatalf("execCount = %d, want 0", h.act.execCount)
+	}
+}
+
+// --- the turn-time catalog (T-12b follow-up) ---
+
+// Only what an admin turned on. A kind in the registry but not enabled is one
+// the propose path refuses, so naming it in a turn would spend context on a
+// refusal.
+func TestCatalogForTurn_ListsOnlyEnabledKinds(t *testing.T) {
+	repo := newMemInvocationRepo()
+	enabled := &stubAction{kind: "send_message"}
+	offKind := &stubAction{kind: "http_action"}
+	svc := NewActionService(repo, actions.NewRegistry(enabled, offKind), &memDecisionAudit{})
+	repo.enable("co-1", "send_message", true)
+
+	entries, err := svc.CatalogForTurn(context.Background(), "co-1")
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Kind != "send_message" {
+		t.Fatalf("entries = %+v, want only send_message", entries)
+	}
+	if entries[0].Usage == "" {
+		t.Error("usage is empty — the turn is told a kind exists and not how to call it")
+	}
+	if !entries[0].RequiresApproval {
+		t.Error("requires_approval lost")
+	}
+}
+
+// The half that cannot live in a static tool description: the names this tenant
+// registered. http_action is the kind that has them.
+func TestCatalogForTurn_CarriesTheTenantsOwnNames(t *testing.T) {
+	repo := newMemInvocationRepo()
+	act := &stubAction{kind: "http_action", options: []string{"ops_ticket", "refund_request"}}
+	svc := NewActionService(repo, actions.NewRegistry(act), &memDecisionAudit{})
+	repo.enable("co-1", "http_action", true)
+
+	entries, err := svc.CatalogForTurn(context.Background(), "co-1")
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(entries))
+	}
+	if got := entries[0].Options; len(got) != 2 || got[0] != "ops_ticket" {
+		t.Errorf("options = %v, want the registered endpoint names", got)
+	}
+}
+
+// A names lookup that fails degrades to the kind without its names. The turn
+// can still propose — it just has to be told the name by the user, which is
+// exactly where this feature was before the catalog existed.
+func TestCatalogForTurn_AnOptionsFailureStillListsTheKind(t *testing.T) {
+	repo := newMemInvocationRepo()
+	act := &stubAction{kind: "http_action", optionsErr: errors.New("endpoint store is down")}
+	svc := NewActionService(repo, actions.NewRegistry(act), &memDecisionAudit{})
+	repo.enable("co-1", "http_action", true)
+
+	entries, err := svc.CatalogForTurn(context.Background(), "co-1")
+	if err != nil {
+		t.Fatalf("catalog must not fail on an options error: %v", err)
+	}
+	if len(entries) != 1 || len(entries[0].Options) != 0 {
+		t.Fatalf("entries = %+v, want the kind with no names", entries)
 	}
 }

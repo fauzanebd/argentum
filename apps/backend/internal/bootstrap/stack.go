@@ -683,6 +683,7 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 		WithCompanyContext(s.CompanyProfiles).
 		WithCompanyTools(s.CompanyToolSource).
 		WithMetrics(s.Metrics).
+		WithActionCatalog(s.Actions).
 		WithWatchers(s.Watchers)
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)

@@ -228,6 +228,68 @@ func (s *ActionService) AvailableKinds() []string {
 	return s.registry.Kinds()
 }
 
+// ActionCatalogEntry is one kind a company has enabled, as a turn is told about
+// it (T-12b follow-up).
+type ActionCatalogEntry struct {
+	Kind             string
+	Usage            string
+	RequiresApproval bool
+	// Options are the names this kind's params may reference — http_action's
+	// registered endpoints. Empty for a kind with no per-tenant vocabulary, and
+	// empty for a tenant who has registered none, which reads differently in the
+	// prompt: "you have none registered" rather than "pick one".
+	Options []string
+}
+
+// CatalogForTurn is what a company has actually enabled, with each kind's
+// parameter contract and the names it may reference.
+//
+// It exists because `T-12b` shipped a capability a tenant could enable,
+// configure, and never reach: `propose_action`'s description names send_message
+// as its example and spells out that action's parameters, so an agent asked to
+// file a ticket had no way to learn that `http_action` was on or that an
+// endpoint called `ops_ticket` existed. In the 2026-08-02 gate, four turns tried
+// and one succeeded — the one whose user message dictated the tool arguments.
+//
+// Enabled kinds only. A kind an admin has not turned on is one the propose path
+// refuses, and telling a turn about it would spend context on a refusal.
+func (s *ActionService) CatalogForTurn(ctx context.Context, companyID string) ([]ActionCatalogEntry, error) {
+	cfgs, err := s.repo.ListCompanyActions(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ActionCatalogEntry, 0, len(cfgs))
+	for _, cfg := range cfgs {
+		if !cfg.Enabled {
+			continue
+		}
+		action, ok := s.registry.Get(cfg.Kind)
+		if !ok {
+			// Enabled in the database, absent from this build. The propose path
+			// already refuses it; a turn does not need to hear about it.
+			continue
+		}
+		entry := ActionCatalogEntry{
+			Kind:             cfg.Kind,
+			Usage:            action.Usage(),
+			RequiresApproval: cfg.RequiresApproval,
+		}
+		if opt, ok := action.(actions.Optioner); ok {
+			names, err := opt.TurnOptions(ctx)
+			if err != nil {
+				// A catalog is a hint. Losing the names costs the turn a guess;
+				// losing the turn costs the answer.
+				logrus.WithError(err).WithFields(logrus.Fields{
+					"company_id": companyID, "action_kind": cfg.Kind,
+				}).Warn("action options lookup failed; the turn is told the kind without its names")
+			}
+			entry.Options = names
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
 // ListConfig returns a company's per-kind configuration — what is enabled,
 // whether it still needs approval, and who may decide it.
 func (s *ActionService) ListConfig(ctx context.Context, companyID string) ([]*domain.CompanyAction, error) {

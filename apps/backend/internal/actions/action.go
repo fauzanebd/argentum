@@ -41,11 +41,33 @@ type Action interface {
 	// performing the action. It is the gate that keeps an un-runnable proposal out
 	// of the ledger.
 	Validate(params json.RawMessage) error
+	// Usage is the one line a turn is told about this kind: what it does and what
+	// its params object must hold. It lives here, beside Validate, because the two
+	// describe the same shape — a parameter contract written in the prompt builder
+	// would be a second copy, and the copy the model reads is the one that goes
+	// stale. Keep it short: it is prepended to every turn of a company that has
+	// the kind enabled.
+	Usage() string
 	// Execute performs the action. It runs post-approval from ActionService with
 	// the tenant already on the context (tenantctx.CompanyID); its return value is
 	// stored on the invocation as the result. An error here transitions the
 	// invocation to failed.
 	Execute(ctx context.Context, params json.RawMessage) (result json.RawMessage, err error)
+}
+
+// Optioner is the optional half of Usage, for an action whose parameters name
+// something the *tenant* registered rather than something the code declares:
+// http_action's endpoints today. A turn is told the names that exist, because a
+// model asked to pass "a registered endpoint name" with no list will invent a
+// plausible one and get a refusal it cannot learn from.
+//
+// It is a separate interface rather than a method on Action so a kind with no
+// per-tenant vocabulary — send_message — does not have to answer a question it
+// has no answer to. The company comes from ctx, as everywhere else.
+type Optioner interface {
+	// TurnOptions returns the names this action's params may reference for the
+	// company on ctx, or nil when the tenant has registered none.
+	TurnOptions(ctx context.Context) ([]string, error)
 }
 
 // Registry is the set of action kinds this deployment can run. It is populated at
