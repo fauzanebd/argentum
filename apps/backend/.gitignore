@@ -8,6 +8,16 @@
 # Test binary, built with `go test -c`
 *.test
 
+# Compiled binaries at the module root. `go build ./cmd/mcp` writes an
+# executable named after the package into the working directory — 80 MB of it —
+# and one reached the remote on 2026-08-03 before this line existed. Named
+# rather than globbed: a bare `mcp` or `api` is unambiguous here, and a glob
+# would swallow a future source file that happened to share a binary's name.
+/api
+/worker
+/discord
+/mcp
+
 # Output of the go coverage tool
 *.out
 
