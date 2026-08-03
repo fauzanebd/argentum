@@ -366,12 +366,24 @@ is Node and Python, and a third generated client with no consumer is inventory.
 **Trigger for the Go client:** a customer integrating from Go.
 **Estimate:** 1d once `T-A4`'s spec exists.
 
-### Hosted API docs site
-`docs/api/quickstart.md`, `apps/backend/openapi/v1.yaml` and both SDK READMEs are
-complete and CI-verified, and every one of them is reachable only by someone who
-already has the repository. `apps/landing/src/components/nav.tsx:43` is still
-`href="#"`, the dashboard's API Keys tab links to nothing, and
-`GET /v1/openapi.json` serves a published contract with no page in front of it.
+### ~~Hosted API docs site~~ — **SHIPPED 2026-08-03**, one day after it was filed
+`docs/api/quickstart.md`, `apps/backend/openapi/v1.yaml` and both SDK READMEs were
+complete and CI-verified, and every one of them was reachable only by someone who
+already had the repository. The landing nav had no docs entry at all, the
+dashboard's API Keys tab linked to nothing, and `GET /v1/openapi.json` served a
+published contract with no page in front of it.
+**What shipped:** `apps/landing/scripts/build-docs.mjs` publishes the quickstart,
+its examples (rendered and raw), the contract and the Postman collection under
+`/docs/` on the landing domain. Nothing is committed — the output is gitignored
+and rebuilt every dev and build run, so there is still exactly one quickstart in
+this tree. Every relative link in the generated HTML is resolved against the
+files actually emitted and an unresolvable one fails the build, which is what
+stops the published page drifting from the files CI executes. Record, gate
+output and five known limits: [`../coverage/docs-site.md`](../coverage/docs-site.md).
+**The 1.5d half was not taken:** no Redoc or Scalar. The spec is served as a file
+for a generator, which is what the quickstart already tells an integrator to do.
+Revisit when someone is browsing fifteen operations rather than following the
+quickstart.
 **Why deferred:** stated in [`00-sprint-overview.md`](00-sprint-overview.md) §3
 and in `T-A4`'s out-of-scope list — *"Markdown in the repo until it hurts"*. That
 is the right call for an integrator we hand the repo to, and it stops being right

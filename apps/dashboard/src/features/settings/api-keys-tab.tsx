@@ -29,6 +29,14 @@ import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api-error";
 import { useToast } from "@/hooks/use-toast";
 
+// Where the published quickstart lives — the landing app serves it at `/docs/`
+// from `apps/landing/scripts/build-docs.mjs`. It is a full URL because the
+// dashboard is a different host, and it has no default on purpose: a
+// deployment that has not published its docs should show no link rather than
+// one that 404s at the moment somebody has a fresh key and nothing to do
+// with it.
+const DOCS_URL = import.meta.env.VITE_DOCS_URL as string | undefined;
+
 type Status = "active" | "revoked" | "expired";
 
 interface APIKey {
@@ -282,6 +290,21 @@ export function APIKeysTab() {
             A key lets your own backend call Argentum over HTTP at <code>/v1</code>. It carries only
             the scopes you tick — they cannot be changed afterwards, so a key that needs more
             capabilities is a new key.
+            {DOCS_URL && (
+              <>
+                {" "}
+                The{" "}
+                <a
+                  className="underline underline-offset-2"
+                  href={DOCS_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  quickstart
+                </a>{" "}
+                goes from this key to a rendered PDF in about ten minutes.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

@@ -2,10 +2,14 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+// `/docs` is a real navigation, not an anchor — handleAnchorClick below returns
+// early for anything that does not start with "#", so the browser follows it to
+// the static pages `scripts/build-docs.mjs` publishes.
 const LINKS = [
   { href: "#features", label: "Features" },
   { href: "#integrations", label: "Integrations" },
   { href: "#how", label: "How it works" },
+  { href: "/docs/", label: "Docs" },
 ];
 
 export function Nav() {

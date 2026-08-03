@@ -91,6 +91,14 @@ jobs:
               - 'packages/**'
               - 'pnpm-workspace.yaml'
               - 'pnpm-lock.yaml'
+              # The landing app publishes these as static pages
+              # (apps/landing/scripts/build-docs.mjs), and its build fails on a
+              # link that resolves to nothing. Editing the quickstart is
+              # therefore a way to break the published site without touching
+              # apps/, so the job that would catch it has to run on them.
+              - 'docs/api/**'
+              - 'apps/backend/openapi/**'
+              - 'apps/backend/docs/postman/**'
               - '.github/workflows/ci.yaml'
 
   backend:

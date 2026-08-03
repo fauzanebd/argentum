@@ -15,6 +15,21 @@ export function Footer() {
             Your data, finally talkative. The AI agent that turns rows into
             answers and answers into action.
           </p>
+
+          <nav className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            <a className="text-white/55 transition hover:text-white" href="/docs/">
+              API docs
+            </a>
+            <a
+              className="text-white/55 transition hover:text-white"
+              href="/docs/examples/"
+            >
+              Examples
+            </a>
+            <a className="text-white/55 transition hover:text-white" href="/docs/v1.yaml">
+              OpenAPI spec
+            </a>
+          </nav>
         </div>
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-white/[0.06] pt-6 text-xs text-white/40 sm:flex-row sm:items-center">
