@@ -5,19 +5,19 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useDecideAction, usePendingActions } from "./use-actions";
 
-/** describe renders the human sentence for a proposal from its redacted params.
- *  The backend's Action.Describe is authoritative, but the pending payload does
- *  not carry it, so the card reconstructs a faithful summary from action_kind +
- *  params. send_message is the one shipped kind (T-12a). */
+/** describe is the sentence the approver reads. It comes from the backend, which
+ *  builds it with the action's own Describe — the same code that knows what
+ *  Execute will do.
+ *
+ *  This function used to write it a second time, and only knew how: it
+ *  special-cased send_message and fell back to the bare action_kind. So the
+ *  human authorising an outbound authenticated HTTP call saw "http_action" —
+ *  not the endpoint, not the values — while HTTPAction.Describe had been
+ *  writing that exact sentence since T-12b. The kind stays as the fallback for a
+ *  proposal whose kind this deployment no longer registers; every other case is
+ *  the backend's sentence. */
 function describe(inv: ActionInvocation): string {
-  const p = (inv.params_redacted ?? {}) as Record<string, unknown>;
-  if (inv.action_kind === "send_message") {
-    const channel = typeof p.channel === "string" ? p.channel : "a channel";
-    const target = typeof p.target_ref === "string" ? p.target_ref : "a recipient";
-    const body = typeof p.body === "string" ? p.body : "";
-    return `Send a ${channel} message to ${target}${body ? `: “${body}”` : ""}`;
-  }
-  return inv.action_kind;
+  return inv.description || inv.action_kind;
 }
 
 /** ApprovalCard is the inline propose→approve→reject control the agent's

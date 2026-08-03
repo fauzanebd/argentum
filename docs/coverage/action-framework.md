@@ -308,6 +308,24 @@ request — `{"title":"UI approval gate","severity":"low"}` with the admin's
   render that, deleting the TS reconstruction — this repo has twice paid for two
   copies of one truth (design tokens, generated types), and this is a third,
   with a human's authorisation on the end of it.
+
+  **Fixed 2026-08-03, as described.** `ActionInvocation.Description` is filled on
+  every read path — `Get`, `ListPending`, `List`, and the reload behind
+  `Approve`/`Reject` — and `approval-card.tsx`'s reconstruction is deleted; the
+  bare kind survives only as the fallback for a proposal whose kind this build no
+  longer registers.
+
+  Two decisions worth keeping. It is **computed on read, never stored**: the row
+  already holds the parameters the sentence is derived from, and a stored copy
+  could not be corrected for proposals already written when the wording changes.
+  And it is built from **`ParamsRedacted`**, which is the field the executor runs
+  off too — so the sentence describes what will actually happen rather than a
+  pre-redaction version of it. Tested on all three read paths plus the
+  unregistered-kind fallback.
+
+  **Not closed:** the photograph. The card was read in a browser when it was
+  wrong; it has not been read in a browser now that it is right, and that is the
+  same live-gate debt task 10 carries for the non-admin renderings.
 - **Raw tool-call scaffolding reached the rendered message.** The assistant
   bubble contains repeated `<|DSML|function_calls|><|DSML|invoke
   name="propose_action">…` markup as visible text, followed by four empty

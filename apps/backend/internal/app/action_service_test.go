@@ -597,3 +597,60 @@ func TestCatalogForTurn_AnOptionsFailureStillListsTheKind(t *testing.T) {
 		t.Fatalf("entries = %+v, want the kind with no names", entries)
 	}
 }
+
+// --- the approver's sentence (T-11 follow-up) ---
+
+// The card used to write this sentence itself, and could only write it for
+// send_message: everything else rendered as the bare kind, so a human
+// authorising an outbound authenticated HTTP call saw "http_action" and no
+// endpoint. It comes from the action's own Describe now, on every read path.
+func TestReadsCarryTheApproverSentence(t *testing.T) {
+	h := newActionHarness(t, true)
+	res := h.propose(t)
+
+	pending, err := h.svc.ListPending(h.ctx(), "co-1")
+	if err != nil {
+		t.Fatalf("list pending: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending = %d, want 1", len(pending))
+	}
+	if pending[0].Description != "send a test message" {
+		t.Errorf("ListPending description = %q, want the action's own sentence", pending[0].Description)
+	}
+
+	one, err := h.svc.Get(h.ctx(), "co-1", res.InvocationID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if one.Description != "send a test message" {
+		t.Errorf("Get description = %q, want the action's own sentence", one.Description)
+	}
+
+	all, err := h.svc.List(h.ctx(), "co-1", 10, 0)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(all) == 0 || all[0].Description == "" {
+		t.Error("List left the description empty")
+	}
+}
+
+// A proposal whose kind this build no longer registers has no sentence to give.
+// The field stays empty and the card falls back to the kind, which is what it
+// showed for every kind before this.
+func TestAnUnregisteredKindHasNoSentence(t *testing.T) {
+	h := newActionHarness(t, true)
+	res := h.propose(t)
+
+	// Rebuild the service with an empty registry, as a deployment that dropped
+	// the action would be.
+	stripped := NewActionService(h.repo, actions.NewRegistry(), h.audit)
+	inv, err := stripped.Get(h.ctx(), "co-1", res.InvocationID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if inv.Description != "" {
+		t.Errorf("description = %q, want empty for a kind this build cannot describe", inv.Description)
+	}
+}

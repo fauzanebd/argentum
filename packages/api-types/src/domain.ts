@@ -69,6 +69,16 @@ export interface ActionInvocation {
    * the object itself rather than a base64 blob (see AgentAction.ArgsRedacted).
    */
   params_redacted: unknown;
+  /**
+   * Description is the sentence an approver reads instead of the raw
+   * parameters — "Call the registered HTTP endpoint "ops_ticket" with …".
+   * Computed on read by ActionService from the action's own Describe, never
+   * stored: the row already holds the parameters it is derived from, and a
+   * stored copy would be a second truth that a code change could not correct
+   * for proposals already written. Empty when the deployment no longer has the
+   * kind registered.
+   */
+  description?: string;
   idempotency_key: string;
   status: InvocationStatus;
   proposed_at: string;

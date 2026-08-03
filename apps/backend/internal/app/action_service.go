@@ -187,7 +187,7 @@ func (s *ActionService) Approve(ctx context.Context, companyID, id, decidedBy st
 	if !transitioned {
 		// Someone else already approved (and perhaps executed) it. Nothing to do,
 		// and nothing to double-audit.
-		return inv, nil
+		return s.described(inv), nil
 	}
 
 	action, ok := s.registry.Get(inv.Kind)
@@ -216,7 +216,7 @@ func (s *ActionService) Reject(ctx context.Context, companyID, id, decidedBy str
 		return inv, err
 	}
 	s.auditDecision(ctx, inv, actionToolReject, domain.ActorKindUser, decidedBy, domain.ActionStatusOK, "")
-	return inv, nil
+	return s.described(inv), nil
 }
 
 // --- company_actions configuration (admin, T-11) ---
@@ -341,12 +341,55 @@ func (s *ActionService) ConfigureAction(ctx context.Context, companyID, kind, ac
 
 // Get returns one invocation, company-scoped.
 func (s *ActionService) Get(ctx context.Context, companyID, id string) (*domain.ActionInvocation, error) {
-	return s.repo.GetInvocation(ctx, companyID, id)
+	inv, err := s.repo.GetInvocation(ctx, companyID, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.described(inv), nil
 }
 
 // ListPending returns a company's proposals awaiting a decision.
 func (s *ActionService) ListPending(ctx context.Context, companyID string) ([]*domain.ActionInvocation, error) {
-	return s.repo.ListPending(ctx, companyID)
+	invs, err := s.repo.ListPending(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	return s.describeAll(invs), nil
+}
+
+// described fills the sentence an approver reads, from the action's own Describe.
+//
+// It exists because the dashboard was writing that sentence a second time. The
+// approval card special-cased send_message and fell back to the bare kind, so a
+// human authorising an outbound authenticated HTTP call saw "http_action" — not
+// the endpoint, not the values — while HTTPAction.Describe had been writing that
+// exact sentence since T-12b. Two copies of one truth, with an authorisation on
+// the end of it.
+//
+// It runs off ParamsRedacted, which is the field the executor runs off too, so
+// the sentence describes what will actually happen rather than a pre-redaction
+// version of it. A kind this build no longer registers, or params Describe
+// cannot read, leaves it empty — the card falls back to the kind, which is what
+// it did for everything before this.
+func (s *ActionService) described(inv *domain.ActionInvocation) *domain.ActionInvocation {
+	if inv == nil {
+		return nil
+	}
+	action, ok := s.registry.Get(inv.Kind)
+	if !ok {
+		return inv
+	}
+	if desc, err := action.Describe(inv.ParamsRedacted); err == nil {
+		inv.Description = desc
+	}
+	return inv
+}
+
+func (s *ActionService) describeAll(invs []*domain.ActionInvocation) []*domain.ActionInvocation {
+	for _, inv := range invs {
+		s.described(inv)
+	}
+	return invs
 }
 
 // PermittedToDecide reports whether a caller in role may approve or reject an
@@ -381,7 +424,11 @@ func (s *ActionService) PermittedToDecide(ctx context.Context, companyID, invoca
 
 // List returns a company's invocations newest first.
 func (s *ActionService) List(ctx context.Context, companyID string, limit, offset int) ([]*domain.ActionInvocation, error) {
-	return s.repo.ListInvocations(ctx, companyID, limit, offset)
+	invs, err := s.repo.ListInvocations(ctx, companyID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return s.describeAll(invs), nil
 }
 
 // --- execution ---
@@ -473,7 +520,7 @@ func (s *ActionService) turnActor(ctx context.Context) (domain.ActorKind, string
 // only because a subsequent read did.
 func (s *ActionService) reload(ctx context.Context, companyID, id string, fallback *domain.ActionInvocation) *domain.ActionInvocation {
 	if refreshed, err := s.repo.GetInvocation(ctx, companyID, id); err == nil {
-		return refreshed
+		return s.described(refreshed)
 	}
-	return fallback
+	return s.described(fallback)
 }

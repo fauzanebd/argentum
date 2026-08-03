@@ -80,7 +80,15 @@ type ActionInvocation struct {
 	Kind      string `json:"action_kind"`
 	// ParamsRedacted is json.RawMessage so the pending-approvals endpoint returns
 	// the object itself rather than a base64 blob (see AgentAction.ArgsRedacted).
-	ParamsRedacted json.RawMessage  `json:"params_redacted"`
+	ParamsRedacted json.RawMessage `json:"params_redacted"`
+	// Description is the sentence an approver reads instead of the raw
+	// parameters — "Call the registered HTTP endpoint "ops_ticket" with …".
+	// Computed on read by ActionService from the action's own Describe, never
+	// stored: the row already holds the parameters it is derived from, and a
+	// stored copy would be a second truth that a code change could not correct
+	// for proposals already written. Empty when the deployment no longer has the
+	// kind registered.
+	Description    string           `json:"description,omitempty"`
 	IdempotencyKey string           `json:"idempotency_key"`
 	Status         InvocationStatus `json:"status"`
 	ProposedAt     time.Time        `json:"proposed_at"`
