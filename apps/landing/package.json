@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "docs": "node scripts/build-docs.mjs",
-    "dev": "pnpm docs && vite",
-    "build": "pnpm docs && tsc -b && vite build",
+    "build:docs": "node scripts/build-docs.mjs",
+    "dev": "node scripts/build-docs.mjs && vite",
+    "build": "node scripts/build-docs.mjs && tsc -b && vite build",
     "preview": "vite preview",
     "lint": "tsc -b --noEmit"
   },

@@ -46,8 +46,8 @@ func main() {
 		// register the DSN unchanged.
 		metabaseHost = flag.String("metabase-db-host", "postgres_demo:5432",
 			"host:port Metabase should use to reach the demo database")
-		timeout     = flag.Duration("case-timeout", 3*time.Minute, "per-case timeout")
-		dryRun      = flag.Bool("dry-run", false, "validate the set and the tenant, then exit without calling the LLM")
+		timeout = flag.Duration("case-timeout", 3*time.Minute, "per-case timeout")
+		dryRun  = flag.Bool("dry-run", false, "validate the set and the tenant, then exit without calling the LLM")
 		// The metric registry is state on the reused eval tenant, so a run that
 		// wants it absent has to say so — otherwise "with metrics" and "without"
 		// are the same run twice (T-07's before/after).
