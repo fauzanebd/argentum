@@ -34,6 +34,17 @@ import type {
 export interface AgentToolInfo {
   name: string;
   label: string;
+  /**
+   * MCPServerID and MCPServerName are set for a tenant's own MCP tool (T-M2),
+   * empty for the static registry. The form groups by the server name, because
+   * `mcp__kirim_cepat__quote_shipping` is an identifier and "Kirim Cepat" is
+   * what the admin who registered it recognises.
+   * These tools were absent from this list entirely until 2026-08-03, which
+   * silently un-scoped an agent from every MCP tool it was bound to the moment
+   * an admin narrowed its tools in the dashboard.
+   */
+  mcp_server_id?: string;
+  mcp_server_name?: string;
 }
 /**
  * AgentsResponse is the body of `GET /api/agents`.

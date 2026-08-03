@@ -423,6 +423,32 @@ for the Ops agent and an empty list for the default one.
   `static ∪ this company's approved MCP tools`"*, applied to the **form's
   options** rather than to validation. `mcp_server_tools` already holds the
   approved rows.
+
+  **Fixed 2026-08-03, exactly there.** `AgentService.CompanyToolOptions` returns
+  the static registry plus the company's reviewed MCP tools, and `GET
+  /api/agents` is company-aware where it used to be global. The picker groups by
+  server — *"Kirim Cepat · connected tools"* — because
+  `mcp__kirim_cepat__quote_shipping` is an identifier and the server name is what
+  the admin who registered it recognises; each checkbox is labelled with the
+  tool's own first sentence, which is the only description that exists for a tool
+  discovered at runtime.
+
+  Same three gates as the turn-time provider (approved, read-only, not drifted),
+  plus the server's own `enabled`, because a checkbox for a tool the turn would
+  refuse to build is a checkbox that scopes an agent to nothing. A test asserts
+  the name the picker offers is one `normalizeTools` accepts — the two halves
+  disagreeing would turn a tick into a 400 on save.
+
+  **One case the picker cannot be right about**, stated in `mcptools.ToolName`:
+  the collision suffix. When two servers' slugs collide on a tool of the same
+  name, `Source.uniqueName` appends `_2` at turn time, and which server gets the
+  suffix depends on the bindings of the agent running that turn. The picker
+  offers the unsuffixed name; the turn-time provider stays authoritative. Making
+  the picker predict it would mean the picker deciding names, which is worse.
+
+  Both MCP reads degrade to the static registry with a warning rather than
+  failing the roster screen — losing the checkboxes is bad, and a Settings tab
+  that 500s because a tenant's MCP server list timed out is worse.
 - ~~**An MCP call writes no `usage_events` row.**~~ **Fixed 2026-08-03.** The
   ticket asked for it in as many words — *"Record it on the existing
   `usage_events` path … do not invent a second meter"* — and the turn that called

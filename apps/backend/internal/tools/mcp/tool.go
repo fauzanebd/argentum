@@ -205,6 +205,18 @@ func parseArgs(input string) (map[string]any, error) {
 	return args, nil
 }
 
+// ToolName is namespaced, exported for the callers that have to name a tool
+// without building one — the roster's tool picker (T-M3), which offers a
+// checkbox per bound MCP tool and must offer the name the turn will dispatch on.
+//
+// It is the name *before* collision suffixing. Source.uniqueName appends one
+// when two servers' slugs collide on a tool of the same name, which the picker
+// cannot predict because the suffix depends on which servers that turn's agent
+// is bound to. The turn-time provider stays authoritative; the picker is right
+// for every case but that one, and being right there would mean the picker
+// deciding names, which is worse.
+func ToolName(serverName, toolName string) string { return namespaced(serverName, toolName) }
+
 // namespaced builds the model-facing name for a tool. mcp__<server>__<tool>,
 // each part sanitised to the characters a tool name may hold, and the whole
 // clipped to the provider ceiling. The server slug is for a human reading the

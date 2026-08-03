@@ -142,6 +142,33 @@ function scopeSummary(selected: number, total: number, noun: string): string {
   return `${selected} of ${total} ${noun}`;
 }
 
+/** groupTools splits the picker into this deployment's own tools and one group
+ *  per connected MCP server.
+ *
+ *  The tools a tenant's own server supplies were missing from this list
+ *  entirely until 2026-08-03: `/api/agents` built it from the static registry,
+ *  so no checkbox existed for a namespaced MCP name — while the backend applies
+ *  an agent's allowlist to the *combined* set. Ticking a few boxes here
+ *  therefore un-scoped that agent from every MCP tool it was bound to, silently.
+ *
+ *  They are grouped by server rather than listed flat because
+ *  `mcp__kirim_cepat__quote_shipping` is an identifier, and "Kirim Cepat" is
+ *  what the admin who registered it recognises. */
+function groupTools(tools: AgentToolInfo[]): { server: string | null; tools: AgentToolInfo[] }[] {
+  const builtin = tools.filter((t) => !t.mcp_server_id);
+  const groups: { server: string | null; tools: AgentToolInfo[] }[] = [];
+  if (builtin.length > 0) groups.push({ server: null, tools: builtin });
+
+  const byServer = new Map<string, AgentToolInfo[]>();
+  for (const t of tools) {
+    if (!t.mcp_server_id) continue;
+    const key = t.mcp_server_name || t.mcp_server_id;
+    byServer.set(key, [...(byServer.get(key) ?? []), t]);
+  }
+  for (const [server, list] of byServer) groups.push({ server, tools: list });
+  return groups;
+}
+
 export function AgentsTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -523,19 +550,28 @@ export function AgentsTab() {
                 : undefined
             }
           >
-            {tools.map((t) => (
-              <label key={t.name} className="flex items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={draft.allowed_tools.includes(t.name)}
-                  onChange={() => toggleIn("allowed_tools", t.name)}
-                />
-                <span>
-                  {t.label}
-                  <code className="block text-xs text-muted-foreground">{t.name}</code>
-                </span>
-              </label>
+            {groupTools(tools).map((group) => (
+              <div key={group.server ?? "builtin"} className="space-y-2">
+                {group.server && (
+                  <p className="pt-1 text-xs font-medium text-muted-foreground">
+                    {group.server} · connected tools
+                  </p>
+                )}
+                {group.tools.map((t) => (
+                  <label key={t.name} className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={draft.allowed_tools.includes(t.name)}
+                      onChange={() => toggleIn("allowed_tools", t.name)}
+                    />
+                    <span>
+                      {t.label}
+                      <code className="block text-xs text-muted-foreground">{t.name}</code>
+                    </span>
+                  </label>
+                ))}
+              </div>
             ))}
           </ScopeGroup>
 

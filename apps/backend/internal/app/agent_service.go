@@ -67,6 +67,13 @@ type AgentService struct {
 // roster that could be asked to.
 type MCPServerLister interface {
 	ListByCompany(ctx context.Context, companyID string) ([]*domain.MCPServer, error)
+	// ListTools is what the tool picker needs: a bound server's reviewed tools,
+	// so the form can offer a checkbox for each one. Without it the picker shows
+	// only the static registry, and an admin who narrows an agent's tools there
+	// submits a list with no MCP name in it — which silently un-scopes the agent
+	// from every MCP tool it was bound to, because filterTools applies the
+	// allowlist to the combined slice.
+	ListTools(ctx context.Context, serverID string) ([]*domain.MCPServerTool, error)
 }
 
 // NewAgentService wires the roster. toolNames comes from tools.Names over the
@@ -99,6 +106,75 @@ func (s *AgentService) WithMCPServers(l MCPServerLister) *AgentService {
 // ToolNames returns the registry this deployment actually has. The dashboard
 // renders one checkbox per entry.
 func (s *AgentService) ToolNames() []string { return s.tools }
+
+// AgentToolOption is one checkbox in the roster's tool picker: the name stored
+// in allowed_tools, and where it came from. MCPServerName is empty for the
+// static registry and set for a tenant's own tool, so the form can group them
+// under the server an admin recognises rather than showing a wall of
+// `mcp__…__…` identifiers.
+type AgentToolOption struct {
+	Name          string `json:"name"`
+	MCPServerID   string `json:"mcp_server_id,omitempty"`
+	MCPServerName string `json:"mcp_server_name,omitempty"`
+	Description   string `json:"description,omitempty"`
+}
+
+// CompanyToolOptions is every tool an agent of this company may be narrowed to:
+// the static registry plus the reviewed tools of the company's MCP servers.
+//
+// The bug it fixes is a silent one. `/api/agents` built the picker from the
+// static registry alone, so no checkbox existed for a namespaced MCP name —
+// while `filterTools` applies the allowlist to the *combined* slice. An admin
+// who narrowed an agent's tools in the dashboard therefore submitted a list
+// with no MCP name in it and un-scoped that agent from every MCP tool it was
+// bound to, with nothing said and nothing to see. The API half already worked:
+// a namespaced name in `allowed_tools` was accepted, stored and called.
+//
+// Same three gates as the turn-time provider — approved, read-only, not drifted
+// — because a checkbox for a tool the turn would refuse to build is a checkbox
+// that scopes an agent to nothing. A server that is disabled offers nothing
+// either, for the same reason.
+func (s *AgentService) CompanyToolOptions(ctx context.Context, companyID string) []AgentToolOption {
+	out := make([]AgentToolOption, 0, len(s.tools))
+	for _, n := range s.tools {
+		out = append(out, AgentToolOption{Name: n})
+	}
+	if s.mcpServers == nil {
+		return out
+	}
+	servers, err := s.mcpServers.ListByCompany(ctx, companyID)
+	if err != nil {
+		// The picker degrades to the static registry, which is what it showed
+		// before this existed. Losing the MCP checkboxes is bad; failing the
+		// roster screen because an MCP read failed is worse.
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("mcp server list failed; the agent form offers only the static tools")
+		return out
+	}
+	for _, srv := range servers {
+		if !srv.Enabled {
+			continue
+		}
+		toolRows, err := s.mcpServers.ListTools(ctx, srv.ID)
+		if err != nil {
+			logrus.WithError(err).WithField("server_id", srv.ID).
+				Warn("mcp tool list failed; that server's tools are absent from the agent form")
+			continue
+		}
+		for _, tr := range toolRows {
+			if !tr.Approved || !tr.ReadOnly || tr.Drifted() {
+				continue
+			}
+			out = append(out, AgentToolOption{
+				Name:          mcptools.ToolName(srv.Name, tr.ToolName),
+				MCPServerID:   srv.ID,
+				MCPServerName: srv.Name,
+				Description:   tr.Description,
+			})
+		}
+	}
+	return out
+}
 
 // Templates returns the gallery with each card's suggested tools narrowed to
 // what this deployment runs.

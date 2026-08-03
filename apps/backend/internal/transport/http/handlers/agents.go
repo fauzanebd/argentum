@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -88,17 +89,45 @@ func (h *AgentsHandler) templateInfo() []AgentTemplate {
 	return out
 }
 
-func (h *AgentsHandler) toolInfo() []AgentToolInfo {
-	names := h.svc.ToolNames()
-	out := make([]AgentToolInfo, 0, len(names))
-	for _, n := range names {
-		label := agentToolLabels[n]
-		if label == "" {
-			label = n
+// toolInfo is the picker's vocabulary for one company: this deployment's
+// registry plus that company's reviewed MCP tools.
+//
+// An MCP tool's label is its own description — the sentence the tenant's server
+// supplies — rather than an entry in agentToolLabels, which could not have one:
+// the tools are per company and discovered at runtime. It falls back to the raw
+// tool name for a server that described nothing.
+func (h *AgentsHandler) toolInfo(c *gin.Context) []AgentToolInfo {
+	opts := h.svc.CompanyToolOptions(c.Request.Context(), companyID(c))
+	out := make([]AgentToolInfo, 0, len(opts))
+	for _, o := range opts {
+		label := agentToolLabels[o.Name]
+		if o.MCPServerID != "" {
+			label = firstLine(o.Description)
 		}
-		out = append(out, AgentToolInfo{Name: n, Label: label})
+		if label == "" {
+			label = o.Name
+		}
+		out = append(out, AgentToolInfo{
+			Name: o.Name, Label: label,
+			MCPServerID: o.MCPServerID, MCPServerName: o.MCPServerName,
+		})
 	}
 	return out
+}
+
+// firstLine keeps a checkbox one line high. A tenant's tool description is
+// written for a model and can run to a paragraph; the whole of it is already on
+// the MCP servers screen, where an admin reviewed it.
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexAny(s, ".\n"); i > 0 {
+		s = s[:i]
+	}
+	const max = 90
+	if len(s) > max {
+		s = strings.TrimSpace(s[:max]) + "…"
+	}
+	return s
 }
 
 // unavailable answers the wirings that have no roster service. Same shape the
@@ -140,7 +169,7 @@ func (h *AgentsHandler) list(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, AgentsResponse{
-		Agents: agents, Tools: h.toolInfo(), Templates: h.templateInfo(),
+		Agents: agents, Tools: h.toolInfo(c), Templates: h.templateInfo(),
 		Generation: h.generationInfo(c),
 	})
 }
