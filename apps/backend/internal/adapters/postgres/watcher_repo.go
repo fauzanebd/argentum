@@ -237,12 +237,21 @@ func (r *WatcherRepo) GetEvent(ctx context.Context, id string) (*domain.WatcherE
 	return e, err
 }
 
-func (r *WatcherRepo) ListEventsByWatcher(ctx context.Context, companyID, watcherID string, limit, offset int) ([]*domain.WatcherEvent, error) {
+func (r *WatcherRepo) ListEventsByWatcher(ctx context.Context, companyID, watcherID string, limit, offset int, firedOnly bool) ([]*domain.WatcherEvent, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	// The predicate is "breached and nothing stopped it", which is exactly the
+	// condition the evaluator writes a delivery for. Suppressed rows are still
+	// there, on the unfiltered query — this narrows what fills the window, it
+	// does not hide anything.
+	firedPredicate := ""
+	if firedOnly {
+		firedPredicate = ` AND breached AND COALESCE(suppressed_reason, '') = ''`
+	}
 	q := `SELECT ` + watcherEventColumns + ` FROM watcher_events
-		WHERE company_id = $1 AND watcher_id = $2 ORDER BY fired_at DESC LIMIT $3 OFFSET $4`
+		WHERE company_id = $1 AND watcher_id = $2` + firedPredicate + `
+		ORDER BY fired_at DESC LIMIT $3 OFFSET $4`
 	rows, err := r.db.QueryContext(ctx, q, companyID, watcherID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list watcher events: %w", err)

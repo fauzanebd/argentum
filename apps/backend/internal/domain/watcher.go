@@ -162,5 +162,13 @@ type WatcherRepository interface {
 	// outcome once a fire's turn has completed.
 	SetEventDelivery(ctx context.Context, eventID, messageID string, delivery []WatcherDelivery) error
 	GetEvent(ctx context.Context, id string) (*WatcherEvent, error)
-	ListEventsByWatcher(ctx context.Context, companyID, watcherID string, limit, offset int) ([]*WatcherEvent, error)
+	// ListEventsByWatcher returns a watcher's evaluations, newest first.
+	//
+	// firedOnly narrows to the evaluations that actually delivered — breached and
+	// not suppressed. It is a query parameter rather than a client-side filter
+	// because the window is the last N rows: a per-minute watcher inside a
+	// 12-hour cooldown fills 50 rows with identical `suppressed` lines in under an
+	// hour, so the delivery that *started* the cooldown is not merely off screen,
+	// it is not in the payload at all.
+	ListEventsByWatcher(ctx context.Context, companyID, watcherID string, limit, offset int, firedOnly bool) ([]*WatcherEvent, error)
 }

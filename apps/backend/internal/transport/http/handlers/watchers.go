@@ -106,7 +106,11 @@ func (h *WatchersHandler) events(c *gin.Context) {
 	}
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	evs, err := h.svc.ListEvents(c.Request.Context(), companyID(c), c.Param("id"), limit, offset)
+	// ?fired=true asks for the evaluations that delivered. The default is every
+	// evaluation, because "why did this not message me?" is answered by the
+	// suppressed rows and that question is at least as common as the other one.
+	firedOnly := c.Query("fired") == "true"
+	evs, err := h.svc.ListEvents(c.Request.Context(), companyID(c), c.Param("id"), limit, offset, firedOnly)
 	if err != nil {
 		watcherFail(c, err)
 		return

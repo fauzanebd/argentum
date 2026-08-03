@@ -128,12 +128,16 @@ func (r *fakeWatcherRepo) GetEvent(_ context.Context, id string) (*domain.Watche
 	}
 	return nil, domain.ErrNotFound
 }
-func (r *fakeWatcherRepo) ListEventsByWatcher(_ context.Context, _, watcherID string, _, _ int) ([]*domain.WatcherEvent, error) {
+func (r *fakeWatcherRepo) ListEventsByWatcher(_ context.Context, _, watcherID string, _, _ int, firedOnly bool) ([]*domain.WatcherEvent, error) {
 	var out []*domain.WatcherEvent
 	for _, e := range r.events {
-		if e.WatcherID == watcherID {
-			out = append(out, e)
+		if e.WatcherID != watcherID {
+			continue
 		}
+		if firedOnly && (!e.Breached || e.SuppressedReason != "") {
+			continue
+		}
+		out = append(out, e)
 	}
 	return out, nil
 }
@@ -718,5 +722,42 @@ func watcherInputFrom(w *domain.Watcher) WatcherInput {
 		Comparator: w.Comparator, Threshold: w.Threshold, CompareTo: w.CompareTo,
 		CronExpression: w.CronExpression, Timezone: w.Timezone,
 		Channels: w.Channels, CooldownMinutes: &cd,
+	}
+}
+
+// --- the events sheet's window (T-09 follow-up) ---
+
+// A per-minute watcher inside a 12-hour cooldown writes an identical suppressed
+// row every minute, so the last 50 evaluations were 50 copies of "not now" and
+// the delivery that started the cooldown was not in the payload at all. The
+// filter has to reach the query for that reason — filtering after the fact
+// filters an empty set.
+func TestListEventsCanNarrowToWhatDelivered(t *testing.T) {
+	repo := newFakeWatcherRepo()
+	w := enabledWatcher()
+	repo.watchers[w.ID] = w
+
+	repo.events = append(repo.events,
+		&domain.WatcherEvent{ID: "e-fired", WatcherID: w.ID, CompanyID: w.CompanyID, Breached: true},
+		&domain.WatcherEvent{ID: "e-cooldown", WatcherID: w.ID, CompanyID: w.CompanyID,
+			Breached: true, SuppressedReason: "cooldown"},
+		&domain.WatcherEvent{ID: "e-quiet", WatcherID: w.ID, CompanyID: w.CompanyID},
+	)
+	s := NewWatcherService(repo, &fakeMetricEval{def: testMetricDef()}, &fakeThreads{}, fakeCompanies{}, &fakeEnqueuer{}, 20)
+
+	all, err := s.ListEvents(context.Background(), w.CompanyID, w.ID, 50, 0, false)
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+	if len(all) != 3 {
+		t.Errorf("unfiltered = %d events, want 3 — suppressed rows answer \"why did it not message me?\"", len(all))
+	}
+
+	fired, err := s.ListEvents(context.Background(), w.CompanyID, w.ID, 50, 0, true)
+	if err != nil {
+		t.Fatalf("list fired: %v", err)
+	}
+	if len(fired) != 1 || fired[0].ID != "e-fired" {
+		t.Errorf("fired-only = %+v, want just the delivery", fired)
 	}
 }

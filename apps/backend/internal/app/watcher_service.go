@@ -205,12 +205,14 @@ func (s *WatcherService) List(ctx context.Context, companyID string) ([]*domain.
 	return s.repo.ListByCompany(ctx, companyID)
 }
 
-// ListEvents returns a watcher's recent evaluations.
-func (s *WatcherService) ListEvents(ctx context.Context, companyID, watcherID string, limit, offset int) ([]*domain.WatcherEvent, error) {
+// ListEvents returns a watcher's recent evaluations. firedOnly narrows to the
+// ones that delivered — see the repository's own note for why that is a query
+// and not something the caller can filter after the fact.
+func (s *WatcherService) ListEvents(ctx context.Context, companyID, watcherID string, limit, offset int, firedOnly bool) ([]*domain.WatcherEvent, error) {
 	if _, err := s.repo.GetByID(ctx, companyID, watcherID); err != nil {
 		return nil, err
 	}
-	return s.repo.ListEventsByWatcher(ctx, companyID, watcherID, limit, offset)
+	return s.repo.ListEventsByWatcher(ctx, companyID, watcherID, limit, offset, firedOnly)
 }
 
 // Update mutates a watcher. Enabling is gated on a recent dry-run; a change to

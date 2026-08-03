@@ -132,6 +132,24 @@ landed in.
   consecutive suppressions into one line ("suppressed 47× since 08:31"), or a
   filter, would put the deliveries back on screen. The 50-row cap is not the
   problem; a row per silent evaluation is.
+
+  **Fixed 2026-08-03, and it needed both halves.** Consecutive suppressed rows
+  collapse into one expandable line — *"47 suppressed · cooldown · 2 hours ago –
+  5 minutes ago"* — which is the display half. Collapsing alone would not have
+  brought the delivery back, though: the window is the last 50 *rows*, so past an
+  hour of per-minute suppression the fire is not off screen, it is not in the
+  response. So `GET /watchers/:id/events` takes `?fired=true` (breached and not
+  suppressed — the same condition the evaluator writes a delivery for), and the
+  sheet has an **All evaluations / Fired only** toggle that changes the query
+  rather than filtering what came back.
+
+  The default stays **all evaluations**, deliberately: *"why did it not message
+  me?"* is answered by the suppressed rows, and that question is at least as
+  common as *"what did it send?"*. A run of one is not collapsed, because putting
+  a single row behind a toggle hides more than it collapses.
+
+  **Not closed:** the photograph, again through the browser this sheet was first
+  read in.
 - **The default channel is a trap for a scripted click.** `Dashboard thread`
   arrives checked, so a driver that "checks the box" un-checks the only channel
   and `Create watcher` stays disabled with no message explaining why. Noted for
