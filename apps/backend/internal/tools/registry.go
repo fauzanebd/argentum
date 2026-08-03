@@ -87,7 +87,11 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// still yields their names for the allowlist and the vocabulary.
 		NewListMetricsTool(d.Metrics),
 		NewQueryMetricTool(d.Metrics, d.Usage),
-		NewRunSQLTool(d.Pool, d.Connections, d.Usage, d.MaxQueryRows, d.MaxQueryResultBytes),
+		// The schema tool is handed to run_sql as well as registered: a query that
+		// fails on a name the source does not have answers with the names it does,
+		// off the cache above rather than another introspection.
+		NewRunSQLTool(d.Pool, d.Connections, d.Usage, d.MaxQueryRows, d.MaxQueryResultBytes).
+			WithSchema(schema),
 		NewCreateVisualizationTool(d.Pool, d.Connections, d.Metabase, d.MetabaseSource, d.Usage),
 		NewCreateDashboardTool(d.Metabase, d.Usage, d.Dashboards),
 		NewScheduleTaskTool(d.Scheduled),

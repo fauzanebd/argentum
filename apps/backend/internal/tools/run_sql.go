@@ -27,6 +27,9 @@ type RunSQLTool struct {
 	recorder UsageRecorder
 	maxRows  int
 	maxBytes int
+	// schema turns a driver's name error into the list of names that would
+	// have worked. Optional: nil leaves the driver's own message untouched.
+	schema SchemaProvider
 }
 
 // UsageRecorder is the narrow interface tools depend on for metering. Kept
@@ -57,6 +60,19 @@ func NewRunSQLTool(pool *db.TenantConnPool, repo domain.ConnectionRepository, re
 		recorder = nopRecorder{}
 	}
 	return &RunSQLTool{pool: pool, repo: repo, recorder: recorder, maxRows: maxRows, maxBytes: maxBytes}
+}
+
+// WithSchema lets a failed query answer itself: on a column or table name the
+// source does not have, the error carries the names it does have. Pass the same
+// *GetSchemaTool the agent calls, so the lookup hits a warm cache instead of
+// re-introspecting the tenant's database.
+//
+// Optional rather than a constructor argument because the two callers that only
+// list tool names have no schema tool to give, and a query that never runs
+// needs no hint.
+func (t *RunSQLTool) WithSchema(p SchemaProvider) *RunSQLTool {
+	t.schema = p
+	return t
 }
 
 func (t *RunSQLTool) Name() string { return "run_sql" }
@@ -121,7 +137,7 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 
 	result, err := conn.ExecuteReadOnly(ctx, params.SQL, t.maxRows)
 	if err != nil {
-		return "", fmt.Errorf("query execution failed: %w", err)
+		return "", explainSQLError(ctx, t.schema, companyID, source.ID, params.SQL, err)
 	}
 
 	t.recorder.RecordSQL(ctx, companyID, tenantctx.ThreadID(ctx))
