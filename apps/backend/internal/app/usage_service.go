@@ -21,6 +21,7 @@ type Pricing struct {
 	MetabaseCardCost      float64 // USD per card
 	MetabaseDashboardCost float64 // USD per dashboard
 	DocumentCost          float64 // USD per generated document
+	MCPCallCost           float64 // USD per call to a tenant's own MCP server
 }
 
 // DefaultPricing approximates GPT-4o + a small per-action operations charge.
@@ -31,6 +32,11 @@ var DefaultPricing = Pricing{
 	MetabaseCardCost:      0.001,
 	MetabaseDashboardCost: 0.002,
 	DocumentCost:          0.001,
+	// Priced like a SQL query: one round trip on the tenant's behalf. It is
+	// deliberately not zero — a metered call at zero cost is invisible in every
+	// summary that sorts by spend, which is where an operator looks first when a
+	// server starts being called in a loop.
+	MCPCallCost: 0.0005,
 }
 
 // UsageService persists usage events and produces summaries. Credit
@@ -127,6 +133,22 @@ func (s *UsageService) RecordDocument(ctx context.Context, companyID, threadID, 
 		EventType:    domain.UsageEventDocumentGenerated,
 		CostMicroUSD: int64(s.pricing.DocumentCost * 1_000_000),
 		Metadata:     map[string]interface{}{"format": format},
+	})
+}
+
+// RecordMCPCall records one call to a tenant's own MCP server (T-M2). The
+// server id and the tool's own name go in the metadata rather than into new
+// columns: this is the fourth per-event kind to want two identifiers, and the
+// audit row (`agent_actions`, written by the same call) is where the arguments
+// and the outcome already live. The agent id is filled in by append, from the
+// turn's scope.
+func (s *UsageService) RecordMCPCall(ctx context.Context, companyID, threadID, serverID, toolName string) {
+	s.append(ctx, &domain.UsageEvent{
+		CompanyID:    companyID,
+		ThreadID:     threadID,
+		EventType:    domain.UsageEventMCPCall,
+		CostMicroUSD: int64(s.pricing.MCPCallCost * 1_000_000),
+		Metadata:     map[string]interface{}{"mcp_server_id": serverID, "tool": toolName},
 	})
 }
 

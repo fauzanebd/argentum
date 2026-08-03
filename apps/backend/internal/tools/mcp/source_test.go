@@ -78,7 +78,7 @@ func toolNames(list []interfaces.Tool) []string {
 }
 
 func newSource(store ServerStore, caller Caller, rec *fakeRecorder) *Source {
-	return NewSource(store, fakeCipher{}, caller, rec, Caps{
+	return NewSource(store, fakeCipher{}, caller, rec, &recordingMeter{}, Caps{
 		CallTimeout: time.Second, MaxResponseBytes: 1024, MaxCallsPerTurn: 10,
 	})
 }

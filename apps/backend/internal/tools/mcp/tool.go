@@ -27,6 +27,7 @@ import (
 
 	adaptersmcp "github.com/fauzanebd/argentum/internal/adapters/mcp"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
 // NamePrefix is the reserved namespace every MCP tool name carries. It is what
@@ -87,6 +88,7 @@ type Tool struct {
 	params     map[string]interfaces.ParameterSpec
 
 	caller    Caller
+	meter     Meter
 	url       string
 	transport domain.MCPTransport
 	token     string
@@ -94,6 +96,19 @@ type Tool struct {
 	maxBytes  int
 	calls     *callGuard
 }
+
+// Meter is the metering half, narrowed the way docgen.Meter is: one method,
+// satisfied by *app.UsageService, so this package does not depend on the whole
+// UsageRecorder interface for a kind of event none of the other tools record.
+type Meter interface {
+	RecordMCPCall(ctx context.Context, companyID, threadID, serverID, toolName string)
+}
+
+// nopMeter is what an unmetered process gets — the same shape tools.nopRecorder
+// takes, so a stack built without a control database still runs its tools.
+type nopMeter struct{}
+
+func (nopMeter) RecordMCPCall(context.Context, string, string, string, string) {}
 
 // Caller is the half of the MCP client this package needs: run one tool. An
 // interface so the tool is testable without a server, and so the guarded client
@@ -151,6 +166,14 @@ func (t *Tool) Execute(ctx context.Context, input string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("calling %s: %w", t.name, err)
 	}
+
+	// Metered here, after the round trip completed and before the result is
+	// classified. A call the server answered is work done on the tenant's
+	// behalf whether or not their tool reported a business error, and the
+	// context the result occupies is paid for either way. A transport failure
+	// records nothing, which is the same line run_sql draws: it meters a query
+	// that ran, not one that could not.
+	t.meter.RecordMCPCall(ctx, tenantctx.CompanyID(ctx), tenantctx.ThreadID(ctx), t.serverID, t.rawName)
 	if res.IsError {
 		// The tenant tool's own business error. Returned as a result, not a Go
 		// error, so the model reads it and self-corrects — but marked, so it does

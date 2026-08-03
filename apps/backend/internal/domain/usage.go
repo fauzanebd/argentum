@@ -15,6 +15,11 @@ const (
 	UsageEventMetabaseDashboard UsageEventType = "metabase_dashboard"
 	UsageEventTopicClassify     UsageEventType = "topic_classify"
 	UsageEventDocumentGenerated UsageEventType = "document_generated"
+	// UsageEventMCPCall is one call to a tenant's own MCP server (T-M2). It is
+	// its own type rather than folded into sql_query because the work happens on
+	// somebody else's machine: the cost we carry is the round trip and the
+	// context the result occupies, not a query against a source we hold.
+	UsageEventMCPCall UsageEventType = "mcp_call"
 )
 
 // UsageEvent is a single billable / observable action taken on behalf of a

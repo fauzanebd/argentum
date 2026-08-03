@@ -64,15 +64,21 @@ type Source struct {
 	cipher   Cipher
 	caller   Caller
 	recorder tools.ActionAuditor
+	meter    Meter
 	caps     Caps
 }
 
 // NewSource wires the provider. recorder is the audit sink every MCP call's row
 // is written to; a nil recorder leaves the tools unaudited exactly as
 // tools.WithAuditAll does, which is only the shape a process with no control DB
-// takes.
-func NewSource(store ServerStore, cipher Cipher, caller Caller, recorder tools.ActionAuditor, caps Caps) *Source {
-	return &Source{store: store, cipher: cipher, caller: caller, recorder: recorder, caps: caps}
+// takes. meter is the usage sink, nil-safe for the same reason — but note that
+// the two are different questions: the audit row says what the agent did, and
+// the usage row says what it cost. T-M2 asked for both and shipped one.
+func NewSource(store ServerStore, cipher Cipher, caller Caller, recorder tools.ActionAuditor, meter Meter, caps Caps) *Source {
+	if meter == nil {
+		meter = nopMeter{}
+	}
+	return &Source{store: store, cipher: cipher, caller: caller, recorder: recorder, meter: meter, caps: caps}
 }
 
 // CompanyTools returns the MCP tools this turn's agent may call, wrapped and
@@ -144,6 +150,7 @@ func (s *Source) CompanyTools(ctx context.Context, companyID string) []interface
 				desc:       tr.Description,
 				params:     paramsFromSchema(tr.InputSchema),
 				caller:     s.caller,
+				meter:      s.meter,
 				url:        srv.URL,
 				transport:  srv.Transport,
 				token:      token,

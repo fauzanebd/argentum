@@ -15,6 +15,11 @@ export const EVENT_LABELS: Record<string, string> = {
   metabase_dashboard: "Dashboards",
   topic_classify: "Topic classification",
   document_generated: "Documents",
+  // A call to one of the tenant's own MCP servers (T-M2). Labelled by what the
+  // tenant connected rather than by the protocol — nobody reading a spend
+  // breakdown is thinking about MCP, they are thinking about the ticketing
+  // system they plugged in.
+  mcp_call: "Connected tools",
 };
 
 export const CHANNEL_LABELS: Record<string, string> = {

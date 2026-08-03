@@ -423,13 +423,37 @@ for the Ops agent and an empty list for the default one.
   `static ∪ this company's approved MCP tools`"*, applied to the **form's
   options** rather than to validation. `mcp_server_tools` already holds the
   approved rows.
-- **An MCP call writes no `usage_events` row.** The ticket asks for it in as many
-  words — *"Record it on the existing `usage_events` path … do not invent a
-  second meter"* — and the turn that called the courier recorded only its two
-  `llm_call` rows. `agent_actions` has the call (with the server id), so the
-  audit is complete and the meter is not: a tenant whose agents lean on their own
-  MCP servers shows the LLM cost of those turns and nothing about the calls
-  themselves. There is no `UsageRecorder` in `internal/tools/mcp`.
+- ~~**An MCP call writes no `usage_events` row.**~~ **Fixed 2026-08-03.** The
+  ticket asked for it in as many words — *"Record it on the existing
+  `usage_events` path … do not invent a second meter"* — and the turn that called
+  the courier recorded only its two `llm_call` rows. `agent_actions` had the call
+  (with the server id), so the audit was complete and the meter was not: a tenant
+  whose agents lean on their own MCP servers showed the LLM cost of those turns
+  and nothing about the calls themselves.
+
+  What shipped: `domain.UsageEventMCPCall` (`mcp_call`), `UsageService.RecordMCPCall`,
+  and a one-method `mcptools.Meter` narrowed the way `docgen.Meter` is — the
+  package does not need the other five `UsageRecorder` methods, and the existing
+  interface would have made every implementer grow one it never calls. The
+  server id and the tenant's own tool name go in the row's metadata rather than
+  into new columns; `agent_id` fills itself in `UsageService.append`, from the
+  turn's scope, which is what the ticket's gate asks the row to carry.
+
+  **Three lines were decided rather than assumed**, and each has a test:
+  a call the server answered is metered even when the tenant's tool reports a
+  business error — the round trip happened and the result occupies the turn's
+  context either way; a transport failure meters nothing, which is where
+  `run_sql` already draws it (a query that ran, not one that could not); and a
+  call the per-turn guard refuses meters nothing, because it never went out.
+  Priced at `SQLQueryCost` — one round trip on the tenant's behalf — and
+  deliberately not zero, since a zero-cost row is invisible in every summary
+  that sorts by spend, which is where an operator looks when a server starts
+  being called in a loop. The dashboard labels it **Connected tools**, not
+  "MCP calls": nobody reading a spend breakdown is thinking about the protocol.
+
+  Not closed by this: the live half. `usage_events` was checked in tests, not
+  against a running stack, so the gate item — *"the `usage_events` row carrying
+  `agent_id`"* — still wants one real MCP turn and one `select`.
 - **`semantic_prompt_injection` refused one of the gate's negative-case turns**
   — an ordinary *"What is the delivery status of shipment SHP-1042?"* to the
   default agent. Fourth in this gate run; recorded under `T-07b` in

@@ -403,7 +403,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		Timeout:           time.Duration(cfg.MCPCallTimeoutSecs) * time.Second,
 	})
 	s.CompanyToolSource = mcptools.NewSource(
-		pgctl.NewMCPServerRepo(controlDB), dsnCipher, mcpClient, s.AgentActions,
+		pgctl.NewMCPServerRepo(controlDB), dsnCipher, mcpClient, s.AgentActions, s.UsageSvc,
 		mcptools.Caps{
 			CallTimeout:      time.Duration(cfg.MCPCallTimeoutSecs) * time.Second,
 			MaxResponseBytes: cfg.MCPMaxResponseBytes,
