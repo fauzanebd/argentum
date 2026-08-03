@@ -677,6 +677,20 @@ func (r *ChatRunner) rejectFabrication(
 				"data_rows":  snap.DataRows,
 			}).Info("turn exhausted its budget and answered without stating a figure")
 		}
+		// A figure that passed the check above is tool-derived; it is not
+		// necessarily printed at the right magnitude. "IDR 3,863,405,700
+		// (approximately $3.86 million)" is the observed shape, twice — once in
+		// chat and once in a watcher briefing a customer receives unprompted.
+		// Correcting the unit is arithmetic over digits already in the reply.
+		corrected, fixes := guardrails.CheckScale(response)
+		if len(fixes) > 0 {
+			logrus.WithFields(logrus.Fields{
+				"company_id":  p.CompanyID,
+				"thread_id":   p.ThreadID,
+				"corrections": fmt.Sprint(fixes),
+			}).Warn("a restatement disagreed with the figure it restated; the unit was corrected")
+			return corrected
+		}
 		return response
 	}
 

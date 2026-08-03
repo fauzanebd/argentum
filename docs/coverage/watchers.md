@@ -178,6 +178,21 @@ rows.
   at the right scale. The metric carries `unit` and `currency` and the renderer
   already formats correctly for documents (`internal/report/format`); the model
   is retyping a figure it was handed.
+
+  **Fixed 2026-08-03 for exactly this shape.** `guardrails.CheckScale` runs
+  beside the fabrication check on every turn — briefings included, since a
+  watcher fire is a chat turn — and corrects a magnitude word that disagrees
+  with the figure it restates: this line now reads *"approximately $3.86
+  billion"*. It changes the unit and nothing else, only when the restated digits
+  are already right under some other unit, and it logs every correction at Warn
+  with the before and after, because a guardrail that edits text and says
+  nothing is one nobody can tune. The `$`-on-an-IDR-metric half is untouched —
+  that is a currency symbol, not a scale, and the fix for it is the renderer
+  the finding already names.
+
+  What is not fixed is the cross-turn case (`business-context.md` §6): one
+  total, two magnitudes, in replies that are each internally consistent. That
+  needs tool values carried into `TurnEvidence`.
 - **Nothing else.** The evaluation loop, the cooldown, the dry-run gate, the
   cascade and the delivery record all behaved as the unit tests said — the first
   ticket in nine where the live half did not contradict them.

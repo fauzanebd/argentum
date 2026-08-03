@@ -208,6 +208,27 @@ the number this product is most often judged by, it predates this ticket, and
 it belongs to whoever owns the response contract — `T-16`'s guard proves the
 figure was queried, not that it was rendered.
 
+**Half of it is closed, 2026-08-03.** The half that shipped is the one a reply
+contradicts *itself* on: `guardrails.CheckScale` corrects a magnitude word that
+disagrees with the figure it restates — *"$3,863,405,700 (approximately $3.86
+million)"*, the shape the 2026-08-02 watcher gate found in a briefing a customer
+receives unprompted. It rewrites the **unit only**, and only when the restated
+digits are already right under some other unit; when the two numbers genuinely
+disagree it changes nothing and the runner logs it. The bar for editing a word
+the model wrote is that the correction is derivable from the reply itself —
+same digits, same sentence, one unit apart. No tool result, no model call.
+
+**The half recorded here is still open**, and it is the harder one: the *same*
+total rendered `$3,863,405,700.00` on one turn and `$3,863,405.70` on two
+others. Those replies are each internally consistent, so nothing in the text
+gives the check a foothold — catching it means carrying the numbers a tool
+returned into `TurnEvidence` and comparing, which is the provenance check
+`fabrication.go` deliberately does not attempt, for the reason stated there: a
+legitimate sum, rate or rounding appears in no tool result, and a guardrail that
+blocks correct answers gets switched off. Anyone taking it on should start from
+a digit-signature comparison — same significant digits, different magnitude —
+rather than from equality.
+
 ### 7. Known limits
 
 - **The cap is characters, not tokens.** 4 chars/token errs long for English
