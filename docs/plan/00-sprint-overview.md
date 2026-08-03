@@ -783,10 +783,14 @@ and this is the mechanism that let it.
 **What is not in this list, and should be decided before Sprint 2 opens:** the
 two acceptance items Sprint 1 still owes (`T-R4`'s three unautomatable
 applications, `T-A2b`'s ten live report calls), the `/metrics` finding above, and
-the unfiled `T-S3` gate finding — the dashboard's host/port connection form pins
+~~the unfiled `T-S3` gate finding — the dashboard's host/port connection form pins
 `sslmode=require` and does not test the connection on create, so a source added
 through the UI fails one turn later after an agent has spent its budget
-discovering it. **Two more joined them on 2026-07-31** from `T-S4`'s gate: the
+discovering it~~ — **fixed 2026-08-03**: the form has an encryption control,
+`ssl_mode` travels on all three DSN-building endpoints rather than only create,
+and create opens the database before storing it, with a `Save anyway` override
+for one that is legitimately down ([`../coverage/agent-roster.md`](../coverage/agent-roster.md) §2).
+**Two more joined them on 2026-07-31** from `T-S4`'s gate: the
 injection guardrail refusing two of seven ordinary questions (`T-07b`'s, and now
 a measured rate rather than an anecdote), and `docker-compose.yml` shipping no
 object storage — **that second one was fixed the same evening**, so the

@@ -68,14 +68,57 @@ func userID(c *gin.Context) string {
 	return s
 }
 
+// sslModes are the transport-security settings the host/port form may choose
+// between, per driver. They exist because the form used to pin postgres to
+// `sslmode=require` with no way to say otherwise, so a database that does not
+// speak TLS — every local one, and plenty of internal ones behind a VPN — could
+// be registered through the UI and could never be reached, which the tenant
+// discovered a turn later.
+//
+// `require` stays the default everywhere. Choosing less is a decision an admin
+// makes explicitly, and it is one they could already make by pasting a raw DSN;
+// what changes is that they no longer have to know the DSN grammar to make it.
+var sslModes = map[string]map[string]string{
+	"postgres": {
+		"require": "require", "prefer": "prefer", "disable": "disable",
+		"verify-ca": "verify-ca", "verify-full": "verify-full",
+	},
+	"mysql": {
+		"require": "true", "prefer": "preferred", "disable": "false",
+		"verify-ca": "skip-verify", "verify-full": "true",
+	},
+}
+
+// resolveSSLMode maps a requested mode onto the driver's own spelling. An empty
+// or unknown request is `require`: the safe end, and the behaviour every
+// connection registered before this shipped already has.
+func resolveSSLMode(dbType, requested string) (string, error) {
+	modes, ok := sslModes[dbType]
+	if !ok {
+		return "", nil
+	}
+	if requested == "" {
+		requested = "require"
+	}
+	driverValue, ok := modes[requested]
+	if !ok {
+		return "", fmt.Errorf("unsupported ssl_mode %q for %s", requested, dbType)
+	}
+	return driverValue, nil
+}
+
 // buildDSN constructs a driver-specific DSN from discrete fields.
 // If raw is non-empty it is returned as-is (advanced mode).
-func buildDSN(dbType, raw, host, port, user, pass, dbname string) (string, error) {
+func buildDSN(dbType, raw, host, port, user, pass, dbname, sslMode string) (string, error) {
 	if raw != "" {
 		return raw, nil
 	}
 	if host == "" || port == "" || dbname == "" {
 		return "", fmt.Errorf("host, port and database name are required")
+	}
+	driverSSL, err := resolveSSLMode(dbType, sslMode)
+	if err != nil {
+		return "", err
 	}
 	switch dbType {
 	case "postgres":
@@ -86,7 +129,7 @@ func buildDSN(dbType, raw, host, port, user, pass, dbname string) (string, error
 			Path:   dbname,
 		}
 		q := u.Query()
-		q.Set("sslmode", "require")
+		q.Set("sslmode", driverSSL)
 		u.RawQuery = q.Encode()
 		return u.String(), nil
 	case "mysql":
@@ -99,6 +142,7 @@ func buildDSN(dbType, raw, host, port, user, pass, dbname string) (string, error
 			ParseTime:            true,
 			Loc:                  time.UTC,
 			AllowNativePasswords: true,
+			TLSConfig:            driverSSL,
 		}
 		return cfg.FormatDSN(), nil
 	case "sqlserver":
@@ -139,6 +183,17 @@ type addConnReq struct {
 	Password    string `json:"password"`
 	DBName      string `json:"dbname"`
 	IsDefault   bool   `json:"is_default"`
+	// SSLMode is the transport security the host/port form chose. Empty is
+	// `require`, which is what every connection registered before this shipped
+	// already has.
+	SSLMode string `json:"ssl_mode"`
+	// SkipTest stores a source that could not be reached. The default is to
+	// refuse: a source added through the form and never opened fails a turn
+	// later, after an agent has spent its budget discovering it, and the tenant
+	// reads that as the agent being broken. But a database behind a VPN that is
+	// down at 4pm is not a configuration error — so the refusal is a 400 an
+	// admin can override, not a wall.
+	SkipTest bool `json:"skip_test"`
 }
 
 func (h *CompanyHandler) addConnection(c *gin.Context) {
@@ -147,10 +202,23 @@ func (h *CompanyHandler) addConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName)
+	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName, req.SSLMode)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	// Open it before storing it. The failure this prevents is not a bad
+	// password — it is a source that looks registered, is listed in the agent's
+	// own catalog, and cannot be read: the agent picks it, spends its budget,
+	// and answers that it has no access to the data.
+	if !req.SkipTest {
+		if err := h.svc.TestConnection(c.Request.Context(), req.DBType, dsn); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":            err.Error(),
+				"connection_error": true,
+			})
+			return
+		}
 	}
 	conn, err := h.svc.AddConnection(c.Request.Context(), companyID(c), req.DBType, req.Label, req.Description, dsn, req.IsDefault)
 	if err != nil {
@@ -214,6 +282,11 @@ type updateDSNReq struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	DBName   string `json:"dbname"`
+	// SSLMode travels with the fields it belongs to. A rotation through the
+	// host/port form that dropped it would silently re-pin the connection to
+	// `require` — which is how a source that worked yesterday stops working
+	// after an unrelated password change.
+	SSLMode string `json:"ssl_mode"`
 }
 
 func (h *CompanyHandler) updateConnectionDSN(c *gin.Context) {
@@ -222,7 +295,7 @@ func (h *CompanyHandler) updateConnectionDSN(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName)
+	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName, req.SSLMode)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -366,6 +439,10 @@ type testConnReq struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	DBName   string `json:"dbname"`
+	// SSLMode so the Test button tests what Save will store. Without it the
+	// test passes on `require` and the save stores `disable`, or the reverse —
+	// a green test for a connection that is not the one being registered.
+	SSLMode string `json:"ssl_mode"`
 }
 
 func (h *CompanyHandler) testConnection(c *gin.Context) {
@@ -374,7 +451,7 @@ func (h *CompanyHandler) testConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName)
+	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName, req.SSLMode)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

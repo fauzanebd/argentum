@@ -72,6 +72,23 @@ function isFormReady(
   return host.trim().length > 0 && port.trim().length > 0 && dbname.trim().length > 0;
 }
 
+/** The encryption choices the host/port form offers, in the order an admin
+ *  should prefer them. `require` is the default and is what every connection
+ *  registered before 2026-08-03 has: the form pinned it with no way to say
+ *  otherwise, so a database that does not speak TLS — every local one, and
+ *  plenty of internal ones behind a VPN — could be saved through this form and
+ *  could never be read, which the tenant found out a turn later. */
+const SSL_MODES = [
+  { value: "require", label: "Require TLS (recommended)" },
+  { value: "verify-full", label: "Require TLS and verify the certificate" },
+  { value: "prefer", label: "Use TLS if the server offers it" },
+  { value: "disable", label: "No TLS — only on a trusted network" },
+];
+
+/** Drivers whose DSN this control affects. SQL Server sets its own encryption
+ *  parameters in buildDSN and is deliberately not offered a choice here. */
+const SSL_MODE_DRIVERS = ["postgres", "mysql"];
+
 export function ConnectionsTab() {
   const qc = useQueryClient();
   const [supported, setSupported] = useState<string[]>([]);
@@ -84,6 +101,12 @@ export function ConnectionsTab() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [dbname, setDbname] = useState("");
+  const [sslMode, setSslMode] = useState("require");
+  // Set when a save was refused because the database could not be opened. It
+  // carries the driver's own error and turns Add into "Save anyway": a source
+  // behind a VPN that is down right now is not a configuration error, but it is
+  // not something to store silently either.
+  const [unreachable, setUnreachable] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +146,7 @@ export function ConnectionsTab() {
       username,
       password,
       dbname,
+      ssl_mode: sslMode,
     };
   }
 
@@ -139,10 +163,18 @@ export function ConnectionsTab() {
     }
   }
 
-  async function add() {
+  /** add saves the connection. The backend opens it first and refuses a source
+   *  it cannot read — the failure that used to surface a turn later, as the
+   *  agent reporting it had no access to the data. `force` is the second press:
+   *  a database that is down right now is not a configuration error. */
+  async function add(force = false) {
     setError(null);
     try {
-      await api.post("/connections", { ...payload(), is_default: connections?.length === 0 });
+      await api.post("/connections", {
+        ...payload(),
+        is_default: connections?.length === 0,
+        ...(force ? { skip_test: true } : {}),
+      });
       setLabel("");
       setDsn("");
       setHost("");
@@ -151,8 +183,15 @@ export function ConnectionsTab() {
       setPassword("");
       setDbname("");
       setTestResult(null);
+      setUnreachable(null);
       qc.invalidateQueries({ queryKey: ["connections"] });
     } catch (e: unknown) {
+      const body = (e as { response?: { data?: { connection_error?: boolean; error?: string } } })
+        ?.response?.data;
+      if (body?.connection_error) {
+        setUnreachable(body.error ?? "The database could not be reached.");
+        return;
+      }
       setError(apiErrorMessage(e));
     }
   }
@@ -368,6 +407,27 @@ export function ConnectionsTab() {
                 <Label>Database name</Label>
                 <Input value={dbname} onChange={(e) => setDbname(e.target.value)} />
               </div>
+              {SSL_MODE_DRIVERS.includes(dbType) && (
+                <div className="space-y-1.5 col-span-2">
+                  <Label>Encryption</Label>
+                  <Select value={sslMode} onValueChange={setSslMode}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SSL_MODES.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    This form used to require TLS with no way to say otherwise, so a database that
+                    does not speak it could be saved and never reached.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -387,15 +447,31 @@ export function ConnectionsTab() {
           {testResult && (
             <Badge variant={testResult === "ok" ? "secondary" : "destructive"}>{testResult}</Badge>
           )}
+          {unreachable && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+              <p className="font-medium text-destructive">This database could not be opened</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">{unreachable}</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Saving it anyway is fine if the database is temporarily down or behind a network
+                the server reaches later — but until it opens, an agent asked about this data will
+                spend a turn discovering it cannot read it.
+              </p>
+            </div>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </CardContent>
         <CardFooter className="gap-2">
           <Button variant="outline" disabled={testing || !ready} onClick={testConnection}>
             {testing ? "Testing…" : "Test"}
           </Button>
-          <Button onClick={add} disabled={!ready}>
+          <Button onClick={() => add()} disabled={!ready}>
             Add database
           </Button>
+          {unreachable && (
+            <Button variant="outline" onClick={() => add(true)} disabled={!ready}>
+              Save anyway
+            </Button>
+          )}
         </CardFooter>
       </Card>
 

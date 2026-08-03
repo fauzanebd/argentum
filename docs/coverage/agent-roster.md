@@ -1123,3 +1123,28 @@ The gate worked around it with `PUT /api/connections/:id/dsn` and an explicit
 returns `{"ok":true}`. Two things follow, neither urgent enough to block this
 track: the form has no SSL-mode control, and **create does not test**, so the
 first evidence of a bad connection is a wasted agent turn.
+
+**Both fixed 2026-08-03.**
+
+The form has an **Encryption** control — require (default), verify-full, prefer,
+disable — and `ssl_mode` travels on all three endpoints that build a DSN, not
+just create. That last part is the non-obvious half: a rotation through
+`PUT /connections/:id/dsn` that dropped the field would silently re-pin a
+working connection to `require`, which is how a source that worked yesterday
+stops working after an unrelated password change. The Test button sends it too,
+so a green test is a test of the connection being saved rather than of a
+different one. Each driver's own spelling — postgres `sslmode=disable`, mysql
+`tls=false` — lives in one table, because a mapping that is wrong in one caller
+is invisible until a tenant's database refuses the connection. A raw DSN is
+never rewritten; that is what advanced mode means. SQL Server sets its own
+encryption parameters and is deliberately offered no choice.
+
+**Create now opens the database before storing it**, and refuses with the
+driver's own error. The refusal is a 400 an admin can override rather than a
+wall — `skip_test`, surfaced as **Save anyway** beside the error — because a
+database behind a VPN that is down at 4pm is not a configuration error. What the
+override says out loud is what it costs: until it opens, an agent asked about
+that data will spend a turn discovering it cannot read it.
+
+The default is unchanged for every connection registered before this, and for
+anyone who does not touch the control: an empty `ssl_mode` is `require`.
