@@ -61,10 +61,13 @@ func (h *AgentsHandler) Register(rg *gin.RouterGroup) {
 var agentToolLabels = map[string]string{
 	"list_sources":         "List the workspace's databases",
 	"get_schema":           "Read table and column names",
+	"list_metrics":         "List the workspace's defined metrics",
+	"query_metric":         "Read a defined metric over a date range",
 	"run_sql":              "Run read-only SQL queries",
 	"create_visualization": "Build a chart from a query",
 	"create_dashboard":     "Assemble charts into a dashboard",
 	"schedule_task":        "Schedule a recurring question",
+	"propose_action":       "Propose an action for a human to approve",
 	"generate_document":    "Generate a PDF or slide deck",
 }
 

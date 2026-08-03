@@ -234,7 +234,9 @@ func (s *AgentService) Get(ctx context.Context, companyID, id string) (*domain.A
 // there is no state in which a company has agents but no default, because
 // T-S2 resolves an unspecified thread to exactly that row.
 func (s *AgentService) Create(ctx context.Context, companyID string, in AgentInput) (*domain.Agent, error) {
-	a, err := s.validated(ctx, companyID, in)
+	// No row yet, so nothing to keep: every name a create submits is checked
+	// against the live registry.
+	a, err := s.validated(ctx, companyID, in, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +280,7 @@ func (s *AgentService) Update(ctx context.Context, companyID, id string, in Agen
 	if err != nil {
 		return nil, err
 	}
-	a, err := s.validated(ctx, companyID, in)
+	a, err := s.validated(ctx, companyID, in, current.AllowedTools)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +402,11 @@ const (
 // and the company's own connections — because an allowlist naming something
 // that does not exist is indistinguishable, later, from one that was never
 // meant to include it.
-func (s *AgentService) validated(ctx context.Context, companyID string, in AgentInput) (*domain.Agent, error) {
+//
+// keep is the allowlist the row already holds, on an update, and nil on a
+// create. Names in it survive validation even when this deployment does not
+// register them — see normalizeTools.
+func (s *AgentService) validated(ctx context.Context, companyID string, in AgentInput, keep []string) (*domain.Agent, error) {
 	name := strings.TrimSpace(in.Name)
 	description := strings.TrimSpace(in.Description)
 	persona := strings.TrimSpace(in.PersonaPrompt)
@@ -417,7 +423,7 @@ func (s *AgentService) validated(ctx context.Context, companyID string, in Agent
 		return nil, fmt.Errorf("%w: instructions must be %d characters or fewer", domain.ErrInvalidInput, agentPersonaMax)
 	}
 
-	tools, err := s.normalizeTools(in.AllowedTools)
+	tools, err := s.normalizeTools(in.AllowedTools, keep)
 	if err != nil {
 		return nil, err
 	}
@@ -443,9 +449,21 @@ func (s *AgentService) validated(ctx context.Context, companyID string, in Agent
 // normalizeTools deduplicates and orders the allowlist by the registry, so two
 // agents ticked in different orders store the same array and a diff of the two
 // rows shows a real difference.
-func (s *AgentService) normalizeTools(in []string) ([]string, error) {
+//
+// keep is what the row already stores. A name in it that this deployment does
+// not register is carried through instead of refused, because the alternative is
+// an admin being shown "no tool called generate_document on this deployment"
+// over a tool they never chose — 043's backfill writes that name into every
+// scoped agent, and object storage is per-deployment (tools.RegistryDeps.Docs).
+// The name reaches nothing until the deployment has a bucket: filterTools
+// matches by name and does not find it. On a create, keep is nil and an
+// unknown name is still an error, which is the check this exists to preserve.
+func (s *AgentService) normalizeTools(in, keep []string) ([]string, error) {
 	want := map[string]bool{}
 	mcp := map[string]bool{}
+	// unregistered preserves both the fact and the order of a kept name that has
+	// no registry entry to sort it by.
+	var unregistered []string
 	for _, t := range in {
 		t = strings.TrimSpace(t)
 		if t == "" {
@@ -464,18 +482,26 @@ func (s *AgentService) normalizeTools(in []string) ([]string, error) {
 			continue
 		}
 		if !slices.Contains(s.tools, t) {
+			if slices.Contains(keep, t) && !slices.Contains(unregistered, t) {
+				unregistered = append(unregistered, t)
+				continue
+			}
 			// Named, not counted: "unknown tool" without the name sends an
 			// admin back to the checkboxes to find which one.
 			return nil, fmt.Errorf("%w: no tool called %q on this deployment", domain.ErrInvalidInput, t)
 		}
 		want[t] = true
 	}
-	out := make([]string, 0, len(want)+len(mcp))
+	out := make([]string, 0, len(want)+len(mcp)+len(unregistered))
 	for _, t := range s.tools {
 		if want[t] {
 			out = append(out, t)
 		}
 	}
+	// Kept names this deployment cannot register go after the ones it can, in
+	// the order they arrived: there is no registry position to sort them by, and
+	// an arbitrary one would make a diff of two identically-scoped rows lie.
+	out = append(out, unregistered...)
 	// MCP names after the static ones and sorted, so two agents scoped to the
 	// same set store the same array and a diff of the two rows shows a real
 	// difference — the same reason the static half is ordered by the registry.

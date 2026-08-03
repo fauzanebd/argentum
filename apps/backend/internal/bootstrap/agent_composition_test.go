@@ -41,11 +41,17 @@ func toolNames(ts []interfaces.Tool) []string {
 
 func compositionFactory() app.AgentFactory {
 	return newAgentFactory(agentFactoryDeps{
-		systemPrompt:  SystemPrompt(),
+		systemPrompt:  SystemPromptFor,
 		tools:         registry(),
 		maxIterations: 3,
 	})
 }
+
+// registryPrompt is what "the shared prompt" means to these tests now that the
+// catalog is composed from the turn's own tools: the prompt for an agent
+// holding everything registry() has. An unrestricted agent gets exactly this,
+// and it is still the prefix every addendum is appended to.
+func registryPrompt() string { return SystemPromptFor(toolNames(registry())) }
 
 const persona = "You serve the finance team. Prefer margin over revenue."
 
@@ -61,7 +67,7 @@ func TestThePersonaIsAppendedAndNeverReplaces(t *testing.T) {
 	}
 
 	prompt := agent.GetSystemPrompt()
-	if !strings.HasPrefix(prompt, SystemPrompt()) {
+	if !strings.HasPrefix(prompt, registryPrompt()) {
 		t.Error("the shared system prompt is no longer the prefix")
 	}
 	if !strings.Contains(prompt, persona) {

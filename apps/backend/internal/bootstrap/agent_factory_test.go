@@ -101,7 +101,8 @@ func testFactory(t *testing.T) app.AgentFactory {
 		t.Fatalf("load guardrails: %v", err)
 	}
 	return newAgentFactory(agentFactoryDeps{
-		systemPrompt:  SystemPrompt(),
+		systemPrompt:  SystemPromptFor,
+		tools:         registry(),
 		guardrails:    gr,
 		maxIterations: 3,
 	})
@@ -122,7 +123,7 @@ func TestTheTurnDirectiveLandsInTheSystemPrompt(t *testing.T) {
 	}
 
 	prompt := agent.GetSystemPrompt()
-	if !strings.HasPrefix(prompt, SystemPrompt()) {
+	if !strings.HasPrefix(prompt, registryPrompt()) {
 		t.Error("the shared system prompt is no longer the prefix; on Anthropic that is every turn's cache key")
 	}
 	for _, clause := range []string{"generate_document", "Do not call create_visualization"} {
@@ -141,7 +142,7 @@ func TestATurnWithoutADirectiveGetsTheSharedPromptUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build agent: %v", err)
 	}
-	if agent.GetSystemPrompt() != SystemPrompt() {
+	if agent.GetSystemPrompt() != registryPrompt() {
 		t.Error("a turn with no addendum did not get the shared prompt verbatim")
 	}
 }

@@ -1,0 +1,11 @@
+-- Deliberately not reversed.
+--
+-- The up migration adds two tool names to agents that lacked them, and nothing
+-- records which rows it touched. Stripping generate_document and
+-- create_dashboard from every scoped agent on the way down would also strip them
+-- from the agents an admin ticked by hand — taking away a capability somebody
+-- chose in order to undo one they were never offered.
+--
+-- A down migration that loses tenant intent is worse than one that does nothing.
+-- Removing the capability from a single agent is a checkbox in Settings → Agents.
+SELECT 1;

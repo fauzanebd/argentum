@@ -23,6 +23,27 @@
 # `generate_document` is conditional on object storage, and a checkbox
 # pre-ticked for a tool this deployment does not run would fail on first save.
 #
+# **Every card suggests the same read-and-report set, because these describe
+# jobs and not permissions.** A template's tool list is the allowlist the agent
+# is created with — `draftFromTemplate` copies it verbatim — and `filterTools`
+# then hands the model exactly that. So a tool left out here is a capability the
+# job silently does not have, which is how a Sales agent asked for "a sales
+# overview report in PDF" came to answer with a wall of markdown and an
+# instruction to press Ctrl+P: `generate_document` was never ticked, and nothing
+# in the product said so.
+#
+# Two rules keep the set honest, and golden_test.go pins both:
+#   - `create_visualization` and `create_dashboard` travel together. A card_id is
+#     not something a user can open, so an agent that can make cards and not wrap
+#     them has half a feature.
+#   - `generate_document` is on every card. Any of these jobs can be asked for a
+#     report, and the answer to that request is a file.
+#
+# `schedule_task` and `propose_action` are deliberately on no card. Both act
+# rather than answer — one books recurring spend on the tenant's credits, the
+# other proposes a change outside Argentum — and an admin should tick those
+# knowingly rather than inherit them from a card they picked for its persona.
+#
 # `source_hints` are matched at the *word start*, case-insensitively, against a
 # connection's label and its description. Prefix rather than whole-word so
 # "invoice" catches `invoices` and "fulfil" catches `fulfilment`; anchored at
@@ -46,7 +67,7 @@ templates:
       counts as revenue, when a cost is recognised, which date a transaction
       belongs to — state the definition you applied rather than choosing one
       silently.
-    suggested_tools: [get_schema, run_sql, create_visualization, generate_document]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, create_visualization, create_dashboard, generate_document]
     source_hints: [invoice, payment, ledger, revenue, transaction, billing, finance, accounting, budget]
     starter_questions:
       - "What was our revenue last month compared with the month before?"
@@ -67,7 +88,7 @@ templates:
       today and one taken last week will disagree. When that matters to the
       answer, say when the data was read rather than presenting a moving number
       as settled.
-    suggested_tools: [get_schema, run_sql, create_visualization]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, create_visualization, create_dashboard, generate_document]
     source_hints: [sales, order, opportunity, lead, pipeline, deal, quote, crm, customer, account]
     starter_questions:
       - "How many deals did we close last month, and what were they worth?"
@@ -88,7 +109,7 @@ templates:
       When something looks like an exception — a stock-out, a stalled batch, a
       site far off its own norm — name it rather than averaging it away. The
       exception is usually the question behind the question.
-    suggested_tools: [get_schema, run_sql, create_visualization, generate_document]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, create_visualization, create_dashboard, generate_document]
     source_hints: [inventory, stock, warehouse, shipment, delivery, fulfil, logistics, production, supply, store, branch]
     starter_questions:
       - "Which items were out of stock most often last month?"
@@ -109,7 +130,7 @@ templates:
       the data usually only supports one of them. Say which one the numbers you
       used actually represent, and do not present a correlation between spend
       and revenue as a causal claim.
-    suggested_tools: [get_schema, run_sql, create_visualization]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, create_visualization, create_dashboard, generate_document]
     source_hints: [campaign, marketing, ad, advert, channel, attribution, traffic, utm, subscriber, engagement]
     starter_questions:
       - "Which channels brought the most customers last month, and at what cost?"
@@ -131,7 +152,7 @@ templates:
       when a group is small enough that an aggregate identifies the people in it,
       say so instead of returning it. If a question needs an individual's record
       to answer, say that it does rather than approximating one.
-    suggested_tools: [get_schema, run_sql, create_visualization]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, create_visualization, create_dashboard, generate_document]
     source_hints: [employee, staff, hr, payroll, headcount, attendance, recruit, applicant, people]
     starter_questions:
       - "What is our headcount by department, and how has it changed this year?"
@@ -153,7 +174,7 @@ templates:
       Volume by category is usually the more useful half of a support question:
       the reason a queue is growing is a product fact, not a staffing one. Point
       at it when the data supports it.
-    suggested_tools: [get_schema, run_sql, create_visualization]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, create_visualization, create_dashboard, generate_document]
     source_hints: [ticket, support, helpdesk, case, complaint, sla, csat, conversation, inbox]
     starter_questions:
       - "How many tickets did we receive last week, and how many are still open?"

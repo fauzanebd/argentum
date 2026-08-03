@@ -49,6 +49,13 @@ A task is done when **all** of these hold. Not when the code compiles.
 - [ ] `go build ./...` and `go vet ./...` clean (backend), or
       `pnpm build` clean (frontend).
 - [ ] New behaviour has a test, or the ticket states explicitly why it cannot.
+- [ ] A change to what an agent can *do* answers three questions before it is
+      done: does the system prompt describe exactly the tools the turn holds
+      (`internal/bootstrap/system_prompt.go`), does the agent form offer them
+      (`agentToolLabels`, `config/agent_templates.yaml`), and do the rows tenants
+      already have need a backfill migration? See `agents/conventions.md`
+      §"Agent tools" 7–8. A capability nobody's `allowed_tools` contains is a
+      capability nobody has.
 - [ ] Docs updated when the change alters the public surface:
       `apps/backend/openapi/v1.yaml` for anything under `/v1` (and
       `docs/api/quickstart.md` if an integrator would do it differently),

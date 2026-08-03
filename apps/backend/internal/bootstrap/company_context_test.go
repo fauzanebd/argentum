@@ -48,7 +48,7 @@ func TestTheCompanyBlockPrecedesThePersona(t *testing.T) {
 	}
 
 	prompt := agent.GetSystemPrompt()
-	if !strings.HasPrefix(prompt, SystemPrompt()) {
+	if !strings.HasPrefix(prompt, registryPrompt()) {
 		t.Error("the shared system prompt is no longer the prefix")
 	}
 	companyAt := strings.Index(prompt, companyBlock)
@@ -105,7 +105,7 @@ func TestTheCompanyBlockIsFramedAsDescriptionNotInstruction(t *testing.T) {
 func TestTheAgentConfigDoesNotReplaceTheComposedPrompt(t *testing.T) {
 	llm := &recordingLLM{reply: "ok"}
 	factory := newAgentFactory(agentFactoryDeps{
-		systemPrompt:  SystemPrompt(),
+		systemPrompt:  SystemPromptFor,
 		tools:         registry(),
 		maxIterations: 3,
 		agentConfig: sdkagent.WithAgentConfig(sdkagent.AgentConfig{
@@ -122,7 +122,7 @@ func TestTheAgentConfigDoesNotReplaceTheComposedPrompt(t *testing.T) {
 	}
 
 	prompt := agent.GetSystemPrompt()
-	if !strings.HasPrefix(prompt, SystemPrompt()) {
+	if !strings.HasPrefix(prompt, registryPrompt()) {
 		t.Fatal("config/agents.yaml replaced the runtime system prompt")
 	}
 	for _, want := range []string{companyBlock, persona} {

@@ -423,7 +423,6 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		}
 	}
 
-	systemPrompt := SystemPrompt()
 	agentTools := s.Tools
 
 	// The registry, by name, once per boot. The SDK looks a tool call up by
@@ -431,14 +430,10 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// "Tool not found" when it misses — which is indistinguishable, in a log,
 	// from a tool that was never registered. One line here tells the two
 	// apart, and T-A2's gate needed exactly that.
-	names := make([]string, 0, len(agentTools))
-	for _, t := range agentTools {
-		names = append(names, t.Name())
-	}
-	logrus.WithField("tools", names).Info("agent tool registry")
+	logrus.WithField("tools", tools.Names(agentTools)).Info("agent tool registry")
 
 	s.AgentFactory = newAgentFactory(agentFactoryDeps{
-		systemPrompt:  systemPrompt,
+		systemPrompt:  SystemPromptFor,
 		tools:         agentTools,
 		memory:        mem,
 		guardrails:    guardrailsTpl,
@@ -464,7 +459,12 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 // agentFactoryDeps is everything an agent is built from that does not change
 // between turns.
 type agentFactoryDeps struct {
-	systemPrompt  string
+	// systemPrompt composes the shared prompt for a turn holding exactly the
+	// named tools — SystemPromptFor in every real wiring. A function rather
+	// than a string because the tool list is a per-turn fact: an agent's
+	// allowlist decides it, and a prompt that describes tools the turn does not
+	// hold is a prompt that promises capabilities the model cannot use.
+	systemPrompt  func(available []string) string
 	tools         []interfaces.Tool
 	memory        interfaces.Memory
 	guardrails    *guardrails.Analytics
@@ -481,6 +481,23 @@ type agentFactoryDeps struct {
 // against a live stack is a property nothing tests.
 func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 	return func(spec app.AgentSpec) (*sdkagent.Agent, error) {
+		// Static registry plus this turn's tenant MCP tools (T-M2), then
+		// filtered by the agent's allowlist. The company tools arrive already
+		// budget-guarded and audited, so appending them here — after the static
+		// half was wrapped at boot — leaves the whole slice bounded and audited,
+		// which is the security property the ticket warns is easy to half-ship.
+		// Empty CompanyTools is the common path and leaves d.tools untouched.
+		//
+		// This happens before the prompt is composed, because it decides what the
+		// prompt may say: the catalog describes the tools this turn actually got.
+		turnTools := d.tools
+		if len(spec.CompanyTools) > 0 {
+			turnTools = append(append(make([]interfaces.Tool, 0, len(d.tools)+len(spec.CompanyTools)),
+				d.tools...), spec.CompanyTools...)
+		}
+		turnTools = filterTools(turnTools, spec.ToolNames)
+		turnToolNames := tools.Names(turnTools)
+
 		// A per-turn addendum, appended rather than prepended: the shared
 		// prompt is what the agent is, and the addendum is what this one turn
 		// wants of it — and on Anthropic the shared prefix is also what the
@@ -488,7 +505,14 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 		// same cached system message. A report turn pays for its own, which
 		// is a few hundred tokens on a request that is about to run a
 		// multi-minute agentic loop.
-		turnPrompt := d.systemPrompt
+		//
+		// The prefix is per-agent rather than per-deployment since the catalog
+		// became tool-aware: two agents with different allowlists have different
+		// prompts and so different cache entries, and each agent's own turns
+		// still share one. An agent bound to MCP servers whose tool list changes
+		// between turns pays for a new prefix when it does, which is the same
+		// bill its tool definitions were already generating.
+		turnPrompt := d.systemPrompt(turnToolNames)
 		// Facts before instructions, and both after the rules (T-B1, locked
 		// decision 1): the company block says what the business is, the persona
 		// says what this agent does about it. A persona that mentions "our
@@ -510,31 +534,25 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 		// The prompt itself is Trace and off by default — it carries the
 		// tenant's own text about their own business.
 		digest := sha256.Sum256([]byte(turnPrompt))
+		// The tool names go in the same line as the digest. filterTools only
+		// says something when an allowlist matches *nothing*, so a turn that
+		// quietly lost one tool — the allowlist that omits generate_document and
+		// answers a report request with markdown — left no trace at all.
 		entry := logrus.WithFields(logrus.Fields{
 			"prompt_sha256":  hex.EncodeToString(digest[:8]),
 			"prompt_chars":   len(turnPrompt),
 			"company_chars":  len(spec.CompanyContext),
 			"persona_chars":  len(spec.Persona),
 			"addendum_chars": len(spec.SystemAddendum),
+			"tools":          turnToolNames,
 		})
 		entry.Debug("composed system prompt")
 		if logrus.IsLevelEnabled(logrus.TraceLevel) {
 			entry.WithField("prompt", turnPrompt).Trace("composed system prompt (full)")
 		}
-		// Static registry plus this turn's tenant MCP tools (T-M2), then
-		// filtered by the agent's allowlist. The company tools arrive already
-		// budget-guarded and audited, so appending them here — after the static
-		// half was wrapped at boot — leaves the whole slice bounded and audited,
-		// which is the security property the ticket warns is easy to half-ship.
-		// Empty CompanyTools is the common path and leaves d.tools untouched.
-		turnTools := d.tools
-		if len(spec.CompanyTools) > 0 {
-			turnTools = append(append(make([]interfaces.Tool, 0, len(d.tools)+len(spec.CompanyTools)),
-				d.tools...), spec.CompanyTools...)
-		}
 		opts := []sdkagent.Option{
 			sdkagent.WithLLM(spec.Primary),
-			sdkagent.WithTools(filterTools(turnTools, spec.ToolNames)...),
+			sdkagent.WithTools(turnTools...),
 			sdkagent.WithMemory(d.memory),
 			sdkagent.WithName("Argentum"),
 			sdkagent.WithDescription("Conversational analytics agent for B2B owners."),

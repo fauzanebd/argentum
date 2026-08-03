@@ -172,9 +172,38 @@ A tool implements `Name()`, `Description()`, `Parameters()`, `Run()`, `Execute()
    field explaining what to do when a result is truncated. The tool teaches the
    agent, in-band.
 5. **Meter it** through `UsageRecorder` if it costs money.
-6. **Register it** in `cmd/worker/main.go`, and describe it in
-   `buildSystemPrompt()`. A tool the prompt doesn't mention gets called rarely and
-   badly.
+6. **Register it once**, in `internal/tools/registry.go`. Both processes build
+   from that function — the worker runs the tools, the API reads `Names` off them
+   for the agent form — so a second list is a list that goes stale. A dependency
+   that only some deployments have (object storage, for `generate_document`)
+   makes the tool conditional there and nowhere else.
+7. **A new tool is four edits, not one.** Miss any of them and the tool exists
+   without being reachable, or is described without existing:
+   - `internal/tools/registry.go` — the registry above.
+   - `internal/bootstrap/system_prompt.go` — a line in `promptTools`, and a
+     `guideline` if using it well needs a rule. The prompt is composed from the
+     tools the turn actually holds, so a tool with no line is invisible to the
+     model. `TestEveryRegisteredToolHasAPromptLine` fails until you write one.
+   - `internal/transport/http/handlers/agents.go` — a sentence in
+     `agentToolLabels`, or the checkbox renders as a raw identifier.
+   - `config/agent_templates.yaml` — decide, per card, whether the job wants it.
+     Not deciding is deciding "no" for every agent created from that card.
+8. **Ask what the tenant already stored a copy of.** `agents.allowed_tools` is
+   the whole of what an agent may call, and it is a copy of a default frozen on
+   the day the row was written — editing the template that produced it reaches
+   nobody (`agent_templates.yaml` §"Nothing here survives a save"). So a
+   capability added to a card needs a backfill migration for the rows that
+   predate it, or it ships to new tenants only and the old ones see a product
+   that quietly cannot do the thing.
+   - Backfill only what does not widen data reach. `043` adds
+     `generate_document` and `create_dashboard` — output, not access. `044` adds
+     `query_metric` **only** to agents with no rows in `agent_sources`, because
+     the metric tools scope by company and ignore the agent's source allowlist.
+   - Guard on `allowed_tools <> '{}'`: empty means *every* tool, so writing
+     names into an unrestricted agent narrows it.
+   - Do not write a down migration that strips the names. Nothing records which
+     rows were touched, so it would also take the capability from agents an
+     administrator ticked by hand.
 
 ## Frontend
 

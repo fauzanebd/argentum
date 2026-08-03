@@ -76,6 +76,51 @@ func TestEveryTemplateIsComplete(t *testing.T) {
 	}
 }
 
+// A card's tool list is the allowlist its agent is created with, and the agent
+// gets nothing else. That makes an omission here invisible in exactly the way a
+// permission is not: nobody chose it, and the product never mentions it.
+//
+// The live failure this pins: the Sales card suggested get_schema, run_sql and
+// create_visualization, so an agent made from it was asked for a sales overview
+// "report in PDF" and had no generate_document to call. It answered with a
+// markdown document in the chat and told the user to print it.
+func TestEveryCardCanHandBackAFile(t *testing.T) {
+	for _, tpl := range loadShipped(t).All() {
+		if !slices.Contains(tpl.SuggestedTools, "generate_document") {
+			t.Errorf("%s: does not suggest generate_document — an agent for this job "+
+				"cannot answer a request for a report with a report", tpl.Key)
+		}
+	}
+}
+
+// The pair. create_visualization returns a card_id and a dashboard_cards array
+// and nothing a user can open; create_dashboard is what turns those into a URL.
+// A card that suggests the first without the second produces an agent whose
+// charts have nowhere to go — and the system prompt tells that agent so, which
+// is not the same as it being a sensible thing to ship.
+func TestCardsAndDashboardsTravelTogether(t *testing.T) {
+	for _, tpl := range loadShipped(t).All() {
+		if slices.Contains(tpl.SuggestedTools, "create_visualization") &&
+			!slices.Contains(tpl.SuggestedTools, "create_dashboard") {
+			t.Errorf("%s: suggests create_visualization without create_dashboard", tpl.Key)
+		}
+	}
+}
+
+// The two that act rather than answer stay off every card. schedule_task books
+// recurring spend on the tenant's credits and propose_action reaches outside
+// Argentum — an admin ticks those deliberately or not at all, and inheriting one
+// from a card picked for its persona is not deliberate.
+func TestNoCardPreTicksAToolThatActs(t *testing.T) {
+	for _, tpl := range loadShipped(t).All() {
+		for _, acts := range []string{"schedule_task", "propose_action"} {
+			if slices.Contains(tpl.SuggestedTools, acts) {
+				t.Errorf("%s: pre-ticks %s, which an admin should choose knowingly", tpl.Key, acts)
+			}
+		}
+	}
+}
+
 // The load-bearing property of the whole track: a template carries the shape of
 // a *job*, and the business specifics arrive from the company profile (T-B1) at
 // turn time. "the business described above" is the phrase that hands off to

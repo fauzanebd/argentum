@@ -300,6 +300,56 @@ func TestCreateRejectsForeignSource(t *testing.T) {
 	}
 }
 
+// An edit does not have to answer for a tool the row already holds.
+//
+// Migration 043 writes generate_document into every scoped agent, and object
+// storage is per-deployment: on one without a bucket the tool is not in the
+// registry, so the stored name is one this service cannot validate. Refusing
+// the save would show an admin "no tool called generate_document on this
+// deployment" over a checkbox they never ticked, on an edit to the agent's
+// name. The name is carried through instead and reaches nothing until the
+// deployment has storage — filterTools matches by name and does not find it.
+func TestUpdateKeepsAStoredToolThisDeploymentCannotRegister(t *testing.T) {
+	svc, repo, conns := newAgentFixture()
+	ctx := context.Background()
+	mustCreate(t, svc, companyA, AgentInput{Name: "Analyst"})
+	stored := mustCreate(t, svc, companyA, AgentInput{
+		Name: "Sales", AllowedTools: []string{"run_sql", "generate_document"},
+	})
+
+	// The same rows, seen by a process with no object storage.
+	withoutStorage := slices.DeleteFunc(slices.Clone(registry),
+		func(n string) bool { return n == "generate_document" })
+	storageless := NewAgentService(repo, conns, withoutStorage)
+
+	got, err := storageless.Update(ctx, companyA, stored.ID, AgentInput{
+		Name: "Sales", Description: "edited", AllowedTools: stored.AllowedTools,
+	})
+	if err != nil {
+		t.Fatalf("editing an agent holding a tool this deployment does not run: %v", err)
+	}
+	if !slices.Contains(got.AllowedTools, "generate_document") {
+		t.Errorf("allowed_tools = %v, want generate_document kept; the agent would lose it "+
+			"permanently the first time somebody renamed it", got.AllowedTools)
+	}
+
+	// The check the tolerance must not swallow: a name the row does not hold is
+	// still refused, by name.
+	_, err = storageless.Update(ctx, companyA, stored.ID, AgentInput{
+		Name: "Sales", AllowedTools: []string{"run_sql", "delete_everything"},
+	})
+	if !errors.Is(err, domain.ErrInvalidInput) || !strings.Contains(err.Error(), "delete_everything") {
+		t.Errorf("err = %v, want ErrInvalidInput naming delete_everything", err)
+	}
+
+	// And a create cannot invent one: there is no row yet, so nothing to keep.
+	if _, err := storageless.Create(ctx, companyA, AgentInput{
+		Name: "New", AllowedTools: []string{"generate_document"},
+	}); !errors.Is(err, domain.ErrInvalidInput) {
+		t.Errorf("creating with an unregistered tool: err = %v, want ErrInvalidInput", err)
+	}
+}
+
 // A company cannot read or edit another company's agent by id. Not found, not
 // forbidden: the id is a bare uuid in a URL, and a 403 would confirm the row.
 func TestCrossCompanyAccessIsNotFound(t *testing.T) {

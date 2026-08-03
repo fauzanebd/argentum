@@ -93,7 +93,7 @@ func TestCompanyToolOptionsOffersTheTenantsOwnTools(t *testing.T) {
 	}
 	// The name the picker offers has to be one normalizeTools accepts, or
 	// ticking the box produces a 400 on save.
-	if _, err := svc.normalizeTools([]string{last.Name}); err != nil {
+	if _, err := svc.normalizeTools([]string{last.Name}, nil); err != nil {
 		t.Errorf("the picker offered a name the service refuses: %v", err)
 	}
 }
