@@ -659,12 +659,13 @@ func (r *ChatRunner) rejectFabrication(
 ) string {
 	snap := tracker.Snapshot()
 	replacement, blocked := guardrails.CheckFabrication(response, guardrails.TurnEvidence{
-		ToolCalls:    snap.ToolCalls,
-		DataCalls:    snap.DataCalls,
-		DataRows:     snap.DataRows,
-		EmptyResults: snap.EmptyResults,
-		Exhausted:    snap.Exhausted,
-		Reason:       snap.Reason,
+		ToolCalls:        snap.ToolCalls,
+		DataCalls:        snap.DataCalls,
+		DataRows:         snap.DataRows,
+		DeliverableCalls: snap.DeliverableCalls,
+		EmptyResults:     snap.EmptyResults,
+		Exhausted:        snap.Exhausted,
+		Reason:           snap.Reason,
 	}, p.Message)
 
 	if !blocked {

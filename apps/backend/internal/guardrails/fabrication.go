@@ -16,6 +16,9 @@ type TurnEvidence struct {
 	DataCalls int
 	// DataRows is the total rows those data tools returned.
 	DataRows int
+	// DeliverableCalls is how many tools produced a file for the user
+	// (generate_document). See the restatement carve-out in CheckFabrication.
+	DeliverableCalls int
 	// EmptyResults counts data calls that succeeded and matched nothing.
 	EmptyResults int
 	// Exhausted reports whether the turn ran out of budget, and Reason says
@@ -26,6 +29,21 @@ type TurnEvidence struct {
 
 // grounded reports whether anything in the turn could have produced a figure.
 func (e TurnEvidence) grounded() bool { return e.DataRows > 0 }
+
+// restatedIntoAFile reports the "yes, make that PDF" turn: the only tool work
+// was writing the deliverable, and no query was attempted or cut short. The
+// figures in it came from the conversation, which is the same provenance as
+// "show that in millions" — a turn this check has always deliberately left
+// alone.
+//
+// Narrow on purpose. A turn that queried (DataCalls > 0) is judged on what came
+// back, and a turn that ran out of budget is judged as exhausted, both of them
+// whatever else they called. Only the deliverable earns this: a card or a
+// dashboard is built from SQL the model never saw the rows of, so a figure
+// quoted beside one is as unfounded as a figure quoted beside nothing.
+func (e TurnEvidence) restatedIntoAFile() bool {
+	return e.DeliverableCalls > 0 && e.DataCalls == 0 && !e.Exhausted
+}
 
 // CheckFabrication is the output-scope rule of ticket T-16: a reply may not
 // state a figure that no tool in this turn produced.
@@ -43,6 +61,21 @@ func (e TurnEvidence) grounded() bool { return e.DataRows > 0 }
 // (C-1, and the empty-result case in the first eval run) called tools and got
 // nothing back, which is exactly what this catches.
 //
+// Condition 3 counted *any* tool call as "the turn tried", which broke the one
+// follow-up shape that has to call a tool: "yes, make that PDF". The model
+// renders the figures the previous turn retrieved, generate_document is the
+// only call in the turn, and the reply — a link plus a summary — was replaced
+// with "I did not get as far as running a query for this" after the user had
+// already watched it stream. Reported live, twice.
+//
+// So a turn that only wrote the file is treated as the restatement it is. This
+// gives up nothing: the guard never inspected the document spec, so the figures
+// it would have blocked in the reply are already inside the file the same call
+// produced. Blocking the prose while shipping the PDF protects no one and
+// leaves the user with a download whose covering message denies it exists.
+// A turn that queried and got nothing, or ran out of budget, is still blocked
+// whatever else it called.
+//
 // What it deliberately does not do is verify provenance — that a figure in
 // the reply matches a number in a tool result. Aggregation, rounding and
 // magnitude formatting ("Rp 3,86 Miliar" for 3_863_405_700) make that a
@@ -58,6 +91,9 @@ func CheckFabrication(reply string, ev TurnEvidence, userInput string) (string, 
 		return reply, false
 	}
 	if ev.ToolCalls == 0 && !ev.Exhausted {
+		return reply, false
+	}
+	if ev.restatedIntoAFile() {
 		return reply, false
 	}
 	if !StatesFigure(reply) {

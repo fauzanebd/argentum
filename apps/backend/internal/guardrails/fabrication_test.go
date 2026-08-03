@@ -92,6 +92,42 @@ func TestCheckFabrication(t *testing.T) {
 			wantBlocked: false,
 		},
 		{
+			// The live bug: "yes, make that PDF" after a turn that already had
+			// the data. generate_document is the only call, and the reply — a
+			// link plus a summary of what is in the file — was replaced with a
+			// message saying no query ran, after the user watched it stream.
+			name:        "the turn only wrote the file: a restatement, not a fabrication",
+			reply:       figure + "\n\n[Download the report](https://minio.local/x/report.pdf)",
+			ev:          TurnEvidence{ToolCalls: 1, DeliverableCalls: 1},
+			wantBlocked: false,
+		},
+		{
+			// The carve-out does not extend to a turn that asked the data a
+			// question and got nothing back. Writing a file out of that answer
+			// does not make the answer grounded.
+			name:        "a file written over an empty query is still blocked",
+			reply:       figure,
+			ev:          TurnEvidence{ToolCalls: 3, DataCalls: 1, EmptyResults: 1, DeliverableCalls: 1},
+			wantBlocked: true,
+		},
+		{
+			// Nor to a turn cut short: the reserved document call (see
+			// agentbudget) writes a file on a spent budget, and a figure in that
+			// reply still has to have come from a row.
+			name:        "a file written on an exhausted budget is still blocked",
+			reply:       figure,
+			ev:          TurnEvidence{ToolCalls: 12, DataCalls: 2, DeliverableCalls: 1, Exhausted: true},
+			wantBlocked: true,
+		},
+		{
+			// A card is built from SQL the model never saw the rows of, so it
+			// grounds nothing. Only the deliverable earns the carve-out.
+			name:        "a chart card does not excuse an ungrounded figure",
+			reply:       figure,
+			ev:          TurnEvidence{ToolCalls: 2},
+			wantBlocked: true,
+		},
+		{
 			name:        "greeting",
 			reply:       "Hi! Ask me a question about your business data.",
 			ev:          TurnEvidence{},
