@@ -61,6 +61,20 @@ func (g *guarded) Execute(ctx context.Context, args string) (string, error) {
 		return refusal, nil
 	}
 
+	// A deliverable call that runs on a turn already marked exhausted came out
+	// of the reserve. Logged because it is the one path where a spent budget
+	// still executes a tool, and "did the reserve fire?" is the first question
+	// asked of a report turn that finished without a file.
+	if snap := tr.Snapshot(); snap.Exhausted && IsDeliverableTool(name) {
+		logrus.WithFields(logrus.Fields{
+			"company_id": tenantctx.CompanyID(ctx),
+			"thread_id":  tenantctx.ThreadID(ctx),
+			"tool":       name,
+			"reason":     snap.Reason,
+			"tool_calls": snap.ToolCalls,
+		}).Info("agent budget exhausted; reserved deliverable call allowed")
+	}
+
 	out, err := g.Tool.Execute(ctx, args)
 	tr.Observe(name, out, err)
 	return out, err

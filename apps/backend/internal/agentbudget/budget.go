@@ -21,6 +21,9 @@
 //  3. Records the turn's evidence — which data tools ran, how many rows came
 //     back — which is what the reply is judged against before it is sent
 //     (guardrails.CheckFabrication).
+//  4. Holds one call back from the budget for the tool that writes the
+//     deliverable, so a turn asked for a file cannot run out with the file
+//     unwritten. See Tracker.reserveAppliesLocked.
 //
 // Enforcement points differ per dimension, and the difference matters:
 //
@@ -90,6 +93,12 @@ func Default() Budget {
 // they set, it does not replace it. Tokens and wall clock are untouched:
 // neither was the binding constraint, and a document turn that runs away is
 // still a document turn that has to stop.
+//
+// The headroom is room to explore, not a guarantee that the file gets written;
+// the guarantee is the reserved deliverable call, which every turn has whether
+// or not it came through this door. A chat turn asking for a PDF has no
+// APIReportID and so never reaches here — it ran out mid-exploration with
+// nothing to download, which is what the reserve now prevents.
 func (b Budget) ForDocument() Budget {
 	b = b.Normalize()
 	b.MaxIterations += documentHeadroomIterations
@@ -137,6 +146,17 @@ var dataTools = map[string]bool{
 // IsDataTool reports whether a tool's result can ground a figure in a reply.
 func IsDataTool(name string) bool { return dataTools[name] }
 
+// deliverableTools produce what the user asked for, rather than gather what it
+// takes to produce it. Exactly one call to one of these is held in reserve past
+// exhaustion — see Tracker.reserveAppliesLocked.
+var deliverableTools = map[string]bool{
+	"generate_document": true,
+}
+
+// IsDeliverableTool reports whether a tool's output is itself the thing the
+// user asked for.
+func IsDeliverableTool(name string) bool { return deliverableTools[name] }
+
 // Tracker is the per-turn state. One is created per chat turn and carried in
 // the context, so both the tool guard and the metering layer can reach it.
 // Safe for concurrent use: a provider may execute several tool calls from one
@@ -145,15 +165,16 @@ type Tracker struct {
 	budget Budget
 	start  time.Time
 
-	mu           sync.Mutex
-	toolCalls    int
-	dataCalls    int
-	dataRows     int
-	emptyResults int
-	toolErrors   int
-	exhausted    bool
-	reason       string
-	tools        []string
+	mu               sync.Mutex
+	toolCalls        int
+	dataCalls        int
+	deliverableCalls int
+	dataRows         int
+	emptyResults     int
+	toolErrors       int
+	exhausted        bool
+	reason           string
+	tools            []string
 }
 
 // New returns a tracker for one turn. The wall clock starts now: a turn that
@@ -180,15 +201,20 @@ func FromContext(ctx context.Context) *Tracker {
 // Snapshot is what the turn spent and what it retrieved. Copied out under
 // the lock so callers can log or score it without holding one.
 type Snapshot struct {
-	ToolCalls    int
-	DataCalls    int
-	DataRows     int
-	EmptyResults int
-	ToolErrors   int
-	Exhausted    bool
-	Reason       string
-	Tools        []string
-	Elapsed      time.Duration
+	ToolCalls int
+	DataCalls int
+	// DeliverableCalls counts calls to a tool whose output is the thing the
+	// user asked for. Zero on a turn that was asked for a file and did not
+	// write one is the failure the reserve exists to prevent, and it is the
+	// only field that says so.
+	DeliverableCalls int
+	DataRows         int
+	EmptyResults     int
+	ToolErrors       int
+	Exhausted        bool
+	Reason           string
+	Tools            []string
+	Elapsed          time.Duration
 }
 
 // Snapshot returns the current state of the turn.
@@ -201,15 +227,16 @@ func (t *Tracker) Snapshot() Snapshot {
 	tools := make([]string, len(t.tools))
 	copy(tools, t.tools)
 	return Snapshot{
-		ToolCalls:    t.toolCalls,
-		DataCalls:    t.dataCalls,
-		DataRows:     t.dataRows,
-		EmptyResults: t.emptyResults,
-		ToolErrors:   t.toolErrors,
-		Exhausted:    t.exhausted,
-		Reason:       t.reason,
-		Tools:        tools,
-		Elapsed:      time.Since(t.start),
+		ToolCalls:        t.toolCalls,
+		DataCalls:        t.dataCalls,
+		DeliverableCalls: t.deliverableCalls,
+		DataRows:         t.dataRows,
+		EmptyResults:     t.emptyResults,
+		ToolErrors:       t.toolErrors,
+		Exhausted:        t.exhausted,
+		Reason:           t.reason,
+		Tools:            tools,
+		Elapsed:          time.Since(t.start),
 	}
 }
 
@@ -228,6 +255,9 @@ func (t *Tracker) Budget() Budget {
 // Once any dimension trips the turn stays exhausted. A model that keeps
 // calling tools after being told to stop gets the same answer each time,
 // which is cheaper and more legible than re-deciding per call.
+//
+// The single exception is the reserved deliverable call — see
+// reserveAppliesLocked.
 func (t *Tracker) Begin(ctx context.Context, tool string) (refusal string, blocked bool) {
 	if t == nil {
 		return "", false
@@ -235,28 +265,27 @@ func (t *Tracker) Begin(ctx context.Context, tool string) (refusal string, block
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.exhausted {
-		return t.refusalLocked(), true
+	if !t.exhausted {
+		switch {
+		case t.toolCalls >= t.budget.MaxToolCalls:
+			t.exhaustLocked(fmt.Sprintf("tool-call budget spent (%d of %d)",
+				t.toolCalls, t.budget.MaxToolCalls))
+		case time.Since(t.start) >= t.budget.Wall:
+			t.exhaustLocked(fmt.Sprintf("time budget spent (%s of %s)",
+				time.Since(t.start).Round(time.Second), t.budget.Wall))
+		case tokensUsed(ctx) >= t.budget.MaxTokens && t.budget.MaxTokens > 0:
+			t.exhaustLocked(fmt.Sprintf("token budget spent (%d of %d)",
+				tokensUsed(ctx), t.budget.MaxTokens))
+		case t.budget.MaxIterations > 1 && iterationsUsed(ctx) >= t.budget.MaxIterations-1:
+			// The final permitted iteration is reserved for the answer. Letting
+			// tools run here spends it, and the SDK then asks for a final
+			// response with no instruction attached — the exact sequence that
+			// produced C-1.
+			t.exhaustLocked(fmt.Sprintf("iteration budget spent (%d of %d)",
+				iterationsUsed(ctx)+1, t.budget.MaxIterations))
+		}
 	}
-	switch {
-	case t.toolCalls >= t.budget.MaxToolCalls:
-		t.exhaustLocked(fmt.Sprintf("tool-call budget spent (%d of %d)",
-			t.toolCalls, t.budget.MaxToolCalls))
-	case time.Since(t.start) >= t.budget.Wall:
-		t.exhaustLocked(fmt.Sprintf("time budget spent (%s of %s)",
-			time.Since(t.start).Round(time.Second), t.budget.Wall))
-	case tokensUsed(ctx) >= t.budget.MaxTokens && t.budget.MaxTokens > 0:
-		t.exhaustLocked(fmt.Sprintf("token budget spent (%d of %d)",
-			tokensUsed(ctx), t.budget.MaxTokens))
-	case t.budget.MaxIterations > 1 && iterationsUsed(ctx) >= t.budget.MaxIterations-1:
-		// The final permitted iteration is reserved for the answer. Letting
-		// tools run here spends it, and the SDK then asks for a final
-		// response with no instruction attached — the exact sequence that
-		// produced C-1.
-		t.exhaustLocked(fmt.Sprintf("iteration budget spent (%d of %d)",
-			iterationsUsed(ctx)+1, t.budget.MaxIterations))
-	}
-	if t.exhausted {
+	if t.exhausted && !t.reserveAppliesLocked(ctx, tool) {
 		return t.refusalLocked(), true
 	}
 
@@ -265,7 +294,34 @@ func (t *Tracker) Begin(ctx context.Context, tool string) (refusal string, block
 	if dataTools[tool] {
 		t.dataCalls++
 	}
+	if deliverableTools[tool] {
+		t.deliverableCalls++
+	}
 	return "", false
+}
+
+// reserveAppliesLocked reports whether tool may run even though the budget is
+// spent. One call to one deliverable tool per turn is held back for this.
+//
+// Why a reserve rather than a bigger budget. The budget bounds *exploration*,
+// and every dimension it bounds is spent finding out what to put in the answer.
+// A turn asked for a file has one call that is not exploration: the one that
+// writes the file. Refusing that call is the one refusal that cannot produce an
+// honest partial answer — the user gets prose where they asked for a document,
+// which is the failure agentbudget.ForDocument was written for and only fixed
+// for `POST /v1/reports`. A chat turn asking for a PDF has the same shape and
+// no APIReportID, so it ran out with the deliverable still unwritten.
+//
+// Bounded on purpose: one call, only if none has run yet (a file already
+// written needs no second one), and never once the turn's context is done —
+// that call would fail anyway, and the reserve is not a licence to run past a
+// deadline. The spec it builds from is whatever the turn already retrieved, and
+// the reply is still judged by guardrails.CheckFabrication.
+func (t *Tracker) reserveAppliesLocked(ctx context.Context, tool string) bool {
+	if !deliverableTools[tool] || t.deliverableCalls > 0 {
+		return false
+	}
+	return ctx.Err() == nil
 }
 
 // Observe records what a tool returned. Only data-tool results carry
@@ -319,8 +375,12 @@ func (t *Tracker) exhaustLocked(reason string) {
 // deliberately specific about the shape of an acceptable answer: the failure
 // being prevented is not "the model kept going", it is "the model produced a
 // confident figure it never retrieved".
-const FinalInstruction = "Your budget for this turn is spent. Do not call any more tools. " +
-	"Write your final reply now using ONLY results you already received in this turn: " +
+const FinalInstruction = "Your budget for this turn is spent. Do not call any more tools. " + finalAnswer
+
+// finalAnswer is the half both instructions share: what an acceptable final
+// reply contains. Split out so the two cannot drift — the anti-fabrication
+// clause has to hold whether or not a file is still owed.
+const finalAnswer = "Write your final reply now using ONLY results you already received in this turn: " +
 	"restate what the user asked, REPORT THE ACTUAL FIGURES any tool already returned to " +
 	"you — those numbers are yours to give and the user is waiting for them, do not " +
 	"withhold them or offer to present them later — then state plainly what you could not " +
@@ -328,19 +388,45 @@ const FinalInstruction = "Your budget for this turn is spent. Do not call any mo
 	"Do NOT state any monetary amount, total, count or metric value that did not come " +
 	"from a tool result in this turn — say you could not complete that part instead."
 
+// DeliverableInstruction replaces FinalInstruction while the reserved
+// deliverable call is still unspent. FinalInstruction's "do not call any more
+// tools" would talk the model out of the one call the reserve exists to permit
+// — a model told to stop, stops, and the turn ends with the file unwritten for
+// a different reason than before.
+//
+// Conditional on the model actually holding the tool, because this tracker
+// cannot see the turn's registry: an agent whose allowlist omits
+// generate_document reads the condition, finds it false, and falls through to
+// the ordinary final answer.
+const DeliverableInstruction = "Your exploration budget for this turn is spent. Run no more queries, " +
+	"and create no more cards or dashboards. " +
+	"If this turn was asked for a file (PDF, PPTX, XLSX or CSV), you have the generate_document " +
+	"tool, and you have not yet called it: make that ONE call NOW — build the spec only from " +
+	"results you already received in this turn, invent no figures to fill it — and reply with " +
+	"the download link it returns. " +
+	"Otherwise: " + finalAnswer
+
 // refusalLocked is the tool result a blocked call returns. JSON because every
 // other tool in the registry returns JSON, and a model that has been reading
 // structured results all turn should not have to switch parsers at the end.
 func (t *Tracker) refusalLocked() string {
+	instruction := FinalInstruction
+	if t.deliverableCalls == 0 {
+		instruction = DeliverableInstruction
+	}
 	payload := map[string]interface{}{
 		"budget_exhausted": true,
 		"reason":           t.reason,
 		"retrieved_so_far": t.retrievedLocked(),
-		"instruction":      FinalInstruction,
+		// The reserve is stated as data as well as prose: a model that reads
+		// the payload structurally and skims the instruction still sees that
+		// one call remains.
+		"document_call_remaining": t.deliverableCalls == 0,
+		"instruction":             instruction,
 	}
 	out, err := json.Marshal(payload)
 	if err != nil {
-		return FinalInstruction
+		return instruction
 	}
 	return string(out)
 }

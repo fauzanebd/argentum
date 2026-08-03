@@ -85,7 +85,10 @@ func TestGuardStopsAtToolCallBudget(t *testing.T) {
 	if !strings.Contains(payload.Reason, "tool-call budget") {
 		t.Errorf("reason = %q, want it to name the tool-call dimension", payload.Reason)
 	}
-	if payload.Instruction != FinalInstruction {
+	// The reserve is still unspent here, so the instruction is the one that
+	// permits the deliverable call. FinalInstruction's "do not call any more
+	// tools" arrives only once the file has been written.
+	if payload.Instruction != DeliverableInstruction {
 		t.Error("refusal does not carry the final-turn instruction")
 	}
 	if !strings.Contains(payload.Retrieved, "run_sql") {
