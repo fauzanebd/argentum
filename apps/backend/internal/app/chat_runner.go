@@ -68,6 +68,16 @@ type AgentSpec struct {
 	// for every turn with no bound MCP server, which is the common case and
 	// composes to today's exact tool list.
 	CompanyTools []interfaces.Tool
+	// MaxIterations is this turn's tool-calling ceiling, which the SDK enforces
+	// and agentbudget reserves the last of for the answer. Per-turn because the
+	// budget is: a document turn gets ForDocument's headroom, and a ceiling
+	// fixed at boot would leave that headroom unreachable — the SDK would stop
+	// the turn first, and its way of stopping is one more model call with no
+	// instruction attached, which is the failure agentbudget exists to remove.
+	//
+	// Zero means the deployment's configured ceiling, which is what the
+	// composition tests and any caller outside a chat turn pass.
+	MaxIterations int
 
 	// Primitives rather than a *domain.Agent on purpose: the factory lives in
 	// bootstrap, and it should not have to learn a domain entity in order to
@@ -464,6 +474,9 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		Persona:        personaOf(agentRow),
 		ToolNames:      toolNamesOf(agentRow),
 		CompanyTools:   companyTools,
+		// The same ceiling the tracker installed above. Handing the SDK a
+		// different number is how a document turn's headroom went unused.
+		MaxIterations: budget.MaxIterations,
 	})
 	if err != nil {
 		return r.handleRunError(ctx, p, fmt.Errorf("build agent: %w", err))

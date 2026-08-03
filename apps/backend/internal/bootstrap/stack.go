@@ -556,7 +556,6 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 			sdkagent.WithMemory(d.memory),
 			sdkagent.WithName("Argentum"),
 			sdkagent.WithDescription("Conversational analytics agent for B2B owners."),
-			sdkagent.WithMaxIterations(d.maxIterations),
 			sdkagent.WithRequirePlanApproval(false),
 			sdkagent.WithLLMConfig(interfaces.LLMConfig{Temperature: 0.2}),
 			// Stream content from every iteration immediately. The SDK's default
@@ -603,9 +602,32 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 		// truth" — and agents.yaml already carries a comment about the same
 		// last-option-wins rule silently deciding max_iterations (finding Q-5).
 		// It is the same trap twice; this is the seam where it gets closed.
-		opts = append(opts, sdkagent.WithSystemPrompt(turnPrompt))
+		//
+		// The iteration ceiling is below the config for the same reason, and it
+		// is the case agents.yaml's comment already warns about: WithAgentConfig
+		// assigns max_iterations too when the file carries one. It is also the
+		// only per-turn value in this list that the SDK enforces on its own — a
+		// document turn's headroom is real only if the provider's loop knows
+		// about it — so it is set from the spec last, where nothing can quietly
+		// take it back.
+		opts = append(opts,
+			sdkagent.WithMaxIterations(turnMaxIterations(spec.MaxIterations, d.maxIterations)),
+			sdkagent.WithSystemPrompt(turnPrompt),
+		)
 		return sdkagent.NewAgent(opts...)
 	}
+}
+
+// turnMaxIterations picks the ceiling the SDK runs this turn under: the one the
+// turn's budget set, or the deployment's when the caller has no budget of its
+// own (the composition tests, and anything building an agent outside a chat
+// turn). A pure function because the SDK keeps the value unexported, so this is
+// the only seam a test can pin the choice at.
+func turnMaxIterations(turn, deployment int) int {
+	if turn > 0 {
+		return turn
+	}
+	return deployment
 }
 
 // framePersona wraps a tenant-authored persona before it joins the system

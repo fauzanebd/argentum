@@ -13,9 +13,12 @@ analytics_agent:
   # internal/bootstrap, where this file won because WithAgentConfig is applied
   # last — so the Go value was decorative and the real cap was 3 (finding Q-5,
   # the cap that made the agent fabricate figures). The whole turn budget now
-  # lives in internal/agentbudget, configured by AGENT_MAX_* env vars. Do not
-  # reintroduce the key: a safety limit with two sources of truth ends up being
-  # whichever one nobody is reading.
+  # lives in internal/agentbudget, configured by AGENT_MAX_* env vars, and is
+  # per-turn: a report turn gets more room than a chat turn. Do not reintroduce
+  # the key: a safety limit with two sources of truth ends up being whichever
+  # one nobody is reading. The ceiling is now applied after this file rather
+  # than before it, so the key would no longer win — it would simply be ignored,
+  # which is a worse kind of confusing.
   require_plan_approval: false
 
   llm_config:
