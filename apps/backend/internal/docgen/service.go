@@ -134,6 +134,13 @@ type Input struct {
 	// that already asks for small tables, and a turn refused by a row cap the
 	// agent cannot see is a turn that fails with nothing to act on.
 	EnforceLimits bool
+	// EnforceNarrative refuses an analytical report that only states figures.
+	// It is the mirror image of EnforceLimits: this one is on for the agent and
+	// off for the API. A model that has just run the queries is the only author
+	// who can say what the numbers mean and the only one who will skip it, while
+	// a spec posted to the render door was written by an integrator who is
+	// entitled to a document with no prose in it. See spec.CheckNarrative.
+	EnforceNarrative bool
 }
 
 // Result is a generated document and the bytes behind it.
@@ -174,6 +181,14 @@ func (s *Service) Generate(ctx context.Context, in Input) (*Result, error) {
 		// is a limit that has already spent the memory it exists to protect.
 		if err := spec.CheckLimits(in.Spec, s.limits); err != nil {
 			return nil, err
+		}
+	}
+	if in.EnforceNarrative {
+		// Also before render, and for a blunter reason: everything below this
+		// line bills. A report refused here costs the caller nothing, while the
+		// same report refused after the upload has already been metered.
+		if err := spec.CheckNarrative(in.Spec); err != nil {
+			return nil, fmt.Errorf("%w: %s", domain.ErrInvalidInput, err)
 		}
 	}
 

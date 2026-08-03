@@ -51,16 +51,26 @@ Pick the format that matches the request:
 
 SET "spec_version": 2 FOR ANY PDF OR PPTX. It turns on the branded layout: cover page, running header, "Page N of M" footer, numbered headings, KPI cards, and typed table cells. Without it you get a plain document.
 
+WRITE THE ANALYSIS, NOT JUST THE NUMBERS. A report that is a cover page, a KPI row, a chart and a table has told the reader what happened and nothing else — and they already had the numbers, that is where you got them. What they are paying for is the reading. A PDF or PPTX containing a "kpi_row" or a "chart" is rejected if it carries no interpretation, so write it as you build the spec:
+- Open with a "heading" reading "Executive summary" and a "paragraph" of 2-4 sentences: what happened, why, and what to do about it. Someone who reads only that paragraph should be able to act.
+- After a "kpi_row": a paragraph saying which of those numbers moved, by how much, and against what baseline — the prior period, the target, the same month last year. A number with no comparison is not a finding.
+- After a "chart": a paragraph naming the shape in words — a trend, a spike, a plateau, a seasonal dip — when it turned, and how big the move was.
+- After a "table": a paragraph naming the two or three rows that carry the story — the biggest contributor, the outlier, the one that reversed — not a re-reading of every row.
+- A "callout" for the one finding the reader must not miss: tone "good" for a result worth repeating, "warn" for a risk or a decline, "info" for a caveat about the data itself (a partial month, a changed definition, a source that was missing).
+- Close with what to watch next, and a "footnote" naming the tables and the date range the figures came from.
+Write in the language the user wrote in. Prefer specifics over adjectives: "orders fell 18% in the last two weeks of June, all of it in the North region" beats "performance was mixed".
+GROUND EVERY CLAIM. Each figure in the prose must come from a query you ran in this turn. Where a cause is not in the data, say so — "revenue fell 12%; this data does not show why" is a correct sentence and an invented driver is the worst failure this product has. Do not pad the prose to satisfy the check; if you genuinely have only figures, say what they show and what you would need to explain them.
+
 WRITING FOR A DECK: author it exactly as you would a PDF — do not shorten the prose, and do not split content into "slide" sections. The renderer decides where the slides break. Each "paragraph" becomes a slide's speaker notes with its opening sentence as the bullet, so a full explanatory paragraph produces a better deck than a terse one. A table longer than ~12 rows continues onto further slides automatically.
 
 content.sections is an ordered list. Each section has a "type":
 - "cover"      {text, subtitle, period, prepared_for, prepared_by, confidentiality} → full cover page. One per document, first in the list.
 - "heading"    {text, level: 1|2}            → numbered section heading
-- "paragraph"  {text}                        → justified body copy
+- "paragraph"  {text}                        → justified body copy. This is where the analysis lives; a report with no paragraphs is a spreadsheet with a cover page.
 - "kpi_row"    {items:[{label, value, delta_pct, higher_is_better}, ...]} → 2-4 headline-number cards. delta_pct is a percentage (12.5 = +12.5%). Set higher_is_better:false for metrics where a rise is bad (churn, cost).
 - "table"      {columns:[...], rows:[[...]], total_row:[...], caption} → ruled table with zebra bands
 - "chart"      {chart:{...}, caption}        → a chart image. See CHARTS below.
-- "callout"    {tone: info|warn|good, title, text} → tinted box for a caveat or a headline finding
+- "callout"    {tone: info|warn|good, title, text} → tinted box for a caveat or a headline finding. One or two per report; a page of callouts emphasises nothing.
 - "key_value"  {items:[{k,v}, ...]}          → label/value rows (invoice and agreement headers)
 - "footnote"   {text}                        → small muted source/methodology line
 - "page_break" {}                            → start a new page
@@ -191,6 +201,11 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 		// asks for small tables, and a turn refused by a row cap the agent
 		// cannot see is a turn that fails with nothing to act on.
 		EnforceLimits: false,
+		// The narrative check is the opposite case: the model *can* see it,
+		// because the description below asks for the prose in the same words the
+		// error does, and it is the only author in the system who has just run
+		// the queries and can say what the figures mean.
+		EnforceNarrative: true,
 	})
 	if err != nil {
 		return "", err

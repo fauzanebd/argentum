@@ -291,6 +291,74 @@ lines. Clipping is only for what wrapping cannot do.
 Tests: `format.TestColumnDecimals` (12 cases, invoice and revenue adjacent on
 purpose), `pdf/disclosure_test.go` (6 tests). Ticket: `T-R6`.
 
+## Reports that stated figures and did not read them, 2026-08-03
+
+Every renderer decision above is about getting numbers onto a page correctly, and
+the reports coming out of the agent were correct and empty: a cover, a KPI row, a
+chart, a table, and not one sentence saying what any of it meant. The reader
+already had those numbers — the queries are how we got them — so a document that
+only restates them is a spreadsheet with a cover page. The landing page has been
+promising that "Argentum writes the narrative, surfaces anomalies, and explains
+the why" the whole time.
+
+Nothing in the spec was missing. `paragraph`, `callout` and `footnote` have been
+there since v2, and `pptx` even routes paragraphs into speaker notes. What was
+missing was anything that *asked*. The tool description read as a formatting
+reference — here are eleven section types, here is how a cell is formatted — and
+the one normative sentence in it was about charts. A model reading it takes the
+cheap path, which is the numeric sections and nothing else.
+
+The fix is a prompt in three places and a gate in one:
+
+- `tools/generate_document.go` — a `WRITE THE ANALYSIS, NOT JUST THE NUMBERS`
+  block that names what goes beside each numeric section: an executive summary
+  that answers what happened, why and what to do; an interpretation after each
+  `kpi_row`, `chart` and `table`; a `callout` for the finding that matters most;
+  a closing note on what to watch.
+- `app/report_directive.go` — the same, as the third named failure mode of a
+  `POST /v1/reports` turn, for PDF and PPTX only.
+- `bootstrap/system_prompt.go` — one line, so a chat turn that produces a report
+  behaves like an API turn that does.
+- `spec.CheckNarrative` — refuses an analytical PDF or deck carrying under 200
+  characters of prose.
+
+**Why the gate is an error.** There is no warning channel back to a model. A tool
+result is either a download URL — at which point the document is rendered,
+uploaded, metered and delivered, and nothing can be said about it any more — or
+an error the model reads and repairs from inside the same turn. Same reasoning as
+`Chart.Validate`: a defect the reader cannot see has to be caught before the
+reader gets the file. The message is written as a repair instruction rather than
+a verdict, and it runs before the render, where a refusal costs nothing and bills
+nothing.
+
+**Why it is this narrow.** `generate_document` is generic-purpose, and an invoice
+that explained its own totals in a paragraph would be a worse invoice. The gate
+fires only when a `kpi_row` or a `chart` is present — both exist to make a point
+about a number against a baseline, and neither appears on a document that is only
+a record. A table alone is not enough, because a data export is a table.
+Spreadsheet formats are exempt outright. And it is opt-in per call: on for the
+agent (`docgen.Input.EnforceNarrative`), off for `POST /v1/reports/render`, whose
+spec was authored by an integrator entitled to render a KPI sheet with no prose
+in it.
+
+Only `paragraph` and `callout` text counts toward the floor. A `heading` is a
+label, a `footnote` is a source line and a caption says where the numbers came
+from; counting them would let a thorough methodology note stand in for an
+analysis that was never written.
+
+**The risk this adds, stated plainly.** Asking for "why" invites a model to
+supply a cause it does not have, against `NEVER STATE A FIGURE YOU DID NOT
+RETRIEVE`. Both prompts and the error message carry the counterweight in the same
+breath as the request: ground every claim in a query from this turn, and where
+the data does not show a cause, say so. `"revenue fell 12%; this data does not
+show why"` is the correct sentence. Worth watching in eval — a fabricated driver
+is a worse regression than the thin report this replaces.
+
+Tests: `spec/narrative_test.go` (7 tests — the refusal, the two accepted shapes,
+invoices and exports, spreadsheets, labels-and-sources, the two-word paragraph),
+`docgen/service_test.go` (`TestNarrativeCheckRefusesBeforeAnythingRendersOrMeters`,
+`TestNarrativeCheckIsOptIn`).
+
 ## Known limits
 
 **Eight columns of long text do not fit on A4 portrait, and the renderer does

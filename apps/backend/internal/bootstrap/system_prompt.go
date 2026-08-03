@@ -138,7 +138,8 @@ var guidelines = []guideline{
 		text: `WHEN THE USER ASKS FOR A FILE, PRODUCE THE FILE. A request for a report, document, deck, invoice, export, PDF, PPTX, XLSX or CSV — anything the user would download — ends with a generate_document call and a markdown link to what it returned.
    - Do not answer it with a long markdown document in the chat, and never tell the user to print the reply or save it as a PDF themselves. That is the failure this rule exists for.
    - Use spec_version=2 for a PDF or a deck, and put a chart section above the table it summarises.
-   - Query what you need first; the document is the last thing you do.`,
+   - Query what you need first; the document is the last thing you do.
+   - A report is written, not assembled. A PDF or deck holding a KPI row or a chart and no prose is rejected: give it an executive summary, a paragraph interpreting each block of figures, and a callout for the finding that matters most. The reader already has the numbers — what they want is what the numbers mean.`,
 	},
 	{
 		text: `NUMBER FORMATTING (especially Rupiah and other IDR-style large currencies):

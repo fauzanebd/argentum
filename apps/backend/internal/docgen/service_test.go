@@ -207,6 +207,57 @@ func TestLimitsRejectBeforeAnythingRenders(t *testing.T) {
 	}
 }
 
+// The narrative check is the mirror image of the caps: on for the agent, off
+// for the API. It refuses before the render for the same reason the caps do,
+// with one more behind it — everything past that line bills, and a report
+// refused after the upload has already been metered.
+func TestNarrativeCheckRefusesBeforeAnythingRendersOrMeters(t *testing.T) {
+	store, docs := newFakeStore(), &fakeDocs{}
+	meter := &countingMeter{}
+	svc := newTestService(store, docs, meter)
+
+	figuresOnly := &spec.Document{
+		SpecVersion: 2,
+		Format:      "pdf",
+		Title:       "June review",
+		Content: spec.Content{Sections: []spec.Section{
+			{Type: spec.SectionCover, Text: "June review"},
+			{Type: spec.SectionKPIRow, Items: []spec.Item{
+				{Label: "Revenue", Value: &spec.Cell{V: 4012118800, Fmt: "currency"}},
+			}},
+		}},
+	}
+	_, err := svc.Generate(context.Background(), Input{
+		Spec: figuresOnly, CompanyID: "co-1", ThreadID: "th-1", EnforceNarrative: true,
+	})
+	if err == nil {
+		t.Fatal("a report of pure figures was accepted")
+	}
+	// Handlers map this to a 400 rather than a 500: the spec is wrong, not the
+	// server.
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Errorf("error does not wrap ErrInvalidInput: %v", err)
+	}
+	if len(store.objects) != 0 || len(docs.rows) != 0 {
+		t.Error("a refused report was rendered and stored")
+	}
+	if meter.calls != 0 {
+		t.Error("a refused report was billed")
+	}
+}
+
+// A spec that arrived at `POST /v1/reports/render` was authored by the
+// integrator, who is entitled to render a KPI sheet with no prose in it.
+// Refusing one would break a contract that already works.
+func TestNarrativeCheckIsOptIn(t *testing.T) {
+	svc := newTestService(newFakeStore(), &fakeDocs{}, nil)
+	if _, err := svc.Generate(context.Background(), Input{
+		Spec: csvSpec(), CompanyID: "co-1", EnforceNarrative: false,
+	}); err != nil {
+		t.Fatalf("the render door was held to the agent's narrative check: %v", err)
+	}
+}
+
 // The agent's own spec is not checked against the API's caps: it comes from a
 // model on the other side of a tool description that already asks for small
 // tables, and a turn refused by a row cap the agent cannot see fails with

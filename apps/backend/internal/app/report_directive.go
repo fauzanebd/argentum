@@ -57,6 +57,14 @@ func ReportDirective(in ReportDirectiveInput) string {
 	b.WriteString("Invoke the tool. Do not print its arguments as JSON in your reply — a code block is not a document and the caller receives no file.\n")
 	b.WriteString("Do not call create_visualization or create_dashboard: a chart in this report is a \"chart\" section inside the generate_document spec, not a Metabase card.\n")
 	b.WriteString("Query only what you need first; the document is the last thing you do.\n")
+	// The third named failure mode, and the one that produces a document nobody
+	// complains about and nobody reads: a spec that is a cover, a KPI row, a
+	// chart and a table, with not one sentence saying what any of it means. The
+	// tool rejects that shape for a PDF or a deck, and a turn that learns so from
+	// the rejection has spent a retry on something it could have been told.
+	if in.Format == domain.DocumentFormatPDF || in.Format == domain.DocumentFormatPPTX {
+		b.WriteString("Write the analysis, not just the numbers: an executive summary paragraph, a paragraph interpreting each kpi_row, chart and table, a callout for the finding that matters most, and a closing note on what to watch next. Every figure in that prose must come from a query you ran in this turn; where the data does not show a cause, say that rather than supplying one.\n")
+	}
 	if in.Locale != "" {
 		b.WriteString("Use locale=" + in.Locale + ".\n")
 	}
