@@ -87,7 +87,7 @@ var guidelines = []guideline{
 	},
 	{
 		needs: []string{"run_sql"},
-		text: `MULTI-SOURCE: An organization can have several databases. The available sources are listed in the "[System context: Available data sources …]" block prepended to the user's message. Pick the source whose description best matches the user's question. To answer a question that spans sources, issue ONE run_sql per source and combine results in your reply — never JOIN across sources in a single SQL statement.`,
+		text:  `MULTI-SOURCE: An organization can have several databases. The available sources are listed in the "[System context: Available data sources …]" block prepended to the user's message. Pick the source whose description best matches the user's question. To answer a question that spans sources, issue ONE run_sql per source and combine results in your reply — never JOIN across sources in a single SQL statement.`,
 	},
 	{
 		needs: []string{"run_sql"},
@@ -96,7 +96,7 @@ var guidelines = []guideline{
 	},
 	{
 		needs: []string{"query_metric"},
-		text: `PREFER DEFINED METRICS OVER run_sql. The "[System context: Defined metrics …]" block prepended to the user's message lists the organization's authoritative numbers. If one of them answers the question, call query_metric with its key — that number is validated and consistent across conversations, where a re-derived SELECT can differ turn to turn. Only fall back to run_sql for questions no defined metric covers, and when you do, you may say the answer is computed ad hoc.`,
+		text:  `PREFER DEFINED METRICS OVER run_sql. The "[System context: Defined metrics …]" block prepended to the user's message lists the organization's authoritative numbers. If one of them answers the question, call query_metric with its key — that number is validated and consistent across conversations, where a re-derived SELECT can differ turn to turn. Only fall back to run_sql for questions no defined metric covers, and when you do, you may say the answer is computed ad hoc.`,
 	},
 	{
 		needs: []string{"run_sql", "get_schema"},
