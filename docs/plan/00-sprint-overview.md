@@ -801,8 +801,14 @@ and this is the mechanism that let it.
 **Every un-run acceptance item is now collected in one place** —
 [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md), added
 2026-08-03 — grouped by what each needs: the stack, real spend, or a real phone.
-Five of the nine need only the stack and could be closed in one sitting; the
-order to run them in is in that file.
+**The five that needed only the stack were run on 2026-08-04**, in one sitting,
+in that file's order: `T-07b`'s redaction, `T-15`'s signed fan-out and
+auto-disable, `T-M4`'s propose→approve→effect, and `T-14`'s MCP handshake all
+passed; `T-09`/`T-11`'s non-admin rendering failed, because a member is shown
+every admin control enabled on both surfaces. Two defects came out of it — that
+one, and `list_watchers` being advertised on the MCP surface without existing —
+plus a third `semantic_prompt_injection` false positive. What remains in that
+file needs LLM spend, a real handset, or an operator's decision.
 
 **What is not in this list, and should be decided before Sprint 2 opens:** the
 two acceptance items Sprint 1 still owes (`T-R4`'s three unautomatable

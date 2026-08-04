@@ -12,24 +12,30 @@ ticket where it was run.** Ten tickets went into the 2026-08-02 gate and came ou
 with two defects fixed the same day and six findings written down. A list of
 un-run gates is therefore a list of unknown defects, not a list of paperwork.
 
+**Group 1 was run on 2026-08-04** — all five items, one sitting, one tenant. The
+pattern held: three findings, none of which a unit test could have produced
+([`delivery-log.md`](delivery-log.md) Phase 2e). What is left needs money or a
+real phone.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of three things: the stack up, money spent, or a message sent to a real
 person's phone.
 
 ---
 
-## 1. Needs the local stack, nothing else
+## 1. ~~Needs the local stack, nothing else~~ — run 2026-08-04
 
-Cheapest group. `make infra` plus the API and worker, no LLM spend beyond what a
-turn costs, no outside party.
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-15` | Local receiver, watcher breach, signature verified; plus a receiver answering `500` twenty times | **Pass.** Body carried value and threshold, HMAC verified over the raw bytes and failed on a tampered copy, and the failing subscription disabled itself on the twentieth while the healthy one stayed at zero ([`outbound-webhooks.md`](outbound-webhooks.md) §7) |
+| `T-M4` | Propose → approve → the courier showing the effect once, plus the reject case and both audit rows | **Pass.** One `cancel_shipment` line on the courier after approve, none after reject, five audit rows across the two decisions ([`mcp-source.md`](mcp-source.md) §T-M4) |
+| `T-14` | An MCP client connecting with a key, listing tools, retrieving a metric; the audit row and usage event that follow | **Pass with a defect.** Handshake, `401`-before-session, metric retrieval, the `read:metrics`-cannot-`run_sql` split, `agent_actions` and `usage_events` all as designed — but the surface is **7 tools, not 8**: `list_watchers` is advertised and does not exist ([`mcp-server.md`](mcp-server.md) §7) |
+| `T-07b` | One dashboard turn returning `[EMAIL REDACTED]` | **Pass.** Same question under `strict` and `contact_ok`, nothing else changed ([`guardrail-overreach.md`](guardrail-overreach.md) §4) |
+| `T-09`, `T-11` | The non-admin renderings of both UIs, photographed | **Fail — the rendering does not exist.** A member sees every admin control enabled on both surfaces, and the admin's card is pixel-identical. The `403`s are all real ([`watchers-ui.md`](watchers-ui.md), [`action-framework.md`](action-framework.md)) |
 
-| Owed by | The gate | What it would prove |
-| ------- | -------- | ------------------- |
-| `T-15` | Local receiver, trigger a watcher breach, verify the signature against the workspace secret | The fan-out reaches a real HTTP server and the HMAC verifies. Worth adding: a receiver that answers `500` twenty times, so auto-disable is watched rather than reasoned about ([`outbound-webhooks.md`](outbound-webhooks.md) §7) |
-| `T-M4` | Propose → approve → the courier showing the effect once, plus the reject case and both audit rows | That a write tool proposes rather than executes, over the wire, against the same Go MCP server `T-M2` was gated on ([`mcp-source.md`](mcp-source.md) §T-M4) |
-| `T-14` | Claude Code connecting with a key, listing tools, retrieving a metric; the audit row and usage event that follow | The handshake and the transport. Everything below the protocol is already proven — this is the layer nothing has exercised ([`mcp-server.md`](mcp-server.md) §6) |
-| `T-07b` | One dashboard turn returning `[EMAIL REDACTED]` | That the output rules fire on a real streaming turn, not only at the seam a unit test calls ([`guardrail-overreach.md`](guardrail-overreach.md) §4) |
-| `T-09`, `T-11` | The non-admin renderings of both UIs, photographed | Both refusals are proven at the API; neither disabled control has been seen. The smallest item here ([`watchers-ui.md`](watchers-ui.md), [`action-framework.md`](action-framework.md)) |
+The one thing the run needed that no document named:
+`API_V1_CALLBACK_ALLOW_PRIVATE=true` for a loopback webhook receiver — separate
+from `MCP_ALLOW_PRIVATE_EGRESS`, and the two are easy to confuse.
 
 ## 2. Needs the stack **and** real LLM spend
 
@@ -41,6 +47,10 @@ turn costs, no outside party.
 | `T-18` | The final eval run → `docs/coverage/eval-sprint1.md`, compared against baseline | One full run of the golden set. **Order matters:** run `T-07b`'s before/after pair first, or the guardrail question gets answered against a baseline this run has already moved ([`launch-hygiene.md`](launch-hygiene.md) §6) |
 | `T-17` | `curl` the exposition; one trace waterfall for a tool-calling turn | The exposition needs only the stack; the waterfall needs a collector — a local Jaeger or an OTel collector in the compose file, which is itself not written ([`observability.md`](observability.md) §6) |
 
+`T-17`'s exposition half needs no spend and was not run on 2026-08-04 — it is a
+`curl` against a running API with `METRICS_TOKEN` set, and the only reason it sat
+out is that the group-1 list did not carry it.
+
 ## 3. Needs somebody's real phone
 
 | Owed by | The gate | Why it is deferred |
@@ -51,28 +61,17 @@ turn costs, no outside party.
 
 | Owed by | What | Why it is not guessed at |
 | ------- | ---- | ------------------------ |
-| `T-14` | A Helm deployment for `cmd/mcp` | `Dockerfile.mcp` exists and matches the discord image's shape, but the chart has no `deployment-mcp.yaml`. The ingress is where a hostname and a TLS certificate get decided, and both are an operator's call ([`mcp-server.md`](mcp-server.md) §6) |
+| `T-14` | A Helm deployment for `cmd/mcp` | `Dockerfile.mcp` exists and matches the discord image's shape, but the chart has no `deployment-mcp.yaml`. The ingress is where a hostname and a TLS certificate get decided, and both are an operator's call ([`mcp-server.md`](mcp-server.md) §8) |
+| `T-14` | `list_watchers`: write the tool, or delete the promise | Writing it puts the tool in the *agent's* registry too, which changes every turn's prompt; deleting it is two doc rows and a map entry. A product call, not an implementation one ([`mcp-server.md`](mcp-server.md) §7) |
+| `T-09`/`T-11` | Whether a member sees a disabled control or no control | The fix is one change across both surfaces — the pending payload and the watcher row would carry `can_decide` / `can_edit` — but which of the two renderings is wanted is a design decision |
 
 ---
 
-## How to run group 1 in one sitting
+## What running group 1 cost, for the next estimate
 
-They share a stack, and three of them share a tenant. In dependency order:
-
-1. Bring up the stack; confirm `schema_migrations` reaches `046` on the API's
-   boot (`045` is `T-07b`'s, `046` is `T-15`'s).
-2. **`T-07b`** first, because it changes what every later transcript shows: ask a
-   question whose answer contains a customer email under `strict`, then flip the
-   company to `contact_ok` in Settings → General and ask again.
-3. **`T-15`** next: a local receiver on a port the deployment can reach, a
-   subscription to `watcher.breached`, and a watcher whose threshold is already
-   breached. Then point a second subscription at a receiver that always answers
-   `500` and let it disable itself.
-4. **`T-M4`** and **`T-14`** together, since both want the courier MCP server
-   from `T-M2`'s run: register it, approve a write tool, watch a proposal go
-   through the card; then point Claude Code at `cmd/mcp` with a key and ask it
-   for a metric.
-5. **`T-09`/`T-11`** last: two screenshots as a member rather than an admin.
-
-Group 2's eval pair is the only item that costs money, and it is the only one
-that should wait for an explicit yes.
+About two hours end to end, of which the auto-disable was 24 minutes of waiting
+(twenty terminal failures, each already five attempts with backoff) and roughly
+thirty briefing turns of LLM spend, because the watcher driving it fired every
+minute with a zero cooldown. A cheaper shape for the next run: keep the
+minute cron for the first breach, then raise the cooldown before pointing a
+second subscription at a failing receiver.

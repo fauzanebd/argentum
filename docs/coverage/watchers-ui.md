@@ -157,9 +157,19 @@ landed in.
   the disabled button never says which requirement is unmet, which is worth a
   tooltip.
 
-**Not covered:** the non-admin view (Enable/Delete disabled with a tooltip).
-The member role's refusal is proven at the API (`403` on every watcher write),
-but the disabled-with-tooltip rendering was not photographed.
+**Photographed 2026-08-04, and there is no non-admin view.** A member logged
+into `/watchers` is shown the page an admin is shown: `New watcher`, `Dry-run`,
+`Pause`, `Events`, edit and delete, none of them disabled and none carrying a
+tooltip. Every one of those calls is refused at the API — `POST /api/watchers`,
+`POST /api/watchers/:id/dry-run` and `DELETE /api/watchers/:id` each answered
+`403` for the same member in the same session — so the refusal is real and the
+rendering is what is missing, exactly as this line suspected.
+
+The acceptance item therefore **fails rather than being un-run**: the control
+this section calls "disabled with a tooltip" does not exist. A member's first
+signal is an error after clicking. `T-11`'s approval card has the same gap
+([`action-framework.md`](action-framework.md)), which suggests one fix rather
+than two — the role is already on the session, and no surface reads it.
 
 ## 4a. Verified after the gate
 

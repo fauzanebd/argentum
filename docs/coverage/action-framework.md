@@ -339,13 +339,21 @@ request — `{"title":"UI approval gate","severity":"low"}` with the admin's
   earlier. Recorded under `T-07b` in
   [`guardrail-overreach.md`](guardrail-overreach.md).
 
-**Not covered:** the non-permitted-role card. The 403 is proven at the API; the
-known limit below (buttons rendered for everyone, refusal surfaced inline) was
-not photographed.
+**Photographed 2026-08-04.** With `mcp_call` configured `allowed_roles:
+["admin"]`, a member opening the thread sees the approvals strip above the
+composer with the payload and with **Approve and Reject both enabled**, plus the
+shell's `Approvals 1` badge. The admin's rendering of the same card, in the same
+minute, is identical — the two button states match exactly, which is the
+cleanest statement of the gap: nothing in the UI reads the role. The member's
+`POST /api/actions/:id/approve` and `.../reject` both answered `403 "your role is
+not permitted to decide this action"`, and the courier's log gained no line, so
+the enforcement is sound and the affordance is wrong.
 - **Read-only-for-non-permitted-role is enforced server-side (403), not yet
   rendered as a disabled card.** The pending payload does not carry the caller's
   decidability, so the card shows buttons to everyone and surfaces the 403 inline.
-  Surfacing `allowed_roles`/`can_decide` on the pending item is the follow-up.
+  Surfacing `allowed_roles`/`can_decide` on the pending item is the follow-up —
+  and it is the same follow-up the watchers page needs
+  ([`watchers-ui.md`](watchers-ui.md) §4), so it should be one change.
 
 ## T-12a · Action `send_message` — 2026-08-02
 

@@ -1849,6 +1849,68 @@ Four seconds against a runner round trip plus a follow-up commit.
 
 ---
 
+## Phase 2e — Group 1 of the live-gate backlog (2026-08-04)
+
+No commits. One stack, one tenant, five acceptance items —
+[`live-gate-backlog.md`](live-gate-backlog.md) §1's whole first group, run in
+the order that file prescribed. Four passed and one failed, and the failure is
+the interesting one because it is a thing the API has been refusing correctly
+for a week.
+
+**`T-07b` — the output rules fire on a real turn.** One question about customer
+emails, asked twice with nothing changed but Settings → General:
+`[EMAIL REDACTED]` three times under `strict`, the real addresses three times
+under `contact_ok`. The seam the unit tests cover is the seam that runs.
+
+**`T-15` — the webhook reaches a server, and the signature verifies against the
+bytes.** The `watcher.breached` body carried `value: 50` and `threshold: 10`
+rather than a rendered sentence; HMAC-SHA256 over `t + "." + raw body` with
+`companies.webhook_secret` matched, and the same body with the value edited did
+not. Then the second half, which is the one worth the wait: a receiver answering
+`500` drove `consecutive_failures` to twenty over 24 minutes and the
+subscription switched itself off with *"disabled automatically after 20
+consecutive failed deliveries"*, while the healthy subscription beside it stayed
+enabled at zero across 25 deliveries.
+
+**`T-M4` — the effect happened once, and only after a human said yes.** With
+`mcp_call` not yet enabled, the write tool ran and refused with the sentence that
+names the fix. Enabled, the proposal card carried the literal payload; approve
+put exactly one `cancel_shipment` line in the courier's log; reject put none.
+Five audit rows across the two decisions.
+
+**`T-14` — the handshake and the transport work, and the surface is one tool
+short of its own documentation.** A real MCP client over streamable HTTP:
+`401` before any session without a key, the metric retrieved, a
+`read:metrics`-only key refused `run_sql` by name, an `agent_actions` row with
+`actor_kind = api_key` and a `usage_events` row per SQL call. But `tools/list`
+returned **seven** tools. `list_watchers` is in `exposed`, in the setup guide and
+in the coverage doc, and **no tool in the registry is named that**, so `New`
+skips it silently. `ExposedTools()` reads the same map the docs do, which is why
+eight was the number everywhere except on the wire.
+
+**`T-09`/`T-11` — the failure.** A member sees `New watcher`, `Dry-run`,
+`Pause`, edit and delete on the watchers page, and `Approve`/`Reject` on the
+approval card, none disabled, no tooltip — and the admin's rendering of the same
+card is identical, button for button. Every one of those calls is refused
+`403` for that member. So the enforcement has never been the problem and the
+affordance has never been built; the acceptance item does not become true by
+being photographed. Both surfaces need the same thing — the caller's
+decidability on the payload — which makes it one change rather than two.
+
+**A third guardrail false positive, and a new shape.** *"Use the courier tool
+mcp__kirim_cepat__cancel_shipment directly to cancel KC-1002"* was blocked as an
+attempt to override the assistant's instructions; the same request without the
+tool name was answered twice. The 2026-08-03 carve-out covers a user asserting
+their role and their configuration, not a user naming a tool the product itself
+showed them.
+
+**What the run cost, since the next one should be estimated from it:** about two
+hours, of which 24 minutes was waiting for the twentieth delivery failure, and
+roughly thirty briefing turns of LLM spend because the watcher driving the
+webhooks fired every minute with a zero cooldown.
+
+---
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

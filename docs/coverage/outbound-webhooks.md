@@ -122,9 +122,47 @@ failed, a delivery that could not be queued, a nil service. A watcher that
 breached, breached; an action that ran, ran. A tenant's unreachable server must
 not turn a completed piece of work into a failed one.
 
-## 7. Not done
+## 7. The gate, run 2026-08-04
 
-The gate: a local receiver, a triggered breach, and the signature verified
-against the workspace's secret — plus, worth adding while the stack is up, a
-receiver that returns 500 twenty times so the auto-disable is watched rather
-than reasoned about.
+Two receivers on loopback — one answering `200`, one answering `500` every time
+— both subscribed to `watcher.breached`, against a watcher whose threshold was
+already breached and whose cron fired every minute.
+
+**The fan-out reached a real HTTP server.** First delivery arrived ~55s after
+the watcher was enabled, carrying `Argentum-Event: watcher.breached`,
+`Argentum-Delivery`, and a body with the value and the threshold rather than a
+sentence:
+
+```json
+{"event":"watcher.breached","occurred_at":"2026-08-04T14:18:00.296442Z",
+ "company_id":"…","watcher_id":"…","watcher_name":"Customers above 10",
+ "metric_id":"…","event_id":"…","value":50,"comparator":"gt","threshold":10,
+ "window_grain":"day","fired_at":"2026-08-04T14:18:00.255683Z"}
+```
+
+**The signature verifies.** `Argentum-Signature: t=1785853081,v1=0df4aee4…`
+recomputed as HMAC-SHA256 over `t + "." + raw body` with
+`companies.webhook_secret` matched exactly, and the same body with `"value":50`
+changed to `"value":5` did not — which is the property the criterion names,
+checked against the bytes on the wire rather than against a second reading of
+§2.
+
+**Auto-disable was watched, not reasoned about.** The `500` receiver's
+subscription incremented one terminal failure at a time (each already five
+attempts with backoff) and switched itself off on the twentieth, 24 minutes in:
+
+| URL | enabled | consecutive_failures | disabled_reason | delivered | failed |
+| --- | ------- | -------------------- | --------------- | --------- | ------ |
+| `…:9500/hook` | t | 0 | | 25 | 0 |
+| `…:9501/hook` | **f** | **20** | disabled automatically after 20 consecutive failed deliveries | 0 | 20 |
+
+The healthy subscription beside it stayed enabled at zero the whole time — one
+receiver being down does not take the other with it, and §6's "publishing never
+fails the thing that produced the event" held for 25 breaches.
+
+**One thing the gate needed that is not in this document:** a loopback receiver
+is refused at registration (`callback_url must be https`) until
+`API_V1_CALLBACK_ALLOW_PRIVATE=true`. That is `T-A2`'s switch, correctly reused
+rather than duplicated, but §5's "the URL is checked at registration against the
+same rule the worker applies" is the only hint of it, and the variable is not
+named anywhere in this file.

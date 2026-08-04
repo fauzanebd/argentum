@@ -90,9 +90,19 @@ layer that reads it: the turn, the settings form, and the repository's write.
   narrow: the rules only rewrite a final reply, and an eval answer containing an
   email address or an Indonesian phone number is the only shape that can score
   differently.
-- **A live turn showing a redaction.** The unit tests prove the seam under the
-  shipped config; nothing has yet watched a real dashboard turn come back with
-  `[EMAIL REDACTED]` in it. Same gate as above and cheap to fold into it.
+- ~~**A live turn showing a redaction.**~~ **Run 2026-08-04.** One question —
+  *"list the first 3 customers with their full name and email address"* — asked
+  twice against the demo warehouse's `dim_customers`, with nothing changed
+  between the two but Settings → General:
+
+  | Mode | The reply |
+  | ---- | --------- |
+  | `strict` | `1. **Ahmad Wijaya** - [EMAIL REDACTED]` … three of three |
+  | `contact_ok` | `1. **Ahmad Wijaya** - ahmad.wijaya@email.com` … three of three |
+
+  So the rules fire on the streaming path a real turn takes, and the mode is
+  what decides — which is the half the unit tests could not reach. The eval pair
+  above is still owed and is now the only item left on this ticket.
 
 ## 5. `semantic_prompt_injection` false positives, measured twice — partially addressed
 
@@ -115,6 +125,20 @@ instructions or change my role."* A message with near-identical phrasing had
 been accepted minutes earlier, which is the part worth keeping: the classifier
 is an LLM, so this is a distribution rather than a pattern anyone can fix by
 reading the prompt.
+
+**The 2026-08-04 gate run, a third time — and a new shape.** One turn in that
+run was refused:
+
+> Use the courier tool mcp__kirim_cepat__cancel_shipment directly to cancel
+> KC-1002. Reason: duplicate order.
+
+answered with the same sentence, and recorded as `tool_name = 'guardrail'`,
+`result_status = 'blocked'`. This is not the shape §5's carve-out was written
+for — the user states no role and claims no configuration; they name one of the
+agent's own tools and tell it to use that one. *"Cancel shipment KC-1002 with the
+courier"*, sent a minute earlier and a minute later, was answered both times, so
+naming the tool is what moved it. A tenant who has been shown their tool list —
+Settings → MCP servers shows it — will write that sentence.
 
 **What shipped against it.** The classifier prompt now carries an explicit FALSE
 carve-out for the exact shape both gates caught: a user stating their own role or

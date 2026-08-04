@@ -15,7 +15,7 @@ appends its own section.
 | `T-M1` | Schema, egress safety, CRUD, discovery | 2.5d | **done — gate run live 2026-08-01** |
 | `T-M2` | MCP tools at turn time | 3.0d | **done — gated live and eval-clean 2026-08-02** |
 | `T-M3` | MCP servers on the dashboard and `/v1` | 1.0d | **gated live 2026-08-02** — usage-per-server breakout still deferred (cut #3a) |
-| `T-M4` | Write-capable tools behind approval | 1.5d | not started |
+| `T-M4` | Write-capable tools behind approval | 1.5d | **done — gate run live 2026-08-04** |
 
 ---
 
@@ -661,10 +661,36 @@ Write tools are now offered with a `needs approval` badge, and the badge is the
 point — an admin who thinks the checkbox grants a write will not tick it, and one
 who thinks it grants nothing will.
 
-### Not done
+### The gate, run 2026-08-04
 
-The live gate. It wants the courier server from `T-M2`'s run with its write tool
-enabled, `mcp_call` enabled in Settings → Actions, and a recording of: the agent
-proposing, the card showing the payload, approve executing once, a second approve
-executing nothing, and reject executing never. The audit rows for both decisions
-are written by the framework and should be pasted with it.
+The courier server was rebuilt on the MCP TypeScript SDK — `track_shipment`
+(approved read-only) and `cancel_shipment` (approved, **not** read-only) — with
+every call it received appended to a file, so "the tenant's system showed the
+effect" is a line on disk rather than a sentence in a transcript.
+
+| Step | What happened |
+| ---- | ------------- |
+| Ask to cancel, `mcp_call` **not** enabled | `mcp__kirim_cepat__cancel_shipment` ran and errored: *"the `mcp_call` action is not enabled for this workspace; an admin can turn it on in Settings"*. Audited as an error row. Nothing reached the courier |
+| Same ask, `mcp_call` enabled | Action row `kind = mcp_call`, `status = proposed`, `params_redacted = {"tool":"mcp__kirim_cepat__cancel_shipment","arguments":{"reason":"customer changed their mind","tracking_number":"KC-1001"}}`. Courier log still one line, and that line a `track_shipment` |
+| Approve | `status = executed`, `executed_at` 13ms after `decided_at`, result `{"tracking_number":"KC-1001","status":"cancelled",…}` — and **exactly one** `cancel_shipment` line appeared in the courier's log |
+| Second proposal, reject | `status = rejected`, `executed_at` null, **no** new line in the courier's log |
+| Audit | `propose_action` → `action:approve` → `action:execute` for the first, `propose_action` → `action:reject` for the second, all `ok` |
+
+The card rendered `Run the MCP tool "mcp__kirim_cepat__cancel_shipment" with
+{"reason":"duplicate order","tracking_number":"KC-1002"}` — the literal payload,
+which is what §"The shape" argued for and what the approver actually read.
+
+**Where the gate diverged from the design.** With `mcp_call` enabled, the model
+reached the proposal through `propose_action` carrying a `{tool, arguments}`
+payload, not through the namespaced write tool — the same destination by the
+other road, so the action row and the effect are identical. The write tool is
+demonstrably offered (the first row above is it, executing and refusing), so this
+is model choice rather than a missing tool. Worth knowing that *"offered as a
+tool, not as a propose_action payload"* removes the need for the model to
+compose that payload without removing its ability to.
+
+**And what stopped the direct attempt.** Asking for the write tool *by name* —
+*"Use the courier tool mcp__kirim_cepat__cancel_shipment directly"* — was
+refused by `semantic_prompt_injection`, recorded in
+[`guardrail-overreach.md`](guardrail-overreach.md) §5 as a third false positive
+and a shape the existing carve-out does not cover.
