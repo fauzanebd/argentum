@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -353,21 +354,65 @@ func (s *ActionService) ConfigureAction(ctx context.Context, companyID, kind, ac
 // --- reads (for T-11's endpoints and the ledger view) ---
 
 // Get returns one invocation, company-scoped.
-func (s *ActionService) Get(ctx context.Context, companyID, id string) (*domain.ActionInvocation, error) {
+func (s *ActionService) Get(ctx context.Context, companyID, id string, role string) (*domain.ActionInvocation, error) {
 	inv, err := s.repo.GetInvocation(ctx, companyID, id)
 	if err != nil {
 		return nil, err
 	}
-	return s.described(inv), nil
+	s.described(inv)
+	return s.decidable(ctx, companyID, role, inv)[0], nil
 }
 
-// ListPending returns a company's proposals awaiting a decision.
-func (s *ActionService) ListPending(ctx context.Context, companyID string) ([]*domain.ActionInvocation, error) {
+// ListPending returns a company's proposals awaiting a decision, each carrying
+// whether this caller may decide it.
+func (s *ActionService) ListPending(ctx context.Context, companyID, role string) ([]*domain.ActionInvocation, error) {
 	invs, err := s.repo.ListPending(ctx, companyID)
 	if err != nil {
 		return nil, err
 	}
-	return s.describeAll(invs), nil
+	return s.decidable(ctx, companyID, role, s.describeAll(invs)...), nil
+}
+
+// decidable fills CanDecide on each invocation, reading each kind's config once
+// however many proposals share it — a pending list is usually several proposals
+// of one or two kinds, and one config read per row would be the same query
+// repeated.
+//
+// It answers exactly what PermittedToDecide answers, and deliberately does not
+// call it per row: that function re-reads the invocation it was given the id of.
+// The two must agree, so the rule lives in permits below and both go through it.
+func (s *ActionService) decidable(ctx context.Context, companyID, role string, invs ...*domain.ActionInvocation) []*domain.ActionInvocation {
+	cache := make(map[string]bool, 2)
+	for _, inv := range invs {
+		if inv == nil {
+			continue
+		}
+		allowed, seen := cache[inv.Kind]
+		if !seen {
+			cfg, err := s.repo.GetCompanyAction(ctx, companyID, inv.Kind)
+			switch {
+			case errors.Is(err, domain.ErrNotFound):
+				allowed = role == string(domain.RoleAdmin)
+			case err != nil:
+				// A config read that failed must not read as permission. The
+				// buttons render disabled and the decide endpoint still answers
+				// for itself if the caller tries anyway.
+				allowed = false
+			default:
+				allowed = permits(cfg.AllowedRoles, role)
+			}
+			cache[inv.Kind] = allowed
+		}
+		inv.CanDecide = allowed
+	}
+	return invs
+}
+
+// permits is the allowed_roles rule, in one place because two callers ask it:
+// the card's CanDecide and the decision itself. An empty list means any member —
+// the migration's stated default.
+func permits(allowedRoles []string, role string) bool {
+	return len(allowedRoles) == 0 || slices.Contains(allowedRoles, role)
 }
 
 // described fills the sentence an approver reads, from the action's own Describe.
@@ -424,15 +469,7 @@ func (s *ActionService) PermittedToDecide(ctx context.Context, companyID, invoca
 	if err != nil {
 		return false, err
 	}
-	if len(cfg.AllowedRoles) == 0 {
-		return true, nil
-	}
-	for _, r := range cfg.AllowedRoles {
-		if r == role {
-			return true, nil
-		}
-	}
-	return false, nil
+	return permits(cfg.AllowedRoles, role), nil
 }
 
 // List returns a company's invocations newest first.

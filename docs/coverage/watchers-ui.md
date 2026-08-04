@@ -157,19 +157,32 @@ landed in.
   the disabled button never says which requirement is unmet, which is worth a
   tooltip.
 
-**Photographed 2026-08-04, and there is no non-admin view.** A member logged
-into `/watchers` is shown the page an admin is shown: `New watcher`, `Dry-run`,
-`Pause`, `Events`, edit and delete, none of them disabled and none carrying a
-tooltip. Every one of those calls is refused at the API — `POST /api/watchers`,
-`POST /api/watchers/:id/dry-run` and `DELETE /api/watchers/:id` each answered
-`403` for the same member in the same session — so the refusal is real and the
-rendering is what is missing, exactly as this line suspected.
+**Photographed 2026-08-04. Half the page was gated and half was not** — the
+worse of the two possible answers, because the half that was gated is what made
+the gap invisible to review:
 
-The acceptance item therefore **fails rather than being un-run**: the control
-this section calls "disabled with a tooltip" does not exist. A member's first
-signal is an error after clicking. `T-11`'s approval card has the same gap
-([`action-framework.md`](action-framework.md)), which suggests one fix rather
-than two — the role is already on the session, and no surface reads it.
+| Control | Before | The API |
+| ------- | ------ | ------- |
+| Enable | disabled, "Only admins can enable a watcher" | `403` |
+| Delete | disabled, "Only admins can delete watchers" | `403` |
+| **Pause** | **live** — the same button as Enable, on its other branch | `403` |
+| **New watcher** | **live** | `403` |
+| **Dry-run** | **live** | `403` |
+| **Edit** | **live** | `403` |
+| Events | live | `200` — a read, correctly member-visible |
+
+`useIsAdmin` already existed and already carried the right comment (*"drives
+what the UI offers, never what it permits"*); `watcher-row.tsx` already imported
+it. It was applied to Enable and Delete and not to the four beside them, and
+`disabled={toggle.isPending || (!watcher.enabled && !canEnable)}` is how Pause
+escaped — gating the enable branch of a toggle leaves the pause branch open on
+exactly the watchers a member is most likely to be looking at.
+
+**Fixed the same day, and re-photographed.** All six writes now disable with a
+sentence naming the reason, `Events` stays live, and the admin's rendering is
+unchanged control for control. `T-11`'s approval card was the same gap with a
+different cause and is fixed with it
+([`action-framework.md`](action-framework.md)).
 
 ## 4a. Verified after the gate
 

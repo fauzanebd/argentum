@@ -1888,14 +1888,19 @@ in the coverage doc, and **no tool in the registry is named that**, so `New`
 skips it silently. `ExposedTools()` reads the same map the docs do, which is why
 eight was the number everywhere except on the wire.
 
-**`T-09`/`T-11` — the failure.** A member sees `New watcher`, `Dry-run`,
-`Pause`, edit and delete on the watchers page, and `Approve`/`Reject` on the
-approval card, none disabled, no tooltip — and the admin's rendering of the same
-card is identical, button for button. Every one of those calls is refused
-`403` for that member. So the enforcement has never been the problem and the
-affordance has never been built; the acceptance item does not become true by
-being photographed. Both surfaces need the same thing — the caller's
-decidability on the payload — which makes it one change rather than two.
+**`T-09`/`T-11` — the failure, and it was half-built rather than absent.** On
+the watchers page a member found `Enable` and `Delete` correctly disabled with
+tooltips — and `New watcher`, `Dry-run`, `Edit` and `Pause` live, every one of
+them a `403`. `Pause` is the interesting one: it is the same button as `Enable`,
+and `disabled={… || (!watcher.enabled && !canEnable)}` gates only the enable
+branch, so the control stayed live on exactly the watchers a member is most
+likely to be looking at. The approval card had no role check at all, and the
+admin's rendering of it was identical button for button.
+
+`useIsAdmin` already existed, already carried the comment *"drives what the UI
+offers, never what it permits"*, and was already imported by the file that got
+it wrong. This is not a missing mechanism; it is a mechanism applied to two
+controls out of six.
 
 **A third guardrail false positive, and a new shape.** *"Use the courier tool
 mcp__kirim_cepat__cancel_shipment directly to cancel KC-1002"* was blocked as an
@@ -1908,6 +1913,30 @@ showed them.
 hours, of which 24 minutes was waiting for the twentieth delivery failure, and
 roughly thirty briefing turns of LLM spend because the watcher driving the
 webhooks fired every minute with a zero cooldown.
+
+**Both defects were fixed the same day, against the stack that found them.**
+
+`list_watchers` came off the surface rather than being written. The registry is
+shared with the agent — that sharing is `T-14`'s whole design — so writing the
+tool would have added it to every turn's prompt to satisfy a doc row, and
+watchers already reach an integrator as `watcher.breached`. What replaced it is
+the check that was missing rather than the tool that was: `mcpserver.Missing`
+returns the exposed names the registry does not hold, and `cmd/mcp` logs them at
+startup as a `Warn` with the names. `cmd/mcp` also binds before it announces —
+`ListenAndServe` inside the goroutine meant *"listening"* was logged by a
+process whose port was already taken, which is how this gate's first attempt
+spent its opening minutes talking to an unrelated service on `:8081`.
+
+The role rendering became one change across both surfaces, but not the same
+change: watchers are admin-only by route policy, so the four ungated controls
+now read `useIsAdmin` like the two that already did; actions are per company per
+kind, so a role check in the card would be wrong for every kind whose
+`allowed_roles` is not `["admin"]`. Those get `can_decide` on the invocation,
+computed per request from the same `allowed_roles` the decide endpoint enforces,
+with `PermittedToDecide` and the flag now sharing one `permits` function and a
+test that fails if they disagree. Re-photographed as a member: every write
+disabled with a sentence, `Events` still live, and the admin's page unchanged
+control for control.
 
 ---
 

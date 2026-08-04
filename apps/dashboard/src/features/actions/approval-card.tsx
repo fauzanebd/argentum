@@ -25,10 +25,22 @@ function describe(inv: ActionInvocation): string {
  *  styling so a proposal reads as part of the same conversation, not a modal
  *  bolted on beside it. Approve executes the action exactly once (the backend's
  *  state machine, T-10); reject is terminal. */
+/** The sentence a viewer who may not decide reads instead of a 403. Which roles
+ *  may decide is per company per kind (company_actions.allowed_roles), so this
+ *  says who to ask rather than naming a role the reader is not. */
+const NOT_YOURS = "Someone with permission for this action has to approve it.";
+
 export function ApprovalCard({ invocation }: { invocation: ActionInvocation }) {
   const decide = useDecideAction();
   const [error, setError] = useState<string | null>(null);
   const settled = invocation.status !== "proposed";
+  // can_decide comes from the backend, which computes it from the same
+  // allowed_roles the decide endpoint enforces — a role check written here
+  // would be a second copy of a per-company rule, and it would be wrong for
+  // every kind whose allowed_roles is not ["admin"]. An older backend that does
+  // not send the field leaves the buttons live, which is the pre-2026-08-04
+  // behaviour rather than a lockout.
+  const canDecide = invocation.can_decide !== false;
 
   const run = (decision: "approve" | "reject") => {
     setError(null);
@@ -72,7 +84,8 @@ export function ApprovalCard({ invocation }: { invocation: ActionInvocation }) {
           <Button
             size="sm"
             className="h-7 px-2"
-            disabled={decide.isPending}
+            disabled={decide.isPending || !canDecide}
+            title={canDecide ? undefined : NOT_YOURS}
             onClick={() => run("approve")}
           >
             {decide.isPending ? (
@@ -86,12 +99,14 @@ export function ApprovalCard({ invocation }: { invocation: ActionInvocation }) {
             size="sm"
             variant="outline"
             className="h-7 px-2"
-            disabled={decide.isPending}
+            disabled={decide.isPending || !canDecide}
+            title={canDecide ? undefined : NOT_YOURS}
             onClick={() => run("reject")}
           >
             <X className="h-3.5 w-3.5" />
             Reject
           </Button>
+          {!canDecide && <span className="text-muted-foreground">{NOT_YOURS}</span>}
         </div>
       )}
       {error && <p className="mt-1.5 text-destructive">{error}</p>}

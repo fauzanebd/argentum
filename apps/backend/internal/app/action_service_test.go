@@ -608,7 +608,7 @@ func TestReadsCarryTheApproverSentence(t *testing.T) {
 	h := newActionHarness(t, true)
 	res := h.propose(t)
 
-	pending, err := h.svc.ListPending(h.ctx(), "co-1")
+	pending, err := h.svc.ListPending(h.ctx(), "co-1", "admin")
 	if err != nil {
 		t.Fatalf("list pending: %v", err)
 	}
@@ -619,7 +619,7 @@ func TestReadsCarryTheApproverSentence(t *testing.T) {
 		t.Errorf("ListPending description = %q, want the action's own sentence", pending[0].Description)
 	}
 
-	one, err := h.svc.Get(h.ctx(), "co-1", res.InvocationID)
+	one, err := h.svc.Get(h.ctx(), "co-1", res.InvocationID, "admin")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -636,6 +636,71 @@ func TestReadsCarryTheApproverSentence(t *testing.T) {
 	}
 }
 
+// CanDecide on the read is the same answer PermittedToDecide gives at decision
+// time. The 2026-08-04 gate photographed the alternative: a member shown an
+// Approve button that answers 403, because the pending payload said nothing
+// about who may press it.
+func TestReadsCarryWhetherThisCallerMayDecide(t *testing.T) {
+	h := newActionHarness(t, true)
+	res := h.propose(t)
+	h.repo.cfg[ck("co-1", "send_message")].AllowedRoles = []string{"admin"}
+
+	for _, tc := range []struct {
+		role string
+		want bool
+	}{{"admin", true}, {"member", false}} {
+		pending, err := h.svc.ListPending(h.ctx(), "co-1", tc.role)
+		if err != nil {
+			t.Fatalf("list pending as %s: %v", tc.role, err)
+		}
+		if len(pending) != 1 || pending[0].CanDecide != tc.want {
+			t.Errorf("ListPending as %s: can_decide = %v, want %v", tc.role, pending[0].CanDecide, tc.want)
+		}
+
+		one, err := h.svc.Get(h.ctx(), "co-1", res.InvocationID, tc.role)
+		if err != nil {
+			t.Fatalf("get as %s: %v", tc.role, err)
+		}
+		if one.CanDecide != tc.want {
+			t.Errorf("Get as %s: can_decide = %v, want %v", tc.role, one.CanDecide, tc.want)
+		}
+
+		// The rendered flag and the enforced check must not be able to disagree.
+		permitted, err := h.svc.PermittedToDecide(h.ctx(), "co-1", res.InvocationID, tc.role)
+		if err != nil {
+			t.Fatalf("permitted as %s: %v", tc.role, err)
+		}
+		if permitted != tc.want {
+			t.Errorf("PermittedToDecide as %s = %v, want %v — it disagrees with can_decide", tc.role, permitted, tc.want)
+		}
+	}
+}
+
+// An empty allowed_roles means any member, and a kind with no config at all is
+// admins only — the safe reading of an absent rule. Both are PermittedToDecide's
+// rules, and the card has to show the same two.
+func TestCanDecideFollowsTheEmptyAndMissingRules(t *testing.T) {
+	h := newActionHarness(t, true)
+	h.propose(t)
+
+	pending, err := h.svc.ListPending(h.ctx(), "co-1", "member")
+	if err != nil {
+		t.Fatalf("list pending: %v", err)
+	}
+	if !pending[0].CanDecide {
+		t.Error("empty allowed_roles: can_decide = false, want true — an empty list means any member")
+	}
+
+	delete(h.repo.cfg, ck("co-1", "send_message"))
+	pending, err = h.svc.ListPending(h.ctx(), "co-1", "member")
+	if err != nil {
+		t.Fatalf("list pending with no config: %v", err)
+	}
+	if pending[0].CanDecide {
+		t.Error("missing config: can_decide = true for a member, want admins only")
+	}
+}
+
 // A proposal whose kind this build no longer registers has no sentence to give.
 // The field stays empty and the card falls back to the kind, which is what it
 // showed for every kind before this.
@@ -646,7 +711,7 @@ func TestAnUnregisteredKindHasNoSentence(t *testing.T) {
 	// Rebuild the service with an empty registry, as a deployment that dropped
 	// the action would be.
 	stripped := NewActionService(h.repo, actions.NewRegistry(), h.audit)
-	inv, err := stripped.Get(h.ctx(), "co-1", res.InvocationID)
+	inv, err := stripped.Get(h.ctx(), "co-1", res.InvocationID, "admin")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}

@@ -79,6 +79,16 @@ export interface ActionInvocation {
    * kind registered.
    */
   description?: string;
+  /**
+   * CanDecide is whether *the caller who asked for this row* may approve or
+   * reject it — the same question PermittedToDecide answers at decision time,
+   * answered early so the card can render the buttons as disabled instead of
+   * offering a 403. Computed per request from the kind's allowed_roles, never
+   * stored, and never load-bearing: the check that enforces anything is the one
+   * in the decide handler, and this field travels to a browser where a user can
+   * edit it freely.
+   */
+  can_decide: boolean;
   idempotency_key: string;
   status: InvocationStatus;
   proposed_at: string;

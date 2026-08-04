@@ -144,9 +144,13 @@ export function WatcherRow({
             variant="outline"
             size="sm"
             onClick={() => runDryRun.mutate()}
-            disabled={runDryRun.isPending}
+            disabled={runDryRun.isPending || !isAdmin}
             className="gap-1"
-            title="Evaluate against recent history without firing"
+            title={
+              isAdmin
+                ? "Evaluate against recent history without firing"
+                : "Only admins can run a dry-run — it runs the metric's SQL"
+            }
           >
             <FlaskConical className="h-3.5 w-3.5" />
             {runDryRun.isPending ? "Running…" : "Dry-run"}
@@ -155,16 +159,21 @@ export function WatcherRow({
             variant="outline"
             size="sm"
             onClick={() => toggle.mutate(!watcher.enabled)}
-            disabled={toggle.isPending || (!watcher.enabled && !canEnable)}
+            // Pausing is the same PUT as enabling, so it is the same permission.
+            // Gating only the enable branch left a member a live Pause button on
+            // every running watcher, which is what the 2026-08-04 gate found.
+            disabled={toggle.isPending || !isAdmin || (!watcher.enabled && !canEnable)}
             className="gap-1"
             title={
-              watcher.enabled
-                ? "Pause this watcher"
-                : canEnable
-                  ? "Enable this watcher"
-                  : isAdmin
-                    ? "Run a dry-run within the last 24h to enable"
-                    : "Only admins can enable a watcher"
+              !isAdmin
+                ? watcher.enabled
+                  ? "Only admins can pause a watcher"
+                  : "Only admins can enable a watcher"
+                : watcher.enabled
+                  ? "Pause this watcher"
+                  : canEnable
+                    ? "Enable this watcher"
+                    : "Run a dry-run within the last 24h to enable"
             }
           >
             {watcher.enabled ? (
@@ -180,7 +189,13 @@ export function WatcherRow({
           <Button variant="outline" size="sm" onClick={() => onOpenEvents(watcher)} className="gap-1">
             <History className="h-3.5 w-3.5" /> Events
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => onEdit(watcher)} title="Edit">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onEdit(watcher)}
+            disabled={!isAdmin}
+            title={isAdmin ? "Edit" : "Only admins can edit watchers"}
+          >
             <Pencil className="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="icon" asChild title="Open thread">

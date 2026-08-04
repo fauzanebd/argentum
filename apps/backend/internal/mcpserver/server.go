@@ -47,14 +47,18 @@ const (
 // turn or behind `/v1`.
 //
 // A tool named here that this deployment does not run is simply absent, which
-// is how `create_visualization` behaves where Metabase is unconfigured.
+// is how `create_visualization` behaves where Metabase is unconfigured. That
+// leniency is also how `list_watchers` sat here for a week naming a tool the
+// registry has never held: absent-because-unconfigured and
+// absent-because-imaginary look identical from in here. `Missing` is the
+// difference, and `cmd/mcp` logs it at startup — see the 2026-08-04 gate in
+// docs/coverage/mcp-server.md.
 var exposed = map[string]domain.Scope{
 	"list_sources":         domain.ScopeReadData,
 	"get_schema":           domain.ScopeReadData,
 	"run_sql":              domain.ScopeReadData,
 	"list_metrics":         domain.ScopeReadMetrics,
 	"query_metric":         domain.ScopeReadMetrics,
-	"list_watchers":        domain.ScopeReadMetrics,
 	"create_visualization": domain.ScopeWriteVisualizations,
 	"create_dashboard":     domain.ScopeWriteVisualizations,
 }
@@ -67,10 +71,35 @@ func ScopeFor(tool string) (domain.Scope, bool) {
 
 // ExposedTools is the surface, sorted — for the setup doc and for a test that
 // wants to assert the list rather than read it.
+//
+// It is what this package *intends* to serve, not what a client will see: New
+// serves the intersection with the registry it is handed. Use Missing to tell
+// the two apart.
 func ExposedTools() []string {
 	out := make([]string, 0, len(exposed))
 	for name := range exposed {
 		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Missing returns the exposed names that the given registry does not hold,
+// sorted. Every one of them is a tool the docs promise and no client can call.
+//
+// It cannot distinguish "this deployment has no Metabase" from "this name is a
+// typo", and it does not try: both are worth saying out loud at startup, and
+// the operator knows which of the two they are looking at.
+func Missing(registry []interfaces.Tool) []string {
+	have := make(map[string]struct{}, len(registry))
+	for _, t := range registry {
+		have[t.Name()] = struct{}{}
+	}
+	var out []string
+	for name := range exposed {
+		if _, ok := have[name]; !ok {
+			out = append(out, name)
+		}
 	}
 	sort.Strings(out)
 	return out

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -171,6 +172,36 @@ func TestNewExposesOnlyTheSurface(t *testing.T) {
 	// that matters — that generate_document is absent — is ScopeFor's above.
 	// This case exists to prove New does not panic on a registry holding tools
 	// it will not expose, which is the ordinary production shape.
+}
+
+// Missing is the check that would have caught `list_watchers`: it sat in
+// `exposed` for a week naming a tool no registry has ever held, so the wire
+// served seven tools while ExposedTools(), the setup guide and the coverage doc
+// all said eight. Nothing here can know a deployment's registry, which is why
+// this is a startup log in cmd/mcp rather than a build failure — what the test
+// pins is that the difference is computed at all.
+func TestMissingNamesWhatTheRegistryDoesNotHold(t *testing.T) {
+	full := make([]interfaces.Tool, 0, len(exposed))
+	for name := range exposed {
+		full = append(full, &stubTool{name: name})
+	}
+	if got := Missing(full); len(got) != 0 {
+		t.Errorf("Missing over a registry holding the whole surface = %v, want none", got)
+	}
+
+	partial := []interfaces.Tool{&stubTool{name: "run_sql"}, &stubTool{name: "list_metrics"}}
+	got := Missing(partial)
+	if len(got) != len(exposed)-2 {
+		t.Fatalf("Missing = %v, want the other %d exposed names", got, len(exposed)-2)
+	}
+	for _, name := range got {
+		if name == "run_sql" || name == "list_metrics" {
+			t.Errorf("%q is in the registry and should not be reported missing", name)
+		}
+	}
+	if !sort.StringsAreSorted(got) {
+		t.Errorf("Missing = %v, want it sorted — an operator reads this in a log line", got)
+	}
 }
 
 func TestSchemaForRendersAnObjectSchema(t *testing.T) {

@@ -82,7 +82,7 @@ func (h *ActionsHandler) pending(c *gin.Context) {
 	if h.unavailable(c) {
 		return
 	}
-	invs, err := h.svc.ListPending(c.Request.Context(), companyID(c))
+	invs, err := h.svc.ListPending(c.Request.Context(), companyID(c), c.GetString("role"))
 	if err != nil {
 		actionFail(c, err)
 		return
@@ -131,7 +131,7 @@ func (h *ActionsHandler) get(c *gin.Context) {
 	if h.unavailable(c) {
 		return
 	}
-	inv, err := h.svc.Get(c.Request.Context(), companyID(c), c.Param("id"))
+	inv, err := h.svc.Get(c.Request.Context(), companyID(c), c.Param("id"), c.GetString("role"))
 	if err != nil {
 		actionFail(c, err)
 		return
@@ -177,5 +177,9 @@ func (h *ActionsHandler) decide(c *gin.Context, approve bool) {
 		actionFail(c, err)
 		return
 	}
+	// The caller got past the check above, so they may decide this kind — say so
+	// on the way out too, or the card re-renders from this response with the
+	// buttons it has just used disabled.
+	inv.CanDecide = true
 	c.JSON(http.StatusOK, ActionResponse{Action: inv})
 }

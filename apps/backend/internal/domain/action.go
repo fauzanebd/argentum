@@ -88,7 +88,15 @@ type ActionInvocation struct {
 	// stored copy would be a second truth that a code change could not correct
 	// for proposals already written. Empty when the deployment no longer has the
 	// kind registered.
-	Description    string           `json:"description,omitempty"`
+	Description string `json:"description,omitempty"`
+	// CanDecide is whether *the caller who asked for this row* may approve or
+	// reject it — the same question PermittedToDecide answers at decision time,
+	// answered early so the card can render the buttons as disabled instead of
+	// offering a 403. Computed per request from the kind's allowed_roles, never
+	// stored, and never load-bearing: the check that enforces anything is the one
+	// in the decide handler, and this field travels to a browser where a user can
+	// edit it freely.
+	CanDecide      bool             `json:"can_decide"`
 	IdempotencyKey string           `json:"idempotency_key"`
 	Status         InvocationStatus `json:"status"`
 	ProposedAt     time.Time        `json:"proposed_at"`

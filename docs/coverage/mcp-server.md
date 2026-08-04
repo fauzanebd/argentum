@@ -35,8 +35,11 @@ this ticket.
 | Tool | Scope |
 | ---- | ----- |
 | `list_sources`, `get_schema`, `run_sql` | `read:data` |
-| `list_metrics`, `query_metric`, `list_watchers` | `read:metrics` |
+| `list_metrics`, `query_metric` | `read:metrics` |
 | `create_visualization`, `create_dashboard` | `write:visualizations` |
+
+Seven, not eight: `list_watchers` was listed here and in the setup guide until
+the 2026-08-04 gate found that no such tool has ever existed (§7).
 
 **Absent: `generate_document`, `schedule_task`, `propose_action`.** Each spends
 money, changes something outside Argentum, or produces an artifact somebody has
@@ -140,10 +143,26 @@ any test reading from it agree with the map rather than with the registry —
 eight either way. The startup log prints both lists side by side (`tools` from
 the map, `of` from the registry) and the disagreement is visible in it.
 
-Two ways out, and they are not equivalent: write the tool (it would join the
-*agent's* registry too, which changes every turn's prompt), or drop the entry
-and the two doc rows. Left for the owner; the wire is the honest surface either
-way.
+**Resolved the same day: the promise was dropped, not kept.** Writing the tool
+would have put it in the *agent's* registry too — the registry is shared, which
+is this ticket's whole design — so a tool nobody asked for would have joined
+every turn's prompt and needed its own eval. Watchers are a dashboard surface
+whose output already reaches an integrator as `watcher.breached`
+([`outbound-webhooks.md`](outbound-webhooks.md)), so the MCP client was never the
+way to reach them.
+
+What replaces it is the check that was missing rather than the tool that was
+missing. `mcpserver.Missing(registry)` returns the exposed names the registry
+does not hold, and `cmd/mcp` logs them at startup — as a `Warn`, with the names,
+rather than the `Info` a clean surface gets. It cannot tell
+absent-because-Metabase-is-unconfigured from absent-because-imaginary and does
+not try: both belong in the operator's log, and the operator knows which they
+are looking at.
+
+`cmd/mcp` also binds before it announces now. `ListenAndServe` inside the
+goroutine meant *"Argentum MCP server listening"* was logged by a process whose
+port was already taken — which is how this gate's first attempt spent its
+opening minutes talking to an unrelated service on `:8081`.
 
 ## 8. Still not done
 

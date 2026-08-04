@@ -20,7 +20,6 @@ need:
 | `run_sql` | `read:data` | A read-only query. Always read-only — this is enforced in the driver, not in a prompt |
 | `list_metrics` | `read:metrics` | The metric registry: what is defined, and its grain |
 | `query_metric` | `read:metrics` | One defined metric's value for a window |
-| `list_watchers` | `read:metrics` | The watchers this workspace has configured |
 | `create_visualization` | `write:visualizations` | A Metabase card |
 | `create_dashboard` | `write:visualizations` | A Metabase dashboard from cards |
 
@@ -56,9 +55,14 @@ project:
 custom header will work. The server name in the handshake is `argentum`.
 
 Check it connected by asking your agent to list its tools; the Argentum ones are
-the eight in the table above, minus any this deployment does not run —
+the seven in the table above, minus any this deployment does not run —
 `create_visualization` and `create_dashboard` are absent where Metabase is not
 configured.
+
+Watchers are not on this surface. They are configured and read in the dashboard,
+and a breach reaches you as a message on your channels or as a
+`watcher.breached` webhook — Settings → Webhooks — rather than by an agent
+polling for them.
 
 ## 3. What your agent can and cannot do
 

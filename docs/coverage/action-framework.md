@@ -348,12 +348,23 @@ cleanest statement of the gap: nothing in the UI reads the role. The member's
 `POST /api/actions/:id/approve` and `.../reject` both answered `403 "your role is
 not permitted to decide this action"`, and the courier's log gained no line, so
 the enforcement is sound and the affordance is wrong.
-- **Read-only-for-non-permitted-role is enforced server-side (403), not yet
-  rendered as a disabled card.** The pending payload does not carry the caller's
-  decidability, so the card shows buttons to everyone and surfaces the 403 inline.
-  Surfacing `allowed_roles`/`can_decide` on the pending item is the follow-up —
-  and it is the same follow-up the watchers page needs
-  ([`watchers-ui.md`](watchers-ui.md) §4), so it should be one change.
+- ~~**Read-only-for-non-permitted-role is enforced server-side (403), not yet
+  rendered as a disabled card.**~~ **Fixed 2026-08-04.** `can_decide` now travels
+  on every invocation a read returns, computed per request from the same
+  `allowed_roles` the decide endpoint enforces — the card disables both buttons
+  and says *"Someone with permission for this action has to approve it"*.
+
+  It is computed in the service rather than in the card because the rule is per
+  company per kind: a card checking `role === "admin"` would be wrong for every
+  kind whose `allowed_roles` is not `["admin"]`, and right only by accident
+  today. `PermittedToDecide` and `CanDecide` now go through one `permits`
+  function, and a test fails if they disagree. The flag is advisory in the
+  strict sense — it travels to a browser where a user can edit it — and the
+  decide handler still runs its own check, which is why the 403 above is
+  unchanged rather than replaced.
+
+  A decision response carries `can_decide: true` on the way out, or the card
+  re-renders from it with the buttons it has just used disabled.
 
 ## T-12a · Action `send_message` — 2026-08-02
 

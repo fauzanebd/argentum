@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -76,14 +77,34 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	logrus.WithFields(logrus.Fields{
+	// Bind before announcing. ListenAndServe inside the goroutine used to mean
+	// "listening" was logged by a process whose port was already taken, and the
+	// fatal that followed it read as a second, unrelated event — which is exactly
+	// how the 2026-08-04 gate spent its first attempt talking to somebody else's
+	// service on :8081.
+	ln, err := net.Listen("tcp", cfg.MCPServerAddr)
+	if err != nil {
+		logrus.Fatalf("mcp server: %v", err)
+	}
+
+	fields := logrus.Fields{
 		"addr":  cfg.MCPServerAddr,
 		"tools": mcpserver.ExposedTools(),
 		"of":    tools.Names(stack.Tools),
-	}).Info("Argentum MCP server listening")
+	}
+	// A name on the surface that the registry does not hold is a tool the setup
+	// guide promises and no client can call. Absent-because-unconfigured looks
+	// the same from here as absent-because-nobody-wrote-it, so it is logged
+	// rather than judged.
+	if missing := mcpserver.Missing(stack.Tools); len(missing) > 0 {
+		fields["missing"] = missing
+		logrus.WithFields(fields).Warn("Argentum MCP server listening, with tools on the surface that this deployment does not run")
+	} else {
+		logrus.WithFields(fields).Info("Argentum MCP server listening")
+	}
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logrus.Fatalf("mcp server: %v", err)
 		}
 	}()

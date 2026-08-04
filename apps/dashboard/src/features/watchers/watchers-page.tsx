@@ -15,6 +15,7 @@ import type {
 import { WatcherForm } from "./watcher-form";
 import { WatcherRow } from "./watcher-row";
 import { WatcherEventsSheet } from "./watcher-events-sheet";
+import { useIsAdmin } from "@/store/auth";
 
 export function WatchersPage() {
   const [showForm, setShowForm] = useState(false);
@@ -54,6 +55,9 @@ export function WatchersPage() {
   }, [metrics]);
 
   const noMetrics = metrics.length === 0;
+  // Every watcher write is admin-only in the route policy, so a member is
+  // offered the page (the list is theirs to read) with the writes disabled.
+  const isAdmin = useIsAdmin();
 
   function openCreate() {
     setEditing(null);
@@ -82,7 +86,12 @@ export function WatchersPage() {
             </p>
           </div>
           {!showForm && (
-            <Button onClick={openCreate} disabled={noMetrics} className="shrink-0">
+            <Button
+              onClick={openCreate}
+              disabled={noMetrics || !isAdmin}
+              title={isAdmin ? undefined : "Only admins can create watchers"}
+              className="shrink-0"
+            >
               New watcher
             </Button>
           )}

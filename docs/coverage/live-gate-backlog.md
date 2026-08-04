@@ -29,9 +29,9 @@ person's phone.
 | ------- | -------- | ------- |
 | `T-15` | Local receiver, watcher breach, signature verified; plus a receiver answering `500` twenty times | **Pass.** Body carried value and threshold, HMAC verified over the raw bytes and failed on a tampered copy, and the failing subscription disabled itself on the twentieth while the healthy one stayed at zero ([`outbound-webhooks.md`](outbound-webhooks.md) §7) |
 | `T-M4` | Propose → approve → the courier showing the effect once, plus the reject case and both audit rows | **Pass.** One `cancel_shipment` line on the courier after approve, none after reject, five audit rows across the two decisions ([`mcp-source.md`](mcp-source.md) §T-M4) |
-| `T-14` | An MCP client connecting with a key, listing tools, retrieving a metric; the audit row and usage event that follow | **Pass with a defect.** Handshake, `401`-before-session, metric retrieval, the `read:metrics`-cannot-`run_sql` split, `agent_actions` and `usage_events` all as designed — but the surface is **7 tools, not 8**: `list_watchers` is advertised and does not exist ([`mcp-server.md`](mcp-server.md) §7) |
+| `T-14` | An MCP client connecting with a key, listing tools, retrieving a metric; the audit row and usage event that follow | **Pass with a defect, since fixed.** Handshake, `401`-before-session, metric retrieval, the `read:metrics`-cannot-`run_sql` split, `agent_actions` and `usage_events` all as designed — but the surface was **7 tools, not 8**: `list_watchers` was advertised and did not exist ([`mcp-server.md`](mcp-server.md) §7) |
 | `T-07b` | One dashboard turn returning `[EMAIL REDACTED]` | **Pass.** Same question under `strict` and `contact_ok`, nothing else changed ([`guardrail-overreach.md`](guardrail-overreach.md) §4) |
-| `T-09`, `T-11` | The non-admin renderings of both UIs, photographed | **Fail — the rendering does not exist.** A member sees every admin control enabled on both surfaces, and the admin's card is pixel-identical. The `403`s are all real ([`watchers-ui.md`](watchers-ui.md), [`action-framework.md`](action-framework.md)) |
+| `T-09`, `T-11` | The non-admin renderings of both UIs, photographed | **Failed, then fixed and re-photographed.** Two of six watcher controls were gated and four were not — `Pause` among them, because it is `Enable`'s other branch — and the approval card had no role check at all. The `403`s were all real ([`watchers-ui.md`](watchers-ui.md), [`action-framework.md`](action-framework.md)) |
 
 The one thing the run needed that no document named:
 `API_V1_CALLBACK_ALLOW_PRIVATE=true` for a loopback webhook receiver — separate
@@ -62,8 +62,8 @@ out is that the group-1 list did not carry it.
 | Owed by | What | Why it is not guessed at |
 | ------- | ---- | ------------------------ |
 | `T-14` | A Helm deployment for `cmd/mcp` | `Dockerfile.mcp` exists and matches the discord image's shape, but the chart has no `deployment-mcp.yaml`. The ingress is where a hostname and a TLS certificate get decided, and both are an operator's call ([`mcp-server.md`](mcp-server.md) §8) |
-| `T-14` | `list_watchers`: write the tool, or delete the promise | Writing it puts the tool in the *agent's* registry too, which changes every turn's prompt; deleting it is two doc rows and a map entry. A product call, not an implementation one ([`mcp-server.md`](mcp-server.md) §7) |
-| `T-09`/`T-11` | Whether a member sees a disabled control or no control | The fix is one change across both surfaces — the pending payload and the watcher row would carry `can_decide` / `can_edit` — but which of the two renderings is wanted is a design decision |
+| ~~`T-14`~~ | ~~`list_watchers`: write the tool, or delete the promise~~ | **Decided 2026-08-04: deleted.** The registry is shared with the agent, so writing it would have put a tool nobody asked for into every turn's prompt ([`mcp-server.md`](mcp-server.md) §7) |
+| ~~`T-09`/`T-11`~~ | ~~Whether a member sees a disabled control or no control~~ | **Decided 2026-08-04: disabled, with a sentence.** Hiding a control makes a member think the feature is missing; disabled tells them who to ask ([`watchers-ui.md`](watchers-ui.md), [`action-framework.md`](action-framework.md)) |
 
 ---
 
