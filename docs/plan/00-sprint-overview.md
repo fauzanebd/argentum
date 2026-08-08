@@ -779,6 +779,16 @@ dashboard and in chat apps.*
 Everything else outstanding is a gate rather than a build, and all of it is in
 [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md).
 
+**Updated 2026-08-08.** Two things happened that this section should not make a
+reader re-derive. **`T-17` is finished and gated** — queue depth, the sub-tool
+spans, the exposition scrape and the trace waterfall, which found a
+span-parenting defect on the way ([`../coverage/observability.md`](../coverage/observability.md)).
+And **Slack shipped as a channel** outside the twelve entirely — it was a
+backlog entry, not a cut-list row, and watcher delivery to it followed the same
+day ([`../coverage/slack-channel.md`](../coverage/slack-channel.md)). The widget
+phase is still the one track with no code, and the sentence above still stands:
+it wants a decision to open the scope, not an afternoon.
+
 Cutting all twelve recovers at most **21.0 of the 54.5** — less than that in
 practice, because positions 5 and 9 are scoped cuts rather than whole tickets
 (`T-17` keeps the `/metrics` fix, `T-M3` keeps the binding control), and because

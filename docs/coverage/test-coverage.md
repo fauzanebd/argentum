@@ -6,6 +6,17 @@ measurement). These are actual results, not estimates.
 
 ## Headline
 
+> **Current reading, 2026-08-08: 43 of 69 Go packages have tests** (`go list -f
+> '{{if or .TestGoFiles .XTestGoFiles}}…'`). The denominator moved as much as the
+> numerator — `internal/slack`, `internal/mcpserver`, `internal/webhookout`,
+> `internal/tracing` and the rest are packages that did not exist when this file
+> was written. The dashboard and landing apps still have zero tests; `tsc -b` and
+> the lint job are what stand in for them, and the backlog's *Frontend test
+> framework* entry still has its trigger.
+>
+> Everything below is the original measurement, kept because the risk ranking it
+> produced is what `T-02` was scoped against.
+
 **3 of 35 Go packages have any test file. The dashboard and landing apps have
 zero tests.**
 

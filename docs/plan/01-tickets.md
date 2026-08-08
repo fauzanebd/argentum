@@ -781,8 +781,17 @@ Artifacts: [`../coverage/report-branding.md`](../coverage/report-branding.md).
 
 ---
 
-## T-R6 · Three ways a document loses its content silently
+## ~~T-R6~~ · Three ways a document loses its content silently — **DONE 2026-08-01**
 **Repo:** BE · **Size:** 1d · **Deps:** T-R2 · **Priority:** P1
+
+> **Shipped the day it was filed.** `format.ColumnDecimals` is where the
+> judgement went — a whole-number currency column keeps its zero decimals
+> instead of being handed `AutoDecimals` and printing USD's two — plus the
+> column headroom that bought back and the heading fix. Record:
+> [`../coverage/report-rendering.md`](../coverage/report-rendering.md) §`T-R6`,
+> with `pdf/disclosure_test.go` covering the case where cut cells were figures.
+> This heading carried no status until 2026-08-08, which made the ticket read as
+> open in every sweep of this file.
 
 ### Why
 Three findings from a render audit on 2026-08-01. All three pass the current
@@ -2727,6 +2736,19 @@ forbids.
 > depth — which needs an `asynq.Inspector` and is the one counter here about
 > infrastructure rather than the product — and the sub-tool spans, for which
 > `tracing.Step` exists and is unused.
+>
+> **GATED LIVE 2026-08-08 — all four closed.** Queue depth is
+> exported (`argentum_queue_{pending,active,scheduled,retry,archived}{queue}`,
+> sampled from `asynq.Inspector` by `cmd/api`, queues discovered rather than
+> configured). The sub-tool spans are wired — `memory.hydrate`, `table_picker`,
+> `guardrails.output`. The exposition half of the gate was run: `401` with no
+> credential, `401` on a wrong token, `200` and `text/plain; version=0.0.4` with
+> the right one. And the waterfall was read against a `jaeger` service now in
+> the compose file — one `agent.turn` of 7,750 ms with 18 ms inside
+> `query_metric`. It found a defect first: `cmd/eval` installed no tracer at
+> all, and `memory.hydrate` was landing in a trace of its own because the turn
+> span started after it
+> ([`../coverage/observability.md`](../coverage/observability.md) §6–§9).
 >
 > **The disclosure half of bullet 2, delivered earlier the same day.** The
 > endpoint no longer serves this deployment's spend to whoever can reach it —

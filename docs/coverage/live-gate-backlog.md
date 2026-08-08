@@ -17,6 +17,12 @@ pattern held: three findings, none of which a unit test could have produced
 ([`delivery-log.md`](delivery-log.md) Phase 2e). What is left needs money or a
 real phone.
 
+**And `T-17`'s exposition half was run on 2026-08-08** (§2), which needed
+neither — it had been filed under "needs real LLM spend" and sat there for five
+days because of it. Everything still open needs model spend, a Slack workspace,
+a real handset, or an operator's decision. Nothing left is blocked on writing
+code.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of three things: the stack up, money spent, or a message sent to a real
 person's phone.
@@ -45,11 +51,21 @@ from `MCP_ALLOW_PRIVATE_EGRESS`, and the two are easy to confuse.
 | `T-A2b` | Ten live agentic report calls, confirming the injection guardrail no longer refuses them | The fix (the directive moved into the system prompt) is proven by construction and by one gate run; ten is what the ticket asked for |
 | `T-R4` | Three unautomatable applications of the deck renderer | Opening the generated `.pptx` in PowerPoint, Keynote and Google Slides. No test can do this |
 | `T-18` | The final eval run → `docs/coverage/eval-sprint1.md`, compared against baseline | One full run of the golden set. **Order matters:** run `T-07b`'s before/after pair first, or the guardrail question gets answered against a baseline this run has already moved ([`launch-hygiene.md`](launch-hygiene.md) §6) |
-| `T-17` | `curl` the exposition; one trace waterfall for a tool-calling turn | The exposition needs only the stack; the waterfall needs a collector — a local Jaeger or an OTel collector in the compose file, which is itself not written ([`observability.md`](observability.md) §6) |
+| ~~`T-17`~~ | ~~`curl` the exposition; one trace waterfall for a tool-calling turn~~ | **Both run 2026-08-08 — ticket closed.** Exposition: 401 / 401 / 200 with the right token, queue gauges reading a queue discovered from Redis. Waterfall: one `agent.turn` of 7,750 ms with 18 ms inside `query_metric`, which is the LLM/SQL split the ticket asked for. It cost one case of model spend, and it found the defect §9 records — `memory.hydrate` was landing in its own trace ([`observability.md`](observability.md) §8–§9) |
 
-`T-17`'s exposition half needs no spend and was not run on 2026-08-04 — it is a
-`curl` against a running API with `METRICS_TOKEN` set, and the only reason it sat
-out is that the group-1 list did not carry it.
+~~`T-17`'s exposition half needs no spend and was not run on 2026-08-04~~ —
+**run on 2026-08-08**, against the compose stack with the API on the host. It
+cost nothing but the stack, exactly as this paragraph claimed, and it is worth
+recording why it sat out twice: it was written down in a *group 2* table headed
+"needs real LLM spend", so every reading of this file filed it behind a cost it
+did not have. A gate in the wrong bucket is a gate nobody runs.
+
+## 2a. Needs a Slack workspace
+
+| Owed by | The gate | Why it is deferred |
+| ------- | -------- | ------------------ |
+| Slack channel | An @mention answered in-thread, a follow-up inside that thread landing on the same `conversation_threads` row, and `/api/usage/by-channel` showing `slack` with a non-zero cost | Needs a Slack app installed in a real workspace — signing secret, bot token, Event Subscriptions pointed at a reachable host. No CI job and no local stack can supply one. Steps: [`slack-channel.md`](slack-channel.md) §7 |
+| Slack watcher delivery | A breach posting top-level in a channel, and the delivery row reading `delivered` | Same workspace. The unit test pins the part a workspace cannot teach us — that the post carries no `thread_ts` — so what the gate adds is proof the token and channel id are right |
 
 ## 3. Needs somebody's real phone
 

@@ -139,14 +139,23 @@ inline code and fenced blocks already match and pass through.
 
 ## 6. Known limitations
 
-**Watchers cannot deliver to Slack.** `WatcherService.validateChannels` accepts
-dashboard, WhatsApp, Discord and Lark; a Slack target is refused at creation
-with `"slack" is not a channel a watcher can deliver to`. That is a clean
-refusal rather than a silent drop, but it means the first tenant to ask for
-"alert my Slack channel" is blocked. Adding it is a `Send` method on
-`slack.Provider` (post without `thread_ts`) plus the two switches in
-`watcher_service.go` — deliberately out of scope here, because the playbook's
-checklist covers chat and this is a second feature.
+**~~Watchers cannot deliver to Slack.~~ Shipped 2026-08-08**, and it cost what
+this paragraph estimated: `Send` on `slack.Provider` — `Reply` with an empty
+`thread_ts`, which is the whole difference between answering in a thread and
+starting one — the two switches in `watcher_service.go`, the channel list the
+watchers handler hands the dashboard, and a label and a ref placeholder in
+`watcher-model.ts`.
+
+The one thing worth stating rather than assuming: **a breach starts its own
+thread.** Replying into an existing one would bury an alert under whatever
+conversation was last in that channel, so the delivery path posts top-level and
+`TestCompleteFireDeliversToEveryChannel` asserts the `thread_ts` it was given is
+empty. `WithDelivery` grew a fourth provider rather than gaining a second
+installer, and a Slack target with no `ref` is refused at creation like every
+other non-dashboard channel.
+
+Not shipped with it: watcher delivery to a Slack **DM**. The ref is a channel
+id, and a DM would need the bot to open a conversation with a user id first.
 
 **Text messages only.** Files, attachments and Block Kit inputs are ignored.
 Same limitation Lark ships with.

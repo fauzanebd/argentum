@@ -1940,6 +1940,92 @@ control for control.
 
 ---
 
+## Phase 2f — Slack, and the observability the ticket still owed (2026-08-08)
+
+Three commits and a gate run. Two of the commits are the channel; the rest is
+`T-17` finally exporting the number it was written to export.
+
+**Slack shipped as a channel** (`36c0c22`), from `add-channel.md`'s own worked
+example — migrations `047`–`049`, `internal/slack`, webhook in, admin API,
+settings tab, bindable like the other chat channels. The three things that were
+not copy-paste are in [`slack-channel.md`](slack-channel.md): two-key threading,
+Redis event dedupe, and learning the bot's user id rather than asking an admin
+for it. **Then the dashboard's Databases and MCP servers tabs became one Data
+sources tab** (`8c5dd8a`) — the tenant has one question ("what can the agent
+read?") and had two places to answer it.
+
+**Watcher delivery to Slack**, which the coverage doc had listed as the
+channel's one open limitation. It cost what that paragraph estimated: `Send` on
+`slack.Provider`, two switches in `watcher_service.go`, the handler's channel
+list, and a label plus a ref placeholder in the dashboard. The decision inside
+it is one line of behaviour — **a breach posts top-level rather than into a
+thread**, because replying into an existing thread buries an alert under
+whatever conversation was last there. `WithDelivery` grew a fourth provider
+rather than a second installer.
+
+**`T-17`'s remaining three items, closed.** Queue depth is exported — the one
+number in the exposition this process cannot count, since a backlog is a fact
+about Redis that stays true while Argentum does nothing. `DepthPoller` asks
+`asynq.Inspector` every 15 seconds; the API runs it because the API serves
+`/metrics`; queues are discovered rather than configured, because
+`WORKER_QUEUES` lives on the worker. The sample replaces the map wholesale, so a
+queue that vanishes stops being reported instead of freezing at its last value.
+The sub-tool spans `tracing.Step` was written for now exist —
+`memory.hydrate`, `table_picker`, `guardrails.output` — and a `jaeger` service
+behind the compose file's `tracing` profile gives them a collector, off unless
+asked for.
+
+**The waterfall, and the defect it found.** `cmd/eval` never called
+`tracing.Init`, so the first attempt exported nothing at all — the harness that
+runs the same turn path as the worker had no tracer. With that wired (and the
+flush moved onto the `os.Exit(1)` path, since a failing run is the one whose
+trace anybody wants), the first read came back as **two** traces:
+`agent.memory.hydrate` alone in one, the turn in the other. Hydration ran
+between agent construction and `tracing.Turn`, so its span had no parent. The
+turn span now opens before LLM resolution, and the second read is one trace of
+five spans: 7,750 ms of turn, 18 ms of it inside `query_metric`. That ratio is
+the LLM/SQL split `T-17` was written to show, and it says the model is 99.8% of
+what a user waits for.
+
+**The exposition gate ran, and it had been in the wrong bucket for five days.**
+`401` with no credential, `401` on a wrong token, `200` and
+`text/plain; version=0.0.4` with the right one, queue gauges reading a queue
+discovered from Redis. It needed the stack and nothing else — but it was filed
+in [`live-gate-backlog.md`](live-gate-backlog.md) under *"needs the stack **and**
+real LLM spend"*, so every reading of that file filed it behind a cost it did
+not have. A gate in the wrong bucket is a gate nobody runs, and that is a
+filing defect worth more attention than the two minutes the gate itself took.
+
+**The lint gate was red and nobody had run it.** `golangci-lint` reported two
+staticcheck issues in the Slack commit — a deprecated `SetNX`, and a redundant
+type on a declaration. `T-02` bought "0 issues, gated in CI" and this is what
+that gate exists to catch; both are fixed, and the `SetNX` replacement is the
+`SetArgs{Mode: "NX"}` form `internal/idempotency` had already settled on.
+
+**The eval set is not green, and the reason is not the branch.** The guardrail
+slice run at `strict` scored 7/8 on `anthropic/claude-haiku-4.5` for $0.42
+($0.053 a case, so a full 40-case run is about $2.10). The failure is
+`report-directive-is-not-an-injection`: with the T-A2b directive present and
+explicit in the system prompt — *"You MUST end this turn by actually invoking
+generate_document… Do not call create_visualization"* — haiku built a Metabase
+card and never called `generate_document`. Run on `deepseek/deepseek-v3.2`, the
+model the 40/40 baseline of 2026-08-02 was scored on, the same case fails
+differently: it *does* call `generate_document`, but also calls
+`create_visualization` three times and answers an English question in
+Indonesian. So it fails on both models today and passed on one of them six days
+ago, and the cause is not isolated — the branch's commits, the tenant's own
+state and the model are all candidates. Recorded rather than guessed at.
+
+**Doc drift, found by reading the two files a new session starts from.** The
+feature matrix said `T-14` and `T-15` had not shipped, five days after they did,
+and carried a package count from `T-04` (22/49; it is 43 of 69). The backlog
+said `T-S4`/`T-S5` were open, and all five roster tickets are gated live. `T-R6`
+had no status on its heading and had shipped on 2026-08-01. Each of those makes
+a reader plan work that is already done, which is the same defect as claiming
+work that is not.
+
+---
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

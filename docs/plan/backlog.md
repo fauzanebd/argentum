@@ -8,7 +8,7 @@ has one.
 
 ## Sprint 2 candidates (high confidence)
 
-### The tenant agent roster (`T-S1` → `T-S5`) — **`T-S1`→`T-S3` shipped, `T-S4`/`T-S5` open**
+### ~~The tenant agent roster (`T-S1` → `T-S5`)~~ — **all five shipped and gated live**
 The customer creates their own agents — Marketing, Ops, HR, Finance — each with
 a persona, a tool allowlist and a data-source allowlist, reachable from the
 dashboard, from a bound Discord/Lark/WhatsApp channel, and over `/v1`.
@@ -25,6 +25,11 @@ roster blocks anything in Sprint 1.
 and gated against a live API, `030`/`031` applied
 ([`../coverage/agent-roster.md`](../coverage/agent-roster.md)). 3.5d left in the
 track, and it is no longer a Sprint 2 candidate so much as a Sprint 2 remainder.
+**Closed: `T-S4` and `T-S5` shipped too, and all five are gated live** — a
+Discord channel, Lark chat or WhatsApp number binds to an agent, and `agent_id`
+rides on `POST /v1/chat` and `POST /v1/reports` beside a keyless
+`GET /v1/agents`. This entry said they were open until 2026-08-08, which is the
+kind of staleness that makes a backlog read as work remaining when it is not.
 
 ### Tenant MCP servers as a source (`T-M1` → `T-M4`) — **scheduled, tickets written**
 The customer registers their own MCP server — ticketing, CRM, an internal ops
@@ -216,7 +221,10 @@ the other chat channels. The shape was as known as this entry claimed; the three
 things that were not copy-paste — two-key threading, Redis event dedupe, and
 learning the bot's user id instead of asking an admin for it — are in
 [`../coverage/slack-channel.md`](../coverage/slack-channel.md).
-**Still open:** watcher delivery to Slack is refused at creation; see §6 there.
+**Watcher delivery followed on 2026-08-08** — `Send` on the provider, two
+switches in `watcher_service.go`, and a breach posts top-level so it starts its
+own thread instead of landing in an old one. What is still open is the gate: it
+needs a Slack workspace, which no CI job and no local stack can supply.
 
 ### Telegram channel
 **Why deferred:** Advertised on the landing page but not built. T-18 fixes the

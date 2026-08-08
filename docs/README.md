@@ -82,9 +82,25 @@ docs/
 │   ├── api-foundation.md         T-A1 /v1 envelope, request ids, idempotency, limits
 │   ├── api-reports.md            T-A2 both report doors, documents, signed callbacks
 │   ├── api-chat.md               T-A3 SSE + sync chat, the event schema, thread reads
+│   ├── api-contract.md           T-A4 OpenAPI 3.1, the SDKs, the quickstart
+│   ├── api-observability.md      T-A5 per-key request record, /v1/usage, /metrics auth
+│   ├── generated-types.md        T-02b Go structs → TS types, and the job that diffs them
 │   ├── agent-roster.md           T-S1→T-S5 the tenant's own agents, per channel and on /v1
 │   ├── business-context.md       T-B1→T-B4 what business the agent works for
-│   └── report-branding.md        T-R5 tenant logo, accent, contrast floor, preview
+│   ├── report-branding.md        T-R5 tenant logo, accent, contrast floor, preview
+│   ├── metric-registry.md        T-06/T-07 defined metrics, list_metrics, query_metric
+│   ├── watchers.md               T-08 the eval loop, breach → turn → delivery
+│   ├── watchers-ui.md            T-09 the watcher surfaces, and who may press what
+│   ├── action-framework.md       T-10→T-12b propose → approve → execute once
+│   ├── mcp-server.md             T-14 Argentum's tools over MCP, for someone else's agent
+│   ├── mcp-source.md             T-M1→T-M4 the tenant's MCP server as a tool source
+│   ├── outbound-webhooks.md      T-15 subscriptions, signing, auto-disable
+│   ├── observability.md          T-17 exposition, queue depth, spans, the waterfall
+│   ├── guardrail-overreach.md    T-07b PII policy, the leak guard, false positives
+│   ├── launch-hygiene.md         T-18 what shipped, what the landing page may claim
+│   ├── slack-channel.md          The Slack channel, threading, dedupe, watcher delivery
+│   ├── docs-site.md              The published quickstart, spec and collection
+│   └── live-gate-backlog.md      Every acceptance item owed that code cannot close
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals
 │   ├── 01-tickets.md             Ticket-level, agent-executable units
