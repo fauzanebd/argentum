@@ -129,18 +129,21 @@ func main() {
 	// Slack outbound: worker calls chat.postMessage with the tenant's bot
 	// token. Decrypted tokens are cached per company and evicted on auth
 	// errors.
+	var slackProv slack.Provider
 	if cfg.SlackEnabled {
 		slackCredRepo := pgctl.NewCompanySlackCredentialRepo(stack.ControlDB)
-		runner = runner.WithSlack(slack.NewClient(slackCredRepo, stack.DSNCipher, cfg.SlackAPIBaseURL))
+		slackProv = slack.NewClient(slackCredRepo, stack.DSNCipher, cfg.SlackAPIBaseURL)
+		runner = runner.WithSlack(slackProv)
 	}
 
 	// Watcher delivery (T-08) uses the same outbound providers as chat replies:
-	// WhatsApp and Lark directly, Discord through the outbound bus cmd/discord
-	// consumes. Installed on the very service the runner already holds as its
-	// fire closer, so HandleFire and CompleteFire are one instance. larkProv is a
-	// true nil interface when Lark is disabled, which deliver() treats as
-	// "skipped" rather than dialling a nil client.
-	stack.Watchers.WithDelivery(waProvider, larkProv, bus)
+	// WhatsApp, Lark and Slack directly, Discord through the outbound bus
+	// cmd/discord consumes. Installed on the very service the runner already
+	// holds as its fire closer, so HandleFire and CompleteFire are one instance.
+	// larkProv and slackProv are true nil interfaces when those channels are
+	// disabled, which deliver() treats as "skipped" rather than dialling a nil
+	// client.
+	stack.Watchers.WithDelivery(waProvider, larkProv, slackProv, bus)
 
 	// --- asynq.Server ---
 	srv := asynq.NewServer(stack.AsynqOpt, asynq.Config{

@@ -76,6 +76,13 @@ func (c *Client) Reply(ctx context.Context, companyID, channelID, threadTS, cont
 	return c.do(ctx, companyID, c.baseURL+"/chat.postMessage", body)
 }
 
+// Send posts a top-level message to channelID. This is proactive delivery —
+// a watcher breach, not an answer to anything — so it carries no thread_ts
+// and starts its own thread in the channel.
+func (c *Client) Send(ctx context.Context, companyID, channelID, content string) error {
+	return c.Reply(ctx, companyID, channelID, "", content)
+}
+
 type postMessageBody struct {
 	Channel  string `json:"channel"`
 	Text     string `json:"text"`

@@ -29,6 +29,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/metric"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/slack"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
 
@@ -89,9 +90,10 @@ type WatcherService struct {
 	// API's instance serves CRUD and dry-runs and never delivers, so it leaves
 	// these nil — a channel with no provider records "skipped" rather than
 	// pretending it sent.
-	wa   whatsapp.Provider
-	lark lark.Provider
-	bus  EventBus
+	wa    whatsapp.Provider
+	lark  lark.Provider
+	slack slack.Provider
+	bus   EventBus
 
 	// budget refuses an unattended fire on an exhausted tenant, the same second
 	// integration point ScheduledTaskService needs and for the same reason: a
@@ -132,9 +134,10 @@ func NewWatcherService(
 
 // WithDelivery installs the outbound providers the worker delivers a fire's
 // answer through. The API constructs the service without them.
-func (s *WatcherService) WithDelivery(wa whatsapp.Provider, larkProv lark.Provider, bus EventBus) *WatcherService {
+func (s *WatcherService) WithDelivery(wa whatsapp.Provider, larkProv lark.Provider, slackProv slack.Provider, bus EventBus) *WatcherService {
 	s.wa = wa
 	s.lark = larkProv
+	s.slack = slackProv
 	s.bus = bus
 	return s
 }
@@ -370,7 +373,7 @@ func validateChannels(channels []domain.WatcherChannel) error {
 		switch ch.Channel {
 		case domain.ChannelDashboard:
 			// No ref: the dedicated thread is the destination.
-		case domain.ChannelWhatsApp, domain.ChannelDiscord, domain.ChannelLark:
+		case domain.ChannelWhatsApp, domain.ChannelDiscord, domain.ChannelLark, domain.ChannelSlack:
 			if strings.TrimSpace(ch.Ref) == "" {
 				return fmt.Errorf("%w: the %s channel needs a ref (phone, channel id, or chat id)", domain.ErrInvalidInput, ch.Channel)
 			}
@@ -676,8 +679,8 @@ func (s *WatcherService) CompleteFire(ctx context.Context, eventID, assistantMsg
 
 // deliver pushes the turn's answer to each configured channel and returns the
 // per-channel outcome. It is proactive delivery — there is no inbound message to
-// reply to — which is why Lark needs Send rather than Reply and the dashboard
-// case is a no-op (the answer is already in the dedicated thread).
+// reply to — which is why Lark and Slack need Send rather than Reply and the
+// dashboard case is a no-op (the answer is already in the dedicated thread).
 func (s *WatcherService) deliver(ctx context.Context, w *domain.Watcher, response string) []domain.WatcherDelivery {
 	out := make([]domain.WatcherDelivery, 0, len(w.Channels))
 	for _, ch := range w.Channels {
@@ -705,6 +708,12 @@ func (s *WatcherService) deliver(ctx context.Context, w *domain.Watcher, respons
 			if s.lark == nil || ch.Ref == "" {
 				d.Status, d.Error = "skipped", "no lark provider"
 			} else if err := s.lark.Send(ctx, w.CompanyID, ch.Ref, response); err != nil {
+				d.Status, d.Error = "failed", err.Error()
+			}
+		case domain.ChannelSlack:
+			if s.slack == nil || ch.Ref == "" {
+				d.Status, d.Error = "skipped", "no slack provider"
+			} else if err := s.slack.Send(ctx, w.CompanyID, ch.Ref, response); err != nil {
 				d.Status, d.Error = "failed", err.Error()
 			}
 		default:

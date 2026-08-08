@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -213,6 +214,22 @@ func (l *fakeLark) Reply(context.Context, string, string, string) error { return
 func (l *fakeLark) Send(_ context.Context, _, chatID, _ string) error {
 	l.chats = append(l.chats, chatID)
 	return nil
+}
+
+type fakeSlack struct {
+	channels []string
+	// threadTS records what Reply was given, so a test can prove watcher
+	// delivery starts its own thread rather than replying into one.
+	threadTS []string
+}
+
+func (s *fakeSlack) Reply(_ context.Context, _, channelID, threadTS, _ string) error {
+	s.channels = append(s.channels, channelID)
+	s.threadTS = append(s.threadTS, threadTS)
+	return nil
+}
+func (s *fakeSlack) Send(ctx context.Context, companyID, channelID, content string) error {
+	return s.Reply(ctx, companyID, channelID, "", content)
 }
 
 type fakeBus struct{ outbound []OutboundEvent }
@@ -528,14 +545,15 @@ func TestCompleteFireDeliversToEveryChannel(t *testing.T) {
 		{Channel: domain.ChannelWhatsApp, Ref: "+62811"},
 		{Channel: domain.ChannelDiscord, Ref: "chan-9"},
 		{Channel: domain.ChannelLark, Ref: "oc_chat"},
+		{Channel: domain.ChannelSlack, Ref: "C0SLACK"},
 	}
 	repo.watchers[w.ID] = w
 	ev := &domain.WatcherEvent{ID: "ev-1", WatcherID: w.ID, CompanyID: w.CompanyID, Breached: true}
 	repo.events = append(repo.events, ev)
 
-	wa, lk, bus := &fakeWA{}, &fakeLark{}, &fakeBus{}
+	wa, lk, sl, bus := &fakeWA{}, &fakeLark{}, &fakeSlack{}, &fakeBus{}
 	s := NewWatcherService(repo, &fakeMetricEval{def: testMetricDef()}, &fakeThreads{}, fakeCompanies{}, &fakeEnqueuer{}, 20).
-		WithDelivery(wa, lk, bus)
+		WithDelivery(wa, lk, sl, bus)
 
 	s.CompleteFire(context.Background(), "ev-1", "msg-assistant", "Revenue is down 12%.")
 
@@ -543,8 +561,8 @@ func TestCompleteFireDeliversToEveryChannel(t *testing.T) {
 	if stored.MessageID == nil || *stored.MessageID != "msg-assistant" {
 		t.Errorf("assistant message not recorded: %+v", stored.MessageID)
 	}
-	if len(stored.DeliveryStatus) != 4 {
-		t.Fatalf("expected 4 delivery outcomes, got %d", len(stored.DeliveryStatus))
+	if len(stored.DeliveryStatus) != 5 {
+		t.Fatalf("expected 5 delivery outcomes, got %d", len(stored.DeliveryStatus))
 	}
 	for _, d := range stored.DeliveryStatus {
 		if d.Status != "delivered" {
@@ -559,6 +577,27 @@ func TestCompleteFireDeliversToEveryChannel(t *testing.T) {
 	}
 	if len(lk.chats) != 1 || lk.chats[0] != "oc_chat" {
 		t.Errorf("lark send = %+v", lk.chats)
+	}
+	// Slack: the breach opens its own thread in the channel, so the post
+	// carries no thread_ts. Replying into a thread would bury the alert under
+	// whatever conversation happened to be there last.
+	if len(sl.channels) != 1 || sl.channels[0] != "C0SLACK" {
+		t.Errorf("slack send = %+v", sl.channels)
+	}
+	if len(sl.threadTS) != 1 || sl.threadTS[0] != "" {
+		t.Errorf("slack thread_ts = %+v, want one empty string", sl.threadTS)
+	}
+}
+
+func TestValidateChannelsAcceptsSlackWithARef(t *testing.T) {
+	if err := validateChannels([]domain.WatcherChannel{
+		{Channel: domain.ChannelSlack, Ref: "C0SLACK"},
+	}); err != nil {
+		t.Fatalf("slack with a ref must be accepted: %v", err)
+	}
+	err := validateChannels([]domain.WatcherChannel{{Channel: domain.ChannelSlack}})
+	if err == nil || !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("slack without a ref must be refused, got %v", err)
 	}
 }
 

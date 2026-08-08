@@ -82,7 +82,7 @@ func (h *WatchersHandler) list(c *gin.Context) {
 		},
 		Channels: []domain.Channel{
 			domain.ChannelDashboard, domain.ChannelWhatsApp,
-			domain.ChannelDiscord, domain.ChannelLark,
+			domain.ChannelDiscord, domain.ChannelLark, domain.ChannelSlack,
 		},
 		CompareOptions: []string{"previous_period", "same_period_last_year"},
 	})

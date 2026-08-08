@@ -34,6 +34,7 @@ false alarm off a flaky number would destroy trust permanently.
 | Queue | `internal/queue/tasks.go` (`watcher:eval`, `WatcherEvalPayload`, `WatcherEventID` on `ChatRunPayload`), `internal/queue/scheduler.go` (`WatcherConfigProvider`) |
 | Runner hook | `internal/app/chat_runner.go` — `WatcherFireCloser`, `WithWatchers`, the `completeWith` delivery hand-off, and the `watcher` actor kind |
 | Proactive Lark | `internal/lark/{provider,client}.go` — `Send(chatID)` beside `Reply(messageID)` |
+| Proactive Slack (2026-08-08) | `internal/slack/{provider,client}.go` — `Send(channelID)`, which is `Reply` with an empty `thread_ts`, so the breach starts its own thread instead of landing in whatever thread was last used |
 | CRUD API | `internal/transport/http/handlers/watchers.go`, `wire.go`; `cmd/api/policy.go` (read=member, write+dry-run=admin) |
 | Worker wiring | `cmd/worker/main.go` — the `watcher:eval` handler, the second periodic task manager, `WithDelivery` |
 | Stack + API wiring | `internal/bootstrap/stack.go`, `cmd/api/{deps,bootstrap,router}.go` |
@@ -76,7 +77,9 @@ been `agent_actions` since `T-05`, and the tree was at 039 (`metric_definitions`
   on the event. Because a watcher has no inbound message to reply to, Lark needed
   a new `Send(chat_id)` beside `Reply(message_id)`; WhatsApp `SendMessage` and the
   Discord outbound bus were already proactive; the dashboard channel is a no-op —
-  the answer is already in the thread.
+  the answer is already in the thread. **Slack joined this list on 2026-08-08**
+  and needed the same thing for the same reason
+  ([`slack-channel.md`](slack-channel.md) §6).
 - **A second config provider, not a second scheduler.** `WatcherConfigProvider`
   turns enabled `watchers` rows into `watcher:eval` periodic configs, run under
   its own `asynq.PeriodicTaskManager`. The two managers never collide because

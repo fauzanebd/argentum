@@ -109,6 +109,7 @@ export const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "WhatsApp",
   discord: "Discord",
   lark: "Lark",
+  slack: "Slack",
   api: "API",
 };
 
@@ -121,6 +122,8 @@ export function channelRefPlaceholder(channel: Channel): string {
       return "Channel id";
     case "lark":
       return "Chat id";
+    case "slack":
+      return "Channel id, e.g. C0123ABCD";
     default:
       return "";
   }
