@@ -138,6 +138,9 @@ type apiDeps struct {
 	requestObs  *apiobs.Recorder
 	requestRepo *pgctl.APIRequestRepo
 	stopObs     context.CancelFunc
+	// stopQueueDepth ends the asynq depth poller (T-17). The API is where it
+	// runs because the API is what serves /metrics.
+	stopQueueDepth context.CancelFunc
 }
 
 // cleanup releases resources in reverse order of creation (same as the original defer stack).
@@ -147,6 +150,9 @@ func (d *apiDeps) cleanup() {
 	// before a shutdown, which is when somebody is most likely to be looking.
 	if d.stopObs != nil {
 		d.stopObs()
+	}
+	if d.stopQueueDepth != nil {
+		d.stopQueueDepth()
 	}
 	if d.requestObs != nil {
 		d.requestObs.Close()

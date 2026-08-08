@@ -119,6 +119,32 @@ services:
       - metabase_data:/metabase-data
     networks: [ argentum_network ]
 
+  # Trace collector (T-17). Jaeger all-in-one speaks OTLP natively, so it is
+  # both the collector and the UI — no separate otel-collector process to
+  # configure for a local waterfall. Off by default: the `tracing` profile
+  # starts it, and nothing exports until OTEL_EXPORTER_OTLP_ENDPOINT is set on
+  # api/worker/discord (see .env.example). A stack without it behaves exactly
+  # as before, which is the property internal/tracing was built to keep.
+  #
+  #   docker compose --profile tracing up -d jaeger
+  #   OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 \
+  #   OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf docker compose up -d api worker
+  #   open http://localhost:16686
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: argentum_jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      # In-memory storage: a local waterfall is read minutes after it is
+      # produced, and a volume would outlive the question it answers.
+      SPAN_STORAGE_TYPE: memory
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    networks: [ argentum_network ]
+    profiles: [ tracing ]
+
   # ngrok for WhatsApp webhook tunneling (development only)
   ngrok:
     image: ngrok/ngrok:latest
@@ -199,6 +225,14 @@ services:
       # Frontend origin allowlist
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+
+      # Observability (T-17). Unset METRICS_TOKEN → /metrics answers on
+      # loopback only, which from outside the container means "not at all";
+      # set it to scrape from the host. Unset OTLP endpoint → no tracer
+      # provider is installed at all.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -271,6 +305,11 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-argentum-documents}
       MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+
+      # The turn span starts here, so a waterfall with no worker export is the
+      # half of the trace nobody wants.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -311,6 +350,9 @@ services:
       SUMMARY_EVERY_N_TURNS: ${SUMMARY_EVERY_N_TURNS:-8}
 
       DISCORD_ENABLED: ${DISCORD_ENABLED:-true}
+
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-}
     depends_on:
       postgres:
         condition: service_healthy

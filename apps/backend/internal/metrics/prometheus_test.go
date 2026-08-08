@@ -231,3 +231,38 @@ func TestExpositionIsStableAcrossScrapes(t *testing.T) {
 		}
 	}
 }
+
+// Queue depth is the one gauge set sampled from Redis rather than counted
+// here, so it has a state the others do not: nothing has sampled yet.
+func TestQueueDepthGaugesAppearOnlyOnceSampled(t *testing.T) {
+	c := NewCollector()
+
+	if out := renderSnapshot(t, c); strings.Contains(out, "argentum_queue_") {
+		t.Errorf("a process that has not sampled must export no queue series, got:\n%s", out)
+	}
+
+	c.SetQueueDepths(map[string]QueueDepth{
+		"default": {Pending: 3, Active: 1, Scheduled: 7, Retry: 2, Archived: 4},
+		"low":     {Pending: 0},
+	})
+	out := renderSnapshot(t, c)
+	for _, want := range []string{
+		`argentum_queue_pending{queue="default"} 3`,
+		`argentum_queue_pending{queue="low"} 0`,
+		`argentum_queue_active{queue="default"} 1`,
+		`argentum_queue_scheduled{queue="default"} 7`,
+		`argentum_queue_retry{queue="default"} 2`,
+		`argentum_queue_archived{queue="default"} 4`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("exposition is missing:\n  %s\n\ngot:\n%s", want, out)
+		}
+	}
+
+	// A queue that vanishes from the sample must vanish from the exposition:
+	// a stale gauge reading 3 pending cannot be told from a real backlog.
+	c.SetQueueDepths(map[string]QueueDepth{"low": {Pending: 0}})
+	if out := renderSnapshot(t, c); strings.Contains(out, `queue="default"`) {
+		t.Errorf("a queue dropped from the sample must not linger, got:\n%s", out)
+	}
+}

@@ -66,6 +66,35 @@ func (s MetricsSnapshot) WriteProm(w io.Writer) error {
 	p.gauge("conversations_active", "Threads currently mid-turn.", nil, float64(s.Conversations.Active))
 	p.counter("context_resets_total", "Threads whose context was reset.", nil, float64(s.Conversations.ContextResets))
 
+	// --- queue depth (T-17), sampled from Redis rather than counted here ---
+	//
+	// Absent entirely on a process with no poller: a queue gauge is read as
+	// "this is the backlog right now", and a process that is not sampling would
+	// otherwise export a confident zero.
+	queues := sortedKeys(s.Queues)
+	if len(queues) > 0 {
+		p.header("queue_pending", "gauge", "Tasks waiting to be picked up, by queue.")
+		for _, q := range queues {
+			p.sample("queue_pending", map[string]string{"queue": q}, float64(s.Queues[q].Pending))
+		}
+		p.header("queue_active", "gauge", "Tasks a worker is running right now, by queue.")
+		for _, q := range queues {
+			p.sample("queue_active", map[string]string{"queue": q}, float64(s.Queues[q].Active))
+		}
+		p.header("queue_scheduled", "gauge", "Tasks queued for a future time, by queue.")
+		for _, q := range queues {
+			p.sample("queue_scheduled", map[string]string{"queue": q}, float64(s.Queues[q].Scheduled))
+		}
+		p.header("queue_retry", "gauge", "Tasks that failed and are waiting to be retried, by queue.")
+		for _, q := range queues {
+			p.sample("queue_retry", map[string]string{"queue": q}, float64(s.Queues[q].Retry))
+		}
+		p.header("queue_archived", "gauge", "Tasks that exhausted their retries, by queue.")
+		for _, q := range queues {
+			p.sample("queue_archived", map[string]string{"queue": q}, float64(s.Queues[q].Archived))
+		}
+	}
+
 	// --- what the product did (T-17) ---
 	p.counterVec("watcher_fires_total", "Watcher evaluations, by outcome.", "outcome", asFloats(s.Domain.WatcherFires))
 	p.counterVec("action_executions_total", "Actions executed, by kind.", "kind", asFloats(s.Domain.ActionExecutions))

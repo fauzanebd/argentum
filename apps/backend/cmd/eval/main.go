@@ -29,6 +29,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/bootstrap"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/eval"
+	"github.com/fauzanebd/argentum/internal/tracing"
 )
 
 func main() {
@@ -75,6 +76,30 @@ func main() {
 	if *model != "" {
 		cfg.LLMModel = *model
 	}
+
+	// OTel (T-17), a no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set — same
+	// contract as cmd/api and cmd/worker. This command is the cheapest way to
+	// produce a real waterfall: it runs the same turn path as the worker, one
+	// question at a time, against a tenant that is already seeded. Without it
+	// the spans the turn creates are non-recording and a collector sees
+	// nothing, which is exactly what the first attempt at T-17's gate found.
+	rootCtx := context.Background()
+	shutdownTracing, err := tracing.Init(rootCtx, "argentum-eval", "1")
+	if err != nil {
+		logrus.WithError(err).Warn("otel: tracing not enabled")
+	}
+	// The batcher flushes on shutdown, and this command ends with os.Exit(1)
+	// whenever a case failed — which `defer` does not survive. So the flush is
+	// a named function called on both exits, and a failing run is precisely
+	// the run whose trace somebody wants to look at.
+	flushTracing := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(ctx); err != nil {
+			logrus.WithError(err).Warn("otel: exporter did not flush cleanly")
+		}
+	}
+	defer flushTracing()
 
 	// Finding E-2: the working .env on the developer machine pointed
 	// DB_HOST at a deployed control plane while looking local. The eval
@@ -166,6 +191,7 @@ func main() {
 	// Non-zero exit when anything failed, so CI can gate on it later
 	// without a wrapper script.
 	if report.Failed > 0 {
+		flushTracing()
 		os.Exit(1)
 	}
 }

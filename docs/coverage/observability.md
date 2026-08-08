@@ -5,6 +5,14 @@ fix landed in the morning; the exposition format, the domain counters and the
 OTel spans landed in the same session. The gate — a `curl` of the exposition and
 one trace waterfall — needs the stack and is outstanding.
 
+**GATED LIVE 2026-08-08, and the ticket is complete.** Everything this file
+listed as *not done* is done: queue depth is exported (§6), the sub-tool spans
+are wired (§7), the exposition was scraped and its auth proven (§8), and the
+trace waterfall was read (§9) — which found and fixed a span-parenting defect
+that had been splitting every turn into two traces. The pattern the delivery log
+has recorded since `T-13` held again: **the live half found something the unit
+tests could not.**
+
 ## 1. What landed first: the endpoint stopped being public
 
 Recorded in [`api-observability.md`](api-observability.md). `METRICS_TOKEN` set
@@ -107,18 +115,128 @@ Prometheus pod, which is not loopback, so a deployment enabling this must set
 `METRICS_TOKEN` and name the secret holding it — otherwise every scrape reads
 `401`, which is the endpoint working as designed and looking broken.
 
-## 6. Not done
+## 6. Queue depth, added 2026-08-08
 
-- **The gate.** `curl` the exposition and paste it; one trace waterfall for a
-  tool-calling turn showing the LLM/SQL split. Both need the stack, and the
-  waterfall needs a collector — a local Jaeger or an OTel collector in the compose
-  file, which is itself not written.
-- **Queue depth is not exported.** The ticket names it. It needs an
-  `asynq.Inspector` against the same Redis, polled on a ticker — a small amount
-  of work in a place none of the rest of this touches, and it is the one counter
-  here that is about the infrastructure rather than the product. Left out rather
-  than half-wired.
-- **No spans below the tool call.** The ticket names guardrails, memory
-  hydration and the embedding lookup. `tracing.Step` exists for exactly that and
-  is unused; each site is one line, and the reason to add them is a real
-  waterfall showing where the time went, which is the gate above.
+The one number in the exposition this process cannot count. Every other metric
+here is something Argentum did; a backlog is a fact about Redis that stays true
+while this process does nothing at all. `internal/queue.DepthPoller` asks
+`asynq.Inspector` every 15 seconds and writes the answer into the collector;
+`cmd/api` runs it, because the API is what serves `/metrics` and a gauge in a
+process nothing scrapes is not an exported metric.
+
+| Metric | Meaning |
+| ------ | ------- |
+| `argentum_queue_pending{queue}` | waiting to be picked up |
+| `argentum_queue_active{queue}` | running in a worker right now |
+| `argentum_queue_scheduled{queue}` | queued for a future time |
+| `argentum_queue_retry{queue}` | failed, waiting to be retried |
+| `argentum_queue_archived{queue}` | out of retries |
+
+Two decisions worth keeping:
+
+**Queues are discovered, not configured.** `WORKER_QUEUES` lives on the worker,
+so an API that only knew the queues it was told about would stop reporting the
+day somebody added one.
+
+**The sample is replaced wholesale, and nothing is exported until something
+samples.** A queue that disappears from Redis disappears from the exposition,
+because a stale gauge reading 400 pending cannot be told from a real backlog;
+and a process with no poller exports no queue series rather than a confident
+zero it cannot vouch for.
+
+## 7. Spans below the tool call, added 2026-08-08
+
+`tracing.Step` had no callers. Three now, each one line at a seam that already
+existed: `memory.hydrate` (Postgres → agent memory), `table_picker` (the
+embedding round trip, which happens before the model is called at all), and
+`guardrails.output` (the T-07b rules, started after the nil check so a
+deployment without them records nothing).
+
+`guardrails.output` carries `argentum.outcome` — `blocked` or `redacted` —
+through the new `tracing.Outcome` helper, because a guardrail that redacted a
+reply did its job and a waterfall that cannot tell that from a clean pass is
+missing the reason the span was worth exporting. It is not an error, and
+recording it as one would make every redaction look like a fault.
+
+## 8. The gate — exposition half run 2026-08-08
+
+`METRICS_TOKEN=local-gate-token`, API on the host against the compose stack:
+
+| Request | Result |
+| ------- | ------ |
+| `GET /metrics`, no credential | `401` |
+| `GET /metrics`, `Authorization: Bearer wrong` | `401` |
+| `GET /metrics`, correct token | `200`, `text/plain; version=0.0.4; charset=utf-8`, 105 lines |
+
+The queue gauges appeared in that scrape reading the `default` queue asynq
+already had in Redis — discovered, not configured, which is the property above
+being exercised rather than asserted. That they *move* is
+`TestDepthPollerReportsWhatRedisHolds`: enqueue one task on a queue of the
+test's own and `pending` reads 1, drain it and the same sample reads 0. It is
+skipped unless `ARGENTUM_TEST_REDIS` names a live Redis — CI has none, and a
+test that passes without its dependency is worse than no test.
+
+```
+ARGENTUM_TEST_REDIS=localhost:6380 go test ./internal/queue/ -run Depth
+```
+
+**A collector now exists to trace into.** `docker-compose.yml` gained a
+`jaeger` service — all-in-one, OTLP native, so there is no separate
+otel-collector to configure — behind the `tracing` profile, so an ordinary
+`docker compose up` still starts nothing. Verified up on 2026-08-08: UI on
+`:16686`, OTLP HTTP on `:4318` answering `200`. `.env.example` carries the
+three-line runbook, including the part that is easy to get wrong: **both** api
+and worker must export, because `agent.turn` starts on the worker and a trace
+with only the API's spans is half a trace.
+
+## 9. The waterfall, read 2026-08-08 — and the defect it found
+
+`docker compose --profile tracing up -d jaeger`, then one golden-set case
+(`december-2024-sales`) run through `cmd/eval` with the OTLP variables set. The
+harness runs the same turn path as the worker, one question at a time, against a
+tenant that is already seeded — the cheapest way to produce a waterfall on
+demand. It needed one change to do that: **`cmd/eval` never called
+`tracing.Init`**, so every span in it was non-recording and the collector saw
+nothing. It does now, with the flush called on the `os.Exit(1)` path as well as
+the deferred one — a failing run is precisely the run whose trace somebody wants
+to look at.
+
+**The first read came back as two traces, not one:**
+
+```
+trace b4ec5071…  1 span:  agent.memory.hydrate
+trace 4f49f453…  4 spans: agent.turn → table_picker, tool(query_metric), guardrails.output
+```
+
+`hydrateMemory` ran *between* the agent being built and `tracing.Turn` being
+called, so its span had no parent and Jaeger filed it as a trace of its own. The
+turn span now starts before LLM resolution rather than after agent construction:
+the user waits for resolution, construction and hydration exactly as they wait
+for the model, so covering them is also the more honest reading of "the turn as
+the user experiences it" that the old comment claimed. Second read:
+
+```
+agent.turn                 +   0.0ms   7750.3ms  channel=dashboard company_id=de3caef9… thread_id=499725c7…
+  agent.memory.hydrate     +   2.5ms      0.9ms
+  agent.table_picker       +   5.1ms      0.0ms
+  agent.tool               +6084.2ms     18.1ms  tool=query_metric
+  agent.guardrails.output  +7745.4ms      1.1ms
+```
+
+**And there is the LLM/SQL split the ticket asked for**: 7,750 ms of turn, 18 ms
+of it inside the tool. The metric query is 0.2% of what the user waited for and
+the rest is model latency — the answer to "why is it slow" for this product,
+stated in one line for the first time. `table_picker` at 0.0 ms is the feature
+being off for this tenant, returning before the embedding call.
+
+## 10. Not done
+
+- **A worker-side trace.** The waterfall above came from `cmd/eval`. On the real
+  deployment the turn is enqueued by `cmd/api` and run by `cmd/worker`, and
+  nothing has yet shown the trace context surviving that hop — the propagators
+  are installed, but `ChatRunPayload` carries no traceparent field, so it almost
+  certainly does not. A trace that stops at the queue is two traces again, one
+  layer up from the bug §9 just fixed. Worth a ticket; not worth claiming.
+- **Queue depth is API-only.** The poller runs where `/metrics` is served, which
+  is right for today's deployment and would need revisiting if the worker ever
+  exposed an endpoint of its own.

@@ -127,6 +127,14 @@ func Step(ctx context.Context, name string) (context.Context, trace.Span) {
 	return Tracer().Start(ctx, "agent."+name)
 }
 
+// Outcome labels a span with what a phase decided, for the phases where the
+// interesting answer is not "did it error" — a guardrail that redacted a reply
+// did its job, and a waterfall that cannot tell that from a clean pass is
+// missing the reason the span was worth exporting.
+func Outcome(span trace.Span, outcome string) {
+	span.SetAttributes(attribute.String("argentum.outcome", outcome))
+}
+
 // End closes a span, recording the error when there is one. Every caller ends
 // with `defer tracing.End(span, err)` reading a named return, which is the one
 // shape that cannot forget the error on an early return.

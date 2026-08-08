@@ -504,6 +504,18 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		companyTools = r.companyTools.CompanyTools(ctx, p.CompanyID)
 	}
 
+	// The turn's own span (T-17), parent of every span below it.
+	//
+	// Started here rather than after the agent is built, which is where it used
+	// to be: `hydrateMemory` runs between those two points, so its span had no
+	// parent and Jaeger filed it as a separate trace — the first waterfall read
+	// (2026-08-08) showed `agent.memory.hydrate` alone in one trace and the turn
+	// in another. The user waits for LLM resolution, agent construction and
+	// hydration exactly as they wait for the model, so covering them is also the
+	// more honest reading of "the turn as the user experiences it".
+	ctx, turnSpan := tracing.Turn(ctx, p.CompanyID, p.ThreadID, string(p.Channel))
+	defer turnSpan.End()
+
 	// Resolve the per-tenant LLMs for this turn. Primary is required; light
 	// falls back to primary if resolution fails (preserves today's behavior
 	// where missing LIGHT_LLM_API_KEY means "use primary").
@@ -539,13 +551,6 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	if err := r.hydrateMemory(ctx, agent, p); err != nil {
 		logrus.WithError(err).Warn("memory hydration failed; continuing with empty context")
 	}
-
-	// The turn's own span (T-17), parent of every tool span below it. Started
-	// after the agent is built and before the first event, so its duration is
-	// the turn as the user experiences it rather than as the process schedules
-	// it.
-	ctx, turnSpan := tracing.Turn(ctx, p.CompanyID, p.ThreadID, string(p.Channel))
-	defer turnSpan.End()
 
 	now := time.Now()
 	_ = r.bus.Publish(p.ThreadID, ChatEvent{
@@ -811,6 +816,13 @@ func (r *ChatRunner) applyOutputRules(ctx context.Context, p queue.ChatRunPayloa
 		return response
 	}
 
+	// Started after the nil check so a deployment with no output rules records
+	// no span for work it did not do. A blocked reply is not an error here —
+	// the rule fired as designed — so the span carries the outcome as an
+	// attribute rather than an error.
+	ctx, span := tracing.Step(ctx, "guardrails.output")
+	defer span.End()
+
 	mode := guardrails.PIIStrict
 	if c, err := r.companyPol.GetByID(ctx, p.CompanyID); err != nil {
 		logrus.WithError(err).WithField("company_id", p.CompanyID).
@@ -830,9 +842,11 @@ func (r *ChatRunner) applyOutputRules(ctx context.Context, p queue.ChatRunPayloa
 			"blocked_reply": response,
 		}).Warn("reply was blocked by an output guardrail; replaced with the rule's message")
 		r.recordBlockedTurn(ctx, p, "final_answer", "reply was blocked by an output guardrail")
+		tracing.Outcome(span, "blocked")
 		return err.Error()
 	}
 	if processed != response {
+		tracing.Outcome(span, "redacted")
 		// Not the text — that is what was redacted, and logging it would put the
 		// personal data in the log the redaction just took out of the answer.
 		logrus.WithFields(logrus.Fields{
@@ -1206,7 +1220,10 @@ func stripMarkdownLinks(s string) string {
 
 // hydrateMemory loads prior turns from Postgres into the agent's memory so
 // the agent has full context even if Redis was empty or reset.
-func (r *ChatRunner) hydrateMemory(ctx context.Context, agent *sdkagent.Agent, p queue.ChatRunPayload) error {
+func (r *ChatRunner) hydrateMemory(ctx context.Context, agent *sdkagent.Agent, p queue.ChatRunPayload) (err error) {
+	ctx, span := tracing.Step(ctx, "memory.hydrate")
+	defer func() { tracing.End(span, err) }()
+
 	msgs, err := r.messages.ListByThread(ctx, p.ThreadID, r.historyLimit, 0)
 	if err != nil {
 		return err
@@ -1300,6 +1317,12 @@ func withCurrencyContext(msg, currency string) string {
 // the feature is off, the source has no embeddings, or the embedding API
 // fails — the agent's regular get_schema flow still works.
 func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg, userMsg string, sources []*domain.DBConnection) string {
+	// Plain End rather than tracing.End: every failure in here is a deliberate
+	// silent skip, so there is no error to record — what the waterfall answers
+	// is how long the embedding round-trip cost before the turn even started.
+	ctx, span := tracing.Step(ctx, "table_picker")
+	defer span.End()
+
 	companyID := tenantctx.CompanyID(ctx)
 	if r.embRepo == nil || r.embedCache == nil || len(sources) == 0 {
 		logrus.WithField("company_id", companyID).Debug("table picker: feature off (nil repo/cache or no sources)")

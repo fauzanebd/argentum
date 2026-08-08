@@ -481,6 +481,13 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.stopObs = stopObs
 	go deps.requestObs.Run(obsCtx, time.Duration(cfg.APIV1ObsFlushSeconds)*time.Second)
 
+	// Queue depth (T-17). Sampled here rather than on the worker because this
+	// process serves /metrics, and a gauge that lives in a process nothing
+	// scrapes is not an exported metric.
+	depthCtx, stopDepth := context.WithCancel(ctx)
+	deps.stopQueueDepth = stopDepth
+	go queue.NewDepthPoller(asynqOpt, deps.metrics, 0).Run(depthCtx)
+
 	return deps, nil
 }
 

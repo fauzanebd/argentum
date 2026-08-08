@@ -10,6 +10,7 @@
 package metrics
 
 import (
+	"maps"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -70,6 +71,13 @@ type Collector struct {
 	apiRoutes        map[string]*routeAgg
 	apiKeys          map[string]*keyAgg
 	apiKeysUntracked int64
+
+	// Queue depth (T-17), sampled rather than counted: every other number here
+	// is a total this process accumulated, while a depth is whatever Redis says
+	// right now. Written by the poller in internal/queue, read by the exposition
+	// — nil until something samples, which is how a process with no poller
+	// exports no queue series rather than exporting zeros it cannot vouch for.
+	queueDepths map[string]QueueDepth
 
 	// Timestamp of last reset
 	lastReset time.Time
@@ -154,6 +162,18 @@ var defaultCollector = NewCollector()
 
 // Default returns the process-wide collector. Never nil.
 func Default() *Collector { return defaultCollector }
+
+// SetQueueDepths replaces the sampled queue depths wholesale. Wholesale
+// because a queue that has disappeared from the sample should disappear from
+// the exposition too — a stale gauge reading 400 pending is worse than no
+// gauge, since an operator cannot tell it from a real backlog.
+func (c *Collector) SetQueueDepths(depths map[string]QueueDepth) {
+	next := make(map[string]QueueDepth, len(depths))
+	maps.Copy(next, depths)
+	c.mu.Lock()
+	c.queueDepths = next
+	c.mu.Unlock()
+}
 
 // RecordQuery records a query execution
 func (c *Collector) RecordQuery(duration time.Duration, cached, failed bool) {
@@ -455,9 +475,23 @@ func (c *Collector) GetSnapshot() MetricsSnapshot {
 
 		APIV1:  c.apiSnapshot(),
 		Domain: c.domainSnapshot(),
+		Queues: c.queueSnapshot(),
 
 		UptimeSeconds: time.Since(c.lastReset).Seconds(),
 	}
+}
+
+// queueSnapshot copies the sampled depths out from under the lock. Nil when
+// nothing has sampled, which the exposition reads as "export no queue series".
+func (c *Collector) queueSnapshot() map[string]QueueDepth {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if len(c.queueDepths) == 0 {
+		return nil
+	}
+	out := make(map[string]QueueDepth, len(c.queueDepths))
+	maps.Copy(out, c.queueDepths)
+	return out
 }
 
 // domainSnapshot copies the T-17 counters out from under the lock, for the same
@@ -598,8 +632,11 @@ type MetricsSnapshot struct {
 	APIV1         APIV1Metrics        `json:"api_v1"`
 	// Domain is what the product did rather than what the process did (T-17):
 	// turns, tool calls, watcher fires, action executions, LLM latency by model.
-	Domain        DomainMetrics `json:"domain"`
-	UptimeSeconds float64       `json:"uptime_seconds"`
+	Domain DomainMetrics `json:"domain"`
+	// Queues is sampled from Redis rather than accumulated here, and is absent
+	// on a process with no poller — see Collector.SetQueueDepths.
+	Queues        map[string]QueueDepth `json:"queues,omitempty"`
+	UptimeSeconds float64               `json:"uptime_seconds"`
 }
 
 // DomainMetrics is the T-17 counter set. Every label here is bounded by code —
@@ -705,6 +742,19 @@ type CacheMetrics struct {
 	Hits    int64   `json:"hits"`
 	Misses  int64   `json:"misses"`
 	HitRate float64 `json:"hit_rate_percent"`
+}
+
+// QueueDepth is one asynq queue as Redis holds it at a moment: how much work
+// is waiting, how much is running, and how much has fallen back to be retried
+// or is scheduled for later. Pending rising while active stays flat is the
+// shape that means "add a worker"; retry rising is the shape that means
+// "something downstream is failing".
+type QueueDepth struct {
+	Pending   int64 `json:"pending"`
+	Active    int64 `json:"active"`
+	Scheduled int64 `json:"scheduled"`
+	Retry     int64 `json:"retry"`
+	Archived  int64 `json:"archived"`
 }
 
 // JobMetrics contains job processing metrics
