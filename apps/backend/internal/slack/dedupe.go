@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -57,7 +58,19 @@ func (d *RedisDeduper) FirstSight(ctx context.Context, appID, eventID string) (b
 	if d == nil || d.rdb == nil || eventID == "" {
 		return true, nil
 	}
-	return d.rdb.SetNX(ctx, DedupeKey(appID, eventID), "1", d.ttl).Result()
+	// SetArgs with Mode "NX" rather than SetNX, which go-redis deprecated —
+	// the same substitution internal/idempotency made, and for the same
+	// reason. A key that already exists comes back as redis.Nil rather than as
+	// an error: that is the duplicate, not a failure.
+	err := d.rdb.SetArgs(ctx, DedupeKey(appID, eventID), "1",
+		redis.SetArgs{Mode: "NX", TTL: d.ttl}).Err()
+	if errors.Is(err, redis.Nil) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 var _ Deduper = (*RedisDeduper)(nil)

@@ -89,7 +89,7 @@ func TestAnEmptyEventIDIsAlwaysFirst(t *testing.T) {
 
 // A deployment without Redis still starts, and still answers questions.
 func TestNoRedisMeansNoDeduplication(t *testing.T) {
-	var d *RedisDeduper = NewRedisDeduper(nil)
+	d := NewRedisDeduper(nil)
 	first, err := d.FirstSight(context.Background(), "A123", "Ev123")
 	if err != nil {
 		t.Fatal(err)
