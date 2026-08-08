@@ -220,7 +220,7 @@ export function BusinessProfileCard() {
           <p className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
             We could not read your connected data to suggest a profile — this workspace is out of
             credit. Your sources still work; describe the business below in your own words, or top
-            up and press Re-scan under Settings → Connections.
+            up and press Re-scan under Settings → Data sources.
           </p>
         )}
 

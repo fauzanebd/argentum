@@ -65,7 +65,7 @@ function probeSummary(s: MCPServer): string {
 }
 
 /**
- * Settings → MCP servers (T-M1).
+ * Settings → Data sources → MCP servers (T-M1).
  *
  * The tenant registers their own MCP server — their ticketing system, their
  * CRM — and reviews the tools it offers. Nothing here runs a tool: approving
@@ -173,7 +173,7 @@ export function MCPServersTab() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>MCP servers</CardTitle>
+          <CardTitle>Connected servers</CardTitle>
           <CardDescription>
             Connect a server that speaks the Model Context Protocol — your ticketing system, your
             CRM, an internal API — and your agents can call the tools you approve on it. Argentum

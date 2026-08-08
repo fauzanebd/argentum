@@ -1,10 +1,9 @@
 import { useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { GeneralTab } from "./general-tab";
-import { ConnectionsTab } from "./connections-tab";
+import { DataSourcesTab } from "./data-sources-tab";
 import { MetricsTab } from "./metrics-tab";
 import { AgentsTab } from "./agents-tab";
-import { MCPServersTab } from "./mcp-servers-tab";
 import { WebhooksTab } from "./webhooks-tab";
 import { PhonesTab } from "./phones-tab";
 import { IntegrationsTab } from "./integrations-tab";
@@ -26,13 +25,12 @@ export function SettingsPage() {
   // render disabled instead.
   const tabs = [
     { id: "general", label: "General" },
-    { id: "connections", label: "Databases" },
+    // Databases and MCP servers are both "a place an agent reads from", so they
+    // are one tab with the kind picked inside rather than two siblings that ask
+    // an admin to know which one they want before they can look.
+    { id: "data-sources", label: "Data sources" },
     { id: "metrics", label: "Metrics" },
     { id: "agents", label: "Agents" },
-    // Admin-only on every route, including the read — a server is a credential
-    // plus an egress destination — so the tab is hidden rather than disabled,
-    // like Team and API keys above.
-    ...(isAdmin ? [{ id: "mcp-servers", label: "MCP servers" }] : []),
     { id: "phones", label: "Phone numbers" },
     { id: "integrations", label: "Integrations" },
     ...(isAdmin ? [{ id: "reports", label: "Reports" }] : []),
@@ -49,7 +47,7 @@ export function SettingsPage() {
       <div className="max-w-4xl mx-auto px-6 py-8">
         <h1 className="text-2xl font-bold mb-1">Settings</h1>
         <p className="text-sm text-muted-foreground mb-6">
-          Manage your company preferences, databases, authorised phone numbers and team.
+          Manage your company preferences, data sources, authorised phone numbers and team.
         </p>
         <Tabs.Root value={tab} onValueChange={setTab}>
           <Tabs.List className="inline-flex border-b border-border mb-6">
@@ -73,10 +71,10 @@ export function SettingsPage() {
               <GeneralTab />
             </AdminGate>
           </Tabs.Content>
-          <Tabs.Content value="connections">
-            <AdminGate>
-              <ConnectionsTab />
-            </AdminGate>
+          {/* Gating lives inside: databases render read-only for a member,
+              MCP servers are not offered to one at all. */}
+          <Tabs.Content value="data-sources">
+            <DataSourcesTab />
           </Tabs.Content>
           {/* Reads are member-level, but defining and testing a metric is admin
               (Test runs tenant SQL), so the panel is gated like the others. */}
@@ -93,11 +91,6 @@ export function SettingsPage() {
               <AgentsTab />
             </AdminGate>
           </Tabs.Content>
-          {isAdmin && (
-            <Tabs.Content value="mcp-servers">
-              <MCPServersTab />
-            </Tabs.Content>
-          )}
           {isAdmin && (
             <Tabs.Content value="webhooks">
               <WebhooksTab />
