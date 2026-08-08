@@ -1,8 +1,14 @@
 # Playbook: Add a Chat Channel
 
-Adding Slack, Telegram, or email. **Do not invent a new pattern** — Discord and
-Lark were added together in `17f81f5` and established the shape. Read that commit
-before starting.
+Adding Telegram, email, or the next platform. **Do not invent a new pattern** —
+Discord and Lark were added together in `17f81f5` and established the shape, and
+Slack followed it in full on 2026-08-08. Read that commit before starting.
+
+> **Slack is now built**, so the worked example below is a description of
+> shipped code rather than a proposal. Where it differs from what landed, the
+> code is right and [`../../coverage/slack-channel.md`](../../coverage/slack-channel.md)
+> says why — in particular Step 2's thread-key rule, which Slack satisfies with
+> *two* keys that have to be kept in agreement.
 
 **Time:** ~2d for a well-documented platform. Budget more if the platform needs a
 persistent gateway connection (like Discord) rather than webhooks (like Lark).

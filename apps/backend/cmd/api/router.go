@@ -78,6 +78,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	if d.larkSvc != nil {
 		handlers.NewLarkHandler(d.larkSvc).Register(authed)
 	}
+	if d.slackSvc != nil {
+		handlers.NewSlackHandler(d.slackSvc).Register(authed)
+	}
 	authed.GET("/threads/:id/stream", ws.NewHandler(d.rdb, d.threadRepo, cfg.CORSOrigins).Stream)
 
 	// The public API (T-13; T-A1 builds the rest of the contract on this
@@ -168,6 +171,12 @@ func newRouter(d *apiDeps) *gin.Engine {
 	if d.larkSvc != nil {
 		handlers.NewLarkWebhookHandler(d.larkSvc, d.chatEnq).
 			WithReplier(d.larkReplier).
+			Register(webhookGroup)
+	}
+	if d.slackSvc != nil {
+		handlers.NewSlackWebhookHandler(d.slackSvc, d.chatEnq).
+			WithReplier(d.slackReplier).
+			WithDeduper(d.slackDedupe).
 			Register(webhookGroup)
 	}
 

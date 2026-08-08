@@ -90,6 +90,14 @@ type Config struct {
 	LarkEnabled    bool
 	LarkAPIBaseURL string
 
+	// Slack
+	// Per-tenant bot tokens are stored encrypted in company_slack_credentials.
+	// SlackEnabled gates the API webhook + worker outbound; SlackAPIBaseURL
+	// defaults to the public Web API root and only needs to change when
+	// pointing at a proxy or a test double.
+	SlackEnabled    bool
+	SlackAPIBaseURL string
+
 	// Metabase
 	MetabaseURL           string
 	MetabasePublicURL     string
@@ -340,6 +348,9 @@ func Load() (*Config, error) {
 
 		LarkEnabled:    getEnv("LARK_ENABLED", "true") == "true",
 		LarkAPIBaseURL: getEnv("LARK_API_BASE_URL", ""),
+
+		SlackEnabled:    getEnv("SLACK_ENABLED", "true") == "true",
+		SlackAPIBaseURL: getEnv("SLACK_API_BASE_URL", ""),
 
 		// Metabase
 		MetabaseURL:           getEnv("METABASE_URL", "http://localhost:3000"),

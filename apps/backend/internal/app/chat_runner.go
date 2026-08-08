@@ -26,6 +26,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/slack"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/fauzanebd/argentum/internal/tracing"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
@@ -234,6 +235,7 @@ type ChatRunner struct {
 	bus          EventBus
 	wa           whatsapp.Provider
 	larkProv     lark.Provider
+	slackProv    slack.Provider
 	pool         *db.TenantConnPool
 	scheduled    ScheduledRunMarker
 	apiReports   APIReportCompleter
@@ -404,6 +406,13 @@ func (r *ChatRunner) WithActionCatalog(c ActionCatalog) *ChatRunner {
 // WithTablePicker so the worker can chain configuration on construction.
 func (r *ChatRunner) WithLark(p lark.Provider) *ChatRunner {
 	r.larkProv = p
+	return r
+}
+
+// WithSlack attaches a Slack outbound provider so the runner can post replies
+// for chat:run tasks on the Slack channel. Mirrors WithLark.
+func (r *ChatRunner) WithSlack(p slack.Provider) *ChatRunner {
+	r.slackProv = p
 	return r
 }
 
@@ -1165,6 +1174,16 @@ func (r *ChatRunner) completeWith(
 					"company_id": p.CompanyID,
 					"message_id": p.LarkMessageID,
 				}).Error("lark reply failed")
+			}
+		}
+	case domain.ChannelSlack:
+		if r.slackProv != nil && p.SlackChannelID != "" && p.CompanyID != "" {
+			if err := r.slackProv.Reply(ctx, p.CompanyID, p.SlackChannelID, p.SlackThreadTS, response); err != nil {
+				logrus.WithError(err).WithFields(logrus.Fields{
+					"company_id": p.CompanyID,
+					"channel_id": p.SlackChannelID,
+					"thread_ts":  p.SlackThreadTS,
+				}).Error("slack reply failed")
 			}
 		}
 	case domain.ChannelAPI:

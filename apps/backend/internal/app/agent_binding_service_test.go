@@ -144,7 +144,9 @@ func TestABindingCannotNameAnotherCompanysAgent(t *testing.T) {
 func TestOnlyTheInboundChatChannelsCanBeBound(t *testing.T) {
 	svc := bindingService(&fakeBindingRepo{}, &domain.Agent{ID: "ag-ops", CompanyID: "co-1", Enabled: true})
 
-	for _, channel := range []string{"dashboard", "api", "", "slack"} {
+	// "telegram" stands in for a channel that does not exist yet — it held
+	// "slack" until Slack became one.
+	for _, channel := range []string{"dashboard", "api", "", "telegram"} {
 		t.Run(channel, func(t *testing.T) {
 			_, err := svc.Create(context.Background(), "co-1", BindingInput{
 				AgentID: "ag-ops", Channel: channel, ExternalID: "whatever",

@@ -136,6 +136,59 @@ func (s *ThreadService) ResolveForLark(ctx context.Context, companyID, larkChatI
 	return &ResolveResult{Thread: latest, IsNew: false}, nil
 }
 
+// ResolveForSlack picks the thread for an inbound Slack message.
+//
+// Slack is the one channel with *both* shapes the playbook describes, so it
+// keys on both and skips fork classification either way:
+//
+//   - A message inside a thread carries thread_ts. That is the user's own
+//     boundary, so it resolves by (channel, thread_ts) and continues however
+//     long the gap has been — the Lark rule.
+//   - A top-level mention or DM carries none. There is no thread id to look up
+//     yet, so it resolves by (channel, user) — the Discord rule — and the new
+//     conversation records the ts our reply will hang under.
+//
+// That last line is what keeps the two keys from disagreeing. Without it the
+// follow-ups arriving inside the thread our own reply created would find
+// nothing under (channel, thread_ts) and open a second conversation for what
+// the user is looking at as one.
+//
+// agentID pins a new conversation to one roster agent (T-S4); empty means the
+// company default.
+func (s *ThreadService) ResolveForSlack(ctx context.Context, in SlackThreadKey, userMessage, agentID string) (*ResolveResult, error) {
+	if in.CompanyID == "" || in.ChannelID == "" || in.UserID == "" {
+		return nil, fmt.Errorf("companyID, slack channelID and userID required")
+	}
+	if in.MessageTS == "" {
+		return nil, fmt.Errorf("slack message ts required")
+	}
+
+	// Threaded reply: the user drew the boundary, so honour it exactly.
+	if in.ThreadTS != "" {
+		latest, err := s.threads.LatestForSlackThread(ctx, in.CompanyID, in.ChannelID, in.ThreadTS)
+		if err == nil {
+			return &ResolveResult{Thread: latest, IsNew: false}, nil
+		}
+		if !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("lookup thread: %w", err)
+		}
+		// A thread we have never seen — the bot was invited into a conversation
+		// already in progress. Open one keyed to it.
+		return s.createSlackThread(ctx, in, in.ThreadTS, userMessage, agentID)
+	}
+
+	// Top-level message: continue this person's conversation in this room.
+	latest, err := s.threads.LatestForSlackUser(ctx, in.CompanyID, in.ChannelID, in.UserID)
+	if errors.Is(err, domain.ErrNotFound) {
+		// The reply will hang under this message, so that is the thread ts.
+		return s.createSlackThread(ctx, in, in.MessageTS, userMessage, agentID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup thread: %w", err)
+	}
+	return &ResolveResult{Thread: latest, IsNew: false}, nil
+}
+
 // ResolveForAPIUser picks the thread for a turn started over the public API
 // (T-A1). Threads are keyed by (companyID, apiUserRef).
 //
@@ -304,6 +357,45 @@ func (s *ThreadService) createLarkThread(
 	return &ResolveResult{Thread: t, IsNew: true}, nil
 }
 
+// SlackThreadKey is everything needed to find or open a Slack conversation.
+// A struct rather than six positional strings, for the reason
+// ChannelThreadInput states — and because MessageTS and ThreadTS differ by one
+// character at the call site while meaning opposite things.
+type SlackThreadKey struct {
+	CompanyID string
+	TeamID    string
+	ChannelID string
+	// UserID is the human who wrote the message, and half of the fallback key.
+	UserID string
+	// MessageTS is this message's own ts. It becomes the conversation's
+	// thread_ts when the message is top-level, because that is where our reply
+	// will hang.
+	MessageTS string
+	// ThreadTS is set only when the message already sits inside a thread.
+	ThreadTS string
+}
+
+func (s *ThreadService) createSlackThread(
+	ctx context.Context, in SlackThreadKey, threadTS, firstMessage, agentID string,
+) (*ResolveResult, error) {
+	now := time.Now()
+	t := &domain.ConversationThread{
+		CompanyID:      in.CompanyID,
+		Channel:        domain.ChannelSlack,
+		SlackTeamID:    in.TeamID,
+		SlackChannelID: in.ChannelID,
+		SlackThreadTS:  threadTS,
+		SlackUserID:    in.UserID,
+		AgentID:        agentID,
+		Title:          deriveTitle(firstMessage),
+		LastMessageAt:  now,
+	}
+	if err := s.threads.Create(ctx, t); err != nil {
+		return nil, fmt.Errorf("create thread: %w", err)
+	}
+	return &ResolveResult{Thread: t, IsNew: true}, nil
+}
+
 // createDashboardThread is the dashboard's own constructor, beside Lark's and
 // the API's, rather than an eighth positional argument on createThread. The
 // same reasoning continueOrForkWith records: a channel that carries a key the
@@ -339,6 +431,7 @@ type ChannelThreadInput struct {
 	LarkChatID    string
 	LarkThreadKey string
 	LarkOpenID    string
+	Slack         SlackThreadKey
 	FirstMessage  string
 	// AgentID pins the new conversation. Not validated here, for the reason
 	// CreateDashboardThread states.
@@ -361,6 +454,15 @@ func (s *ThreadService) CreateChannelThread(ctx context.Context, in ChannelThrea
 	if in.Channel == domain.ChannelLark {
 		return s.createLarkThread(ctx, in.CompanyID, in.LarkChatID, in.LarkThreadKey,
 			in.LarkOpenID, in.FirstMessage, in.AgentID)
+	}
+	if in.Channel == domain.ChannelSlack {
+		// The fork keeps the trigger's own thread: a rebind opens a new
+		// conversation, not a new place to speak.
+		threadTS := in.Slack.ThreadTS
+		if threadTS == "" {
+			threadTS = in.Slack.MessageTS
+		}
+		return s.createSlackThread(ctx, in.Slack, threadTS, in.FirstMessage, in.AgentID)
 	}
 	return s.createThread(ctx, in.CompanyID, in.Channel,
 		in.PhoneNumber, "", in.DiscordUserID, in.FirstMessage, in.AgentID)

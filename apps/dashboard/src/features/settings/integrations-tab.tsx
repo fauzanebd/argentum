@@ -15,6 +15,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { DiscordTab } from "./discord-tab";
 import { LarkTab } from "./lark-tab";
+import { SlackTab } from "./slack-tab";
 
 function SlackIcon({ className }: { className?: string }) {
   return (
@@ -93,14 +94,11 @@ const integrations: Integration[] = [
   {
     id: "slack",
     name: "Slack",
-    description: "Send analytics digests and alerts to Slack channels.",
-    helpText: "Posts go to the chosen channel via a bot installed in your workspace.",
+    description: "Chat with the Argentum bot from Slack @mentions or DMs.",
+    helpText: "Create a Slack app, install it to your workspace, and grant messaging scopes.",
     icon: SlackIcon,
-    fields: [
-      { name: "workspace", label: "Workspace URL", placeholder: "your-team.slack.com" },
-      { name: "token", label: "Bot user OAuth token", placeholder: "xoxb-…", type: "password" },
-      { name: "channel", label: "Default channel", placeholder: "#analytics" },
-    ],
+    fields: [],
+    live: true,
   },
   {
     id: "discord",
@@ -220,6 +218,7 @@ function IntegrationDetail({
             <p className="text-sm text-muted-foreground">{integration.description}</p>
           </div>
         </div>
+        {integration.id === "slack" && <SlackTab />}
         {integration.id === "discord" && <DiscordTab />}
         {integration.id === "lark" && <LarkTab />}
       </div>

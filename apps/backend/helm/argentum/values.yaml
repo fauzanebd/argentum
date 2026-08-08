@@ -261,6 +261,11 @@ extraEnv:
   # Override only for Feishu (China) deployments. Empty => global endpoint.
   - name: LARK_API_BASE_URL
     value: ""
+  - name: SLACK_ENABLED
+    value: "true"
+  # Empty => https://slack.com/api. Override only to point at a proxy.
+  - name: SLACK_API_BASE_URL
+    value: ""
 
 # Extra volumes / mounts (e.g. external CA bundles).
 extraVolumes: []

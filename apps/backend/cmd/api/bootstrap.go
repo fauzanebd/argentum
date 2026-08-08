@@ -30,6 +30,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/migrate"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/spec"
+	"github.com/fauzanebd/argentum/internal/slack"
 	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
 	"github.com/fauzanebd/argentum/internal/webhookout"
@@ -83,6 +84,8 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	allowedDiscordRepo := pgctl.NewAllowedDiscordUserRepo(controlDB)
 	larkCredRepo := pgctl.NewCompanyLarkCredentialRepo(controlDB)
 	allowedLarkRepo := pgctl.NewAllowedLarkUserRepo(controlDB)
+	slackCredRepo := pgctl.NewCompanySlackCredentialRepo(controlDB)
+	allowedSlackRepo := pgctl.NewAllowedSlackUserRepo(controlDB)
 	deps.threadRepo = threadRepo
 	deps.msgRepo = messageRepo
 	deps.usageRepo = usageRepo
@@ -187,6 +190,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	if cfg.LarkEnabled {
 		deps.larkSvc = app.NewLarkService(larkCredRepo, allowedLarkRepo, dsnCipher)
 		deps.larkReplier = lark.NewClient(larkCredRepo, dsnCipher, cfg.LarkAPIBaseURL)
+	}
+	if cfg.SlackEnabled {
+		deps.slackSvc = app.NewSlackService(slackCredRepo, allowedSlackRepo, dsnCipher)
+		deps.slackReplier = slack.NewClient(slackCredRepo, dsnCipher, cfg.SlackAPIBaseURL)
+		deps.slackDedupe = slack.NewRedisDeduper(rdb)
 	}
 
 	// Table-picker embeddings: per-tenant resolution via embedCache.

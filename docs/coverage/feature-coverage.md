@@ -28,7 +28,7 @@ what to build next.
 | Discord                | ✅     | Dedicated `cmd/discord` gateway, per-tenant bot tokens, user allowlist    |
 | Lark / Feishu          | ✅     | Webhook in, REST reply out, per-tenant app secret, thread-key mapping     |
 | Telegram               | ❌     | **Advertised on the landing page.** Not implemented anywhere              |
-| Slack                  | ❌     | Not implemented                                                          |
+| Slack                  | ✅     | Events API webhook in, `chat.postMessage` out, per-tenant bot token, user allowlist, thread + DM keying |
 | Email                  | ❌     | Not implemented                                                          |
 
 ## Data sources

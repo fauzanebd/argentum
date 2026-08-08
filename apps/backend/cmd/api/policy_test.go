@@ -104,6 +104,7 @@ func testDeps(cfg *config.Config, signer *auth.TokenSigner) *apiDeps {
 		scheduledSvc: app.NewScheduledTaskService(nil, nil, nil, nil),
 		discordSvc:   app.NewDiscordService(nil, nil, nil, nil),
 		larkSvc:      app.NewLarkService(nil, nil, nil),
+		slackSvc:     app.NewSlackService(nil, nil, nil),
 	}
 }
 

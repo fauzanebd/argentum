@@ -109,6 +109,11 @@ type ChatInput struct {
 	LarkChatID       string // lark only; chat the @mention came from
 	LarkThreadKey    string // lark only; thread lookup key
 	LarkMessageID    string // lark only; reply target (latest inbound message id)
+	SlackTeamID      string // slack only; workspace the event arrived from
+	SlackChannelID   string // slack only; reply destination, and T-S4's binding key
+	SlackUserID      string // slack only; the human who wrote the message
+	SlackMessageTS   string // slack only; this message's own ts
+	SlackThreadTS    string // slack only; set when the message is already threaded
 	APIUserRef       string // api only; the tenant's own reference for the end user
 	Message          string
 	// Directive is an instruction for this turn that the *caller* did not
@@ -144,6 +149,30 @@ type ChatInput struct {
 	APIKeyID string
 }
 
+// slackReplyTS is the thread the worker's reply hangs under: the thread the
+// message already sits in, or — for a top-level mention — the message itself,
+// which is what opens the thread. Empty for every other channel.
+func slackReplyTS(in ChatInput) string {
+	if in.SlackThreadTS != "" {
+		return in.SlackThreadTS
+	}
+	return in.SlackMessageTS
+}
+
+// slackKey gathers the Slack routing fields into the shape ThreadService
+// resolves and creates with. One place to assemble it, so the resolve path and
+// the rebind fork cannot key the same conversation differently.
+func (in ChatInput) slackKey() SlackThreadKey {
+	return SlackThreadKey{
+		CompanyID: in.CompanyID,
+		TeamID:    in.SlackTeamID,
+		ChannelID: in.SlackChannelID,
+		UserID:    in.SlackUserID,
+		MessageTS: in.SlackMessageTS,
+		ThreadTS:  in.SlackThreadTS,
+	}
+}
+
 func (in ChatInput) validate() error {
 	if in.CompanyID == "" {
 		return errors.New("company_id required")
@@ -176,6 +205,18 @@ func (in ChatInput) validate() error {
 		}
 		if in.LarkMessageID == "" {
 			return errors.New("lark_message_id required for lark channel")
+		}
+	case domain.ChannelSlack:
+		if in.SlackUserID == "" {
+			return errors.New("slack_user_id required for slack channel")
+		}
+		if in.SlackChannelID == "" {
+			return errors.New("slack_channel_id required for slack channel")
+		}
+		// The message's own ts, not thread_ts: a top-level mention has no
+		// thread yet, and this is the ts our reply hangs the thread under.
+		if in.SlackMessageTS == "" {
+			return errors.New("slack_message_ts required for slack channel")
 		}
 	case domain.ChannelAPI:
 		// Either identity will do, and one of them must be there. A caller
@@ -419,15 +460,21 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		LarkChatID:       in.LarkChatID,
 		LarkThreadKey:    in.LarkThreadKey,
 		LarkMessageID:    in.LarkMessageID,
-		Channel:          in.Channel,
-		Message:          in.Message,
-		Directive:        in.Directive,
-		AgentID:          s.agentFor(ctx, thread),
-		UserMsgID:        userMsg.ID,
-		CompanyName:      companyName,
-		DefaultCurrency:  currency,
-		APIReportID:      in.APIReportID,
-		APIKeyID:         in.APIKeyID,
+		SlackTeamID:      in.SlackTeamID,
+		SlackChannelID:   in.SlackChannelID,
+		SlackUserID:      in.SlackUserID,
+		// The thread the reply hangs under: the message's own ts when it is
+		// top-level, which is the same value the resolved thread stores.
+		SlackThreadTS:   slackReplyTS(in),
+		Channel:         in.Channel,
+		Message:         in.Message,
+		Directive:       in.Directive,
+		AgentID:         s.agentFor(ctx, thread),
+		UserMsgID:       userMsg.ID,
+		CompanyName:     companyName,
+		DefaultCurrency: currency,
+		APIReportID:     in.APIReportID,
+		APIKeyID:        in.APIKeyID,
 		// Off the context rather than out of ChatInput: the request id is
 		// ambient per-request identity, exactly like the company id, and a
 		// field on the input would be one every caller has to remember to
@@ -506,6 +553,11 @@ func (s *ChatEnqueuer) boundAgent(ctx context.Context, in ChatInput) (string, er
 		ref = in.DiscordChannelID
 	case domain.ChannelLark:
 		ref = in.LarkChatID
+	case domain.ChannelSlack:
+		// The Slack channel, for the same reason Discord uses its channel: a
+		// binding is a room configured for a job. A DM's channel id (D…) works
+		// the same way and binds that one conversation.
+		ref = in.SlackChannelID
 	default:
 		return "", nil
 	}
@@ -538,6 +590,8 @@ func (s *ChatEnqueuer) resolveChannelThread(
 	case domain.ChannelLark:
 		return s.threads.ResolveForLark(ctx, in.CompanyID, in.LarkChatID, in.LarkThreadKey,
 			in.LarkOpenID, in.Message, bound)
+	case domain.ChannelSlack:
+		return s.threads.ResolveForSlack(ctx, in.slackKey(), in.Message, bound)
 	}
 	return nil, fmt.Errorf("%w: %q is not an inbound chat channel", domain.ErrInvalidInput, in.Channel)
 }
@@ -583,6 +637,7 @@ func (s *ChatEnqueuer) rebindThread(
 		LarkChatID:    in.LarkChatID,
 		LarkThreadKey: in.LarkThreadKey,
 		LarkOpenID:    in.LarkOpenID,
+		Slack:         in.slackKey(),
 		FirstMessage:  in.Message,
 		AgentID:       want,
 	})

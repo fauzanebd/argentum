@@ -336,6 +336,21 @@ export interface AllowedLarkUser {
 }
 
 //////////
+// source: allowed_slack_user.go
+
+/**
+ * AllowedSlackUser records which Slack user ids are authorized to chat with
+ * the agent on behalf of a company. A user may be allowed by more than one
+ * company (through different Slack apps), so the primary key is composite.
+ */
+export interface AllowedSlackUser {
+  company_id: string;
+  slack_user_id: string;
+  label?: string;
+  added_at: string;
+}
+
+//////////
 // source: api_key.go
 
 /**
@@ -1339,6 +1354,30 @@ export interface ScheduledTaskRun {
 }
 
 //////////
+// source: slack_credential.go
+
+/**
+ * CompanySlackCredential holds one tenant's Slack app configuration.
+ * BotTokenEncrypted is AES-256-GCM via crypto.DSNCipher (same key as DSNs)
+ * and holds the xoxb- bot user token used for chat.postMessage.
+ * SigningSecret verifies the v0 request signature on every inbound event.
+ * BotUserID is the bot's own user id, used to strip the @mention from the
+ * text and to ignore the bot's own messages; it is optional because the
+ * webhook can fall back to the `authorizations` array Slack sends.
+ */
+export interface CompanySlackCredential {
+  CompanyID: string;
+  AppID: string;
+  TeamID: string;
+  BotTokenEncrypted: string /* []byte */;
+  SigningSecret: string;
+  BotUserID: string;
+  Enabled: boolean;
+  CreatedAt: string;
+  UpdatedAt: string;
+}
+
+//////////
 // source: source_profile.go
 
 /**
@@ -1426,6 +1465,7 @@ export const ChannelWhatsApp = "whatsapp";
 export const ChannelDashboard = "dashboard";
 export const ChannelDiscord = "discord";
 export const ChannelLark = "lark";
+export const ChannelSlack = "slack";
 /**
  * ChannelAPI is a turn started over the public `/v1` API (T-A1). It is
  * the only channel with no outbound provider: the reply is the HTTP
@@ -1433,7 +1473,7 @@ export const ChannelLark = "lark";
  * deliberately does nothing for it.
  */
 export const ChannelAPI = "api";
-export type Channel = typeof ChannelWhatsApp | typeof ChannelDashboard | typeof ChannelDiscord | typeof ChannelLark | typeof ChannelAPI;
+export type Channel = typeof ChannelWhatsApp | typeof ChannelDashboard | typeof ChannelDiscord | typeof ChannelLark | typeof ChannelSlack | typeof ChannelAPI;
 /**
  * ConversationThread is one logical conversation. Each phone number gets its
  * own thread chain; threads auto-split on long idle gaps + topic shifts.
@@ -1451,6 +1491,16 @@ export interface ConversationThread {
   lark_chat_id?: string; // empty for non-lark threads
   lark_thread_key?: string; // empty for non-lark threads
   lark_open_id?: string; // initiating user's open_id; empty for non-lark threads
+  /**
+   * Slack keys on two things at once, and 049's comment says why: a message
+   * inside a thread is found by (SlackChannelID, SlackThreadTS), a top-level
+   * mention or DM by (SlackChannelID, SlackUserID). A thread opened by the
+   * latter stores the ts its reply will hang under, so the two agree.
+   */
+  slack_team_id?: string; // empty for non-slack threads
+  slack_channel_id?: string; // empty for non-slack threads
+  slack_thread_ts?: string; // empty for non-slack threads
+  slack_user_id?: string; // initiating user's id; empty for non-slack threads
   /**
    * APIUserRef is the tenant's own identifier for whoever the API call was
    * made on behalf of (T-A1). It is opaque to us by design: an API key

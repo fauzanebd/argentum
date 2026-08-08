@@ -209,12 +209,14 @@ turn the registry into a semantic-layer DSL, which is a multi-week design proble
 the point where a `dimensions` column pays for itself.
 **Estimate:** 5d.
 
-### Slack channel
-**Why deferred:** Additive against the existing channel abstraction (`Channel`
-enum + provider + thread resolver + allowlist + migration). Known shape, ~2 days,
-no workflow change.
-**Trigger:** first non-Indonesian mid-market prospect, or any inbound asking for it.
-**Estimate:** 2d.
+### ~~Slack channel~~ — **shipped 2026-08-08**
+Built from `add-channel.md`, which used Slack as its worked example. Migrations
+`047`–`049`, `internal/slack`, webhook + admin API + settings tab, bindable like
+the other chat channels. The shape was as known as this entry claimed; the three
+things that were not copy-paste — two-key threading, Redis event dedupe, and
+learning the bot's user id instead of asking an admin for it — are in
+[`../coverage/slack-channel.md`](../coverage/slack-channel.md).
+**Still open:** watcher delivery to Slack is refused at creation; see §6 there.
 
 ### Telegram channel
 **Why deferred:** Advertised on the landing page but not built. T-18 fixes the

@@ -20,6 +20,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/slack"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
@@ -70,6 +71,7 @@ type apiDeps struct {
 	scheduledSvc *app.ScheduledTaskService
 	discordSvc   *app.DiscordService
 	larkSvc      *app.LarkService
+	slackSvc     *app.SlackService
 	brandingSvc  *branding.Service
 	apiKeySvc    *app.APIKeyService
 	// The tenant agent roster (T-S1). It holds this deployment's tool registry
@@ -117,6 +119,11 @@ type apiDeps struct {
 	// larkReplier lets the webhook answer a turn it refuses before enqueueing
 	// (T-03). Nil when Lark is disabled.
 	larkReplier lark.Provider
+	// slackReplier is Lark's counterpart for Slack, and slackDedupe is what
+	// keeps a redelivered event from running a second turn. Both nil when
+	// Slack is disabled.
+	slackReplier slack.Provider
+	slackDedupe  slack.Deduper
 
 	wa whatsapp.Provider
 

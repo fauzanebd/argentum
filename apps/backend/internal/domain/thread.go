@@ -13,6 +13,7 @@ const (
 	ChannelDashboard Channel = "dashboard"
 	ChannelDiscord   Channel = "discord"
 	ChannelLark      Channel = "lark"
+	ChannelSlack     Channel = "slack"
 	// ChannelAPI is a turn started over the public `/v1` API (T-A1). It is
 	// the only channel with no outbound provider: the reply is the HTTP
 	// response the caller is already holding open, so ChatRunner.completeWith
@@ -35,6 +36,14 @@ type ConversationThread struct {
 	LarkChatID    string  `json:"lark_chat_id,omitempty"`    // empty for non-lark threads
 	LarkThreadKey string  `json:"lark_thread_key,omitempty"` // empty for non-lark threads
 	LarkOpenID    string  `json:"lark_open_id,omitempty"`    // initiating user's open_id; empty for non-lark threads
+	// Slack keys on two things at once, and 049's comment says why: a message
+	// inside a thread is found by (SlackChannelID, SlackThreadTS), a top-level
+	// mention or DM by (SlackChannelID, SlackUserID). A thread opened by the
+	// latter stores the ts its reply will hang under, so the two agree.
+	SlackTeamID    string `json:"slack_team_id,omitempty"`    // empty for non-slack threads
+	SlackChannelID string `json:"slack_channel_id,omitempty"` // empty for non-slack threads
+	SlackThreadTS  string `json:"slack_thread_ts,omitempty"`  // empty for non-slack threads
+	SlackUserID    string `json:"slack_user_id,omitempty"`    // initiating user's id; empty for non-slack threads
 	// APIUserRef is the tenant's own identifier for whoever the API call was
 	// made on behalf of (T-A1). It is opaque to us by design: an API key
 	// belongs to a company, so the only identity available is the one the
@@ -99,6 +108,15 @@ type ThreadRepository interface {
 	// (companyID, larkThreadKey) pair. One Lark reply-thread = one row.
 	// ErrNotFound if no thread exists.
 	LatestForLark(ctx context.Context, companyID, larkThreadKey string) (*ConversationThread, error)
+	// LatestForSlackThread returns the non-archived slack thread for a
+	// (companyID, slackChannelID, slackThreadTS) triple. One Slack thread =
+	// one row. ErrNotFound if no thread exists.
+	LatestForSlackThread(ctx context.Context, companyID, slackChannelID, slackThreadTS string) (*ConversationThread, error)
+	// LatestForSlackUser returns the most recent non-archived slack thread for
+	// a (companyID, slackChannelID, slackUserID) triple. It answers the
+	// top-level message — one that carries no thread_ts, so there is no thread
+	// id to look up yet. ErrNotFound if no thread exists.
+	LatestForSlackUser(ctx context.Context, companyID, slackChannelID, slackUserID string) (*ConversationThread, error)
 	// LatestForAPIUser returns the most recent non-archived api thread for a
 	// (companyID, apiUserRef) pair. ErrNotFound if no thread exists.
 	LatestForAPIUser(ctx context.Context, companyID, apiUserRef string) (*ConversationThread, error)

@@ -122,6 +122,12 @@ func (f *fakeThreads) LatestForDiscordUser(context.Context, string, string) (*do
 func (f *fakeThreads) LatestForLark(context.Context, string, string) (*domain.ConversationThread, error) {
 	panic("unexpected LatestForLark")
 }
+func (f *fakeThreads) LatestForSlackThread(context.Context, string, string, string) (*domain.ConversationThread, error) {
+	panic("unexpected LatestForSlackThread")
+}
+func (f *fakeThreads) LatestForSlackUser(context.Context, string, string, string) (*domain.ConversationThread, error) {
+	panic("unexpected LatestForSlackUser")
+}
 func (f *fakeThreads) LatestForAPIUser(context.Context, string, string) (*domain.ConversationThread, error) {
 	panic("unexpected LatestForAPIUser")
 }

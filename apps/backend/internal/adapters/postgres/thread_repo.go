@@ -17,6 +17,8 @@ func NewThreadRepo(db *sql.DB) *ThreadRepo { return &ThreadRepo{db: db} }
 const threadSelectCols = `id, company_id, channel, COALESCE(phone_number, ''), COALESCE(user_id::text, ''),
 		COALESCE(discord_user_id, ''), COALESCE(lark_chat_id, ''), COALESCE(lark_thread_key, ''),
 		COALESCE(lark_open_id, ''), COALESCE(api_user_ref, ''), COALESCE(agent_id::text, ''),
+		COALESCE(slack_team_id, ''), COALESCE(slack_channel_id, ''),
+		COALESCE(slack_thread_ts, ''), COALESCE(slack_user_id, ''),
 		title, summary, last_message_at, is_archived, created_at`
 
 func (r *ThreadRepo) Create(ctx context.Context, t *domain.ConversationThread) error {
@@ -24,15 +26,19 @@ func (r *ThreadRepo) Create(ctx context.Context, t *domain.ConversationThread) e
 		INSERT INTO conversation_threads
 			(company_id, channel, phone_number, user_id, discord_user_id,
 			 lark_chat_id, lark_thread_key, lark_open_id, api_user_ref, agent_id,
+			 slack_team_id, slack_channel_id, slack_thread_ts, slack_user_id,
 			 title, summary, last_message_at)
 		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, '')::uuid, NULLIF($5, ''),
 			NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''),
-			NULLIF($10, '')::uuid, $11, $12, $13)
+			NULLIF($10, '')::uuid,
+			NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, ''), NULLIF($14, ''),
+			$15, $16, $17)
 		RETURNING id, created_at
 	`
 	return r.db.QueryRowContext(ctx, q,
 		t.CompanyID, string(t.Channel), t.PhoneNumber, t.UserID, t.DiscordUserID,
 		t.LarkChatID, t.LarkThreadKey, t.LarkOpenID, t.APIUserRef, t.AgentID,
+		t.SlackTeamID, t.SlackChannelID, t.SlackThreadTS, t.SlackUserID,
 		t.Title, t.Summary, t.LastMessageAt,
 	).Scan(&t.ID, &t.CreatedAt)
 }
@@ -72,6 +78,30 @@ func (r *ThreadRepo) LatestForLark(ctx context.Context, companyID, larkThreadKey
 		WHERE company_id = $1 AND lark_thread_key = $2 AND channel = 'lark' AND NOT is_archived
 		ORDER BY last_message_at DESC LIMIT 1`
 	return r.scanOne(ctx, q, companyID, larkThreadKey)
+}
+
+// LatestForSlackThread finds the conversation a threaded Slack message belongs
+// to. Both key columns are matched: Slack's `ts` is unique only within a
+// channel, so thread_ts alone would collide across channels.
+func (r *ThreadRepo) LatestForSlackThread(ctx context.Context, companyID, slackChannelID, slackThreadTS string) (*domain.ConversationThread, error) {
+	q := `SELECT ` + threadSelectCols + `
+		FROM conversation_threads
+		WHERE company_id = $1 AND slack_channel_id = $2 AND slack_thread_ts = $3
+		  AND channel = 'slack' AND NOT is_archived
+		ORDER BY last_message_at DESC LIMIT 1`
+	return r.scanOne(ctx, q, companyID, slackChannelID, slackThreadTS)
+}
+
+// LatestForSlackUser finds the conversation a *top-level* Slack message
+// continues — a mention or DM carrying no thread_ts, so there is no thread id
+// to look up. Keyed on the room and the person, like Discord.
+func (r *ThreadRepo) LatestForSlackUser(ctx context.Context, companyID, slackChannelID, slackUserID string) (*domain.ConversationThread, error) {
+	q := `SELECT ` + threadSelectCols + `
+		FROM conversation_threads
+		WHERE company_id = $1 AND slack_channel_id = $2 AND slack_user_id = $3
+		  AND channel = 'slack' AND NOT is_archived
+		ORDER BY last_message_at DESC LIMIT 1`
+	return r.scanOne(ctx, q, companyID, slackChannelID, slackUserID)
 }
 
 // LatestForAPIUser is the `api` channel's lookup (T-A1). The channel filter
@@ -242,6 +272,7 @@ func scanThreadRow(row rowScanner) (*domain.ConversationThread, error) {
 	if err := row.Scan(
 		&t.ID, &t.CompanyID, &channel, &t.PhoneNumber, &t.UserID, &t.DiscordUserID,
 		&t.LarkChatID, &t.LarkThreadKey, &t.LarkOpenID, &t.APIUserRef, &t.AgentID,
+		&t.SlackTeamID, &t.SlackChannelID, &t.SlackThreadTS, &t.SlackUserID,
 		&t.Title, &t.Summary, &t.LastMessageAt, &t.IsArchived, &t.CreatedAt,
 	); err != nil {
 		return nil, err

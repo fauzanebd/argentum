@@ -98,6 +98,10 @@ type ChatRunPayload struct {
 	LarkChatID       string         `json:"lark_chat_id,omitempty"`
 	LarkThreadKey    string         `json:"lark_thread_key,omitempty"`
 	LarkMessageID    string         `json:"lark_message_id,omitempty"` // reply target
+	SlackTeamID      string         `json:"slack_team_id,omitempty"`
+	SlackChannelID   string         `json:"slack_channel_id,omitempty"` // reply destination
+	SlackThreadTS    string         `json:"slack_thread_ts,omitempty"`  // reply target thread
+	SlackUserID      string         `json:"slack_user_id,omitempty"`
 	Channel          domain.Channel `json:"channel"`
 	Message          string         `json:"message"`
 	// Directive is an instruction for this turn that the caller did not write

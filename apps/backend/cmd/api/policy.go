@@ -268,6 +268,15 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/lark/users":        domain.RoleMember,
 	"POST /api/lark/users":       domain.RoleAdmin,
 	"DELETE /api/lark/users/:id": domain.RoleAdmin,
+
+	// Slack, same split as Lark: a member may see how the channel is wired,
+	// only an admin may change the credential or who is allowed to ask.
+	"GET /api/slack":              domain.RoleMember,
+	"PUT /api/slack":              domain.RoleAdmin,
+	"DELETE /api/slack":           domain.RoleAdmin,
+	"GET /api/slack/users":        domain.RoleMember,
+	"POST /api/slack/users":       domain.RoleAdmin,
+	"DELETE /api/slack/users/:id": domain.RoleAdmin,
 }
 
 // unpolicedPaths are the routes that legitimately sit outside the policy: they
@@ -333,6 +342,7 @@ var unpolicedPaths = map[string]bool{
 	"/webhook/whatsapp":             true,
 	"/webhook/discord/interactions": true,
 	"/webhook/lark/events/:app_id":  true,
+	"/webhook/slack/events/:app_id": true,
 
 	// The Metabase reverse proxy forwards to Metabase's own auth.
 	"/metabase/*path": true,

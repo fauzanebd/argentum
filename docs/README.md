@@ -12,7 +12,7 @@ covers every app in it.
 
 A B2B agentic analytics assistant. A customer connects their analytical
 database (Postgres / MySQL / SQL Server), then talks to the agent from the web
-dashboard, WhatsApp, Discord, or Lark. The agent introspects the schema, writes
+dashboard, WhatsApp, Slack, Discord, or Lark. The agent introspects the schema, writes
 and runs read-only SQL, builds Metabase cards and dashboards, generates
 downloadable documents, schedules recurring reports, and replies in the user's
 language.

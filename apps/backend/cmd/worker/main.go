@@ -32,6 +32,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/slack"
 	"github.com/fauzanebd/argentum/internal/tracing"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
 	"github.com/fauzanebd/argentum/internal/webhookout"
@@ -123,6 +124,14 @@ func main() {
 		larkCredRepo := pgctl.NewCompanyLarkCredentialRepo(stack.ControlDB)
 		larkProv = lark.NewClient(larkCredRepo, stack.DSNCipher, cfg.LarkAPIBaseURL)
 		runner = runner.WithLark(larkProv)
+	}
+
+	// Slack outbound: worker calls chat.postMessage with the tenant's bot
+	// token. Decrypted tokens are cached per company and evicted on auth
+	// errors.
+	if cfg.SlackEnabled {
+		slackCredRepo := pgctl.NewCompanySlackCredentialRepo(stack.ControlDB)
+		runner = runner.WithSlack(slack.NewClient(slackCredRepo, stack.DSNCipher, cfg.SlackAPIBaseURL))
 	}
 
 	// Watcher delivery (T-08) uses the same outbound providers as chat replies:

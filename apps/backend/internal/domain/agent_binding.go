@@ -38,7 +38,7 @@ type AgentChannelBinding struct {
 // Not dashboard and not api: both already carry an explicit agent id from the
 // caller, and a binding on them would be a second, invisible opinion about a
 // turn that already named one.
-var BindableChannels = []Channel{ChannelWhatsApp, ChannelDiscord, ChannelLark}
+var BindableChannels = []Channel{ChannelWhatsApp, ChannelDiscord, ChannelLark, ChannelSlack}
 
 // Bindable reports whether a binding may name this channel.
 func (c Channel) Bindable() bool { return slices.Contains(BindableChannels, c) }
@@ -51,8 +51,8 @@ func (c Channel) Bindable() bool { return slices.Contains(BindableChannels, c) }
 // is a binding that exists and never fires, with nothing to see in either the
 // table or the log.
 //
-// Discord snowflakes and Lark chat ids are opaque provider identifiers and are
-// stored exactly as the provider gives them.
+// Discord snowflakes, Lark chat ids and Slack channel ids are opaque provider
+// identifiers and are stored exactly as the provider gives them.
 func NormalizeChannelRef(c Channel, externalID string) string {
 	ref := strings.TrimSpace(externalID)
 	if c == ChannelWhatsApp {
