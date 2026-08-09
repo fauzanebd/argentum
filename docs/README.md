@@ -24,13 +24,15 @@ language.
 | `apps/backend/`         | API, worker, Discord gateway              | Go 1.26, Gin, asynq, Postgres  |
 | `apps/dashboard/`       | Customer-facing web app                   | React 18, Vite, TanStack       |
 | `apps/landing/`         | Marketing site                            | React 18, Vite, Tailwind       |
-| `apps/widget/`          | **Planned** (T-21) — embeddable chat widget for customers' own internal sites | Preact, iframe, npm + CDN |
-| `packages/api-types/`   | **Planned** (T-02b) — TS types generated from Go structs | TypeScript      |
+| `apps/render/`          | The video renderer (T-V2): a plan in over HTTP, an MP4 out. The one image here with a browser in it, deployed behind `egress: []` | Node 22, Remotion, ffmpeg |
+| `apps/widget/`          | **Backlogged** (T-19→T-23) — embeddable chat widget for customers' own internal sites. Moved out of committed work 2026-08-09 with a trigger; see `plan/00-sprint-overview.md` §8e | Preact, iframe, npm + CDN |
+| `packages/api-types/`   | TS types generated from the Go structs by tygo, committed and diffed by CI (T-02b) | TypeScript      |
+| `packages/motion/`      | The Remotion compositions a video plan is drawn with (T-V2). Holds no palette, no type scale and no layout — everything comes from the plan | Preact/React + Remotion |
 | `packages/argentum-node/` | `@argentum/sdk` — the public API from Node, types generated from the OpenAPI spec (T-A4) | TypeScript, no runtime deps |
 | `packages/argentum-python/` | `argentum` — the same three shapes from Python, sync and async (T-A4) | Python 3.9+, httpx |
 | `packages/openapi-tools/` | Everything generated from `apps/backend/openapi/v1.yaml`: Postman, the Python types, the 3.1 validity check, the quickstart-example drift check (`make openapi`) | Node scripts |
 | `packages/design-tokens/` | One token source generating the dashboard's CSS variables and the backend's Go report theme (`make tokens`) | JSON + codegen |
-| `packages/chat-ui/`     | **Planned** (T-21) — chat components shared by dashboard + widget | Preact/React |
+| `packages/chat-ui/`     | **Backlogged** (T-21) — chat components shared by dashboard + widget, extracted rather than copied when the widget phase opens | Preact/React |
 
 Consolidated from three separate repos in `T-00b`, with history preserved via
 `git subtree`. One commit per feature; deploys stay independent per app.
@@ -99,6 +101,7 @@ docs/
 │   ├── guardrail-overreach.md    T-07b PII policy, the leak guard, false positives
 │   ├── launch-hygiene.md         T-18 what shipped, what the landing page may claim
 │   ├── slack-channel.md          The Slack channel, threading, dedupe, watcher delivery
+│   ├── report-video.md           T-V1→T-V3 the spec as a video, and the service that draws it
 │   ├── docs-site.md              The published quickstart, spec and collection
 │   └── live-gate-backlog.md      Every acceptance item owed that code cannot close
 ├── plan/

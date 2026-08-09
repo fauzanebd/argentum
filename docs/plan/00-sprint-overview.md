@@ -1049,6 +1049,30 @@ which does not exist yet either way. Nothing rots.
 `T-17b` (0.5). For the first time since 2026-07-27 that is a number a sprint can
 be sized against rather than a number that needs a paragraph of explanation.
 
+### 8f. What the same day delivered against it
+
+**Written 2026-08-09, hours after §8d and §8e.** Of the 12.0 committed days,
+**7.0 are delivered**: `T-V1` (2.5) and `T-V2` (3.0) landed earlier the same
+day, `T-V3` (2.5) and `T-17b` (0.5) that evening — which sums to 8.5 against a
+12.0 that counted `T-V1`/`T-V2` as outstanding when §8d was written. Summed
+from the ticket headers, per §8a's lesson: **`T-V4` (2.0) and `T-V5` (1.5)
+remain, so 3.5 days of committed work are left.**
+
+That is the smallest this figure has ever been, and the reason to say so
+plainly is §8e's: a remaining-work number that quietly counts delivered work is
+the failure that section spent a paragraph correcting.
+
+**Both remaining tickets are cuttable** — rows 13 and 14 of §8b — and neither
+is a never-cut item. `T-V1`/`T-V2`/`T-V3` were the never-cut set, and they
+shipped together as that row required.
+
+**What is *not* in the 3.5 is the gate debt this day added**: the video track's
+live gate, `T-17b`'s joined waterfall, and a scored eval run for the
+prompt-contradiction fix. All three are in
+[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md), and the
+first two are in §1a — the bucket that needs only the stack, which is the one
+that actually gets run.
+
 **This is the owner's call to reverse**, and reversing it is one line in
 [`backlog.md`](backlog.md) plus this section. If the widget is wanted on a date,
 say the date and the video track moves behind it — that ordering is equally

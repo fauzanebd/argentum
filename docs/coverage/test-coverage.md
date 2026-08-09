@@ -6,8 +6,11 @@ measurement). These are actual results, not estimates.
 
 ## Headline
 
-> **Current reading, 2026-08-08: 43 of 69 Go packages have tests** (`go list -f
-> '{{if or .TestGoFiles .XTestGoFiles}}…'`). The denominator moved as much as the
+> **Current reading, 2026-08-09: 46 of 73 Go packages have tests** (`go list -f
+> '{{if or .TestGoFiles .XTestGoFiles}}…'`). Was 43 of 69 on 2026-08-08; the
+> video track added `internal/report/videoplan`, `internal/report/video`,
+> `internal/report/canvas` and `internal/report/flow`, and three of the four
+> arrived with their own tests. The denominator moved as much as the
 > numerator — `internal/slack`, `internal/mcpserver`, `internal/webhookout`,
 > `internal/tracing` and the rest are packages that did not exist when this file
 > was written. The dashboard and landing apps still have zero tests; `tsc -b` and

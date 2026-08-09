@@ -2026,6 +2026,114 @@ work that is not.
 
 ---
 
+## Phase 2g — The video reaches the product, and four defects in a Dockerfile (2026-08-09)
+
+Five commits the day after the video track opened. `T-V1` and `T-V2` shipped a
+plan and a renderer that nothing could reach; this is the day `mp4` became a
+format the product understands, plus two findings that belong to other tickets
+and one build that had been red for six days.
+
+**The red build first, because it had been red since 2026-08-03.** `T-14` added
+`read:data` and `write:visualizations` to `openapi/v1.yaml` and neither
+generated SDK was regenerated. The Python half was caught — `openapi-tools
+check` had been reporting it `STALE` ever since, and `T-V1`'s record filed it
+as somebody else's — and **the Node half was caught by nothing a developer can
+run**: `make openapi-check` covers the three artifacts `openapi-tools` writes
+and not the one `openapi-typescript` does, so the only gate on it was CI's
+`pnpm -r build` followed by a `git diff`. Both are regenerated, and the missing
+check is added rather than the missed run being noted: `pnpm --filter
+@argentum/sdk types-check` regenerates into a temporary file and compares, so it
+writes nothing to the tree it is checking, and it is wired into that package's
+`lint` so `make check` carries it. Proven red then green. A gate a developer
+cannot run is a gate that reports late — the same lesson as the exposition gate
+filed in the wrong bucket on 2026-08-08, one week apart.
+
+**`T-V2`'s outstanding half — "the image has not been built or deployed" —
+found four defects in fourteen lines.** There is no root `package.json` in this
+repository and the Dockerfile copied one. `ENV PNPM_HOME=… PATH=$PNPM_HOME:$PATH`
+on a single line prepends an empty string, because an `ENV` does not expand a
+variable it is setting. An unpinned corepack met a pnpm whose
+`minimumReleaseAge` refuses any package published in the last 24 hours — which
+is a description of a lockfile `T-V2` updated the day before, so the image
+would have started failing on a day nobody touched it. And `npx remotion
+browser ensure` cannot work at all: this service depends on the bundler and the
+renderer, never on `@remotion/cli`.
+
+**The fifth is the one worth reading twice.** The entrypoint was `pnpm --filter
+@argentum/render start`. corepack's cache belongs to root, the process runs as
+`render`, so the first container started from this image **downloaded a package
+manager from the npm registry on boot** — in the one image this repository
+deploys behind a NetworkPolicy with `egress: []`. It would have failed in the
+cluster and worked on every laptop, which is exactly the class `T-02`'s
+zoneinfo finding named. The entrypoint is now `node --import tsx src/server.ts`:
+no package manager at runtime.
+
+The image then did what it was built for: `401` without the secret, a typed
+refusal for a bad plan, and **2,623 frames encoded in 182 seconds into a
+5,865,049-byte MP4** — ISO Media, played back from the container. Record:
+[`report-video.md`](report-video.md) §8.
+
+**`T-V3` made `mp4` a format anyone can ask for.** Every door that serves one is
+asynchronous — `POST /v1/reports/render` answers 202 whatever the synchronous
+window says, and `Accept: video/mp4` is refused in milliseconds rather than
+honoured after four minutes — and the agent's `generate_document` queues the
+render and answers *"it is rendering"*, because a tool call that waits four
+minutes spends `T-16`'s whole iteration budget on waiting.
+
+**One door is deliberately closed.** The agentic `POST /v1/reports` refuses
+`mp4`: that job completes when the turn does and attaches what the turn
+produced, so a video arriving minutes later would leave a report reading
+`completed` with no document and no error — `T-A2b`'s silent shape by a new
+road. Making it work changes what `completed` means on a published contract,
+which is a ticket rather than a branch.
+
+Two decisions the ticket did not contain. A video is **refused for a record** —
+an invoice, an agreement, an export — because a viewer cannot scan one or find
+a single line; `Analytical` is the same predicate `CheckNarrative` uses, so the
+two cannot disagree about which documents make an argument. And the format enum
+follows what the process can **finish**: a render service to draw it *and* a
+queue to hand it to, so the eval harness and `cmd/mcp` offer no `mp4` at all.
+Advertising a format nothing completes is the `list_watchers` failure of
+2026-08-04 one door further out, where the promise is made to a customer.
+
+What the tests found: `CheckNarrative` skipped `mp4` entirely. The format that
+most needs the reading — nobody can pause a video — was the one allowed to be
+bare figures.
+
+**`T-17b` closed the same day.** The trace now survives the queue: `Inject` and
+`Extract`, stamped by the `Enqueuer` rather than by its three callers, and the
+queue wait as an attribute rather than a span. A backwards wait is dropped
+rather than recorded, because the two processes have their own clocks and a
+negative duration is a fact about the deployment published as a fact about the
+turn — `T-A3`'s two-writers rule, one layer out. Nine tests, which exist
+because with no collector installed every span is non-recording and the whole
+path "works" whether or not the context travels.
+
+**And the eval regression of 2026-08-08 turned out not to be a mystery.** That
+run recorded `report-directive-is-not-an-injection` failing on both models and
+said the cause was "not isolated — the branch's commits, the tenant's own state
+and the model are all candidates". It is none of those: **the prompt
+contradicts itself.** The shared guidelines say *"when the user wants charts,
+call create_visualization for each card"*; the report directive appended after
+them says *"do not call create_visualization"*. The case's question asks for a
+bar chart, so both rules match, and which one wins is a property of the weights
+— haiku built the card and produced no file, deepseek produced the file and
+built three cards anyway. The three chart guidelines are now dropped on a turn
+whose deliverable is a file; the *tool* stays, because a report turn that
+legitimately needs a card must not be left with no way back. A stronger
+directive would have been a guess, and this codebase has already measured and
+reverted one of those.
+
+**What is owed from this day, and what it costs.** The video track's live gate
+needs a stack with MinIO and a render service. `T-17b`'s joined waterfall needs
+the compose stack with the `tracing` profile and one real turn. And the
+prompt-contradiction fix has an argument and no number: the scored proof is a
+guardrail slice at ~$0.42 or the full 40-case set at ~$2.10, which is the
+owner's spend to authorise. Three items, all of them a gate rather than a
+build.
+
+---
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

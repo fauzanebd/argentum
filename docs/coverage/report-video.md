@@ -5,9 +5,11 @@ an animated deck at a link. Tickets in
 [`../plan/01-tickets.md`](../plan/01-tickets.md); the insert and what it slipped
 are [`../plan/00-sprint-overview.md`](../plan/00-sprint-overview.md) §8d.
 
-**State: `T-V1` and `T-V2` code complete and gated locally, 2026-08-09.
-`T-V3`→`T-V5` not started.** A plan renders to a real MP4 and to a still per
-scene; nothing is wired to the backend yet.
+**State: `T-V1`, `T-V2` and `T-V3` code complete, 2026-08-09. `T-V4`/`T-V5`
+not started.** A plan renders to a real MP4 from a container, and `mp4` is a
+format the API, the agent and the queue all understand. The live gate — a
+video through `/v1` and through a real turn, on a stack with MinIO — has not
+run.
 
 ---
 
@@ -371,11 +373,172 @@ that say `Dibuat dengan Argentum` and `Rahasia — Internal`.
 
 ### 7. What is not done
 
-- **The image has not been built or deployed.** The Dockerfile and the chart are
-  written and unexercised; `docker build` needs a run and the readiness probe
-  needs a cluster. That is the outstanding half of this ticket.
-- **No backend wiring.** `mp4` is not a format anything can ask for yet — `T-V3`.
 - **`RevealGrow` is defined and never chosen**, and the chart's own white ground
   sits on the cream page exactly as it does in the PDF. Both are `T-V5`'s.
 - **No still-comparison gate yet.** The stills are produced; comparing them
   against goldens within a perceptual tolerance is `T-V5`.
+- **The cluster half of the deployment is unexercised.** The image builds and
+  runs (§8); the Helm chart's readiness probe, the `egress: []` NetworkPolicy
+  and the emptyDir sizing have never met a cluster.
+
+### 8. The image, built — and four defects, 2026-08-09
+
+The Dockerfile and the chart shipped with `T-V2` "written and unexercised".
+Building them found **four defects in fourteen lines**, three of which would
+have failed in a cluster and passed on a laptop, and one that could never have
+worked anywhere.
+
+| # | What | Why it was invisible |
+| - | ---- | -------------------- |
+| 1 | `COPY … package.json` — **there is no root `package.json` in this repository** | Every workspace has one. pnpm reads `pnpm-workspace.yaml` for the member list and the lockfile for what to install, so the root manifest was never needed — it was named because it usually exists |
+| 2 | `ENV PNPM_HOME=/pnpm PATH=$PNPM_HOME:$PATH` on one line | A variable set in an `ENV` is not expanded by the same `ENV`, so `PATH` was prepended with an empty string. Docker prints this as a warning nobody reads |
+| 3 | Unpinned corepack met a pnpm whose `minimumReleaseAge` refuses any package published in the last 24 hours | Which is a description of a lockfile somebody updated yesterday — this one, by `T-V2`, the day before. The image would have started failing on a day nobody touched it |
+| 4 | `npx remotion browser ensure` | This service depends on `@remotion/bundler` and `@remotion/renderer`, never on `@remotion/cli`. There is no `remotion` binary to run: `npm error could not determine executable to run` |
+
+**And a fifth, at runtime, which is the one worth reading twice.** The
+entrypoint was `pnpm --filter @argentum/render start`. corepack's cache belongs
+to root; the process runs as `render`; so the first container started from this
+image **downloaded a package manager from the npm registry on boot** — in the
+one image this repository deploys behind a NetworkPolicy with `egress: []`. It
+would have failed in the cluster and worked on every developer machine, which
+is precisely the class `T-02`'s zoneinfo finding named. pnpm 11 then wanted to
+purge and reinstall the `node_modules` the build had already written.
+
+The entrypoint is now `node --import tsx src/server.ts`: no package manager at
+runtime, and the browser Remotion downloaded at build time sits in
+`/app/apps/render/node_modules/.remotion/`, owned by the runtime user.
+
+**The gate, run against the built image:**
+
+```
+$ docker build -f apps/render/Dockerfile -t argentum-render:local .   → ok
+$ docker run -d -p 8090:8090 -e RENDER_SHARED_SECRET=… argentum-render:local
+  {"svc":"render","event":"ready","port":8090}
+$ curl -s localhost:8090/healthz                       → 200 {"status":"ok","jobs":0}
+$ curl -sX POST …/v1/render                            → 401  (no secret)
+$ curl -sX POST …/v1/render -H 'x-render-secret: nope' → 401  (wrong secret)
+$ curl -sX POST …/v1/render -H 'x-render-secret: …' -d '{"plan":{}}'
+  {"error":"plan version undefined is not supported; this renderer draws version 1"}
+$ …/v1/render with kpi_summary.plan.json               → 202 {"job_id":"…"}
+  rendering 0.08 → 0.75 → 0.91
+  {"state":"done","size_bytes":5865049,"frames":2623,"render_seconds":181.863}
+$ GET …/v1/jobs/:id/result                             → 200, 5 865 049 bytes
+  ISO Media, MP4 Base Media v1
+```
+
+Two numbers for the next estimate: **2 623 frames in 182 seconds** on an
+8-core developer machine under Docker, and **5.9 MB** for 87 seconds of 1080p.
+That ratio is what the channel-delivery threshold in `T-V3` is sized against.
+
+---
+
+## §T-V3 — `mp4` end to end
+
+Shipped 2026-08-09. `T-V1` projected a spec onto a plan and `T-V2` drew one;
+neither could be reached, because no door accepted the format. This is where a
+tenant, an agent and an integrator can each ask for a video.
+
+### 1. Every door is asynchronous, and one is closed
+
+| Door | What it does |
+| ---- | ------------ |
+| `POST /v1/reports/render` | `202` with a report id **whatever `API_V1_SYNC_RENDER_TIMEOUT` says**. Collected by poll, by SSE, or by signed callback — `T-A2`'s three ways, unchanged |
+| `Accept: video/mp4` on that door | Refused in milliseconds with `async_format`, naming the collection routes |
+| `generate_document` | Queues the render, answers *"it is rendering"*, and the worker posts the file into the thread |
+| `POST /v1/reports` (agentic) | **Refused** with `format_not_supported_here` |
+
+That last row is the one decision worth defending. It could accept a video —
+the directive would ask for one and the tool would queue it. What it could not
+do is *finish*: that job completes when the turn does and attaches whatever
+document the turn produced, so a video arriving four minutes later would leave
+a report reading `completed` with **no document and no error**. That is
+`T-A2b`'s silent shape arriving by a new road. Making it work means the report
+row waiting on a render rather than on a turn, which changes what `completed`
+means on a published contract — a ticket, not a branch.
+
+### 2. The three failures, told apart
+
+`internal/report/video` is the first outbound dependency `docgen` has ever had,
+and most of the package is about that. A PDF fails in-process in milliseconds;
+a video fails in another container after minutes, in one of three ways that
+mean completely different things to whoever reads the message:
+
+- **not configured** — a deployment with no render service, which is a valid
+  deployment. `mp4` is left out of the tool's format enum entirely and refused
+  with a sentence saying every other format works.
+- **unavailable** — configured and unreachable. The only one a retry could fix.
+- **rejected** — the plan was refused. Deterministic, so nothing retries it.
+
+The service already decides which of the last two it was — 400 on a plan it
+refused, 500 on its own failure — so a failed job is resolved by asking
+`/result` rather than by parsing the message. A second classifier would be one
+that can disagree with the first.
+
+### 3. Bounded before, metered after
+
+Checked **before the job is queued**: the scene and frame caps
+(`videoplan.Limits`, read from config as `T-V1` §6 said `T-V3` would have to),
+the spec's own validation, and the tenant's credit balance. That last one is
+new for a render — a PDF is a millisecond of this process and has never been
+worth a balance lookup, while a video is minutes of a pod that does one job at
+a time, which is the unbounded spend `T-03` exists to stop. A refusal after
+the frames are drawn has already cost everything it was going to.
+
+Metered after: a `video_render` usage event carrying the service's own wall
+clock, **beside** the document event rather than instead of it. One video is
+one document and also three minutes of somebody's CPU. The per-second price is
+a placeholder; what the event does is make the number exist before anyone has
+to price it.
+
+### 4. Two decisions the ticket did not contain
+
+**A video is refused for a document that is a record.** An invoice, an
+agreement, an export: a viewer cannot scan a video, cannot compare two numbers
+side by side, and cannot find one line. `Analytical` — a `kpi_row` or a
+`chart` — is the same predicate `CheckNarrative` uses for the mirror-image
+judgement, so the two cannot disagree about which documents make an argument.
+
+**The format enum follows what the process can *finish*.** Both halves are
+required: a render service to draw it, and a queue to hand it to. The eval
+harness and `cmd/mcp` build the same tool and have no queue, so neither offers
+`mp4` — advertising a format nothing can complete is the `list_watchers`
+failure of 2026-08-04 one door further out, where the promise is made to a
+customer rather than to an MCP client.
+
+### 5. What the tests found
+
+`CheckNarrative` skipped `mp4` entirely — it fired for `pdf` and `pptx` only.
+The format that most needs the reading was the one allowed to be bare figures:
+a PDF of unexplained numbers can at least be scanned, and a video of them
+cannot be paused.
+
+### 6. Gate
+
+```
+$ go build ./...      → clean
+$ go test ./...       → all packages pass
+$ make lint-go        → 0 issues
+$ make types-check    → 6 generated files are current
+$ make openapi-check  → 4 artifacts current, quickstart's 13 examples byte-equal
+$ helm template … --set render.enabled=true | grep RENDER_BASE_URL → api + worker
+$ helm template …                                                  → absent
+```
+
+**The live half has not run.** It needs a stack with MinIO and a render
+service: a video through `POST /v1/reports/render` with its progress events and
+its download, one through a real turn appearing in the thread, the invoice
+refusal, the cap refusal with an empty access log on the render service, the
+402, and the unconfigured-service message.
+
+### 7. What is not done in `T-V3`
+
+- **Channel delivery above a size threshold.** `send_message` with an
+  `attach_document_id` pointing at an mp4 should post the presigned URL rather
+  than the file once it exceeds the channel's limit (Discord 8–25 MB, WhatsApp
+  16 MB). Unwritten — and the numbers in §8 above say it matters: 87 seconds of
+  1080p is 5.9 MB, so an ordinary three-minute report clears Discord's free
+  limit on its own.
+- **The dashboard does not render a video inline.** A document is a markdown
+  link today, whatever its format. Nothing broke — there is no exhaustive
+  switch over `DocumentFormat` in the dashboard, which is also why widening the
+  union did not fail its build the way `T-V3`'s ticket predicted it would.

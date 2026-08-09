@@ -229,17 +229,48 @@ the rest is model latency — the answer to "why is it slow" for this product,
 stated in one line for the first time. `table_picker` at 0.0 ms is the feature
 being off for this tenant, returning before the embedding call.
 
-## 10. Not done
+## 10. `T-17b` — the trace survives the queue, 2026-08-09
 
-- **A worker-side trace — now `T-17b`.** The waterfall above came from
-  `cmd/eval`, which enqueues nothing. On the real deployment the turn is
-  enqueued by `cmd/api` and run by `cmd/worker`, and nothing carries the context
-  across: the propagators are installed and never called, and `ChatRunPayload`
-  has no field to put a `traceparent` in. A trace that stops at the queue is two
-  traces again, one layer up from the bug §9 fixed — and the part it hides is
-  the queue wait, which is the one component of a slow turn §9's waterfall
-  cannot account for. Filed as [`../plan/01-tickets.md`](../plan/01-tickets.md)
-  `T-17b`, 0.5d, P2.
+§10 used to open with *"a worker-side trace — now `T-17b`"*. It is done.
+
+`tracing.Inject` and `tracing.Extract` are the two ends, and the stamping
+happens in **`queue.Enqueuer`** rather than in its callers. `ChatEnqueuer`, the
+scheduler and the watcher all produce `chat:run`; three call sites is three
+chances to forget, and forgetting is invisible — the turn simply starts its own
+trace, which is what every turn did before. A fourth producer inherits it
+without knowing this code exists.
+
+Three decisions worth keeping:
+
+- **The carrier is a map, not a `traceparent` string.** `tracestate` is a second
+  header the composite propagator writes when it has one, and a payload field
+  named after the first would drop the second silently.
+- **The queue wait is an attribute, not a span.** Nothing happens during it, and
+  a span with no work in it is a bar on a waterfall that invites somebody to
+  look for the code that ran inside.
+- **A backwards wait is dropped rather than recorded.** The two processes have
+  their own clocks. A negative duration is a fact about the deployment
+  published as a fact about the turn — the same class as `T-A3`'s finding about
+  comparing two writers' clocks, one layer out.
+
+`ReportRenderPayload` takes the same stamp, and since `T-V3` it is the longest
+task in the system: a video is minutes in another process with nobody holding a
+connection, and none of that time appeared in a trace at all.
+
+Nine tests, and they exist because the property is invisible without a
+collector: with no provider installed every span is non-recording, so the whole
+path "works" whether or not the context travels. They run a real SDK provider
+that exports nowhere and assert what a waterfall would show — one trace id
+across both halves, a parent marked remote, and no `trace` field at all on a
+deployment collecting nothing.
+
+**What is owed is the reading.** A joined waterfall — `cmd/api`'s span, the
+queue wait, `cmd/worker`'s turn — needs the compose stack with the `tracing`
+profile up and one real turn. §9's waterfall came from `cmd/eval`, which
+enqueues nothing, so this has never been seen end to end.
+
+## 11. Not done
+
 - **Queue depth is API-only.** The poller runs where `/metrics` is served, which
   is right for today's deployment and would need revisiting if the worker ever
   exposed an endpoint of its own.

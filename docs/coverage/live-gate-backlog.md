@@ -23,6 +23,14 @@ days because of it. Everything still open needs model spend, a Slack workspace,
 a real handset, or an operator's decision. Nothing left is blocked on writing
 code.
 
+**Revised 2026-08-09.** The video track added three items, and one of them
+moves this file's own claim: **§1 is no longer empty.** `T-V3` and `T-17b` both
+landed with gates that need the compose stack and nothing else, which is the
+bucket that gets run — the two items in it on 2026-08-04 produced three
+findings between them. §1a below is where they are, deliberately kept out of §2
+so the mistake this file recorded on 2026-08-08 is not repeated: a gate filed
+behind a cost it does not have is a gate nobody runs.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of three things: the stack up, money spent, or a message sent to a real
 person's phone.
@@ -43,6 +51,17 @@ The one thing the run needed that no document named:
 `API_V1_CALLBACK_ALLOW_PRIVATE=true` for a loopback webhook receiver — separate
 from `MCP_ALLOW_PRIVATE_EGRESS`, and the two are easy to confuse.
 
+## 1a. Needs the local stack, nothing else — **open, added 2026-08-09**
+
+| Owed by | The gate | What it would prove |
+| ------- | -------- | ------------------- |
+| `T-V3` | A video through `POST /v1/reports/render`: the 202, the `render_progress` events reaching 1.0 exactly once, and the download. Then one through a real turn — the agent answers "it is rendering" and the file appears in the thread minutes later. Then the four refusals: the invoice, the cap (asserted by an **empty access log on the render service**, the same way `T-A2` asserts nothing was uploaded), the 402, and the unconfigured-service message | Every acceptance item of the ticket. The unit tests cover each seam; what they cannot cover is the seams meeting. Needs `RENDER_BASE_URL` set on the API and the worker, and MinIO — `make infra` starts both since 2026-07-31 |
+| `T-17b` | One waterfall spanning both processes: `cmd/api`'s span, the queue wait, `cmd/worker`'s turn | That the trace actually joins. §9's waterfall came from `cmd/eval`, which enqueues nothing, so the joined shape has never been seen. Needs the compose file's `tracing` profile |
+| `T-V2` | The image in a cluster: the readiness probe passing, the `egress: []` NetworkPolicy holding, the emptyDir sized for a render | The image itself was built and run on 2026-08-09 ([`report-video.md`](report-video.md) §8) and found five defects. What is left is Kubernetes-shaped and needs a cluster rather than Docker |
+
+The first two cost nothing but the stack. The third needs a cluster, and is
+the only item in this section that a developer machine cannot close.
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |
@@ -51,6 +70,7 @@ from `MCP_ALLOW_PRIVATE_EGRESS`, and the two are easy to confuse.
 | `T-A2b` | Ten live agentic report calls, confirming the injection guardrail no longer refuses them | The fix (the directive moved into the system prompt) is proven by construction and by one gate run; ten is what the ticket asked for |
 | `T-R4` | Three unautomatable applications of the deck renderer | Opening the generated `.pptx` in PowerPoint, Keynote and Google Slides. No test can do this |
 | `T-18` | The final eval run → `docs/coverage/eval-sprint1.md`, compared against baseline | One full run of the golden set. **Order matters:** run `T-07b`'s before/after pair first, or the guardrail question gets answered against a baseline this run has already moved ([`launch-hygiene.md`](launch-hygiene.md) §6) |
+| The prompt-contradiction fix (2026-08-09) | `report-directive-is-not-an-injection` passing on both models | The guardrail slice is ~$0.42 on haiku (8 cases, measured 2026-08-08); the full set is ~$2.10. The fix removes the chart guidelines from a turn whose deliverable is a file, which is a mechanism with an argument behind it and **no number** — the deterministic half is tested, and whether the case now passes is exactly what a golden set exists to answer ([`delivery-log.md`](delivery-log.md) Phase 2g) |
 | ~~`T-17`~~ | ~~`curl` the exposition; one trace waterfall for a tool-calling turn~~ | **Both run 2026-08-08 — ticket closed.** Exposition: 401 / 401 / 200 with the right token, queue gauges reading a queue discovered from Redis. Waterfall: one `agent.turn` of 7,750 ms with 18 ms inside `query_metric`, which is the LLM/SQL split the ticket asked for. It cost one case of model spend, and it found the defect §9 records — `memory.hydrate` was landing in its own trace ([`observability.md`](observability.md) §8–§9) |
 
 ~~`T-17`'s exposition half needs no spend and was not run on 2026-08-04~~ —
