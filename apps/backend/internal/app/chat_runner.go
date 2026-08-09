@@ -513,8 +513,17 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// in another. The user waits for LLM resolution, agent construction and
 	// hydration exactly as they wait for the model, so covering them is also the
 	// more honest reading of "the turn as the user experiences it".
+	// The producer's trace, restored before the span is started (T-17b).
+	//
+	// Without this the API's spans and the worker's are two unrelated traces of
+	// one turn, so the interval a slow turn is most often blamed on — the wait
+	// in the queue — was the one interval no waterfall could show. An absent or
+	// unreadable carrier leaves ctx alone and the turn starts its own trace,
+	// which is what every task queued before this field existed carries.
+	ctx = tracing.Extract(ctx, p.Trace)
 	ctx, turnSpan := tracing.Turn(ctx, p.CompanyID, p.ThreadID, string(p.Channel))
 	defer turnSpan.End()
+	tracing.QueueWait(turnSpan, p.EnqueuedAt)
 
 	// Resolve the per-tenant LLMs for this turn. Primary is required; light
 	// falls back to primary if resolution fails (preserves today's behavior

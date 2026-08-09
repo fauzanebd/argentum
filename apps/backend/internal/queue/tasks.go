@@ -22,6 +22,8 @@
 package queue
 
 import (
+	"time"
+
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/report/spec"
 )
@@ -83,6 +85,12 @@ type ReportRenderPayload struct {
 	// render happens after the turn that asked for it has ended, so nothing
 	// else in this payload can say which agent it belonged to.
 	AgentID string `json:"agent_id,omitempty"`
+	// Trace and EnqueuedAt are ChatRunPayload's, for the same reason and with
+	// more of it: since T-V3 this is the longest-running task in the system, so
+	// a trace that stopped at the queue would stop in front of the interval
+	// worth measuring.
+	Trace      map[string]string `json:"trace,omitempty"`
+	EnqueuedAt time.Time         `json:"enqueued_at,omitzero"`
 }
 
 // WebhookDeliverPayload names the delivery row. Only the id: the URL, the
@@ -162,6 +170,19 @@ type ChatRunPayload struct {
 	// the rows are written in another process, minutes later, from a payload
 	// that is the only thing crossing the gap.
 	RequestID string `json:"request_id,omitempty"`
+	// Trace and EnqueuedAt carry the turn's trace across the queue (T-17b).
+	//
+	// Without them `cmd/api`'s spans and `cmd/worker`'s are two unrelated
+	// traces of one turn, and the wait between them — the only part of a slow
+	// turn the 2026-08-08 waterfall could not see — is unmeasurable. Both are
+	// filled by the Enqueuer rather than by its three callers, so a fourth
+	// producer cannot forget them. Empty is the ordinary state on a deployment
+	// with no collector, and on a task queued before this field existed.
+	Trace map[string]string `json:"trace,omitempty"`
+	// `omitzero` rather than `omitempty`, which does nothing on a struct: a
+	// zero time.Time would otherwise be written as `"0001-01-01T00:00:00Z"`
+	// into every payload queued by a process that did not set it.
+	EnqueuedAt time.Time `json:"enqueued_at,omitzero"`
 }
 
 // ScheduledRunPayload is the body of a `scheduled:run` task. Only the

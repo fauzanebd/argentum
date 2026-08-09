@@ -135,6 +135,58 @@ func Outcome(span trace.Span, outcome string) {
 	span.SetAttributes(attribute.String("argentum.outcome", outcome))
 }
 
+// Inject captures the current trace context as a carrier a queue payload can
+// hold (T-17b).
+//
+// Without it the two halves of a turn are two traces. `cmd/api` opens a span
+// for the HTTP request, the work happens in `cmd/worker` minutes later, and
+// nothing connects them — so the one interval a slow turn is most often blamed
+// on, the wait in the queue, is the interval no waterfall can show. The
+// producer is the only place that knows the trace, and the payload is the only
+// thing that crosses the gap.
+//
+// A map rather than a string: `traceparent` and `tracestate` are two headers,
+// the composite propagator writes whichever it has, and a payload field named
+// after one of them would quietly drop the other. Nil when no provider is
+// installed, which is the ordinary deployment and costs a payload nothing.
+func Inject(ctx context.Context) map[string]string {
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	if len(carrier) == 0 {
+		return nil
+	}
+	return carrier
+}
+
+// Extract restores a trace context captured by Inject.
+//
+// An absent or unparseable carrier returns ctx unchanged, so a task queued
+// before this field existed — or by a process with no tracer — starts its own
+// trace exactly as it did before. There is no version of this that should fail
+// a turn.
+func Extract(ctx context.Context, carrier map[string]string) context.Context {
+	if len(carrier) == 0 {
+		return ctx
+	}
+	return otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(carrier))
+}
+
+// QueueWait records how long a task sat before a worker picked it up.
+//
+// It is an attribute rather than a span of its own: nothing happens during the
+// wait, and a span with no work in it is a bar on a waterfall that invites
+// somebody to look for the code that ran inside it. A zero or negative
+// duration is dropped — the two processes have their own clocks, and a
+// negative wait is a clock difference reported as a fact.
+func QueueWait(span trace.Span, enqueuedAt time.Time) {
+	if enqueuedAt.IsZero() {
+		return
+	}
+	if wait := time.Since(enqueuedAt); wait > 0 {
+		span.SetAttributes(attribute.Int64("argentum.queue_wait_ms", wait.Milliseconds()))
+	}
+}
+
 // End closes a span, recording the error when there is one. Every caller ends
 // with `defer tracing.End(span, err)` reading a named return, which is the one
 // shape that cannot forget the error on an early return.

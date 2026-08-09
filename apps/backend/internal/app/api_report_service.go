@@ -15,6 +15,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/video"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
+	"github.com/fauzanebd/argentum/internal/tracing"
 	"github.com/fauzanebd/argentum/internal/webhookout"
 )
 
@@ -164,6 +165,14 @@ func (s *APIReportService) RunRenderJob(ctx context.Context, p queue.ReportRende
 	if p.RequestID != "" {
 		ctx = tenantctx.WithRequestID(ctx, p.RequestID)
 	}
+	// One span for the render, joined to the request that asked for it
+	// (T-17b). A video is minutes long and the caller is holding nothing —
+	// this is the only place the time goes, and until now none of it appeared
+	// in a trace at all.
+	ctx = tracing.Extract(ctx, p.Trace)
+	ctx, span := tracing.Step(ctx, "report.render")
+	defer span.End()
+	tracing.QueueWait(span, p.EnqueuedAt)
 
 	spec := p.Spec
 	res, err := s.gen.Generate(ctx, docgen.Input{
@@ -233,6 +242,14 @@ func (s *APIReportService) runThreadRender(ctx context.Context, p queue.ReportRe
 	}
 	ctx = tenantctx.WithCompanyID(ctx, p.CompanyID)
 	ctx = tenantctx.WithThreadID(ctx, p.ThreadID)
+	// Joined to the turn that asked for the video, which is the whole reason
+	// this trace is worth having: the turn ends in seconds and the file arrives
+	// minutes later, and a waterfall that shows only the first half explains
+	// nothing about the wait the user actually experienced.
+	ctx = tracing.Extract(ctx, p.Trace)
+	ctx, span := tracing.Step(ctx, "report.render.threaded")
+	defer span.End()
+	tracing.QueueWait(span, p.EnqueuedAt)
 	if p.AgentID != "" {
 		// The id only, not the turn's whole scope: nothing in a render reads a
 		// source or MCP allowlist, and reconstructing one from a payload would

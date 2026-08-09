@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+
+	"github.com/fauzanebd/argentum/internal/tracing"
 )
 
 // Enqueuer wraps *asynq.Client with typed helpers so handlers don't have
@@ -34,6 +36,16 @@ func (e *Enqueuer) Close() error {
 // id is the asynq task ID, useful for tracing but not required for the WS
 // stream subscription (which is keyed by thread_id).
 func (e *Enqueuer) EnqueueChatRun(ctx context.Context, p ChatRunPayload) (string, error) {
+	// Stamped here rather than by the three callers (T-17b). `ChatEnqueuer`, the
+	// scheduler and the watcher all produce this task, and a fourth producer
+	// added next year would otherwise be a trace that stops at the queue with
+	// nothing to say it does.
+	if p.Trace == nil {
+		p.Trace = tracing.Inject(ctx)
+	}
+	if p.EnqueuedAt.IsZero() {
+		p.EnqueuedAt = time.Now()
+	}
 	body, err := json.Marshal(p)
 	if err != nil {
 		return "", fmt.Errorf("marshal chat payload: %w", err)
@@ -69,6 +81,12 @@ const QueueVideo = "video"
 // asynq's retry is limited to what the worker chooses to return an error for,
 // which is transport failures only.
 func (e *Enqueuer) EnqueueReportRender(ctx context.Context, p ReportRenderPayload) (string, error) {
+	if p.Trace == nil {
+		p.Trace = tracing.Inject(ctx)
+	}
+	if p.EnqueuedAt.IsZero() {
+		p.EnqueuedAt = time.Now()
+	}
 	body, err := json.Marshal(p)
 	if err != nil {
 		return "", fmt.Errorf("marshal report render payload: %w", err)
