@@ -2124,6 +2124,24 @@ legitimately needs a card must not be left with no way back. A stronger
 directive would have been a guess, and this codebase has already measured and
 reverted one of those.
 
+**And `attach_document_id` stopped being a field that does nothing.** It has
+been on `send_message` since `T-12a`, validated and never fetched, with the
+approval card rendering *"(a document was requested but is not attached in this
+version)"*. `T-V3` asks for a link *above* a channel's size limit — and there is
+no threshold to implement, because the upload path never existed, so every case
+is the above-threshold case. The gate's own numbers say that is the right
+answer anyway: 5.9 MB for 87 seconds of 1080p puts a three-minute report past
+Discord's free limit unaided.
+
+The decisions are about what happens when the link cannot be produced. A
+document that will not resolve **refuses the whole action**, because sending
+the message anyway delivers a sentence about a report with no report in it. The
+lookup is company-scoped by the query rather than by a comparison afterwards —
+the id came from a model. The allowlist still runs first, pinned by a test that
+asserts the linker was never called for a refused recipient. And a deployment
+with no object storage refuses the proposal at `Validate`, so a proposal
+nothing could honour is never put in front of a human to approve.
+
 **What is owed from this day, and what it costs.** The video track's live gate
 needs a stack with MinIO and a render service. `T-17b`'s joined waterfall needs
 the compose stack with the `tracing` profile and one real turn. And the

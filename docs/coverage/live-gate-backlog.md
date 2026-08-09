@@ -91,6 +91,7 @@ did not have. A gate in the wrong bucket is a gate nobody runs.
 
 | Owed by | The gate | Why it is deferred |
 | ------- | -------- | ------------------ |
+| `send_message`'s document link (T-V3) | A real WhatsApp message carrying a presigned link, opened on a handset | Same deferral as the row below and the same reason: it goes to a real phone. What a test cannot show is that the link survives WhatsApp's own URL handling and that the markdown-link flattening the chat path already does reaches this body too ([`report-video.md`](report-video.md) §8) |
 | `T-12a` | The message arrives | `.env` holds live Twilio credentials and the worker delivers, so closing this sends a real WhatsApp message to a real handset. **Deferred by the repo owner**, not by an implementer. Both halves of the ticket's gate are owed, because the un-allowlisted-target refusal is only reachable by approving a proposal ([`delivery-log.md`](delivery-log.md) Phase 2c) |
 
 ## 4. Needs an operator's decision, not a gate

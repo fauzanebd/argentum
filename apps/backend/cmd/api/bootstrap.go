@@ -424,7 +424,10 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// http_action resolves a registered endpoint (decrypting its header) and calls
 	// it through the guarded egress.
 	actionRegistry := actions.NewRegistry(
-		actions.NewSendMessageAction(app.NewActionMessenger(phoneRepo, deps.wa)),
+		// The linker matters more in this process than in the worker: the worker
+		// only *proposes*, and this is where an approval is carried out (T-V3).
+		actions.NewSendMessageAction(app.NewActionMessenger(phoneRepo, deps.wa)).
+			WithDocuments(documentLinkerOrNil(deps.docGen)),
 		actions.NewHTTPAction(
 			app.NewHTTPEndpointResolver(httpEndpointRepo, dsnCipher),
 			app.NewHTTPActionEgress(httpActionGuard, 0),
@@ -503,4 +506,14 @@ func idempotencyStoreOrNil(rdb *redis.Client) idempotency.Store {
 		return nil
 	}
 	return st
+}
+
+// documentLinkerOrNil is budgetReaderOrNil for the document linker (T-V3).
+// Fourth instance of the same trap: a nil *docgen.Service assigned into an
+// interface arrives non-nil, and the action's own guard would not fire.
+func documentLinkerOrNil(d *docgen.Service) actions.DocumentLinker {
+	if d == nil {
+		return nil
+	}
+	return d
 }

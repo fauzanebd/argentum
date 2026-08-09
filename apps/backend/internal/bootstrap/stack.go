@@ -376,7 +376,11 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.Actions = app.NewActionService(
 		s.ActionRepo,
 		actions.NewRegistry(
-			actions.NewSendMessageAction(s.actionMessenger),
+			// The linker is what lets an approved message carry a report (T-V3).
+			// Nil on a deployment with no object storage, which refuses an
+			// `attach_document_id` at Validate rather than accepting a proposal
+			// nothing could honour.
+			actions.NewSendMessageAction(s.actionMessenger).WithDocuments(documentLinkerOrNil(s.Docs)),
 			actions.NewHTTPAction(
 				app.NewHTTPEndpointResolver(pgctl.NewHTTPEndpointRepo(controlDB), dsnCipher),
 				httpActionEgress,
@@ -869,4 +873,19 @@ func buildStorageService(cfg *config.Config) (*storage.StorageService, error) {
 		Bucket:          cfg.MinIOBucket,
 		UseSSL:          cfg.MinIOUseSSL,
 	})
+}
+
+// documentLinkerOrNil converts a possibly-nil *docgen.Service into a
+// genuinely-nil interface.
+//
+// The third instance of this trap in this codebase — `budgetReaderOrNil` and
+// `chatEnqueuerOrNil` in cmd/api are the others. A nil pointer assigned into an
+// interface arrives non-nil, so the action's own `docs == nil` guard would not
+// fire and an `attach_document_id` on a deployment with no object storage would
+// reach a nil receiver instead of the refusal that exists for it.
+func documentLinkerOrNil(d *docgen.Service) actions.DocumentLinker {
+	if d == nil {
+		return nil
+	}
+	return d
 }

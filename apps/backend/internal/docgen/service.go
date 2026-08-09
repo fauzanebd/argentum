@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/actions"
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/report/brand"
@@ -309,6 +310,40 @@ func (s *Service) Presign(ctx context.Context, doc *domain.Document) (string, ti
 		return "", time.Time{}, fmt.Errorf("presign document: %w", err)
 	}
 	return signed, expiresAt, nil
+}
+
+// LinkForDocument resolves a document to a link a recipient can open (T-V3).
+//
+// It is `actions.DocumentLinker`, satisfied here because this is already where
+// a document becomes a URL — `GET /v1/documents/:id` re-presigns through the
+// same `Presign`, and a second presigner would be a second answer to how long
+// a link lasts.
+//
+// **Company-scoped by the query, not by a comparison afterwards.** An action
+// executes in a worker on behalf of a tenant, and the id in its parameters came
+// from a model: `GetForCompany` is what makes another tenant's document a
+// not-found rather than a fetch followed by a check somebody can forget.
+func (s *Service) LinkForDocument(ctx context.Context, companyID, documentID string) (actions.Attachment, error) {
+	if s == nil || s.repo == nil {
+		return actions.Attachment{}, fmt.Errorf("documents are not available on this deployment")
+	}
+	if companyID == "" {
+		return actions.Attachment{}, fmt.Errorf("no tenant in context: cannot resolve a document")
+	}
+	doc, err := s.repo.GetForCompany(ctx, companyID, documentID)
+	if err != nil {
+		return actions.Attachment{}, err
+	}
+	url, _, err := s.Presign(ctx, doc)
+	if err != nil {
+		return actions.Attachment{}, err
+	}
+	return actions.Attachment{
+		Filename:  doc.Filename,
+		URL:       url,
+		SizeBytes: doc.SizeBytes,
+		ExpiresIn: s.presignTTL,
+	}, nil
 }
 
 // storageKey picks where the object lives.

@@ -532,13 +532,57 @@ refusal, the cap refusal with an empty access log on the render service, the
 
 ### 7. What is not done in `T-V3`
 
-- **Channel delivery above a size threshold.** `send_message` with an
-  `attach_document_id` pointing at an mp4 should post the presigned URL rather
-  than the file once it exceeds the channel's limit (Discord 8–25 MB, WhatsApp
-  16 MB). Unwritten — and the numbers in §8 above say it matters: 87 seconds of
-  1080p is 5.9 MB, so an ordinary three-minute report clears Discord's free
-  limit on its own.
+- ~~**Channel delivery above a size threshold.**~~ **Done, same day** — see §8
+  below, and note what it turned out to be: the threshold does not exist,
+  because the upload path never did.
 - **The dashboard does not render a video inline.** A document is a markdown
   link today, whatever its format. Nothing broke — there is no exhaustive
   switch over `DocumentFormat` in the dashboard, which is also why widening the
   union did not fail its build the way `T-V3`'s ticket predicted it would.
+
+### 8. `attach_document_id` stops being a field that does nothing
+
+The ticket asks for *"a link above the threshold"*: `send_message` with an
+`attach_document_id` pointing at an mp4 should post the presigned URL rather
+than the file whenever the file exceeds the channel's limit.
+
+**There is no threshold, because there was no upload path.** The field has been
+on `sendMessageParams` since `T-12a` and its own comment said so — *"accepted
+for forward compatibility … validated as a well-formed id if present, never
+fetched"*, with `Describe` rendering *"(a document was requested but is not
+attached in this version)"*. So the honest reading of the ticket is that every
+case is the above-threshold case, and the numbers agree: §8's gate measured
+**5.9 MB for 87 seconds** of 1080p, which puts an ordinary three-minute report
+past Discord's free limit on its own. A link that always works beats an upload
+that works until a report gets longer.
+
+What ships is the link, and the decisions are about what happens when it cannot
+be produced:
+
+- **A document that will not resolve refuses the whole action.** Sending the
+  message without it delivers a sentence about a report with no report in it,
+  and the approver cannot check that afterwards because the message has gone.
+- **The lookup is company-scoped by the query.** The id comes from a model and
+  the action runs in a worker on a tenant's behalf, so `GetForCompany` is what
+  makes another tenant's document a not-found — rather than a fetch followed by
+  a comparison somebody can forget.
+- **The allowlist still runs first.** An attachment must not become a way to
+  make the action fetch something before the recipient has been checked. Pinned
+  by a test that asserts the linker was never called on a refused target.
+- **No linker, no proposal.** A deployment without object storage refuses an
+  `attach_document_id` at `Validate`, so a proposal nothing could honour is
+  never stored and never put in front of a human. Same rule as
+  `generate_document`'s format enum: do not offer what this process cannot
+  finish.
+- **The message states the expiry.** A presigned URL that has lapsed answers
+  with a signature error, which reads to a recipient as the product being
+  broken rather than as a link having had a lifetime.
+
+`docgen.Service` satisfies the linker, because it is already where a document
+becomes a URL — `GET /v1/documents/:id` re-presigns through the same `Presign`,
+and a second presigner would be a second answer to how long a link lasts.
+
+Eleven tests. The live half — a real WhatsApp message with a real link, opened
+on a handset — joins `T-12a`'s own gate in
+[`live-gate-backlog.md`](live-gate-backlog.md) §3, which the repo owner
+deferred: closing it sends a real message to a real phone.
