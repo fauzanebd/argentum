@@ -1,0 +1,146 @@
+{{- if .Values.render.enabled }}
+# The video renderer (T-V2).
+#
+# Three things about this deployment are load-bearing rather than conventional:
+#
+#   * **One replica.** Jobs live in the pod's own memory and tmpfs, so a second
+#     replica would answer GET /v1/jobs/{id} for a job it has never heard of.
+#     Fixing that means moving results to object storage, which means giving
+#     this service a credential and egress — the two things it deliberately does
+#     not have. The trigger for revisiting is a second tenant waiting.
+#   * **No ingress, no Service beyond ClusterIP.** The worker calls it; nothing
+#     outside the cluster can.
+#   * **Egress denied.** The plan it renders is self-contained — chart images
+#     and the tenant logo arrive as data URIs, drawn in Go — so denying egress
+#     costs the service nothing and removes the SSRF surface entirely.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "argentum.fullname" . }}-render
+  labels:
+    {{- include "argentum.labels" . | nindent 4 }}
+    app.kubernetes.io/component: render
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, not RollingUpdate: two pods would both hold jobs, and the
+    # in-flight render is lost either way.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "argentum.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: render
+  template:
+    metadata:
+      labels:
+        {{- include "argentum.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: render
+    spec:
+      serviceAccountName: {{ include "argentum.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: render
+          image: "{{ .Values.render.image.repository }}:{{ .Values.render.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.render.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8090
+          env:
+            - name: RENDER_PORT
+              value: "8090"
+            {{- if .Values.render.sharedSecretRef }}
+            - name: RENDER_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.render.sharedSecretRef.name }}
+                  key: {{ .Values.render.sharedSecretRef.key }}
+            {{- end }}
+          # The readiness probe renders. A pod whose browser cannot start must
+          # never receive a tenant's report — it has to fail the probe instead,
+          # which is the difference between an alert and a refund.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.render.resources | nindent 12 }}
+          volumeMounts:
+            # Chromium and the encoder both want real scratch space, and the
+            # root filesystem is read-only. Sized rather than unbounded: a
+            # ten-minute 1080p render plus its frames is the worst case, and an
+            # emptyDir with no limit is a node-eviction waiting to happen.
+            - name: scratch
+              mountPath: /tmp
+            - name: dev-shm
+              mountPath: /dev/shm
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: scratch
+          emptyDir:
+            sizeLimit: {{ .Values.render.scratchSize }}
+        - name: dev-shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "argentum.fullname" . }}-render
+  labels:
+    {{- include "argentum.labels" . | nindent 4 }}
+    app.kubernetes.io/component: render
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8090
+      targetPort: http
+      name: http
+  selector:
+    {{- include "argentum.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: render
+---
+{{- if .Values.render.denyEgress }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "argentum.fullname" . }}-render
+  labels:
+    {{- include "argentum.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "argentum.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: render
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "argentum.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 8090
+  # No egress rules at all. Not a tightening of a broader policy — the service
+  # genuinely makes no outbound call, and an acceptance test renders under this
+  # policy to prove that rather than to assume it.
+  egress: []
+{{- end }}
+{{- end }}

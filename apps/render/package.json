@@ -1,0 +1,29 @@
+{
+  "name": "@argentum/render",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The video renderer. Takes a plan from internal/report/videoplan, draws it with Remotion, and hands back an MP4. It has no database, no object storage and no outbound network: the plan is self-contained, so this service can be deployed with egress denied.",
+  "main": "./src/server.ts",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "lint": "tsc -p tsconfig.json --noEmit && node --import tsx --test src/*.test.ts",
+    "render:fixture": "tsx src/fixture.ts",
+    "test": "node --import tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@argentum/api-types": "workspace:*",
+    "@argentum/motion": "workspace:*",
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

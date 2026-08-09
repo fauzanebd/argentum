@@ -270,3 +270,31 @@ extraEnv:
 # Extra volumes / mounts (e.g. external CA bundles).
 extraVolumes: []
 extraVolumeMounts: []
+
+# The video renderer (T-V2). Off by default: it is the only image with a
+# browser in it, and a deployment that never asks for an mp4 should not pay for
+# one. `mp4` is refused with a plain message when this is disabled and the
+# backend has no RENDER_URL — the same rule as every other optional dependency
+# in this chart.
+render:
+  enabled: false
+  image:
+    repository: ghcr.io/haritsrizkall/argentum-render
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Denying egress is correctness-preserving here: the plan carries its own
+  # images, so the service has nothing to call out to. Leave it on.
+  denyEgress: true
+  # A ten-minute 1080p render plus its frames. Bounded because an unbounded
+  # emptyDir is a node eviction waiting to happen.
+  scratchSize: 8Gi
+  resources:
+    requests:
+      cpu: "2"
+      memory: 4Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+  # sharedSecretRef:
+  #   name: argentum-secrets
+  #   key: render-shared-secret

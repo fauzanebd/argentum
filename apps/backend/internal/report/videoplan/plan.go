@@ -109,6 +109,15 @@ type Metrics struct {
 	TitleRuleWidth     int `json:"title_rule_width"`
 	TitleRuleThickness int `json:"title_rule_thickness"`
 
+	// Radius is the corner radius on a card, in pixels.
+	Radius int `json:"radius"`
+
+	// Spacing is the vertical rhythm, in pixels. Named rather than numbered so
+	// a component asks for a gap by role.
+	SpacingSM int `json:"spacing_sm"`
+	SpacingMD int `json:"spacing_md"`
+	SpacingLG int `json:"spacing_lg"`
+
 	// Leading is the multiple of the font size one line occupies. It is a
 	// float because it is a ratio, and it is the only float here.
 	Leading float64 `json:"leading"`
@@ -150,6 +159,22 @@ type Brand struct {
 	Dark       string `json:"dark"`
 	OnDark     string `json:"on_dark"`
 
+	// Surface and SurfaceSubtle are the card and the table's header band.
+	Surface       string `json:"surface"`
+	SurfaceSubtle string `json:"surface_subtle"`
+
+	// Positive and Destructive colour a KPI delta and a callout. They are here
+	// rather than in the renderer's stylesheet for the same reason everything
+	// else is: **the renderer holds no palette at all.** A colour literal in
+	// packages/motion is therefore always a defect, which is a rule a grep can
+	// enforce — where "does this hex match the token?" is a rule only a human
+	// can.
+	Positive    string `json:"positive"`
+	Destructive string `json:"destructive"`
+
+	// Tones are the callout fills, keyed by spec.Tone* — info, warn, good.
+	Tones map[string]Tone `json:"tones"`
+
 	// LogoDataURI is empty when the tenant has no usable mark. LogoAspect is
 	// its width ÷ height, so the renderer places it by height without decoding
 	// the image.
@@ -161,6 +186,14 @@ type Brand struct {
 	Credit          string `json:"credit,omitempty"`
 	Confidentiality string `json:"confidentiality,omitempty"`
 	FooterNote      string `json:"footer_note,omitempty"`
+}
+
+// Tone is one callout's colours: the rule down its edge and the ground behind
+// it. Two fields because a tone that is only a fill is invisible on a coloured
+// ground and a tone that is only a rule is a hairline nobody notices.
+type Tone struct {
+	Accent string `json:"accent"`
+	Fill   string `json:"fill"`
 }
 
 // Scene is one beat of the video.

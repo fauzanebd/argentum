@@ -5,8 +5,9 @@ an animated deck at a link. Tickets in
 [`../plan/01-tickets.md`](../plan/01-tickets.md); the insert and what it slipped
 are [`../plan/00-sprint-overview.md`](../plan/00-sprint-overview.md) §8d.
 
-**State: `T-V1` code complete and gated locally, 2026-08-09. `T-V2`→`T-V5` not
-started.**
+**State: `T-V1` and `T-V2` code complete and gated locally, 2026-08-09.
+`T-V3`→`T-V5` not started.** A plan renders to a real MP4 and to a still per
+scene; nothing is wired to the backend yet.
 
 ---
 
@@ -233,3 +234,148 @@ deleted four files to end.
 - The `RevealGrow` constant is defined and never chosen. `T-V5` decides whether
   a growing mask suits a bar chart better than a wipe; the wipe is the default
   until it does.
+
+---
+
+## §T-V2 — `apps/render`: the Remotion service and `packages/motion`
+
+Shipped 2026-08-09, the same day as `T-V1`. A plan goes in over HTTP and an MP4
+comes out. **It rendered:** the KPI fixture is 13 scenes and 1 016 frames, and it
+encoded in 136 seconds on a developer machine, after 13 stills that took about a
+second each.
+
+```
+packages/motion/            NEW — the compositions, drawn from the plan and nothing else
+   plan.ts                    the contract re-exported, plus validate/partition/timeline
+   anim.ts                    one curve, two durations — the whole motion vocabulary
+   chrome.tsx                 Frame, TitleBand, Footer, Body, Lines
+   scenes/index.tsx           one component per scene kind, and the switch
+   Report.tsx                 the scenes as Sequences, and the font gate
+   composition.tsx            the Composition, sized by calculateMetadata
+   Root.tsx                   registerRoot, and nothing else
+   public/fonts/              Space Grotesk, the same three TTFs the PDF embeds
+apps/render/                NEW — the service
+   render.ts                  bundle once, renderMedia, the encoding settings
+   jobs.ts                    the job store, the wall clock, the TTL sweep
+   server.ts                  five routes, no framework
+   fixture.ts                 the CLI: a plan in, an MP4 and a still per scene out
+   plan.test.ts               the checks that run before a browser is started
+   Dockerfile                 the one image in this repository with a browser in it
+```
+
+### 1. The renderer holds no palette, no type scale and no layout
+
+`T-V1` said the plan carries the strings. Building the components made it clear
+that was half a decision, so the plan now also carries **the colours, the type
+sizes in pixels, the margins, the radius and the spacing** — everything
+`internal/report/theme` knows, resolved once per plan.
+
+The payoff is a rule a grep can enforce: **a colour literal anywhere in
+`packages/motion` is a defect.** The alternative — importing
+`@argentum/design-tokens` into the compositions and checking that each hex
+matches a token — is a rule only a human can apply, and `T-R1` already had to
+delete a hand-written `:root` block whose HSL values had drifted from the hex
+their own comments named.
+
+Four fields were added to `Plan.Brand` for it (`surface`, `surface_subtle`,
+`positive`, `destructive`), plus a `tones` map for callouts and four `Metrics`
+fields for radius and spacing. Additive, so the plan version stays 1.
+
+### 2. What is actually enforced by "the frame is the slide"
+
+`Lines` draws one element per line with `white-space: pre` and no width. The
+browser is never asked where to break, so it cannot break somewhere the Go
+measurement did not. That is the whole return on `T-V1`'s pre-wrapping, and it
+is why the table scene's rupiah column lands character for character where the
+deck's does.
+
+### 3. What the render found
+
+**The `(cont.)` marker was drawn through the brand rule.** Exactly the class
+`T-R4`'s gate found on the deck's cover — *"a one-line subtitle estimate came
+back on two lines with the brand rule drawn through it"* — arrived at a
+different way: the marker was an inline `span` after a stack of block-level
+lines, so it wrapped onto its own line and landed on the rule. It is now
+absolutely positioned in the band's opposite corner, where the band's fixed
+height means it cannot collide with anything. Caught by looking at the 200-row
+export's second table scene; no test would have.
+
+**A golden plan is not a renderable plan.** `T-V1`'s goldens replace chart
+images with a `sha256:` digest so the golden stays reviewable, and feeding one
+to the renderer produces `net::ERR_UNKNOWN_URL_SCHEME` on that scheme — which is
+what happened on the first attempt at the Indonesian fixture. `TestWritePlans`
+(`ARGENTUM_PLAN_OUT=…`) now writes undigested plans, the same escape hatch the
+deck has in `TestWriteDecks`, and both the test and the CLI say so.
+
+**`.js` import specifiers break the bundler.** Remotion's webpack does not map
+`./plan.js` onto `plan.ts`, so the NodeNext-style suffixes had to go. They are
+extensionless throughout both packages now; `tsx` and the bundler agree on that
+and nothing else needed changing.
+
+### 4. Decisions inside the service
+
+- **One job at a time, one replica.** Remotion already uses every core it is
+  given, so two concurrent renders on one pod are slower than two sequential
+  ones and twice as likely to be killed by a memory limit. The single replica is
+  a stated limit with a trigger — a second tenant waiting — because fixing it
+  means moving results to object storage, which costs the service its
+  no-egress property.
+- **Two timeouts.** Remotion's per-frame timeout catches a frame that hangs; a
+  ten-minute wall clock catches everything else. Without the second, a pod is
+  healthy, useless and holding a tenant's report forever.
+- **The readiness probe renders.** `/healthz` reports the boot bundle, so a pod
+  whose browser cannot start never receives a report — it fails the probe
+  instead.
+- **The log carries job ids, durations and frame counts, never a plan.** A plan
+  is a customer's business figures, and this service has no tenant, no user and
+  no thread to attach them to. It must not acquire one by way of a log line.
+- **A caller's bad plan is a 400 even when it surfaces late.** `PlanError` is a
+  distinct type for exactly that: the difference between an integrator fixing
+  their spec and an integrator opening a ticket.
+
+### 5. Deployment
+
+`Dockerfile` is Node 22 on bookworm-slim with ffmpeg and Chromium's shared
+libraries, the browser downloaded at **build** time — doing it on first request
+puts a 94 MB download inside a tenant's first report, and doing it never is a pod
+that needs egress it is not supposed to have. Non-root, read-only root
+filesystem, `/tmp` and `/dev/shm` as sized emptyDirs.
+
+The Helm chart adds `deployment-render.yaml`: one replica, `Recreate`, a
+`ClusterIP` Service, **no ingress**, and a `NetworkPolicy` with `egress: []`.
+`render.enabled` is **false by default** — it is the only image with a browser in
+it and a deployment that never asks for an mp4 should not pay for one.
+
+`docker-compose.yml` gains the service, so a video can be rendered on a developer
+machine. That gap is what `T-S4`'s gate found when `make infra` shipped no object
+storage and the deterministic example suite could not run locally.
+
+### 6. Gate
+
+Run locally 2026-08-09.
+
+```
+$ pnpm --filter @argentum/motion lint     → clean
+$ pnpm --filter @argentum/render lint     → clean, 7 tests pass
+$ pnpm render:fixture kpi_summary.plan.json out
+  kpi_summary: 13 scenes, 1016 frames, 33.9s
+  13 stills, then: video out/kpi_summary.mp4 (136.1s to render)
+$ pnpm render:fixture monthly_sales.plan.json out --stills
+  monthly_sales: 13 scenes, 2485 frames, 82.8s — 13 stills
+```
+
+The Indonesian fixture's table scene reads `Rp 3.863.405.700` and `3,3%` — the
+`C-1` figure, in the document's own separators, in a video. The chart scene is
+the Go-rendered PNG with Indonesian axis labels, under a caption and a footer
+that say `Dibuat dengan Argentum` and `Rahasia — Internal`.
+
+### 7. What is not done
+
+- **The image has not been built or deployed.** The Dockerfile and the chart are
+  written and unexercised; `docker build` needs a run and the readiness probe
+  needs a cluster. That is the outstanding half of this ticket.
+- **No backend wiring.** `mp4` is not a format anything can ask for yet — `T-V3`.
+- **`RevealGrow` is defined and never chosen**, and the chart's own white ground
+  sits on the cream page exactly as it does in the PDF. Both are `T-V5`'s.
+- **No still-comparison gate yet.** The stills are produced; comparing them
+  against goldens within a perceptual tolerance is `T-V5`.

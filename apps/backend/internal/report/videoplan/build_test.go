@@ -397,6 +397,39 @@ func TestNotesSurviveTheProjection(t *testing.T) {
 	}
 }
 
+// TestWritePlans writes the fixture plans, undigested, for apps/render.
+//
+// **The goldens in testdata are not renderable.** Their chart images are
+// replaced by a digest so the golden stays reviewable — a diff hiding one
+// changed line under 60 KB of base64 is a diff nobody reads — and feeding one
+// to the renderer produces `net::ERR_UNKNOWN_URL_SCHEME` on `sha256:…`, which
+// is what happened the first time somebody tried. This is the way to get a real
+// one.
+//
+//	ARGENTUM_PLAN_OUT=/tmp/plans go test ./internal/report/videoplan
+//	pnpm --filter @argentum/render render:fixture /tmp/plans/monthly_sales.plan.json out --stills
+//
+// It lives here rather than in a cmd/ because the package is internal and a
+// throwaway binary to reach it is a binary somebody has to maintain — the same
+// reasoning as the deck's TestWriteDecks, which is the prior art.
+func TestWritePlans(t *testing.T) {
+	dir := os.Getenv("ARGENTUM_PLAN_OUT")
+	if dir == "" {
+		t.Skip("set ARGENTUM_PLAN_OUT to write the fixture plans to a directory")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, name := range fixtures {
+		out := mustJSON(t, build(t, name))
+		path := filepath.Join(dir, strings.TrimSuffix(name, ".json")+".plan.json")
+		if err := os.WriteFile(path, out, 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+		t.Logf("wrote %s (%d bytes)", path, len(out))
+	}
+}
+
 // --- helpers ---
 
 func allStrings(s Scene) []string {

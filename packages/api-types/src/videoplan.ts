@@ -120,6 +120,17 @@ export interface Metrics {
   title_rule_width: number /* int */;
   title_rule_thickness: number /* int */;
   /**
+   * Radius is the corner radius on a card, in pixels.
+   */
+  radius: number /* int */;
+  /**
+   * Spacing is the vertical rhythm, in pixels. Named rather than numbered so
+   * a component asks for a gap by role.
+   */
+  spacing_sm: number /* int */;
+  spacing_md: number /* int */;
+  spacing_lg: number /* int */;
+  /**
    * Leading is the multiple of the font size one line occupies. It is a
    * float because it is a ratio, and it is the only float here.
    */
@@ -162,6 +173,25 @@ export interface Brand {
   dark: string;
   on_dark: string;
   /**
+   * Surface and SurfaceSubtle are the card and the table's header band.
+   */
+  surface: string;
+  surface_subtle: string;
+  /**
+   * Positive and Destructive colour a KPI delta and a callout. They are here
+   * rather than in the renderer's stylesheet for the same reason everything
+   * else is: **the renderer holds no palette at all.** A colour literal in
+   * packages/motion is therefore always a defect, which is a rule a grep can
+   * enforce — where "does this hex match the token?" is a rule only a human
+   * can.
+   */
+  positive: string;
+  destructive: string;
+  /**
+   * Tones are the callout fills, keyed by spec.Tone* — info, warn, good.
+   */
+  tones: { [key: string]: Tone};
+  /**
    * LogoDataURI is empty when the tenant has no usable mark. LogoAspect is
    * its width ÷ height, so the renderer places it by height without decoding
    * the image.
@@ -175,6 +205,15 @@ export interface Brand {
   credit?: string;
   confidentiality?: string;
   footer_note?: string;
+}
+/**
+ * Tone is one callout's colours: the rule down its edge and the ground behind
+ * it. Two fields because a tone that is only a fill is invisible on a coloured
+ * ground and a tone that is only a rule is a hairline nobody notices.
+ */
+export interface Tone {
+  accent: string;
+  fill: string;
 }
 /**
  * Scene is one beat of the video.

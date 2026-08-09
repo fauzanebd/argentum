@@ -2,6 +2,7 @@ packages:
   - 'apps/dashboard'
   - 'apps/landing'
   - 'apps/widget'
+  - 'apps/render'
   - 'packages/*'
   # Widget example apps are deliberately excluded. They must install standalone,
   # exactly as a customer's project would (T-22) — pulling them into the

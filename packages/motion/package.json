@@ -1,0 +1,36 @@
+{
+  "name": "@argentum/motion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Remotion compositions that draw a video plan. Imported by apps/render, which renders them to MP4, and by the dashboard's player, which replays them in a browser. It holds no palette and no layout of its own: everything it draws comes from the plan.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./root": "./src/Root.tsx"
+  },
+  "files": [
+    "src",
+    "public"
+  ],
+  "scripts": {
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "studio": "remotion studio src/Root.tsx"
+  },
+  "dependencies": {
+    "@argentum/api-types": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0",
+    "typescript": "^5.6.3"
+  }
+}

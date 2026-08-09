@@ -246,6 +246,30 @@ services:
 
   # Worker process: pulls chat:run tasks off Redis (asynq) and runs the
   # agent. Shares all env with api, plus tunables for concurrency.
+  # The video renderer (T-V2). A browser and ffmpeg, in their own container,
+  # reachable only from the worker. It holds no credential and makes no
+  # outbound call: the plan it is sent carries its own chart images and logo.
+  render:
+    build:
+      # The repo root: the image installs the pnpm workspace, which lives above
+      # this file. A context of `..` would put pnpm-workspace.yaml out of reach.
+      context: ../..
+      dockerfile: apps/render/Dockerfile
+    container_name: argentum_render
+    environment:
+      RENDER_PORT: 8090
+      RENDER_SHARED_SECRET: ${RENDER_SHARED_SECRET:-}
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8090/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+    networks: [ argentum_network ]
+
   worker:
     build:
       context: .

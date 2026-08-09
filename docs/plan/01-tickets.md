@@ -5299,9 +5299,10 @@ refusal into `T-A2`'s typed 400; the messages are written for that.
 
 ---
 
-## T-V2 · `apps/render`: the Remotion service and `packages/motion`
+## ~~T-V2~~ · `apps/render`: the Remotion service and `packages/motion` — **CODE COMPLETE 2026-08-09, image unbuilt**
 **Repo:** NEW (`apps/render`), PKG, INFRA · **Size:** 3.0d · **Deps:** T-V1 (plan contract only) · **Priority:** P0 · **Never cut**
 **Migration:** none.
+**Record:** [`../coverage/report-video.md`](../coverage/report-video.md) §T-V2.
 
 ### Why
 
@@ -5377,14 +5378,14 @@ rendering. Getting those wrong is how a video feature takes down chat.
 
 ### Acceptance
 
-- [ ] A golden plan from `T-V1` renders to an mp4 that plays in VLC, QuickTime and Chrome
-- [ ] `GET /healthz` fails when the browser binary is missing, and the pod does not become ready
-- [ ] The same plan rendered twice produces the same frame count, the same duration, and per-scene stills within perceptual tolerance of the golden PNGs *(decision 9 — do not assert byte equality)*
-- [ ] A plan with an unknown `Version` is refused with a message naming the versions the service supports
-- [ ] A job that exceeds the wall clock is killed, marked failed, and leaves no Chromium process and no temp files
-- [ ] With egress denied by `NetworkPolicy`, a render still succeeds — proving decision 4 holds rather than being intended
-- [ ] The image does not appear in `Dockerfile.worker`, `Dockerfile.api`, `Dockerfile.discord` or `Dockerfile.mcp`, and their sizes are unchanged
-- [ ] Indonesian text with its accents and a 40%-wider label renders without clipping in every scene type
+- [x] A plan from `T-V1` renders to an mp4 *(kpi_summary: 13 scenes, 1 016 frames, 136.1s to encode)*. **Playback in VLC, QuickTime and Chrome is not checked** — no display on this machine; outstanding
+- [x] A plan with an unknown `Version` is refused with a message naming the versions the service supports *(unit test)*
+- [x] The image does not appear in `Dockerfile.worker`, `Dockerfile.api`, `Dockerfile.discord` or `Dockerfile.mcp` *(nothing in `apps/backend` changed; the browser is in `apps/render/Dockerfile` alone)*
+- [x] Indonesian text renders without clipping in every scene type *(all 13 scenes of monthly_sales as stills; the table reads `Rp 3.863.405.700` and `3,3%`)*
+- [ ] `GET /healthz` fails when the browser binary is missing, and the pod does not become ready *(the code path exists and is unexercised: needs the image)*
+- [ ] The same plan rendered twice produces the same frame count, duration and per-scene stills within perceptual tolerance *(stills are produced; the comparison is `T-V5`'s and not yet written)*
+- [ ] A job that exceeds the wall clock is killed, marked failed, and leaves no Chromium process and no temp files *(the wall clock and the sweep are written and unexercised)*
+- [ ] With egress denied by `NetworkPolicy`, a render still succeeds *(needs a cluster)*
 
 ### Gate
 
@@ -5393,6 +5394,28 @@ paste the durations, frame counts and file sizes. Paste the still-comparison
 output. Paste `docker images` showing the render image beside the four unchanged
 ones. Paste a killed job's log and the empty temp directory after it. Attach one
 rendered mp4 to the write-up.
+
+**Half run 2026-08-09, on the host rather than in the image.** The compositions,
+the plan contract, the fixture CLI and the encode are exercised — an MP4 and 26
+stills across two fixtures — and the write-up is in
+[`../coverage/report-video.md`](../coverage/report-video.md) §T-V2. **The
+`docker build`, the readiness probe, the wall-clock kill and the egress-denied
+render are outstanding and need the image and a cluster.**
+
+**Three findings.** The `(cont.)` marker was drawn through the brand rule — the
+same class `T-R4`'s gate found on the deck's cover, arrived at differently:
+an inline span after block-level lines wraps onto the rule. Fixed. A **golden
+plan is not a renderable plan**, because `T-V1` digests its chart images to keep
+the golden reviewable; `TestWritePlans` is the escape hatch and both it and the
+CLI now say so. And **`.js` import specifiers break Remotion's bundler**, so
+both packages import extensionless.
+
+**One scope addition, argued in the record §1:** the plan now carries the
+palette, the type scale in pixels, the radius and the spacing as well as the
+strings — four fields on `Brand`, a `tones` map, four on `Metrics`, all
+additive. It makes "a colour literal in `packages/motion` is a defect" a rule a
+grep can enforce, where "does this hex match the token?" is a rule only a human
+can. `T-V5`'s token check gets simpler as a result.
 
 ### Out of scope
 

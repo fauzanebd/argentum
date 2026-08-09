@@ -277,6 +277,35 @@ func (b *builder) finish() (*Plan, error) {
 	}, nil
 }
 
+// tones is the callout palette, resolved once per plan.
+//
+// The mapping is the PDF's and the deck's, which both carry their own copy of
+// it — a third copy would be one too many, so this is the one that travels and
+// the renderer holds none. The tones deliberately do not all resolve to the
+// brand red: a warning and a good-news box that are the same colour communicate
+// nothing.
+//
+// The fill is the accent at 8%, which is how both document renderers tint a
+// callout ground: light enough that body text keeps its contrast against it,
+// dark enough to read as a box rather than as a stray rule.
+func tones() map[string]Tone {
+	out := map[string]Tone{}
+	for name, c := range map[string]theme.Color{
+		spec.ToneInfo: theme.ColorInfo,
+		spec.ToneWarn: theme.ColorWarning,
+		spec.ToneGood: theme.ColorPositive,
+	} {
+		out[name] = Tone{
+			Accent: c.Hex(),
+			Fill:   c.Tint(calloutFillTint).Hex(),
+		}
+	}
+	return out
+}
+
+// calloutFillTint is how far a tone is lifted towards the page for its ground.
+const calloutFillTint = 0.92
+
 // duration renders a frame count as m:ss, for a message a caller has to act on.
 func duration(f int) string {
 	secs := int(math.Round(float64(f) / FPS))
@@ -299,6 +328,11 @@ func metrics() Metrics {
 
 		TitleRuleWidth:     canvas.Px(canvas.TitleRuleWidth),
 		TitleRuleThickness: canvas.Px(canvas.TitleRuleThickness),
+
+		Radius:    canvas.Px(theme.RadiusBase),
+		SpacingSM: canvas.Px(theme.Spacing.SM),
+		SpacingMD: canvas.Px(theme.Spacing.MD),
+		SpacingLG: canvas.Px(theme.Spacing.LG),
 
 		Leading: canvas.BodyLeading,
 		Type: TypeScale{
@@ -338,6 +372,11 @@ func (b *builder) brand() Brand {
 		Border:          theme.ColorBorder.Hex(),
 		Dark:            theme.ColorForeground.Hex(),
 		OnDark:          theme.ColorBackground.Hex(),
+		Surface:         theme.ColorSurface.Hex(),
+		SurfaceSubtle:   theme.ColorSurfaceSubtle.Hex(),
+		Positive:        theme.ColorPositive.Hex(),
+		Destructive:     theme.ColorDestructive.Hex(),
+		Tones:           tones(),
 		Credit:          credit,
 		Confidentiality: b.confid,
 		FooterNote:      strings.TrimSpace(b.opts.Brand.FooterNote),

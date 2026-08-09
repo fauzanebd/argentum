@@ -18,6 +18,10 @@
     "footer_top": 972,
     "title_rule_width": 193,
     "title_rule_thickness": 9,
+    "radius": 18,
+    "spacing_sm": 23,
+    "spacing_md": 34,
+    "spacing_lg": 57,
     "leading": 1.45,
     "type": {
       "display": 86,
@@ -37,6 +41,24 @@
     "border": "#E2E2DC",
     "dark": "#0A0A0A",
     "on_dark": "#F5F5F0",
+    "surface": "#FFFFFF",
+    "surface_subtle": "#ECECEA",
+    "positive": "#3F7A46",
+    "destructive": "#EF4343",
+    "tones": {
+      "good": {
+        "accent": "#3F7A46",
+        "fill": "#F0F4F0"
+      },
+      "info": {
+        "accent": "#1C3A62",
+        "fill": "#EDEFF2"
+      },
+      "warn": {
+        "accent": "#B07A16",
+        "fill": "#F9F4EC"
+      }
+    },
     "credit": "Dibuat dengan Argentum",
     "confidentiality": "Rahasia — Internal"
   },
