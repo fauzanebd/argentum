@@ -231,12 +231,15 @@ being off for this tenant, returning before the embedding call.
 
 ## 10. Not done
 
-- **A worker-side trace.** The waterfall above came from `cmd/eval`. On the real
-  deployment the turn is enqueued by `cmd/api` and run by `cmd/worker`, and
-  nothing has yet shown the trace context surviving that hop — the propagators
-  are installed, but `ChatRunPayload` carries no traceparent field, so it almost
-  certainly does not. A trace that stops at the queue is two traces again, one
-  layer up from the bug §9 just fixed. Worth a ticket; not worth claiming.
+- **A worker-side trace — now `T-17b`.** The waterfall above came from
+  `cmd/eval`, which enqueues nothing. On the real deployment the turn is
+  enqueued by `cmd/api` and run by `cmd/worker`, and nothing carries the context
+  across: the propagators are installed and never called, and `ChatRunPayload`
+  has no field to put a `traceparent` in. A trace that stops at the queue is two
+  traces again, one layer up from the bug §9 fixed — and the part it hides is
+  the queue wait, which is the one component of a slow turn §9's waterfall
+  cannot account for. Filed as [`../plan/01-tickets.md`](../plan/01-tickets.md)
+  `T-17b`, 0.5d, P2.
 - **Queue depth is API-only.** The poller runs where `/metrics` is served, which
   is right for today's deployment and would need revisiting if the worker ever
   exposed an endpoint of its own.

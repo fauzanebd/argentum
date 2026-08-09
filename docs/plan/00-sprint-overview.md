@@ -789,6 +789,18 @@ day ([`../coverage/slack-channel.md`](../coverage/slack-channel.md)). The widget
 phase is still the one track with no code, and the sentence above still stands:
 it wants a decision to open the scope, not an afternoon.
 
+**One new ticket came out of that gate: `T-17b`, 0.5d, P2** — the trace does not
+survive the queue. `ChatRunPayload` carries no `traceparent`, so `cmd/api`'s
+spans and `cmd/worker`'s are two unrelated traces of one turn, and the wait
+between them — the only part of a slow turn `T-17`'s waterfall cannot see — is
+unmeasurable. It is a build rather than a gate, so it belongs here rather than
+in [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md). It is
+**not** in the cut order below: that table is Sprint 2's twelve, written on
+2026-07-31, and renumbering it for a half-day P2 would break every citation
+already pointing into it. Take it whenever the next observability question is
+asked, or alongside the widget work — nothing depends on it and it blocks
+nothing.
+
 Cutting all twelve recovers at most **21.0 of the 54.5** — less than that in
 practice, because positions 5 and 9 are scoped cuts rather than whole tickets
 (`T-17` keeps the `/metrics` fix, `T-M3` keeps the binding control), and because

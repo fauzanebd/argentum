@@ -2786,6 +2786,91 @@ trace waterfall for a tool-calling turn showing LLM vs SQL time split.
 
 ---
 
+## T-17b · The trace stops at the queue
+**Repo:** BE · **Size:** 0.5d · **Deps:** T-17 · **Priority:** P2
+
+**Found by `T-17`'s own gate, 2026-08-08.** The waterfall that closed `T-17`
+came from `cmd/eval`, which enqueues nothing — one process, one trace. On the
+real deployment a turn is enqueued by `cmd/api` and run by `cmd/worker`, and
+nothing carries the trace context across that hop: `tracing.Init` installs both
+propagators, but nothing ever calls them, and `queue.ChatRunPayload` has no
+field to put a `traceparent` in. So the API's spans and the worker's spans are
+two unrelated traces of one user-visible turn.
+
+### Why
+
+This is the same defect the gate already fixed once, one layer up. Inside the
+worker, `agent.memory.hydrate` was landing in a trace of its own because the
+turn span opened after it; the fix was to open the span earlier. Across
+processes the break is wider and no amount of span reordering closes it — the
+context has to travel with the task.
+
+It matters because of what the first waterfall measured: **7,750 ms of turn, 18
+ms of it inside the tool.** Nearly all of a turn is spent somewhere between the
+user pressing enter and the model replying, and the part this ticket restores is
+precisely the part currently invisible — how long the task sat in Redis before a
+worker picked it up. An operator answering *"it was slow at three o'clock"*
+cannot today tell a slow model from a backed-up queue, and `T-17`'s new
+`argentum_queue_pending` says only that a backlog existed, not that *this* turn
+waited in it.
+
+It is `P2` rather than `P1` because the spans are correct within each process
+and nothing is wrong with the data being exported; what is missing is the join.
+
+### Do
+
+- Add `TraceParent string \`json:"traceparent,omitempty"\`` (and `TraceState`,
+  which W3C treats as its companion) to `queue.ChatRunPayload`. Empty means a
+  task queued before this field existed, or one enqueued by a process with no
+  collector — both must run exactly as they do now.
+- Inject in `Enqueuer.EnqueueChatRun` rather than at each call site. There are
+  four — `chat_enqueuer.go`, `scheduled_task_service.go`, `watcher_service.go`,
+  and the API report path — and a fifth will be added by whoever adds the next
+  channel. `otel.GetTextMapPropagator().Inject(ctx, propagation.MapCarrier{…})`
+  writes nothing when no provider is installed, which is what keeps this free on
+  a deployment with no collector.
+- Extract in `makeChatRunHandler` before `runner.Run`, so `tracing.Turn` starts
+  as a child of the enqueuing span instead of a root.
+- Same treatment for `watcher:eval` and `scheduled:run`, which are the two
+  unattended paths: a watcher fire that produces a turn should be one trace from
+  the tick to the delivery. `report:render`, `webhook:deliver` and
+  `business:infer` are the same shape and cheap to include once the carrier
+  helper exists — but they are the second half of the ticket, not the first.
+- One span for the wait itself, or an attribute for it. A trace that joins the
+  two processes but cannot say how long the task queued has restored the link
+  and not the number.
+
+### Notes for the implementer
+
+- **The propagator is already installed and already composite** —
+  `TraceContext{}` and `Baggage{}`, set in `tracing.Init` — because a `/v1`
+  caller may send us their own traceparent. That is the reason to use the
+  propagator API here rather than copying a span id by hand: a tenant's trace
+  should continue through our queue too.
+- **Do not put the carrier in `asynq.Task` options.** asynq has no header
+  concept; the payload is the only thing that survives Redis, and inventing a
+  second envelope means two places to keep in sync.
+- **A `traceparent` is not tenant data**, so it may be logged and stored freely
+  — unlike everything else this file warns about carrying between processes.
+
+### Acceptance
+
+- [ ] A dashboard turn produces **one** trace spanning both processes: the API's
+      enqueue and the worker's `agent.turn`, `agent.tool` and the rest beneath it
+- [ ] The time between enqueue and pickup is readable from that trace
+- [ ] A watcher fire is one trace from `watcher:eval` to the delivery
+- [ ] A task enqueued with no collector configured runs unchanged, and a task
+      whose payload predates the field runs unchanged — the empty-string case is
+      the one that must be boring
+- [ ] Unit test: inject then extract round-trips a context, and an empty carrier
+      yields a valid non-recording context rather than an error
+
+**Gate:** one waterfall from the real `cmd/api` + `cmd/worker` pair — not
+`cmd/eval` — showing the queue wait between the two processes. Same collector
+`T-17` added: `docker compose --profile tracing up -d jaeger`.
+
+---
+
 ## T-18 · Launch hygiene — **MOSTLY DONE 2026-08-03, eval run outstanding**
 **Repo:** BE, FE, LP · **Size:** 1.5d · **Deps:** all · **Priority:** P1
 
@@ -3160,7 +3245,7 @@ T-00 ──► T-00b ─┬─► T-01 ─────────────�
                 │         │            └──────────► T-20 (audit)      │
                 │         ├─► T-06 ──► T-07                           │
                 │         └─► T-07b                                   │
-                └─► T-17 (independent)                                │
+                └─► T-17 (independent) ──► T-17b (trace across the queue)
 T-18 depends on everything through week 6 ────────────────────────────┘
 
 T-01 ──► T-16   (dep changed from T-17 to T-01; runs in phase 1, no longer cuttable)
@@ -3247,9 +3332,9 @@ shipping with `pdf | xlsx | csv` and gaining `pptx` later is a clean seam.
 | 3     | T-08, T-09                                    | 5.0   | — |
 | 4     | T-10, T-11, T-12a, T-12b                      | 6.5   | — |
 | 5     | T-14, T-15                                    | 3.5   | — |
-| 6     | T-17, T-18                                    | 3.0   | — |
+| 6     | ~~T-17~~, T-18, T-17b                         | 3.5   | — · `T-17` gated live 2026-08-08; `T-17b` (0.5d, P2) is the follow-on its gate found — the trace does not survive the queue |
 | 7–8   | T-19, T-20, T-21, T-22, T-23                  | 11.5  | — |
-|       | **Total**                                     | **73.0** | **39.0 + 6.0 of Sprint 2** |
+|       | **Total**                                     | **73.5** | **39.0 + 6.0 of Sprint 2** |
 
 **Updated 2026-07-30: `T-A5` closes phase 1c, and with it Sprint 1's committed
 scope.** Every ticket in phases 0, 1, 1a, 1b and 1c has shipped. Two acceptance
