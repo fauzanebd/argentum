@@ -387,3 +387,15 @@ func TestGenerateRefusesAnEmptyTenant(t *testing.T) {
 		t.Fatal("Generate accepted a nil spec")
 	}
 }
+
+// DownloadKey completes ObjectStore for T-V4: the plan a share link plays is
+// read back through the same store it was written to.
+func (s *fakeStore) DownloadKey(_ context.Context, key string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, ok := s.objects[key]
+	if !ok {
+		return nil, errors.New("storage: no such key")
+	}
+	return data, nil
+}

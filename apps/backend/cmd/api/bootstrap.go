@@ -297,6 +297,14 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			MaxRows: cfg.APIV1MaxSpecRows,
 			MaxCols: cfg.APIV1MaxSpecCols,
 		}).WithVideo(cfg.VideoClient(), cfg.VideoLimits())
+
+		// Share links (T-V4). Inside the storage branch on purpose: the plan a
+		// link plays lives in the bucket, so a deployment without one has
+		// nothing to share and the routes answer 503 rather than minting
+		// tokens for pages that cannot open.
+		deps.shareSvc = app.NewReportShareService(
+			pgctl.NewReportShareRepo(controlDB), deps.documentRepo, deps.docGen, deps.actionRepo,
+		)
 	}
 
 	// The agent roster (T-S1). The tool checkboxes an admin scopes an agent

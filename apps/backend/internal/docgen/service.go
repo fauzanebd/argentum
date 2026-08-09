@@ -21,9 +21,11 @@ package docgen
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"time"
 
@@ -48,6 +50,11 @@ import (
 type ObjectStore interface {
 	UploadKey(ctx context.Context, key string, reader io.Reader, contentType string) (string, error)
 	PresignKey(ctx context.Context, key string, expiry time.Duration) (string, error)
+	// DownloadKey reads an object back. Added for T-V4: the player is served
+	// the plan's bytes by our own handler rather than a presigned URL, because
+	// a presigned URL cannot be revoked, cannot be counted, and outlives the
+	// share it was minted for.
+	DownloadKey(ctx context.Context, key string) ([]byte, error)
 }
 
 // Meter is the metering half. It matches tools.UsageRecorder's document
@@ -295,6 +302,17 @@ func (s *Service) Generate(ctx context.Context, in Input) (*Result, error) {
 		return nil, fmt.Errorf("persist document: %w", err)
 	}
 
+	// The plan, beside the document (T-V4). The player replays the
+	// compositions client-side from this, never from the mp4, so a document
+	// shared as a link plays without a video render having happened at all —
+	// and a document that *was* rendered plays the identical scenes, because
+	// this is the same projection the renderer was sent.
+	//
+	// After the row and never before: a plan is an enhancement to a document
+	// that already exists, and a document that failed to store because its
+	// plan did not would be a worse product than one that cannot be shared.
+	s.storePlan(ctx, in.Spec, doc)
+
 	s.meter.RecordDocument(ctx, in.CompanyID, in.ThreadID, in.Spec.Format)
 	if renderSeconds > 0 {
 		s.meter.RecordRenderSeconds(ctx, in.CompanyID, in.ThreadID, in.Spec.Format, renderSeconds)
@@ -378,6 +396,83 @@ func (s *Service) storageKey(companyID, threadID, docID string, format domain.Do
 		return fmt.Sprintf("documents/%s/api/%s.%s", companyID, docID, format.Extension())
 	}
 	return fmt.Sprintf("documents/%s/%s/%s.%s", companyID, threadID, docID, format.Extension())
+}
+
+// PlanKey is where a document's video plan lives, beside the document itself.
+//
+// A suffix on the document's own key rather than a second scheme: the two
+// objects share a lifetime, and a bucket policy or a deletion sweep written
+// against `documents/{company}/` covers both without having to know this
+// exists.
+func PlanKey(storageKey string) string {
+	return strings.TrimSuffix(storageKey, path.Ext(storageKey)) + ".plan.json"
+}
+
+// storePlan writes the video plan beside a document, when it has one.
+//
+// Three things decide whether it does, and all three are refusals rather than
+// failures:
+//
+//   - **The format has to be a narrative one.** A CSV and a spreadsheet are
+//     data; there is nothing to animate and nobody would watch it.
+//   - **The document has to make an argument** — the same `Analytical`
+//     predicate the mp4 door refuses a record with, so a shared invoice is
+//     impossible for exactly the reason a video of one is.
+//   - **The plan has to build.** Over the scene cap, too long, a chart that
+//     will not draw: all deterministic, all the caller's spec, none of them a
+//     reason to fail a PDF that rendered perfectly well.
+//
+// Every outcome is logged at debug or warn and swallowed. The document exists,
+// and a Share control that is absent is a smaller failure than a report that
+// did not arrive.
+func (s *Service) storePlan(ctx context.Context, doc *spec.Document, stored *domain.Document) {
+	switch stored.Format {
+	case domain.DocumentFormatPDF, domain.DocumentFormatPPTX, domain.DocumentFormatMP4:
+	default:
+		return
+	}
+	if !spec.Analytical(doc) {
+		return
+	}
+
+	cfg := s.brandFor(ctx, stored.CompanyID)
+	plan, err := videoplan.Build(doc, videoplan.Options{
+		Brand:    cfg.Video(),
+		Currency: s.currencyFor(ctx, stored.CompanyID),
+		Locale:   cfg.Locale,
+		Limits:   s.videoLimits,
+	})
+	if err != nil {
+		logrus.WithError(err).WithField("document_id", stored.ID).
+			Debug("no video plan stored for this document; it cannot be shared as a player")
+		return
+	}
+	body, err := json.Marshal(plan)
+	if err != nil {
+		logrus.WithError(err).WithField("document_id", stored.ID).Warn("video plan not marshalled")
+		return
+	}
+	if _, err := s.storage.UploadKey(ctx, PlanKey(stored.StorageKey),
+		bytes.NewReader(body), "application/json"); err != nil {
+		logrus.WithError(err).WithField("document_id", stored.ID).Warn("video plan not stored")
+		return
+	}
+	stored.HasPlan = true
+}
+
+// LoadPlan reads a document's stored plan.
+//
+// Returns domain.ErrNotFound when there is none, which is the ordinary case
+// for a spreadsheet, an invoice, or anything generated before T-V4.
+func (s *Service) LoadPlan(ctx context.Context, doc *domain.Document) ([]byte, error) {
+	if s == nil || doc == nil {
+		return nil, domain.ErrNotFound
+	}
+	body, err := s.storage.DownloadKey(ctx, PlanKey(doc.StorageKey))
+	if err != nil {
+		return nil, domain.ErrNotFound
+	}
+	return body, nil
 }
 
 // render dispatches to the format's renderer, returning the bytes and — for a

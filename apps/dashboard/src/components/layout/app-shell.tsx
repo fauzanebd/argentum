@@ -12,6 +12,7 @@ import {
 import { RecentChats } from "@/components/layout/recent-chats";
 import { ScheduledTasksNav } from "@/components/layout/scheduled-tasks-nav";
 import { WatchersNav } from "@/components/layout/watchers-nav";
+import { DocumentsNav } from "@/components/layout/documents-nav";
 import { ApprovalsNav } from "@/components/layout/approvals-nav";
 import { GeneratedDashboards } from "@/components/layout/generated-dashboards";
 import { NavUser } from "@/components/layout/nav-user";
@@ -89,6 +90,7 @@ function AppSidebar() {
         <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-2 py-2">
           <ScheduledTasksNav />
           <WatchersNav />
+          <DocumentsNav />
           <ApprovalsNav />
           <RecentChats />
         </div>

@@ -58,6 +58,8 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewConfigHandler(cfg).Register(authed)
 	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).Register(authed.Group("/users"))
 	handlers.NewReportsHandler(d.brandingSvc, d.companyRepo).Register(authed)
+	handlers.NewDocumentsHandler(d.documentRepo, d.docGen).Register(authed)
+	handlers.NewReportShareHandler(d.shareSvc).Register(authed)
 	handlers.NewAuditHandler(d.actionRepo).Register(authed)
 	handlers.NewAPIKeysHandler(d.apiKeySvc).
 		WithTraffic(trafficReaderOrNil(d.requestRepo)).
@@ -89,6 +91,20 @@ func newRouter(d *apiDeps) *gin.Engine {
 		handlers.NewSlackHandler(d.slackSvc).Register(authed)
 	}
 	authed.GET("/threads/:id/stream", ws.NewHandler(d.rdb, d.threadRepo, cfg.CORSOrigins).Stream)
+
+	// The report player's data route (T-V4). Its own group, under neither
+	// `/api` nor `/v1`, because both of those mean "authenticated" and every
+	// middleware, policy table and route test on them assumes a tenant. A
+	// keyless route inside either would be an exemption in somebody else's
+	// chain — which is exactly the shape a mistake hides in.
+	//
+	// Two links only: an address-keyed rate limit, and the handler. No session
+	// and no key, because the token in the path is the whole credential.
+	share := r.Group("/share")
+	if shareLimiter := middleware.NewRateLimiter(d.rdb, 60, 1.0); shareLimiter != nil {
+		share.Use(shareLimiter.ShareMiddleware())
+	}
+	handlers.NewShareHandler(d.shareSvc).Register(share)
 
 	// The public API (T-13; T-A1 builds the rest of the contract on this
 	// group). It is a sibling of /api rather than a subtree of it, and it

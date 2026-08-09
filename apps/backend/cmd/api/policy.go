@@ -243,6 +243,20 @@ var apiPolicy = middleware.RolePolicy{
 	// as many words, and this table is where that is true.
 	"GET /api/api-keys/errors": domain.RoleAdmin,
 
+	// Report share links (T-V4). Admin throughout, and for the API keys'
+	// reason rather than the documents' one: a share is a bearer credential
+	// that reaches a tenant's figures from outside every session they control.
+	// The list is admin too, because it is the inventory a revoke starts from
+	// — and because it names who created each link and when it was last read.
+	// The list itself is member-readable: a document is a report the staff
+	// asked for, and hiding the record of what was generated from the people
+	// who generated it buys nothing. Sharing one is admin, below.
+	"GET /api/documents": domain.RoleMember,
+
+	"GET /api/documents/:id/shares":             domain.RoleAdmin,
+	"POST /api/documents/:id/shares":            domain.RoleAdmin,
+	"DELETE /api/documents/:id/shares/:shareID": domain.RoleAdmin,
+
 	// Scheduled tasks.
 	"GET /api/scheduled-tasks":                 domain.RoleMember,
 	"POST /api/scheduled-tasks":                domain.RoleMember,
@@ -300,6 +314,13 @@ var unpolicedPaths = map[string]bool{
 
 	// Static metadata, no tenant data.
 	"/api/meta/supported-databases": true,
+
+	// The report player (T-V4). Deliberately keyless: the token in the path is
+	// the whole credential, and the visitor has no account to hold a role. It
+	// is listed here rather than being outside the walk, so "this route
+	// authenticates nobody" stays a decision somebody wrote down — the same
+	// reason the auth routes above are named one by one.
+	"/share/:token": true,
 
 	// The public API (T-13). Authenticated by an API key, which carries
 	// scopes rather than a role — apiPolicy answers a question that does not

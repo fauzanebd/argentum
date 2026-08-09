@@ -99,6 +99,13 @@ type Document struct {
 	// layers the sprint's risk register names against a leaked key.
 	APIKeyID  string    `json:"api_key_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+	// HasPlan reports whether a video plan was stored beside this document
+	// (T-V4), which is what decides whether the dashboard offers to share it
+	// as a player. Set by docgen when it writes one, and by the share handler
+	// when it reads one back — it is **not** a column: the object store is the
+	// only thing that knows, and a boolean in Postgres saying otherwise is a
+	// second answer that can drift from the bucket.
+	HasPlan bool `json:"has_plan,omitempty"`
 }
 
 // DocumentFilter narrows a company-scoped document listing. A zero value

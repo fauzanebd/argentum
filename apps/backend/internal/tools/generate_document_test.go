@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -141,4 +142,12 @@ func TestGenerateDocumentReturnsTheAgentsShape(t *testing.T) {
 			t.Errorf("tool output lost %q", k)
 		}
 	}
+}
+
+func (s *memStore) DownloadKey(_ context.Context, key string) ([]byte, error) {
+	data, ok := s.objects[key]
+	if !ok {
+		return nil, errors.New("no such key")
+	}
+	return data, nil
 }

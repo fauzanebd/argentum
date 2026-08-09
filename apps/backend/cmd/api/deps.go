@@ -112,7 +112,11 @@ type apiDeps struct {
 	storageSvc   *storage.StorageService
 	reportRepo   *pgctl.APIReportRepo
 	documentRepo *pgctl.DocumentRepo
-	idemStore    idempotency.Store
+	// shareSvc mints and resolves report player links (T-V4). Nil when there
+	// is no object storage: without it no plan was ever written, so there is
+	// nothing a link could play.
+	shareSvc  *app.ReportShareService
+	idemStore idempotency.Store
 	// apiKeyAuth overrides what authenticates `/v1`. Nil in production, where
 	// apiKeySvc is used; see apiKeyAuthOf in router.go for why the seam exists.
 	apiKeyAuth middleware.APIKeyAuthenticator

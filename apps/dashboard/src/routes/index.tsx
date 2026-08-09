@@ -16,6 +16,8 @@ import { SettingsPage } from "@/features/settings/settings-page";
 import { UsagePage } from "@/features/usage/usage-page";
 import { ScheduledTasksPage } from "@/features/scheduled-tasks/scheduled-tasks-page";
 import { WatchersPage } from "@/features/watchers/watchers-page";
+import { SharePage } from "@/features/share/share-page";
+import { DocumentsPage } from "@/features/documents/documents-page";
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -49,6 +51,22 @@ const acceptInviteRoute = createRoute({
   validateSearch: (search: Record<string, unknown>) => ({
     token: typeof search.token === "string" ? search.token : undefined,
   }),
+});
+
+// The report player (T-V4). Public by design, and for the same reason the
+// invite route above is: the token in the path is the only credential the
+// visitor holds, and they have no account for a session to belong to.
+//
+// It is deliberately *outside* `protectedRoute`, so it renders no AppShell —
+// no sidebar, no navigation, nothing that implies the visitor is inside
+// somebody's workspace. They were sent one report and that is what they get.
+const shareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/s/$token",
+  component: function SharedReport() {
+    const { token } = shareRoute.useParams();
+    return <SharePage token={token} />;
+  },
 });
 
 const protectedRoute = createRoute({
@@ -112,11 +130,18 @@ const watchersRoute = createRoute({
   component: WatchersPage,
 });
 
+const documentsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/documents",
+  component: DocumentsPage,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   signupRoute,
   acceptInviteRoute,
+  shareRoute,
     protectedRoute.addChildren([
       onboardingRoute,
       chatRoute,
@@ -125,5 +150,6 @@ export const routeTree = rootRoute.addChildren([
       usageRoute,
       scheduledTasksRoute,
       watchersRoute,
+      documentsRoute,
     ]),
 ]);

@@ -17,12 +17,18 @@ const (
 	ActorKindSchedule ActorKind = "schedule"
 	ActorKindWatcher  ActorKind = "watcher" // T-08
 	ActorKindAPIKey   ActorKind = "api_key" // T-13
+	// ActorKindShare is a bearer share link (T-V4). The accountable party is
+	// the link, not a person: whoever opened it has no session, no account and
+	// no tenant, and the only thing we honestly know is which share was used.
+	// ActorRef carries the share id, which is what makes "revoke the one that
+	// is being read from an address I do not recognise" answerable.
+	ActorKindShare ActorKind = "share"
 )
 
 // Valid reports whether k is a kind this system issues.
 func (k ActorKind) Valid() bool {
 	switch k {
-	case ActorKindUser, ActorKindSchedule, ActorKindWatcher, ActorKindAPIKey:
+	case ActorKindUser, ActorKindSchedule, ActorKindWatcher, ActorKindAPIKey, ActorKindShare:
 		return true
 	}
 	return false

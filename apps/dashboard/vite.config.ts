@@ -59,6 +59,16 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: true,
         },
+        // The report player's data route (T-V4). It is not under `/api`
+        // because it authenticates nobody, which means it needs its own proxy
+        // entry here for the same reason — the page is `/s/:token` and the
+        // data it fetches is `/share/:token`, two different prefixes on
+        // purpose so the SPA route and the API route cannot collide.
+        "/share": {
+          target: apiTarget,
+          changeOrigin: true,
+          secure: true,
+        },
         "/metabase": {
           target: apiTarget,
           changeOrigin: true,

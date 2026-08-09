@@ -119,6 +119,35 @@ func (r *RateLimiter) APIKeyMiddleware() gin.HandlerFunc {
 	})
 }
 
+// ctxShareBucket is where ShareMiddleware leaves the identity it limits by.
+// Unexported and set by that middleware itself: nothing else should be able to
+// choose what a public route's bucket is keyed on.
+const ctxShareBucket = "share_bucket"
+
+// ShareMiddleware rate-limits `GET /share/:token` by client address (T-V4).
+//
+// Neither of the other two identities exists here — there is no session and no
+// key — so the bucket is the address, which is the weakest identity in the
+// system and is used because it is the only one. What it is actually
+// defending is token guessing: 256 bits is not brute-forceable, but a public
+// route that runs a database read per request is worth bounding regardless,
+// and an attacker distributed enough to beat a per-address bucket is not the
+// one this is for.
+//
+// The refusal is a plain JSON body, not the `/v1` envelope. This route is not
+// part of the published contract and its reader is a browser.
+func (r *RateLimiter) ShareMiddleware() gin.HandlerFunc {
+	limit := r.limitBy("rl:share:", ctxShareBucket, func(c *gin.Context) {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error": "Too many requests. Try again in a moment.",
+		})
+	})
+	return func(c *gin.Context) {
+		c.Set(ctxShareBucket, c.ClientIP())
+		limit(c)
+	}
+}
+
 // limitBy is the shared body: read the bucket identity off the Gin context,
 // consume a token, and hand the refusal to the caller's own writer so the two
 // surfaces can answer in their own error formats.

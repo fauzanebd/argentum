@@ -179,7 +179,15 @@ export const ActorKindUser = "user";
 export const ActorKindSchedule = "schedule";
 export const ActorKindWatcher = "watcher"; // T-08
 export const ActorKindAPIKey = "api_key"; // T-13
-export type ActorKind = typeof ActorKindUser | typeof ActorKindSchedule | typeof ActorKindWatcher | typeof ActorKindAPIKey;
+/**
+ * ActorKindShare is a bearer share link (T-V4). The accountable party is
+ * the link, not a person: whoever opened it has no session, no account and
+ * no tenant, and the only thing we honestly know is which share was used.
+ * ActorRef carries the share id, which is what makes "revoke the one that
+ * is being read from an address I do not recognise" answerable.
+ */
+export const ActorKindShare = "share";
+export type ActorKind = typeof ActorKindUser | typeof ActorKindSchedule | typeof ActorKindWatcher | typeof ActorKindAPIKey | typeof ActorKindShare;
 /**
  * ActionStatus is how a tool call ended.
  */
@@ -939,6 +947,15 @@ export interface Document {
    */
   api_key_id?: string;
   created_at: string;
+  /**
+   * HasPlan reports whether a video plan was stored beside this document
+   * (T-V4), which is what decides whether the dashboard offers to share it
+   * as a player. Set by docgen when it writes one, and by the share handler
+   * when it reads one back — it is **not** a column: the object store is the
+   * only thing that knows, and a boolean in Postgres saying otherwise is a
+   * second answer that can drift from the bucket.
+   */
+  has_plan?: boolean;
 }
 /**
  * DocumentFilter narrows a company-scoped document listing. A zero value
@@ -1305,6 +1322,55 @@ export interface AllowedPhoneNumber {
   label?: string;
   added_at: string;
 }
+
+//////////
+// source: report_share.go
+
+/**
+ * ReportShare is a bearer link that plays one document as an animated deck
+ * (T-V4).
+ * It is deliberately not a presigned URL. A presigned URL cannot be revoked
+ * before it expires, cannot be counted, and cannot be scoped to a page — and
+ * "who has seen the Q3 numbers, and can I stop them" is the question a tenant
+ * asks about a link the moment they have shared one.
+ * The token is never stored. `TokenHash` is a SHA-256 of it, for the same
+ * reason `api_keys` hashes: a dump of this table must not be a set of working
+ * links. SHA-256 rather than Argon2id, and for the same argument `T-13` makes
+ * at length — the input is 256 uniformly random bits, so there is no dictionary
+ * for a KDF to slow down, and a 64 MiB allocation on every page view is a
+ * denial-of-service handed to anybody who can guess a prefix.
+ */
+export interface ReportShare {
+  id: string;
+  company_id: string;
+  document_id: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  revoked_at?: string;
+  /**
+   * ViewCount and LastViewedAt are what makes a link answerable at a glance
+   * in the dashboard. The audit log holds the detail — one row per view with
+   * the ip and the user agent — and these two are the summary nobody should
+   * have to run a query for.
+   */
+  view_count: number /* int */;
+  last_viewed_at?: string;
+}
+export const ShareDefaultDays = 30;
+export const ShareMaxDays = 90;
+/**
+ * Share lifetimes, in days. A default that is not forever, and a ceiling an
+ * admin cannot type their way past.
+ * Days rather than a `time.Duration` for two reasons, one of them the
+ * generator's. A duration constant comes out of tygo as `30 * 24 * any /*
+ * time.Hour *\/`, which does not compile — the same class of problem `T-02b`
+ * exists to make loud, caught here by the dashboard's build. And days is the
+ * unit the request field is in (`expires_in_days`) and the unit a person
+ * picking an expiry thinks in, so the conversion belongs at the one place that
+ * needs a duration rather than in every place that quotes the limit.
+ */
+export type Share = typeof ShareDefaultDays | typeof ShareMaxDays;
 
 //////////
 // source: scheduled_task.go

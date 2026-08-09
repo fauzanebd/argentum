@@ -19,7 +19,7 @@ func RequestLogging() gin.HandlerFunc {
 
 		fields := logrus.Fields{
 			"method":     c.Request.Method,
-			"path":       c.Request.URL.Path,
+			"path":       loggablePath(c),
 			"status":     c.Writer.Status(),
 			"latency_ms": latency.Milliseconds(),
 			"client_ip":  c.ClientIP(),
@@ -55,4 +55,25 @@ func RequestLogging() gin.HandlerFunc {
 			entry.Info("request")
 		}
 	}
+}
+
+// loggablePath is the request path with any credential in it removed.
+//
+// Every other route in this system carries its credential in a header, so the
+// path has always been safe to log. `GET /share/:token` (T-V4) is the first
+// where the path **is** the credential: the T-V4 gate found the token written
+// to `api.log` in full on every page view, three times over, which turns read
+// access to a log file into the ability to replay a link that was shared with
+// somebody else.
+//
+// The route template rather than the value, so the line still says which route
+// was hit and how long it took. Falling back to `c.FullPath()` in general
+// would be the tidier rule and is deliberately not taken: for every other
+// route the concrete path is what an operator greps for, and losing the ids in
+// it would cost more than it buys.
+func loggablePath(c *gin.Context) string {
+	if c.FullPath() == "/share/:token" {
+		return "/share/:token"
+	}
+	return c.Request.URL.Path
 }
