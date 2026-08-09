@@ -6,7 +6,8 @@
   "description": "TypeScript for the Go structs the dashboard reads off /api. Generated from apps/backend by tygo; never hand-edited. Deliberately has no `build` or `lint` script: regeneration needs the Go toolchain, which the web CI job does not have — the `types` job owns it.",
   "exports": {
     ".": "./src/index.ts",
-    "./webhooks": "./src/webhooks.ts"
+    "./webhooks": "./src/webhooks.ts",
+    "./videoplan": "./src/videoplan.ts"
   },
   "files": [
     "src"

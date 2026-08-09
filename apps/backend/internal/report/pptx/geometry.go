@@ -3,17 +3,21 @@ package pptx
 import (
 	"math"
 
+	"github.com/fauzanebd/argentum/internal/report/canvas"
 	"github.com/fauzanebd/argentum/internal/report/measure"
-	"github.com/fauzanebd/argentum/internal/report/theme"
 )
 
-// Slide geometry and the deck's type scale.
+// Slide geometry, and where it now comes from.
 //
-// Everything here is derived from the design tokens or from the OOXML slide
-// size, and nothing here is a token: a 16:9 slide has no counterpart on the
-// dashboard, and a value that means something in exactly one renderer belongs
-// beside that renderer's other geometry — the same argument theme.GridCols
-// makes for the PDF.
+// Everything about the *surface* — its size, its margins, the title band, the
+// type scale, the leading, the substitution margin and the text fitting — moved
+// to internal/report/canvas when the video renderer needed the same numbers
+// (T-V1). This file is what is left: OOXML's units, and thin local names for
+// the shared values so the deck's call sites read the way they always did.
+//
+// The delegations are deliberate rather than lazy. Renaming ~80 call sites to
+// canvas.X would have made the T-V1 diff unreviewable against a renderer whose
+// only guarantee is that its bytes did not change.
 
 // EMU is the English Metric Unit, OOXML's length. 914400 to the inch, which
 // makes exactly 36000 to the millimetre — chosen by the format precisely so
@@ -21,8 +25,7 @@ import (
 const emuPerMM = 36000.0
 
 // The 16:9 slide, at OOXML's standard widescreen size: 13⅓ × 7½ inches, which
-// is 338.67 × 190.5 mm. 4:3 is not offered. A deck that opens letterboxed on
-// every projector built since 2010 is not a compatibility win.
+// is 338.67 × 190.5 mm — canvas.WidthMM and canvas.HeightMM, in EMU.
 const (
 	slideWidthEMU  = 12192000
 	slideHeightEMU = 6858000
@@ -33,112 +36,65 @@ const (
 	notesHeightEMU = 9144000
 )
 
-var (
-	slideWidthMM  = float64(slideWidthEMU) / emuPerMM  // 338.667
-	slideHeightMM = float64(slideHeightEMU) / emuPerMM // 190.5
-)
+// slideHeightMM is canvas.HeightMM derived from the EMU rather than imported,
+// so the two constants are checked against each other by a test rather than
+// asserted to match by a comment.
+var slideHeightMM = float64(slideHeightEMU) / emuPerMM // 190.5
 
-// Margins, in millimetres. Wider than the page's because the slide is wider:
-// the measure a reader's eye tracks is the same either way, and a line of text
-// running the full 339mm of a slide is unreadable at any size.
+// Margins and bands, from the shared surface.
 const (
-	marginX      = 24.0
-	marginTop    = 17.0
-	marginBottom = 12.0
+	marginX      = canvas.MarginX
+	marginTop    = canvas.MarginTop
+	marginBottom = canvas.MarginBottom
 
-	// footerBand is the strip at the foot of every content slide carrying the
-	// confidentiality label and the slide number.
-	footerBand = 7.0
+	footerBand = canvas.FooterBand
+	titleBand  = canvas.TitleBand
 
-	// titleBand is the height reserved for a slide title. Two lines of the
-	// deck's H1 plus its leading; a third line is truncated rather than allowed
-	// to push the content down, because a slide title that long is the
-	// problem, not the layout.
-	titleBand = 22.0
-
-	// titleRule is the short brand-coloured rule under a slide title — the same
-	// device the PDF's level-1 headings use, at slide scale.
-	titleRuleWidth     = 34.0
-	titleRuleThickness = 1.6
+	titleRuleWidth     = canvas.TitleRuleWidth
+	titleRuleThickness = canvas.TitleRuleThickness
 )
 
-// deckScale lifts the print type scale onto a slide.
-//
-// It is one number rather than a second scale in tokens.json, because the deck
-// is the same design system seen from further away — decoupling the two would
-// let a body-size change land in the report and not in the deck built from the
-// same spec.
-//
-// 1.8 comes from the measure: the slide's content width is 290.7mm against
-// A4's 174mm, a ratio of 1.67, rounded up because a slide is read across a
-// room and a page is read at arm's length.
-const deckScale = 1.8
-
-// deckType is the print type scale at slide scale, in points.
-var deckType = theme.TypeScaleTokens{
-	Display: scalePt(theme.TypeScale.Display), // 43.5 — cover and divider titles
-	H1:      scalePt(theme.TypeScale.H1),      // 29   — slide titles
-	H2:      scalePt(theme.TypeScale.H2),      // 23.5 — leads, KPI values, table captions
-	Body:    scalePt(theme.TypeScale.Body),    // 18   — bullets and table cells
-	Caption: scalePt(theme.TypeScale.Caption), // 14.5 — footers, labels, chart captions
-}
-
-// scalePt rounds to the nearest half point. OOXML carries hundredths of a
-// point, so any value would encode; halves keep the scale legible in the XML
-// and keep two sizes from differing by a tenth of a point nobody can see.
-func scalePt(pt float64) float64 {
-	return math.Round(pt*deckScale*2) / 2
-}
+// deckType is the shared type scale under the name this renderer has always
+// used for it.
+var deckType = canvas.Type
 
 // contentWidth is the usable width between the left and right margins.
-func contentWidth() float64 { return slideWidthMM - 2*marginX }
+func contentWidth() float64 { return canvas.ContentWidth() }
 
 // bodyTop is the top of a content slide's body area: under the title band and
 // the rule beneath it.
-func bodyTop() float64 { return marginTop + titleBand + theme.Spacing.MD }
+func bodyTop() float64 { return canvas.BodyTop() }
 
 // bodyHeight is what is left for content once the title and footer are taken.
-func bodyHeight() float64 { return slideHeightMM - bodyTop() - marginBottom - footerBand }
+func bodyHeight() float64 { return canvas.BodyHeight() }
 
 // footerTop is the baseline strip of a content slide.
-func footerTop() float64 { return slideHeightMM - marginBottom - footerBand }
+func footerTop() float64 { return canvas.FooterTop() }
 
 // bodyLeading is the multiple of the font height a line of slide copy occupies.
-// Looser than the PDF's 1.32: a slide is read at distance and from an angle,
-// and tight leading is the first thing that fails in both conditions.
-const bodyLeading = 1.45
+const bodyLeading = canvas.BodyLeading
 
-// substitutionMargin is the width every text estimate is measured against,
-// as a fraction of the box it has to fit in.
-//
-// The deck names Space Grotesk and does not embed it (see the package comment),
-// so the machine that opens the file may set the text in whatever its own
-// substitution picks — Arial on Windows, Helvetica Neue on macOS, Liberation
-// Sans on Linux. Those are within a few percent of Space Grotesk's widths but
-// they are not identical, and the direction that matters is wider. Measuring
-// against 94% of the real box is what keeps a line that just fits here from
-// being a line that just does not fit there.
-const substitutionMargin = 0.94
+// substitutionMargin is the width every text estimate is measured against, as a
+// fraction of the box it has to fit in. See canvas for why it is 94% and why
+// the video renderer pays it too.
+const substitutionMargin = canvas.SubstitutionMargin
 
 // linesIn is how many lines s will take in a box of the given width, measured
 // against the embedded face and discounted for a substituted one.
 func linesIn(s string, family string, style measure.Style, sizePt, widthMM float64) int {
-	if s == "" {
-		return 0
-	}
-	return len(measure.Wrap(s, family, style, sizePt, widthMM*substitutionMargin))
+	return canvas.LinesIn(s, family, style, sizePt, widthMM)
 }
 
 // textHeight is the height s will occupy in a box of the given width.
 func textHeight(s string, family string, style measure.Style, sizePt, widthMM float64) float64 {
-	return float64(linesIn(s, family, style, sizePt, widthMM)) * measure.LineHeightMM(sizePt) * bodyLeading
+	return canvas.TextHeight(s, family, style, sizePt, widthMM)
 }
 
 // fitLines truncates s to at most maxLines in a box of the given width, with a
 // visible ellipsis when it had to cut. Silent clipping is what PowerPoint does
-// on its own and what this ticket calls an acceptance failure.
+// on its own and what T-R4 calls an acceptance failure.
 func fitLines(s string, family string, style measure.Style, sizePt, widthMM float64, maxLines int) string {
-	return measure.Fit(s, family, style, sizePt, widthMM*substitutionMargin, maxLines)
+	return canvas.FitLines(s, family, style, sizePt, widthMM, maxLines)
 }
 
 // mmToEMU converts a millimetre measurement to OOXML's unit, rounded to the

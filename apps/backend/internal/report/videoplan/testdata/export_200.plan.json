@@ -1,0 +1,4516 @@
+{
+  "version": 1,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "total_frames": 7892,
+  "locale": "id",
+  "title": "Ekspor Pesanan 2026",
+  "metrics": {
+    "margin_x": 136,
+    "margin_top": 96,
+    "margin_bottom": 68,
+    "content_width": 1648,
+    "body_top": 255,
+    "body_height": 717,
+    "title_band": 125,
+    "footer_band": 40,
+    "footer_top": 972,
+    "title_rule_width": 193,
+    "title_rule_thickness": 9,
+    "leading": 1.45,
+    "type": {
+      "display": 86,
+      "h1": 58,
+      "h2": 47,
+      "body": 36,
+      "caption": 29
+    }
+  },
+  "brand": {
+    "name": "",
+    "primary": "#F25C5C",
+    "primary_on_dark": "#F25C5C",
+    "foreground": "#0A0A0A",
+    "background": "#F5F5F0",
+    "muted": "#6B6B6B",
+    "border": "#E2E2DC",
+    "dark": "#0A0A0A",
+    "on_dark": "#F5F5F0",
+    "credit": "Dibuat dengan Argentum",
+    "confidentiality": "Rahasia — Internal"
+  },
+  "scenes": [
+    {
+      "kind": "cover",
+      "frames": 120,
+      "title": [
+        "Ekspor Pesanan"
+      ],
+      "subtitle": [
+        "Dua ratus pesanan pertama tahun berjalan, lengkap dengan",
+        "pelanggan, kanal, dan nilai transaksi"
+      ],
+      "period": "TAHUN BERJALAN 2026",
+      "facts": [
+        {
+          "label": "Disiapkan untuk",
+          "value": [
+            "Tim Operasional"
+          ]
+        },
+        {
+          "label": "Disiapkan oleh",
+          "value": [
+            "PT Sinar Abadi Nusantara"
+          ]
+        },
+        {
+          "label": "Dibuat",
+          "value": [
+            "27 Juli 2026 09:30"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "statement",
+      "frames": 369,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "lines": [
+        "Tabel di bawah memuat dua ratus baris pesanan. Tabel ini ada",
+        "untuk menguji penomoran halaman, pengulangan baris judul di",
+        "setiap halaman, dan konsistensi desimal pada kolom angka",
+        "sepanjang beberapa halaman."
+      ],
+      "notes": "Tabel di bawah memuat dua ratus baris pesanan. Tabel ini ada untuk menguji penomoran halaman, pengulangan baris judul di setiap halaman, dan konsistensi desimal pada kolom angka sepanjang beberapa halaman."
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "1 Jan 2026",
+            "SO-2026-4100",
+            "PT Sinar Abadi…",
+            "Kabel Data 5…",
+            "Reseller",
+            "11",
+            "Rp 88.000",
+            "Rp 968.000"
+          ],
+          [
+            "2 Jan 2026",
+            "SO-2026-4101",
+            "CV Mitra Jaya",
+            "Layanan Instalasi",
+            "Marketpla…",
+            "21",
+            "Rp 300.000",
+            "Rp 6.300.000"
+          ],
+          [
+            "3 Jan 2026",
+            "SO-2026-4102",
+            "PT Sinar Abadi…",
+            "Layanan Instalasi",
+            "Marketpla…",
+            "3",
+            "Rp 152.000",
+            "Rp 456.000"
+          ],
+          [
+            "4 Jan 2026",
+            "SO-2026-4103",
+            "Toko Sumber…",
+            "Paket Langgan…",
+            "Retail",
+            "3",
+            "Rp 125.000",
+            "Rp 375.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ]
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "5 Jan 2026",
+            "SO-2026-4104",
+            "PT Global Trans…",
+            "Paket Langgan…",
+            "Direct",
+            "9",
+            "Rp 99.000",
+            "Rp 891.000"
+          ],
+          [
+            "6 Jan 2026",
+            "SO-2026-4105",
+            "PT Global Trans…",
+            "Paket Langgan…",
+            "Marketpla…",
+            "8",
+            "Rp 88.000",
+            "Rp 704.000"
+          ],
+          [
+            "7 Jan 2026",
+            "SO-2026-4106",
+            "PT Karya Anuger…",
+            "Layanan Instalasi",
+            "Retail",
+            "15",
+            "Rp 400.000",
+            "Rp 6.000.000"
+          ],
+          [
+            "8 Jan 2026",
+            "SO-2026-4107",
+            "UD Cahaya…",
+            "Kabel Data 5…",
+            "Reseller",
+            "11",
+            "Rp 336.000",
+            "Rp 3.696.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "9 Jan 2026",
+            "SO-2026-4108",
+            "CV Mitra Jaya",
+            "Perpanja… Garansi 1…",
+            "Marketpla…",
+            "17",
+            "Rp 73.000",
+            "Rp 1.241.000"
+          ],
+          [
+            "10 Jan 2026",
+            "SO-2026-4109",
+            "Toko Sumber…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "6",
+            "Rp 102.000",
+            "Rp 612.000"
+          ],
+          [
+            "11 Jan 2026",
+            "SO-2026-4110",
+            "Toko Sumber…",
+            "Perpanja… Garansi 1…",
+            "Reseller",
+            "12",
+            "Rp 417.000",
+            "Rp 5.004.000"
+          ],
+          [
+            "12 Jan 2026",
+            "SO-2026-4111",
+            "PT Nusant…",
+            "Perangk… Sensor…",
+            "Retail",
+            "9",
+            "Rp 368.000",
+            "Rp 3.312.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "13 Jan 2026",
+            "SO-2026-4112",
+            "CV Amana…",
+            "Kabel Data 5…",
+            "Reseller",
+            "15",
+            "Rp 92.000",
+            "Rp 1.380.000"
+          ],
+          [
+            "14 Jan 2026",
+            "SO-2026-4113",
+            "PT Karya Anuger…",
+            "Perangk… Sensor…",
+            "Retail",
+            "5",
+            "Rp 348.000",
+            "Rp 1.740.000"
+          ],
+          [
+            "15 Jan 2026",
+            "SO-2026-4114",
+            "Warung Berkah",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "9",
+            "Rp 352.000",
+            "Rp 3.168.000"
+          ],
+          [
+            "16 Jan 2026",
+            "SO-2026-4115",
+            "PT Bumi Persad…",
+            "Layanan Instalasi",
+            "Reseller",
+            "19",
+            "Rp 391.000",
+            "Rp 7.429.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "17 Jan 2026",
+            "SO-2026-4116",
+            "PT Sinar Abadi…",
+            "Layanan Instalasi",
+            "Direct",
+            "14",
+            "Rp 50.000",
+            "Rp 700.000"
+          ],
+          [
+            "18 Jan 2026",
+            "SO-2026-4117",
+            "CV Mitra Jaya",
+            "Perpanja… Garansi 1…",
+            "Reseller",
+            "20",
+            "Rp 215.000",
+            "Rp 4.300.000"
+          ],
+          [
+            "19 Jan 2026",
+            "SO-2026-4118",
+            "Toko Sumber…",
+            "Paket Langgan…",
+            "Direct",
+            "10",
+            "Rp 77.000",
+            "Rp 770.000"
+          ],
+          [
+            "20 Jan 2026",
+            "SO-2026-4119",
+            "CV Amana…",
+            "Modul Konektiv…",
+            "Reseller",
+            "19",
+            "Rp 356.000",
+            "Rp 6.764.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "21 Jan 2026",
+            "SO-2026-4120",
+            "Toko Sumber…",
+            "Kabel Data 5…",
+            "Retail",
+            "17",
+            "Rp 214.000",
+            "Rp 3.638.000"
+          ],
+          [
+            "22 Jan 2026",
+            "SO-2026-4121",
+            "PT Bumi Persad…",
+            "Perpanja… Garansi 1…",
+            "Retail",
+            "23",
+            "Rp 269.000",
+            "Rp 6.187.000"
+          ],
+          [
+            "23 Jan 2026",
+            "SO-2026-4122",
+            "PT Nusant…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "10",
+            "Rp 138.000",
+            "Rp 1.380.000"
+          ],
+          [
+            "24 Jan 2026",
+            "SO-2026-4123",
+            "PT Nusant…",
+            "Modul Konektiv…",
+            "Direct",
+            "14",
+            "Rp 423.000",
+            "Rp 5.922.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "25 Jan 2026",
+            "SO-2026-4124",
+            "PT Bumi Persad…",
+            "Layanan Instalasi",
+            "Retail",
+            "1",
+            "Rp 72.000",
+            "Rp 72.000"
+          ],
+          [
+            "26 Jan 2026",
+            "SO-2026-4125",
+            "PT Sinar Abadi…",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "9",
+            "Rp 277.000",
+            "Rp 2.493.000"
+          ],
+          [
+            "27 Jan 2026",
+            "SO-2026-4126",
+            "Warung Berkah",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "12",
+            "Rp 280.000",
+            "Rp 3.360.000"
+          ],
+          [
+            "28 Jan 2026",
+            "SO-2026-4127",
+            "PT Global Trans…",
+            "Paket Langgan…",
+            "Direct",
+            "11",
+            "Rp 73.000",
+            "Rp 803.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "1 Feb 2026",
+            "SO-2026-4128",
+            "PT Nusant…",
+            "Paket Langgan…",
+            "Direct",
+            "9",
+            "Rp 230.000",
+            "Rp 2.070.000"
+          ],
+          [
+            "2 Feb 2026",
+            "SO-2026-4129",
+            "UD Cahaya…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "11",
+            "Rp 277.000",
+            "Rp 3.047.000"
+          ],
+          [
+            "3 Feb 2026",
+            "SO-2026-4130",
+            "CV Mitra Jaya",
+            "Layanan Instalasi",
+            "Direct",
+            "23",
+            "Rp 353.000",
+            "Rp 8.119.000"
+          ],
+          [
+            "4 Feb 2026",
+            "SO-2026-4131",
+            "PT Global Trans…",
+            "Paket Langgan…",
+            "Direct",
+            "15",
+            "Rp 249.000",
+            "Rp 3.735.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "5 Feb 2026",
+            "SO-2026-4132",
+            "PT Bumi Persad…",
+            "Layanan Instalasi",
+            "Direct",
+            "11",
+            "Rp 424.000",
+            "Rp 4.664.000"
+          ],
+          [
+            "6 Feb 2026",
+            "SO-2026-4133",
+            "CV Mitra Jaya",
+            "Layanan Instalasi",
+            "Reseller",
+            "17",
+            "Rp 219.000",
+            "Rp 3.723.000"
+          ],
+          [
+            "7 Feb 2026",
+            "SO-2026-4134",
+            "CV Amana…",
+            "Kabel Data 5…",
+            "Reseller",
+            "22",
+            "Rp 206.000",
+            "Rp 4.532.000"
+          ],
+          [
+            "8 Feb 2026",
+            "SO-2026-4135",
+            "PT Sinar Abadi…",
+            "Perpanja… Garansi 1…",
+            "Marketpla…",
+            "18",
+            "Rp 137.000",
+            "Rp 2.466.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "9 Feb 2026",
+            "SO-2026-4136",
+            "Warung Berkah",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "20",
+            "Rp 272.000",
+            "Rp 5.440.000"
+          ],
+          [
+            "10 Feb 2026",
+            "SO-2026-4137",
+            "Toko Sumber…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "1",
+            "Rp 342.000",
+            "Rp 342.000"
+          ],
+          [
+            "11 Feb 2026",
+            "SO-2026-4138",
+            "PT Nusant…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "10",
+            "Rp 303.000",
+            "Rp 3.030.000"
+          ],
+          [
+            "12 Feb 2026",
+            "SO-2026-4139",
+            "Toko Sumber…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "9",
+            "Rp 37.000",
+            "Rp 333.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "13 Feb 2026",
+            "SO-2026-4140",
+            "PT Nusant…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "1",
+            "Rp 92.000",
+            "Rp 92.000"
+          ],
+          [
+            "14 Feb 2026",
+            "SO-2026-4141",
+            "PT Global Trans…",
+            "Kabel Data 5…",
+            "Direct",
+            "13",
+            "Rp 165.000",
+            "Rp 2.145.000"
+          ],
+          [
+            "15 Feb 2026",
+            "SO-2026-4142",
+            "PT Bumi Persad…",
+            "Kabel Data 5…",
+            "Retail",
+            "21",
+            "Rp 331.000",
+            "Rp 6.951.000"
+          ],
+          [
+            "16 Feb 2026",
+            "SO-2026-4143",
+            "Warung Berkah",
+            "Layanan Instalasi",
+            "Retail",
+            "3",
+            "Rp 413.000",
+            "Rp 1.239.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "17 Feb 2026",
+            "SO-2026-4144",
+            "PT Global Trans…",
+            "Modul Konektiv…",
+            "Retail",
+            "6",
+            "Rp 305.000",
+            "Rp 1.830.000"
+          ],
+          [
+            "18 Feb 2026",
+            "SO-2026-4145",
+            "PT Bumi Persad…",
+            "Kabel Data 5…",
+            "Retail",
+            "13",
+            "Rp 360.000",
+            "Rp 4.680.000"
+          ],
+          [
+            "19 Feb 2026",
+            "SO-2026-4146",
+            "CV Amana…",
+            "Perpanja… Garansi 1…",
+            "Retail",
+            "24",
+            "Rp 319.000",
+            "Rp 7.656.000"
+          ],
+          [
+            "20 Feb 2026",
+            "SO-2026-4147",
+            "PT Sinar Abadi…",
+            "Paket Langgan…",
+            "Retail",
+            "7",
+            "Rp 319.000",
+            "Rp 2.233.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "21 Feb 2026",
+            "SO-2026-4148",
+            "PT Global Trans…",
+            "Kabel Data 5…",
+            "Direct",
+            "10",
+            "Rp 61.000",
+            "Rp 610.000"
+          ],
+          [
+            "22 Feb 2026",
+            "SO-2026-4149",
+            "PT Nusant…",
+            "Kabel Data 5…",
+            "Reseller",
+            "14",
+            "Rp 185.000",
+            "Rp 2.590.000"
+          ],
+          [
+            "23 Feb 2026",
+            "SO-2026-4150",
+            "PT Nusant…",
+            "Paket Langgan…",
+            "Reseller",
+            "6",
+            "Rp 229.000",
+            "Rp 1.374.000"
+          ],
+          [
+            "24 Feb 2026",
+            "SO-2026-4151",
+            "PT Sinar Abadi…",
+            "Layanan Instalasi",
+            "Marketpla…",
+            "18",
+            "Rp 32.000",
+            "Rp 576.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "25 Feb 2026",
+            "SO-2026-4152",
+            "PT Nusant…",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "15",
+            "Rp 25.000",
+            "Rp 375.000"
+          ],
+          [
+            "26 Feb 2026",
+            "SO-2026-4153",
+            "PT Sinar Abadi…",
+            "Modul Konektiv…",
+            "Marketpla…",
+            "22",
+            "Rp 46.000",
+            "Rp 1.012.000"
+          ],
+          [
+            "27 Feb 2026",
+            "SO-2026-4154",
+            "PT Bumi Persad…",
+            "Modul Konektiv…",
+            "Reseller",
+            "21",
+            "Rp 335.000",
+            "Rp 7.035.000"
+          ],
+          [
+            "28 Feb 2026",
+            "SO-2026-4155",
+            "PT Karya Anuger…",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "20",
+            "Rp 134.000",
+            "Rp 2.680.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "1 Mar 2026",
+            "SO-2026-4156",
+            "Warung Berkah",
+            "Layanan Instalasi",
+            "Reseller",
+            "1",
+            "Rp 301.000",
+            "Rp 301.000"
+          ],
+          [
+            "2 Mar 2026",
+            "SO-2026-4157",
+            "PT Nusant…",
+            "Paket Langgan…",
+            "Reseller",
+            "13",
+            "Rp 179.000",
+            "Rp 2.327.000"
+          ],
+          [
+            "3 Mar 2026",
+            "SO-2026-4158",
+            "PT Bumi Persad…",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "9",
+            "Rp 206.000",
+            "Rp 1.854.000"
+          ],
+          [
+            "4 Mar 2026",
+            "SO-2026-4159",
+            "CV Amana…",
+            "Paket Langgan…",
+            "Retail",
+            "8",
+            "Rp 424.000",
+            "Rp 3.392.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "5 Mar 2026",
+            "SO-2026-4160",
+            "PT Sinar Abadi…",
+            "Layanan Instalasi",
+            "Reseller",
+            "1",
+            "Rp 241.000",
+            "Rp 241.000"
+          ],
+          [
+            "6 Mar 2026",
+            "SO-2026-4161",
+            "CV Mitra Jaya",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "24",
+            "Rp 165.000",
+            "Rp 3.960.000"
+          ],
+          [
+            "7 Mar 2026",
+            "SO-2026-4162",
+            "UD Cahaya…",
+            "Modul Konektiv…",
+            "Reseller",
+            "10",
+            "Rp 226.000",
+            "Rp 2.260.000"
+          ],
+          [
+            "8 Mar 2026",
+            "SO-2026-4163",
+            "Toko Sumber…",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "21",
+            "Rp 242.000",
+            "Rp 5.082.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "9 Mar 2026",
+            "SO-2026-4164",
+            "CV Mitra Jaya",
+            "Perangk… Sensor…",
+            "Retail",
+            "9",
+            "Rp 362.000",
+            "Rp 3.258.000"
+          ],
+          [
+            "10 Mar 2026",
+            "SO-2026-4165",
+            "PT Global Trans…",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "21",
+            "Rp 224.000",
+            "Rp 4.704.000"
+          ],
+          [
+            "11 Mar 2026",
+            "SO-2026-4166",
+            "Warung Berkah",
+            "Perpanja… Garansi 1…",
+            "Retail",
+            "24",
+            "Rp 32.000",
+            "Rp 768.000"
+          ],
+          [
+            "12 Mar 2026",
+            "SO-2026-4167",
+            "CV Mitra Jaya",
+            "Paket Langgan…",
+            "Marketpla…",
+            "8",
+            "Rp 422.000",
+            "Rp 3.376.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "13 Mar 2026",
+            "SO-2026-4168",
+            "PT Karya Anuger…",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "4",
+            "Rp 155.000",
+            "Rp 620.000"
+          ],
+          [
+            "14 Mar 2026",
+            "SO-2026-4169",
+            "PT Sinar Abadi…",
+            "Modul Konektiv…",
+            "Marketpla…",
+            "2",
+            "Rp 184.000",
+            "Rp 368.000"
+          ],
+          [
+            "15 Mar 2026",
+            "SO-2026-4170",
+            "Toko Sumber…",
+            "Layanan Instalasi",
+            "Reseller",
+            "10",
+            "Rp 76.000",
+            "Rp 760.000"
+          ],
+          [
+            "16 Mar 2026",
+            "SO-2026-4171",
+            "Toko Sumber…",
+            "Layanan Instalasi",
+            "Direct",
+            "14",
+            "Rp 295.000",
+            "Rp 4.130.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "17 Mar 2026",
+            "SO-2026-4172",
+            "CV Mitra Jaya",
+            "Modul Konektiv…",
+            "Reseller",
+            "11",
+            "Rp 151.000",
+            "Rp 1.661.000"
+          ],
+          [
+            "18 Mar 2026",
+            "SO-2026-4173",
+            "PT Nusant…",
+            "Perpanja… Garansi 1…",
+            "Marketpla…",
+            "15",
+            "Rp 227.000",
+            "Rp 3.405.000"
+          ],
+          [
+            "19 Mar 2026",
+            "SO-2026-4174",
+            "PT Bumi Persad…",
+            "Perpanja… Garansi 1…",
+            "Retail",
+            "13",
+            "Rp 215.000",
+            "Rp 2.795.000"
+          ],
+          [
+            "20 Mar 2026",
+            "SO-2026-4175",
+            "PT Bumi Persad…",
+            "Layanan Instalasi",
+            "Retail",
+            "15",
+            "Rp 375.000",
+            "Rp 5.625.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "21 Mar 2026",
+            "SO-2026-4176",
+            "CV Amana…",
+            "Paket Langgan…",
+            "Reseller",
+            "6",
+            "Rp 222.000",
+            "Rp 1.332.000"
+          ],
+          [
+            "22 Mar 2026",
+            "SO-2026-4177",
+            "PT Nusant…",
+            "Layanan Instalasi",
+            "Direct",
+            "22",
+            "Rp 257.000",
+            "Rp 5.654.000"
+          ],
+          [
+            "23 Mar 2026",
+            "SO-2026-4178",
+            "PT Nusant…",
+            "Kabel Data 5…",
+            "Retail",
+            "13",
+            "Rp 141.000",
+            "Rp 1.833.000"
+          ],
+          [
+            "24 Mar 2026",
+            "SO-2026-4179",
+            "Warung Berkah",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "6",
+            "Rp 390.000",
+            "Rp 2.340.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "25 Mar 2026",
+            "SO-2026-4180",
+            "CV Mitra Jaya",
+            "Paket Langgan…",
+            "Direct",
+            "6",
+            "Rp 114.000",
+            "Rp 684.000"
+          ],
+          [
+            "26 Mar 2026",
+            "SO-2026-4181",
+            "CV Amana…",
+            "Perpanja… Garansi 1…",
+            "Marketpla…",
+            "3",
+            "Rp 245.000",
+            "Rp 735.000"
+          ],
+          [
+            "27 Mar 2026",
+            "SO-2026-4182",
+            "PT Sinar Abadi…",
+            "Layanan Instalasi",
+            "Retail",
+            "14",
+            "Rp 389.000",
+            "Rp 5.446.000"
+          ],
+          [
+            "28 Mar 2026",
+            "SO-2026-4183",
+            "Warung Berkah",
+            "Perpanja… Garansi 1…",
+            "Marketpla…",
+            "22",
+            "Rp 329.000",
+            "Rp 7.238.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "1 Apr 2026",
+            "SO-2026-4184",
+            "PT Sinar Abadi…",
+            "Layanan Instalasi",
+            "Retail",
+            "17",
+            "Rp 386.000",
+            "Rp 6.562.000"
+          ],
+          [
+            "2 Apr 2026",
+            "SO-2026-4185",
+            "PT Sinar Abadi…",
+            "Modul Konektiv…",
+            "Retail",
+            "12",
+            "Rp 216.000",
+            "Rp 2.592.000"
+          ],
+          [
+            "3 Apr 2026",
+            "SO-2026-4186",
+            "PT Sinar Abadi…",
+            "Kabel Data 5…",
+            "Direct",
+            "22",
+            "Rp 240.000",
+            "Rp 5.280.000"
+          ],
+          [
+            "4 Apr 2026",
+            "SO-2026-4187",
+            "PT Karya Anuger…",
+            "Modul Konektiv…",
+            "Marketpla…",
+            "17",
+            "Rp 172.000",
+            "Rp 2.924.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "5 Apr 2026",
+            "SO-2026-4188",
+            "PT Nusant…",
+            "Perpanja… Garansi 1…",
+            "Reseller",
+            "14",
+            "Rp 126.000",
+            "Rp 1.764.000"
+          ],
+          [
+            "6 Apr 2026",
+            "SO-2026-4189",
+            "Warung Berkah",
+            "Paket Langgan…",
+            "Direct",
+            "13",
+            "Rp 375.000",
+            "Rp 4.875.000"
+          ],
+          [
+            "7 Apr 2026",
+            "SO-2026-4190",
+            "PT Sinar Abadi…",
+            "Kabel Data 5…",
+            "Direct",
+            "5",
+            "Rp 29.000",
+            "Rp 145.000"
+          ],
+          [
+            "8 Apr 2026",
+            "SO-2026-4191",
+            "PT Sinar Abadi…",
+            "Perpanja… Garansi 1…",
+            "Marketpla…",
+            "14",
+            "Rp 370.000",
+            "Rp 5.180.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "9 Apr 2026",
+            "SO-2026-4192",
+            "CV Mitra Jaya",
+            "Perpanja… Garansi 1…",
+            "Retail",
+            "22",
+            "Rp 95.000",
+            "Rp 2.090.000"
+          ],
+          [
+            "10 Apr 2026",
+            "SO-2026-4193",
+            "PT Nusant…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "15",
+            "Rp 75.000",
+            "Rp 1.125.000"
+          ],
+          [
+            "11 Apr 2026",
+            "SO-2026-4194",
+            "UD Cahaya…",
+            "Kabel Data 5…",
+            "Direct",
+            "9",
+            "Rp 169.000",
+            "Rp 1.521.000"
+          ],
+          [
+            "12 Apr 2026",
+            "SO-2026-4195",
+            "UD Cahaya…",
+            "Kabel Data 5…",
+            "Retail",
+            "20",
+            "Rp 307.000",
+            "Rp 6.140.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "13 Apr 2026",
+            "SO-2026-4196",
+            "PT Karya Anuger…",
+            "Kabel Data 5…",
+            "Retail",
+            "2",
+            "Rp 384.000",
+            "Rp 768.000"
+          ],
+          [
+            "14 Apr 2026",
+            "SO-2026-4197",
+            "PT Sinar Abadi…",
+            "Paket Langgan…",
+            "Retail",
+            "13",
+            "Rp 361.000",
+            "Rp 4.693.000"
+          ],
+          [
+            "15 Apr 2026",
+            "SO-2026-4198",
+            "CV Mitra Jaya",
+            "Layanan Instalasi",
+            "Marketpla…",
+            "24",
+            "Rp 125.000",
+            "Rp 3.000.000"
+          ],
+          [
+            "16 Apr 2026",
+            "SO-2026-4199",
+            "Warung Berkah",
+            "Modul Konektiv…",
+            "Retail",
+            "4",
+            "Rp 107.000",
+            "Rp 428.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "17 Apr 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Perpanja… Garansi 1…",
+            "Retail",
+            "1",
+            "Rp 75.000",
+            "Rp 75.000"
+          ],
+          [
+            "18 Apr 2026",
+            "SO-2026-4201",
+            "CV Mitra Jaya",
+            "Kabel Data 5…",
+            "Reseller",
+            "22",
+            "Rp 87.000",
+            "Rp 1.914.000"
+          ],
+          [
+            "19 Apr 2026",
+            "SO-2026-42…",
+            "CV Mitra Jaya",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "24",
+            "Rp 189.000",
+            "Rp 4.536.000"
+          ],
+          [
+            "20 Apr 2026",
+            "SO-2026-42…",
+            "PT Sinar Abadi…",
+            "Paket Langgan…",
+            "Direct",
+            "7",
+            "Rp 142.000",
+            "Rp 994.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "21 Apr 2026",
+            "SO-2026-42…",
+            "CV Amana…",
+            "Layanan Instalasi",
+            "Marketpla…",
+            "1",
+            "Rp 314.000",
+            "Rp 314.000"
+          ],
+          [
+            "22 Apr 2026",
+            "SO-2026-42…",
+            "CV Amana…",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "10",
+            "Rp 324.000",
+            "Rp 3.240.000"
+          ],
+          [
+            "23 Apr 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Modul Konektiv…",
+            "Reseller",
+            "15",
+            "Rp 100.000",
+            "Rp 1.500.000"
+          ],
+          [
+            "24 Apr 2026",
+            "SO-2026-42…",
+            "CV Mitra Jaya",
+            "Perpanja… Garansi 1…",
+            "Marketpla…",
+            "10",
+            "Rp 261.000",
+            "Rp 2.610.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "25 Apr 2026",
+            "SO-2026-42…",
+            "CV Mitra Jaya",
+            "Perpanja… Garansi 1…",
+            "Retail",
+            "24",
+            "Rp 404.000",
+            "Rp 9.696.000"
+          ],
+          [
+            "26 Apr 2026",
+            "SO-2026-42…",
+            "CV Mitra Jaya",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "21",
+            "Rp 286.000",
+            "Rp 6.006.000"
+          ],
+          [
+            "27 Apr 2026",
+            "SO-2026-4210",
+            "Warung Berkah",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "16",
+            "Rp 327.000",
+            "Rp 5.232.000"
+          ],
+          [
+            "28 Apr 2026",
+            "SO-2026-4211",
+            "PT Bumi Persad…",
+            "Modul Konektiv…",
+            "Reseller",
+            "13",
+            "Rp 181.000",
+            "Rp 2.353.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "1 Mei 2026",
+            "SO-2026-4212",
+            "PT Nusant…",
+            "Layanan Instalasi",
+            "Marketpla…",
+            "9",
+            "Rp 173.000",
+            "Rp 1.557.000"
+          ],
+          [
+            "2 Mei 2026",
+            "SO-2026-4213",
+            "PT Nusant…",
+            "Kabel Data 5…",
+            "Reseller",
+            "14",
+            "Rp 376.000",
+            "Rp 5.264.000"
+          ],
+          [
+            "3 Mei 2026",
+            "SO-2026-4214",
+            "Warung Berkah",
+            "Paket Langgan…",
+            "Direct",
+            "22",
+            "Rp 305.000",
+            "Rp 6.710.000"
+          ],
+          [
+            "4 Mei 2026",
+            "SO-2026-4215",
+            "PT Bumi Persad…",
+            "Modul Konektiv…",
+            "Marketpla…",
+            "12",
+            "Rp 76.000",
+            "Rp 912.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "5 Mei 2026",
+            "SO-2026-4216",
+            "PT Nusant…",
+            "Perangk… Sensor…",
+            "Reseller",
+            "8",
+            "Rp 269.000",
+            "Rp 2.152.000"
+          ],
+          [
+            "6 Mei 2026",
+            "SO-2026-4217",
+            "UD Cahaya…",
+            "Kabel Data 5…",
+            "Retail",
+            "12",
+            "Rp 25.000",
+            "Rp 300.000"
+          ],
+          [
+            "7 Mei 2026",
+            "SO-2026-4218",
+            "CV Amana…",
+            "Modul Konektiv…",
+            "Direct",
+            "24",
+            "Rp 273.000",
+            "Rp 6.552.000"
+          ],
+          [
+            "8 Mei 2026",
+            "SO-2026-4219",
+            "CV Mitra Jaya",
+            "Perangk… Sensor…",
+            "Direct",
+            "2",
+            "Rp 72.000",
+            "Rp 144.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "9 Mei 2026",
+            "SO-2026-42…",
+            "PT Bumi Persad…",
+            "Modul Konektiv…",
+            "Marketpla…",
+            "21",
+            "Rp 329.000",
+            "Rp 6.909.000"
+          ],
+          [
+            "10 Mei 2026",
+            "SO-2026-4221",
+            "PT Karya Anuger…",
+            "Perangk… Sensor…",
+            "Retail",
+            "15",
+            "Rp 285.000",
+            "Rp 4.275.000"
+          ],
+          [
+            "11 Mei 2026",
+            "SO-2026-42…",
+            "PT Bumi Persad…",
+            "Layanan Instalasi",
+            "Marketpla…",
+            "19",
+            "Rp 169.000",
+            "Rp 3.211.000"
+          ],
+          [
+            "12 Mei 2026",
+            "SO-2026-42…",
+            "PT Bumi Persad…",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "16",
+            "Rp 420.000",
+            "Rp 6.720.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "13 Mei 2026",
+            "SO-2026-42…",
+            "PT Bumi Persad…",
+            "Modul Konektiv…",
+            "Reseller",
+            "15",
+            "Rp 109.000",
+            "Rp 1.635.000"
+          ],
+          [
+            "14 Mei 2026",
+            "SO-2026-42…",
+            "Warung Berkah",
+            "Paket Langgan…",
+            "Direct",
+            "1",
+            "Rp 390.000",
+            "Rp 390.000"
+          ],
+          [
+            "15 Mei 2026",
+            "SO-2026-42…",
+            "Toko Sumber…",
+            "Modul Konektiv…",
+            "Direct",
+            "23",
+            "Rp 396.000",
+            "Rp 9.108.000"
+          ],
+          [
+            "16 Mei 2026",
+            "SO-2026-42…",
+            "CV Amana…",
+            "Modul Konektiv…",
+            "Retail",
+            "6",
+            "Rp 393.000",
+            "Rp 2.358.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "17 Mei 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Kabel Data 5…",
+            "Direct",
+            "21",
+            "Rp 77.000",
+            "Rp 1.617.000"
+          ],
+          [
+            "18 Mei 2026",
+            "SO-2026-42…",
+            "PT Sinar Abadi…",
+            "Modul Konektiv…",
+            "Reseller",
+            "11",
+            "Rp 333.000",
+            "Rp 3.663.000"
+          ],
+          [
+            "19 Mei 2026",
+            "SO-2026-42…",
+            "UD Cahaya…",
+            "Kabel Data 5…",
+            "Retail",
+            "23",
+            "Rp 154.000",
+            "Rp 3.542.000"
+          ],
+          [
+            "20 Mei 2026",
+            "SO-2026-4231",
+            "PT Global Trans…",
+            "Modul Konektiv…",
+            "Direct",
+            "10",
+            "Rp 63.000",
+            "Rp 630.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "21 Mei 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Modul Konektiv…",
+            "Direct",
+            "1",
+            "Rp 226.000",
+            "Rp 226.000"
+          ],
+          [
+            "22 Mei 2026",
+            "SO-2026-42…",
+            "UD Cahaya…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "15",
+            "Rp 338.000",
+            "Rp 5.070.000"
+          ],
+          [
+            "23 Mei 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Kabel Data 5…",
+            "Retail",
+            "12",
+            "Rp 84.000",
+            "Rp 1.008.000"
+          ],
+          [
+            "24 Mei 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Paket Langgan…",
+            "Reseller",
+            "19",
+            "Rp 358.000",
+            "Rp 6.802.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "25 Mei 2026",
+            "SO-2026-42…",
+            "PT Karya Anuger…",
+            "Modul Konektiv…",
+            "Reseller",
+            "13",
+            "Rp 358.000",
+            "Rp 4.654.000"
+          ],
+          [
+            "26 Mei 2026",
+            "SO-2026-42…",
+            "CV Mitra Jaya",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "7",
+            "Rp 375.000",
+            "Rp 2.625.000"
+          ],
+          [
+            "27 Mei 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Modul Konektiv…",
+            "Reseller",
+            "14",
+            "Rp 228.000",
+            "Rp 3.192.000"
+          ],
+          [
+            "28 Mei 2026",
+            "SO-2026-42…",
+            "Toko Sumber…",
+            "Modul Konektiv…",
+            "Reseller",
+            "12",
+            "Rp 311.000",
+            "Rp 3.732.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "1 Jun 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "12",
+            "Rp 187.000",
+            "Rp 2.244.000"
+          ],
+          [
+            "2 Jun 2026",
+            "SO-2026-4241",
+            "PT Global Trans…",
+            "Modul Konektiv…",
+            "Direct",
+            "22",
+            "Rp 359.000",
+            "Rp 7.898.000"
+          ],
+          [
+            "3 Jun 2026",
+            "SO-2026-42…",
+            "PT Sinar Abadi…",
+            "Perpanja… Garansi 1…",
+            "Retail",
+            "23",
+            "Rp 292.000",
+            "Rp 6.716.000"
+          ],
+          [
+            "4 Jun 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Layanan Instalasi",
+            "Retail",
+            "23",
+            "Rp 300.000",
+            "Rp 6.900.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "5 Jun 2026",
+            "SO-2026-42…",
+            "UD Cahaya…",
+            "Layanan Instalasi",
+            "Reseller",
+            "1",
+            "Rp 314.000",
+            "Rp 314.000"
+          ],
+          [
+            "6 Jun 2026",
+            "SO-2026-42…",
+            "UD Cahaya…",
+            "Paket Langgan…",
+            "Direct",
+            "19",
+            "Rp 283.000",
+            "Rp 5.377.000"
+          ],
+          [
+            "7 Jun 2026",
+            "SO-2026-42…",
+            "PT Karya Anuger…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "6",
+            "Rp 160.000",
+            "Rp 960.000"
+          ],
+          [
+            "8 Jun 2026",
+            "SO-2026-42…",
+            "PT Karya Anuger…",
+            "Modul Konektiv…",
+            "Retail",
+            "7",
+            "Rp 45.000",
+            "Rp 315.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "9 Jun 2026",
+            "SO-2026-42…",
+            "PT Bumi Persad…",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "15",
+            "Rp 113.000",
+            "Rp 1.695.000"
+          ],
+          [
+            "10 Jun 2026",
+            "SO-2026-42…",
+            "PT Bumi Persad…",
+            "Paket Langgan…",
+            "Direct",
+            "8",
+            "Rp 33.000",
+            "Rp 264.000"
+          ],
+          [
+            "11 Jun 2026",
+            "SO-2026-42…",
+            "PT Karya Anuger…",
+            "Perangk… Sensor…",
+            "Reseller",
+            "16",
+            "Rp 167.000",
+            "Rp 2.672.000"
+          ],
+          [
+            "12 Jun 2026",
+            "SO-2026-4251",
+            "PT Bumi Persad…",
+            "Modul Konektiv…",
+            "Reseller",
+            "5",
+            "Rp 419.000",
+            "Rp 2.095.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "13 Jun 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Perangk… Sensor…",
+            "Retail",
+            "2",
+            "Rp 185.000",
+            "Rp 370.000"
+          ],
+          [
+            "14 Jun 2026",
+            "SO-2026-42…",
+            "UD Cahaya…",
+            "Perpanja… Garansi 1…",
+            "Retail",
+            "1",
+            "Rp 380.000",
+            "Rp 380.000"
+          ],
+          [
+            "15 Jun 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Modul Konektiv…",
+            "Marketpla…",
+            "14",
+            "Rp 290.000",
+            "Rp 4.060.000"
+          ],
+          [
+            "16 Jun 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "20",
+            "Rp 255.000",
+            "Rp 5.100.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "17 Jun 2026",
+            "SO-2026-42…",
+            "CV Mitra Jaya",
+            "Kabel Data 5…",
+            "Marketpla…",
+            "19",
+            "Rp 104.000",
+            "Rp 1.976.000"
+          ],
+          [
+            "18 Jun 2026",
+            "SO-2026-42…",
+            "Warung Berkah",
+            "Kabel Data 5…",
+            "Reseller",
+            "7",
+            "Rp 81.000",
+            "Rp 567.000"
+          ],
+          [
+            "19 Jun 2026",
+            "SO-2026-42…",
+            "UD Cahaya…",
+            "Paket Langgan…",
+            "Direct",
+            "5",
+            "Rp 360.000",
+            "Rp 1.800.000"
+          ],
+          [
+            "20 Jun 2026",
+            "SO-2026-42…",
+            "PT Bumi Persad…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "5",
+            "Rp 402.000",
+            "Rp 2.010.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "21 Jun 2026",
+            "SO-2026-42…",
+            "PT Sinar Abadi…",
+            "Modul Konektiv…",
+            "Direct",
+            "24",
+            "Rp 43.000",
+            "Rp 1.032.000"
+          ],
+          [
+            "22 Jun 2026",
+            "SO-2026-4261",
+            "PT Sinar Abadi…",
+            "Perpanja… Garansi 1…",
+            "Reseller",
+            "10",
+            "Rp 144.000",
+            "Rp 1.440.000"
+          ],
+          [
+            "23 Jun 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Perangk… Sensor…",
+            "Direct",
+            "20",
+            "Rp 361.000",
+            "Rp 7.220.000"
+          ],
+          [
+            "24 Jun 2026",
+            "SO-2026-42…",
+            "PT Sinar Abadi…",
+            "Paket Langgan…",
+            "Direct",
+            "10",
+            "Rp 397.000",
+            "Rp 3.970.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "25 Jun 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Kabel Data 5…",
+            "Retail",
+            "2",
+            "Rp 309.000",
+            "Rp 618.000"
+          ],
+          [
+            "26 Jun 2026",
+            "SO-2026-42…",
+            "CV Amana…",
+            "Layanan Instalasi",
+            "Marketpla…",
+            "1",
+            "Rp 209.000",
+            "Rp 209.000"
+          ],
+          [
+            "27 Jun 2026",
+            "SO-2026-42…",
+            "PT Sinar Abadi…",
+            "Paket Langgan…",
+            "Reseller",
+            "11",
+            "Rp 89.000",
+            "Rp 979.000"
+          ],
+          [
+            "28 Jun 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "21",
+            "Rp 44.000",
+            "Rp 924.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "1 Jul 2026",
+            "SO-2026-42…",
+            "PT Sinar Abadi…",
+            "Perpanja… Garansi 1…",
+            "Retail",
+            "14",
+            "Rp 118.000",
+            "Rp 1.652.000"
+          ],
+          [
+            "2 Jul 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "24",
+            "Rp 179.000",
+            "Rp 4.296.000"
+          ],
+          [
+            "3 Jul 2026",
+            "SO-2026-42…",
+            "CV Mitra Jaya",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "4",
+            "Rp 86.000",
+            "Rp 344.000"
+          ],
+          [
+            "4 Jul 2026",
+            "SO-2026-4271",
+            "PT Bumi Persad…",
+            "Kabel Data 5…",
+            "Direct",
+            "1",
+            "Rp 396.000",
+            "Rp 396.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "5 Jul 2026",
+            "SO-2026-42…",
+            "PT Karya Anuger…",
+            "Perangk… Sensor…",
+            "Retail",
+            "8",
+            "Rp 402.000",
+            "Rp 3.216.000"
+          ],
+          [
+            "6 Jul 2026",
+            "SO-2026-42…",
+            "PT Sinar Abadi…",
+            "Kabel Data 5…",
+            "Direct",
+            "2",
+            "Rp 68.000",
+            "Rp 136.000"
+          ],
+          [
+            "7 Jul 2026",
+            "SO-2026-42…",
+            "UD Cahaya…",
+            "Perangk… Sensor…",
+            "Direct",
+            "11",
+            "Rp 397.000",
+            "Rp 4.367.000"
+          ],
+          [
+            "8 Jul 2026",
+            "SO-2026-42…",
+            "CV Amana…",
+            "Layanan Instalasi",
+            "Reseller",
+            "16",
+            "Rp 50.000",
+            "Rp 800.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "9 Jul 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Layanan Instalasi",
+            "Marketpla…",
+            "11",
+            "Rp 396.000",
+            "Rp 4.356.000"
+          ],
+          [
+            "10 Jul 2026",
+            "SO-2026-4277",
+            "PT Nusant…",
+            "Modul Konektiv…",
+            "Reseller",
+            "6",
+            "Rp 308.000",
+            "Rp 1.848.000"
+          ],
+          [
+            "11 Jul 2026",
+            "SO-2026-42…",
+            "Toko Sumber…",
+            "Perangk… Sensor…",
+            "Reseller",
+            "1",
+            "Rp 199.000",
+            "Rp 199.000"
+          ],
+          [
+            "12 Jul 2026",
+            "SO-2026-42…",
+            "PT Karya Anuger…",
+            "Modul Konektiv…",
+            "Reseller",
+            "20",
+            "Rp 58.000",
+            "Rp 1.160.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "13 Jul 2026",
+            "SO-2026-42…",
+            "Toko Sumber…",
+            "Paket Langgan…",
+            "Direct",
+            "15",
+            "Rp 70.000",
+            "Rp 1.050.000"
+          ],
+          [
+            "14 Jul 2026",
+            "SO-2026-4281",
+            "UD Cahaya…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "9",
+            "Rp 311.000",
+            "Rp 2.799.000"
+          ],
+          [
+            "15 Jul 2026",
+            "SO-2026-42…",
+            "CV Mitra Jaya",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "11",
+            "Rp 53.000",
+            "Rp 583.000"
+          ],
+          [
+            "16 Jul 2026",
+            "SO-2026-42…",
+            "CV Amana…",
+            "Kabel Data 5…",
+            "Reseller",
+            "1",
+            "Rp 229.000",
+            "Rp 229.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "17 Jul 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Perpanja… Garansi 1…",
+            "Reseller",
+            "22",
+            "Rp 361.000",
+            "Rp 7.942.000"
+          ],
+          [
+            "18 Jul 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Perangk… Sensor…",
+            "Marketpla…",
+            "5",
+            "Rp 148.000",
+            "Rp 740.000"
+          ],
+          [
+            "19 Jul 2026",
+            "SO-2026-42…",
+            "CV Mitra Jaya",
+            "Perangk… Sensor…",
+            "Reseller",
+            "21",
+            "Rp 60.000",
+            "Rp 1.260.000"
+          ],
+          [
+            "20 Jul 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Kabel Data 5…",
+            "Direct",
+            "24",
+            "Rp 155.000",
+            "Rp 3.720.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "21 Jul 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Modul Konektiv…",
+            "Retail",
+            "22",
+            "Rp 352.000",
+            "Rp 7.744.000"
+          ],
+          [
+            "22 Jul 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Layanan Instalasi",
+            "Direct",
+            "19",
+            "Rp 135.000",
+            "Rp 2.565.000"
+          ],
+          [
+            "23 Jul 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Perpanja… Garansi 1…",
+            "Reseller",
+            "22",
+            "Rp 148.000",
+            "Rp 3.256.000"
+          ],
+          [
+            "24 Jul 2026",
+            "SO-2026-4291",
+            "PT Karya Anuger…",
+            "Paket Langgan…",
+            "Retail",
+            "1",
+            "Rp 237.000",
+            "Rp 237.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 146,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "25 Jul 2026",
+            "SO-2026-42…",
+            "PT Karya Anuger…",
+            "Layanan Instalasi",
+            "Retail",
+            "24",
+            "Rp 391.000",
+            "Rp 9.384.000"
+          ],
+          [
+            "26 Jul 2026",
+            "SO-2026-42…",
+            "UD Cahaya…",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "11",
+            "Rp 286.000",
+            "Rp 3.146.000"
+          ],
+          [
+            "27 Jul 2026",
+            "SO-2026-42…",
+            "PT Global Trans…",
+            "Perpanja… Garansi 1…",
+            "Direct",
+            "20",
+            "Rp 269.000",
+            "Rp 5.380.000"
+          ],
+          [
+            "28 Jul 2026",
+            "SO-2026-42…",
+            "PT Nusant…",
+            "Modul Konektiv…",
+            "Reseller",
+            "5",
+            "Rp 89.000",
+            "Rp 445.000"
+          ]
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "continued": true
+    },
+    {
+      "kind": "table",
+      "frames": 159,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "table": {
+        "header": [
+          "Tanggal",
+          "No. Pesanan",
+          "Pelang…",
+          "Produk",
+          "Kanal",
+          "Qty",
+          "Harga Satuan",
+          "Jumlah"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "l",
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          217,
+          251,
+          173,
+          187,
+          219,
+          102,
+          234,
+          265
+        ],
+        "rows": [
+          [
+            "1 Agu 2026",
+            "SO-2026-42…",
+            "PT Sinar Abadi…",
+            "Perangk… Sensor…",
+            "Reseller",
+            "12",
+            "Rp 358.000",
+            "Rp 4.296.000"
+          ],
+          [
+            "2 Agu 2026",
+            "SO-2026-42…",
+            "CV Mitra Jaya",
+            "Kabel Data 5…",
+            "Direct",
+            "5",
+            "Rp 415.000",
+            "Rp 2.075.000"
+          ],
+          [
+            "3 Agu 2026",
+            "SO-2026-42…",
+            "PT Sinar Abadi…",
+            "Modul Konektiv…",
+            "Reseller",
+            "21",
+            "Rp 118.000",
+            "Rp 2.478.000"
+          ],
+          [
+            "4 Agu 2026",
+            "SO-2026-42…",
+            "CV Amana…",
+            "Perangk… Sensor…",
+            "Retail",
+            "19",
+            "Rp 423.000",
+            "Rp 8.037.000"
+          ]
+        ],
+        "total": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "Total",
+          "Rp 583.149.000"
+        ],
+        "font_size": 29,
+        "row_height": 105,
+        "header_height": 105
+      },
+      "caption": [
+        "Rincian pesanan"
+      ],
+      "notes": "Sumber: Sumber: tabel fact_orders. Nilai transaksi belum termasuk pajak.",
+      "continued": true
+    },
+    {
+      "kind": "closing",
+      "frames": 90,
+      "title": [
+        "Ekspor Pesanan 2026"
+      ],
+      "facts": [
+        {
+          "label": "Dibuat",
+          "value": [
+            "27 Juli 2026 09:30"
+          ]
+        }
+      ]
+    }
+  ]
+}

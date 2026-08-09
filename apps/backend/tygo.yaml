@@ -93,6 +93,22 @@ packages:
         MetricUnit,
       } from "./domain.js";
 
+  # The video plan (T-V1). Generated because two TypeScript consumers compile
+  # against it — apps/render draws it and the dashboard's player replays it —
+  # and a hand-written interface matching a Go struct is the exact defect T-02b
+  # deleted four files to end. It is the only report package that crosses the
+  # wire, which is why the rest of internal/report is not here.
+  - path: "github.com/fauzanebd/argentum/internal/report/videoplan"
+    include_files:
+      - "plan.go"
+    output_path: "../../packages/api-types/src/videoplan.ts"
+    enum_style: "union"
+    frontmatter: |
+      /* eslint-disable */
+      // The video plan, from apps/backend/internal/report/videoplan/plan.go.
+      // Every string in it is final: nothing on this side formats a number,
+      // picks a word, or decides how long a scene is on screen.
+
   # Inbound webhook envelopes. Named by the ticket, and generated for the same
   # reason the rest is — but deliberately not re-exported from the package
   # index: these are what Meta and Twilio send *us*, no browser ever sees one,

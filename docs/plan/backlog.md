@@ -87,6 +87,33 @@ swapped later the same day, when the specified Generate-with-AI flow made `T-B4`
 the primary create path and it was rewritten to degrade without `T-B2` instead
 of depending on it.
 
+### Video and animated decks (`T-V1` → `T-V5`) — **scheduled, tickets written**
+The same report spec renders as a silent 1080p video and as an animated deck at a
+shareable link. A Go package (`internal/report/videoplan`) projects the spec into
+a finished plan — every figure formatted, every label resolved, every duration
+computed, every chart already a PNG — and a new Node service (`apps/render`)
+draws it with Remotion. `mp4` becomes a document format on every door that
+already serves PDF and PPTX.
+**Why it is not a new product:** `T-R4` established that a format is a projection
+of the same content model, not a second one. The spec, the chart images, the
+branding, the fixtures and the delivery doors all exist; what is new is a
+compositor and a plan to feed it.
+**Why now:** a PPTX read by someone who was not in the room is a stack of bullets
+with the argument in the speaker notes, which is where `T-R4` had to put it. And
+every channel this product already speaks — Lark, WhatsApp, Discord, Slack —
+plays video inline and treats a deck as an attachment to open later or never.
+**Status:** owner-set 2026-08-09. Filed as five tickets in
+[`01-tickets.md`](01-tickets.md), inserted ahead of the widget phase;
+[`00-sprint-overview.md`](00-sprint-overview.md) §8d records the 11.5d that slips
+off the widget to pay for it.
+**Estimate:** 11.5d (`T-V1` 2.5, `T-V2` 3.0, `T-V3` 2.5, `T-V4` 2.0, `T-V5` 1.5).
+`T-V1`/`T-V2`/`T-V3` never-cut **together** — a half-built path is a format the
+tool advertises and cannot produce. `T-V4` and `T-V5` are §8b rows 13 and 14.
+**It does not reopen the headless-Chromium rejection below.** That entry's
+clauses are about the worker image and about documents; this browser ships in its
+own image behind its own deployment, no document renderer changes, and the plan
+is self-contained so the service needs no egress at all.
+
 ### Phases 2–6: metric registry, watchers, actions, MCP, hardening (T-06 → T-18)
 **Why deferred:** Scheduling, again, and this one is expensive. The API track
 (`T-A1`→`T-A5`, 10.5d plus the foundation it forces earlier) was made the
@@ -98,7 +125,21 @@ for.** `00-sprint-overview.md` §6 carries the full arithmetic and the argument.
 never-cut, before anything new is considered.
 **Estimate:** 23.5d, unchanged — the tickets need no rewriting.
 
-### The whole widget phase (T-19 → T-23)
+### The whole widget phase (T-19 → T-23) — **no longer committed work, 2026-08-09**
+**Moved out of Sprint 2's commitments** and given the trigger below.
+[`00-sprint-overview.md`](00-sprint-overview.md) §8e is the decision and its
+reasoning. In short: four consecutive plans said the widget was next and none ran
+it, and 11.5 days that are always next make every remaining-work figure wrong.
+**Not cancelled.** `T-19`→`T-23` stay written, nothing depends on them, and the
+phase slides back whole — `T-19` builds on `T-13`, which shipped, so it starts
+cheaper than it was scoped.
+**Trigger:** a named tenant with a frontend team asking to put Argentum's chat
+inside their own internal site. The API and MCP already serve every consumer that
+is a server or an agent; this serves humans in the tenant's UI, and nobody has
+asked for it in the seven weeks it has been carried.
+**Estimate:** 11.5d, unchanged.
+
+**The original deferral note, kept because its reasoning is still the reasoning:**
 **Why deferred:** Not a change of mind about the widget — a scheduling
 consequence. The report track (`T-R1`→`T-R5`, 10d) was inserted on 2026-07-27 and
 the sprint cannot hold both. The widget phase is the designated slack because
@@ -122,6 +163,12 @@ demo the product will have.
 is wiring, not building.
 **Trigger:** watchers running in production for any customer.
 **Estimate:** 1.5d.
+**Both dependencies landed 2026-08-02** (`T-08`/`T-09` gated live; `T-12a` is
+code-complete with its live gate deferred), so the trigger is one production
+customer away from firing and the estimate is the wiring it always was.
+**The video track makes this the demo, not the feature** — "the weekly review
+lands in Lark every Monday at 07:00" is a file; "…and it plays" is the thing
+someone forwards. Add `mp4` to the format choice when this is built, not before.
 
 ### DOCX / Word output
 **Why deferred:** PDF covers "send it", PPTX covers "present it". Word is for a
@@ -154,7 +201,69 @@ Renders HTML with the dashboard's real CSS for perfect fidelity.
 sandbox to secure, ~1s per document.
 **Trigger:** a specific layout the grid cannot express — not "this is taking
 longer than expected".
-**Estimate:** 3d, plus permanent operational cost.
+**Estimate:** 3d, plus permanent operational cost. **Cheaper after `T-V2`** — the
+browser, the fonts, the sandbox decision and the image are paid for by the video
+track, so what is left is an HTML template and a route on a service that already
+exists. Call it 1.5d.
+**Annotated 2026-08-09, and the deferral stands.** `T-V2` puts a headless browser
+in the product, which reads like this entry being overtaken and is not. Every
+clause above is about **the worker image** and about **documents**: the video
+service is a separate deployment, `cmd/worker` gains an HTTP client rather than a
+browser, and no document renderer changes — the PDF and the deck stay Go, stay
+byte-identical between runs, and stay off the path that answers a chat turn.
+**What did change is the trigger's cost, not the trigger.** Do not reopen this
+because the browser is now available; reopen it when a named layout cannot be
+expressed, which is what the trigger has always said.
+
+### Narrated video (TTS voiceover)
+`T-V1`→`T-V5` ship silent by design (locked decision 8): motion and on-screen
+prose carry the pacing. Narration means a speech vendor, a per-second cost on top
+of LLM spend, id/en voice selection, and audio-driven scene timing — the plan's
+`Frames` would come from the audio's length rather than from reading speed.
+**Why deferred:** all four of those are cheaper to add against a working silent
+renderer than to design around one that does not exist. The plan already carries
+the per-scene text a narrator would read, so nothing about the silent version
+blocks it.
+**Trigger:** a customer asking for a narrated version, or the first video that is
+forwarded outside the tenant — narration is what turns an internal explainer into
+something a board watches.
+**Estimate:** 2.5d, plus a vendor decision and a per-minute cost line.
+
+### Natively animated charts in video
+`T-V5` animates the Go-rendered chart PNG with a mask (locked decision 6). Native
+React charts would let bars grow, lines draw and points land one at a time.
+**Why deferred:** it is a second chart engine, and a second answer to what the
+palette is, where the axis starts, and whether the eighth series is green —
+questions `T-R3`'s colour-vision gate settled once, in Go. The mask gets most of
+the effect for none of that.
+**Trigger:** a scene where the reveal is the point and a wipe demonstrably is not
+enough — not "it would look better".
+**Estimate:** 3d, and it should reuse `internal/report/chart`'s geometry over the
+wire rather than re-deriving it, or the drift this defers is the drift it ships.
+
+### Remotion Lambda for render capacity
+Fan-out rendering across AWS Lambda instead of one pod.
+**Why deferred:** `T-V2` runs a single replica with jobs in its own tmpfs, which
+is honest for the load this product has. Lambda is a new cloud dependency outside
+the Helm chart, a second deploy path, and a per-render cost with no pricing model
+behind it.
+**Trigger:** renders queueing behind each other for more than a few minutes, or a
+single video exceeding the 10-minute wall clock. Note the cheaper step first —
+horizontal scaling of the existing service by moving job results to object
+storage, which costs the render service its no-egress property (locked decision
+4) and is therefore a real trade rather than a config change.
+**Estimate:** 2d for the object-storage job store, 3d for Lambda.
+
+### Vertical and square video, and per-tenant motion templates
+9:16 for a chat app, 1:1 for a feed; and a tenant choosing a motion style the way
+they choose a logo and an accent colour today.
+**Why deferred:** the plan carries `Width`/`Height`, so aspect ratio is a value
+change plus a scene-by-scene layout pass — real work, but not a redesign. Motion
+templates need to know which styles anyone actually wants, which needs videos in
+production first. Same reasoning as the report template gallery above.
+**Trigger:** a customer sending these into a channel where the aspect ratio is
+wrong; or three tenants asking for the same style change.
+**Estimate:** 1.5d for the aspect ratios, 2d for templates.
 ### Public / anonymous widget mode
 **Why deferred:** Sprint 1's widget (T-19→T-23) serves the tenant's **own staff**,
 with identity asserted by the tenant's backend via HMAC. Serving anonymous

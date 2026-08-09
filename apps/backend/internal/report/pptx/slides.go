@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fauzanebd/argentum/internal/report/canvas"
 	"github.com/fauzanebd/argentum/internal/report/format"
 	"github.com/fauzanebd/argentum/internal/report/measure"
 	"github.com/fauzanebd/argentum/internal/report/spec"
@@ -334,7 +335,7 @@ func (r *renderer) drawKPI(b *bldr, s slide) {
 		// table the tile is summarising, not on the tile.
 		valueFmt := r.fmt
 		valueFmt.Compact = true
-		value := r.cellText(item.ValueCell(), format.KindNumber, valueFmt)
+		value := canvas.CellText(item.ValueCell(), format.KindNumber, valueFmt)
 
 		// Step the value down the type scale rather than letting it wrap. A
 		// tile whose number is a point smaller than its neighbour's still reads

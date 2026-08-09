@@ -4,7 +4,8 @@ Each ticket is an independently executable unit. Format is defined in
 [`../agents/task-template.md`](../agents/task-template.md).
 
 **App shorthand:** `BE` = `apps/backend/`, `FE` = `apps/dashboard/`,
-`LP` = `apps/landing/`, `WID` = `apps/widget/`, `PKG` = `packages/`.
+`LP` = `apps/landing/`, `WID` = `apps/widget/`, `RND` = `apps/render/`
+(created by `T-V2`), `PKG` = `packages/`.
 Single monorepo as of `T-00b` — a ticket spanning BE and FE is **one commit**.
 
 **Migration numbers are pre-assigned — but the assignment is not binding, and
@@ -48,6 +49,7 @@ with no number cannot drift.
 | T-15   | `*_outbound_webhooks` | next free on landing (subscription model; the sender landed in `029`) |
 | T-19   | `*_embed_keys` | next free on landing |
 | T-20   | `*_thread_embed` | next free on landing |
+| T-V4   | `*_report_shares` | next free on landing (the only migration in the video track; `T-V1`→`T-V3` add no schema) |
 
 ---
 
@@ -4972,3 +4974,694 @@ hostile description, the member's 403, and the zero-balance state.
 - A generation history, or a multi-step undo stack
 - Auto-generating on form open, on blur, or on anything that is not a click — the tenant chooses to spend
 - Evaluating a generated persona's quality automatically (`T-01`'s harness is the right home if this ever needs measuring)
+
+---
+
+# Sprint 2 — Reports that move: video and animated decks (`T-V1` → `T-V5`)
+
+**Filed 2026-08-09, owner-set. Inserted ahead of the widget phase**, which is
+the only committed track left with no code.
+[`00-sprint-overview.md`](00-sprint-overview.md) §8d writes down what slips,
+because §8 says an insert without that note is how Sprint 1 absorbed two of them
+without anyone noticing the cost. This is the fourth.
+
+## Why this track exists
+
+**The artefact that leaves the building is now three artefacts, and one of them
+is weak on its own.** §1b of the overview put the report track in Sprint 1 on one
+argument: nobody forwards a chat thread, they forward the file. `T-R2` made that
+file a branded PDF and `T-R4` made it a 16:9 deck. But a deck is the weaker of
+the two at the job it was built for, because **`T-R4` put the argument in the
+speaker notes** — where a recipient who was not in the room does not look. A PPTX
+opened by somebody we never presented to is a stack of bullets with the reasoning
+hidden one keystroke away.
+
+A video is that deck with the pacing attached. The prose `T-R2` and `T-R4`
+already require — `spec.CheckNarrative`'s 200-character floor exists precisely
+because a report that states figures without interpreting them adds nothing —
+stops being a block of text under a chart and becomes the thing the viewer is
+reading while the chart draws itself. Silent (locked decision 8), it is closer to
+a well-paced explainer than to a presentation recording, and it needs no voice,
+no vendor and no per-second audio bill to be that.
+
+**And it changes where a report can land.** Lark, WhatsApp, Discord and Slack all
+play video inline and all treat a PPTX as an attachment to open later or never.
+`send_message` with `attach_document_id` (`T-12a`) already exists; this is the
+first document format where the delivery surface is better than the download.
+
+**The content model is already built, which is what makes this affordable.**
+`T-R4`'s own framing — *"a deck is a projection of the same content model, not a
+second content model"* — is the whole reason this is 11.5 days and not a product.
+`spec.Document` is the input, the same fixtures are the test set, and the
+sections a video needs are the sections a deck already has.
+
+## Why Remotion, and why not the four alternatives
+
+Remotion renders React components frame by frame in headless Chromium and hands
+the frames to ffmpeg. It is a layout engine we already know, driven by the design
+tokens we already generate, producing a file at the end.
+
+| Alternative | Why not |
+| ----------- | ------- |
+| ffmpeg alone (`xfade` + `drawtext` filtergraphs) | No layout engine and no text measurement. Every problem `T-R4` already solved — a subtitle that comes back on two lines, a table that has to continue on the next slide, a label that is 40% wider in Indonesian — would be re-solved inside filtergraph strings, which are neither testable nor readable. |
+| Export the PPTX and let PowerPoint export the video | Needs a licensed Office install driven by automation. `T-R4`'s own risk register already records that PowerPoint *cannot be driven from a headless runner*; that is why three of its four compatibility checks are still outstanding. |
+| A canvas / WebGL renderer of our own | This is Remotion with the difficult parts missing: frame-accurate seeking, deterministic timing, font loading before the first frame, and the ffmpeg pipeline. |
+| Slide stills + a static Ken Burns pan | Cheap, and it is a slideshow rather than an explanation. The value here is that a number arrives *while* the sentence about it is on screen; that is timing, and timing is what a composition framework is for. |
+
+## Why this does not reopen the headless-Chromium rejection
+
+[`backlog.md`](backlog.md) rejects **Headless-Chromium document rendering** —
+*"~300 MB browser layer in the worker image, a sandbox to secure, ~1s per
+document"*. Read the clauses: they are about **the worker image** and about
+**documents**, and both still hold.
+
+- **Documents keep the Go renderers.** No PDF, XLSX, CSV or PPTX byte moves. The
+  properties that decision bought — byte-identical output between runs, no
+  browser on the path that answers a chat turn, a worker image that is a static
+  binary on alpine — are untouched.
+- **A video cannot be produced without a compositor.** For a PDF the browser was
+  a *convenience* bought at 300 MB; here there is no version of the feature
+  without one, so the trade is not the same trade.
+- **It goes in its own image, behind its own deployment** (locked decision 3).
+  `cmd/worker` gains an HTTP client, not a browser.
+
+If anything this makes the document rejection *more* durable: the escape hatch
+that entry describes — "if maroto's grid genuinely cannot express a layout" — now
+has somewhere to live that is not the worker, so nobody will be tempted to
+justify it by the wrong route. The backlog entry is annotated accordingly and its
+trigger is unchanged.
+
+## Decisions (locked — do not re-litigate inside the tickets)
+
+1. **One spec, three renderers.** The input is `spec.Document` with
+   `format: "mp4"`. There is no video content model, no timeline the model
+   authors, no per-scene JSON. `T-R4` set this precedent and the reason is
+   unchanged: building a second content model means every future section type is
+   implemented three times, and the three drift.
+2. **Go decides everything; the renderer draws.** `internal/report/videoplan`
+   projects a spec plus resolved branding into a **Plan** in which every string
+   is already final — every figure formatted through `internal/report/format`,
+   every renderer-chosen word resolved through `internal/report/labels`, every
+   duration computed, every chart already a PNG. The Node service knows nothing
+   about tenants, locales, currencies or specs. This is `T-R4`'s `measure` /
+   `layout` / `labels` extraction applied one renderer further out: the reason
+   the PDF and the deck cannot disagree about what "Prepared for" is in
+   Indonesian is that neither of them decides it, and a third renderer written in
+   another language would otherwise be the place that disagreement finally
+   appears.
+3. **The browser lives in its own service and nothing else moves in with it.**
+   `apps/render` is a Node service with one job. It is internal-only — a
+   `ClusterIP` Service, never on the ingress — and the Go worker calls it over
+   HTTP. Rendering a document does not go near it.
+4. **The plan is self-contained; the render service makes no outbound network
+   call, ever.** Chart PNGs and the tenant logo travel inside the plan as data
+   URIs, because Go has already rendered both. The service therefore needs no
+   object-storage credential, no database, and no egress — so a `NetworkPolicy`
+   denying all egress is a correctness-preserving configuration rather than a
+   compromise, and the SSRF class that `T-M1`'s gate spent three findings on
+   cannot exist here.
+5. **Durations are computed, never authored.** The model writes sections; the
+   plan derives each scene's length from the reading time of its own text.
+   `Chart.HeightMM`'s doc comment states the general rule — *"a model asked for a
+   number in millimetres will pick one that makes the aspect ratio wrong"* — and
+   seconds are worse than millimetres, because a wrong duration is only visible
+   after a two-minute render.
+6. **Charts are the same pixels.** The video embeds the PNG
+   `internal/report/chart` already produces for the PDF and the deck. Animation
+   is a mask moving over that image, not a redraw. A second chart engine in React
+   would be a second answer to what the palette is, what the axis minimum is, and
+   whether the eighth series is green — a question `T-R3`'s colour-vision gate
+   settled once, in Go.
+7. **Video is asynchronous, always.** There is no synchronous door. A render is
+   tens of seconds to minutes; `POST /v1/reports/render` with `format: "mp4"`
+   answers `202` with a report id and never inline bytes, and the tool result
+   inside an agent turn is a job the user is told about rather than a link that
+   took four minutes to arrive.
+8. **Silent in v1.** No audio track, no TTS, no music. The narrative is on screen
+   and the pacing carries it. Adding speech means a vendor, per-second cost,
+   voice and locale choices, and audio-driven timing — all of which are cheaper
+   to add against a working silent renderer than to design around one that does
+   not exist yet. Filed in [`backlog.md`](backlog.md) with a trigger.
+9. **Determinism is structural, not byte-level.** The PDF and the deck are
+   byte-identical between runs by construction and the video will not be — an
+   H.264 encoder is not a pure function of its input across builds. The
+   equivalent guarantee is asserted one level up: same plan → same frame count,
+   same duration, same scene boundaries, and per-scene stills that match a golden
+   PNG within a perceptual tolerance. Do not write a byte-equality test and do
+   not pin an encoder to fake one.
+10. **A tenant who never asks for a video is unaffected.** No format enum change
+    reaches an existing spec, `mp4` is absent from `Document.Format`'s valid set
+    until `T-V3`, and a deployment with no render service configured refuses the
+    format with a plain message rather than failing a turn. Same rule as `T-B`'s
+    decision 7 and the roster's empty allowlist, for the same reason.
+11. **Nothing tenant-supplied becomes markup or a URL.** Every string in the plan
+    is rendered as React children — no `dangerouslySetInnerHTML`, no
+    `<img src>` pointing anywhere but a `data:` URI the backend built. A report
+    spec is caller-supplied text that reaches a browser for the first time in
+    this product's history; that is a new trust boundary and this is where it is
+    drawn.
+
+**Order:** `T-V1` → `T-V2` (which can start against a frozen plan contract while
+`T-V1` finishes its fixtures) → `T-V3` → `T-V4` → `T-V5`. **Total 11.5d.**
+
+**`T-V1` landed 2026-08-09**, the day the track was filed, and the plan contract
+is frozen at version 1 — so `T-V2` is startable now and has a golden plan per
+fixture plus `@argentum/api-types/videoplan` to compile against. It cost three
+extractions out of `internal/report/pptx` that the ticket named and one it did
+not: the table solver, which had to move for the same reason the geometry did.
+The deck's bytes are unchanged, proven by hash
+([`../coverage/report-video.md`](../coverage/report-video.md) §T-V1).
+
+**Cut positions** are in `00-sprint-overview.md` §8b, which is authoritative, and
+§8d states the track-level rule: **the whole track is cut before anything already
+in §8b's list**, because it is 11.5 days that have not started and every position
+above it is delivered or is the widget phase. Within the track `T-V4` is **13**
+and `T-V5` is **14**. `T-V1`, `T-V2` and `T-V3` are never-cut *together*: a
+half-built video path is a format the tool description advertises and the
+renderer cannot produce, which is the `list_watchers` failure — a tool advertised
+on the MCP surface without existing — found on 2026-08-04 and it is worse here,
+because the model would promise a customer a file.
+
+---
+
+## ~~T-V1~~ · `videoplan`: the projection, the plan contract, and the timing model — **CODE COMPLETE 2026-08-09**
+**Repo:** BE, PKG · **Size:** 2.5d · **Deps:** — · **Priority:** P0 · **Never cut**
+**Migration:** none.
+**Record:** [`../coverage/report-video.md`](../coverage/report-video.md) §T-V1.
+
+### Why
+
+Everything else in the track is worth nothing without a shape to render, and the
+shape is where the drift risk lives. Two renderers already agree about
+formatting, labels and column widths because `T-R4` pulled those decisions into
+packages neither of them owns. A third renderer written in TypeScript, in another
+process, has no access to any of that — so either the decisions travel with the
+data, or `Rp 3.863.405.700` becomes `Rp 3,863,405,700` in the one format a
+customer watches rather than skims.
+
+This ticket is the answer to that: the Node service receives no spec, no locale
+and no currency, only a plan whose every string is finished.
+
+### Do
+
+- **`internal/report/videoplan`**, beside `pdf` and `pptx`. Pure:
+  `Build(doc *spec.Document, opt Options) (Plan, error)`, no I/O, no clock read
+  that is not `doc.Generated()`.
+- **The Plan.** Roughly, and the field comments matter more than the shape:
+
+```go
+// Plan is a finished video. Every string in it is final: nothing downstream
+// formats a number, picks a word, or decides how long anything is on screen.
+type Plan struct {
+    Version  int     // 1. Bumped when a scene type's meaning changes, never for additions.
+    Width    int     // 1920
+    Height   int     // 1080
+    FPS      int     // 30
+    Brand    Brand   // hex colours, logo as a data URI, the credit line or ""
+    Scenes   []Scene // in order; the video is their concatenation
+    TotalFrames int  // sum, so the renderer never re-derives it
+}
+
+// Scene is one beat. Kind decides which React component draws it; every
+// component reads only the fields it knows and ignores the rest, so a plan
+// from a newer backend renders on an older service minus the new beat.
+type Scene struct {
+    Kind      string  // cover|section|statement|kpi|table|chart|quote|closing
+    Frames    int     // computed by the timing model, never by the model
+    Title     string
+    Body      []string // already wrapped into paragraphs, already truncated
+    KPIs      []KPI    // Value is a formatted string; Delta carries its own sign and arrow direction
+    Table     *Table   // header strings and cell strings; no cells, no formats
+    ChartPNG  string   // data: URI of the image T-R3 already renders
+    Reveal    string   // none|wipe|grow — how the mask over ChartPNG moves
+    Notes     string   // the speaker-notes text T-R4 extracts, carried for T-V4's player
+}
+```
+
+- **Scene segmentation reuses the deck's rules, it does not invent new ones.**
+  `internal/report/pptx/slides.go` already decides what becomes a slide, how a
+  long table continues, and where the lead sentence goes. Extract the parts that
+  are policy rather than OOXML into a shared function both call, exactly as
+  `T-R4` extracted `measure`, `layout` and `labels`. If a table continues onto a
+  second slide in the deck it continues onto a second scene here, or the two
+  formats have quietly become two documents.
+- **The timing model.** One function, `frames(text string, kind string) int`,
+  with the numbers written down and testable:
+  - Reading pace **2.7 words/second**, floor **3.5s**, ceiling **15s** per scene.
+  - Cover **4.0s**, closing **3.0s**, section divider **2.0s** — fixed, because
+    they carry almost no text and a computed duration would flash past.
+  - A chart scene adds **1.5s** for its reveal before its text starts.
+  - Rounded to whole frames, and a scene is never a non-integer number of frames.
+  These are a starting point tuned against the fixture set, not a law. State that
+  in the doc comment so the next person tunes them instead of working around
+  them.
+- **Truncation is here, not in React.** A paragraph longer than its scene's
+  ceiling is split across a continuation scene carrying `labels.Continued`, the
+  same marker the deck uses. Nothing is ever clipped silently — `T-R4`'s closed
+  risk row is *"text overflows a slide and is silently clipped"* and the same
+  failure in a video is worse, because the viewer cannot scroll.
+- **Brand.** Resolve through the same `branding.Service` the PDF and deck read
+  (`docgen.brandFor`), then flatten: `Primary` as `#RRGGBB`, the logo as a
+  `data:image/png;base64,…`, `Credit` as the resolved line or `""`. The service
+  must never be reachable from the render side — decision 2.
+- **Caps, before anything is built:** `MaxScenes` 60, `MaxTotalFrames` 18 000
+  (10 minutes at 30fps), `MaxPlanBytes` 25 MB after marshalling. Extend
+  `spec.Limits` with the first two so `/v1` rejects an oversized request with
+  `T-A2`'s existing typed error rather than discovering it in the renderer.
+- **`make types`** — add `videoplan` to `tygo.yaml` with its own output file, so
+  `packages/api-types` carries `Plan` and `T-V2`/`T-V4` compile against the Go
+  definition. A TypeScript interface hand-written to match this struct is the
+  exact defect `T-02b` deleted four files to end.
+- **Golden plans** for the five fixtures `T-R2`/`T-R4` already use — monthly
+  sales report, invoice, KPI summary, 200-row export, and the deck fixture. JSON
+  goldens, committed, diffed in CI.
+
+### Notes for the implementer
+
+- **The plan is the contract and it is versioned.** `Version` exists so
+  `apps/render` can refuse a plan it does not understand with a clear message
+  rather than rendering three blank scenes. Additive fields do not bump it.
+- **An invoice is not a video and should not become one.** Reuse
+  `spec.Analytical` — the same predicate that decides whether the narrative floor
+  applies. A non-analytical document asked for as `mp4` is refused with the
+  reason, in `T-V3`'s validation, not rendered as four seconds of line items.
+- Do not put the timing model in the tool description. The model does not need to
+  know the pace, and telling it invites it to fight it.
+- `Notes` is carried even though the video never displays it: `T-V4`'s player
+  shows it beside the frame, and dropping it here would mean a second projection
+  pass to get it back.
+
+### Acceptance
+
+- [x] `Build` is pure — the same fixture produces a byte-identical plan on two runs, asserted with `doc.GeneratedAt` set *(`TestBuildIsPure`, all five fixtures)*
+- [x] Every string in a plan built from the Indonesian fixture is Indonesian, including the labels the renderer chose *("Disiapkan untuk" on the cover)*, and no figure carries English grouping *(`TestIndonesianFixtureIsIndonesianThroughout`)*. **The "character for character against the PDF" half is not asserted** — the PDF renderer exposes no per-cell output to diff against, so the property is held structurally instead: both formats call `canvas.CellText` and neither formats anything itself. `T-V5`'s three-format agreement test is where this becomes a real check
+- [x] The 200-row export produces continuation scenes, and no scene exceeds its ceiling *(`TestLongTableContinues`, `TestNoSceneOutstaysItsWelcome`; the marker is `Scene.Continued` — `labels.Continued` is the deck's string and the video's renderer draws its own)*
+- [x] A spec whose paragraphs total 40 minutes of reading is refused by `MaxTotalFrames` before any scene is built, with the cap in the message *(and **before any chart is rasterised**, proven by making every chart in the document unrenderable — see the record §7)*
+- [x] A chart section produces a scene whose image is byte-identical to the one the **deck** embeds for the same spec *(`TestChartIsTheDeckImage`, which unzips `ppt/media/image1.png` and compares. Changed from "the PDF" deliberately: the deck rasterises at the same width as the video and the PDF does not, so the deck is the comparison that can be byte-exact)*
+- [x] `make types-check` is red if a `Plan` field changes without regeneration *(proven red then green — record §8)*
+- [x] Golden plans exist for all five fixtures and CI diffs them *(`testdata/*.plan.json`, `-update` to rewrite; chart images are digested so the golden stays reviewable)*
+
+### Gate
+
+`make check` clean, `make types-check` clean, goldens committed. Paste the
+Indonesian fixture's plan beside the corresponding page of the PDF, showing the
+same figures and the same labels. Paste the refusal for the over-long spec.
+
+**Run 2026-08-09** — `make vet`, `make lint-go` (0 issues), `go test ./...` and
+`make types-check` all clean; transcripts and the scene breakdown in
+[`../coverage/report-video.md`](../coverage/report-video.md) §T-V1.
+
+**What the gate found, and it belongs to `T-R4` as much as to this ticket.**
+Extracting the deck's geometry changed all five deck fixtures — 29 to 375 bytes
+each — while every test still passed. The cause was writing the surface width as
+`338.667` instead of `12192000 ÷ 36000`, a difference of 0.00033mm that reaches
+every measured column width and every EMU rounding in the package. Nothing in
+`internal/report/pptx` asserts a rendered byte against a fixed value, so there
+was no test that could have caught it; it was caught by rendering the fixtures
+before and after the change and diffing SHA-256s. Fixed, and now asserted by
+`TestSlideAndCanvasAgree`. **`make check`'s web half is red for an unrelated
+pre-existing reason** — `packages/argentum-python`'s generated types are stale
+against `openapi/v1.yaml`, which reproduces with this whole track stashed.
+
+**One deviation from the Do list, argued in the record §6:** the scene and frame
+caps are in `videoplan.Limits`, not `spec.Limits`. `spec` cannot import
+`videoplan` — the dependency runs the other way — so `spec.CheckLimits` could
+never enforce them, and two fields it could not check would be configuration in
+the wrong struct. `T-V3` reads config into `videoplan.Limits` and translates the
+refusal into `T-A2`'s typed 400; the messages are written for that.
+
+### Out of scope
+
+- Rendering anything — that is `T-V2`
+- Audio, captions as a timed track, or any field a voice track would need
+- Vertical (9:16) or square output; the plan carries `Width`/`Height` so it is a
+  later value change rather than a later redesign
+
+---
+
+## T-V2 · `apps/render`: the Remotion service and `packages/motion`
+**Repo:** NEW (`apps/render`), PKG, INFRA · **Size:** 3.0d · **Deps:** T-V1 (plan contract only) · **Priority:** P0 · **Never cut**
+**Migration:** none.
+
+### Why
+
+This is the part that does not exist anywhere in the repo: a Node process, a
+browser, and ffmpeg. Everything about it is a decision about blast radius —
+what it can reach, what happens when it hangs, and what it costs when nobody is
+rendering. Getting those wrong is how a video feature takes down chat.
+
+### Do
+
+- **`packages/motion`** — the compositions, importable by both the service and
+  the dashboard (`T-V4`). One React component per `Scene.Kind`, a
+  `<Report plan={plan} />` root, and `Composition` metadata derived from
+  `plan.TotalFrames`. It imports `@argentum/design-tokens` for every colour,
+  type size and spacing value; a hard-coded hex in this package is a CI failure
+  waiting to happen and `make palette` is the precedent.
+- **`apps/render`** — a Node 22 service, no framework beyond a router:
+  - `POST /v1/render` `{plan}` → `{job_id}`. Validates `plan.Version`, the caps,
+    and nothing else; the plan is trusted to be well-formed because Go built it.
+  - `GET /v1/jobs/:id` → `{state, progress, error}` where `progress` is
+    Remotion's own `onProgress`.
+  - `GET /v1/jobs/:id/result` → the mp4, streamed.
+  - `DELETE /v1/jobs/:id` → drops the temp files. Also dropped by a **15-minute
+    TTL sweep**, because the caller crashing must not fill the disk.
+  - `GET /healthz` → renders one hard-coded 10-frame composition on boot and
+    caches the result. A browser that cannot start must fail the readiness probe,
+    not the first tenant's report.
+  - Auth: a shared secret in a header, compared in constant time. It is not the
+    security boundary — decision 3's `ClusterIP` and the `NetworkPolicy` are —
+    it is what stops a misconfiguration being silently exploitable.
+- **Encoding:** H.264 High, `yuv420p`, CRF 20, 30fps, `+faststart` so the file
+  plays before it is fully downloaded. `--concurrency` at cores−1, one job at a
+  time per pod.
+- **Timeouts, two of them:** a per-frame timeout (Remotion's `timeoutInMilliseconds`,
+  30s) and a wall-clock job timeout (10 minutes) that kills the browser and marks
+  the job failed. A hung Chromium with no wall clock over it is a pod that is
+  healthy, useless, and holding a tenant's report forever.
+- **`Dockerfile.render`** — Node 22 slim + `chrome-headless-shell` + ffmpeg,
+  fonts vendored (the same Space Grotesk TTFs `T-R1` already committed; a font
+  resolved off the base image is `T-02`'s zoneinfo defect again), non-root user,
+  `--font-render-hinting=none` for frame stability.
+- **Chromium's sandbox stays on.** If the deployment cannot support it, the pod
+  gets a seccomp profile and the `NetworkPolicy` of decision 4 instead — and the
+  ticket's write-up **states which of the two shipped**. Do not pass
+  `--no-sandbox` and leave it unmentioned.
+- **Helm:** `deployment-render.yaml`, `service.yaml` entry, resource requests
+  (2 CPU / 4 GB is the starting point, measure and correct), `replicas: 1`, the
+  egress-deny `NetworkPolicy`, and **no ingress route**. `docker-compose.yml`
+  gains the service so a video can be rendered on a developer machine — the same
+  gap `T-S4`'s gate found when `make infra` shipped no object storage and the
+  deterministic example suite could not run locally.
+- **Fixture CLI:** `pnpm --filter @argentum/render render:fixture <plan.json>`
+  writes an mp4 and a per-scene still to disk. This is what makes the thing
+  reviewable without the backend.
+
+### Notes for the implementer
+
+- **One replica, deliberately, and it is a known limit.** Jobs live in the pod's
+  own tmpfs, so a second replica would answer `GET /jobs/:id` for a job it does
+  not have. Fixing that means putting results in object storage, which means
+  giving this service a credential and egress — decision 4 — so it is not a
+  change to make casually. Record the limit and the trigger: a second tenant
+  waiting on the queue.
+- Fonts must be loaded before frame 0. `delayRender` until
+  `document.fonts.ready`, or the first second of every video is a fallback
+  typeface — the exact failure `T-R1` vendored TTFs to prevent in the PDF.
+- Do not reach for `@remotion/lambda`. It is the right answer at a scale this
+  product does not have, and it is a new cloud dependency outside the Helm chart.
+  Filed in the backlog with a trigger.
+- The service has no logger of tenant data because it has no tenant data. Log
+  job ids, durations and frame counts. A plan is a customer's business figures
+  and it must not reach a log line.
+
+### Acceptance
+
+- [ ] A golden plan from `T-V1` renders to an mp4 that plays in VLC, QuickTime and Chrome
+- [ ] `GET /healthz` fails when the browser binary is missing, and the pod does not become ready
+- [ ] The same plan rendered twice produces the same frame count, the same duration, and per-scene stills within perceptual tolerance of the golden PNGs *(decision 9 — do not assert byte equality)*
+- [ ] A plan with an unknown `Version` is refused with a message naming the versions the service supports
+- [ ] A job that exceeds the wall clock is killed, marked failed, and leaves no Chromium process and no temp files
+- [ ] With egress denied by `NetworkPolicy`, a render still succeeds — proving decision 4 holds rather than being intended
+- [ ] The image does not appear in `Dockerfile.worker`, `Dockerfile.api`, `Dockerfile.discord` or `Dockerfile.mcp`, and their sizes are unchanged
+- [ ] Indonesian text with its accents and a 40%-wider label renders without clipping in every scene type
+
+### Gate
+
+Build the image, run it under `docker compose`, render all five golden plans, and
+paste the durations, frame counts and file sizes. Paste the still-comparison
+output. Paste `docker images` showing the render image beside the four unchanged
+ones. Paste a killed job's log and the empty temp directory after it. Attach one
+rendered mp4 to the write-up.
+
+### Out of scope
+
+- Any backend wiring — that is `T-V3`
+- Audio of any kind
+- Horizontal scaling of the job store
+- A UI; the fixture CLI is the review surface
+
+---
+
+## T-V3 · `mp4` as a first-class format, end to end
+**Repo:** BE · **Size:** 2.5d · **Deps:** T-V1, T-V2 · **Priority:** P0 · **Never cut**
+**Migration:** none — `documents` already carries a format column.
+
+### Why
+
+`T-V1` and `T-V2` produce a file nobody can ask for. This is the ticket where a
+tenant, an agent and an integrator can each get one, through the doors that
+already exist, metered and bounded like everything else that spends money.
+
+### Do
+
+- **`domain.DocumentFormatMP4`** — `Valid`, `Extension` (`mp4`), `ContentType`
+  (`video/mp4`). `make types` widens the union in `packages/api-types`, which is
+  what makes the dashboard's download switch fail to compile until it handles the
+  case — `T-02b`'s whole argument.
+- **`internal/report/video`** — the HTTP client for `apps/render`: submit, poll,
+  fetch, delete, with the base URL and secret from config. **Absent
+  configuration means the format is unavailable**, reported as a plain refusal
+  (decision 10), never as a 500.
+- **`docgen.Service.render` gains the `mp4` branch**, and it is the first branch
+  that is not `(*spec.Document) ([]byte, error)` in-process. Keep the seam: build
+  the plan, call the client, return the bytes. Everything after that — the
+  storage key, the row, the presign, the metering — is the code that already
+  runs, which is the point of there being one `Generate`.
+- **`spec.Validate` / `spec.CheckLimits`** learn the format: `mp4` requires
+  `spec.Analytical` (decision, `T-V1` notes) and is bounded by the new scene and
+  frame caps. Both checks run **before** the render service is called — `T-A2`'s
+  rule, and here it is worth more, because the thing being protected is minutes
+  of CPU rather than megabytes of RAM.
+- **Always asynchronous** (decision 7):
+  - `POST /v1/reports/render` with `format: "mp4"` returns `202` with the report
+    id **regardless of `API_V1_SYNC_RENDER_TIMEOUT`**, and the existing
+    `report:render` job runs it. `Accept: video/mp4` is refused with a typed
+    error that names the async collection routes, rather than being honoured
+    after four minutes.
+  - The agent's `generate_document` returns *"the video is rendering; it will
+    appear in this thread when it is done"* and the worker posts the document
+    message on completion. A tool call that blocks a turn for four minutes
+    exhausts `T-16`'s budget on waiting.
+  - Progress reaches the dashboard on the existing SSE/event names — a
+    `render_progress` event carrying `0..1`, at most once per second. A four-
+    minute silent spinner is the failure mode a progress channel exists for.
+- **Metering.** A video is not a document-sized cost. Record render seconds
+  alongside `RecordDocument`, and check the budget (`T-03`) **before enqueuing**,
+  not before uploading. A tenant at zero gets the same 402 and the same sentence
+  they get everywhere else.
+- **`generate_document`'s description** gains `mp4` in the enum and one sentence
+  about when to choose it — *something the recipient will watch without you in
+  the room, or that goes to a group chat* — plus the honest cost note: it takes
+  minutes and costs more than a PDF, so it is not the default for "make me a
+  report".
+- **Channel delivery is a link above a threshold.** `send_message` with an
+  `attach_document_id` pointing at an mp4 posts the presigned URL rather than the
+  file whenever the file exceeds the channel's limit (Discord's 8–25 MB,
+  WhatsApp's 16 MB, Lark's and Slack's own). Silently failing to attach is the
+  worst outcome; silently transcoding to fit is the second worst.
+- **OpenAPI + SDKs.** `mp4` joins the format enum in `openapi/`, both parity
+  checks stay green, and both SDKs regenerate. `T-A4` made a route without a spec
+  entry a red build in both directions; a format is the same promise.
+
+### Notes for the implementer
+
+- **The render call is the first outbound dependency in `docgen`.** It needs a
+  context deadline slightly above the service's own wall clock, and a failure
+  message that distinguishes *"the render service is not configured"* from
+  *"it is down"* from *"your spec was rejected"*. An integrator reading `500:
+  render failed` has nothing to act on, which is the finding `T-A5` exists
+  because of.
+- Do not add a second queue task type. `report:render` already carries a spec and
+  a report id and already has retry semantics; a video is a longer instance of
+  the same job. Do give it its own asynq queue name so a four-minute video does
+  not starve PDF renders.
+- Retries are **not** free here. Cap at one, and only for transport errors — a
+  retried render bills a second time for a file the tenant may already have.
+- The presign TTL is the existing one. A video the recipient opens next week is
+  `GET /v1/documents/:id` re-presigning, exactly as `T-A2` designed it.
+
+### Acceptance
+
+- [ ] `POST /v1/reports/render` with `format: "mp4"` returns `202` with a report id, and the document is collectable by all three of `T-A2`'s methods
+- [ ] The same request with `Accept: video/mp4` is refused with a typed error naming the collection routes — not honoured, not a 500
+- [ ] An agent asked for "a video walkthrough of last month's sales" produces one, and the turn does not block on it
+- [ ] A non-analytical spec (the invoice fixture) asked for as `mp4` is refused with the reason, and no render is started
+- [ ] A spec over the scene or frame cap is refused **before** the render service is called — asserted by the service receiving no request, the same way `T-A2` asserts nothing was uploaded
+- [ ] A tenant at zero credits gets a 402 before the job is enqueued
+- [ ] With the render service unconfigured, `mp4` is refused with a plain message and every other format still works
+- [ ] With the render service down, the job fails with an error naming which of the three failures it was, and the report row records it
+- [ ] `render_progress` events reach the dashboard at most once per second and reach 1.0 exactly once
+- [ ] A 30 MB video attached to a Discord message is posted as a link, and the message says so
+- [ ] `make types-check`, the OpenAPI parity checks and both SDK diffs are green
+
+### Gate
+
+`make check` clean. Then live: render a video through `/v1` and paste the 202,
+the progress events, the completion callback and the download; render one through
+the agent and paste the thread; paste the invoice refusal, the cap refusal with
+the render service's empty access log, the 402, and the unconfigured-service
+message. Paste the Discord message showing the link.
+
+### Out of scope
+
+- The player and share links — `T-V4`
+- Any scene design work — `T-V5`
+- Per-format pricing; render seconds are recorded, and what they cost is the
+  monetization track's decision
+
+---
+
+## T-V4 · The player: an animated deck at a link
+**Repo:** BE, FE · **Size:** 2.0d · **Deps:** T-V1, T-V2 · **Priority:** P1 · **Cut §8b #13**
+**Migration:** `*_report_shares` — next free on landing. **Do not copy a number
+from this line**; read `schema_migrations` first.
+
+### Why
+
+The file answers "send it". This answers "let me show you" — a link that plays
+the same presentation in a browser, scrubbable, with the narrative beside the
+frame instead of buried in speaker notes where `T-R4` had to put it.
+
+It is also nearly free once `packages/motion` exists: `@remotion/player` runs the
+identical compositions client-side from the identical plan. The work here is not
+the player, it is the link — who can create one, how long it lives, and how it is
+taken back.
+
+### Do
+
+- **Store the plan beside the video.** `documents/{company}/…/{id}.plan.json`,
+  written by `docgen` in the same transaction-shaped sequence as the mp4. The
+  player fetches the plan, not the video, so a deck is playable without a render
+  having happened at all.
+- **Migration `*_report_shares`:** id, company_id, document_id, `token_hash`
+  (SHA-256 — `T-13`'s argument applies unchanged: 256 random bits are not a
+  password), created_by, expires_at, revoked_at, view_count, last_viewed_at.
+- **`POST|DELETE /api/documents/:id/share`** — admin-only, `T-04`'s policy table
+  gains both rows. The token is shown **exactly once**, `T-13`'s precedent.
+  Default expiry 30 days, maximum 90.
+- **`GET /share/:token`** — keyless, on its own route group with its own rate
+  limit and its own `noindex` headers. It serves the player page and the plan.
+  It is **not** under `/api` and **not** under `/v1`: it authenticates nobody and
+  answers to a bearer URL, so it gets its own middleware chain rather than an
+  exemption inside someone else's.
+- **The player page** — `packages/motion` compositions in `@remotion/player`,
+  play/pause/scrub, the current scene's `Notes` beside the frame, the tenant's
+  branding, and a **Download video** button when an mp4 exists for the document.
+- **An audit row per view** (`T-05`'s log), because "who has seen the Q3 numbers"
+  is a question a tenant will ask and a bearer link is the one surface where we
+  cannot answer it from the session.
+- **The dashboard**: a Share control on a document, the live link list with view
+  counts, and Revoke. A share that cannot be found and killed in ten seconds is a
+  share nobody will create.
+
+### Notes for the implementer
+
+- **Expiring is not revoking and both are needed.** Expiry is the default that
+  limits the damage nobody notices; revoke is the button pressed at 11pm.
+- Serve the plan with `Cache-Control: private, no-store`. A shared link's payload
+  in a CDN cache outlives the revocation.
+- The player must degrade: a plan version it does not know renders the scenes it
+  understands and says so, rather than a blank frame — the same rule as the
+  service, one consumer further out.
+- Do not reuse the presign mechanism for the share. A presigned object URL cannot
+  be revoked, cannot be counted, and cannot be scoped to a page.
+
+### Acceptance
+
+- [ ] A shared link plays the deck for a logged-out visitor in Chrome, Safari and Firefox
+- [ ] Revoking kills it within one request — the next load is a 404, not a cached page
+- [ ] An expired link is a 404 with the same body as a wrong one *(a distinguishable "expired" tells an enumerator their guess was right)*
+- [ ] A member cannot create or revoke a share; an admin can *(403 / 200)*
+- [ ] One company's admin cannot share another company's document
+- [ ] Each view appends an audit row with the ip, the user agent and the share id, and the count in the dashboard matches
+- [ ] The token appears exactly once, at creation, and is not readable afterwards from any endpoint or log
+- [ ] A plan with an unknown version renders its known scenes and shows a notice
+- [ ] The share route is absent from `/api` and `/v1`'s policy tables and is exercised by the route-coverage test as deliberately keyless
+
+### Gate
+
+`make check` clean. Live: create a share, open it in a private window, paste the
+page; revoke it and paste the 404; paste an expired one; paste the member's 403;
+paste the audit rows and the view count; paste the cross-company attempt.
+
+### Out of scope
+
+- Comments, reactions or any collaboration surface on the shared page
+- Password-protected or email-gated shares *(the trigger is a customer asking; it is a small addition against this schema)*
+- Embedding the player in the customer's own site — that is the widget phase's
+  problem and its threat model, not this one's
+
+---
+
+## T-V5 · The motion system: scene design, brand fidelity, and the three-format agreement
+**Repo:** PKG, FE · **Size:** 1.5d · **Deps:** T-V2 · **Priority:** P2 · **Cut §8b #14**
+**Migration:** none.
+
+### Why
+
+`T-V2` ships components that draw the scenes. This is the ticket that makes them
+worth watching and proves they are telling the truth — and it is last because
+polish against a working renderer is cheap, while polish against an imagined one
+is how `T-R2`'s *"enterprise-grade has no exit condition"* risk row got written.
+
+### Do
+
+- **Finish the scene set** against the same fixed fixture list `T-R2`/`T-R4` are
+  gated on — no open-ended design work, the fixtures are the exit condition:
+  cover, section divider, statement, KPI row, table, chart, quote/callout,
+  closing. Entrances and exits on a single shared easing curve and two durations;
+  a component that invents a third is a review finding.
+- **The chart reveal** (decision 6): a mask over the Go-rendered PNG — a
+  left-to-right wipe for line and bar, a radial sweep for pie and donut, nothing
+  for sparklines. The pixels underneath are never redrawn.
+- **Tokens all the way down.** Extend the `tokens` CI job so a colour or type
+  value in `packages/motion` that is not a token is a red build, the same guard
+  `make palette` gives the chart palette.
+- **Brand fidelity**: the tenant's logo on the cover and closing, their accent on
+  rules and emphasis, `T-R5`'s contrast floor applied — a pale brand colour that
+  cannot pass on a PDF cannot pass on a frame either, and the fallback must be
+  the same fallback.
+- **A reduced-motion still export**: the same compositions rendered as one PNG
+  per scene. It is three lines of Remotion, it gives the perceptual gate its
+  golden images, and it is what a recipient who cannot watch video gets.
+- **The three-format agreement test** — the ticket's real deliverable. One
+  fixture rendered as PDF, PPTX and MP4 stills; extract the figures and the
+  renderer-chosen labels from all three and assert they are the same strings.
+  This is `T-R4`'s "the two renderers cannot disagree" property extended to the
+  third renderer, and it is the only automated defence against decision 2 being
+  quietly bypassed by someone formatting a number in React.
+
+### Notes for the implementer
+
+- **Motion is pacing, not decoration.** Anything that moves for longer than its
+  scene's text takes to read is delaying the reader. When in doubt, cut the
+  animation and keep the duration.
+- Keep the easing curve and the two durations in one file with the tokens. Three
+  components with three timing feels is the "enterprise-grade" failure in
+  miniature.
+- The still export is also the fastest review loop for any future scene work —
+  seconds instead of a render.
+
+### Acceptance
+
+- [ ] All five fixtures render with every scene type exercised, and the write-up carries a contact sheet of the stills *(the precedent is `T-R3`'s chart contact sheet)*
+- [ ] The three-format agreement test passes, and fails when a figure is deliberately reformatted in a component
+- [ ] A non-token colour in `packages/motion` fails CI
+- [ ] A pale tenant brand colour is corrected to the same fallback the PDF uses, and the frame is legible
+- [ ] The still export produces one PNG per scene, and the count matches the plan's scene count
+- [ ] Indonesian and English renderings of the same fixture differ only in text, never in layout collapse
+
+### Gate
+
+Render the fixture contact sheet and attach it. Paste the agreement test passing,
+then paste it failing against a deliberately reformatted figure. Paste the CI
+failure for a hard-coded colour. Paste the pale-brand frame beside the PDF cover
+using the same fallback.
+
+### Out of scope
+
+- New scene types beyond the eight listed — the fixture set is the exit condition
+- Per-tenant motion configuration or template selection *(backlog, with a trigger)*
+- Transitions between scenes beyond the shared curve
+- Anything audio

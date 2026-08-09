@@ -18,6 +18,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/report/pdf"
 	"github.com/fauzanebd/argentum/internal/report/pptx"
 	"github.com/fauzanebd/argentum/internal/report/theme"
+	"github.com/fauzanebd/argentum/internal/report/videoplan"
 )
 
 // Input is the raw material: what the company row knows, plus whatever the
@@ -101,6 +102,24 @@ func (c Config) PDF() pdf.Brand {
 func (c Config) PPTX() pptx.Brand {
 	primary := c.Primary
 	return pptx.Brand{
+		Name:            c.Name,
+		LogoPNG:         c.LogoPNG,
+		Primary:         &primary,
+		Confidentiality: c.Confidentiality,
+		FooterNote:      c.FooterNote,
+		HideCredit:      !c.ShowCredit,
+	}
+}
+
+// Video is PPTX for the video plan (T-V1). Third identical projection, and the
+// third is where a reader starts wondering why these are not one type: they
+// stay separate because the renderers are separate packages and a shared Brand
+// would make every renderer import every other one's. What keeps them honest is
+// that they are filled here, from one Config, in one place — so a tenant who
+// sets a logo sets it on all three or on none.
+func (c Config) Video() videoplan.BrandInput {
+	primary := c.Primary
+	return videoplan.BrandInput{
 		Name:            c.Name,
 		LogoPNG:         c.LogoPNG,
 		Primary:         &primary,

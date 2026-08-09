@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "total_frames": 465,
+  "locale": "en",
+  "title": "Invoice #1234",
+  "metrics": {
+    "margin_x": 136,
+    "margin_top": 96,
+    "margin_bottom": 68,
+    "content_width": 1648,
+    "body_top": 255,
+    "body_height": 717,
+    "title_band": 125,
+    "footer_band": 40,
+    "footer_top": 972,
+    "title_rule_width": 193,
+    "title_rule_thickness": 9,
+    "leading": 1.45,
+    "type": {
+      "display": 86,
+      "h1": 58,
+      "h2": 47,
+      "body": 36,
+      "caption": 29
+    }
+  },
+  "brand": {
+    "name": "",
+    "primary": "#F25C5C",
+    "primary_on_dark": "#F25C5C",
+    "foreground": "#0A0A0A",
+    "background": "#F5F5F0",
+    "muted": "#6B6B6B",
+    "border": "#E2E2DC",
+    "dark": "#0A0A0A",
+    "on_dark": "#F5F5F0",
+    "credit": "Made with Argentum"
+  },
+  "scenes": [
+    {
+      "kind": "table",
+      "frames": 105,
+      "title": [
+        "Invoice #1234"
+      ],
+      "facts": [
+        {
+          "label": "Date",
+          "value": [
+            "2026-05-09"
+          ]
+        },
+        {
+          "label": "Customer",
+          "value": [
+            "Foo Inc."
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "section",
+      "frames": 60,
+      "title": [
+        "Line Items"
+      ]
+    },
+    {
+      "kind": "table",
+      "frames": 105,
+      "title": [
+        "Line Items"
+      ],
+      "table": {
+        "header": [
+          "Item",
+          "Qty",
+          "Price"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "r"
+        ],
+        "widths": [
+          624,
+          369,
+          655
+        ],
+        "rows": [
+          [
+            "Widget",
+            "3",
+            "$9.99"
+          ],
+          [
+            "Gadget",
+            "1",
+            "$199.00"
+          ]
+        ],
+        "font_size": 36,
+        "row_height": 73,
+        "header_height": 73
+      }
+    },
+    {
+      "kind": "statement",
+      "frames": 105,
+      "title": [
+        "Line Items"
+      ],
+      "lines": [
+        "Thank you for your business."
+      ],
+      "notes": "Thank you for your business."
+    },
+    {
+      "kind": "closing",
+      "frames": 90,
+      "title": [
+        "Invoice #1234"
+      ],
+      "facts": [
+        {
+          "label": "Generated",
+          "value": [
+            "28 July 2026 08:00"
+          ]
+        }
+      ]
+    }
+  ]
+}

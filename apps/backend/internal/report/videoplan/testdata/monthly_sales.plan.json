@@ -1,0 +1,394 @@
+{
+  "version": 1,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "total_frames": 2485,
+  "locale": "id",
+  "title": "Laporan Penjualan Bulanan",
+  "metrics": {
+    "margin_x": 136,
+    "margin_top": 96,
+    "margin_bottom": 68,
+    "content_width": 1648,
+    "body_top": 255,
+    "body_height": 717,
+    "title_band": 125,
+    "footer_band": 40,
+    "footer_top": 972,
+    "title_rule_width": 193,
+    "title_rule_thickness": 9,
+    "leading": 1.45,
+    "type": {
+      "display": 86,
+      "h1": 58,
+      "h2": 47,
+      "body": 36,
+      "caption": 29
+    }
+  },
+  "brand": {
+    "name": "",
+    "primary": "#F25C5C",
+    "primary_on_dark": "#F25C5C",
+    "foreground": "#0A0A0A",
+    "background": "#F5F5F0",
+    "muted": "#6B6B6B",
+    "border": "#E2E2DC",
+    "dark": "#0A0A0A",
+    "on_dark": "#F5F5F0",
+    "credit": "Dibuat dengan Argentum",
+    "confidentiality": "Rahasia — Internal"
+  },
+  "scenes": [
+    {
+      "kind": "cover",
+      "frames": 120,
+      "title": [
+        "Laporan Penjualan Bulanan"
+      ],
+      "subtitle": [
+        "Ringkasan pendapatan, transaksi, dan nilai pesanan rata-rata per",
+        "bulan"
+      ],
+      "period": "JANUARI – DESEMBER 2026",
+      "facts": [
+        {
+          "label": "Disiapkan untuk",
+          "value": [
+            "Dewan Direksi"
+          ]
+        },
+        {
+          "label": "Disiapkan oleh",
+          "value": [
+            "PT Sinar Abadi Nusantara"
+          ]
+        },
+        {
+          "label": "Dibuat",
+          "value": [
+            "27 Juli 2026 09:30"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "section",
+      "frames": 60,
+      "title": [
+        "Ringkasan Eksekutif"
+      ]
+    },
+    {
+      "kind": "kpi",
+      "frames": 233,
+      "title": [
+        "Ringkasan Eksekutif"
+      ],
+      "kpis": [
+        {
+          "label": "Total Pendapatan",
+          "value": "Rp 3,86 Miliar",
+          "delta": "+12,4%",
+          "rising": true,
+          "good": true
+        },
+        {
+          "label": "Jumlah Transaksi",
+          "value": "48.219",
+          "delta": "+8,1%",
+          "rising": true,
+          "good": true
+        },
+        {
+          "label": "Nilai Pesanan Rata-rata",
+          "value": "Rp 80.122",
+          "delta": "+4,0%",
+          "rising": true,
+          "good": true
+        },
+        {
+          "label": "Tingkat Pembatalan",
+          "value": "3,4%",
+          "delta": "+0,6%",
+          "rising": true
+        }
+      ]
+    },
+    {
+      "kind": "statement",
+      "frames": 425,
+      "title": [
+        "Ringkasan Eksekutif"
+      ],
+      "lines": [
+        "Pendapatan tahun berjalan mencapai Rp 3,86 miliar, naik 12,4%",
+        "dibanding periode yang sama tahun lalu. Pertumbuhan terkuat",
+        "terjadi pada kuartal kedua, dipicu kampanye Ramadan yang",
+        "menaikkan jumlah transaksi sebesar 21% pada bulan Maret dan April."
+      ],
+      "notes": "Pendapatan tahun berjalan mencapai Rp 3,86 miliar, naik 12,4% dibanding periode yang sama tahun lalu. Pertumbuhan terkuat terjadi pada kuartal kedua, dipicu kampanye Ramadan yang menaikkan jumlah transaksi sebesar 21% pada bulan Maret dan April. Nilai pesanan rata-rata tumbuh lebih lambat daripada volume, yang menunjukkan bahwa pertumbuhan datang dari pelanggan baru dengan keranjang belanja lebih kecil, bukan dari kenaikan belanja pelanggan lama.\n\nTingkat pembatalan naik 0,6 poin — Kenaikan terkonsentrasi pada kanal marketplace di bulan September dan Oktober. Angka ini perlu ditelusuri sebelum target kuartal keempat ditetapkan."
+    },
+    {
+      "kind": "quote",
+      "frames": 303,
+      "title": [
+        "Ringkasan Eksekutif"
+      ],
+      "subtitle": [
+        "Tingkat pembatalan naik 0,6 poin"
+      ],
+      "lines": [
+        "Kenaikan terkonsentrasi pada kanal marketplace di bulan",
+        "September dan Oktober. Angka ini perlu ditelusuri sebelum target",
+        "kuartal keempat ditetapkan."
+      ],
+      "tone": "warn"
+    },
+    {
+      "kind": "section",
+      "frames": 60,
+      "title": [
+        "Rincian Bulanan"
+      ]
+    },
+    {
+      "kind": "chart",
+      "frames": 159,
+      "title": [
+        "Pendapatan per bulan"
+      ],
+      "chart": {
+        "data_uri": "sha256:55e3c286f80542183b470aeac77f5d20fc9744cb8f08605cb9484e09d4bb29db",
+        "width": 1648,
+        "height": 641,
+        "reveal": "wipe"
+      },
+      "caption": [
+        "Pendapatan bulanan sepanjang 2025."
+      ]
+    },
+    {
+      "kind": "table",
+      "frames": 164,
+      "title": [
+        "Rincian Bulanan"
+      ],
+      "table": {
+        "header": [
+          "Bulan",
+          "Pendapatan",
+          "Transaksi",
+          "Nilai Rata-rata",
+          "Pertumbuhan"
+        ],
+        "aligns": [
+          "l",
+          "r",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          264,
+          431,
+          253,
+          359,
+          340
+        ],
+        "rows": [
+          [
+            "Januari",
+            "Rp 268.431.200",
+            "3.612",
+            "Rp 74.316",
+            "3,1%"
+          ],
+          [
+            "Februari",
+            "Rp 251.902.800",
+            "3.388",
+            "Rp 74.352",
+            "-6,2%"
+          ],
+          [
+            "Maret",
+            "Rp 342.118.900",
+            "4.471",
+            "Rp 76.519",
+            "35,8%"
+          ],
+          [
+            "April",
+            "Rp 358.774.100",
+            "4.602",
+            "Rp 77.960",
+            "4,9%"
+          ],
+          [
+            "Mei",
+            "Rp 311.204.600",
+            "4.015",
+            "Rp 77.510",
+            "-13,3%"
+          ],
+          [
+            "Juni",
+            "Rp 296.880.400",
+            "3.844",
+            "Rp 77.231",
+            "-4,6%"
+          ],
+          [
+            "Juli",
+            "Rp 318.442.700",
+            "4.090",
+            "Rp 77.859",
+            "7,3%"
+          ]
+        ],
+        "font_size": 33,
+        "row_height": 68,
+        "header_height": 68
+      },
+      "caption": [
+        "Pendapatan, transaksi, dan nilai pesanan rata-rata per bulan"
+      ]
+    },
+    {
+      "kind": "table",
+      "frames": 150,
+      "title": [
+        "Rincian Bulanan"
+      ],
+      "table": {
+        "header": [
+          "Bulan",
+          "Pendapatan",
+          "Transaksi",
+          "Nilai Rata-rata",
+          "Pertumbuhan"
+        ],
+        "aligns": [
+          "l",
+          "r",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          264,
+          431,
+          253,
+          359,
+          340
+        ],
+        "rows": [
+          [
+            "Agustus",
+            "Rp 329.105.300",
+            "4.188",
+            "Rp 78.583",
+            "3,3%"
+          ],
+          [
+            "September",
+            "Rp 341.776.200",
+            "4.301",
+            "Rp 79.465",
+            "3,8%"
+          ],
+          [
+            "Oktober",
+            "Rp 358.990.100",
+            "4.436",
+            "Rp 80.926",
+            "5,0%"
+          ],
+          [
+            "November",
+            "Rp 331.218.400",
+            "4.051",
+            "Rp 81.762",
+            "-7,7%"
+          ],
+          [
+            "Desember",
+            "Rp 354.556.000",
+            "4.221",
+            "Rp 83.998",
+            "7,1%"
+          ]
+        ],
+        "total": [
+          "Total",
+          "Rp 3.863.405.700",
+          "48.219",
+          "Rp 80.122",
+          "12,4%"
+        ],
+        "font_size": 33,
+        "row_height": 68,
+        "header_height": 68
+      },
+      "caption": [
+        "Pendapatan, transaksi, dan nilai pesanan rata-rata per bulan"
+      ],
+      "notes": "Sumber: Sumber: tabel fact_sales pada sumber data Penjualan, difilter pada status = 'completed'. Pertumbuhan dihitung terhadap bulan sebelumnya; baris total dihitung terhadap tahun sebelumnya.",
+      "continued": true
+    },
+    {
+      "kind": "section",
+      "frames": 60,
+      "title": [
+        "Catatan Metodologi"
+      ]
+    },
+    {
+      "kind": "statement",
+      "frames": 447,
+      "title": [
+        "Perlakuan pesanan yang dibatalkan"
+      ],
+      "lines": [
+        "Pesanan yang dibatalkan dikeluarkan dari pendapatan namun tetap",
+        "dihitung dalam tingkat pembatalan. Pengembalian dana yang",
+        "diproses setelah akhir bulan dicatat pada bulan pesanan dibuat,",
+        "bukan bulan pengembalian, sehingga angka bulan berjalan dapat",
+        "berubah hingga tiga puluh hari."
+      ],
+      "notes": "Pesanan yang dibatalkan dikeluarkan dari pendapatan namun tetap dihitung dalam tingkat pembatalan. Pengembalian dana yang diproses setelah akhir bulan dicatat pada bulan pesanan dibuat, bukan bulan pengembalian, sehingga angka bulan berjalan dapat berubah hingga tiga puluh hari.\n\nRekonsiliasi selesai — Seluruh angka pada laporan ini telah dicocokkan dengan buku besar per 26 Juli 2026."
+    },
+    {
+      "kind": "quote",
+      "frames": 214,
+      "title": [
+        "Perlakuan pesanan yang dibatalkan"
+      ],
+      "subtitle": [
+        "Rekonsiliasi selesai"
+      ],
+      "lines": [
+        "Seluruh angka pada laporan ini telah dicocokkan dengan buku",
+        "besar per 26 Juli 2026."
+      ],
+      "tone": "good"
+    },
+    {
+      "kind": "closing",
+      "frames": 90,
+      "title": [
+        "Laporan Penjualan Bulanan"
+      ],
+      "facts": [
+        {
+          "label": "Dibuat",
+          "value": [
+            "27 Juli 2026 09:30"
+          ]
+        }
+      ]
+    }
+  ]
+}

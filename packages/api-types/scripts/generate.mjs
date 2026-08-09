@@ -46,9 +46,9 @@ const backend = resolve(pkgRoot, "../../apps/backend");
 const check = process.argv.includes("--check");
 
 /** The files tygo writes, in the order the barrel re-exports them. */
-const GENERATED = ["domain.ts", "events.ts", "api.ts", "webhooks.ts"];
+const GENERATED = ["domain.ts", "events.ts", "api.ts", "videoplan.ts", "webhooks.ts"];
 
-/** Everything but the webhook envelopes — see tygo.yaml for why. */
+/** Everything but the webhook envelopes and the video plan — see tygo.yaml. */
 const BARRELLED = ["domain.ts", "events.ts", "api.ts"];
 
 const BARREL = `/* eslint-disable */
@@ -59,6 +59,11 @@ const BARREL = `/* eslint-disable */
 // Inbound webhook envelopes (apps/backend/pkg/models) are deliberately absent:
 // no browser ever receives one, and \`models.Message\` would collide with
 // \`domain.Message\`. Import them from "@argentum/api-types/webhooks".
+//
+// The video plan (internal/report/videoplan) is absent for the same reason and
+// a sharper one: its \`Brand\`, \`Table\` and \`Metrics\` are names a dashboard
+// namespace should not be handed. Import it from
+// "@argentum/api-types/videoplan".
 
 ${BARRELLED.map((f) => `export * from "./${f.replace(/\.ts$/, ".js")}";`).join("\n")}
 `;

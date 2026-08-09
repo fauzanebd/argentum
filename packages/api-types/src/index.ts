@@ -6,6 +6,11 @@
 // Inbound webhook envelopes (apps/backend/pkg/models) are deliberately absent:
 // no browser ever receives one, and `models.Message` would collide with
 // `domain.Message`. Import them from "@argentum/api-types/webhooks".
+//
+// The video plan (internal/report/videoplan) is absent for the same reason and
+// a sharper one: its `Brand`, `Table` and `Metrics` are names a dashboard
+// namespace should not be handed. Import it from
+// "@argentum/api-types/videoplan".
 
 export * from "./domain.js";
 export * from "./events.js";

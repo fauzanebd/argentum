@@ -670,7 +670,8 @@ than from any phase table:
 | Roster (`T-S1`→`T-S5`) | 9.5 | 2.5 + 2.5 + 1 + 2 + 1.5 |
 | MCP-as-source (`T-M1`→`T-M4`) | 8.0 | 2.5 + 3 + 1 + 1.5 |
 | Business context (`T-B1`→`T-B4`) — **added 2026-07-31** | 8.5 | 2 + 2.5 + 2 + 2 |
-| **Committed total** | **60.5** | |
+| Video and animated decks (`T-V1`→`T-V5`) — **added 2026-08-09** | 11.5 | 2.5 + 3 + 2.5 + 2 + 1.5 |
+| **Committed total** | **72.0** | |
 
 Two separate errors, not one. **`~40.5` is a 4.0-day arithmetic slip** against its
 own inputs — the three tracks it summed came to `44.5` by the figures available
@@ -694,6 +695,15 @@ about numbers that stopped tracking what they summarised. §8c is what it cost.
 (The track was filed at `8.0` earlier the same day and re-summed to `8.5` when
 `T-B4` grew from persona drafting to the specified Generate-with-AI flow — two
 fields, create *and* edit, and an undo. Same lesson, four hours apart.)
+
+**A sixth row was added on 2026-08-09** — video and animated decks
+(`T-V1`→`T-V5`, 11.5d), owner-set, the fourth priority insert in the plan's
+history and dated in the table for the same reason the business-context row is.
+§8d is what it cost. The paragraphs below this line
+were written against `60.5` and are left as they were written; the arithmetic
+they lead to is carried forward in §8d, which states the remaining figure against
+what is actually left rather than against a total that has been re-summed five
+times.
 
 **`T-S5` landed the same day (1.5d): 53.0 days remain committed.** It ran ahead
 of `T-S4` because §8c's running order puts it there, and it takes row 10 of
@@ -760,6 +770,13 @@ citing the wrong ticket; cite the ticket id.
 | 10 | ~~`T-S5` `agent_id` on `/v1`~~ — **delivered 2026-07-31** | 1.5 | `#2b` | Was: cutting it strands `T-M3`, which deps it, so cut 10 only after 9 is already gone. Moot — the dependency is satisfied, and `T-M3` can now be cut or kept on its own terms. |
 | 11 | `T-23` widget config UI | 1.5 | Sprint 1 `#8` | Ship the widget on hardcoded defaults. |
 | 12 | `T-22` npm packages and examples | 2.0 | Sprint 1 `#9` | Only down to the vanilla example and the Go + Node signing snippets. **Never ship the widget with no integration docs.** |
+| 13 | `T-V4` the player and share links | 2.0 | — | The video ships as a file only: an mp4 in a chat message and a download, with no link that plays. Costs the "let me show you" half of the track and nothing structural — `T-V1`'s plan is stored either way, so the player is additive against a working renderer whenever it is wanted. |
+| 14 | `T-V5` motion system and the agreement gate | 1.5 | — | **Partially, never whole.** Cut the scene polish and the still export; **keep the three-format agreement test**, which is the only automated proof that a figure reads the same in the video as in the PDF. Cutting that is cutting the check, not the polish — and locked decision 2 is what it checks. |
+
+**Rows 13 and 14 are appended, not inserted, and their numbers are identifiers
+rather than a position.** Renumbering is what §8b's own header warns against, so
+the video track's place in the cut order is stated in §8d instead: **the whole
+track is cut before anything already in this table.** Read the numbers as names.
 
 **State of play, 2026-08-03.** Positions **1 through 5 are all delivered** —
 `T-M4`, `T-B2`, `T-15`, `T-14`, `T-17` — as are 8 and 10, which were already
@@ -807,13 +824,27 @@ practice, because positions 5 and 9 are scoped cuts rather than whole tickets
 positions 11–12 belong to the widget phase, which §6 says is cut whole or not at
 all. Read the list as a sequence to stop partway down, not as a budget.
 
+**Updated 2026-08-09 with the video track.** The list is now fourteen rows and
+the paragraph above is unchanged on purpose: of the original twelve, ten are
+delivered, so "cutting all twelve" describes a decision nobody can still make.
+What is actually cuttable today is **23.5 days in three whole tracks and two
+scoped rows** — the widget phase (11.5, whole), the video track (11.5, whole
+before it starts), and `T-17b` (0.5). Rows 13 and 14 only become live decisions
+once the video track has opened; before that the only decision is whether it
+opens at all.
+
 **Never cut:** `T-06`/`T-07` (metric registry), `T-08`/`T-09` (watchers — twice
 displaced already, see §5), `T-10`/`T-11`/`T-12a` (the action framework and the
 one action that makes watchers useful), `T-19` (embed auth), `T-M1`/`T-M2` (the
 egress gate and the turn-time integration; a half-built MCP client is dead
 attack surface in the same way a half-built embed surface is), `T-B1`/`T-B3`
 (the business block every other `T-B` ticket deps, and the template gallery the
-track was set for; cutting `T-B3` leaves the blank textarea that motivated it).
+track was set for; cutting `T-B3` leaves the blank textarea that motivated it),
+and — **added 2026-08-09** — `T-V1`/`T-V2`/`T-V3` **as a set**: the video track
+is cut whole or its first three ship together, because a format the tool
+description advertises and the renderer cannot produce is the `list_watchers`
+failure found on 2026-08-04, one door further out, where the model promises a
+customer a file.
 
 **Two rules carried forward from §6.** The widget phase is cut whole or not at
 all — `T-19`→`T-23` move together. And nothing is inserted ahead of `T-19` and
@@ -916,3 +947,109 @@ recovers 13.0 and costs the MCP write tools, business inference, webhooks, the
 MCP server, tracing, `http_action` and Generate-with-AI; or accept that phases
 2–6 and the widget are Sprint 3. **Neither is decided here.** What is decided is
 that the number is 54.5 and not 46.0, and that watchers slipped again.
+
+**Settled by delivery rather than by decision.** Between 2026-08-01 and
+2026-08-08 everything in that paragraph except the widget landed — watchers
+included (`T-08`/`T-09`, gated live 2026-08-02), and Slack arrived from the
+backlog on top. The two ways out were never taken because the work outran the
+arithmetic. That is a good outcome and a bad precedent: it is the second time a
+"something must slip" note was overtaken instead of decided, and the next insert
+should not assume a third.
+
+### 8d. The fourth insert: video and animated decks
+
+**Owner-set 2026-08-09: the video track (`T-V1`→`T-V5`, 11.5d) runs ahead of the
+widget phase.** This is the note §8b's second carried rule demands, and it is the
+fourth such insert — the report track (2026-07-27), the API track (2026-07-28),
+business context (2026-07-31), and this. Each of the first three was cheaper than
+it looked because the thing it extended already existed. So is this one:
+`spec.Document`, the chart images, the branding, the fixtures and the delivery
+doors are all built, and `T-R4` already established that a new format is a
+projection of the same content model rather than a second one.
+
+**What the track is.** The same report spec renders as a silent 1080p video and
+as an animated deck at a shareable link. A Go package projects the spec into a
+finished plan; a new Node service (`apps/render`) draws it with Remotion; `mp4`
+becomes a document format on every door that already serves PDF and PPTX. The
+argument, the alternatives considered, and eleven locked decisions are in
+[`01-tickets.md`](01-tickets.md) under *Reports that move*.
+
+**The one thing worth reading twice** is that it puts a headless browser in this
+product for the first time, which [`backlog.md`](backlog.md) explicitly rejected
+for documents. It is not that decision reopened: the rejection's clauses are
+about the *worker image* and about *documents*, and both hold — the browser ships
+in its own image behind its own deployment, no document renderer changes, and
+`cmd/worker` gains an HTTP client rather than 300 MB. Locked decisions 3 and 4
+are the fence, and decision 4 is the strong one: the plan is self-contained, so
+the render service makes no outbound call at all and can be deployed with egress
+denied.
+
+**What slips, in days:**
+
+| What | Slips by | Note |
+| ---- | -------- | ---- |
+| `T-19`→`T-23` widget | **11.5** | Cut whole or not at all, so it moves whole — §6's rule, carried forward for the third time. It has now been the next thing since Sprint 1's week 7, and it is still the one track with no code. |
+| `T-17b` the trace stops at the queue | 0 | 0.5d, blocked by nothing and blocking nothing. Take it whenever. |
+
+**What does not slip:** everything else, because everything else is delivered.
+Positions 1–10 of §8b are done, watchers shipped on 2026-08-02, `T-17` finished
+on 2026-08-08, and Slack arrived outside the list entirely. This is the first
+insert in the plan's history that displaces exactly one track.
+
+**Remaining committed work is therefore 23.5 days:** the widget phase (11.5),
+this track (11.5), and `T-17b` (0.5). Summed from the ticket headers, per §8a's
+lesson.
+
+**The honest read, again.** The widget has now been displaced four times — by the
+report track, by the API track, by business context, and by this — and each note
+was written truthfully at the time. Four true notes still add up to a track that
+never starts. Two things follow, and both are the owner's call:
+
+1. **If the widget is still wanted, the next insert has to displace something
+   else** — or the widget goes first and the video track waits. Neither ordering
+   is wrong; drifting into the first by default is.
+2. **If it is not wanted, say so and cut it**, rather than carrying 11.5 days at
+   the top of every remaining-work figure. `feature-coverage.md`'s
+   *Embeddability ░░░░░░░░░░* is honest today; carrying a phase nobody intends to
+   start would make it dishonest.
+
+**What is decided here** is the ordering and the cost: the video track runs
+first, the widget slips 11.5 days, and remaining committed work is 23.5.
+
+### 8e. The widget phase stops being committed work
+
+**Decided 2026-08-09, together with the insert above, because §8d's question
+should not be asked a fifth time.**
+
+The widget phase moves to [`backlog.md`](backlog.md) with a trigger. It is **not
+cancelled** — `T-19`→`T-23` stay written, nothing depends on them, and the phase
+slides back whole the day the trigger fires. What changes is that it stops being
+counted as committed.
+
+**Why, in one line:** four consecutive plans have said the widget is next and
+none of them ran it. That is not four scheduling accidents, it is a revealed
+priority, and §8b's own rule for the roster track applies in reverse — *a
+committed feature buried behind a condition nobody is measuring is a feature that
+never ships*. A track that is always next and never started makes every
+remaining-work figure in this document wrong by 11.5 days, which is the exact
+failure §8a spent a section correcting.
+
+**The trigger:** a customer asking to put Argentum's chat inside their own
+internal site. Not a hypothetical one — a named tenant with a frontend team. The
+API (`T-A1`→`T-A5`) and MCP (`T-14`) already cover *reachable from outside the
+dashboard* for every consumer that is a server or an agent; the widget covers
+humans in the tenant's own UI, and that is a demand nobody has expressed yet in
+the seven weeks it has been carried.
+
+**What it costs to be wrong:** the phase starts 11.5 days later than it would
+have. `T-19` builds on `T-13`, which shipped; `T-21` builds on `packages/chat-ui`,
+which does not exist yet either way. Nothing rots.
+
+**Remaining committed work is therefore 12.0 days** — the video track (11.5) and
+`T-17b` (0.5). For the first time since 2026-07-27 that is a number a sprint can
+be sized against rather than a number that needs a paragraph of explanation.
+
+**This is the owner's call to reverse**, and reversing it is one line in
+[`backlog.md`](backlog.md) plus this section. If the widget is wanted on a date,
+say the date and the video track moves behind it — that ordering is equally
+defensible and it is the *drifting* that this section exists to stop.

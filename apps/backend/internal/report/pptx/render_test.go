@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fauzanebd/argentum/internal/report/canvas"
 	"github.com/fauzanebd/argentum/internal/report/measure"
 	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/report/theme"
@@ -422,15 +423,15 @@ func TestLongTableContinues(t *testing.T) {
 		}
 		tables++
 		lastTable = i
-		rows += len(s.table.rows)
+		rows += len(s.table.Rows)
 		if s.continued {
 			continued++
 		}
-		if len(s.table.total) > 0 {
+		if len(s.table.Total) > 0 {
 			totals++
 		}
-		if n := len(s.table.rows); n > maxRowsPerSlide {
-			t.Errorf("slide %d carries %d rows, over the %d cap", i+1, n, maxRowsPerSlide)
+		if n := len(s.table.Rows); n > canvas.MaxRowsPerSurface {
+			t.Errorf("slide %d carries %d rows, over the %d cap", i+1, n, canvas.MaxRowsPerSurface)
 		}
 	}
 
@@ -446,7 +447,7 @@ func TestLongTableContinues(t *testing.T) {
 	if totals > 1 {
 		t.Errorf("the total row appears on %d slides; it belongs on the last one only", totals)
 	}
-	if totals == 1 && len(r.slides[lastTable].table.total) == 0 {
+	if totals == 1 && len(r.slides[lastTable].table.Total) == 0 {
 		t.Error("the total row is not on the last table slide")
 	}
 
@@ -511,35 +512,35 @@ func assertTableFits(t *testing.T, where string, m *tableModel) {
 	t.Helper()
 
 	sum := 0.0
-	for _, w := range m.widths {
+	for _, w := range m.Widths {
 		sum += w
 	}
 	if diff := sum - contentWidth(); diff > 0.01 || diff < -0.01 {
 		t.Errorf("%s: columns sum to %vmm against a %vmm measure", where, sum, contentWidth())
 	}
 
-	height := m.headerH + float64(len(m.rows))*m.rowH
-	if len(m.total) > 0 {
-		height += m.rowH
+	height := m.HeaderH + float64(len(m.Rows))*m.RowH
+	if len(m.Total) > 0 {
+		height += m.RowH
 	}
 	if height > bodyHeight()+0.01 {
 		t.Errorf("%s: the table is %vmm tall in a %vmm body area", where, height, bodyHeight())
 	}
 
-	rows := append([][]string{m.header}, m.rows...)
-	if m.total != nil {
-		rows = append(rows, m.total)
+	rows := append([][]string{m.Header}, m.Rows...)
+	if m.Total != nil {
+		rows = append(rows, m.Total)
 	}
 	for r, row := range rows {
 		for c, cell := range row {
-			if c >= len(m.widths) {
-				t.Errorf("%s: row %d has %d cells against %d columns", where, r, len(row), len(m.widths))
+			if c >= len(m.Widths) {
+				t.Errorf("%s: row %d has %d cells against %d columns", where, r, len(row), len(m.Widths))
 				break
 			}
-			n := linesIn(cell, theme.FontBody, measure.Regular, m.size, m.widths[c]-2*cellPadX)
+			n := linesIn(cell, theme.FontBody, measure.Regular, m.Size, m.Widths[c]-2*cellPadX)
 			if n > maxCellLines {
 				t.Errorf("%s: cell [%d][%d] wraps to %d lines in a %vmm column: %q",
-					where, r, c, n, m.widths[c], cell)
+					where, r, c, n, m.Widths[c], cell)
 			}
 		}
 	}

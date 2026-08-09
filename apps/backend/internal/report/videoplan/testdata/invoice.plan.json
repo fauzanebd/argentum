@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "total_frames": 1014,
+  "locale": "en",
+  "title": "Invoice 2026-0417",
+  "metrics": {
+    "margin_x": 136,
+    "margin_top": 96,
+    "margin_bottom": 68,
+    "content_width": 1648,
+    "body_top": 255,
+    "body_height": 717,
+    "title_band": 125,
+    "footer_band": 40,
+    "footer_top": 972,
+    "title_rule_width": 193,
+    "title_rule_thickness": 9,
+    "leading": 1.45,
+    "type": {
+      "display": 86,
+      "h1": 58,
+      "h2": 47,
+      "body": 36,
+      "caption": 29
+    }
+  },
+  "brand": {
+    "name": "",
+    "primary": "#F25C5C",
+    "primary_on_dark": "#F25C5C",
+    "foreground": "#0A0A0A",
+    "background": "#F5F5F0",
+    "muted": "#6B6B6B",
+    "border": "#E2E2DC",
+    "dark": "#0A0A0A",
+    "on_dark": "#F5F5F0",
+    "credit": "Made with Argentum"
+  },
+  "scenes": [
+    {
+      "kind": "section",
+      "frames": 60,
+      "title": [
+        "Invoice 2026-0417"
+      ]
+    },
+    {
+      "kind": "table",
+      "frames": 211,
+      "title": [
+        "Invoice 2026-0417"
+      ],
+      "facts": [
+        {
+          "label": "Billed to",
+          "value": [
+            "Meridian Logistics Pte Ltd, 8 Marina View #22-01, Asia",
+            "Square Tower 2, Singapore 018961"
+          ]
+        },
+        {
+          "label": "Invoice date",
+          "value": [
+            "2026-07-27"
+          ]
+        },
+        {
+          "label": "Due date",
+          "value": [
+            "2026-08-26"
+          ]
+        },
+        {
+          "label": "Payment terms",
+          "value": [
+            "Net 30"
+          ]
+        },
+        {
+          "label": "Purchase order",
+          "value": [
+            "MLG-PO-88214"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "table",
+      "frames": 123,
+      "title": [
+        "Invoice 2026-0417"
+      ],
+      "table": {
+        "header": [
+          "Description",
+          "Period",
+          "Qty",
+          "Unit price",
+          "Amount"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          738,
+          393,
+          102,
+          206,
+          209
+        ],
+        "rows": [
+          [
+            "Argentum platform subscription — Business tier",
+            "Jul 2026",
+            "1",
+            "$2,400.…",
+            "$2,400.00"
+          ],
+          [
+            "Additional data source connections beyond the three included in the tier",
+            "Jul 2026",
+            "4",
+            "$180.00",
+            "$720.00"
+          ],
+          [
+            "Scheduled report delivery add-on",
+            "Jul 2026",
+            "1",
+            "$240.00",
+            "$240.00"
+          ],
+          [
+            "Onboarding and schema mapping, professional services",
+            "Jun–Jul 2026",
+            "12",
+            "$145.00",
+            "$1,740.00"
+          ]
+        ],
+        "font_size": 33,
+        "row_height": 116,
+        "header_height": 68
+      }
+    },
+    {
+      "kind": "table",
+      "frames": 105,
+      "title": [
+        "Invoice 2026-0417"
+      ],
+      "table": {
+        "header": [
+          "Description",
+          "Period",
+          "Qty",
+          "Unit price",
+          "Amount"
+        ],
+        "aligns": [
+          "l",
+          "l",
+          "r",
+          "r",
+          "r"
+        ],
+        "widths": [
+          738,
+          393,
+          102,
+          206,
+          209
+        ],
+        "rows": [
+          [
+            "Priority support retainer",
+            "Jul 2026",
+            "1",
+            "$500.00",
+            "$500.00"
+          ]
+        ],
+        "total": [
+          "Total due",
+          "",
+          "",
+          "",
+          "$5,600.00"
+        ],
+        "font_size": 33,
+        "row_height": 116,
+        "header_height": 68
+      },
+      "continued": true
+    },
+    {
+      "kind": "quote",
+      "frames": 425,
+      "title": [
+        "Invoice 2026-0417"
+      ],
+      "subtitle": [
+        "Payment instructions"
+      ],
+      "lines": [
+        "Transfer to Argentum Analytics Pte Ltd, DBS Bank Singapore,",
+        "account 072-901188-4, SWIFT DBSSSGSG. Quote invoice number",
+        "2026-0417 in the reference field. Late payment beyond the due",
+        "date accrues interest at 1.5% per month."
+      ],
+      "tone": "info",
+      "notes": "Payment instructions — Transfer to Argentum Analytics Pte Ltd, DBS Bank Singapore, account 072-901188-4, SWIFT DBSSSGSG. Quote invoice number 2026-0417 in the reference field. Late payment beyond the due date accrues interest at 1.5% per month.\n\nSource: This invoice is issued electronically and is valid without signature. GST is not chargeable — Argentum Analytics Pte Ltd is not GST-registered."
+    },
+    {
+      "kind": "closing",
+      "frames": 90,
+      "title": [
+        "Invoice 2026-0417"
+      ],
+      "facts": [
+        {
+          "label": "Generated",
+          "value": [
+            "27 July 2026 09:30"
+          ]
+        }
+      ]
+    }
+  ]
+}

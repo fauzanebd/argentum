@@ -24,25 +24,25 @@ import (
 
 func (r *renderer) drawTable(b *bldr, s slide) {
 	m := s.table
-	if m == nil || len(m.header) == 0 {
+	if m == nil || len(m.Header) == 0 {
 		return
 	}
 
 	y := bodyTop()
-	if m.caption != "" {
-		h := textHeight(m.caption, theme.FontBody, measure.Regular, deckType.Caption, contentWidth())
+	if m.Caption != "" {
+		h := textHeight(m.Caption, theme.FontBody, measure.Regular, deckType.Caption, contentWidth())
 		b.text(textBox{
 			x: marginX, y: y, w: contentWidth(), h: h, name: "Table Caption",
 			paras: []para{simplePara(
-				fitLines(m.caption, theme.FontBody, measure.Regular, deckType.Caption, contentWidth(), 2),
+				fitLines(m.Caption, theme.FontBody, measure.Regular, deckType.Caption, contentWidth(), 2),
 				deckType.Caption, false, theme.ColorMuted, alignLeft)},
 		})
 		y += h + theme.Spacing.SM
 	}
 
-	height := m.headerH + float64(len(m.rows))*m.rowH
-	if len(m.total) > 0 {
-		height += m.rowH
+	height := m.HeaderH + float64(len(m.Rows))*m.RowH
+	if len(m.Total) > 0 {
+		height += m.RowH
 	}
 
 	id := b.id()
@@ -58,21 +58,21 @@ func (r *renderer) drawTable(b *bldr, s slide) {
 	// banding is drawn as explicit fills below, and asking for both gives some
 	// consumers two bandings at once.
 	b.printf(`<a:tbl><a:tblPr firstRow="1" bandRow="0"/><a:tblGrid>`)
-	for _, w := range m.widths {
+	for _, w := range m.Widths {
 		b.printf(`<a:gridCol w="%d"/>`, mmToEMU(w))
 	}
 	b.printf(`</a:tblGrid>`)
 
-	b.printf("%s", tableRow(m.header, m, m.headerH, rowHeader))
-	for i, row := range m.rows {
+	b.printf("%s", tableRow(m.Header, m, m.HeaderH, rowHeader))
+	for i, row := range m.Rows {
 		style := rowPlain
 		if i%2 == 1 {
 			style = rowBanded
 		}
-		b.printf("%s", tableRow(row, m, m.rowH, style))
+		b.printf("%s", tableRow(row, m, m.RowH, style))
 	}
-	if len(m.total) > 0 {
-		b.printf("%s", tableRow(m.total, m, m.rowH, rowTotal))
+	if len(m.Total) > 0 {
+		b.printf("%s", tableRow(m.Total, m, m.RowH, rowTotal))
 	}
 
 	b.printf(`</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`)
@@ -90,12 +90,12 @@ const (
 func tableRow(cells []string, m *tableModel, height float64, style rowStyle) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `<a:tr h="%d">`, mmToEMU(height))
-	for i := range m.widths {
+	for i := range m.Widths {
 		value := ""
 		if i < len(cells) {
 			value = cells[i]
 		}
-		sb.WriteString(tableCell(value, m.aligns[i], m.size, style))
+		sb.WriteString(tableCell(value, m.Aligns[i], m.Size, style))
 	}
 	sb.WriteString(`</a:tr>`)
 	return sb.String()
