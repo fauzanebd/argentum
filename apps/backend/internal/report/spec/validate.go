@@ -38,9 +38,9 @@ func (d *Document) Normalize() {
 // Validate gives early, actionable errors before a renderer is reached.
 func (d *Document) Validate() error {
 	switch d.Format {
-	case "pdf", "xlsx", "csv", "pptx":
+	case "pdf", "xlsx", "csv", "pptx", "mp4":
 	default:
-		return fmt.Errorf("format must be one of pdf|xlsx|csv|pptx (got %q)", d.Format)
+		return fmt.Errorf("format must be one of pdf|xlsx|csv|pptx|mp4 (got %q)", d.Format)
 	}
 
 	switch d.Format {
@@ -62,6 +62,25 @@ func (d *Document) Validate() error {
 		// authored twice — so there is nothing extra to require here.
 		if len(d.Content.Sections) == 0 && d.Content.Table == nil {
 			return fmt.Errorf("%s requires content.sections or content.table", d.Format)
+		}
+	case "mp4":
+		if len(d.Content.Sections) == 0 && d.Content.Table == nil {
+			return fmt.Errorf("mp4 requires content.sections or content.table")
+		}
+		// The one format that refuses a document it could render.
+		//
+		// A video is watched: it moves at its own pace and the viewer cannot
+		// scroll back. That is the right medium for an argument about numbers
+		// and the wrong one for a record somebody needs to read a line of — an
+		// invoice as a video is a worse invoice, and the reader cannot even
+		// find the total. `Analytical` is the same predicate `CheckNarrative`
+		// uses for the mirror-image judgement, so the two cannot disagree about
+		// which documents are making an argument.
+		if !Analytical(d) {
+			return fmt.Errorf("mp4 is for reports that make an argument about data, and this document has neither a " +
+				"\"kpi_row\" nor a \"chart\" in it: a record — an invoice, an agreement, a data export — is worse as a " +
+				"video than as a PDF, because the reader cannot scan it or find one line. Render this as \"pdf\", or add " +
+				"the figures the video would be about")
 		}
 	}
 

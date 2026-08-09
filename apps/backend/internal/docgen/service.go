@@ -36,6 +36,8 @@ import (
 	"github.com/fauzanebd/argentum/internal/report/pdf"
 	"github.com/fauzanebd/argentum/internal/report/pptx"
 	"github.com/fauzanebd/argentum/internal/report/spec"
+	"github.com/fauzanebd/argentum/internal/report/video"
+	"github.com/fauzanebd/argentum/internal/report/videoplan"
 	"github.com/fauzanebd/argentum/internal/tools/document"
 )
 
@@ -56,11 +58,20 @@ type ObjectStore interface {
 // have.
 type Meter interface {
 	RecordDocument(ctx context.Context, companyID, threadID, format string)
+	// RecordRenderSeconds meters wall clock spent in the render service
+	// (T-V3). A video is not a document-sized cost — a PDF is milliseconds of
+	// this process and a video is minutes of another pod's CPU — so the
+	// document event says one was produced and this says what it took. Two
+	// events rather than a field on one, because the second only exists for the
+	// formats that leave this process.
+	RecordRenderSeconds(ctx context.Context, companyID, threadID, format string, seconds float64)
 }
 
 type nopMeter struct{}
 
 func (nopMeter) RecordDocument(context.Context, string, string, string) {}
+
+func (nopMeter) RecordRenderSeconds(context.Context, string, string, string, float64) {}
 
 // Service generates documents. One instance is shared by the worker's
 // generate_document tool and by the API's `/v1` report routes.
@@ -72,6 +83,14 @@ type Service struct {
 	meter      Meter
 	presignTTL time.Duration
 	limits     spec.Limits
+	// video is nil on a deployment with no render service, which is what makes
+	// `mp4` unavailable rather than broken there.
+	video *video.Client
+	// videoLimits bounds what a spec may turn into as scenes and frames. They
+	// are videoplan's rather than spec.Limits' because deriving them means
+	// running the timing model, and `spec` cannot import `videoplan` — see
+	// videoplan's own note on where the caps live.
+	videoLimits videoplan.Limits
 }
 
 // New wires the service. branding may be nil — a deployment without object
@@ -109,6 +128,28 @@ func (s *Service) WithLimits(l spec.Limits) *Service {
 	return s
 }
 
+// WithVideo installs the render service client and the caps a video is bounded
+// by (T-V3). A nil client is the supported state, not a broken one: `mp4` is
+// then refused with a plain sentence and every other format is untouched.
+func (s *Service) WithVideo(c *video.Client, l videoplan.Limits) *Service {
+	s.video = c
+	s.videoLimits = l.Normalize()
+	return s
+}
+
+// VideoAvailable reports whether `mp4` can be produced here. Handlers and the
+// agent's tool registry both ask, so neither re-derives it from config —
+// `generate_document` narrows its own format enum on the answer, the same way
+// it is registered at all only where object storage exists.
+func (s *Service) VideoAvailable() bool { return s != nil && s.video.Configured() }
+
+// Limits are the caps an untrusted spec is checked against. Exposed because
+// the `/v1` render door checks a video's spec *before* it enqueues the job —
+// the job is the thing that would otherwise spend minutes of a render pod on a
+// spec that was never going to be accepted — and it must check against the
+// same numbers Generate will.
+func (s *Service) Limits() spec.Limits { return s.limits }
+
 // PresignTTL is how long a download URL this service issues stays valid.
 // Handlers report it to the caller, so they read it from here rather than
 // re-deriving it from config and drifting.
@@ -134,6 +175,13 @@ type Input struct {
 	// that already asks for small tables, and a turn refused by a row cap the
 	// agent cannot see is a turn that fails with nothing to act on.
 	EnforceLimits bool
+	// OnProgress reports 0..1 while a format that is rendered elsewhere is
+	// being rendered (T-V3). Nil for every in-process format, because a PDF
+	// finishes before a progress event would arrive. It is called from the
+	// caller's goroutine and at most once a second — a four-minute silent
+	// spinner is the failure a progress channel exists for, and a four-minute
+	// firehose is the other one.
+	OnProgress func(float64)
 	// EnforceNarrative refuses an analytical report that only states figures.
 	// It is the mirror image of EnforceLimits: this one is on for the agent and
 	// off for the API. A model that has just run the queries is the only author
@@ -193,7 +241,7 @@ func (s *Service) Generate(ctx context.Context, in Input) (*Result, error) {
 	}
 
 	format := domain.DocumentFormat(in.Spec.Format)
-	data, err := s.render(ctx, in.Spec, in.CompanyID)
+	data, renderSeconds, err := s.render(ctx, in.Spec, in.CompanyID, in.OnProgress)
 	if err != nil {
 		return nil, err
 	}
@@ -227,6 +275,9 @@ func (s *Service) Generate(ctx context.Context, in Input) (*Result, error) {
 	}
 
 	s.meter.RecordDocument(ctx, in.CompanyID, in.ThreadID, in.Spec.Format)
+	if renderSeconds > 0 {
+		s.meter.RecordRenderSeconds(ctx, in.CompanyID, in.ThreadID, in.Spec.Format, renderSeconds)
+	}
 
 	signed, expiresAt, err := s.Presign(ctx, doc)
 	if err != nil {
@@ -274,23 +325,69 @@ func (s *Service) storageKey(companyID, threadID, docID string, format domain.Do
 	return fmt.Sprintf("documents/%s/%s/%s.%s", companyID, threadID, docID, format.Extension())
 }
 
-// render dispatches to the format's renderer.
+// render dispatches to the format's renderer, returning the bytes and — for a
+// format rendered somewhere else — how many seconds that took.
 //
-// The PDF and PPTX paths are the only ones that read company settings. A
+// The PDF, PPTX and MP4 paths are the ones that read company settings. A
 // spreadsheet and a CSV are data, and a tenant's currency symbol pasted into a
 // cell someone wants to sum is a formatting decision made in the wrong place.
-func (s *Service) render(ctx context.Context, doc *spec.Document, companyID string) ([]byte, error) {
+//
+// **The mp4 branch is the first that is not `(*spec.Document) ([]byte, error)`
+// in this process.** The seam is kept as narrow as it can be: build the plan,
+// call the service, hand back bytes. Everything after this line — the storage
+// key, the row, the presign, the metering — is the code that already runs for
+// the other four, which is the whole reason there is one `Generate`.
+func (s *Service) render(ctx context.Context, doc *spec.Document, companyID string, onProgress func(float64)) ([]byte, float64, error) {
 	switch doc.Format {
 	case "pdf":
-		return pdf.Render(doc, s.pdfOptions(ctx, companyID))
+		data, err := pdf.Render(doc, s.pdfOptions(ctx, companyID))
+		return data, 0, err
 	case "pptx":
-		return pptx.Render(doc, s.pptxOptions(ctx, companyID))
+		data, err := pptx.Render(doc, s.pptxOptions(ctx, companyID))
+		return data, 0, err
 	case "xlsx":
-		return document.RenderXLSX(document.FromReportSpec(doc))
+		data, err := document.RenderXLSX(document.FromReportSpec(doc))
+		return data, 0, err
 	case "csv":
-		return document.RenderCSV(document.FromReportSpec(doc))
+		data, err := document.RenderCSV(document.FromReportSpec(doc))
+		return data, 0, err
+	case "mp4":
+		return s.renderVideo(ctx, doc, companyID, onProgress)
 	}
-	return nil, fmt.Errorf("unsupported format %q", doc.Format)
+	return nil, 0, fmt.Errorf("unsupported format %q", doc.Format)
+}
+
+// renderVideo projects the spec onto a plan and has the render service draw it.
+//
+// The projection happens here rather than in the service because everything it
+// needs is here: the tenant's branding, their currency and locale, the chart
+// images Go already draws for the PDF and the deck. What crosses the wire is a
+// finished plan — every string wrapped, every duration counted, every image a
+// data URI — which is what lets the render service hold no palette, no theme
+// and no network.
+func (s *Service) renderVideo(ctx context.Context, doc *spec.Document, companyID string, onProgress func(float64)) ([]byte, float64, error) {
+	if !s.VideoAvailable() {
+		return nil, 0, video.ErrNotConfigured
+	}
+	cfg := s.brandFor(ctx, companyID)
+	plan, err := videoplan.Build(doc, videoplan.Options{
+		Brand:    cfg.Video(),
+		Currency: s.currencyFor(ctx, companyID),
+		Locale:   cfg.Locale,
+		Limits:   s.videoLimits,
+	})
+	if err != nil {
+		// A plan that will not build is the caller's spec, not our renderer:
+		// too many scenes, too long, a chart that cannot be drawn. It is
+		// wrapped as a rejection so the handler answers 400 rather than
+		// inviting a retry of something deterministic.
+		return nil, 0, fmt.Errorf("%w: %s", video.ErrPlanRejected, err)
+	}
+	res, err := s.video.Render(ctx, plan, onProgress)
+	if err != nil {
+		return nil, 0, err
+	}
+	return res.Data, res.Seconds, nil
 }
 
 // currencyFor is the tenant's default currency, used when the spec names none.

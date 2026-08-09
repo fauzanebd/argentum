@@ -65,11 +65,24 @@ type BusinessInferPayload struct {
 // megabyte in Redis is the wrong trade — the task is transient and the row
 // is not.
 type ReportRenderPayload struct {
-	ReportID  string        `json:"report_id"`
+	// ReportID is the `api_reports` row this job answers. **Empty for the
+	// agent's own video** (T-V3): a turn that asked for an mp4 hands the render
+	// off rather than waiting minutes inside a tool call, and there is no `/v1`
+	// job behind it — the thread is what the result goes back to.
+	ReportID  string        `json:"report_id,omitempty"`
 	CompanyID string        `json:"company_id"`
 	APIKeyID  string        `json:"api_key_id,omitempty"`
 	RequestID string        `json:"request_id,omitempty"`
 	Spec      spec.Document `json:"spec"`
+	// ThreadID is where a finished document is announced when this job came
+	// from a turn rather than from `/v1`. The worker writes one assistant
+	// message carrying the download link and publishes it on the thread's
+	// channel, which is the same seam a chat reply arrives through.
+	ThreadID string `json:"thread_id,omitempty"`
+	// AgentID attributes the spend, exactly as it does on a chat turn: the
+	// render happens after the turn that asked for it has ended, so nothing
+	// else in this payload can say which agent it belonged to.
+	AgentID string `json:"agent_id,omitempty"`
 }
 
 // WebhookDeliverPayload names the delivery row. Only the id: the URL, the

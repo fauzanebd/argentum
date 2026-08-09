@@ -68,7 +68,14 @@ func NarrativeChars(d *Document) int {
 // integrator, who is entitled to render a KPI sheet with no prose in it, and
 // refusing one would break a contract they already have working.
 func CheckNarrative(d *Document) error {
-	if d.Format != "pdf" && d.Format != "pptx" {
+	// mp4 is in this list for a stronger reason than the other two (T-V3). A
+	// reader who is handed a PDF of bare figures can at least scan it and draw
+	// their own conclusion; a viewer cannot scroll back, cannot compare two
+	// numbers side by side, and gets whatever the scene says in the seconds it
+	// is on screen. A video with no prose in it is a slideshow of numbers
+	// nobody can pause — the format that most needs the reading is the one
+	// that was skipping this check.
+	if d.Format != "pdf" && d.Format != "pptx" && d.Format != "mp4" {
 		return nil
 	}
 	if !Analytical(d) {

@@ -177,3 +177,26 @@ Init containers shared by api + worker (wait-for-postgres, wait-for-redis).
     runAsUser: 1000
 {{- end }}
 {{- end }}
+
+{{/*
+Where the video renderer answers, for the two processes that call it (T-V3).
+
+Injected rather than left to the secret. The chart already knows the Service
+name and the port; asking an operator to also write RENDER_BASE_URL into
+`argentum-secrets` means a release with `render.enabled: true` where `mp4` is
+still refused, and nothing in any log to say the two halves were never
+introduced. Disabled renders to nothing at all, which is the supported state.
+*/}}
+{{- define "argentum.renderEnv" -}}
+{{- if .Values.render.enabled }}
+- name: RENDER_BASE_URL
+  value: "http://{{ include "argentum.fullname" . }}-render:8090"
+{{- with .Values.render.sharedSecretRef }}
+- name: RENDER_SHARED_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .name }}
+      key: {{ .key }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -11,9 +11,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
+
+	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/report/video"
+	"github.com/fauzanebd/argentum/internal/report/videoplan"
 )
 
 // Config holds all application configuration
@@ -232,6 +237,28 @@ type Config struct {
 	// in a tight loop, spending a turn on round trips.
 	MCPMaxCallsPerTurn int
 
+	// RenderBaseURL is where `apps/render` answers, e.g.
+	// http://argentum-render:8090 (T-V3). **Empty is a supported deployment**,
+	// not a broken one: `mp4` is then refused with a plain sentence and every
+	// other format works exactly as before. The Helm chart ships the render
+	// deployment disabled by default, so empty is also the common case.
+	RenderBaseURL string
+	// RenderSharedSecret is sent as `x-render-secret`. It is not the security
+	// boundary — a ClusterIP Service and a NetworkPolicy are — it is what stops
+	// a misconfiguration being silently exploitable.
+	RenderSharedSecret string
+	// RenderTimeoutSecs bounds one whole render from this side. It sits above
+	// the service's own ten-minute wall clock so a service that gives up
+	// answers us, rather than being cut off and reported as unreachable.
+	RenderTimeoutSecs int
+	// RenderMaxScenes / RenderMaxFrames bound what a spec may turn into
+	// (T-V1's videoplan.Limits). They are not in APIV1MaxSpec* because they
+	// apply to the agent's own videos too: the thing being protected is minutes
+	// of a render pod that does one job at a time, and the agent can spend
+	// those as easily as an integrator can.
+	RenderMaxScenes int
+	RenderMaxFrames int
+
 	// WatcherEnabled is the kill switch for the whole watcher subsystem (T-08).
 	// When off, the worker does not start the watcher periodic manager, so no
 	// evaluation ticks fire — the panic button for a deployment whose watchers
@@ -417,6 +444,11 @@ func Load() (*Config, error) {
 		MCPCallTimeoutSecs:         getEnvAsInt("MCP_CALL_TIMEOUT_SECS", 30),
 		MCPMaxResponseBytes:        getEnvAsInt("MCP_MAX_RESPONSE_BYTES", 262144),
 		MCPMaxCallsPerTurn:         getEnvAsInt("MCP_MAX_CALLS_PER_TURN", 20),
+		RenderBaseURL:              getEnv("RENDER_BASE_URL", ""),
+		RenderSharedSecret:         getEnv("RENDER_SHARED_SECRET", ""),
+		RenderTimeoutSecs:          getEnvAsInt("RENDER_TIMEOUT_SECS", 900),
+		RenderMaxScenes:            getEnvAsInt("RENDER_MAX_SCENES", 60),
+		RenderMaxFrames:            getEnvAsInt("RENDER_MAX_FRAMES", 18_000),
 		WatcherEnabled:             getEnv("WATCHER_ENABLED", "true") == "true",
 		WatcherMaxPerCompany:       getEnvAsInt("WATCHER_MAX_PER_COMPANY", 20),
 		APIV1ObsFlushSeconds:       getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
@@ -587,6 +619,31 @@ func (c *Config) IsProduction() bool {
 	return c.Env == "production"
 }
 
+// VideoClient builds the render-service client, or nil when no render service
+// is configured (T-V3).
+//
+// It lives here, beside WorkerQueueMap, because **both processes build one**:
+// the worker's stack for the agent's `generate_document`, and `cmd/api` for
+// `/v1`. Those two already keep their own copies of the object-storage wiring,
+// and the copies have not drifted yet only because nobody has edited one. A
+// client built two ways is a deployment where the agent can produce a video
+// and the API cannot, with nothing to see in either log.
+func (c *Config) VideoClient() *video.Client {
+	return video.New(video.Options{
+		BaseURL: c.RenderBaseURL,
+		Secret:  c.RenderSharedSecret,
+		Timeout: time.Duration(c.RenderTimeoutSecs) * time.Second,
+	})
+}
+
+// VideoLimits bounds what a spec may turn into as scenes and frames.
+func (c *Config) VideoLimits() videoplan.Limits {
+	return videoplan.Limits{
+		MaxScenes:      c.RenderMaxScenes,
+		MaxTotalFrames: c.RenderMaxFrames,
+	}
+}
+
 // ResolvedAsynqRedisURL returns AsynqRedisURL when set, otherwise RedisURL.
 // asynq accepts a "redis://..." URI or a bare "host:port"; either is fine
 // for asynq.RedisClientOpt parsing helpers downstream.
@@ -641,6 +698,16 @@ func (c *Config) WorkerQueueMap() map[string]int {
 	}
 	if len(out) == 0 {
 		out["default"] = 10
+	}
+	// The video lane, added rather than configured (T-V3). A worker that does
+	// not consume it leaves every video queued forever with nothing in a log to
+	// say why — and `WORKER_QUEUES` is set per deployment, so shipping the lane
+	// in the default string would reach no existing one. A low weight is the
+	// point: a render pod takes one job at a time, so a second video waits on
+	// the pod regardless, and there is nothing to gain by racing PDFs for the
+	// worker's attention.
+	if _, ok := out[queue.QueueVideo]; !ok {
+		out[queue.QueueVideo] = 1
 	}
 	return out
 }

@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/report/video"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/fauzanebd/argentum/internal/webhookout"
 )
@@ -32,6 +35,25 @@ type APIReportService struct {
 	docs    domain.DocumentRepository
 	gen     *docgen.Service
 	sender  *webhookout.Sender
+	// progress publishes `render_progress` for a job nobody can otherwise see
+	// (T-V3). Nil is legal and means the caller polls, which is what every
+	// render did before a format took minutes.
+	progress ReportProgressBus
+	// announcer puts a threaded render's result back in its conversation.
+	announcer ThreadAnnouncer
+}
+
+// ReportProgressBus is the slice of the event bus a render job needs.
+// Declared at the consumer and narrow, so the worker's Redis bus satisfies it
+// without this package depending on the transport.
+type ReportProgressBus interface {
+	PublishReport(reportID string, evt ChatEvent) error
+}
+
+// WithProgress installs the bus a threadless render job reports progress on.
+func (s *APIReportService) WithProgress(bus ReportProgressBus) *APIReportService {
+	s.progress = bus
+	return s
 }
 
 // NewAPIReportService wires the service. gen and sender may be nil: a
@@ -111,13 +133,21 @@ func (s *APIReportService) CompleteReport(ctx context.Context, reportID, threadI
 	s.notify(ctx, rep)
 }
 
-// RunRenderJob renders a spec that overran the synchronous window.
+// RunRenderJob renders a spec that overran the synchronous window, or a video,
+// which never waits for one (T-V3).
 //
 // Returning an error asks asynq to retry, and it does so only for failures
 // that a retry could fix. A spec the renderer refuses is recorded as a failed
 // job and returns nil: rendering is deterministic, so the second attempt
 // produces the same refusal and the caller waits longer for the same answer.
 func (s *APIReportService) RunRenderJob(ctx context.Context, p queue.ReportRenderPayload) error {
+	// A job with no report id came from a turn, not from `/v1`, and its result
+	// goes back to the thread. Split before the repository check below, because
+	// that path needs no `api_reports` row and must not fail for the want of
+	// one.
+	if p.ReportID == "" {
+		return s.runThreadRender(ctx, p)
+	}
 	if s.reports == nil {
 		return fmt.Errorf("api report repository is not configured")
 	}
@@ -142,13 +172,14 @@ func (s *APIReportService) RunRenderJob(ctx context.Context, p queue.ReportRende
 		Source:        domain.DocumentSourceAPI,
 		APIKeyID:      p.APIKeyID,
 		EnforceLimits: true,
+		OnProgress:    s.progressFor(p.ReportID),
 	})
 	if err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
 			"company_id": p.CompanyID,
 			"report_id":  p.ReportID,
 		}).Warn("asynchronous render failed")
-		s.fail(ctx, p.ReportID, "The document could not be rendered from this spec.")
+		s.fail(ctx, p.ReportID, renderFailureMessage(err))
 		return nil
 	}
 
@@ -163,6 +194,178 @@ func (s *APIReportService) RunRenderJob(ctx context.Context, p queue.ReportRende
 		s.notify(ctx, rep)
 	}
 	return nil
+}
+
+// ThreadAnnouncer is how a render that finished after its turn gets back to
+// the conversation that asked for it (T-V3).
+//
+// Two methods rather than a reach into ChatRunner: everything a chat turn does
+// after the model stops — memory, usage, the fabrication check, channel
+// delivery — is wrong for a file that arrives four minutes later, and the only
+// parts that are right are the two below.
+type ThreadAnnouncer interface {
+	// Append persists the assistant message carrying the link.
+	Append(ctx context.Context, m *domain.Message) error
+	// Publish puts it on the thread's channel so an open dashboard shows it
+	// without a reload.
+	Publish(threadID string, evt ChatEvent) error
+}
+
+// WithThreadAnnouncer installs the seam a threaded render answers through.
+// Nil leaves the document collectable — the row and the presigned URL exist
+// either way — and silently, which is why the worker always installs one.
+func (s *APIReportService) WithThreadAnnouncer(a ThreadAnnouncer) *APIReportService {
+	s.announcer = a
+	return s
+}
+
+// runThreadRender renders a video the agent asked for and announces it.
+//
+// The turn that asked is over. `generate_document` answered "it is rendering"
+// and the model wrote its reply around that, because a tool call that blocks
+// for four minutes spends `T-16`'s whole budget on waiting and then has no
+// iterations left to say anything about the file. So this is the other half of
+// that answer, and its failure mode is the one that matters: a video that
+// never arrives and never explains itself is worse than one that was refused.
+func (s *APIReportService) runThreadRender(ctx context.Context, p queue.ReportRenderPayload) error {
+	if p.ThreadID == "" {
+		return fmt.Errorf("render job has neither a report id nor a thread id")
+	}
+	ctx = tenantctx.WithCompanyID(ctx, p.CompanyID)
+	ctx = tenantctx.WithThreadID(ctx, p.ThreadID)
+	if p.AgentID != "" {
+		// The id only, not the turn's whole scope: nothing in a render reads a
+		// source or MCP allowlist, and reconstructing one from a payload would
+		// be a second answer to "what could that agent reach" — able to
+		// disagree with the roster row the turn itself resolved.
+		ctx = agentscope.WithScope(ctx, agentscope.Scope{AgentID: p.AgentID})
+	}
+
+	if s.gen == nil {
+		s.announce(ctx, p, "The video could not be rendered: document generation is not available on this deployment.")
+		return nil
+	}
+
+	spec := p.Spec
+	res, err := s.gen.Generate(ctx, docgen.Input{
+		Spec:       &spec,
+		CompanyID:  p.CompanyID,
+		ThreadID:   p.ThreadID,
+		Source:     domain.DocumentSourceAgent,
+		OnProgress: s.threadProgress(p.ThreadID),
+	})
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": p.CompanyID,
+			"thread_id":  p.ThreadID,
+		}).Warn("threaded video render failed")
+		s.announce(ctx, p, renderFailureMessage(err))
+		return nil
+	}
+	s.announce(ctx, p, fmt.Sprintf("Your video is ready: [%s](%s). The link expires in about an hour; ask again and I will produce a fresh one.",
+		res.Document.Filename, res.DownloadURL))
+	return nil
+}
+
+// announce writes one assistant message and publishes it.
+//
+// Persisted first, then published: a dashboard that is open sees it live and a
+// dashboard that is not sees it on the next load, and the row is what makes
+// the second true. A publish failure is logged and swallowed — the message is
+// in the thread either way.
+func (s *APIReportService) announce(ctx context.Context, p queue.ReportRenderPayload, content string) {
+	if s.announcer == nil {
+		logrus.WithField("thread_id", p.ThreadID).
+			Warn("no thread announcer: a rendered video will not be announced in its thread")
+		return
+	}
+	msg := &domain.Message{
+		ThreadID: p.ThreadID,
+		Role:     domain.MessageRoleAssistant,
+		Content:  content,
+		Metadata: map[string]interface{}{"kind": "render_result"},
+	}
+	if err := s.announcer.Append(ctx, msg); err != nil {
+		logrus.WithError(err).WithField("thread_id", p.ThreadID).
+			Error("rendered video not written to its thread")
+		return
+	}
+	if err := s.announcer.Publish(p.ThreadID, ChatEvent{
+		ThreadID:  p.ThreadID,
+		Type:      "final",
+		Content:   content,
+		Timestamp: time.Now(),
+	}); err != nil {
+		logrus.WithError(err).WithField("thread_id", p.ThreadID).
+			Warn("rendered video written but not published; it appears on the next load")
+	}
+}
+
+// threadProgress reports a threaded render's progress on the thread's own
+// channel, so the dashboard that asked for the video has a number to show.
+func (s *APIReportService) threadProgress(threadID string) func(float64) {
+	if s.announcer == nil || threadID == "" {
+		return nil
+	}
+	return func(f float64) {
+		_ = s.announcer.Publish(threadID, ChatEvent{
+			ThreadID:  threadID,
+			Type:      EventRenderProgress,
+			Progress:  f,
+			Timestamp: time.Now(),
+		})
+	}
+}
+
+// progressFor returns the callback a long render reports through, or nil when
+// there is no bus to report on.
+//
+// It publishes and forgets: a report whose progress nobody is watching is the
+// normal case, and a Redis hiccup must not fail a render that is working. The
+// rate cap is upstream — the render client polls once a second and only calls
+// this when it does — because the cheapest way to honour "at most once per
+// second" is not to generate the events.
+func (s *APIReportService) progressFor(reportID string) func(float64) {
+	if s.progress == nil || reportID == "" {
+		return nil
+	}
+	return func(p float64) {
+		_ = s.progress.PublishReport(reportID, ChatEvent{
+			Type:      EventRenderProgress,
+			Progress:  p,
+			Timestamp: time.Now(),
+		})
+	}
+}
+
+// renderFailureMessage says which of the three failures this was.
+//
+// "The document could not be rendered" is true of all three and actionable for
+// none: an integrator whose deployment has no render service, one whose render
+// service is down, and one whose spec was refused have three different next
+// steps, and `T-A5` exists because we used to hand them the same sentence.
+func renderFailureMessage(err error) string {
+	switch {
+	case errors.Is(err, video.ErrNotConfigured):
+		return "Video rendering is not configured on this deployment. Every other format is available."
+	case errors.Is(err, video.ErrPlanRejected):
+		// The renderer's own words: they name the cap and the observed value,
+		// which is the whole reason those messages are written the way they are.
+		return "This spec cannot be rendered as a video: " + unwrapMessage(err)
+	case errors.Is(err, video.ErrUnavailable):
+		return "The video render service did not answer. Nothing was billed for the render; try again."
+	}
+	return "The document could not be rendered from this spec."
+}
+
+// unwrapMessage strips the sentinel prefix so a tenant reads the reason rather
+// than our error chain.
+func unwrapMessage(err error) string {
+	msg := err.Error()
+	if i := strings.Index(msg, ": "); i >= 0 && i+2 < len(msg) {
+		return msg[i+2:]
+	}
+	return msg
 }
 
 // fail marks a job failed with a message written for whoever reads it.

@@ -106,7 +106,12 @@ func main() {
 	webhookSubs := app.NewWebhookSubscriptionService(subscriptionRepo, webhookSender)
 	webhookDeliverer := webhookout.NewDeliverer(deliveryRepo, companyRepo, cfg.APIV1CallbackAllowPrivate, webhookMaxAttempts).
 		WithSubscriptions(subscriptionRepo, domain.WebhookAutoDisableAfter)
-	reportSvc := app.NewAPIReportService(reportRepo, stack.Documents, stack.Docs, webhookSender)
+	// The same bus the chat turns publish on, on a channel keyed by the report
+	// rather than by a thread (T-V3): a render job has no thread, and until a
+	// format took minutes it had nothing worth streaming either.
+	reportSvc := app.NewAPIReportService(reportRepo, stack.Documents, stack.Docs, webhookSender).
+		WithProgress(bus).
+		WithThreadAnnouncer(threadAnnouncer{messages: stack.Messages, bus: bus})
 
 	// The three publishers. All on the worker, because all three events happen
 	// here: a watcher fires on a tick, an action executes after approval is
@@ -255,19 +260,42 @@ func makeChatRunHandler(runner *app.ChatRunner, reports *app.APIReportService) a
 }
 
 // makeReportRenderHandler runs a spec whose synchronous render overran its
-// window. The service decides what is retryable; a returned error here is one
-// it asked for.
+// window, or a video the agent asked for (T-V3). The service decides what is
+// retryable; a returned error here is one it asked for.
+//
+// A job must name **one** of the two things that can collect it: an
+// `api_reports` row, or the thread to post the file into. This used to require
+// a report id, which would have dropped every agent video on the floor —
+// `SkipRetry` and no log line, the quietest failure in the file.
 func makeReportRenderHandler(reports *app.APIReportService) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var p queue.ReportRenderPayload
 		if err := json.Unmarshal(t.Payload(), &p); err != nil {
 			return asynq.SkipRetry
 		}
-		if p.ReportID == "" {
+		if p.ReportID == "" && p.ThreadID == "" {
+			logrus.Warn("report:render task with neither a report id nor a thread id; dropped")
 			return asynq.SkipRetry
 		}
 		return reports.RunRenderJob(ctx, p)
 	}
+}
+
+// threadAnnouncer is the seam a render that outlived its turn answers through
+// (T-V3): the message repository and the event bus, and nothing else. Both
+// already exist in this process; what this type adds is the refusal to hand
+// `APIReportService` anything wider.
+type threadAnnouncer struct {
+	messages domain.MessageRepository
+	bus      *eventbus.RedisBus
+}
+
+func (a threadAnnouncer) Append(ctx context.Context, m *domain.Message) error {
+	return a.messages.Append(ctx, m)
+}
+
+func (a threadAnnouncer) Publish(threadID string, evt app.ChatEvent) error {
+	return a.bus.Publish(threadID, evt)
 }
 
 // makeWebhookDeliverHandler makes one delivery attempt. asynq owns the backoff

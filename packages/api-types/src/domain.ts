@@ -888,7 +888,15 @@ export const DocumentFormatPDF = "pdf";
 export const DocumentFormatXLSX = "xlsx";
 export const DocumentFormatCSV = "csv";
 export const DocumentFormatPPTX = "pptx";
-export type DocumentFormat = typeof DocumentFormatPDF | typeof DocumentFormatXLSX | typeof DocumentFormatCSV | typeof DocumentFormatPPTX;
+/**
+ * DocumentFormatMP4 is the same report spec as a silent 1080p video
+ * (T-V3). It is a document like the other four — one row, one storage key,
+ * one presigned URL — and unlike them it is produced by another process and
+ * takes minutes rather than milliseconds, which is why every door that
+ * serves it is asynchronous.
+ */
+export const DocumentFormatMP4 = "mp4";
+export type DocumentFormat = typeof DocumentFormatPDF | typeof DocumentFormatXLSX | typeof DocumentFormatCSV | typeof DocumentFormatPPTX | typeof DocumentFormatMP4;
 /**
  * DocumentSource is which door produced a document.
  */
@@ -1561,6 +1569,14 @@ export const UsageEventDocumentGenerated: UsageEventType = "document_generated";
  * context the result occupies, not a query against a source we hold.
  */
 export const UsageEventMCPCall: UsageEventType = "mcp_call";
+/**
+ * UsageEventVideoRender is wall clock spent in the render service (T-V3).
+ * Beside `document_generated` rather than instead of it: one video is one
+ * document, and it is also three minutes of another pod's CPU. A per-second
+ * price is the monetization track's decision; what this event does is make
+ * the number exist before anybody has to price it.
+ */
+export const UsageEventVideoRender: UsageEventType = "video_render";
 /**
  * UsageEvent is a single billable / observable action taken on behalf of a
  * company. Persisted for usage display today; will back per-call billing in

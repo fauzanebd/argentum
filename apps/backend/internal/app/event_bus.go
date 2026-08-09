@@ -38,13 +38,24 @@ type ToolCallEvent struct {
 // these directly. WhatsApp delivery is handled by the worker — no fan-out
 // indirection required anymore.
 type ChatEvent struct {
-	JobID        string                 `json:"job_id"`
-	ThreadID     string                 `json:"thread_id"`
-	Type         string                 `json:"type"` // started | delta | thinking | tool_call | tool_result | final | error
-	Content      string                 `json:"content,omitempty"`
-	ThinkingStep string                 `json:"thinking_step,omitempty"`
-	ToolCall     *ToolCallEvent         `json:"tool_call,omitempty"`
-	Error        string                 `json:"error,omitempty"`
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
-	Timestamp    time.Time              `json:"timestamp"`
+	JobID        string         `json:"job_id"`
+	ThreadID     string         `json:"thread_id"`
+	Type         string         `json:"type"` // started | delta | thinking | tool_call | tool_result | final | error | render_progress
+	Content      string         `json:"content,omitempty"`
+	ThinkingStep string         `json:"thinking_step,omitempty"`
+	ToolCall     *ToolCallEvent `json:"tool_call,omitempty"`
+	Error        string         `json:"error,omitempty"`
+	// Progress is 0..1 on a `render_progress` event and unset on every other
+	// type (T-V3). A four-minute video needs a number on the screen, and the
+	// dashboard and `/v1` both already read this struct — a second event
+	// pipeline for one float is how two vocabularies start.
+	Progress  float64                `json:"progress,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Timestamp time.Time              `json:"timestamp"`
 }
+
+// EventRenderProgress is emitted while a video renders. It is capped at one a
+// second by the render client's own poll interval, and it never carries 1.0:
+// completion is `final` for a turn and the terminal `report` event for a job,
+// both of which arrive when the file exists rather than when the frames stop.
+const EventRenderProgress = "render_progress"

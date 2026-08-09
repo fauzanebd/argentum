@@ -222,6 +222,14 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-argentum-documents}
       MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
 
+      # The render service (T-V3). Empty is a supported deployment: `mp4` is
+      # refused with `format_unavailable` and every other format is untouched.
+      # Set here because the compose file already runs one — the API needs it
+      # only to know the format exists, since the render itself happens on the
+      # worker.
+      RENDER_BASE_URL: ${RENDER_BASE_URL:-http://render:8090}
+      RENDER_SHARED_SECRET: ${RENDER_SHARED_SECRET:-}
+
       # Frontend origin allowlist
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
@@ -329,6 +337,13 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-argentum-documents}
       MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+
+      # This is the process that actually renders a video (T-V3): the job runs
+      # here, on the `video` queue, and calls the service below. Without it the
+      # agent is not offered `mp4` at all — the format enum narrows to what the
+      # process can finish rather than advertising a file it cannot produce.
+      RENDER_BASE_URL: ${RENDER_BASE_URL:-http://render:8090}
+      RENDER_SHARED_SECRET: ${RENDER_SHARED_SECRET:-}
 
       # The turn span starts here, so a waterfall with no worker export is the
       # half of the trace nobody wants.

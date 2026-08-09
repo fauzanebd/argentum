@@ -296,7 +296,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		).WithLimits(spec.Limits{
 			MaxRows: cfg.APIV1MaxSpecRows,
 			MaxCols: cfg.APIV1MaxSpecCols,
-		})
+		}).WithVideo(cfg.VideoClient(), cfg.VideoLimits())
 	}
 
 	// The agent roster (T-S1). The tool checkboxes an admin scopes an agent

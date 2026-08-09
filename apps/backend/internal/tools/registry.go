@@ -68,6 +68,16 @@ type RegistryDeps struct {
 	// agent allowlist and the template vocabulary) and reports "not configured"
 	// if ever executed without a proposer. The worker passes the real service.
 	Actions ActionProposer
+	// Renders lets generate_document offer `mp4` (T-V3). Nil — the API's
+	// name-only build, the eval harness, cmd/mcp — leaves the format out of the
+	// enum and out of the description entirely, because a video is finished by
+	// a worker and a process with no queue has no way to finish one.
+	//
+	// Unlike Metrics and Actions above, this is not a "registers and reports
+	// not configured" dependency: those affect a tool's *behaviour* and this
+	// affects its *vocabulary*, and a format the model is offered but nothing
+	// can produce is a promise to a customer rather than an error to an admin.
+	Renders VideoEnqueuer
 }
 
 // Registry returns the tools an agent may call on this deployment, unwrapped.
@@ -102,7 +112,7 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		NewProposeActionTool(d.Actions),
 	}
 	if d.Docs != nil {
-		ts = append(ts, NewGenerateDocumentTool(d.Docs))
+		ts = append(ts, NewGenerateDocumentTool(d.Docs).WithVideoQueue(d.Renders))
 	}
 	return ts
 }

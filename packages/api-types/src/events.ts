@@ -94,11 +94,25 @@ export interface ToolCallEvent {
 export interface ChatEvent {
   job_id: string;
   thread_id: string;
-  type: string; // started | delta | thinking | tool_call | tool_result | final | error
+  type: string; // started | delta | thinking | tool_call | tool_result | final | error | render_progress
   content?: string;
   thinking_step?: string;
   tool_call?: ToolCallEvent;
   error?: string;
+  /**
+   * Progress is 0..1 on a `render_progress` event and unset on every other
+   * type (T-V3). A four-minute video needs a number on the screen, and the
+   * dashboard and `/v1` both already read this struct — a second event
+   * pipeline for one float is how two vocabularies start.
+   */
+  progress?: number /* float64 */;
   metadata?: { [key: string]: unknown};
   timestamp: string;
 }
+/**
+ * EventRenderProgress is emitted while a video renders. It is capped at one a
+ * second by the render client's own poll interval, and it never carries 1.0:
+ * completion is `final` for a turn and the terminal `report` event for a job,
+ * both of which arrive when the file exists rather than when the frames stop.
+ */
+export const EventRenderProgress = "render_progress";

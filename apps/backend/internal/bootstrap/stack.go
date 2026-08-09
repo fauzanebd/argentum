@@ -291,10 +291,16 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// own instance in cmd/api — separate process, same constructor — and
 		// installs the untrusted-spec caps on top; the agent's path leaves them
 		// off, which is the only difference between the two.
-		s.Docs = docgen.New(storageSvc, documentRepo, s.Companies, brandingSvc, s.UsageSvc, presignTTL)
+		s.Docs = docgen.New(storageSvc, documentRepo, s.Companies, brandingSvc, s.UsageSvc, presignTTL).
+			WithVideo(cfg.VideoClient(), cfg.VideoLimits())
 		logrus.WithFields(logrus.Fields{
 			"bucket":   cfg.MinIOBucket,
 			"endpoint": cfg.MinIOEndpoint,
+			// Logged beside the bucket because it decides what the model is
+			// offered: `generate_document`'s format enum narrows to what this
+			// process can actually produce, the same way the tool itself is
+			// registered only where storage exists.
+			"video": s.Docs.VideoAvailable(),
 		}).Info("generate_document tool enabled")
 	}
 
@@ -403,6 +409,11 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		MaxQueryRows:        cfg.MaxQueryRows,
 		MaxQueryResultBytes: cfg.MaxQueryResultBytes,
 		Actions:             s.Actions,
+		// The same enqueuer the scheduler and the watchers use. Only this
+		// process passes one, which is what keeps `mp4` out of the eval
+		// harness's and cmd/mcp's tool descriptions: they have nothing that
+		// would ever finish the render.
+		Renders: s.scheduledEnq,
 	})
 
 	// Every tool runs behind the per-turn budget guard (T-16). Wrapping here

@@ -152,7 +152,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 		d.docGen, d.reportRepo, d.documentRepo, chatEnqueuerOrNil(d.chatEnq), d.enqueuer, d.rdb, d.idemStore,
 		time.Duration(cfg.APIV1SyncRenderTimeoutSecs)*time.Second,
 		cfg.APIV1CallbackAllowPrivate,
-	).Register(v1)
+	).WithBudget(budgetReaderOrNil(d.usageSvc)).Register(v1)
 	handlers.NewV1DocumentsHandler(d.documentRepo, d.docGen, contentStoreOrNil(d.storageSvc)).Register(v1)
 	// T-A3's chat surface. Same reasoning as above: registered unconditionally
 	// so a deployment missing a dependency answers a typed 503 from inside the

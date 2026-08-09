@@ -12,15 +12,26 @@ const (
 	DocumentFormatXLSX DocumentFormat = "xlsx"
 	DocumentFormatCSV  DocumentFormat = "csv"
 	DocumentFormatPPTX DocumentFormat = "pptx"
+	// DocumentFormatMP4 is the same report spec as a silent 1080p video
+	// (T-V3). It is a document like the other four — one row, one storage key,
+	// one presigned URL — and unlike them it is produced by another process and
+	// takes minutes rather than milliseconds, which is why every door that
+	// serves it is asynchronous.
+	DocumentFormatMP4 DocumentFormat = "mp4"
 )
 
 func (f DocumentFormat) Valid() bool {
 	switch f {
-	case DocumentFormatPDF, DocumentFormatXLSX, DocumentFormatCSV, DocumentFormatPPTX:
+	case DocumentFormatPDF, DocumentFormatXLSX, DocumentFormatCSV, DocumentFormatPPTX, DocumentFormatMP4:
 		return true
 	}
 	return false
 }
+
+// Async reports whether producing this format is too slow to hold a request
+// open for. One predicate rather than `format == mp4` at four call sites: the
+// next slow format must not have to find them all.
+func (f DocumentFormat) Async() bool { return f == DocumentFormatMP4 }
 
 func (f DocumentFormat) Extension() string {
 	switch f {
@@ -32,6 +43,8 @@ func (f DocumentFormat) Extension() string {
 		return "csv"
 	case DocumentFormatPPTX:
 		return "pptx"
+	case DocumentFormatMP4:
+		return "mp4"
 	}
 	return ""
 }
@@ -46,6 +59,8 @@ func (f DocumentFormat) ContentType() string {
 		return "text/csv; charset=utf-8"
 	case DocumentFormatPPTX:
 		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	case DocumentFormatMP4:
+		return "video/mp4"
 	}
 	return "application/octet-stream"
 }

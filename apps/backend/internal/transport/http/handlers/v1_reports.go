@@ -25,6 +25,17 @@ import (
 	"github.com/fauzanebd/argentum/internal/webhookout"
 )
 
+// V1RenderEnqueuer is the slice of the queue this handler needs.
+//
+// Narrowed from *queue.Enqueuer when `mp4` arrived (T-V3), because that format
+// made this path worth testing: every other render answers inline and only
+// reaches the queue when a spec is pathological, while a video takes it on
+// every call. A concrete asynq client cannot be stood up in a handler test, so
+// the flagship door of this ticket would have had no test at all.
+type V1RenderEnqueuer interface {
+	EnqueueReportRender(ctx context.Context, p queue.ReportRenderPayload) (string, error)
+}
+
 // V1ReportsHandler is the two doors T-A2's locked decision 2 describes.
 //
 //	POST /v1/reports/render — a spec in, a file out. No LLM, no thread,
@@ -36,18 +47,37 @@ import (
 // changes the latency, the cost, the failure modes and the shape of the
 // response is two endpoints wearing a coat — and the caller has to write two
 // code paths either way.
+//
+// Since T-V3 the first door has a third shape: `mp4` never waits, whatever the
+// synchronous window says, because the render happens in another process and
+// takes minutes.
 type V1ReportsHandler struct {
 	gen      *docgen.Service
 	reports  domain.APIReportRepository
 	docs     domain.DocumentRepository
 	chat     V1ChatEnqueuer
-	enqueuer *queue.Enqueuer
+	enqueuer V1RenderEnqueuer
 	rdb      *redis.Client
 	idem     idempotency.Store
 	// syncRenderTimeout is how long a render may hold the connection before it
 	// becomes a job.
 	syncRenderTimeout time.Duration
 	allowPrivateHooks bool
+	// budget gates the one render that costs real money (T-V3). Nil means no
+	// enforcement, exactly as it does everywhere else.
+	budget V1BudgetReader
+}
+
+// WithBudget gates an asynchronous render on the tenant's balance (T-V3).
+//
+// Only the asynchronous one. A PDF is a millisecond of this process and has
+// never been worth a balance lookup; a video is minutes of a render pod that
+// does one job at a time, which is the unbounded spend `T-03` exists to stop —
+// and the place to stop it is before the job is queued, because a refusal
+// after the frames are drawn has already cost everything it was going to.
+func (h *V1ReportsHandler) WithBudget(b V1BudgetReader) *V1ReportsHandler {
+	h.budget = b
+	return h
 }
 
 func NewV1ReportsHandler(
@@ -55,7 +85,7 @@ func NewV1ReportsHandler(
 	reports domain.APIReportRepository,
 	docs domain.DocumentRepository,
 	chat V1ChatEnqueuer,
-	enqueuer *queue.Enqueuer,
+	enqueuer V1RenderEnqueuer,
 	rdb *redis.Client,
 	idem idempotency.Store,
 	syncRenderTimeout time.Duration,
@@ -147,6 +177,43 @@ func (h *V1ReportsHandler) render(c *gin.Context) {
 	keyID := c.GetString(middleware.CtxAPIKeyID)
 	ctx := tenantctx.WithCompanyID(c.Request.Context(), company)
 
+	// A video never holds the connection, whatever the synchronous window is
+	// set to (T-V3). It takes minutes in another process, so the door that
+	// waits for one is a door that times out — and `Accept: video/mp4` is
+	// refused rather than honoured four minutes later, because a caller who
+	// asked for bytes and got a 202 with a JSON body has to write the
+	// collection path anyway. Better to be told so in milliseconds.
+	if domain.DocumentFormat(spec.FormatOf(&doc)).Async() {
+		if h.gen != nil && !h.gen.VideoAvailable() {
+			apierr.AbortParam(c, apierr.TypeInvalidRequest, "format_unavailable",
+				"Video rendering is not configured on this deployment. Every other format is available.", "format")
+			return
+		}
+		if wantsBytes(c, domain.DocumentFormatMP4) {
+			apierr.Abort(c, apierr.TypeInvalidRequest, "async_format",
+				"A video is rendered asynchronously and cannot be returned inline. Send `Accept: application/json`; "+
+					"this answers 202 with a report id, collectable from GET /v1/reports/:id, "+
+					"GET /v1/reports/:id/events, or a `callback_url`.")
+			return
+		}
+		// Validated before the job exists, so a spec that can never render is a
+		// 400 the caller reads now rather than a failed job they poll for.
+		doc.Normalize()
+		if err := doc.Validate(); err != nil {
+			h.abortRender(c, err)
+			return
+		}
+		if err := spec.CheckLimits(&doc, h.gen.Limits()); err != nil {
+			h.abortRender(c, err)
+			return
+		}
+		if !h.affordable(c, company) {
+			return
+		}
+		h.renderAsync(c, company, keyID, doc)
+		return
+	}
+
 	// The renderer is not context-aware — maroto lays out a document without
 	// ever checking for cancellation — so the deadline cannot be enforced by
 	// passing a context into it. It runs on its own goroutine and this select
@@ -184,6 +251,32 @@ func (h *V1ReportsHandler) render(c *gin.Context) {
 	case <-time.After(h.syncRenderTimeout):
 		h.renderAsync(c, company, keyID, doc)
 	}
+}
+
+// affordable reports whether the tenant may start a billed render, writing the
+// 402 itself when they may not.
+//
+// A failed lookup lets the render through. That is the same fail-open every
+// other budget check in this codebase makes, and for the same reason: a Redis
+// or database blip must not become a tenant-visible refusal to do work they
+// have paid for. The sentence is `T-03`'s, unchanged, because a caller who
+// meets it on `/v1/chat` and again here should not have to work out that they
+// are the same condition.
+func (h *V1ReportsHandler) affordable(c *gin.Context, company string) bool {
+	if h.budget == nil {
+		return true
+	}
+	st, err := h.budget.CheckBudget(c.Request.Context(), company)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", company).
+			Warn("budget check failed before a render; allowing it")
+		return true
+	}
+	if st.Blocked() {
+		apierr.Abort(c, apierr.TypeBudgetExhausted, "credits_exhausted", app.CreditsExhaustedMessage)
+		return false
+	}
+	return true
 }
 
 // abortRender maps a generation failure onto the envelope.
@@ -432,7 +525,26 @@ func (h *V1ReportsHandler) createReport(c *gin.Context) {
 	}
 	if !format.Valid() {
 		apierr.AbortParam(c, apierr.TypeInvalidRequest, "invalid_format",
-			"`format` must be one of pdf, pptx, xlsx, csv.", "format")
+			"`format` must be one of pdf, pptx, xlsx, csv, mp4.", "format")
+		return
+	}
+	// **The agentic door does not do video, and says so** (T-V3).
+	//
+	// It could accept one: the directive would ask the agent for an mp4 and the
+	// tool would queue it. What it could not do is *finish* — this job completes
+	// when the turn does, and it attaches whatever document the turn produced.
+	// A video is produced minutes after the turn ends, so the report would come
+	// back `completed` with no document and no error: the exact silent shape
+	// `T-A2b` was raised for, arriving by a new road. Making that work means the
+	// report row waiting on a render rather than on a turn, which is a change to
+	// what `status: completed` means on a published contract — a ticket, not a
+	// branch. Until then the deterministic door renders videos and this one says
+	// where to go.
+	if format.Async() {
+		apierr.AbortParam(c, apierr.TypeInvalidRequest, "format_not_supported_here",
+			"A video cannot be produced by the agentic door, because the render outlives the turn "+
+				"and this report would complete before the file existed. Send the spec to "+
+				"POST /v1/reports/render with `format: \"mp4\"`, or ask for a pdf or pptx here.", "format")
 		return
 	}
 	if req.UserRef == "" && req.ThreadID == "" {
@@ -591,18 +703,18 @@ func (h *V1ReportsHandler) streamReport(c *gin.Context) {
 		sseEvent(c, "", "report", h.reportBody(c, rep))
 		return
 	}
-	if rep.ThreadID == "" {
-		// A queued render job publishes nothing on a thread channel — it has no
-		// thread. Poll is the collection path for those, and saying so beats
-		// holding a connection open on a stream that cannot produce an event.
-		sseEvent(c, "", "report", h.reportBody(c, rep))
-		return
-	}
-
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	pubsub := h.rdb.Subscribe(ctx, eventbus.ChannelFor(rep.ThreadID))
+	// A render job has no thread, so it publishes on a channel of its own
+	// (T-V3). Until a format took minutes this branch answered once and closed
+	// — correct for a job that finishes in milliseconds and a four-minute
+	// silent spinner for a video.
+	channel := eventbus.ChannelFor(rep.ThreadID)
+	if rep.ThreadID == "" {
+		channel = eventbus.ReportChannelFor(rep.ID)
+	}
+	pubsub := h.rdb.Subscribe(ctx, channel)
 	defer func() { _ = pubsub.Close() }()
 	if _, err := pubsub.Receive(ctx); err != nil {
 		logrus.WithError(err).Warn("report SSE subscribe failed")
@@ -645,7 +757,7 @@ func (h *V1ReportsHandler) streamReport(c *gin.Context) {
 			// progress and a file, and streaming the prose of an answer they
 			// asked for as a PDF is bandwidth spent on something nobody reads.
 			switch evt.Type {
-			case "started", "tool_call", "tool_result", "thinking":
+			case "started", "tool_call", "tool_result", "thinking", app.EventRenderProgress:
 				if !sseEvent(c, "", "progress", progressBody(&evt)) {
 					return
 				}
@@ -673,6 +785,13 @@ func progressBody(evt *app.ChatEvent) gin.H {
 	}
 	if evt.ThinkingStep != "" {
 		body["step"] = evt.ThinkingStep
+	}
+	if evt.Type == app.EventRenderProgress {
+		// Never 1.0 from here. The stream's own completion is the terminal
+		// `report` event, which arrives when the file is downloadable rather
+		// than when the last frame was drawn — a progress bar that fills while
+		// the upload is still running is a bar that lies for ten seconds.
+		body["progress"] = evt.Progress
 	}
 	return body
 }

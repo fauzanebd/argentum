@@ -77,11 +77,19 @@ func (f *fakeDocs) NewestForThreadSince(context.Context, string, string, time.Ti
 type countingMeter struct {
 	calls   int
 	threads []string
+	// renderSeconds is what the video path meters (T-V3). It stays zero for
+	// every in-process format, which is the property the metering test asserts:
+	// a PDF must not record a render-seconds row.
+	renderSeconds float64
 }
 
 func (m *countingMeter) RecordDocument(_ context.Context, _, threadID, _ string) {
 	m.calls++
 	m.threads = append(m.threads, threadID)
+}
+
+func (m *countingMeter) RecordRenderSeconds(_ context.Context, _, _, _ string, seconds float64) {
+	m.renderSeconds += seconds
 }
 
 // csvSpec is the cheapest format that exercises the whole path: no fonts, no

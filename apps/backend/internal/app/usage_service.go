@@ -22,6 +22,12 @@ type Pricing struct {
 	MetabaseDashboardCost float64 // USD per dashboard
 	DocumentCost          float64 // USD per generated document
 	MCPCallCost           float64 // USD per call to a tenant's own MCP server
+	// VideoRenderCostPerSec is USD per second of wall clock in the render
+	// service (T-V3). Per second rather than per video, because the two
+	// numbers a video costs are the same for a 30-second summary and a
+	// nine-minute one only if you do not look: a render pod is one job at a
+	// time, so the resource being spent is time on it.
+	VideoRenderCostPerSec float64
 }
 
 // DefaultPricing approximates GPT-4o + a small per-action operations charge.
@@ -37,6 +43,11 @@ var DefaultPricing = Pricing{
 	// summary that sorts by spend, which is where an operator looks first when a
 	// server starts being called in a loop.
 	MCPCallCost: 0.0005,
+	// A minute of a render pod, priced at roughly what a minute of the machine
+	// it runs on costs. The kpi_summary fixture renders in about three minutes,
+	// so an ordinary video lands near $0.03 — two orders of magnitude above a
+	// PDF, which is the fact this number exists to make visible.
+	VideoRenderCostPerSec: 0.00017,
 }
 
 // UsageService persists usage events and produces summaries. Credit
@@ -133,6 +144,26 @@ func (s *UsageService) RecordDocument(ctx context.Context, companyID, threadID, 
 		EventType:    domain.UsageEventDocumentGenerated,
 		CostMicroUSD: int64(s.pricing.DocumentCost * 1_000_000),
 		Metadata:     map[string]interface{}{"format": format},
+	})
+}
+
+// RecordRenderSeconds records wall clock spent rendering a video (T-V3).
+//
+// It is a second event beside the document's, not a replacement for it: the
+// document row is what a tenant downloaded and this is what producing it took.
+// A render that reported no time — an older service, a clock that went
+// backwards — records nothing rather than a zero-cost row, because a free
+// video in the usage table is a wrong answer where an absent one is a gap.
+func (s *UsageService) RecordRenderSeconds(ctx context.Context, companyID, threadID, format string, seconds float64) {
+	if seconds <= 0 {
+		return
+	}
+	s.append(ctx, &domain.UsageEvent{
+		CompanyID:    companyID,
+		ThreadID:     threadID,
+		EventType:    domain.UsageEventVideoRender,
+		CostMicroUSD: int64(seconds * s.pricing.VideoRenderCostPerSec * 1_000_000),
+		Metadata:     map[string]interface{}{"format": format, "render_seconds": seconds},
 	})
 }
 

@@ -20,6 +20,12 @@ const (
 	// somebody else's machine: the cost we carry is the round trip and the
 	// context the result occupies, not a query against a source we hold.
 	UsageEventMCPCall UsageEventType = "mcp_call"
+	// UsageEventVideoRender is wall clock spent in the render service (T-V3).
+	// Beside `document_generated` rather than instead of it: one video is one
+	// document, and it is also three minutes of another pod's CPU. A per-second
+	// price is the monetization track's decision; what this event does is make
+	// the number exist before anybody has to price it.
+	UsageEventVideoRender UsageEventType = "video_render"
 )
 
 // UsageEvent is a single billable / observable action taken on behalf of a

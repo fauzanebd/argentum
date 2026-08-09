@@ -54,9 +54,15 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "argentum.secretName" . }}
-          {{- with .Values.extraEnv }}
+          {{- $render := include "argentum.renderEnv" . }}
+          {{- if or .Values.extraEnv (trim $render) }}
           env:
+            {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with $render }}
+            {{- . | nindent 12 }}
+            {{- end }}
           {{- end }}
           {{- with .Values.api.livenessProbe }}
           livenessProbe:

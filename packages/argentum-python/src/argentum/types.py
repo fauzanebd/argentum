@@ -583,7 +583,7 @@ ChatEventMessage = Message
 
 ChatEvent = Union[ChatEventStarted, ChatEventDelta, ChatEventThinking, ChatEventTool, ChatEventMessage, ChatEventError, ChatEventFinal]
 
-DocumentFormat = Literal["pdf", "pptx", "xlsx", "csv"]
+DocumentFormat = Literal["pdf", "pptx", "xlsx", "csv", "mp4"]
 
 ReportEventReport = Report
 

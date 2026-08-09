@@ -28,6 +28,21 @@ func ChannelFor(threadID string) string {
 	return ChannelPrefix + threadID
 }
 
+// ReportChannelPrefix is the namespace for a report job that has no thread —
+// `POST /v1/reports/render`, which takes a spec and never talks to an agent
+// (T-V3). Channels are `argentum:report:{report_id}`.
+//
+// It exists because a video renders for minutes and that door's SSE endpoint
+// had nothing to subscribe to: a render job publishes on no thread channel,
+// so `GET /v1/reports/:id/events` answered once and closed. That was right
+// when every render was sub-second and is a four-minute silent spinner now.
+const ReportChannelPrefix = "argentum:report:"
+
+// ReportChannelFor returns the Redis channel name for a threadless report job.
+func ReportChannelFor(reportID string) string {
+	return ReportChannelPrefix + reportID
+}
+
 // OutboundChannelFor returns the Redis channel name for outbound delivery
 // to a specific (channel, company) pair.
 func OutboundChannelFor(channel, companyID string) string {
@@ -70,6 +85,28 @@ func (b *RedisBus) Publish(threadID string, evt app.ChatEvent) error {
 	}
 	if err := b.rdb.Publish(context.Background(), ChannelFor(threadID), body).Err(); err != nil {
 		return fmt.Errorf("eventbus: publish: %w", err)
+	}
+	return nil
+}
+
+// PublishReport publishes progress for a report job that has no thread.
+//
+// A separate method rather than Publish with a different key, because the two
+// have different failure meanings: nobody listening to a thread is ordinary
+// (a WhatsApp turn has no browser attached), and nobody listening to a report
+// channel is the normal case too — a caller who polls instead of streaming.
+// Both are non-errors, and neither should be able to be published to the
+// other's namespace by passing the wrong id.
+func (b *RedisBus) PublishReport(reportID string, evt app.ChatEvent) error {
+	if reportID == "" {
+		return fmt.Errorf("eventbus: empty reportID")
+	}
+	body, err := json.Marshal(evt)
+	if err != nil {
+		return fmt.Errorf("eventbus: marshal event: %w", err)
+	}
+	if err := b.rdb.Publish(context.Background(), ReportChannelFor(reportID), body).Err(); err != nil {
+		return fmt.Errorf("eventbus: publish report: %w", err)
 	}
 	return nil
 }

@@ -9,8 +9,10 @@ import (
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 
+	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
@@ -30,6 +32,18 @@ import (
 // live.
 type GenerateDocumentTool struct {
 	docs *docgen.Service
+	// renders hands a video off to the queue instead of rendering it inside the
+	// tool call (T-V3). Nil means videos are unavailable here even if a render
+	// service is configured, which is why the format enum is narrowed on both
+	// conditions rather than on one.
+	renders VideoEnqueuer
+}
+
+// VideoEnqueuer is the slice of the queue this tool needs. Declared at the
+// consumer, so `internal/tools` does not depend on the queue package's whole
+// surface to hand off one job.
+type VideoEnqueuer interface {
+	EnqueueReportRender(ctx context.Context, p queue.ReportRenderPayload) (string, error)
 }
 
 // NewGenerateDocumentTool wires the tool to the shared generator.
@@ -37,17 +51,51 @@ func NewGenerateDocumentTool(docs *docgen.Service) *GenerateDocumentTool {
 	return &GenerateDocumentTool{docs: docs}
 }
 
+// WithVideoQueue lets this tool produce mp4 (T-V3).
+//
+// It is separate from the constructor because only the worker has a queue: the
+// eval harness and `cmd/mcp` build the same tool and must not offer a format
+// they have no way to finish. A tool whose description advertises a format it
+// cannot produce is the `list_watchers` failure of 2026-08-04, one door
+// further out — there, an MCP client got a tool that did not exist; here, a
+// customer would be promised a file.
+func (t *GenerateDocumentTool) WithVideoQueue(q VideoEnqueuer) *GenerateDocumentTool {
+	t.renders = q
+	return t
+}
+
+// videoAvailable reports whether this process can finish an mp4: a render
+// service to draw it and a queue to hand it to.
+func (t *GenerateDocumentTool) videoAvailable() bool {
+	return t.renders != nil && t.docs.VideoAvailable()
+}
+
+// formats is the enum the model sees, narrowed to what this process can
+// actually produce.
+func (t *GenerateDocumentTool) formats() []interface{} {
+	out := []interface{}{"pdf", "pptx", "xlsx", "csv"}
+	if t.videoAvailable() {
+		out = append(out, "mp4")
+	}
+	return out
+}
+
 func (t *GenerateDocumentTool) Name() string { return "generate_document" }
 
 func (t *GenerateDocumentTool) Description() string {
+	video := ""
+	if t.videoAvailable() {
+		video = `
+- "mp4"  a silent narrated-on-screen video of the same report, 1080p. Choose it only when the user asks for a video, or for something they will watch without you in the room — a weekly summary sent to a group chat, an update for people who will not open a PDF. It takes several minutes and costs far more than a PDF, so it is never the default for "make me a report", and it is refused for a document that is a record rather than an argument: an invoice, an agreement or a data export must be a PDF. This tool returns as soon as the render starts; the video is posted into this conversation when it is done, so tell the user it is being made and do not claim it is ready.`
+	}
 	return strings.TrimSpace(`
-Generate a downloadable document (PDF, PPTX, XLSX, or CSV) from a structured spec and return a presigned download URL. Generic-purpose: use for invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports, slide decks — anything the user wants to download as a file.
+Generate a downloadable document (PDF, PPTX, XLSX, CSV` + videoInEnum(t.videoAvailable()) + `) from a structured spec and return a presigned download URL. Generic-purpose: use for invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports, slide decks — anything the user wants to download as a file.
 
 Pick the format that matches the request:
 - "pdf"  for invoices, agreements, reports, anything print-ready or meant to be forwarded (use content.sections; optionally a single content.table).
 - "pptx" for anything that will be presented — reviews, board updates, weekly readouts, "walk me through it", "for the meeting". Same content.sections as a PDF; the renderer projects them onto slides.
 - "xlsx" for spreadsheets (use content.table for a single sheet, content.sheets for multi-sheet).
-- "csv"  for raw tabular data (must use content.table).
+- "csv"  for raw tabular data (must use content.table).` + video + `
 
 SET "spec_version": 2 FOR ANY PDF OR PPTX. It turns on the branded layout: cover page, running header, "Page N of M" footer, numbered headings, KPI cards, and typed table cells. Without it you get a plain document.
 
@@ -102,13 +150,22 @@ Keep tables under ~8 columns; wider than that does not read on A4.
 Returns JSON with download_url (presigned, expires after ~1 hour). Embed the URL as a markdown link, e.g. [Download invoice.pdf](url). Never show the raw URL alone.`)
 }
 
+// videoInEnum keeps the description's opening line honest about what this
+// deployment can produce, in the same breath as the enum that enforces it.
+func videoInEnum(ok bool) string {
+	if ok {
+		return ", or MP4"
+	}
+	return ""
+}
+
 func (t *GenerateDocumentTool) Parameters() map[string]interfaces.ParameterSpec {
 	return map[string]interfaces.ParameterSpec{
 		"format": {
 			Type:        "string",
-			Description: "Output format: pdf, pptx, xlsx, or csv. Use pptx for anything that will be presented.",
+			Description: "Output format. Use pptx for anything that will be presented; mp4 only when the recipient will watch it without you there.",
 			Required:    true,
-			Enum:        []interface{}{"pdf", "pptx", "xlsx", "csv"},
+			Enum:        t.formats(),
 		},
 		"filename": {
 			Type:        "string",
@@ -190,6 +247,16 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 		source, keyID = domain.DocumentSourceAPI, ref
 	}
 
+	// A video leaves the turn (T-V3). Rendering one takes minutes in another
+	// process, and a tool call that waits for it spends T-16's entire iteration
+	// budget on waiting — then has nothing left to write the reply with, which
+	// is the failure `5ca4ca6` and `45c1142` were both about. So the tool
+	// hands the job to the queue and answers immediately; the worker posts the
+	// finished file into this thread.
+	if domain.DocumentFormat(input.Format).Async() {
+		return t.enqueueVideo(ctx, input, companyID, threadID)
+	}
+
 	res, err := t.docs.Generate(ctx, docgen.Input{
 		Spec:      &input,
 		CompanyID: companyID,
@@ -219,6 +286,43 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 		"expires_at":   res.ExpiresAt.UTC().Format(time.RFC3339),
 		"size_bytes":   res.Document.SizeBytes,
 		"note":         "Embed download_url as a markdown link with descriptive text, e.g. [Download " + res.Document.Filename + "](download_url). The link expires after about an hour.",
+	})
+	return string(out), nil
+}
+
+// enqueueVideo validates the spec, hands the render to the queue and tells the
+// model what to say.
+//
+// Everything that can refuse this spec runs **here**, in the turn, where the
+// model can still repair it: a spec refused by the worker four minutes later
+// is a refusal nobody is left to act on, and the user has already been told a
+// video is coming. That is the same reason `CheckNarrative` is an error rather
+// than a warning.
+func (t *GenerateDocumentTool) enqueueVideo(ctx context.Context, input spec.Document, companyID, threadID string) (string, error) {
+	if !t.videoAvailable() {
+		return "", fmt.Errorf("video rendering is not available on this deployment; produce this report as a pdf or a pptx instead")
+	}
+	input.Normalize()
+	if err := input.Validate(); err != nil {
+		return "", err
+	}
+	if err := spec.CheckNarrative(&input); err != nil {
+		return "", err
+	}
+	if _, err := t.renders.EnqueueReportRender(ctx, queue.ReportRenderPayload{
+		CompanyID: companyID,
+		ThreadID:  threadID,
+		AgentID:   agentscope.AgentID(ctx),
+		Spec:      input,
+	}); err != nil {
+		return "", fmt.Errorf("the video could not be queued: %w", err)
+	}
+
+	out, _ := json.Marshal(map[string]interface{}{
+		"status": "rendering",
+		"format": "mp4",
+		"note": "The video is being rendered and will be posted into this conversation when it is done, in a few minutes. " +
+			"Tell the user that in your reply — do not say it is ready, do not offer a link, and do not call this tool again for the same video.",
 	})
 	return string(out), nil
 }

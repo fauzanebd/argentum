@@ -1267,7 +1267,17 @@ components:
 
     DocumentFormat:
       type: string
-      enum: [pdf, pptx, xlsx, csv]
+      description: |
+        `mp4` is the same report spec as a silent 1080p video. It is rendered by
+        a separate service and takes minutes rather than milliseconds, so every
+        door that produces one is asynchronous: `POST /v1/reports/render` with
+        `format: mp4` answers `202` whatever `Accept` says, and the file is
+        collected the same three ways an agentic report is. It requires a
+        report that makes an argument — a `kpi_row` or a `chart` — because a
+        record such as an invoice cannot be scanned in a video. A deployment
+        with no render service refuses it with `format_unavailable` and serves
+        every other format as before.
+      enum: [pdf, pptx, xlsx, csv, mp4]
     Document:
       type: object
       description: One generated file.
@@ -1338,7 +1348,11 @@ components:
           examples: ['Monthly revenue for 2024 with a bar chart by month and a short commentary.']
         format:
           allOf: [{ $ref: '#/components/schemas/DocumentFormat' }]
-          description: Defaults to `pdf`.
+          description: |
+            Defaults to `pdf`. **`mp4` is refused here** with
+            `format_not_supported_here`: a video is rendered after the turn that
+            asked for it has ended, so this report would complete before the
+            file existed. Post the spec to `POST /v1/reports/render` instead.
         user_ref:
           type: string
           description: |

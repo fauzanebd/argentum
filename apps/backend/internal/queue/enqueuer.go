@@ -50,20 +50,47 @@ func (e *Enqueuer) EnqueueChatRun(ctx context.Context, p ChatRunPayload) (string
 	return info.ID, nil
 }
 
+// QueueVideo is where a video render runs (T-V3).
+//
+// Its own queue, not its own task type: a video is a longer instance of the
+// same job, and a second type would be a second handler to keep in step. What
+// it must not share is the *lane* — one video is minutes of a worker slot, and
+// three of them on the default queue would stall every PDF, webhook and
+// business-inference task behind them.
+const QueueVideo = "video"
+
 // EnqueueReportRender dispatches a render that overran its synchronous window
-// (T-A2). MaxRetry is 1, not 3: a render is deterministic, so a spec that
-// panicked a renderer will panic it again, and three attempts only delay the
-// failure the caller is polling for.
+// (T-A2), or a video, which never had a synchronous window to overrun (T-V3).
+//
+// MaxRetry is 1, not 3: a render is deterministic, so a spec that panicked a
+// renderer will panic it again, and three attempts only delay the failure the
+// caller is polling for. For a video the argument is stronger — a retried
+// render bills a second time for a file the tenant may already have — and
+// asynq's retry is limited to what the worker chooses to return an error for,
+// which is transport failures only.
 func (e *Enqueuer) EnqueueReportRender(ctx context.Context, p ReportRenderPayload) (string, error) {
 	body, err := json.Marshal(p)
 	if err != nil {
 		return "", fmt.Errorf("marshal report render payload: %w", err)
 	}
-	info, err := e.client.EnqueueContext(ctx, asynq.NewTask(TypeReportRender, body),
+	opts := []asynq.Option{
 		asynq.MaxRetry(1),
-		asynq.Timeout(5*time.Minute),
-		asynq.Retention(24*time.Hour),
-	)
+		asynq.Timeout(5 * time.Minute),
+		asynq.Retention(24 * time.Hour),
+	}
+	if p.Spec.Format == "mp4" {
+		// Twenty minutes: above the render service's own ten-minute wall clock
+		// and above the client's deadline, so the thing that gives up first is
+		// the one with a message to write. An asynq timeout kills the handler
+		// mid-call and leaves the report row `running` forever.
+		opts = []asynq.Option{
+			asynq.MaxRetry(1),
+			asynq.Timeout(20 * time.Minute),
+			asynq.Retention(24 * time.Hour),
+			asynq.Queue(QueueVideo),
+		}
+	}
+	info, err := e.client.EnqueueContext(ctx, asynq.NewTask(TypeReportRender, body), opts...)
 	if err != nil {
 		return "", fmt.Errorf("enqueue report:render: %w", err)
 	}

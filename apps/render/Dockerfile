@@ -18,14 +18,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libxrandr2 xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PNPM_HOME=/pnpm PATH=$PNPM_HOME:$PATH
-RUN corepack enable
+# Two instructions, not one: a variable set in an ENV is not expanded by the
+# same ENV, so `PATH=$PNPM_HOME:$PATH` on one line prepends an empty string and
+# the store's binaries are not on the path at all.
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+# Pinned, not whatever corepack resolves on the day of the build. There is no
+# root package.json to carry a `packageManager` field, so an unpinned corepack
+# takes the newest release — and the first build of this image met a pnpm whose
+# `minimumReleaseAge` policy refuses any package published in the last 24 hours,
+# which is a description of a lockfile somebody updated yesterday. An image
+# whose package manager changes under it is an image that fails on a day nobody
+# touched it.
+RUN corepack enable && corepack prepare pnpm@10.13.1 --activate
 
 WORKDIR /app
 
 # The workspace files first, so a dependency change is the only thing that
 # invalidates the install layer.
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+#
+# **There is no root package.json in this repository** and this line used to
+# copy one. pnpm reads pnpm-workspace.yaml for the member list and the lockfile
+# for what to install, so the root manifest is not needed to install a member —
+# it was named here because most workspaces have one, and the image was never
+# built to find out.
+COPY pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/api-types/package.json packages/api-types/
 COPY packages/motion/package.json packages/motion/
 COPY apps/render/package.json apps/render/
@@ -38,7 +55,13 @@ COPY apps/render apps/render
 # Warm the Chromium download at build time. Doing it on first request would put
 # a 94 MB download inside a tenant's first report, and doing it never is a pod
 # that needs egress it is not supposed to have.
-RUN pnpm --filter @argentum/render exec npx remotion browser ensure
+#
+# Through `@remotion/renderer`'s own `ensureBrowser`, not the `remotion` CLI:
+# this service depends on the bundler and the renderer, never on `@remotion/cli`,
+# so `npx remotion` — what this line used to say — answers "could not determine
+# executable to run". The script lives in package.json so the image and a
+# developer reach the browser the same way.
+RUN pnpm --filter @argentum/render run browser:ensure
 
 # Not root. The browser sandbox stays on; if a deployment cannot support it the
 # answer is a seccomp profile and the NetworkPolicy, not --no-sandbox added
@@ -49,4 +72,17 @@ USER render
 
 ENV RENDER_PORT=8090
 EXPOSE 8090
-CMD ["pnpm", "--filter", "@argentum/render", "start"]
+
+# **No package manager at runtime.** This used to be
+# `pnpm --filter @argentum/render start`, and the first container started from
+# this image never reached the server: corepack's cache belongs to root, the
+# process runs as `render`, so pnpm was re-downloaded from the npm registry on
+# boot — by a container this repository deploys behind a NetworkPolicy with
+# `egress: []`. It would have failed in the cluster and worked on a laptop,
+# which is the failure class T-02's zoneinfo finding named. pnpm 11 then wanted
+# to purge and reinstall `node_modules` that the build had already written.
+#
+# `tsx` resolves from apps/render's own node_modules, so the entrypoint is the
+# runtime and the file and nothing else.
+WORKDIR /app/apps/render
+CMD ["node", "--import", "tsx", "src/server.ts"]

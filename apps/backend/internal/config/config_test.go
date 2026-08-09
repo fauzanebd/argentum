@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/fauzanebd/argentum/internal/queue"
 )
 
 // --- Effective*() fallback chains -------------------------------------------
@@ -332,13 +334,44 @@ func TestWorkerQueueMap(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &Config{WorkerQueues: tc.in}
 			got := c.WorkerQueueMap()
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("WorkerQueueMap(%q) = %v, want %v", tc.in, got, tc.want)
+			// The video lane is added to every parse (T-V3), so the cases above
+			// state what the *setting* produces and this states what the map
+			// always also holds. Written this way rather than by adding
+			// `"video": 1` to sixteen expectations, because the next reader
+			// should be able to see which entries came from the environment.
+			want := map[string]int{queue.QueueVideo: 1}
+			for k, v := range tc.want {
+				want[k] = v
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("WorkerQueueMap(%q) = %v, want %v", tc.in, got, want)
 			}
 			if len(got) == 0 {
 				t.Error("empty queue map: the worker would consume nothing")
 			}
 		})
+	}
+}
+
+// TestVideoQueueIsAlwaysConsumed pins the reason the entry above is added
+// rather than configured.
+//
+// `WORKER_QUEUES` is set per deployment. A video lane that had to be listed
+// there would reach no deployment that already exists, and every video would
+// sit in Redis forever with nothing in any log to say why — the queue is
+// named on the task, so asynq would accept it and simply never hand it to a
+// server that is not consuming that queue.
+func TestVideoQueueIsAlwaysConsumed(t *testing.T) {
+	for _, setting := range []string{"", "default:10", "critical:6,default:3", "video:5"} {
+		c := &Config{WorkerQueues: setting}
+		if _, ok := c.WorkerQueueMap()[queue.QueueVideo]; !ok {
+			t.Fatalf("WORKER_QUEUES=%q leaves the video queue unconsumed", setting)
+		}
+	}
+	// An explicit weight is honoured rather than overwritten: an operator who
+	// has said what they want has said it.
+	if got := (&Config{WorkerQueues: "default:10,video:5"}).WorkerQueueMap()[queue.QueueVideo]; got != 5 {
+		t.Fatalf("explicit video weight = %d, want 5", got)
 	}
 }
 

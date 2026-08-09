@@ -643,8 +643,19 @@ export interface components {
             has_more: boolean;
             next_cursor?: string;
         };
-        /** @enum {string} */
-        DocumentFormat: "pdf" | "pptx" | "xlsx" | "csv";
+        /**
+         * @description `mp4` is the same report spec as a silent 1080p video. It is rendered by
+         *     a separate service and takes minutes rather than milliseconds, so every
+         *     door that produces one is asynchronous: `POST /v1/reports/render` with
+         *     `format: mp4` answers `202` whatever `Accept` says, and the file is
+         *     collected the same three ways an agentic report is. It requires a
+         *     report that makes an argument — a `kpi_row` or a `chart` — because a
+         *     record such as an invoice cannot be scanned in a video. A deployment
+         *     with no render service refuses it with `format_unavailable` and serves
+         *     every other format as before.
+         * @enum {string}
+         */
+        DocumentFormat: "pdf" | "pptx" | "xlsx" | "csv" | "mp4";
         /** @description One generated file. */
         Document: {
             /** Format: uuid */
@@ -705,7 +716,12 @@ export interface components {
              * @example Monthly revenue for 2024 with a bar chart by month and a short commentary.
              */
             prompt: string;
-            /** @description Defaults to `pdf`. */
+            /**
+             * @description Defaults to `pdf`. **`mp4` is refused here** with
+             *     `format_not_supported_here`: a video is rendered after the turn that
+             *     asked for it has ended, so this report would complete before the
+             *     file existed. Post the spec to `POST /v1/reports/render` instead.
+             */
             format?: components["schemas"]["DocumentFormat"];
             /**
              * @description Your own identifier for the person this is on behalf of. It is what
