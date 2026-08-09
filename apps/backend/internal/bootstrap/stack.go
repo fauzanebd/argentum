@@ -476,7 +476,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	logrus.WithField("tools", tools.Names(agentTools)).Info("agent tool registry")
 
 	s.AgentFactory = newAgentFactory(agentFactoryDeps{
-		systemPrompt:  SystemPromptFor,
+		systemPrompt:  SystemPromptForTurn,
 		tools:         agentTools,
 		memory:        mem,
 		guardrails:    guardrailsTpl,
@@ -507,7 +507,7 @@ type agentFactoryDeps struct {
 	// than a string because the tool list is a per-turn fact: an agent's
 	// allowlist decides it, and a prompt that describes tools the turn does not
 	// hold is a prompt that promises capabilities the model cannot use.
-	systemPrompt  func(available []string) string
+	systemPrompt  func(available []string, turn PromptTurn) string
 	tools         []interfaces.Tool
 	memory        interfaces.Memory
 	guardrails    *guardrails.Analytics
@@ -555,7 +555,14 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 		// still share one. An agent bound to MCP servers whose tool list changes
 		// between turns pays for a new prefix when it does, which is the same
 		// bill its tool definitions were already generating.
-		turnPrompt := d.systemPrompt(turnToolNames)
+		// The turn's own shape, not only its tools (T-A2b, measured 2026-08-08):
+		// a turn that must end in a file does not get the guidelines telling it
+		// to answer a chart request with a Metabase card, because the directive
+		// it carries forbids exactly that and the model was deciding between
+		// them rather than obeying either.
+		turnPrompt := d.systemPrompt(turnToolNames, PromptTurn{
+			FileDeliverable: spec.SystemAddendum != "",
+		})
 		// Facts before instructions, and both after the rules (T-B1, locked
 		// decision 1): the company block says what the business is, the persona
 		// says what this agent does about it. A persona that mentions "our

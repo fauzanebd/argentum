@@ -41,7 +41,7 @@ func toolNames(ts []interfaces.Tool) []string {
 
 func compositionFactory() app.AgentFactory {
 	return newAgentFactory(agentFactoryDeps{
-		systemPrompt:  SystemPromptFor,
+		systemPrompt:  SystemPromptForTurn,
 		tools:         registry(),
 		maxIterations: 3,
 	})

@@ -101,7 +101,7 @@ func testFactory(t *testing.T) app.AgentFactory {
 		t.Fatalf("load guardrails: %v", err)
 	}
 	return newAgentFactory(agentFactoryDeps{
-		systemPrompt:  SystemPromptFor,
+		systemPrompt:  SystemPromptForTurn,
 		tools:         registry(),
 		guardrails:    gr,
 		maxIterations: 3,

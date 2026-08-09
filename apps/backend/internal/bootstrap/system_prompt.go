@@ -76,6 +76,23 @@ type guideline struct {
 	needs  []string
 	absent []string
 	text   string
+	// notOnFileTurn drops this guideline from a turn whose deliverable is a
+	// file (T-A2b's directive, measured 2026-08-08).
+	//
+	// The chart rules and the report directive contradict each other in so many
+	// words. The shared prompt says *"when the user wants charts, call
+	// create_visualization"*; the directive appended after it says *"do not call
+	// create_visualization — a chart in this report is a chart section"*. On
+	// "Total sales by month, with a bar chart" both rules match, and the eval
+	// run of 2026-08-08 measured what happens: haiku built a Metabase card and
+	// never produced the file, deepseek produced the file and called
+	// create_visualization three times anyway. Both fail the case; only one of
+	// them fails visibly.
+	//
+	// A stronger directive would be a guess. Removing the rule it argues with
+	// is not: on a turn that must end in a file, the Metabase path is not an
+	// alternative the model should be weighing.
+	notOnFileTurn bool
 }
 
 var guidelines = []guideline{
@@ -115,7 +132,8 @@ var guidelines = []guideline{
    - sqlserver: DATEADD/DATEDIFF/DATEPART (no DATE_TRUNC), STRING_AGG, SYSDATETIME()/GETDATE(), TOP n (or OFFSET … FETCH NEXT … with ORDER BY); identifiers in [brackets]; tables live in dbo.`,
 	},
 	{
-		needs: []string{"create_visualization", "create_dashboard"},
+		needs:         []string{"create_visualization", "create_dashboard"},
+		notOnFileTurn: true,
 		text: `When the user wants charts/graphs/dashboards: call create_visualization for each card (with the appropriate source_id), then create_dashboard ONCE.
    - Create ONLY the cards the user asked for. Every extra chart is a Metabase round trip nobody requested, and it can exhaust the turn before the question is answered. If the user asked for a number, answer with the number — a chart is not a substitute for it.
    - After create_visualization returns, copy the exact "dashboard_cards" array into create_dashboard's "cards" parameter.
@@ -124,12 +142,14 @@ var guidelines = []guideline{
    - Time-series charts (line/bar/combo where an axis is date, datetime, month, week, quarter, year, or similar): put earliest periods first and latest last. In SQL, ORDER BY the true time dimension ascending (use the underlying date/timestamp for grouping labels if needed). Never rely on unspecified row order and do not use DESC for the time axis unless the user explicitly asks for newest-first.`,
 	},
 	{
-		needs: []string{"create_visualization", "create_dashboard"},
-		text:  `NEVER return individual card IDs to the user — always wrap with a dashboard.`,
+		needs:         []string{"create_visualization", "create_dashboard"},
+		notOnFileTurn: true,
+		text:          `NEVER return individual card IDs to the user — always wrap with a dashboard.`,
 	},
 	{
-		needs:  []string{"create_visualization"},
-		absent: []string{"create_dashboard"},
+		needs:         []string{"create_visualization"},
+		absent:        []string{"create_dashboard"},
+		notOnFileTurn: true,
 		text: `CHARTS WITHOUT A DASHBOARD: you can create cards but not wrap them, and a card_id is not something the user can open. Answer the question in the reply — the numbers, the trend, the comparison — and never present a card_id or an invented dashboard URL as the deliverable.
    - Time-series charts: put earliest periods first and latest last. ORDER BY the true time dimension ascending, and do not use DESC for the time axis unless the user explicitly asks for newest-first.`,
 	},
@@ -172,6 +192,21 @@ const promptHeader = `You are Argentum, an expert data analyst helping business 
 // gets, and what the eval harness scores.
 func SystemPrompt() string { return SystemPromptFor(PromptToolNames()) }
 
+// PromptTurn is what this turn wants of the agent, beyond which tools it holds.
+//
+// One field today, and a struct rather than a bool because the last three
+// things to reach this composer — the tool filter, the company block, the
+// persona — each arrived as "one more parameter" and the signature is shared
+// with a function field on the factory.
+type PromptTurn struct {
+	// FileDeliverable marks a turn that must end in a generate_document call:
+	// `POST /v1/reports`, and the agent asked for a file. It drops the
+	// guidelines that route a chart to Metabase, because the directive such a
+	// turn carries forbids exactly that and two contradicting rules in one
+	// prompt are decided by the model rather than by us.
+	FileDeliverable bool
+}
+
 // PromptToolNames is every tool the catalog above knows how to describe.
 func PromptToolNames() []string {
 	out := make([]string, 0, len(promptTools))
@@ -189,6 +224,11 @@ func PromptToolNames() []string {
 // sentence saying they exist, so the catalog does not read as exhaustive when
 // it is not.
 func SystemPromptFor(available []string) string {
+	return SystemPromptForTurn(available, PromptTurn{})
+}
+
+// SystemPromptForTurn is SystemPromptFor with what the turn wants of the agent.
+func SystemPromptForTurn(available []string, turn PromptTurn) string {
 	has := func(names ...string) bool {
 		for _, n := range names {
 			if !slices.Contains(available, n) {
@@ -246,6 +286,9 @@ func SystemPromptFor(available []string) string {
 	n := 0
 	for _, g := range guidelines {
 		if !has(g.needs...) || !none(g.absent...) {
+			continue
+		}
+		if g.notOnFileTurn && turn.FileDeliverable {
 			continue
 		}
 		n++

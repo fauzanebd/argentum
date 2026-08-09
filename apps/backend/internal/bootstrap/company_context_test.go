@@ -105,7 +105,7 @@ func TestTheCompanyBlockIsFramedAsDescriptionNotInstruction(t *testing.T) {
 func TestTheAgentConfigDoesNotReplaceTheComposedPrompt(t *testing.T) {
 	llm := &recordingLLM{reply: "ok"}
 	factory := newAgentFactory(agentFactoryDeps{
-		systemPrompt:  SystemPromptFor,
+		systemPrompt:  SystemPromptForTurn,
 		tools:         registry(),
 		maxIterations: 3,
 		agentConfig: sdkagent.WithAgentConfig(sdkagent.AgentConfig{

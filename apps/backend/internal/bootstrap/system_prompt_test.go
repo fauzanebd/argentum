@@ -32,7 +32,7 @@ func promptFor(t *testing.T, names ...string) string {
 		all = append(all, stubTool{n})
 	}
 	agent, err := newAgentFactory(agentFactoryDeps{
-		systemPrompt: SystemPromptFor, tools: all, maxIterations: 3,
+		systemPrompt: SystemPromptForTurn, tools: all, maxIterations: 3,
 	})(app.AgentSpec{Primary: llm, Light: llm})
 	if err != nil {
 		t.Fatalf("build agent: %v", err)
