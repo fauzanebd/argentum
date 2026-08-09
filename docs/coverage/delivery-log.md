@@ -2207,6 +2207,69 @@ wait** between them.
 the `egress: []` NetworkPolicy, the emptyDir — need Kubernetes and nothing on a
 developer machine can close them. Everything else in §1a is done.
 
+## Phase 2i — The video track closes, and committed work reaches zero (2026-08-09)
+
+`T-V4` and `T-V5`, the last 3.5 days in the plan. What is worth recording is
+not that they landed but the order the day ran in: **the gate first, then the
+build.** §1a of the live-gate backlog took ninety minutes and produced three
+defects; `T-V4` sits directly on the seam two of them were in.
+
+**`T-V4` made a document a link that plays it.** `docgen` stores the video plan
+beside every analytical PDF, PPTX and MP4 — not only the video, because the
+player replays the compositions rather than the file, so a report is playable
+the moment it exists and without a four-minute render. The player was the cheap
+half; the ticket is the link, and `report_shares` holds a bearer credential
+minted like an API key: 32 random bytes, SHA-256 at rest, shown exactly once,
+30 days by default and 90 at most, refused rather than clamped above that.
+
+`GET /share/:token` authenticates nobody and lives under neither `/api` nor
+`/v1`, because both mean "authenticated" and a keyless route inside either is
+an exemption in somebody else's chain. Unknown, expired, revoked and deleted
+all answer one 404 with one body — a distinguishable "expired" tells somebody
+trying tokens that they guessed right.
+
+**Its gate found the token in the log.** Every other route in this system
+carries its credential in a header, so `RequestLogging` writing
+`c.Request.URL.Path` has always been safe. This is the first route where the
+path *is* the credential, and the token went into `api.log` in full on every
+page view — read access to a log file was the ability to replay somebody else's
+link. `loggablePath` substitutes the route template for that one route, and a
+test pins that every other path keeps its ids.
+
+**And it shipped a documents list nobody had noticed was missing.**
+`/v1/documents` has served integrators since `T-A2` and refuses a session as
+flatly as `/api` refuses a key, so the staff who generated a report could reach
+it only through the markdown link in the chat thread that produced it. Scroll
+past it and it was gone.
+
+**`T-V5` shipped the check the whole track was pointed at.** One fixture
+rendered as a PDF, a deck and a video plan; the figures pulled out of all three
+— maroto's component tree, the `.pptx`'s own OOXML text runs, the plan — and
+asserted equal as strings. Locked decision 2 had been construction until now:
+`T-R2` moved formatting out of the model, `T-R4` extracted the shared
+measurement packages, `T-V1` made every string on the plan final, and nothing
+enforced any of it.
+
+**The gate was wrong twice before it was right**, both times in the direction
+that cries wolf, and both are kept in the write-up because a check that raises
+false alarms is a check somebody deletes. It pulled `-42` out of the order id
+`SO-2026-42…` and called it a missing figure — an id is not a figure, and the
+ellipsis is the video truncating a cell its narrower column cannot fit. Then it
+reported every delta, because the PDF draws `↓ -14.0%` where the plan carries
+`-14.0%` and a `Rising` boolean.
+
+**Fourteen of the sixteen colour literals its guard found were the palette
+pasted into a third place** — Remotion Studio's default props and the frame
+drawn when a plan fails validation — which is `T-R1`'s deleted `:root` block
+growing back. Exempting them would have been a file-level allowlist wearing a
+comment, so `tokens.json` now generates a third output beside the dashboard's
+CSS and the backend's Go theme.
+
+**Five defects from four gates in one day**, and none of them reachable from a
+unit test. The remaining work in this repository is now entirely gates: a
+cluster, three browsers, a handset, a Slack workspace, some model spend, and an
+operator's hostname.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

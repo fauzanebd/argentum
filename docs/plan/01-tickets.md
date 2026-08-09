@@ -49,7 +49,7 @@ with no number cannot drift.
 | T-15   | `*_outbound_webhooks` | next free on landing (subscription model; the sender landed in `029`) |
 | T-19   | `*_embed_keys` | next free on landing |
 | T-20   | `*_thread_embed` | next free on landing |
-| T-V4   | `*_report_shares` | next free on landing (the only migration in the video track; `T-V1`→`T-V3` add no schema) |
+| T-V4   | `050_report_shares` | landed 2026-08-09 — the only migration in the video track; `T-V1`→`T-V3` and `T-V5` add no schema |
 
 ---
 
@@ -5124,6 +5124,16 @@ trigger is unchanged.
 **Order:** `T-V1` → `T-V2` (which can start against a frozen plan contract while
 `T-V1` finishes its fixtures) → `T-V3` → `T-V4` → `T-V5`. **Total 11.5d.**
 
+**The whole track landed 2026-08-09**, the day it was filed — all five tickets,
+11.5d. `T-V4` applied migration `050` and `T-V5` needed none. The paragraphs
+below are left as they were written, because each says what was true when the
+next ticket started; the record of what each cost is in
+[`../coverage/report-video.md`](../coverage/report-video.md),
+[`report-player.md`](../coverage/report-player.md) and
+[`report-motion.md`](../coverage/report-motion.md), and what the four gates
+found is in [`../coverage/delivery-log.md`](../coverage/delivery-log.md) phases
+2g–2i.
+
 **`T-V1` landed 2026-08-09**, the day the track was filed, and the plan contract
 is frozen at version 1 — so `T-V2` is startable now and has a golden plan per
 fixture plus `@argentum/api-types/videoplan` to compile against. It cost three
@@ -5537,8 +5547,10 @@ message. Paste the Discord message showing the link.
 
 ## T-V4 · The player: an animated deck at a link
 **Repo:** BE, FE · **Size:** 2.0d · **Deps:** T-V1, T-V2 · **Priority:** P1 · **Cut §8b #13**
-**Migration:** `*_report_shares` — next free on landing. **Do not copy a number
-from this line**; read `schema_migrations` first.
+**Migration:** `050_report_shares` — **DELIVERED 2026-08-09**, gated live the
+same day ([`../coverage/report-player.md`](../coverage/report-player.md)). One
+defect found by the gate: the share token was written to the request log in
+full on every page view. Two acceptance items need a browser and are owed.
 
 ### Why
 
@@ -5619,7 +5631,12 @@ paste the audit rows and the view count; paste the cross-company attempt.
 
 ## T-V5 · The motion system: scene design, brand fidelity, and the three-format agreement
 **Repo:** PKG, FE · **Size:** 1.5d · **Deps:** T-V2 · **Priority:** P2 · **Cut §8b #14**
-**Migration:** none.
+**Migration:** none. **DELIVERED 2026-08-09**
+([`../coverage/report-motion.md`](../coverage/report-motion.md)). Most of the
+scene work was already `T-V2`'s — the eight kinds, the curve, the chart reveal,
+the contrast floor, the still export — so what this shipped is the three
+checks: the agreement gate, and two guards on `packages/motion`. The contact
+sheet and the pale-brand frame are owed.
 
 ### Why
 

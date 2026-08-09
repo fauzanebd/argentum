@@ -1077,3 +1077,47 @@ that actually gets run.
 [`backlog.md`](backlog.md) plus this section. If the widget is wanted on a date,
 say the date and the video track moves behind it — that ordering is equally
 defensible and it is the *drifting* that this section exists to stop.
+
+### 8g. Committed work reaches zero
+
+**Written 2026-08-09, later the same day.** `T-V4` (2.0d) and `T-V5` (1.5d)
+both landed, so the 3.5 days §8f named are spent and **committed work is now
+0.0 days** — the first time since 2026-07-27 that this document has had nothing
+left in it.
+
+The video track is 11.5d complete, all five tickets. `T-V4` shipped the share
+link and, on the way, the documents list the dashboard had never had — the
+staff who generated a report could only reach it through the chat message that
+produced it. `T-V5` shipped the check the whole track was pointed at: the PDF,
+the deck and the video demonstrably carry the same figures.
+
+**What was done first, and what it cost, is the part worth carrying forward.**
+The day opened by running [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md)
+§1a — ninety minutes — and it produced three defects, none of which a unit test
+could have found: the report SSE stream never ended for a threadless render,
+the video's own caps were enforced in the worker rather than at the door, and
+`cmd/api` had never started a span, so `T-17b`'s joined trace could not exist.
+Building `T-V4` on an ungated `T-V3` would have compounded the first two. Then
+`T-V4`'s own gate found a share token written to the request log in full on
+every page view, and `T-V5`'s gate found itself crying wolf twice before it
+passed. **Five defects, from four gates, in one day.** The pattern the delivery
+log has recorded since `T-13` held again, and the cheapest thing in this
+project remains running the gate you already wrote.
+
+**What is left is not build work.** Every outstanding item is a gate:
+`T-V2`'s cluster checks (a Kubernetes cluster), `T-V4`'s three browsers and
+`T-V5`'s contact sheet (a human looking at a screen), `T-A2b`'s ten live report
+calls and `T-07b`'s before/after eval pair (model spend), `T-R4`'s three office
+applications, `T-12a`'s real handset, Slack's workspace, and `T-14`'s Helm
+hostname. They are collected in
+[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) and
+grouped by what each needs, because that grouping is what decides whether one
+gets run — the file records its own lesson about a gate filed behind a cost it
+did not have.
+
+**So the next decision is the owner's, and it is a scoping one rather than a
+scheduling one.** With nothing committed, §8e's widget trigger, the phases-2–6
+backlog and anything new all start from the same line. This document should not
+choose for them; what it can say is that the two cheapest things on the table
+are a cluster and a browser, and that both close items this sprint has been
+carrying since the video track opened.
