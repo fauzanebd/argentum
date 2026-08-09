@@ -98,6 +98,35 @@ type Options struct {
 	Limits Limits
 }
 
+// CheckLimits answers "could this spec ever be a video?" without drawing one.
+//
+// It runs Build's own precheck and stops there, so the answer is the same
+// sentence a render would have failed with — one estimate, not a second
+// implementation of the caps able to disagree with the first.
+//
+// This exists because the caps have to be applied twice, in two processes. The
+// worker applies them inside Build, where the plan is actually assembled; the
+// `/v1` door applies them here, before it queues anything. The 2026-08-09 gate
+// found the door skipping them: a 242-section spec was accepted with `202
+// queued` and only refused a minute later by the worker, so a caller who could
+// have been told at the door had to write a collection path to be told that
+// their document can never render. `spec.CheckLimits` had always been called
+// there — it bounds rows, columns and chart points, and knows nothing about
+// scenes or running time.
+//
+// No chart is rasterised and no logo is needed: precheck reads section kinds
+// and prose lengths only.
+func CheckLimits(doc *spec.Document, opts Options) error {
+	if doc == nil {
+		return fmt.Errorf("videoplan: nil spec")
+	}
+	b, err := newBuilder(doc, opts)
+	if err != nil {
+		return err
+	}
+	return b.precheck()
+}
+
 // Build projects a document onto a plan.
 //
 // It is pure apart from the clock, and pure with it when the spec carries a

@@ -187,6 +187,46 @@ func QueueWait(span trace.Span, enqueuedAt time.Time) {
 	}
 }
 
+// Request starts the span an HTTP request runs under in `cmd/api`.
+//
+// Inject's own documentation has said since T-17b that "`cmd/api` opens a span
+// for the HTTP request". It did not. `cmd/api` installed a tracer provider and
+// started no span anywhere, so Inject's carrier was empty on every enqueue and
+// the worker began a new root trace each time — which is why the joined
+// waterfall T-17b was gated on could not be produced on 2026-08-09 even with
+// a collector running and both processes exporting. Injecting a trace that was
+// never started propagates nothing, silently and by construction.
+//
+// route is the gin route template (`/v1/reports/:id`), never the path as
+// requested: a span name carrying an id is one span name per id, which is how
+// a trace backend's index turns into a list of everything that ever happened.
+func Request(ctx context.Context, method, route string) (context.Context, trace.Span) {
+	if route == "" {
+		// A request that matched no route. Named rather than dropped, because
+		// "the 404s are slow" is a real answer and one bucket holds all of them.
+		route = "unmatched"
+	}
+	return Tracer().Start(ctx, method+" "+route,
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("http.request.method", method),
+			attribute.String("http.route", route),
+		))
+}
+
+// Status records how a request ended, and the request id it was answered with.
+//
+// The request id is on the span so the two halves of an investigation meet: an
+// integrator quotes the id from their own logs (T-A5 hands them one on every
+// response), and that is the only string they have. Without it a trace can be
+// found by time and route, which is a search rather than a lookup.
+func Status(span trace.Span, code int, requestID string) {
+	span.SetAttributes(attribute.Int("http.response.status_code", code))
+	if requestID != "" {
+		span.SetAttributes(attribute.String("argentum.request_id", requestID))
+	}
+}
+
 // End closes a span, recording the error when there is one. Every caller ends
 // with `defer tracing.End(span, err)` reading a named return, which is the one
 // shape that cannot forget the error on an early return.

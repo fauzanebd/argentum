@@ -31,6 +31,12 @@ findings between them. §1a below is where they are, deliberately kept out of §
 so the mistake this file recorded on 2026-08-08 is not repeated: a gate filed
 behind a cost it does not have is a gate nobody runs.
 
+**Revised again the same day: §1a was run.** It cost about ninety minutes and
+produced **three defects**, all fixed and re-proven. Filing them in the cheap
+bucket was the difference between an afternoon and a backlog entry, and the
+count is now eleven findings across three sittings of a gate that only ever
+needed the stack.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of three things: the stack up, money spent, or a message sent to a real
 person's phone.
@@ -51,16 +57,23 @@ The one thing the run needed that no document named:
 `API_V1_CALLBACK_ALLOW_PRIVATE=true` for a loopback webhook receiver — separate
 from `MCP_ALLOW_PRIVATE_EGRESS`, and the two are easy to confuse.
 
-## 1a. Needs the local stack, nothing else — **open, added 2026-08-09**
+## 1a. ~~Needs the local stack, nothing else~~ — added and run 2026-08-09
 
-| Owed by | The gate | What it would prove |
-| ------- | -------- | ------------------- |
-| `T-V3` | A video through `POST /v1/reports/render`: the 202, the `render_progress` events reaching 1.0 exactly once, and the download. Then one through a real turn — the agent answers "it is rendering" and the file appears in the thread minutes later. Then the four refusals: the invoice, the cap (asserted by an **empty access log on the render service**, the same way `T-A2` asserts nothing was uploaded), the 402, and the unconfigured-service message | Every acceptance item of the ticket. The unit tests cover each seam; what they cannot cover is the seams meeting. Needs `RENDER_BASE_URL` set on the API and the worker, and MinIO — `make infra` starts both since 2026-07-31 |
-| `T-17b` | One waterfall spanning both processes: `cmd/api`'s span, the queue wait, `cmd/worker`'s turn | That the trace actually joins. §9's waterfall came from `cmd/eval`, which enqueues nothing, so the joined shape has never been seen. Needs the compose file's `tracing` profile |
-| `T-V2` | The image in a cluster: the readiness probe passing, the `egress: []` NetworkPolicy holding, the emptyDir sized for a render | The image itself was built and run on 2026-08-09 ([`report-video.md`](report-video.md) §8) and found five defects. What is left is Kubernetes-shaped and needs a cluster rather than Docker |
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-V3` | A video through `POST /v1/reports/render`: the 202, the `render_progress` events, and the download. Then one through a real turn. Then the four refusals: the invoice, the cap (asserted by an **empty access log on the render service**, the same way `T-A2` asserts nothing was uploaded), the 402, and the unconfigured-service message | **Pass on every item, with two defects fixed on the way.** The stream never ended for a threadless render — progress to 0.94, then heartbeats for ten minutes against a report already `completed` — and the scene cap was the worker's rather than the door's, so a spec that can never render was answered `202`. Both fixed and re-run ([`report-video.md`](report-video.md) §6) |
+| `T-17b` | One waterfall spanning both processes: `cmd/api`'s span, the queue wait, `cmd/worker`'s turn | **Failed, then fixed and re-read.** `argentum-api` was absent from Jaeger's service list: `cmd/api` installed a tracer and started no span, so `Inject` had nothing to propagate and every turn was its own root trace. A server-span middleware landed; the waterfall now shows one trace across both processes with **934 ms** in the queue ([`observability.md`](observability.md) §10a) |
+| `T-V2` | The image in a cluster: the readiness probe passing, the `egress: []` NetworkPolicy holding, the emptyDir sized for a render | **Still open.** The image itself was built and run on 2026-08-09 ([`report-video.md`](report-video.md) §8) and found five defects. What is left is Kubernetes-shaped and needs a cluster rather than Docker |
 
-The first two cost nothing but the stack. The third needs a cluster, and is
-the only item in this section that a developer machine cannot close.
+**Three items, three defects, and the same pattern for the fourth time.** Every
+one of them is a seam between two processes that no unit test crosses, and each
+had passing tests over the parts either side of it. `T-17b`'s is the sharpest:
+nine tests asserted the carrier travels, and all nine built a context that
+already held a span — the one condition production never met.
+
+What the run needed that no document names: the API refuses to boot without
+WhatsApp credentials on a deployment that uses no WhatsApp
+([`report-video.md`](report-video.md) §6).
 
 ## 2. Needs the stack **and** real LLM spend
 

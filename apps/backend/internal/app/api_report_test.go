@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/queue"
 )
 
 type fakeReports struct {
@@ -239,4 +240,83 @@ func TestCompleteReportToleratesAMissingRow(t *testing.T) {
 func TestCompleteReportOnANilServiceIsANoOp(t *testing.T) {
 	var svc *APIReportService
 	svc.CompleteReport(context.Background(), "rep-1", "th-1", nil)
+}
+
+// recordingBus is the report channel, plus the one property the SSE bridge
+// depends on: what the row said at the moment each event was published.
+type recordingBus struct {
+	reports *fakeReports
+	events  []ChatEvent
+	// statusAt is the report's status as the repository held it when the event
+	// went out, which is what makes the ordering assertion real rather than a
+	// re-reading of the same variable the test set.
+	statusAt []domain.APIReportStatus
+}
+
+func (b *recordingBus) PublishReport(reportID string, evt ChatEvent) error {
+	b.events = append(b.events, evt)
+	var st domain.APIReportStatus
+	if r, err := b.reports.Get(context.Background(), reportID); err == nil {
+		st = r.Status
+	}
+	b.statusAt = append(b.statusAt, st)
+	return nil
+}
+
+func queuedRenderJob() *domain.APIReport {
+	return &domain.APIReport{
+		ID: "rep-r1", CompanyID: "co-1", Kind: domain.APIReportRender,
+		Status: domain.APIReportQueued, Format: domain.DocumentFormatMP4,
+		CreatedAt: reportStart,
+	}
+}
+
+// The defect the 2026-08-09 live gate found: `GET /v1/reports/:id/events`
+// forwards progress and closes on `final`/`error`, and a threadless render job
+// published neither — so a caller following the collection path the 202 names
+// watched progress reach 0.94 and then heartbeat forever against a report that
+// had been terminal for ten minutes. A threaded job never had the bug, because
+// ChatRunner publishes `final` on the thread's channel.
+func TestAFailedRenderJobEndsItsStream(t *testing.T) {
+	reports := newFakeReports(queuedRenderJob())
+	bus := &recordingBus{reports: reports}
+	// gen nil is the "no object storage" deployment, and the one failure branch
+	// reachable without a renderer. Every other failure lands in the same fail().
+	svc := NewAPIReportService(reports, &fakeDocLookup{}, nil, nil).WithProgress(bus)
+
+	if err := svc.RunRenderJob(context.Background(), queue.ReportRenderPayload{
+		ReportID: "rep-r1", CompanyID: "co-1",
+	}); err != nil {
+		t.Fatalf("RunRenderJob: %v", err)
+	}
+
+	if len(bus.events) != 1 {
+		t.Fatalf("want exactly one terminal event, got %d: %+v", len(bus.events), bus.events)
+	}
+	if bus.events[0].Type != "error" {
+		t.Errorf("a failed job must end the stream with `error`, got %q", bus.events[0].Type)
+	}
+	// Published after the row is terminal, never before. The handler answers a
+	// terminal event by re-reading the row, so an event that outran the UPDATE
+	// would hand the caller a report still reading `running`.
+	if !bus.statusAt[0].Terminal() {
+		t.Errorf("the terminal event went out while the row still read %q", bus.statusAt[0])
+	}
+}
+
+// The API process builds one of these to read through and installs no bus.
+// Nothing about a render may depend on somebody listening to it.
+func TestARenderJobWithNoBusStillFinishes(t *testing.T) {
+	reports := newFakeReports(queuedRenderJob())
+	svc := NewAPIReportService(reports, &fakeDocLookup{}, nil, nil)
+
+	if err := svc.RunRenderJob(context.Background(), queue.ReportRenderPayload{
+		ReportID: "rep-r1", CompanyID: "co-1",
+	}); err != nil {
+		t.Fatalf("RunRenderJob: %v", err)
+	}
+	got, _ := reports.Get(context.Background(), "rep-r1")
+	if got.Status != domain.APIReportFailed {
+		t.Errorf("want the row failed with no bus installed, got %q", got.Status)
+	}
 }

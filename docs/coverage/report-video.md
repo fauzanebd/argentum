@@ -524,11 +524,75 @@ $ helm template … --set render.enabled=true | grep RENDER_BASE_URL → api + w
 $ helm template …                                                  → absent
 ```
 
-**The live half has not run.** It needs a stack with MinIO and a render
-service: a video through `POST /v1/reports/render` with its progress events and
-its download, one through a real turn appearing in the thread, the invoice
-refusal, the cap refusal with an empty access log on the render service, the
-402, and the unconfigured-service message.
+~~**The live half has not run.**~~ **Run 2026-08-09**, against the compose
+stack with the API and worker on the host, `argentum-render:local` in Docker,
+and a fresh tenant on the seeded demo warehouse. Every acceptance item was
+exercised. **Two defects, both fixed in the same sitting**, and both of the
+kind this file's own §8 predicts: each is a seam that no unit test crosses.
+
+| The item | Outcome |
+| -------- | ------- |
+| A video through `POST /v1/reports/render` | **202** in 17 ms, then 55 `render_progress` events over SSE and a terminal `report` event carrying the document. 1 844 851 bytes, `ISO Media, MP4 Base Media v1`, downloaded from the presigned URL. 901 frames over 7 scenes, **71 s** wall clock |
+| The progress events | **Defect 1, fixed** — see below. As shipped they climbed to 0.94 and the stream never ended |
+| One through a real turn | **Pass.** `get_schema` → `run_sql` → `run_sql` → `generate_document`, the reply *"Video sedang dirender dan akan diposting ke percakapan ini … dalam beberapa menit"*, and the file in the thread minutes later as `Your video is ready: [ … .mp4](…)` |
+| The invoice refusal | **Pass.** 400 `invalid_spec`, naming `pdf` as the way out |
+| The cap refusal, with an empty render access log | **Defect 2, fixed** — the log stayed empty, but the refusal arrived from the worker after a `202`, not from the door |
+| The 402 | **Pass.** Balance zeroed, 400→402 `credits_exhausted`, nothing queued and nothing rendered |
+| The unconfigured-service message | **Pass.** A second API with `RENDER_BASE_URL=` answers 400 `format_unavailable` — *"Every other format is available"* — and a PDF posted to the same deployment came back 200 |
+
+#### Defect 1 — the stream never ends for a threadless render
+
+`GET /v1/reports/:id/events` forwards progress and closes on `final` or
+`error`. A **threaded** job gets one: `ChatRunner` publishes `final` on the
+thread's channel. A render job has no thread, publishes on
+`ReportChannelFor(id)`, and nothing ever published anything terminal there — so
+the first gate run watched progress reach 0.94 and then heartbeat for **ten
+minutes** against a report that had been `completed`, with its file
+downloadable, since second seventy-one. `curl` gave up at its own 600-second
+cap.
+
+It is the branch's first reachable day. The handler's own comment says so:
+*"Until a format took minutes this branch answered once and closed"* — every
+earlier render was terminal before a subscriber could attach, so the early
+return answered and the loop was dead code. `T-V3` made it live and left
+nothing to end it.
+
+`APIReportService.settled` now publishes `final` after `Complete` and `error`
+after `fail`, **after** the row is terminal and never before — the ordering
+`CompleteReport` already documents, and what lets the handler answer by
+re-reading the row rather than by trusting the event. Re-run: 55 progress
+events, one terminal `report`, and the connection closed by the server at
+**55.5 s**.
+
+#### Defect 2 — the video caps were the worker's, not the door's
+
+§3 of this file says the scene and frame caps are *"checked before the job is
+queued"*. They were not. The door ran `doc.Validate()` and `spec.CheckLimits`
+— rows, columns, strings, chart points — and the caps that decide whether a
+video can exist at all live in `videoplan` and were reached only inside
+`Build`, in the worker. A 242-section spec was answered **`202 queued`** and
+refused a minute later, so a caller learned that their document can never be a
+video only by writing a collection path to be told so. The handler's own
+comment claims the opposite: *"a spec that can never render is a 400 the caller
+reads now rather than a failed job they poll for."*
+
+`videoplan.CheckLimits` exposes `Build`'s existing precheck — the same
+estimate, so there is no second implementation of the caps to disagree with the
+first — and `docgen.CheckVideoLimits` applies it at the door for an async
+format only. Re-run: **400** `invalid_spec`, *"this document needs at least 243
+scenes and the limit is 60"*, with the render service's access log unchanged at
+three lines across the whole gate.
+
+**What the empty access log proves, and it did before the fix too:** nothing
+reached the renderer in either version. The cost of defect 2 was a caller's
+minute and a queue slot, not a render.
+
+**One thing the run needed that no document names:** the API refuses to boot
+without WhatsApp credentials — `WHATSAPP_ACCESS_TOKEN` for the default
+provider, or all three Twilio variables — on a deployment that uses neither.
+`config.Validate`'s switch has no "no WhatsApp" branch. Placeholders get you
+past it; it is filed here rather than fixed because it belongs to whoever owns
+the channel config, and it costs a newcomer twenty minutes.
 
 ### 7. What is not done in `T-V3`
 

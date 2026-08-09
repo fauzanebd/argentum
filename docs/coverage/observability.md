@@ -264,10 +264,68 @@ that exports nowhere and assert what a waterfall would show — one trace id
 across both halves, a parent marked remote, and no `trace` field at all on a
 deployment collecting nothing.
 
-**What is owed is the reading.** A joined waterfall — `cmd/api`'s span, the
-queue wait, `cmd/worker`'s turn — needs the compose stack with the `tracing`
-profile up and one real turn. §9's waterfall came from `cmd/eval`, which
-enqueues nothing, so this has never been seen end to end.
+~~**What is owed is the reading.**~~ **Read 2026-08-09 — and it was not
+joined.** See §10a.
+
+## 10a. The joined waterfall, and the reason there wasn't one
+
+The gate §10 asked for is one trace holding `cmd/api`'s span, the queue wait
+and `cmd/worker`'s turn. Run against the compose stack's `tracing` profile with
+both processes exporting to Jaeger and a real turn through `POST /v1/chat`, and
+the answer was that **`argentum-api` was not in Jaeger's service list at all**:
+
+```
+$ curl -s localhost:16686/api/services
+['jaeger-all-in-one', 'argentum-eval', 'argentum-worker']
+```
+
+Every worker turn was its own root trace, exactly as before `T-17b`.
+
+**The cause is one sentence, and it is in `Inject`'s own documentation:**
+*"`cmd/api` opens a span for the HTTP request."* It did not. `cmd/api` called
+`tracing.Init` — which is why the log says `otel tracing enabled
+service=argentum-api` — and then started no span anywhere. `Inject` reads the
+current span off the context, found none, and correctly returned nil; `Extract`
+found no carrier and correctly started a new root. **Injecting a trace that was
+never started propagates nothing, and it does it silently, by construction.**
+`T-17b` built the bridge and there was no road on one side of it.
+
+That is also why nine tests passed on it. They install a recording provider and
+call `Inject` inside a context that already holds a span, which is the one
+condition production never met.
+
+**What landed:** `tracing.Request` and a fifteen-line `middleware.Tracing`,
+mounted on the `/api` and `/v1` groups — below `RequestID`, so the span carries
+the id an integrator quotes, and above the kill switch and the key check, so a
+503 and a 401 are both on the waterfall. Not `otelgin`: a server span is
+fifteen lines, and this one names spans the way this codebase does. Health
+routes are deliberately above it — a readiness probe every few seconds is the
+highest-volume, least interesting span a collector could be sent.
+
+The route **template** names the span, never the path as requested. One span
+name per report id is a trace backend's index turned into a list of everything
+that has ever been asked for.
+
+**The reading, at last:**
+
+```
+service          span                            start+ms    dur_ms
+argentum-api     POST /v1/chat                        0.0   10341.9   status=200
+argentum-worker  agent.turn                         965.8    9370.5   queue_wait=934ms
+argentum-worker  agent.memory.hydrate               978.1      11.7
+argentum-worker  agent.table_picker                 998.4       0.0
+argentum-worker  agent.tool                        6882.8     115.7
+argentum-worker  agent.guardrails.output          10325.6       2.6
+```
+
+One trace, two processes, and the **934 ms in the queue** — the interval `T-17b`
+exists to make visible and the only part of a slow turn §9's waterfall could
+not show. The API span is 971 ms longer than the turn it contains, which is the
+SSE response still being written after the worker finished.
+
+Three tests, and the one that matters asserts what no earlier test did: that a
+request handler's context yields a non-empty carrier. That is the property the
+queue depends on, and it is the one nothing checked.
 
 ## 11. Not done
 

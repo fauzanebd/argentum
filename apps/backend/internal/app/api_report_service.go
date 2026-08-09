@@ -199,10 +199,40 @@ func (s *APIReportService) RunRenderJob(ctx context.Context, p queue.ReportRende
 		// a second attempt at one UPDATE.
 		return fmt.Errorf("complete render job: %w", err)
 	}
+	s.settled(p.ReportID, "final")
 	if rep, err := s.reports.Get(ctx, p.ReportID); err == nil {
 		s.notify(ctx, rep)
 	}
 	return nil
+}
+
+// settled tells an open SSE stream that a threadless render job is over.
+//
+// A threaded job gets this for free: ChatRunner publishes `final` on the
+// thread's channel and the bridge in `GET /v1/reports/:id/events` closes on
+// it. A render job has no thread, so the only thing ever published on its own
+// channel was progress — and before a format took minutes that was harmless,
+// because the job was already terminal by the time anyone could subscribe and
+// the handler answered from its early return. `T-V3` made the streaming branch
+// reachable for the first time and left nothing to end it: the 2026-08-09 gate
+// watched progress climb to 0.94 and then heartbeat for ten minutes against a
+// report that had been `completed`, with its file downloadable, since second
+// seventy-one.
+//
+// Published after the row is terminal, never before — the same ordering
+// `CompleteReport` documents, and what lets the handler answer by re-reading
+// the row rather than by trusting the event's contents.
+func (s *APIReportService) settled(reportID, kind string) {
+	if s.progress == nil || reportID == "" {
+		return
+	}
+	// Publish and forget. Nobody streaming is the ordinary case — a caller who
+	// polls, or a callback consumer — and a Redis hiccup must not fail a
+	// render whose file is already in object storage.
+	_ = s.progress.PublishReport(reportID, ChatEvent{
+		Type:      kind,
+		Timestamp: time.Now(),
+	})
 }
 
 // ThreadAnnouncer is how a render that finished after its turn gets back to
@@ -392,6 +422,11 @@ func (s *APIReportService) fail(ctx context.Context, reportID, msg string) {
 			Error("report job not marked failed; the caller will keep polling")
 		return
 	}
+	// A failed render ends a stream exactly as a finished one does. The
+	// handler re-reads the row either way, so what the caller gets is the
+	// report object carrying the message written above rather than this
+	// event's own contents.
+	s.settled(reportID, "error")
 	if rep, err := s.reports.Get(ctx, reportID); err == nil {
 		s.notify(ctx, rep)
 	}

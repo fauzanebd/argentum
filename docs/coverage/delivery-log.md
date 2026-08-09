@@ -2152,6 +2152,61 @@ build.
 
 ---
 
+## Phase 2h — §1a of the live-gate backlog, hours after it was written (2026-08-09)
+
+The video track's own gates, run the evening they were filed. Ninety minutes,
+three defects, all fixed and re-proven in the same sitting. The pattern this
+project keeps recording held for the fourth time: **every finding was a seam
+between two processes, and every seam had passing tests on both sides of it.**
+
+**`T-V3`'s gate passed on every acceptance item, and found two defects doing
+it.** A video through `POST /v1/reports/render` is a 202 in 17 ms, 901 frames
+over 7 scenes, 71 seconds of wall clock, and 1 844 851 bytes of `ISO Media`
+downloaded from a presigned URL. A real turn does the other half: `get_schema`
+→ `run_sql` → `run_sql` → `generate_document`, an answer that says the video is
+rendering and will be posted when it is done, and the file in the thread
+minutes later. The invoice refusal, the 402 and the unconfigured-service
+message all answered as designed, and the render service's access log stayed at
+three lines through the whole gate.
+
+**The first defect is `T-A3`'s bug wearing new clothes.** `GET
+/v1/reports/:id/events` closes on `final` or `error`. A threaded job publishes
+one; a threadless render job publishes only progress, and nothing terminal was
+ever published on its channel — so the stream climbed to 0.94 and then
+heartbeat for **ten minutes** against a report that had been `completed`, with
+its file downloadable, since second seventy-one. `curl` gave up at its own
+600-second cap. The branch had been dead code until this ticket: every earlier
+render was terminal before anyone could subscribe, and the handler's comment
+says exactly that. `T-V3` made it reachable and left nothing to end it.
+
+**The second is a claim in this repository's own documentation.**
+`report-video.md` §3 says the scene and frame caps are "checked before the job
+is queued", and the handler's comment says a spec that can never render is "a
+400 the caller reads now rather than a failed job they poll for". Neither was
+true: the door ran `spec.CheckLimits` — rows, columns, chart points — and the
+caps that decide whether a video can exist at all were reached only inside
+`videoplan.Build`, in the worker. A 242-section spec was answered `202 queued`
+and refused a minute later. `videoplan.CheckLimits` now exposes `Build`'s own
+precheck so there is one estimate rather than two, and the door refuses at 400
+naming the number: *"at least 243 scenes and the limit is 60"*.
+
+**`T-17b`'s gate failed outright, and the reason is one sentence of its own
+documentation.** `Inject`'s comment says *"`cmd/api` opens a span for the HTTP
+request"*. It did not — `cmd/api` called `tracing.Init` and started no span
+anywhere, so `Inject` read an empty context, correctly returned nil, and every
+worker turn began its own root trace. Jaeger's service list did not contain
+`argentum-api` at all. **Injecting a trace that was never started propagates
+nothing, silently and by construction**, and nine passing tests did not see it
+because all nine built a context that already held a span — the one condition
+production never met. A fifteen-line server-span middleware on `/api` and `/v1`
+closed it, and the waterfall `T-17b` was gated on finally exists: `POST
+/v1/chat` at 10 341 ms over `agent.turn` at 9 370 ms, with **934 ms of queue
+wait** between them.
+
+**What is owed from this day.** `T-V2`'s cluster items — the readiness probe,
+the `egress: []` NetworkPolicy, the emptyDir — need Kubernetes and nothing on a
+developer machine can close them. Everything else in §1a is done.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

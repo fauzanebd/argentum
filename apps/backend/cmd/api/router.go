@@ -32,6 +32,13 @@ func newRouter(d *apiDeps) *gin.Engine {
 	registerHealthRoutes(r, d.metrics, d.controlDB, cfg.MetricsToken)
 
 	api := r.Group("/api")
+	// The span every `/api` request runs under, and the reason a turn's two
+	// processes can share a trace at all: `Inject` on the enqueue reads
+	// whatever span is on the request context, and until 2026-08-09 there was
+	// never one. Below the health routes on purpose — a readiness probe every
+	// few seconds is the highest-volume, least interesting span a collector
+	// could be sent.
+	api.Use(middleware.Tracing())
 	handlers.NewMetaHandler().Register(api.Group("/meta"))
 	handlers.NewAuthHandler(d.authSvc, d.teamSvc, cfg.CookieSecure, d.signer.RefreshTTL()).
 		Register(api.Group("/auth"))
@@ -121,6 +128,11 @@ func newRouter(d *apiDeps) *gin.Engine {
 
 	v1 := r.Group("/v1")
 	v1.Use(middleware.RequestID())
+	// Below RequestID so the span carries the id the caller was handed, and
+	// above everything else so a 503 from the kill switch and a 401 from a bad
+	// key are both on the waterfall. This is the surface `POST /v1/chat` and
+	// `POST /v1/reports*` enqueue from, so it is the trace the worker joins.
+	v1.Use(middleware.Tracing())
 	v1.Use(middleware.Enabled(cfg.APIV1Enabled))
 	// The recorder (T-A5) wraps everything below it, which is what makes a 401
 	// from a bad key and a 429 from the limiter both countable. It goes below

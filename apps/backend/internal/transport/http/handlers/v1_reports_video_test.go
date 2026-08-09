@@ -19,6 +19,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/idempotency"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/report/video"
 	"github.com/fauzanebd/argentum/internal/report/videoplan"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
@@ -263,5 +264,58 @@ func TestVideoIsRefusedWhenUnconfigured(t *testing.T) {
 	}
 	if q.count() != 0 {
 		t.Error("an unconfigured deployment queued a render")
+	}
+}
+
+// The scene cap is the door's to apply, not the worker's.
+//
+// Found by the 2026-08-09 live gate: a 242-section spec was answered `202
+// queued` and refused a minute later by the worker, so the caller learned that
+// their document can never be a video only by writing a collection path for
+// it. `spec.CheckLimits` runs here and always did — it bounds rows, columns
+// and chart points — but the caps that decide whether a video can exist at all
+// live in `videoplan` and were reached only inside `Build`.
+//
+// The refusal must also name the number, because "too long" is not something a
+// caller can act on and "at least 243 scenes and the limit is 60" is.
+func TestVideoRefusesASpecOverTheSceneCap(t *testing.T) {
+	f := newVideoFixture(t)
+
+	sections := []string{
+		`{"type":"kpi_row","items":[{"label":"Revenue","value":{"v":1,"fmt":"currency"}}]}`,
+	}
+	// Comfortably past videoplan.DefaultLimits.MaxScenes, and every section is
+	// a scene at the floor duration, so the estimate cannot come out under it.
+	for range 120 {
+		sections = append(sections, `{"type":"heading","text":"Section","level":1}`)
+	}
+	body := `{"format":"mp4","title":"Too long","content":{"sections":[` +
+		strings.Join(sections, ",") + `]}}`
+
+	w := f.render(t, body, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
+	}
+	if f.queue.count() != 0 {
+		t.Fatal("a spec that can never render was queued; the caller has to poll to be told so")
+	}
+	if got := w.Body.String(); !strings.Contains(got, "scenes") || !strings.Contains(got, "60") {
+		t.Errorf("the refusal does not name the cap it hit: %s", got)
+	}
+}
+
+// The same caps must not touch a format that has no scenes. A PDF of 240
+// sections is an ordinary long report.
+func TestTheSceneCapDoesNotApplyToAPDF(t *testing.T) {
+	gen := docgen.New(nil, nil, nil, nil, nil, time.Hour).
+		WithVideo(video.New(video.Options{BaseURL: "http://127.0.0.1:1"}), videoplan.Limits{})
+
+	sections := make([]spec.Section, 0, 200)
+	for range 200 {
+		sections = append(sections, spec.Section{Type: spec.SectionHeading, Text: "Section", Level: 1})
+	}
+	doc := spec.Document{Format: "pdf", Title: "Long", Content: spec.Content{Sections: sections}}
+	if err := gen.CheckVideoLimits(&doc); err != nil {
+		t.Fatalf("a PDF was refused by the video caps: %v", err)
 	}
 }

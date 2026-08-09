@@ -151,6 +151,26 @@ func (s *Service) VideoAvailable() bool { return s != nil && s.video.Configured(
 // same numbers Generate will.
 func (s *Service) Limits() spec.Limits { return s.limits }
 
+// CheckVideoLimits applies the scene and running-time caps a video is bounded
+// by, for a door that has not queued anything yet.
+//
+// The comment above says the render door checks "before it enqueues the job".
+// Until 2026-08-09 that was true only of spec.Limits — rows, columns, chart
+// points — and the caps that decide whether a video can exist at all were
+// applied in the worker, inside videoplan.Build. So an over-long spec was
+// answered `202 queued` and failed a minute later, which is the shape the
+// door's own comment exists to rule out.
+//
+// A non-video format is not checked: nothing about a PDF has a scene count,
+// and returning nil here keeps the caller from having to ask what format it
+// holds before it can validate.
+func (s *Service) CheckVideoLimits(doc *spec.Document) error {
+	if s == nil || doc == nil || !domain.DocumentFormat(spec.FormatOf(doc)).Async() {
+		return nil
+	}
+	return videoplan.CheckLimits(doc, videoplan.Options{Limits: s.videoLimits})
+}
+
 // PresignTTL is how long a download URL this service issues stays valid.
 // Handlers report it to the caller, so they read it from here rather than
 // re-deriving it from config and drifting.

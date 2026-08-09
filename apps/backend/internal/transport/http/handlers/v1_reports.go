@@ -207,6 +207,15 @@ func (h *V1ReportsHandler) render(c *gin.Context) {
 			h.abortRender(c, err)
 			return
 		}
+		// And the caps that are the video's own. spec.CheckLimits bounds the
+		// data; this bounds what that data becomes — scenes and running time —
+		// which is the pair of numbers that decides whether a render pod can
+		// finish at all. Skipped here until 2026-08-09, so the comment above
+		// was true of every refusal except the one only a video has.
+		if err := h.gen.CheckVideoLimits(&doc); err != nil {
+			h.abortRender(c, err)
+			return
+		}
 		if !h.affordable(c, company) {
 			return
 		}
