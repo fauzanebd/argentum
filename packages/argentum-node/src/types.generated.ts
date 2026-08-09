@@ -582,10 +582,10 @@ export interface components {
             how: string;
         };
         /**
-         * @description One capability a key may carry. Fixed at mint time.
+         * @description One capability a key may carry. Fixed at mint time. `read:data` and `write:visualizations` gate the MCP server (T-14) rather than any route in this document — a key that will only ever call `/v1` does not need them, and one used from an MCP client does.
          * @enum {string}
          */
-        Scope: "read:metrics" | "read:threads" | "read:usage" | "read:audit" | "read:documents" | "write:chat" | "write:actions" | "write:reports";
+        Scope: "read:metrics" | "read:data" | "read:threads" | "read:usage" | "read:audit" | "read:documents" | "write:chat" | "write:actions" | "write:reports" | "write:visualizations";
         /**
          * @description One agent on the workspace's roster.
          *

@@ -593,7 +593,7 @@ ReportSpecCell = Union[Union[str, float, bool, None], Dict[str, Any]]
 
 ReportSpecColumn = Union[str, Dict[str, Any]]
 
-Scope = Literal["read:metrics", "read:threads", "read:usage", "read:audit", "read:documents", "write:chat", "write:actions", "write:reports"]
+Scope = Literal["read:metrics", "read:data", "read:threads", "read:usage", "read:audit", "read:documents", "write:chat", "write:actions", "write:reports", "write:visualizations"]
 
 __all__ = [
     "API_VERSION",

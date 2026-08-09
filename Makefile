@@ -123,6 +123,7 @@ openapi: ## Validate apps/backend/openapi/v1.yaml and regenerate everything from
 .PHONY: openapi-check
 openapi-check: ## Verify the generated API artifacts match the spec, writing nothing
 	pnpm --filter @argentum/openapi-tools check
+	pnpm --filter @argentum/sdk types-check
 
 .PHONY: api-examples
 api-examples: ## Run every published sample against a live API (see docs/api/examples/run.sh)

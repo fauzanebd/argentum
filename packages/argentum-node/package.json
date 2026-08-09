@@ -27,8 +27,9 @@
   "license": "UNLICENSED",
   "scripts": {
     "generate": "openapi-typescript ../../apps/backend/openapi/v1.yaml --output src/types.generated.ts",
+    "types-check": "node scripts/check-generated.mjs",
     "build": "pnpm generate && tsc -p tsconfig.json",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "pnpm types-check && tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
