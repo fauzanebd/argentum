@@ -146,12 +146,16 @@ tokens: ## Regenerate the dashboard CSS variables and the Go report theme (T-R1)
 	fi
 
 .PHONY: tokens-check
-tokens-check: palette ## Verify the generated token files match tokens.json, writing nothing
+tokens-check: palette motion-guards ## Verify the generated token files match tokens.json, writing nothing
 	node packages/design-tokens/scripts/generate.mjs --check
 
 .PHONY: palette
 palette: ## Verify the chart palette in greyscale and under simulated CVD (T-R3)
 	node packages/design-tokens/scripts/palette.mjs --check
+
+.PHONY: motion-guards
+motion-guards: ## Verify packages/motion names no colour of its own (T-V5)
+	node packages/design-tokens/scripts/motion-guards.mjs --check
 
 # ---------------------------------------------------------------------------
 # Report artifacts

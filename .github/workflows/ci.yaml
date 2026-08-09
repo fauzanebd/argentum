@@ -48,6 +48,11 @@ jobs:
               - 'packages/design-tokens/**'
               - 'apps/dashboard/src/tokens.generated.css'
               - 'apps/backend/internal/report/theme/**'
+              # packages/motion is here for two reasons: it holds a generated
+              # token module like the two above, and T-V5's colour check reads
+              # every component in it — so a hard-coded colour in a scene has
+              # to trigger this job even when tokens.json did not change.
+              - 'packages/motion/**'
               - 'Makefile'
               - '.github/workflows/ci.yaml'
             # The deck smoke test installs LibreOffice, which costs about a
@@ -180,6 +185,13 @@ jobs:
       - name: Verify the chart palette
         run: make palette
 
+      # T-V5. The video's components run in a browser three packages from
+      # tokens.json, where `color: "#0A0A0A"` is shorter than reading the value
+      # off the plan and is wrong for every tenant with a brand colour — and
+      # wrong silently, because the frame still renders.
+      - name: Verify packages/motion names no colour of its own
+        run: make motion-guards
+
       # Same shape as the API-type drift gate in T-02b: generated files are
       # committed, so a diff here means the committed output disagrees with
       # tokens.json — either it was hand-edited or it was never regenerated.
@@ -187,6 +199,7 @@ jobs:
         run: |
           git --no-pager diff --exit-code -- \
             packages/design-tokens \
+            packages/motion/src/tokens.generated.ts \
             apps/dashboard/src/tokens.generated.css \
             apps/backend/internal/report/theme \
           || {

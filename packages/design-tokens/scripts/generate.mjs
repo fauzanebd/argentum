@@ -11,6 +11,7 @@ import { relative } from 'node:path';
 import { loadTokens, REPO_ROOT } from '../lib/tokens.mjs';
 import { CSS_OUT, renderCSS } from './gen-css.mjs';
 import { GO_OUT, renderGo } from './gen-go.mjs';
+import { MOTION_OUT, renderMotion } from './gen-motion.mjs';
 
 const check = process.argv.includes('--check');
 const tokens = loadTokens();
@@ -18,6 +19,7 @@ const tokens = loadTokens();
 const outputs = [
   { path: CSS_OUT, content: renderCSS(tokens) },
   { path: GO_OUT, content: renderGo(tokens) },
+  { path: MOTION_OUT, content: renderMotion(tokens) },
 ];
 
 let stale = 0;

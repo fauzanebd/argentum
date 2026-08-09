@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/johnfercher/go-tree/node"
 	"github.com/johnfercher/maroto/v2"
 	"github.com/johnfercher/maroto/v2/pkg/components/col"
 	"github.com/johnfercher/maroto/v2/pkg/components/image"
@@ -495,4 +496,48 @@ func (r *renderer) footerRows() []core.Row {
 		col.New(theme.GridCols/2).Add(text.New(right, rightProps)),
 	)
 	return []core.Row{rule, band}
+}
+
+// Texts returns every string this renderer draws, page by page.
+//
+// It exists for `T-V5`'s three-format agreement gate, which is the only
+// automated proof that a figure reads the same in the PDF, the deck and the
+// video. That check lives in a package of its own — it has to import all three
+// renderers — so the text a PDF contains has to be reachable from outside this
+// one. The alternative was parsing the produced bytes back, which means a PDF
+// text extractor in the dependency tree to re-derive something the renderer
+// already knows.
+//
+// The strings come from maroto's own component tree rather than from the
+// content stream: same source the page is drawn from, one step earlier. What
+// it cannot see is anything drawn as an image — a chart's axis labels are
+// pixels by the time they reach the page, in every one of the three formats.
+func Texts(doc *spec.Document, opts Options) ([][]string, error) {
+	if doc == nil {
+		return nil, fmt.Errorf("pdf: nil spec")
+	}
+	r, err := newRenderer(doc, opts)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.build(); err != nil {
+		return nil, err
+	}
+	var pages [][]string
+	for _, pageNode := range r.m.GetStructure().GetNexts() {
+		var texts []string
+		collectStrings(pageNode, &texts)
+		pages = append(pages, texts)
+	}
+	return pages, nil
+}
+
+func collectStrings(n *node.Node[core.Structure], out *[]string) {
+	data := n.GetData()
+	if v, ok := data.Value.(string); ok && data.Type == "text" && strings.TrimSpace(v) != "" {
+		*out = append(*out, v)
+	}
+	for _, next := range n.GetNexts() {
+		collectStrings(next, out)
+	}
 }

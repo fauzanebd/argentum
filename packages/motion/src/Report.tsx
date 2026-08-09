@@ -11,6 +11,7 @@ import { FONT } from "./chrome";
 import { timeline, validate } from "./plan";
 import type { Plan } from "./plan";
 import { SceneView } from "./scenes/index";
+import { TOKEN_COLOR } from "./tokens.generated";
 
 /**
  * Report is the whole video: the scenes, in order, each for the number of
@@ -30,11 +31,16 @@ export const Report: React.FC<{ plan: Plan }> = ({ plan }) => {
     // checks it before it starts a browser — so this is the belt to that
     // brace, and it draws the reason rather than a blank frame. A blank frame
     // in a delivered video is the worst shape this failure can take.
+    //
+    // The one frame in this package that cannot read `plan.brand`, because the
+    // plan is the broken thing. It reads the generated tokens instead of
+    // naming colours, so it is still the product's dark ground rather than
+    // somebody's idea of near-black.
     return (
       <AbsoluteFill
         style={{
-          backgroundColor: "#0A0A0A",
-          color: "#F5F5F0",
+          backgroundColor: TOKEN_COLOR.foreground,
+          color: TOKEN_COLOR.background,
           fontFamily: FONT,
           fontSize: 32,
           padding: 96,

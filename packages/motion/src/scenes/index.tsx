@@ -337,6 +337,9 @@ const ChartScene: React.FC<Props> = ({ scene, brand, metrics }) => {
   const chart = scene.chart;
   const p = chart?.reveal === "none" ? 1 : reveal(frame, fps);
 
+  // motion-color-ok: a mask reads only the alpha channel, so `#000` here means
+  // "opaque" and never appears on screen. The pixels underneath are the Go
+  // renderer's chart, drawn on the verified palette and never redrawn.
   const mask =
     chart?.reveal === "sweep"
       ? `conic-gradient(#000 ${p * 360}deg, transparent 0deg)`

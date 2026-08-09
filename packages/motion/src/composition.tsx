@@ -3,6 +3,7 @@ import { Composition } from "remotion";
 
 import { Report } from "./Report";
 import type { Plan } from "./plan";
+import { DEFAULT_BRAND_COLORS } from "./tokens.generated";
 
 /**
  * The composition: one entry, whose size and length come from the plan it is
@@ -51,18 +52,7 @@ const DEFAULT_PLAN: Plan = {
   },
   brand: {
     name: "",
-    primary: "#F25C5C",
-    primary_on_dark: "#F25C5C",
-    foreground: "#0A0A0A",
-    background: "#F5F5F0",
-    muted: "#6B6B6B",
-    border: "#E2E2DC",
-    dark: "#0A0A0A",
-    on_dark: "#F5F5F0",
-    surface: "#FFFFFF",
-    surface_subtle: "#ECECEA",
-    positive: "#3F7A46",
-    destructive: "#EF4343",
+    ...DEFAULT_BRAND_COLORS,
     tones: {},
   },
   scenes: [
