@@ -187,7 +187,19 @@ export const ActorKindAPIKey = "api_key"; // T-13
  * is being read from an address I do not recognise" answerable.
  */
 export const ActorKindShare = "share";
-export type ActorKind = typeof ActorKindUser | typeof ActorKindSchedule | typeof ActorKindWatcher | typeof ActorKindAPIKey | typeof ActorKindShare;
+/**
+ * ActorKindEmbed is a visitor of a tenant's own site, holding a session
+ * this system minted from an identity *they* asserted (T-19). The
+ * accountable party is genuinely divided and the row says so: ActorRef
+ * carries the tenant's `embed_user_ref`, which is a name only they can
+ * resolve to a human, and the embed key that vouched for it is what an
+ * admin revokes when a name turns out to be wrong.
+ * Distinct from ActorKindAPIKey even though both are "not a person here":
+ * an API key is the tenant's own backend acting for itself, and this is
+ * the tenant's backend acting for somebody else.
+ */
+export const ActorKindEmbed = "embed";
+export type ActorKind = typeof ActorKindUser | typeof ActorKindSchedule | typeof ActorKindWatcher | typeof ActorKindAPIKey | typeof ActorKindShare | typeof ActorKindEmbed;
 /**
  * ActionStatus is how a tool call ended.
  */
@@ -985,6 +997,25 @@ export interface DocumentFilter {
 }
 
 //////////
+// source: embed_key.go
+
+/**
+ * EmbedKey is a company-scoped, browser-visible credential.
+ * SecretEnc is `json:"-"` for the reason APIKey.KeyHash is: no handler can leak
+ * it by returning the record. Unlike an API key's hash, this one is reversible
+ * — see the 051 migration for why an HMAC forces that — which makes keeping it
+ * off every response shape more load-bearing here, not less.
+ */
+export const EmbedKeyActive = "active";
+export const EmbedKeyDisabled = "disabled";
+export const EmbedKeyRevoked = "revoked";
+/**
+ * Embed key status values. Revoked outranks disabled: somebody made a permanent
+ * decision, and that is the more useful fact to show.
+ */
+export type EmbedKey = typeof EmbedKeyActive | typeof EmbedKeyDisabled | typeof EmbedKeyRevoked;
+
+//////////
 // source: embedding.go
 
 /**
@@ -1547,7 +1578,15 @@ export const ChannelSlack = "slack";
  * deliberately does nothing for it.
  */
 export const ChannelAPI = "api";
-export type Channel = typeof ChannelWhatsApp | typeof ChannelDashboard | typeof ChannelDiscord | typeof ChannelLark | typeof ChannelSlack | typeof ChannelAPI;
+/**
+ * ChannelWidget is a turn from Argentum's chat embedded in a tenant's own
+ * site (T-20). Like ChannelAPI it has no outbound provider — delivery is
+ * the WebSocket the browser is already attached to — and unlike it, the
+ * person on the other end is a human the tenant vouched for rather than a
+ * script.
+ */
+export const ChannelWidget = "widget";
+export type Channel = typeof ChannelWhatsApp | typeof ChannelDashboard | typeof ChannelDiscord | typeof ChannelLark | typeof ChannelSlack | typeof ChannelAPI | typeof ChannelWidget;
 /**
  * ConversationThread is one logical conversation. Each phone number gets its
  * own thread chain; threads auto-split on long idle gaps + topic shifts.
@@ -1583,6 +1622,15 @@ export interface ConversationThread {
    */
   api_user_ref?: string;
   /**
+   * EmbedUserRef is the tenant's own identifier for the person the widget
+   * session was minted for (T-20). Opaque to us, like APIUserRef, and kept in
+   * a separate column for the reason migration 052 states: the two surfaces
+   * are reached with different credentials, and one filter forgetting to
+   * compare `channel` must not become a cross-surface read. Empty for
+   * non-widget threads.
+   */
+  embed_user_ref?: string;
+  /**
    * AgentID is the roster agent this conversation runs as (T-S2). Empty
    * means the company default, which is what every thread predating the
    * roster resolves to and what a thread whose agent was deleted falls back
@@ -1610,6 +1658,12 @@ export interface ConversationThread {
 export interface ThreadFilter {
   Channel: Channel;
   APIUserRef: string;
+  /**
+   * EmbedUserRef narrows to one visitor of the tenant's own site (T-20). Same
+   * job as APIUserRef on the same struct, and separate for the same reason
+   * the columns are separate.
+   */
+  EmbedUserRef: string;
   CursorTime: string;
   CursorID: string;
   Limit: number /* int */;
@@ -2013,3 +2067,62 @@ export interface WebhookSubscription {
   created_at: string;
   updated_at: string;
 }
+
+//////////
+// source: widget_config.go
+
+/**
+ * WidgetConfig is what a tenant's embedded chat looks like and opens with
+ * (T-23).
+ * **Everything on it is public.** It is served to a browser on a page we do not
+ * control, by a route that authenticates a visitor rather than a member of
+ * staff — so nothing that is not already visible to that visitor may be added
+ * here. Not the credit position, not an agent's tools, not a source name. The
+ * test for a new field is: would we print it in the tenant's page source?
+ */
+export interface WidgetConfig {
+  /**
+   * Greeting is the empty state's first line.
+   */
+  greeting?: string;
+  /**
+   * SuggestedPrompts are the buttons under it. Three to five is the useful
+   * range: fewer reads as an accident, more is a menu nobody scans.
+   * **No `omitempty`, unlike every other field here.** An empty slice with
+   * it would be dropped from the JSON entirely, so a tenant with no prompts
+   * would send the widget no key rather than an empty list — and a client
+   * that then reads `config.suggested_prompts.length` gets a TypeError
+   * instead of zero. A caught-by-test bug: the array is a contract, and a
+   * present-but-empty array is what "none" looks like.
+   */
+  suggested_prompts: string[];
+  /**
+   * Locale is the default language of the widget's own chrome. The agent
+   * answers in the language it was asked in regardless — this is the label on
+   * the composer, not an instruction to the model.
+   */
+  locale?: string;
+  /**
+   * Primary is the accent colour, as a hex string. Radius is in pixels.
+   */
+  primary?: string;
+  radius?: number /* int */;
+  /**
+   * Mode is light / dark / auto. Auto reads the visitor's own preference,
+   * which is the right default for a widget that has to sit inside a host
+   * page whose theme we cannot see.
+   */
+  mode?: string;
+  /**
+   * Launcher and Position control the bubble. `none` means the tenant renders
+   * their own trigger and calls `Argentum.open()`.
+   */
+  launcher?: string;
+  position?: string;
+}
+/**
+ * DefaultWidgetGreeting is what a tenant who has configured nothing gets. In
+ * Go rather than seeded into the column, so changing it is a deploy and not a
+ * backfill.
+ */
+export const DefaultWidgetGreeting = "Ask me about your data.";
