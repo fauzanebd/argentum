@@ -7,6 +7,15 @@ name: Release
 # NOTE: this tag versions the deployed backend images. When packages/widget-*
 # start publishing to npm (T-22), those get independent versions via changesets
 # — do not couple npm package versions to this tag.
+#
+# NOTE: the tag can lag main badly, so do not read main's history as the
+# release history. v0.41.2 (4caf1fa) was followed by fifteen backend commits —
+# nine of them feat:, including the Slack channel, watchers, the trace that
+# survives the queue, the video renderer and embed auth — and no tag was minted
+# for any of them. Two things worth checking before assuming a release went
+# out: this workflow's own runs, and whether secrets.PAT is still valid. The
+# same token mints the tag here and logs in to GHCR in ci.yaml, so a single
+# expiry stops both the release and the images with nothing failing loudly.
 on:
   push:
     branches: [main]
