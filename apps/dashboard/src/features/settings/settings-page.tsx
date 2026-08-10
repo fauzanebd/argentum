@@ -10,6 +10,7 @@ import { IntegrationsTab } from "./integrations-tab";
 import { TeamTab } from "./team-tab";
 import { ReportsTab } from "./reports-tab";
 import { APIKeysTab } from "./api-keys-tab";
+import { EmbedTab } from "./embed-tab";
 import { AboutTab } from "./about-tab";
 import { AdminGate } from "@/components/layout/admin-gate";
 import { useIsAdmin } from "@/store/auth";
@@ -38,6 +39,10 @@ export function SettingsPage() {
     // is a map of where this workspace's events go.
     ...(isAdmin ? [{ id: "webhooks", label: "Webhooks" }] : []),
     ...(isAdmin ? [{ id: "api-keys", label: "API keys" }] : []),
+    // Admin-only on every route including the read, like API keys and for one
+    // step more reason: an embed key decides which websites may tell us who a
+    // person is.
+    ...(isAdmin ? [{ id: "embed", label: "Embed" }] : []),
     ...(isAdmin ? [{ id: "team", label: "Team" }] : []),
     { id: "about", label: "About" },
   ];
@@ -114,6 +119,11 @@ export function SettingsPage() {
           {isAdmin && (
             <Tabs.Content value="api-keys">
               <APIKeysTab />
+            </Tabs.Content>
+          )}
+          {isAdmin && (
+            <Tabs.Content value="embed">
+              <EmbedTab />
             </Tabs.Content>
           )}
           {isAdmin && (
