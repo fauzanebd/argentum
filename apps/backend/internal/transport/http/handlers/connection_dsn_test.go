@@ -29,6 +29,18 @@ func TestBuildDSNCarriesTheChosenSSLMode(t *testing.T) {
 		// why the mapping is in one table rather than in each caller.
 		{name: "mysql defaults to tls", dbType: "mysql", mode: "", want: "tls=true"},
 		{name: "mysql can disable", dbType: "mysql", mode: "disable", want: "tls=false"},
+		// `tls=true` verifies the chain and the address, so a server holding the
+		// certificate mysqld generates for itself is refused with `x509: cannot
+		// validate certificate for <ip> because it doesn't contain any IP SANs`.
+		// skip-verify is the choice that keeps the encryption and drops the
+		// check, and it is the tenant's to make rather than the form's.
+		{name: "mysql can encrypt without verifying", dbType: "mysql", mode: "skip-verify", want: "tls=skip-verify"},
+		// libpq spells the same intent `require`: encrypted, unverified.
+		{name: "postgres spells skip-verify require", dbType: "postgres", mode: "skip-verify", want: "sslmode=require"},
+		// go-sql-driver reaches verify-ca only through a registered tls.Config
+		// carrying the root pool. Accepting the word here could only mean
+		// skip-verify — a promise to check the CA, kept by checking nothing.
+		{name: "mysql refuses verify-ca rather than faking it", dbType: "mysql", mode: "verify-ca", wantErr: true},
 		{name: "an unknown mode is refused", dbType: "postgres", mode: "sslmode=disable", wantErr: true},
 	}
 	for _, tt := range cases {

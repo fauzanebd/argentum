@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { apiErrorMessage } from "@/lib/api-error";
+import { certVerificationHint, defaultSslMode, sslModeOptions, supportsSslMode } from "@/lib/ssl-modes";
 
 const schema = z.object({
   db_type: z.string().min(1, "Pick a database type"),
@@ -39,6 +40,7 @@ export function OnboardingPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [dbname, setDbname] = useState("");
+  const [sslMode, setSslMode] = useState(defaultSslMode("postgres"));
   const [testStatus, setTestStatus] = useState<"idle" | "ok" | "error" | "testing">("idle");
   const [testError, setTestError] = useState<string | null>(null);
 
@@ -63,6 +65,10 @@ export function OnboardingPage() {
 
   useEffect(() => {
     setPort(defaultPort(dbType));
+    // Each driver has its own vocabulary for encryption, so a mode carried over
+    // from the previously selected type would be rejected by the API rather
+    // than meaning the same thing.
+    setSslMode(defaultSslMode(dbType));
   }, [dbType]);
 
   function connectionPayload() {
@@ -76,6 +82,7 @@ export function OnboardingPage() {
       username,
       password,
       dbname,
+      ...(supportsSslMode(dbType) ? { ssl_mode: sslMode } : {}),
     };
   }
 
@@ -207,6 +214,27 @@ export function OnboardingPage() {
                     <Label>Database name</Label>
                     <Input value={dbname} onChange={(e) => setDbname(e.target.value)} />
                   </div>
+                  {supportsSslMode(dbType) && (
+                    <div className="space-y-1.5 col-span-2">
+                      <Label>Encryption</Label>
+                      <Select value={sslMode} onValueChange={setSslMode}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sslModeOptions(dbType).map((m) => (
+                            <SelectItem key={m.value} value={m.value}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Servers holding a self-signed certificate, or one issued for a hostname you are not
+                        connecting by, need a mode that does not verify it.
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-1.5">
@@ -224,19 +252,31 @@ export function OnboardingPage() {
                 Stored encrypted at rest with AES-256-GCM. Only the database type is plaintext.
               </p>
 
-              <div className="flex items-center gap-3">
-                <Button type="button" variant="outline" onClick={testConnection} disabled={testStatus === "testing"}>
-                  {testStatus === "testing" ? "Testing..." : "Test connection"}
-                </Button>
-                {testStatus === "ok" && (
-                  <Badge variant="secondary" className="gap-1">
-                    <CheckCircle2 className="h-3 w-3 text-green-600" /> Connected
-                  </Badge>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <Button type="button" variant="outline" onClick={testConnection} disabled={testStatus === "testing"}>
+                    {testStatus === "testing" ? "Testing..." : "Test connection"}
+                  </Button>
+                  {testStatus === "ok" && (
+                    <Badge variant="secondary" className="gap-1">
+                      <CheckCircle2 className="h-3 w-3 text-green-600" /> Connected
+                    </Badge>
+                  )}
+                  {testStatus === "error" && (
+                    <Badge variant="destructive" className="gap-1">
+                      <XCircle className="h-3 w-3" /> Failed
+                    </Badge>
+                  )}
+                </div>
+                {/* The driver's own message stays verbatim — it is the only
+                    thing that names the real cause — but a certificate it
+                    refused is worth translating into the control that decides
+                    whether it is checked. */}
+                {testStatus === "error" && testError && (
+                  <p className="text-xs text-destructive break-words">{testError}</p>
                 )}
-                {testStatus === "error" && (
-                  <Badge variant="destructive" className="gap-1">
-                    <XCircle className="h-3 w-3" /> {testError ?? "Failed"}
-                  </Badge>
+                {testStatus === "error" && certVerificationHint(testError, dbType) && mode === "fields" && (
+                  <p className="text-xs text-muted-foreground">{certVerificationHint(testError, dbType)}</p>
                 )}
               </div>
 

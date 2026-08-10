@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/sheet";
 import { toast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-error";
+import { certVerificationHint, defaultSslMode, sslModeOptions, supportsSslMode } from "@/lib/ssl-modes";
 
 interface Connection {
   id: string;
@@ -72,23 +73,6 @@ function isFormReady(
   return host.trim().length > 0 && port.trim().length > 0 && dbname.trim().length > 0;
 }
 
-/** The encryption choices the host/port form offers, in the order an admin
- *  should prefer them. `require` is the default and is what every connection
- *  registered before 2026-08-03 has: the form pinned it with no way to say
- *  otherwise, so a database that does not speak TLS — every local one, and
- *  plenty of internal ones behind a VPN — could be saved through this form and
- *  could never be read, which the tenant found out a turn later. */
-const SSL_MODES = [
-  { value: "require", label: "Require TLS (recommended)" },
-  { value: "verify-full", label: "Require TLS and verify the certificate" },
-  { value: "prefer", label: "Use TLS if the server offers it" },
-  { value: "disable", label: "No TLS — only on a trusted network" },
-];
-
-/** Drivers whose DSN this control affects. SQL Server sets its own encryption
- *  parameters in buildDSN and is deliberately not offered a choice here. */
-const SSL_MODE_DRIVERS = ["postgres", "mysql"];
-
 export function ConnectionsTab() {
   const qc = useQueryClient();
   const [supported, setSupported] = useState<string[]>([]);
@@ -101,7 +85,7 @@ export function ConnectionsTab() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [dbname, setDbname] = useState("");
-  const [sslMode, setSslMode] = useState("require");
+  const [sslMode, setSslMode] = useState(defaultSslMode("postgres"));
   // Set when a save was refused because the database could not be opened. It
   // carries the driver's own error and turns Add into "Save anyway": a source
   // behind a VPN that is down right now is not a configuration error, but it is
@@ -132,6 +116,10 @@ export function ConnectionsTab() {
 
   useEffect(() => {
     setPort(defaultPort(dbType));
+    // A mode is a driver's own word, not a shared one: carrying `require` from
+    // postgres to mysql would mean a different handshake, and carrying
+    // `skip-verify` the other way is not a word libpq has.
+    setSslMode(defaultSslMode(dbType));
   }, [dbType]);
 
   function payload() {
@@ -146,7 +134,7 @@ export function ConnectionsTab() {
       username,
       password,
       dbname,
-      ssl_mode: sslMode,
+      ...(supportsSslMode(dbType) ? { ssl_mode: sslMode } : {}),
     };
   }
 
@@ -407,7 +395,7 @@ export function ConnectionsTab() {
                 <Label>Database name</Label>
                 <Input value={dbname} onChange={(e) => setDbname(e.target.value)} />
               </div>
-              {SSL_MODE_DRIVERS.includes(dbType) && (
+              {supportsSslMode(dbType) && (
                 <div className="space-y-1.5 col-span-2">
                   <Label>Encryption</Label>
                   <Select value={sslMode} onValueChange={setSslMode}>
@@ -415,7 +403,7 @@ export function ConnectionsTab() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {SSL_MODES.map((m) => (
+                      {sslModeOptions(dbType).map((m) => (
                         <SelectItem key={m.value} value={m.value}>
                           {m.label}
                         </SelectItem>
@@ -424,7 +412,8 @@ export function ConnectionsTab() {
                   </Select>
                   <p className="text-xs text-muted-foreground">
                     This form used to require TLS with no way to say otherwise, so a database that
-                    does not speak it could be saved and never reached.
+                    does not speak it — or that holds a self-signed certificate — could be saved and
+                    never reached.
                   </p>
                 </div>
               )}
@@ -447,6 +436,14 @@ export function ConnectionsTab() {
           {testResult && (
             <Badge variant={testResult === "ok" ? "secondary" : "destructive"}>{testResult}</Badge>
           )}
+          {/* A refused certificate is the one failure here that the form itself
+              can fix, so it gets pointed at the control rather than left as the
+              driver's x509 sentence. */}
+          {mode === "fields" && certVerificationHint(testResult === "ok" ? null : testResult, dbType) && (
+            <p className="text-xs text-muted-foreground">
+              {certVerificationHint(testResult, dbType)}
+            </p>
+          )}
           {unreachable && (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
               <p className="font-medium text-destructive">This database could not be opened</p>
@@ -456,6 +453,11 @@ export function ConnectionsTab() {
                 the server reaches later — but until it opens, an agent asked about this data will
                 spend a turn discovering it cannot read it.
               </p>
+              {mode === "fields" && certVerificationHint(unreachable, dbType) && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {certVerificationHint(unreachable, dbType)}
+                </p>
+              )}
             </div>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}

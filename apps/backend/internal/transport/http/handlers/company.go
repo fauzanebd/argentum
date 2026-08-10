@@ -78,14 +78,29 @@ func userID(c *gin.Context) string {
 // `require` stays the default everywhere. Choosing less is a decision an admin
 // makes explicitly, and it is one they could already make by pasting a raw DSN;
 // what changes is that they no longer have to know the DSN grammar to make it.
+//
+// The drivers do not agree on what `require` means, which is the second thing
+// this table exists to absorb. libpq's `require` encrypts without checking who
+// answered; go-sql-driver's `tls=true` verifies the chain and the address, so a
+// mysql server holding the certificate mysqld generates for itself is refused
+// with `x509: … doesn't contain any IP SANs` — correctly, but for a reason no
+// control on the form could speak to. `skip-verify` names the middle ground
+// explicitly for both: encrypted, unverified, and never a silent fall back to
+// plaintext the way `prefer` is.
+//
+// mysql has no `verify-ca`: go-sql-driver reaches it only through a registered
+// tls.Config carrying the root pool, so accepting the word here would have to
+// mean skip-verify — a promise to check the CA, kept by checking nothing. It is
+// refused instead, and `verify-full` is the mode that verifies.
 var sslModes = map[string]map[string]string{
 	"postgres": {
 		"require": "require", "prefer": "prefer", "disable": "disable",
-		"verify-ca": "verify-ca", "verify-full": "verify-full",
+		"skip-verify": "require",
+		"verify-ca":   "verify-ca", "verify-full": "verify-full",
 	},
 	"mysql": {
 		"require": "true", "prefer": "preferred", "disable": "false",
-		"verify-ca": "skip-verify", "verify-full": "true",
+		"skip-verify": "skip-verify", "verify-full": "true",
 	},
 }
 
