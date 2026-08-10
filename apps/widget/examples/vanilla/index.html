@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Argentum widget — plain HTML</title>
+    <style>
+      body { font: 15px/1.6 system-ui, sans-serif; margin: 3rem auto; max-width: 40rem; padding: 0 1rem; }
+      code { background: #f3f4f6; padding: 1px 5px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>A page with a widget on it</h1>
+    <p>
+      This is a plain HTML page with no framework and no build step. The widget is
+      the script tag at the bottom. Everything it needs comes from
+      <code>/identity</code>, which your own server signs.
+    </p>
+
+    <!-- The loader. In production this is the versioned CDN path. -->
+    <script src="../../dist/argentum-widget.js"></script>
+    <script>
+      // Ask your own backend who this visitor is. It answers with the public
+      // client key and a signature over `<ref>:<exp>` — never with the secret.
+      async function identify() {
+        const res = await fetch("/identity", { credentials: "same-origin" });
+        return res.json();
+      }
+
+      identify().then((identity) => {
+        Argentum.init({
+          clientKey: identity.clientKey,
+          apiBase: identity.apiBase,
+          user: identity.user,
+          launcher: "bubble",
+          position: "bottom-right",
+          theme: { primary: "#e11d48", radius: 12, mode: "auto" },
+        });
+
+        // The one event you must handle. A session lasts minutes; when it ends
+        // the widget asks the page to re-sign rather than retrying a refusal.
+        Argentum.on("token_expired", async () => {
+          Argentum.identify((await identify()).user);
+        });
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "@argentum/widget-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The embeddable chat widget (T-21). Two build outputs from one source: a framework-free loader a tenant drops in a script tag, and the Preact app that runs inside the iframe it opens.",
+  "scripts": {
+    "build": "pnpm build:app && pnpm build:loader",
+    "build:app": "vite build --config vite.app.config.ts",
+    "build:loader": "vite build --config vite.loader.config.ts",
+    "dev": "vite --config vite.app.config.ts",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "size": "node scripts/size.mjs"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.3",
+    "marked": "^15.0.6",
+    "preact": "^10.25.4"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.3",
+    "vite": "^5.4.11"
+  }
+}
