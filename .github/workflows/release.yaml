@@ -12,10 +12,15 @@ name: Release
 # release history. v0.41.2 (4caf1fa) was followed by fifteen backend commits —
 # nine of them feat:, including the Slack channel, watchers, the trace that
 # survives the queue, the video renderer and embed auth — and no tag was minted
-# for any of them. Two things worth checking before assuming a release went
-# out: this workflow's own runs, and whether secrets.PAT is still valid. The
-# same token mints the tag here and logs in to GHCR in ci.yaml, so a single
-# expiry stops both the release and the images with nothing failing loudly.
+# for any of them. The cause was secrets.PAT returning "Bad credentials" on the
+# tag step, every time, for weeks: this workflow fails in about nine seconds
+# and nothing downstream complains, because "no tag" and "no release yet" look
+# identical from the outside. Check this workflow's runs before assuming a
+# release went out.
+#
+# secrets.PAT is this workflow's alone. Image publication moved to GHCR_TOKEN
+# in ci.yaml, so rotating one no longer silently fixes or breaks the other —
+# which is the whole reason they were split.
 on:
   push:
     branches: [main]

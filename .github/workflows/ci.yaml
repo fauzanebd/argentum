@@ -458,12 +458,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # GHCR_TOKEN, not PAT: publishing images and minting release tags are
+      # separate jobs and now hold separate credentials, so one expiring stops
+      # one of them instead of both. PAT belongs to release.yaml alone.
+      #
+      # It cannot be secrets.GITHUB_TOKEN, tempting as that is for a job that
+      # already declares `packages: write`. That token can only write packages
+      # in the repository owner's namespace, and IMAGE_OWNER is haritsrizkall
+      # while the repository is fauzanebd/argentum — so GHCR_TOKEN has to be a
+      # PAT belonging to IMAGE_OWNER (or an account with write access to that
+      # namespace) carrying write:packages. Change the username below with it.
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: haritsrizkall
-          password: ${{ secrets.PAT }}
+          username: ${{ env.IMAGE_OWNER }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Extract metadata
         id: meta
