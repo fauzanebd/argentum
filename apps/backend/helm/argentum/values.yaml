@@ -279,6 +279,13 @@ extraVolumeMounts: []
 render:
   enabled: false
   image:
+    # NOTE: nothing publishes this image yet. ci.yaml's docker matrix builds
+    # argentum-api, argentum-worker and argentum-discord from the apps/backend
+    # context, and the renderer's Dockerfile lives in apps/render — a different
+    # context the matrix has no way to express — so argentum-render has only
+    # ever been built locally (docs/coverage/report-video.md). Setting
+    # `enabled: true` against this default gets ImagePullBackOff rather than a
+    # renderer. Publish the image first, or point repository at your own build.
     repository: ghcr.io/haritsrizkall/argentum-render
     tag: ""
     pullPolicy: IfNotPresent
