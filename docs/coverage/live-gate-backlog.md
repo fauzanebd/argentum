@@ -67,6 +67,32 @@ from `MCP_ALLOW_PRIVATE_EGRESS`, and the two are easy to confuse.
 | `T-V5` | The scene contact sheet, and the pale-brand frame beside the PDF cover | **Owed, added 2026-08-09.** The still export exists and produces them (`--stills` on the fixture CLI); what is missing is the render service running and a place to put the PNGs. Both are photographs of behaviour that is already shared code — one `theme.Readable` call against one floor, for all three formats ([`report-motion.md`](report-motion.md) §4) |
 | `T-V4` | The shared player rendering in Chrome, Safari and Firefox, and the notice a plan with an unknown version shows | **Owed, added 2026-08-09.** Everything server-side passed and one defect was fixed ([`report-player.md`](report-player.md) §7); these two are visual and need a human opening the page. Same shape as `T-R4`'s four-application check, one surface further out — and cheaper, because the page is served by `pnpm dev` rather than by an office suite |
 
+**Added 2026-08-09, and ~~owed~~ run on 2026-08-10.** `T-19`'s and the widget
+phase's stack-only gates were in this bucket and have now been run — with the
+migrations, the mint matrix, an end-to-end turn and two-visitor isolation all
+passing. Details in [`embed-auth.md`](embed-auth.md) §5 and
+[`widget.md`](widget.md) §5. What remains on the track needs a browser and a
+second origin, which is §3's bucket rather than this one.
+
+**The reason it sat for a day is worth recording**, because it is the same
+failure this file was written about: `docker info` answered *"client version
+1.43 is too old"* and was read as "Docker is not running". The daemon had been
+up for 36 hours with the whole stack healthy. A gate skipped over a misread
+error message costs exactly as much as one filed in the wrong bucket.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-19` | Migration `051` applied up **and** down against a real Postgres; then a `curl` transcript of a successful session mint and a forged one, plus one from an origin that is not on the key's allowlist (expect `403`) | **Pass, 2026-08-10.** Up/down/up clean from version 50; eight-case mint matrix over HTTP matching the unit tests exactly; revoke refusing the next mint; the token carrying no `sub` and no `role`; cross-family refusal both ways. No defect found — the matrix was re-running a table-driven test that already existed ([`embed-auth.md`](embed-auth.md) §5). ~~**Owed.**~~ The full refusal matrix passes as unit tests, including both cross-family token checks; what no test covers is the migration itself and the three responses as an integrator would see them ([`embed-auth.md`](embed-auth.md) §5) |
+| `T-19` | The Embed tab in a browser: create a key, copy the secret once, edit the origin list, pause, resume, revoke. Then one real cross-origin preflight of `POST /api/embed/session` from a page on another origin | **Owed.** `tsc -b` is clean and every route it calls has a test; the preflight is the half that needs a second origin serving a page, and it is the one `EmbedCORS` exists for |
+
+**Added 2026-08-10, with the widget phase built.** Same bucket, same cost.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-20`→`T-23` | Migrations `051`, `052`, `053` up **and** down; then one widget turn end to end — mint a session, send a question, watch the answer stream into the panel — and the same visitor's conversation still there after a reload | **Pass, 2026-08-10.** All three up/down/up; a real turn answered from the demo warehouse (4 tables, 1,612 rows, `get_schema` then `run_sql`, 6,476 µUSD); `threads/current` resolving it afterwards; `agent_actions` reading `embed \| emp_812 \| widget`; `usage_events` showing `widget` beside the other four channels; and T-23's config reaching a live session with no redeploy ([`widget.md`](widget.md) §5) |
+| `T-21` | The panel in Chrome, Safari and Firefox, the full-screen sheet under 640px, and a real cross-origin preflight from a page on a second origin | **Run in Chrome 2026-08-10 — four defects, all fixed.** A 404 preflight that blocked every browser from the whole surface, an ES-module bundle a sandboxed frame cannot load, root-absolute asset URLs, and a session minted from an origin no allowlist can match. Then a live turn streamed into the panel. Safari and Firefox are still owed, and the narrow-viewport sheet needs a device — Chrome would not size below 662 CSS px ([`widget.md`](widget.md) §5a) |
+| `T-20` | Thread ownership with two signed identities: visitor B passing visitor A's thread id, expecting 404 | **Pass, 2026-08-10.** Two real sessions from one key: B reading A's transcript → 404, B *posting into* A's thread → 404, B's own `threads/current` → null, A still 200. The write direction is the one no unit test had covered end to end |
+
 **Three items, three defects, and the same pattern for the fourth time.** Every
 one of them is a seam between two processes that no unit test crosses, and each
 had passing tests over the parts either side of it. `T-17b`'s is the sharpest:

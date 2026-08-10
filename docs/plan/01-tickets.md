@@ -2969,6 +2969,12 @@ mechanical.
 **Repo:** BE, FE · **Size:** 2.5d · **Deps:** T-04, T-13 · **Priority:** P0 (of this phase)
 **Migration:** `*_embed_keys` — next free on landing. **This line read `028`
 until 2026-07-30; `028` has been `api_reports` since `T-A2`.**
+**Built 2026-08-09 as `051_embed_keys`. Live gate outstanding —
+[`../coverage/embed-auth.md`](../coverage/embed-auth.md).** Two departures from
+the text below, both recorded there: the secret is **encrypted, not hashed**
+(§2 — the ticket's own HMAC requirement makes `secret_hash` unsatisfiable), and
+the surface gained a CORS policy and a mint rate bucket the ticket does not
+mention (§4.3, §4.4).
 
 The security foundation. Get this wrong and a tenant's data is one forged request
 away. Build it before any UI exists.
@@ -3031,6 +3037,7 @@ Plus a `curl` transcript of a successful session mint and a forged one.
 ---
 
 ## T-20 · Widget channel + scoped embed API
+**Built 2026-08-09 as `052_thread_embed`. Live gate outstanding — [`../coverage/widget.md`](../coverage/widget.md).**
 **Repo:** BE · **Size:** 2d · **Deps:** T-19, T-05, T-03 · **Priority:** P0 (of this phase)
 **Migration:** `*_thread_embed` — next free on landing. **This line read `029`
 until 2026-07-30; `029` has been `webhook_delivery` since `T-A2`.**
@@ -3064,6 +3071,10 @@ into the void.
   **Nothing else.** No connections, no settings, no usage, no metrics, no audit.
 - Thread ownership check on every read: the thread's `embed_user_ref` must equal
   the token's. A widget user must not be able to read a colleague's thread by id.
+  **Not theoretical** — the Gelael pilot built the same check by hand over `/v1`
+  and would have leaked a colleague's conversation without it, silently and with
+  no audit signal ([`../coverage/gelael-pilot.md`](../coverage/gelael-pilot.md)
+  §3.1). Answer a mismatch with 404, not 403.
 - Budget check from T-03 applies. On `BudgetExhausted` the widget shows a plain
   message, not a 402 stack trace.
 - Audit (T-05): `actor_kind=embed`, `actor_ref=embed_user_ref`, `channel=widget`.
@@ -3086,6 +3097,8 @@ receive streamed events → confirm the thread row, the audit rows, and the
 ---
 
 ## T-21 · Widget client
+**Built 2026-08-10. Loader 1.6 KB gz (budget 15), app 32.0 KB gz (budget 80), enforced by `pnpm size`.**
+**`packages/chat-ui` was NOT extracted** — the widget has its own Preact UI. The trade and the two events that should trigger paying the cost are in [`../../apps/widget/README.md`](../../apps/widget/README.md); the drift this ticket warned about is now real.
 **Repo:** WID (new workspace member `apps/widget/`) + PKG · **Size:** 3.5d · **Deps:** T-20 · **Priority:** P0 (of this phase)
 
 **Do:**
@@ -3155,6 +3168,7 @@ close. Plus the actual gzipped bundle sizes from the build output.
 ---
 
 ## T-22 · Distribution and integration docs
+**Partially built 2026-08-10.** Done: the integration guide, the security model, the CSP block, the troubleshooting table ([`../../apps/backend/docs/embed/README.md`](../../apps/backend/docs/embed/README.md)) and the vanilla example with its signing server. **Not done:** the npm packages, the versioned CDN path, changesets, and the react/vue/nextjs examples — `dist/` is static and deployable, which is what the pilot needs; publishing is what the next tenant needs.
 **Repo:** WID · **Size:** 2d · **Deps:** T-21 · **Priority:** P1 (of this phase)
 
 The ticket that decides whether anyone actually integrates it.
@@ -3185,6 +3199,19 @@ The ticket that decides whether anyone actually integrates it.
 - **Document the host-side CSP requirement explicitly**: the customer needs
   `frame-src` and `connect-src` entries. This is the single most common embed
   support ticket in every product that ships a widget.
+- **Two more troubleshooting rows, both paid for by the Gelael pilot**
+  ([`../coverage/gelael-pilot.md`](../coverage/gelael-pilot.md) §3): *answer
+  arrives all at once in production, streams fine locally* → the host's reverse
+  proxy is buffering, `X-Accel-Buffering: no` (nginx buffers by default, so this
+  is the common case, not the exotic one); and *the transcript differs from what
+  the user watched appear* → the client kept the concatenated deltas instead of
+  overwriting with `final`'s persisted message.
+- **State thread ownership as a rule, with an example.** A tenant building a
+  per-user surface on a workspace-scoped `/v1` key must check the thread's
+  `user_ref` themselves, and nothing tells them when they have not — the pilot
+  hit this and answers a mismatch with 404. The widget does not have the problem
+  (the embed session carries the ref), which is exactly why the docs have to say
+  so: an integrator reading both paths needs to know which one is checking.
 - SemVer, `CHANGELOG.md`, and a stated compatibility policy against the
   `/api/embed` version.
 
@@ -3202,6 +3229,7 @@ bug — fix the docs, not the timing.
 ---
 
 ## T-23 · Widget configuration in the dashboard
+**Built 2026-08-10 as `053_company_widget_config`. Live gate outstanding.** Defaults are applied on read rather than stored on write, so a default that changes reaches every tenant who never overrode it.
 **Repo:** FE, BE · **Size:** 1.5d · **Deps:** T-19, T-20 · **Priority:** P1 (of this phase)
 
 **Do:**

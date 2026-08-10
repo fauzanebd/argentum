@@ -2270,6 +2270,172 @@ unit test. The remaining work in this repository is now entirely gates: a
 cluster, three browsers, a handset, a Slack workspace, some model spend, and an
 operator's hostname.
 
+## Phase 2j — Somebody else's website (2026-08-09)
+
+The first integration built outside this repository, and the day committed work
+went from zero back to 11.5 — not because a plan said the widget was next for
+the fifth time, but because §8e's trigger fired. **The named tenant is Gelael
+Supermarket**, Smartsoft's own membership platform, whose Next.js admin
+dashboard now has a **Tanya Data** page.
+
+**Nothing in this repository changed, and that is the entry.** Three route
+handlers in the Gelael app proxy `POST /v1/chat`, `GET /v1/agents` and
+`GET /v1/threads/{id}/messages` with a workspace key held server-side; the
+browser reads a streamed answer. Streaming, thread continuity, agent selection,
+idempotency, typed errors and per-user attribution all worked from the published
+spec with no additions and no undocumented headers. `T-A1`→`T-A5` were built for
+exactly this consumer and the first real one needed nothing new.
+
+**The pilot is not the widget, and the ordering was chosen deliberately.** It
+has no browser-held credential, no origin allowlist and no HMAC identity — the
+four things `T-19` is. It cost about a day of UI that the widget will replace,
+and it bought the requirements that 11.5 days now get spent against. Reading it
+as the plan is the failure mode; the sprint overview §9a says so in those words.
+
+**Three findings, and only one of them is about the widget.** A tenant building
+a per-user surface on a workspace-scoped key has to check thread ownership
+themselves, and nothing tells them when they have not — an admin passing a
+colleague's `thread_id` is served it, silently. `T-20` already specifies that
+check for `/api/embed`, so the design anticipated it; what is new is evidence
+that it has to be a **rule in the docs** rather than a note. Second, an SSE
+stream dies behind a default nginx, arriving as one lump after the answer
+finished — invisible locally, obvious in a cluster, one header to fix. Third and
+ours: `final` carries the persisted message and the deltas are a preview of it,
+which the quickstart's own Node example quietly gets wrong.
+
+**What the day did not do is answer a question.** Everything above compiles and
+builds; no turn has been sent, because the workspace and the key do not exist
+yet. [`gelael-pilot.md`](gelael-pilot.md) §5 is a six-row gate list rather than
+a summary for that reason, and its §2 is careful to say the contract was read
+rather than exercised. The pattern this log has recorded since `T-13` is that
+the gate finds the defect; this entry is written before its gate has run, and
+should be re-read after it does.
+
+## Phase 2k — The widget phase opens: T-19 (2026-08-09)
+
+Eleven and a half days of always-next work started the same day its trigger
+fired. `T-19` is 2.5 of them and it is the half that decides whether the rest is
+safe: a credential that ships in somebody else's page source, and the rule for
+turning it into a session.
+
+**The ticket contradicted itself and the contradiction was load-bearing.** It
+asks for `secret_hash` (Argon2id) *and* for an HMAC recomputed on our side, and
+an HMAC cannot be recomputed from a hash of its key. The HMAC is the security
+model, so the storage gave way: AES-256-GCM under the same key that seals every
+tenant DSN. A dump plus the deployment key now yields signing secrets, which is
+strictly weaker than `api_keys` and exactly as weak as `connections` already
+was, and it is written down in [`embed-auth.md`](embed-auth.md) §2 rather than
+discovered later in a diff.
+
+**The origin check is the part that would have been wrong.** A suffix test —
+the obvious implementation — admits `https://evil-acme.com` for a tenant who
+allowlisted `acme.com`, and whoever registers that domain holds a session for
+somebody else's workspace. One canonicaliser runs on both sides, and the test
+pins ten refusals including a subdomain, because a subdomain is a different
+origin by the spec and admitting it quietly would be a policy nobody wrote.
+
+**A test found the one defect, and it was a claim name.** `EmbedClaims` set
+`Subject: "embed:" + ref`, which is namespaced and still wrong: `sub` is the
+claim `auth.Claims.UserID` reads, so parsing an embed token with the dashboard's
+struct produced a user id. Nothing was reachable — `middleware.Auth` refuses on
+`typ` before reading a user id — but that is one check between a website visitor
+and an identity. `sub` is now empty and the identity lives in `ref`, which no
+dashboard claim reads.
+
+**Two things the ticket did not name and the surface needs.** `/api/embed` needs
+its own CORS, because the dashboard's allowlist is hosts we operate and this
+one is every site any tenant has allowlisted — a set no env var can hold. It
+reflects the origin and sends no `Allow-Credentials`, so a browser carries no
+ambient authority; the access control is the allowlist and the HMAC, which CORS
+never was. And the mint needs an address-keyed bucket of its own, because at
+mint time no identity has been verified — that is what the route is for.
+
+**What is not done is the gate.** 61 packages pass, `golangci-lint` is at 0, the
+full `{valid, tampered, bad origin, expired, far-future, revoked} × {session,
+refresh}` matrix is green, and `051` has never been applied to a real Postgres.
+That is in [`live-gate-backlog.md`](live-gate-backlog.md) §1a — ninety minutes,
+in the bucket this file's own history says is the one that gets run.
+
+## Phase 2l — The widget phase closes (2026-08-09/10)
+
+`T-20`→`T-23` behind `T-19`, and the phase that was carried for seven weeks
+without starting was built in two days. Migrations `052` and `053`.
+
+**The widget is a channel, and every switch on `Channel` was handled rather
+than left to fall through** — the enqueuer's validation and resolve, the
+runner's delivery (a deliberate no-op with a comment, like `api`: the answer is
+already on the socket the browser holds), the audit's `actor_kind=embed`, and
+the usage rollup's fifth `user_key_kind`. `embed_user_ref` is its own column
+rather than `api_user_ref` reused, because two surfaces reached with different
+credentials must not be one filter away from reading each other.
+
+**Five routes and nothing else**, and the list is short on purpose: every route
+on it is reachable from a page we do not control, so the question for each is
+not whether it would be useful but whether a visitor of a tenant's website is
+entitled to it. The thread id is never taken on trust — company, channel and
+ref, and a mismatch is one 404 shared with "no such thread", because a
+distinguishable refusal enumerates the workspace.
+
+**The client came in at a fifth of its budget**: a 1.6 KB loader against 15, and
+a 32 KB iframe app against 80, with `pnpm size` failing the build on a breach.
+The token lives in a closure and nowhere else; the frame is sandboxed without
+`allow-same-origin`; model output goes through DOMPurify before it is rendered,
+because a product name in a tenant's warehouse can carry markup as easily as a
+prompt can.
+
+**A test caught the phase's second defect.** `suggested_prompts` carried
+`omitempty`, so a tenant with no prompts sent the widget no key at all rather
+than an empty array — and a client reading `.length` gets a TypeError instead of
+zero. Same shape as `T-19`'s `sub` claim two days earlier: both found by a test
+written to assert a contract, neither reachable from any gate that has run.
+
+**Two things were not done and both are named rather than implied.**
+`packages/chat-ui` was not extracted — the widget has its own UI, the drift the
+ticket warned about now exists, and the reasoning plus the two events that
+should trigger paying the cost are in `apps/widget/README.md`. And there is no
+npm package or CDN path yet: `dist/` is static and deployable, which is what the
+Gelael integration needs, but the next tenant still copies a directory.
+
+**The gate ran the next morning, and a widget turn was served.** All three
+migrations up, down and up again from version 50; the eight-case mint matrix
+over HTTP matching the unit tests exactly; a real question answered from the
+demo warehouse — four tables, 1,612 rows, `get_schema` then `run_sql`, 6,476
+µUSD — with `agent_actions` reading `embed | emp_812 | widget` and
+`usage_events` showing `widget` beside the other four channels. Two real
+sessions proved the isolation in both directions: visitor B could neither read
+nor **write into** visitor A's thread, and A still read their own.
+
+**Docker had been up the whole time.** `docker info` answered *"client version
+1.43 is too old"* and it was read as a stopped daemon; the stack had been
+healthy for 36 hours. The phase spent a day describing a gate as blocked by a
+missing dependency when it was blocked by a misread error message, which is a
+cheaper mistake than the one [`live-gate-backlog.md`](live-gate-backlog.md) was
+written about and the same shape.
+
+**The `curl` gate found no defect, and that reading lasted about an hour.**
+Opening the panel in an actual browser found **four**, and the first one means
+the `curl` gate had been measuring the wrong thing: `OPTIONS /api/embed/*` was
+a 404 — gin runs group middleware only for routes that exist — so no browser
+could reach the embed surface at all, while twelve green matrix cases said it
+was healthy. **curl does not preflight.** Then: the iframe app was an ES module,
+which a sandbox without `allow-same-origin` cannot load (opaque origin, CORS
+fetch, no host answers `Origin: null`); its asset URLs were root-absolute, so
+they 404 from any path but a domain root; and — the design error the other three
+were hiding — the session was minted *inside the frame*, where the origin can
+never match the tenant's allowlist, because it is the CDN's or `null` and never
+theirs. The mint moved to the loader, which runs in the host page and presents
+the one origin a tenant can allowlist; the frame now holds a token and nothing
+that could mint another.
+
+**The lesson is about the shape of the gate, not the count.** Every one of those
+four passed `go test -race`, `golangci-lint`, `tsc`, two builds and a
+twelve-case HTTP matrix. What none of them did was load the built file over
+HTTP into a browser, which is the only thing that exercises a preflight, a
+sandbox, a relative URL or a cross-origin postMessage. Afterwards, in Chrome
+against the live stack: the launcher in the tenant's accent, the conversation
+restored on open, and an answer streaming over the WebSocket with a `run_sql`
+chip above it.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

@@ -25,14 +25,14 @@ language.
 | `apps/dashboard/`       | Customer-facing web app                   | React 18, Vite, TanStack       |
 | `apps/landing/`         | Marketing site                            | React 18, Vite, Tailwind       |
 | `apps/render/`          | The video renderer (T-V2): a plan in over HTTP, an MP4 out. The one image here with a browser in it, deployed behind `egress: []` | Node 22, Remotion, ffmpeg |
-| `apps/widget/`          | **Backlogged** (T-19→T-23) — embeddable chat widget for customers' own internal sites. Moved out of committed work 2026-08-09 with a trigger; see `plan/00-sprint-overview.md` §8e | Preact, iframe, npm + CDN |
+| `apps/widget/`          | **Built 2026-08-09/10** (T-19→T-23) — the embeddable chat: a 1.6 KB loader and a 32 KB Preact app in a sandboxed iframe, on `/api/embed`'s five routes. Live gate outstanding; npm/CDN publishing not done. See `coverage/widget.md` | Preact, iframe |
 | `packages/api-types/`   | TS types generated from the Go structs by tygo, committed and diffed by CI (T-02b) | TypeScript      |
 | `packages/motion/`      | The Remotion compositions a video plan is drawn with (T-V2). Holds no palette, no type scale and no layout — everything comes from the plan | Preact/React + Remotion |
 | `packages/argentum-node/` | `@argentum/sdk` — the public API from Node, types generated from the OpenAPI spec (T-A4) | TypeScript, no runtime deps |
 | `packages/argentum-python/` | `argentum` — the same three shapes from Python, sync and async (T-A4) | Python 3.9+, httpx |
 | `packages/openapi-tools/` | Everything generated from `apps/backend/openapi/v1.yaml`: Postman, the Python types, the 3.1 validity check, the quickstart-example drift check (`make openapi`) | Node scripts |
 | `packages/design-tokens/` | One token source generating the dashboard's CSS variables and the backend's Go report theme (`make tokens`) | JSON + codegen |
-| `packages/chat-ui/`     | **Backlogged** (T-21) — chat components shared by dashboard + widget, extracted rather than copied when the widget phase opens | Preact/React |
+| `packages/chat-ui/`     | **Not extracted, deliberately** (T-21). The widget has its own small Preact UI instead; the trade, its cost, and the two events that should trigger paying it are in `apps/widget/README.md` | — |
 
 Consolidated from three separate repos in `T-00b`, with history preserved via
 `git subtree`. One commit per feature; deploys stay independent per app.
@@ -103,6 +103,9 @@ docs/
 │   ├── slack-channel.md          The Slack channel, threading, dedupe, watcher delivery
 │   ├── report-video.md           T-V1→T-V3 the spec as a video, and the service that draws it
 │   ├── docs-site.md              The published quickstart, spec and collection
+│   ├── gelael-pilot.md           The first integration outside this repo, and what it found
+│   ├── embed-auth.md             T-19 embed keys, HMAC identity, session tokens
+│   ├── widget.md                 T-20→T-23 the widget channel, client, docs and config
 │   └── live-gate-backlog.md      Every acceptance item owed that code cannot close
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals

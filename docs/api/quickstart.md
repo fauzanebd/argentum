@@ -397,6 +397,14 @@ for ev in client.chat.stream(
 Continue a conversation by passing the `thread_id` back. Read the transcript
 with `GET /v1/threads/{id}/messages`.
 
+**`final` carries the answer of record; the deltas are a preview of it.** The
+frame's `message` is read back from storage after the turn is persisted, so
+`message.content` is what `GET /v1/threads/{id}/messages` will return and what
+every other surface will show. Printing deltas as they arrive is right for a
+terminal — the examples above do exactly that — but a client that *keeps* the
+conversation should overwrite its accumulated text with `final`'s when the frame
+lands, or its transcript can differ from the thread's.
+
 ## 6. Choosing which agent answers
 
 A workspace can keep several agents — Finance, Ops, Support — each with its own

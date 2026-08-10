@@ -1121,3 +1121,148 @@ backlog and anything new all start from the same line. This document should not
 choose for them; what it can say is that the two cheapest things on the table
 are a cluster and a browser, and that both close items this sprint has been
 carrying since the video track opened.
+
+## 9. The widget trigger fires — Gelael Member
+
+**Decided 2026-08-09, hours after §8g.** §8e moved the widget phase to the
+backlog behind one condition: *a named tenant with a frontend team asking to put
+Argentum's chat inside their own internal site.* That condition is now met, and
+this section is the record of it firing rather than a fifth plan saying the
+widget is next.
+
+**The tenant is Gelael Supermarket** — the membership and loyalty platform
+Smartsoft already builds and operates (`gelael-member`, a separate repo). Its
+admin dashboard is Next.js 14 with next-auth, its analytical data is the MySQL
+database that dashboard already reports on, and its frontend team is this
+repository's owner. It is a first tenant with an unusual property: **the same
+people own both sides**, so the integration's requirements arrive as commits
+rather than as a support thread.
+
+### 9a. What was built first, and why it is not the widget
+
+**A bespoke `/v1` integration, in the Gelael repo, in a day.** The Gelael
+dashboard gained three route handlers that proxy `POST /v1/chat`,
+`GET /v1/agents` and `GET /v1/threads/{id}/messages` with a workspace API key
+held server-side, and a **Tanya Data** page that streams the answer. Nothing in
+*this* repository changed — that is the point of the finding below.
+
+**Why this order, against the widget going first:** the widget is 11.5 days and
+its shape has been guessed at since it was written. A day of somebody actually
+answering questions from inside a real internal tool buys the requirements those
+11.5 days get spent against, and `T-A1`→`T-A5` were built precisely so a
+server-side consumer needs nothing new from us. The cost of the ordering is a
+throwaway UI, about a day of it, and that is stated here so nobody later reads
+the pilot as the plan.
+
+**What the pilot proves, and what it cannot.** It proves the `/v1` contract is
+sufficient for a third-party surface: streaming, thread continuity, agent
+selection, typed errors and per-user attribution all worked against the
+published spec with no additions. It cannot prove anything about the widget's
+security model, because it does not use it — there is no browser-held
+credential, no origin allowlist and no HMAC identity anywhere in it. The pilot's
+key is workspace-wide and server-side, which is exactly the arrangement `T-19`
+exists to make unnecessary.
+
+### 9b. Three requirements the pilot hands the widget phase
+
+Each is something the pilot had to solve in the host application, and each is
+something the widget must solve once so the next tenant does not.
+
+1. **Thread ownership is not the tenant's job.** `/v1` authorises the workspace,
+   so an admin passing a colleague's `thread_id` would have been served it. The
+   Gelael proxy fetches the thread, compares `user_ref`, and answers a mismatch
+   with 404. **`T-20` already specifies this check** — this is the first
+   evidence that a tenant who skips it has a data leak and no error, so the
+   embed docs (`T-22`) must state it as a rule and not as a note.
+2. **A streaming answer dies behind a default proxy.** Nginx buffers, so the
+   host needs `X-Accel-Buffering: no` or the stream arrives as one lump after
+   the answer is finished. This is invisible in local development and obvious in
+   a cluster. It belongs in `T-22`'s troubleshooting table beside the CSP row.
+3. **`final` versus the deltas.** The persisted message on `final` is the answer
+   of record and the deltas are a preview of it; a client that only concatenates
+   deltas is subtly wrong. Undocumented in the quickstart, discovered by reading
+   `v1_chat.go`. Fix the quickstart — that one is ours, not the widget's.
+
+### 9c. What this does to the plan
+
+**The widget phase (`T-19`→`T-23`, 11.5d) returns to committed work**, whole and
+unchanged, and [`backlog.md`](backlog.md)'s entry for it is closed rather than
+edited. Committed work goes from 0.0 days to 11.5.
+
+**Nothing is displaced**, which is the first time an insert in this document has
+been able to say so — §8g emptied the plan the same day. The ordering question
+§8d and §8e kept re-asking does not arise.
+
+**`T-19` starts on the day it was scoped for.** It builds on `T-13`, which
+shipped; `T-21` builds on `packages/chat-ui`, which still does not exist and is
+still the extraction it always was. The seven weeks of deferral cost this phase
+nothing except the seven weeks.
+
+**Gelael is `T-22`'s gate, not a hypothetical throwaway Vite app.** That
+ticket's gate — *integrate into an app using only the published docs, and time
+it* — now has a real host with a real frontend, real CSP, real auth and real
+staff. A pilot that has already integrated once is the strongest possible check
+on whether the documented path is the easy one, because it can be compared
+against what the bespoke integration actually took.
+
+**What the pilot owes before any of this is called proven**: an Argentum
+workspace for Gelael with the MySQL source connected, a scoped key, and one real
+question answered end to end by a human. All three are in
+[`../coverage/gelael-pilot.md`](../coverage/gelael-pilot.md) §5, which is a
+gate-shaped list because that is what this project has learned to write.
+
+### 9d. T-19 lands the same day
+
+`T-19` (2.5d) is built: `051_embed_keys`, the session mint, `EmbedAuth`, the two
+rate buckets and the dashboard's Embed tab with signing snippets in four
+languages. **Remaining committed work is 9.0 days** — `T-20` (2.0), `T-21`
+(3.5), `T-22` (2.0), `T-23` (1.5).
+
+Two departures from the ticket, both in
+[`../coverage/embed-auth.md`](../coverage/embed-auth.md) rather than in a commit
+message: the signing secret is encrypted rather than hashed, because the
+ticket's own HMAC requirement makes `secret_hash` unsatisfiable; and the surface
+grew a CORS policy and a mint rate bucket the ticket never named, because a
+browser cannot read a refusal it is not allowed to see and an unauthenticated
+route needs a bound.
+
+**Its live gate is owed and it is a cheap one** — `051` against a real Postgres
+and three `curl` transcripts, in
+[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1a. §8g
+recorded that the cheapest thing in this project is running the gate you already
+wrote, and `T-20` builds directly on this ticket's auth chain.
+
+### 9e. The phase closes, and what is left is a browser
+
+**Written 2026-08-10.** `T-20` (2.0), `T-21` (3.5), `T-22` (2.0) and `T-23`
+(1.5) are built. **Committed work returns to 0.0 days** — the second time this
+document has been able to say that, and the first time it has said it about a
+track that spent seven weeks being deferred.
+
+Two deliberate departures, both recorded in
+[`../coverage/widget.md`](../coverage/widget.md) rather than left implicit:
+
+1. **`packages/chat-ui` was not extracted** (`T-21`). The widget has its own
+   Preact UI, so the drift the ticket warned about is now real: two places
+   render a chat message. The trade — a refactor of a working staff surface,
+   with the regression landing on people who use it daily, to share ~200 lines
+   of presentational markup against an 80 KB budget — and the two events that
+   should trigger paying the cost are in `apps/widget/README.md`.
+2. **`T-22` shipped its docs and its example, not its packaging.** No npm
+   package, no versioned CDN path, no changesets, three of four example apps
+   missing. `dist/` is static and deployable, which is what the *pilot* needs;
+   publishing is what the *next tenant* needs, and it is the cheapest remaining
+   item in the phase.
+
+**What the phase cost against its estimate:** 11.5 days scoped, two days spent,
+with `T-22` partial. The gap is mostly packaging and the extraction — the two
+things above — and stating it that way is more useful than a velocity claim.
+
+**What is left is not build work, and it is the same sentence §8g ended on.**
+Every outstanding item on this track needs something a test cannot supply: a
+Postgres for three migrations, an LLM key for one turn, three browsers for the
+panel, a second origin for a preflight. They are in
+[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1a, in
+the bucket this project's own record says is the one that actually gets run —
+and the two defects this phase found were both found by tests, which is exactly
+the pattern that precedes a gate finding the rest.

@@ -125,7 +125,25 @@ for.** `00-sprint-overview.md` §6 carries the full arithmetic and the argument.
 never-cut, before anything new is considered.
 **Estimate:** 23.5d, unchanged — the tickets need no rewriting.
 
-### The whole widget phase (T-19 → T-23) — **no longer committed work, 2026-08-09**
+### ~~The whole widget phase (T-19 → T-23)~~ — **trigger fired 2026-08-09, back to committed work**
+**The named tenant is Gelael Supermarket** — Smartsoft's own membership platform
+(`gelael-member`), whose Next.js admin dashboard now carries a **Tanya Data**
+page answering from Argentum. The trigger below asked for *a named tenant with a
+frontend team asking to put Argentum's chat inside their own internal site*, and
+it was written to be hard to satisfy by wishing. It is satisfied.
+**What fired it is a pilot, not the widget.** Gelael integrated over `/v1` with a
+server-side key in a day, which is the arrangement `T-19` exists to make
+unnecessary — it has no browser-held credential, no origin allowlist and no HMAC
+identity. Read it as the requirements-gathering the phase never had.
+**Status:** committed. 11.5d, unchanged, nothing displaced —
+[`00-sprint-overview.md`](00-sprint-overview.md) §9 is the decision, §9b lists
+the three requirements the pilot hands the phase, and
+[`../coverage/gelael-pilot.md`](../coverage/gelael-pilot.md) is the record.
+**This entry stays here, struck through, rather than being deleted** — an item
+that spent seven weeks being deferred should show what finally moved it.
+
+**The deferral it is closing, kept intact below:**
+
 **Moved out of Sprint 2's commitments** and given the trigger below.
 [`00-sprint-overview.md`](00-sprint-overview.md) §8e is the decision and its
 reasoning. In short: four consecutive plans said the widget was next and none ran
