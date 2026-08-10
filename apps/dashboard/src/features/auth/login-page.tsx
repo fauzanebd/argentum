@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, Link } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -19,11 +19,25 @@ const schema = z.object({
 });
 type FormValues = z.infer<typeof schema>;
 
+// Public registration is closed, but testers still need a way in. Flipping the
+// theme toggle more than this many times on the login screen reveals the
+// sign-up link. Deliberately undiscoverable by accident; remove along with the
+// counter below once registration opens for real.
+const THEME_TOGGLES_TO_REVEAL_SIGNUP = 6;
+
 export function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
   const { theme, toggle } = useThemeStore();
   const [error, setError] = useState<string | null>(null);
+  // Per-visit, not persisted: reloading the page hides the link again.
+  const [themeToggles, setThemeToggles] = useState(0);
+  const signupRevealed = themeToggles > THEME_TOGGLES_TO_REVEAL_SIGNUP;
+
+  function onToggleTheme() {
+    toggle();
+    setThemeToggles((n) => n + 1);
+  }
 
   const {
     register,
@@ -48,7 +62,7 @@ export function LoginPage() {
       <Button
         variant="ghost"
         size="icon"
-        onClick={toggle}
+        onClick={onToggleTheme}
         className="absolute top-4 right-4 rounded-full"
         aria-label="Toggle theme"
       >
@@ -78,14 +92,15 @@ export function LoginPage() {
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? "Signing in..." : "Sign in"}
             </Button>
-            {/* Sign-up hidden for now — re-enable when public registration opens.
-            <p className="text-sm text-center text-muted-foreground">
-              Don't have an account?{" "}
-              <Link to="/signup" className="text-foreground underline">
-                Sign up
-              </Link>
-            </p>
-            */}
+            {/* Hidden until the theme toggle above is flipped enough times. */}
+            {signupRevealed && (
+              <p className="text-sm text-center text-muted-foreground">
+                Don't have an account?{" "}
+                <Link to="/signup" className="text-foreground underline">
+                  Sign up
+                </Link>
+              </p>
+            )}
           </CardFooter>
         </form>
       </Card>
