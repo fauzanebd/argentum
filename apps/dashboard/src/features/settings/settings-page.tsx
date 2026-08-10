@@ -49,19 +49,23 @@ export function SettingsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto px-6 py-8">
+      <div className="max-w-6xl mx-auto px-6 py-8">
         <h1 className="text-2xl font-bold mb-1">Settings</h1>
         <p className="text-sm text-muted-foreground mb-6">
           Manage your company preferences, data sources, authorised phone numbers and team.
         </p>
         <Tabs.Root value={tab} onValueChange={setTab}>
-          <Tabs.List className="inline-flex border-b border-border mb-6">
+          {/* w-full + horizontal scroll rather than inline-flex: the strip is
+              wider than the panels below it on a narrow window, and an
+              inline-flex list wraps its labels and spills past the cards
+              instead of staying inside the same column. */}
+          <Tabs.List className="flex w-full overflow-x-auto border-b border-border mb-6">
             {tabs.map((t) => (
               <Tabs.Trigger
                 key={t.id}
                 value={t.id}
                 className={cn(
-                  "px-4 py-2 text-sm border-b-2 transition-colors",
+                  "shrink-0 whitespace-nowrap px-4 py-2 text-sm border-b-2 transition-colors",
                   tab === t.id
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground",
