@@ -115,7 +115,16 @@ type ChatInput struct {
 	SlackMessageTS   string // slack only; this message's own ts
 	SlackThreadTS    string // slack only; set when the message is already threaded
 	APIUserRef       string // api only; the tenant's own reference for the end user
-	Message          string
+	// EmbedUserRef is widget only: the visitor the tenant's backend vouched
+	// for, carried on the embed session token rather than sent by the browser
+	// (T-20). A field the client could set would be a field the client could
+	// change, which is the whole thing T-19's HMAC exists to prevent.
+	EmbedUserRef string
+	// EmbedKeyID names the embed key whose session started this turn. It is
+	// the audit trail's answer to "which of our sites did this come from",
+	// and the object an admin revokes when the answer is wrong.
+	EmbedKeyID string
+	Message    string
 	// Directive is an instruction for this turn that the *caller* did not
 	// write — today, `POST /v1/reports`'s ReportDirective. It is carried
 	// beside Message rather than folded into it because the two are judged
@@ -227,6 +236,17 @@ func (in ChatInput) validate() error {
 		// integration.
 		if in.APIUserRef == "" && in.ThreadID == "" {
 			return errors.New("api_user_ref or thread_id required for api channel")
+		}
+	case domain.ChannelWidget:
+		// Stricter than the api arm above, which accepts either identity. A
+		// widget turn always has an embed_user_ref because the session token
+		// carries one and the middleware refuses a token without it — so an
+		// empty ref here is not a caller who chose to pass a thread id instead,
+		// it is a wiring bug. Every widget read is scoped by this value, and a
+		// turn that is stored without one is a turn its own visitor cannot
+		// read back.
+		if in.EmbedUserRef == "" {
+			return errors.New("embed_user_ref required for widget channel")
 		}
 	default:
 		return fmt.Errorf("invalid channel: %q", in.Channel)
@@ -398,6 +418,41 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 				resolved, err = s.forkForAgent(ctx, in, resolved, pinned)
 			}
 		}
+	case domain.ChannelWidget:
+		// The api arm's shape, with one difference that matters: the thread id
+		// is never taken on trust from the caller. A widget client runs in a
+		// browser on somebody else's page, so a thread id it sends is a thread
+		// id a visitor can edit — the ownership comparison below is what makes
+		// "this is my conversation" a fact rather than a claim.
+		pinned, perr := s.pickAgent(ctx, in.CompanyID, in.AgentID)
+		if perr != nil {
+			return nil, perr
+		}
+		if in.ThreadID != "" {
+			thread, terr := s.threads.GetByID(ctx, in.ThreadID)
+			if terr != nil {
+				return nil, fmt.Errorf("lookup thread: %w", terr)
+			}
+			// Three comparisons, and none is redundant: the company is the
+			// tenant boundary, the channel stops a widget turn being appended
+			// to a staff conversation, and the ref is the per-visitor boundary
+			// that no other channel needs because no other channel hands the
+			// thread id to an untrusted client.
+			if thread.CompanyID != in.CompanyID ||
+				thread.Channel != domain.ChannelWidget ||
+				thread.EmbedUserRef != in.EmbedUserRef {
+				return nil, fmt.Errorf("%w: no such conversation", domain.ErrNotFound)
+			}
+			if pinned != "" && pinned != s.agentFor(ctx, thread) {
+				return nil, ErrAgentChange
+			}
+			resolved = &ResolveResult{Thread: thread, IsNew: false}
+		} else {
+			resolved, err = s.threads.ResolveForEmbedUser(ctx, in.CompanyID, in.EmbedUserRef, in.Message, pinned)
+			if err == nil {
+				resolved, err = s.forkForAgent(ctx, in, resolved, pinned)
+			}
+		}
 	case domain.ChannelDashboard:
 		if in.ThreadID != "" {
 			// Explicit thread selected by the user — bypass resolver.
@@ -475,6 +530,8 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		DefaultCurrency: currency,
 		APIReportID:     in.APIReportID,
 		APIKeyID:        in.APIKeyID,
+		EmbedUserRef:    in.EmbedUserRef,
+		EmbedKeyID:      in.EmbedKeyID,
 		// Off the context rather than out of ChatInput: the request id is
 		// ambient per-request identity, exactly like the company id, and a
 		// field on the input would be one every caller has to remember to
@@ -522,6 +579,14 @@ func (s *ChatEnqueuer) forkForAgent(
 	}
 	if s.agentFor(ctx, resolved.Thread) == pinned {
 		return resolved, nil
+	}
+	// The widget shares this function because it shares the situation exactly:
+	// one `user_ref`-shaped door where a caller names an agent without naming a
+	// thread. What differs is only which column the new conversation is keyed
+	// by, and getting that wrong would fork a widget visitor into an `api`
+	// thread they could then never read back.
+	if in.Channel == domain.ChannelWidget {
+		return s.threads.CreateEmbedThread(ctx, in.CompanyID, in.EmbedUserRef, in.Message, pinned)
 	}
 	return s.threads.CreateAPIThread(ctx, in.CompanyID, in.APIUserRef, in.Message, pinned)
 }

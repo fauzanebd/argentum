@@ -19,6 +19,12 @@ const (
 	// response the caller is already holding open, so ChatRunner.completeWith
 	// deliberately does nothing for it.
 	ChannelAPI Channel = "api"
+	// ChannelWidget is a turn from Argentum's chat embedded in a tenant's own
+	// site (T-20). Like ChannelAPI it has no outbound provider — delivery is
+	// the WebSocket the browser is already attached to — and unlike it, the
+	// person on the other end is a human the tenant vouched for rather than a
+	// script.
+	ChannelWidget Channel = "widget"
 )
 
 // ConversationThread is one logical conversation. Each phone number gets its
@@ -49,6 +55,13 @@ type ConversationThread struct {
 	// belongs to a company, so the only identity available is the one the
 	// caller supplies. Empty for non-api threads.
 	APIUserRef string `json:"api_user_ref,omitempty"`
+	// EmbedUserRef is the tenant's own identifier for the person the widget
+	// session was minted for (T-20). Opaque to us, like APIUserRef, and kept in
+	// a separate column for the reason migration 052 states: the two surfaces
+	// are reached with different credentials, and one filter forgetting to
+	// compare `channel` must not become a cross-surface read. Empty for
+	// non-widget threads.
+	EmbedUserRef string `json:"embed_user_ref,omitempty"`
 	// AgentID is the roster agent this conversation runs as (T-S2). Empty
 	// means the company default, which is what every thread predating the
 	// roster resolves to and what a thread whose agent was deleted falls back
@@ -76,9 +89,13 @@ type ConversationThread struct {
 type ThreadFilter struct {
 	Channel    Channel
 	APIUserRef string
-	CursorTime time.Time
-	CursorID   string
-	Limit      int
+	// EmbedUserRef narrows to one visitor of the tenant's own site (T-20). Same
+	// job as APIUserRef on the same struct, and separate for the same reason
+	// the columns are separate.
+	EmbedUserRef string
+	CursorTime   time.Time
+	CursorID     string
+	Limit        int
 }
 
 // ThreadRepository is the persistence contract for conversation threads.
@@ -120,6 +137,9 @@ type ThreadRepository interface {
 	// LatestForAPIUser returns the most recent non-archived api thread for a
 	// (companyID, apiUserRef) pair. ErrNotFound if no thread exists.
 	LatestForAPIUser(ctx context.Context, companyID, apiUserRef string) (*ConversationThread, error)
+	// LatestForEmbedUser returns the most recent non-archived widget thread for
+	// a (companyID, embedUserRef) pair (T-20). ErrNotFound if no thread exists.
+	LatestForEmbedUser(ctx context.Context, companyID, embedUserRef string) (*ConversationThread, error)
 	ListByCompany(ctx context.Context, companyID string, limit, offset int) ([]*ConversationThread, error)
 	UpdateSummary(ctx context.Context, id, title, summary string) error
 	Touch(ctx context.Context, id string, at time.Time) error

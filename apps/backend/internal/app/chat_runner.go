@@ -889,6 +889,16 @@ func actorOf(p queue.ChatRunPayload) (kind, ref string) {
 	if p.APIKeyID != "" {
 		return string(domain.ActorKindAPIKey), p.APIKeyID
 	}
+	// A widget turn is a person, but not one of ours: the tenant's backend
+	// asserted who they are and we verified the assertion, not the human. It
+	// gets its own kind rather than joining the ActorKindUser list below,
+	// because every ref in that list is an identity we authenticated ourselves
+	// and `embed_user_ref` is a name a tenant chose. The ref is that name; the
+	// key that vouched for it is on the payload and is what an admin revokes
+	// when the vouching turns out to be wrong (T-20).
+	if p.EmbedUserRef != "" {
+		return string(domain.ActorKindEmbed), p.EmbedUserRef
+	}
 	for _, candidate := range []string{p.UserID, p.DiscordUserID, p.LarkOpenID, p.PhoneNumber} {
 		if candidate != "" {
 			return string(domain.ActorKindUser), candidate
@@ -1209,6 +1219,14 @@ func (r *ChatRunner) completeWith(
 				}).Error("slack reply failed")
 			}
 		}
+	case domain.ChannelWidget:
+		// Deliberately nothing, for ChannelAPI's reason one surface further out
+		// (T-20). Delivery is the WebSocket the browser is already attached to,
+		// and the `final` event this function published two statements ago is
+		// what travels down it. There is no outbound provider to add here
+		// later: a widget turn that tried to send somewhere would be sending a
+		// second copy of an answer already on screen. Do not "fix" this empty
+		// case either.
 	case domain.ChannelAPI:
 		// Deliberately nothing, and deliberately written out rather than
 		// left to fall through the switch (T-A1). Delivery already happened:

@@ -110,6 +110,14 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	}
 	deps.signer = signer
 
+	// Embed keys (T-19). Built after the cipher and the signer because it needs
+	// both: the cipher seals the signing secret at rest, and the signer mints
+	// the session that secret's HMAC buys.
+	deps.embedKeySvc = app.NewEmbedKeyService(
+		pgctl.NewEmbedKeyRepo(controlDB), dsnCipher, signer,
+		time.Duration(cfg.EmbedSessionTTLMinutes)*time.Minute,
+	)
+
 	resolver := pgctl.NewConnectionResolver(connRepo, dsnCipher)
 	deps.tenant = db.NewTenantConnPool(resolver, 200, 30*time.Minute)
 	tenCtx, cancelTen := context.WithCancel(ctx)

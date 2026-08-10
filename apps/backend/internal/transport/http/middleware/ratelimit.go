@@ -119,6 +119,66 @@ func (r *RateLimiter) APIKeyMiddleware() gin.HandlerFunc {
 	})
 }
 
+// EmbedMiddleware rate-limits per `(company_id, embed_user_ref)` (T-19), in a
+// third bucket namespace.
+//
+// **The pair, not the ref alone.** An `embed_user_ref` is a string the tenant
+// chose, so `emp_1` is a different person at every company that uses it —
+// keying on it alone would let one tenant's traffic exhaust another's budget,
+// and would let a tenant discover another tenant's usage by watching their own
+// refusals.
+//
+// A third bucket rather than a third limiter, for APIKeyMiddleware's reason:
+// the mechanism is already correct under concurrency, and what must not be
+// shared is the bucket. A tenant's staff in the dashboard, their nightly job on
+// `/v1`, and one visitor of their website are three traffic shapes with no
+// reason to spend each other's tokens.
+func (r *RateLimiter) EmbedMiddleware() gin.HandlerFunc {
+	limit := r.limitBy("rl:embed:", ctxEmbedBucket, func(c *gin.Context) {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error": "Too many messages. Give it a moment.",
+		})
+	})
+	return func(c *gin.Context) {
+		company := c.GetString("company_id")
+		ref := EmbedUserRef(c)
+		if company != "" && ref != "" {
+			c.Set(ctxEmbedBucket, company+":"+ref)
+		}
+		limit(c)
+	}
+}
+
+// EmbedMintMiddleware rate-limits the session mint by client address (T-19).
+//
+// The address is the weakest identity in the system and it is used because at
+// this point in the request there is no other: the mint runs before any
+// credential has been verified — that is what it is for. What it defends is
+// signature guessing. `hmac.Equal` makes each attempt uninformative and 256
+// bits makes the space unsearchable, so this is defence in depth rather than
+// the control; what it actually buys is that an unauthenticated route which
+// does a database read and an AES-GCM open per call cannot be driven at line
+// rate by one host.
+func (r *RateLimiter) EmbedMintMiddleware() gin.HandlerFunc {
+	limit := r.limitBy("rl:embedmint:", ctxEmbedBucket, func(c *gin.Context) {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error": "Too many session requests. Try again in a moment.",
+		})
+	})
+	return func(c *gin.Context) {
+		c.Set(ctxEmbedBucket, c.ClientIP())
+		limit(c)
+	}
+}
+
+// ctxEmbedBucket is where the two embed limiters leave the identity they limit
+// by — the address before a session exists, the `(company, ref)` pair after.
+// Unexported for ctxShareBucket's reason: nothing outside this file should be
+// able to choose what a bucket is keyed on. The two never run on the same
+// request, and their Redis namespaces differ, so sharing the context key
+// cannot mix the buckets.
+const ctxEmbedBucket = "embed_bucket"
+
 // ctxShareBucket is where ShareMiddleware leaves the identity it limits by.
 // Unexported and set by that middleware itself: nothing else should be able to
 // choose what a public route's bucket is keyed on.

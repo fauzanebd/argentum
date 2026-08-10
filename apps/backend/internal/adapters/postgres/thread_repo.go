@@ -16,7 +16,8 @@ func NewThreadRepo(db *sql.DB) *ThreadRepo { return &ThreadRepo{db: db} }
 
 const threadSelectCols = `id, company_id, channel, COALESCE(phone_number, ''), COALESCE(user_id::text, ''),
 		COALESCE(discord_user_id, ''), COALESCE(lark_chat_id, ''), COALESCE(lark_thread_key, ''),
-		COALESCE(lark_open_id, ''), COALESCE(api_user_ref, ''), COALESCE(agent_id::text, ''),
+		COALESCE(lark_open_id, ''), COALESCE(api_user_ref, ''),
+		COALESCE(embed_user_ref, ''), COALESCE(agent_id::text, ''),
 		COALESCE(slack_team_id, ''), COALESCE(slack_channel_id, ''),
 		COALESCE(slack_thread_ts, ''), COALESCE(slack_user_id, ''),
 		title, summary, last_message_at, is_archived, created_at`
@@ -25,19 +26,22 @@ func (r *ThreadRepo) Create(ctx context.Context, t *domain.ConversationThread) e
 	const q = `
 		INSERT INTO conversation_threads
 			(company_id, channel, phone_number, user_id, discord_user_id,
-			 lark_chat_id, lark_thread_key, lark_open_id, api_user_ref, agent_id,
+			 lark_chat_id, lark_thread_key, lark_open_id, api_user_ref, embed_user_ref,
+			 agent_id,
 			 slack_team_id, slack_channel_id, slack_thread_ts, slack_user_id,
 			 title, summary, last_message_at)
 		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, '')::uuid, NULLIF($5, ''),
 			NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''),
-			NULLIF($10, '')::uuid,
-			NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, ''), NULLIF($14, ''),
-			$15, $16, $17)
+			NULLIF($10, ''),
+			NULLIF($11, '')::uuid,
+			NULLIF($12, ''), NULLIF($13, ''), NULLIF($14, ''), NULLIF($15, ''),
+			$16, $17, $18)
 		RETURNING id, created_at
 	`
 	return r.db.QueryRowContext(ctx, q,
 		t.CompanyID, string(t.Channel), t.PhoneNumber, t.UserID, t.DiscordUserID,
-		t.LarkChatID, t.LarkThreadKey, t.LarkOpenID, t.APIUserRef, t.AgentID,
+		t.LarkChatID, t.LarkThreadKey, t.LarkOpenID, t.APIUserRef, t.EmbedUserRef,
+		t.AgentID,
 		t.SlackTeamID, t.SlackChannelID, t.SlackThreadTS, t.SlackUserID,
 		t.Title, t.Summary, t.LastMessageAt,
 	).Scan(&t.ID, &t.CreatedAt)
@@ -116,6 +120,19 @@ func (r *ThreadRepo) LatestForAPIUser(ctx context.Context, companyID, apiUserRef
 	return r.scanOne(ctx, q, companyID, apiUserRef)
 }
 
+// LatestForEmbedUser is the `widget` channel's lookup (T-20). The channel
+// filter carries LatestForAPIUser's reasoning and one more: the two ref
+// columns hold strings the same tenant chose, so without it a visitor of their
+// website and a user of their backend integration could resolve to each
+// other's conversations the day anything writes both columns.
+func (r *ThreadRepo) LatestForEmbedUser(ctx context.Context, companyID, embedUserRef string) (*domain.ConversationThread, error) {
+	q := `SELECT ` + threadSelectCols + `
+		FROM conversation_threads
+		WHERE company_id = $1 AND embed_user_ref = $2 AND channel = 'widget' AND NOT is_archived
+		ORDER BY last_message_at DESC LIMIT 1`
+	return r.scanOne(ctx, q, companyID, embedUserRef)
+}
+
 // GetForCompany is GetByID with the tenant boundary inside the query (T-A3).
 //
 // The `/v1` chat surface uses only this one. A malformed uuid fails the cast
@@ -165,6 +182,10 @@ func (r *ThreadRepo) ListPage(ctx context.Context, companyID string, f domain.Th
 	if f.APIUserRef != "" {
 		args = append(args, f.APIUserRef)
 		where.WriteString(` AND api_user_ref = $` + itoa(len(args)))
+	}
+	if f.EmbedUserRef != "" {
+		args = append(args, f.EmbedUserRef)
+		where.WriteString(` AND embed_user_ref = $` + itoa(len(args)))
 	}
 	if f.CursorID != "" && !f.CursorTime.IsZero() {
 		args = append(args, f.CursorTime, f.CursorID)
@@ -271,7 +292,8 @@ func scanThreadRow(row rowScanner) (*domain.ConversationThread, error) {
 	var channel string
 	if err := row.Scan(
 		&t.ID, &t.CompanyID, &channel, &t.PhoneNumber, &t.UserID, &t.DiscordUserID,
-		&t.LarkChatID, &t.LarkThreadKey, &t.LarkOpenID, &t.APIUserRef, &t.AgentID,
+		&t.LarkChatID, &t.LarkThreadKey, &t.LarkOpenID, &t.APIUserRef, &t.EmbedUserRef,
+		&t.AgentID,
 		&t.SlackTeamID, &t.SlackChannelID, &t.SlackThreadTS, &t.SlackUserID,
 		&t.Title, &t.Summary, &t.LastMessageAt, &t.IsArchived, &t.CreatedAt,
 	); err != nil {

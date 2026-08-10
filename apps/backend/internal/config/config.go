@@ -188,6 +188,22 @@ type Config struct {
 	// maroto will attempt every one of them.
 	APIV1MaxSpecRows int
 	APIV1MaxSpecCols int
+	// Embedding (T-19). EmbedEnabled is the kill switch: false answers 503 on
+	// the session mint and on every `/api/embed` route, and touches neither
+	// `/api` nor `/v1`. Separate from APIV1Enabled because the two surfaces
+	// fail for different reasons and a tenant's own website going quiet should
+	// not require taking their integrations down with it.
+	EmbedEnabled bool
+	// EmbedSessionTTLMinutes is how long a minted session lives. Short by
+	// design — the host page re-signs rather than us issuing a refresh cookie —
+	// and configurable because the right number depends on how long a visitor
+	// sits on one page, which differs per tenant.
+	EmbedSessionTTLMinutes int
+	// EmbedMaxTurnsPerHour is the per-`(company, embed_user_ref)` budget. It
+	// bounds one visitor of one tenant's site, which is the only unit that
+	// makes sense here: a refill keyed on anything wider lets one visitor spend
+	// the workspace's credits and lock out everybody else on the same page.
+	EmbedMaxTurnsPerHour int
 	// APIV1SyncRenderTimeoutSecs is how long `POST /v1/reports/render` will
 	// hold a connection open before the render becomes a job and the caller
 	// gets a 202. Distinct from APIV1SyncTimeoutSeconds, which is a chat turn:
@@ -433,6 +449,10 @@ func Load() (*Config, error) {
 		APIV1Enabled:            getEnv("API_V1_ENABLED", "true") == "true",
 		APIV1SyncTimeoutSeconds: getEnvAsInt("API_V1_SYNC_TIMEOUT_SECONDS", 120),
 		APIV1MaxBodyBytes:       int64(getEnvAsInt("API_V1_MAX_BODY_BYTES", 1<<20)),
+
+		EmbedEnabled:           getEnv("EMBED_ENABLED", "true") == "true",
+		EmbedSessionTTLMinutes: getEnvAsInt("EMBED_SESSION_TTL_MINUTES", 15),
+		EmbedMaxTurnsPerHour:   getEnvAsInt("EMBED_MAX_TURNS_PER_HOUR", 60),
 
 		APIV1MaxSpecRows:           getEnvAsInt("API_V1_MAX_SPEC_ROWS", 50_000),
 		APIV1MaxSpecCols:           getEnvAsInt("API_V1_MAX_SPEC_COLS", 40),

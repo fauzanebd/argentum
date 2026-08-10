@@ -184,3 +184,48 @@ func (r *CompanyRepo) SaveBranding(ctx context.Context, companyID string, b *dom
 	}
 	return nil
 }
+
+// GetWidgetConfig reads the tenant's widget appearance and content (T-23).
+// Same shape as GetBranding above, one column over: a settings blob one tenant
+// reads for their own rendering.
+func (r *CompanyRepo) GetWidgetConfig(ctx context.Context, companyID string) (*domain.WidgetConfig, error) {
+	const q = `SELECT widget_config FROM companies WHERE id = $1`
+	var raw []byte
+	if err := r.db.QueryRowContext(ctx, q, companyID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	c := &domain.WidgetConfig{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, c); err != nil {
+			// A config that will not parse must not take the widget down with
+			// it — the whole contract is that every field is optional. Report
+			// it so it can be fixed; the caller renders defaults meanwhile.
+			return nil, fmt.Errorf("decode widget_config for company %s: %w", companyID, err)
+		}
+	}
+	return c, nil
+}
+
+// SaveWidgetConfig writes the whole record, one column, so it does not race the
+// name/slug/currency writes going through Update.
+func (r *CompanyRepo) SaveWidgetConfig(ctx context.Context, companyID string, c *domain.WidgetConfig) error {
+	if c == nil {
+		c = &domain.WidgetConfig{}
+	}
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("encode widget_config: %w", err)
+	}
+	const q = `UPDATE companies SET widget_config = $1 WHERE id = $2`
+	res, err := r.db.ExecContext(ctx, q, raw, companyID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}

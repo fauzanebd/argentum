@@ -53,3 +53,48 @@ func CORS(allowOrigins []string, skipPrefixes ...string) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// EmbedCORS is the CORS policy for `/api/embed` (T-19). The engine-level CORS
+// above skips that prefix, because the two surfaces answer opposite questions:
+// the dashboard's list is a fixed set of hosts we operate, and this one is
+// "every site any tenant has allowlisted" — a set that changes whenever an
+// admin edits a key, and that no deployment-time env var can hold.
+//
+// **It reflects the Origin, and that is safe here for two specific reasons:**
+//
+//  1. **No credentials.** `Access-Control-Allow-Credentials` is deliberately
+//     absent, so a browser sends no cookie and carries no ambient authority to
+//     this surface. Reflection without credentials grants a page nothing it
+//     could not already do with a plain server-side request.
+//  2. **The real check is behind it.** CORS decides who may *read a response*;
+//     it is not an access control. What actually gates this surface is the
+//     origin allowlist and the HMAC inside MintSession, and an origin nobody
+//     allowlisted reads a 403 with no token in it.
+//
+// Getting this wrong in the other direction is the failure mode worth naming:
+// a fixed allowlist here would mean every new tenant site needs an Argentum
+// deploy, and the pressure that creates is exactly how a `*` ends up in a CORS
+// header on a surface that mints sessions.
+func EmbedCORS() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if origin := c.GetHeader("Origin"); origin != "" {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Vary", "Origin")
+		}
+		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		// The preflight cache. Ten minutes, so a chatty widget is not
+		// re-preflighting every message, and short enough that an admin who has
+		// just fixed an allowlist does not wait out a browser cache to see it.
+		c.Header("Access-Control-Max-Age", "600")
+
+		if c.Request.Method == http.MethodOptions {
+			// Answered for any origin. A preflight carries no body, so there is
+			// no key to look up and nothing to check it against; the POST that
+			// follows is where the decision is made.
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
+	}
+}

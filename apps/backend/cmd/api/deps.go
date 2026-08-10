@@ -74,6 +74,12 @@ type apiDeps struct {
 	slackSvc     *app.SlackService
 	brandingSvc  *branding.Service
 	apiKeySvc    *app.APIKeyService
+	// The browser-visible credential (T-19). It mints the short-lived sessions
+	// `/api/embed` runs on; the dashboard routes beside it are how an admin
+	// creates one and states which sites may use it. Separate service from
+	// apiKeySvc on purpose — merging a server-side credential with one that
+	// ships in somebody's page source is how scope leaks.
+	embedKeySvc *app.EmbedKeyService
 	// The tenant agent roster (T-S1). It holds this deployment's tool registry
 	// by name, which is why it is built from the same tools.Registry the
 	// worker runs rather than from a list maintained beside the handler.

@@ -131,6 +131,9 @@ func (f *fakeThreads) LatestForSlackUser(context.Context, string, string, string
 func (f *fakeThreads) LatestForAPIUser(context.Context, string, string) (*domain.ConversationThread, error) {
 	panic("unexpected LatestForAPIUser")
 }
+func (f *fakeThreads) LatestForEmbedUser(context.Context, string, string) (*domain.ConversationThread, error) {
+	panic("unexpected LatestForEmbedUser")
+}
 func (f *fakeThreads) ListByCompany(context.Context, string, int, int) ([]*domain.ConversationThread, error) {
 	panic("unexpected ListByCompany — /v1 pages by cursor")
 }

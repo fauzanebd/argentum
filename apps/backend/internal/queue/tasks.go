@@ -164,6 +164,13 @@ type ChatRunPayload struct {
 	// a different process and has no other way to learn it. The first writer
 	// is T-A3's chat route; until then it is set only by tests.
 	APIKeyID string `json:"api_key_id,omitempty"`
+	// EmbedUserRef and EmbedKeyID attribute a widget turn (T-20). The pair is
+	// what an audit row needs to answer both halves of "who did this": the
+	// tenant's own name for the person, and the site that vouched for them.
+	// They cross the queue for APIKeyID's reason — the worker is a different
+	// process and the payload is the only thing that reaches it.
+	EmbedUserRef string `json:"embed_user_ref,omitempty"`
+	EmbedKeyID   string `json:"embed_key_id,omitempty"`
 	// RequestID carries the `X-Request-Id` of the HTTP call that started this
 	// turn (T-A1) into the audit rows the worker writes for it. Support
 	// starts from a request id, so a request id has to resolve to rows — and

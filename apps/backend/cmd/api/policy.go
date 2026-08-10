@@ -237,6 +237,21 @@ var apiPolicy = middleware.RolePolicy{
 	// create form, which is admin-only. A member-readable route nobody can act
 	// on is a wider surface for nothing.
 	"GET /api/api-keys/scopes": domain.RoleAdmin,
+	// Embed keys (T-19). Admin throughout, on the API keys' line and one step
+	// past it: this credential decides *which websites may assert who a person
+	// is* to Argentum. An admin who edits the origin allowlist is deciding
+	// which hosts can mint sessions for their workspace, and the list is where
+	// a revoke starts.
+	"GET /api/embed-keys":        domain.RoleAdmin,
+	"POST /api/embed-keys":       domain.RoleAdmin,
+	"PUT /api/embed-keys/:id":    domain.RoleAdmin,
+	"DELETE /api/embed-keys/:id": domain.RoleAdmin,
+	// The widget's appearance and content (T-23). Admin on read too, matching
+	// the keys beside it: the greeting and the prompts are what every visitor
+	// of the tenant's site sees first, so editing them is a publishing act.
+	"GET /api/embed-config": domain.RoleAdmin,
+	"PUT /api/embed-config": domain.RoleAdmin,
+
 	// The `/v1` failure list (T-A5). Admin for the same reason the audit log is:
 	// it names every route every integration called and how each call failed,
 	// across the whole company. The ticket's acceptance asks for admin-only in
@@ -314,6 +329,35 @@ var unpolicedPaths = map[string]bool{
 
 	// Static metadata, no tenant data.
 	"/api/meta/supported-databases": true,
+
+	// The embed session mint (T-19). Deliberately outside the session: its
+	// caller is a visitor of a tenant's own website, who has no Argentum
+	// account and therefore no role for apiPolicy to check. What authorises the
+	// call is a known client key, an allowlisted Origin and the tenant's HMAC —
+	// all three inside app.EmbedKeyService.MintSession.
+	//
+	// Listed here one route at a time, like the auth routes, so "this route
+	// authenticates nobody in the usual sense" stays a decision somebody wrote
+	// down rather than a path that fell through a wildcard.
+	// The CORS preflight for the whole embed surface. Keyless by definition —
+	// a preflight carries no credential and is not allowed to.
+	"/api/embed/*path":           true,
+	"/api/embed/session":         true,
+	"/api/embed/session/refresh": true,
+
+	// The widget's own surface (T-20), authenticated by the session those two
+	// routes mint. An embed session carries no role — middleware.EmbedAuth sets
+	// none, on purpose — so apiPolicy has nothing to check here either. What
+	// gates these is the ref on the token: every one of them is scoped to the
+	// visitor it was minted for, inside the handler.
+	//
+	// Named one by one for the reason the mint is, and with one more: this is
+	// the list somebody will be tempted to add a sixth route to.
+	"/api/embed/config":               true, // greeting, prompts, agent names
+	"/api/embed/chat":                 true, // one turn, budget-checked
+	"/api/embed/threads/current":      true, // this visitor's live conversation
+	"/api/embed/threads/:id/messages": true, // transcript, ref-scoped
+	"/api/embed/threads/:id/stream":   true, // the WebSocket the answer arrives on
 
 	// The report player (T-V4). Deliberately keyless: the token in the path is
 	// the whole credential, and the visitor has no account to hold a role. It

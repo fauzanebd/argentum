@@ -23,12 +23,23 @@ const (
 	// ActorRef carries the share id, which is what makes "revoke the one that
 	// is being read from an address I do not recognise" answerable.
 	ActorKindShare ActorKind = "share"
+	// ActorKindEmbed is a visitor of a tenant's own site, holding a session
+	// this system minted from an identity *they* asserted (T-19). The
+	// accountable party is genuinely divided and the row says so: ActorRef
+	// carries the tenant's `embed_user_ref`, which is a name only they can
+	// resolve to a human, and the embed key that vouched for it is what an
+	// admin revokes when a name turns out to be wrong.
+	//
+	// Distinct from ActorKindAPIKey even though both are "not a person here":
+	// an API key is the tenant's own backend acting for itself, and this is
+	// the tenant's backend acting for somebody else.
+	ActorKindEmbed ActorKind = "embed"
 )
 
 // Valid reports whether k is a kind this system issues.
 func (k ActorKind) Valid() bool {
 	switch k {
-	case ActorKindUser, ActorKindSchedule, ActorKindWatcher, ActorKindAPIKey, ActorKindShare:
+	case ActorKindUser, ActorKindSchedule, ActorKindWatcher, ActorKindAPIKey, ActorKindShare, ActorKindEmbed:
 		return true
 	}
 	return false

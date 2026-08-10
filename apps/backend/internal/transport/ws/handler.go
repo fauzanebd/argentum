@@ -76,7 +76,55 @@ func (h *Handler) Stream(c *gin.Context) {
 		return
 	}
 
-	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
+	h.pump(c, threadID, h.upgrader)
+}
+
+// EmbedStream is the same socket for a widget visitor (T-20).
+//
+// Two differences from Stream, and both are the point:
+//
+//  1. **Ownership is per visitor, not per company.** A widget client runs on a
+//     page we do not control, so the thread id in the path is a value the
+//     visitor can edit. The thread must belong to this company, be a widget
+//     thread, and carry *this session's* `embed_user_ref` — otherwise a
+//     colleague's conversation is one guessed uuid away. A mismatch answers
+//     404 rather than 403: a wrong id and somebody else's id are one answer.
+//  2. **The origin check is off.** It cannot be anything else: the set of
+//     allowed origins is per embed key and this socket has no key on it, only
+//     a session. That is not a hole, because CheckOrigin defends
+//     cookie-authenticated sockets and this one authenticates with a bearer
+//     token in the query — a token a hostile page does not have. The origin
+//     that mattered was checked when the session was minted (T-19).
+func (h *Handler) EmbedStream(c *gin.Context) {
+	threadID := c.Param("id")
+	companyID := c.GetString("company_id")
+	userRef := c.GetString("embed_user_ref")
+
+	thread, err := h.threads.GetByID(c.Request.Context(), threadID)
+	if err != nil || thread.CompanyID != companyID ||
+		thread.Channel != domain.ChannelWidget || thread.EmbedUserRef == "" ||
+		thread.EmbedUserRef != userRef {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no such conversation"})
+		return
+	}
+
+	h.pump(c, threadID, h.embedUpgrader())
+}
+
+// embedUpgrader is the connection upgrader for EmbedStream: the same buffers,
+// with CheckOrigin accepting anything for the reason stated above.
+func (h *Handler) embedUpgrader() websocket.Upgrader {
+	u := h.upgrader
+	u.CheckOrigin = func(*http.Request) bool { return true }
+	return u
+}
+
+// pump upgrades the connection and forwards one thread's events until either
+// side goes away. Shared by both entry points so the two sockets cannot drift
+// in their ping cadence, their read limit or their shutdown ordering — what
+// differs between them is who is allowed to open one, which is settled above.
+func (h *Handler) pump(c *gin.Context, threadID string, upgrader websocket.Upgrader) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		logrus.WithError(err).Warn("ws upgrade failed")
 		return

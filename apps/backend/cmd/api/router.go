@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/apiobs"
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/transport/http/handlers"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 	"github.com/fauzanebd/argentum/internal/transport/ws"
@@ -27,7 +29,12 @@ func newRouter(d *apiDeps) *gin.Engine {
 	r.Use(middleware.RequestLogging())
 	// /v1 is excluded: it is a machine surface authenticated by an API key,
 	// and with CORS_ORIGINS unset this middleware echoes any Origin.
-	r.Use(middleware.CORS(cfg.CORSOrigins, "/v1"))
+	//
+	// /api/embed is excluded for the opposite reason (T-19): its callers are
+	// every website any tenant has allowlisted, which a deployment-time env var
+	// cannot enumerate. middleware.EmbedCORS answers for that group instead,
+	// without credentials.
+	r.Use(middleware.CORS(cfg.CORSOrigins, "/v1", "/api/embed"))
 
 	registerHealthRoutes(r, d.metrics, d.controlDB, cfg.MetricsToken)
 
@@ -64,6 +71,12 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewAPIKeysHandler(d.apiKeySvc).
 		WithTraffic(trafficReaderOrNil(d.requestRepo)).
 		Register(authed)
+	// Embed key management (T-19). Admin-only through the policy table, like
+	// the API keys above and for a wider reason: this credential decides which
+	// websites may assert an identity to us.
+	handlers.NewEmbedKeysHandler(d.embedKeySvc).
+		WithConfig(widgetConfigOrNil(d.companyRepo)).
+		Register(authed)
 	handlers.NewAgentsHandler(d.agentSvc).
 		WithGenerator(d.agentGenSvc).
 		Register(authed)
@@ -91,6 +104,76 @@ func newRouter(d *apiDeps) *gin.Engine {
 		handlers.NewSlackHandler(d.slackSvc).Register(authed)
 	}
 	authed.GET("/threads/:id/stream", ws.NewHandler(d.rdb, d.threadRepo, cfg.CORSOrigins).Stream)
+
+	// The CORS preflight, on its own group and registered as a route.
+	//
+	// **Group middleware in gin runs only for routes that exist.** An
+	// unregistered `OPTIONS /api/embed/session` falls through to the 404
+	// handler, which no group middleware wraps — so EmbedCORS never runs, the
+	// response carries no `Access-Control-Allow-Origin`, and the browser blocks
+	// the request that follows. Every `curl` transcript passes anyway, because
+	// curl does not preflight. Found by the browser gate on 2026-08-10, after
+	// the whole mint matrix had already been proven green over HTTP.
+	//
+	// It carries neither the kill switch nor the rate limiter, deliberately: a
+	// preflight has no credential to check and a deployment with embedding off
+	// should answer it, so the POST behind it can return a readable 503 instead
+	// of the browser reporting an opaque CORS failure.
+	preflight := r.Group("/api/embed")
+	preflight.Use(middleware.EmbedCORS())
+	preflight.OPTIONS("/*path", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	// The embed session mint (T-19). It sits under `/api` because it is the
+	// dashboard's own product surface rather than the published contract, and
+	// it sits *outside* `authed` because its caller has no Argentum account by
+	// definition — a visitor of somebody else's website.
+	//
+	// The chain is deliberately short and its order is the contract:
+	//   EmbedCORS — a browser must be able to read the answer, including the
+	//               refusals, or an integrator debugging a 403 sees only an
+	//               opaque network error
+	//   Enabled   — a switched-off deployment answers before it reads anything
+	//   rate limit— keyed on the address, because no identity exists yet at
+	//               this point in the request. It is what makes the signature
+	//               check something an attacker cannot simply iterate.
+	embed := r.Group("/api/embed")
+	embed.Use(middleware.EmbedCORS())
+	embed.Use(middleware.Enabled(cfg.EmbedEnabled))
+	if mintLimiter := middleware.NewRateLimiter(d.rdb, 30, 0.5); mintLimiter != nil {
+		embed.Use(mintLimiter.EmbedMintMiddleware())
+	}
+	handlers.NewEmbedSessionHandler(d.embedKeySvc).Register(embed)
+
+	// The widget's own surface (T-20). A sibling group rather than routes on
+	// the one above, because the two differ in exactly one thing that must not
+	// be expressed as a conditional: these carry a session and those mint one.
+	// A `skipAuth` flag inside one chain is how a route ends up unauthenticated
+	// by accident.
+	//
+	// Its chain, in order:
+	//   EmbedCORS  — the caller is a page on somebody else's origin
+	//   Enabled    — the same kill switch, so switching embedding off takes the
+	//                whole surface and not only new sessions
+	//   EmbedAuth  — who this visitor is, per T-19's token
+	//   rate limit — per (company, embed_user_ref), which needs the identity
+	//                above and is therefore below it
+	embedAPI := r.Group("/api/embed")
+	embedAPI.Use(middleware.EmbedCORS())
+	embedAPI.Use(middleware.Enabled(cfg.EmbedEnabled))
+	embedAPI.Use(middleware.EmbedAuth(d.signer))
+	if turnLimiter := middleware.NewRateLimiter(
+		d.rdb, cfg.EmbedMaxTurnsPerHour, float64(cfg.EmbedMaxTurnsPerHour)/3600.0,
+	); turnLimiter != nil {
+		embedAPI.Use(turnLimiter.EmbedMiddleware())
+	}
+	handlers.NewEmbedChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, rosterListerOrNil(d.agentSvc)).
+		WithConfig(widgetConfigOrNil(d.companyRepo)).
+		Register(embedAPI)
+	// Registered here rather than inside the handler for the reason the
+	// dashboard's own stream is: the WebSocket handler belongs to the transport
+	// layer and holds the Redis client, which no HTTP handler should.
+	embedAPI.GET("/threads/:id/stream",
+		ws.NewHandler(d.rdb, d.threadRepo, cfg.CORSOrigins).EmbedStream)
 
 	// The report player's data route (T-V4). Its own group, under neither
 	// `/api` nor `/v1`, because both of those mean "authenticated" and every
@@ -320,6 +403,17 @@ func apiKeyAuthOf(d *apiDeps) middleware.APIKeyAuthenticator {
 		return d.apiKeyAuth
 	}
 	return d.apiKeySvc
+}
+
+// widgetConfigOrNil is budgetReaderOrNil for the widget's settings blob
+// (T-23). Same nil-pointer-in-a-non-nil-interface trap: both handlers guard on
+// `config == nil` so a stripped-down wiring serves defaults, and a typed nil
+// would turn that graceful path into a panic on a route a browser hits.
+func widgetConfigOrNil(repo *pgctl.CompanyRepo) domain.WidgetConfigStore {
+	if repo == nil {
+		return nil
+	}
+	return repo
 }
 
 // contentStoreOrNil is budgetReaderOrNil for the object store (T-A2). A nil

@@ -225,6 +225,70 @@ func (s *ThreadService) ResolveForAPIUser(ctx context.Context, companyID, apiUse
 	return s.continueOrForkWith(ctx, latest, userMessage, s.idleThreshold, create)
 }
 
+// ResolveForEmbedUser picks the thread for a turn from the widget (T-20).
+// Threads are keyed by (companyID, embedUserRef).
+//
+// It forks on an idle gap and a topic shift, matching Discord and the API
+// rather than Lark. The playbook's rule is that a platform with native threads
+// keys on the platform's thread id and skips classification, because the user
+// already drew the boundary — and the widget has no threads at all. A visitor
+// who comes back tomorrow and asks about something else has drawn no boundary,
+// so the heuristic is the only thing that can.
+//
+// This deliberately reuses continueOrForkWith rather than restating the rule. A
+// channel that forks on different terms from the others is a channel whose
+// conversations end up somewhere nobody expects.
+func (s *ThreadService) ResolveForEmbedUser(ctx context.Context, companyID, embedUserRef, userMessage, agentID string) (*ResolveResult, error) {
+	if companyID == "" || embedUserRef == "" {
+		return nil, fmt.Errorf("companyID and embedUserRef required")
+	}
+
+	create := func() (*ResolveResult, error) {
+		return s.createEmbedThread(ctx, companyID, embedUserRef, userMessage, agentID)
+	}
+
+	latest, err := s.threads.LatestForEmbedUser(ctx, companyID, embedUserRef)
+	if errors.Is(err, domain.ErrNotFound) {
+		return create()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup thread: %w", err)
+	}
+
+	return s.continueOrForkWith(ctx, latest, userMessage, s.idleThreshold, create)
+}
+
+// CreateEmbedThread opens a fresh widget conversation for one visitor, pinned
+// to one roster agent. Exported for CreateAPIThread's reason: the enqueuer
+// needs a second create after a resolve when the caller's agent disagrees with
+// what the resolved conversation runs as.
+func (s *ThreadService) CreateEmbedThread(
+	ctx context.Context, companyID, embedUserRef, firstMessage, agentID string,
+) (*ResolveResult, error) {
+	if companyID == "" || embedUserRef == "" {
+		return nil, fmt.Errorf("companyID and embedUserRef required")
+	}
+	return s.createEmbedThread(ctx, companyID, embedUserRef, firstMessage, agentID)
+}
+
+func (s *ThreadService) createEmbedThread(
+	ctx context.Context, companyID, embedUserRef, firstMessage, agentID string,
+) (*ResolveResult, error) {
+	now := time.Now()
+	t := &domain.ConversationThread{
+		CompanyID:     companyID,
+		Channel:       domain.ChannelWidget,
+		EmbedUserRef:  embedUserRef,
+		AgentID:       agentID,
+		Title:         deriveTitle(firstMessage),
+		LastMessageAt: now,
+	}
+	if err := s.threads.Create(ctx, t); err != nil {
+		return nil, fmt.Errorf("create thread: %w", err)
+	}
+	return &ResolveResult{Thread: t, IsNew: true}, nil
+}
+
 // ResolveForUser is the old dashboard thread resolver. It is kept for
 // backward compatibility but the dashboard now creates / selects threads
 // explicitly via CreateDashboardThread instead.
