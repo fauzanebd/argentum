@@ -115,9 +115,33 @@ answers `401`.
 
 | Row | Now |
 | --- | --- |
-| Provider webhook secret | `WHATSAPP_APP_SECRET` is fatal in production for the Meta provider. Twilio needs no separate rule — its signing key is `TWILIO_AUTH_TOKEN`, already required unconditionally by the existing triple. |
-| `CORS_ORIGINS` empty | Fatal in production. `Access-Control-Allow-Credentials` is now sent only alongside an `Allow-Origin` we actually issued. |
-| Tenant DSN without TLS | `disable`/`prefer`/`allow` refused in production on the form path; the raw-DSN path checked for the same property; SQL Server verifies its certificate by default and floors at TLS 1.2. |
+| Provider webhook secret | `WHATSAPP_APP_SECRET` **warns** in production for the Meta provider; unset, every callback is `401`, so inbound WhatsApp is off rather than open. Twilio needs no separate rule — its signing key is `TWILIO_AUTH_TOKEN`, already required unconditionally by the existing triple. |
+| `CORS_ORIGINS` empty | **Warns** in production. `Access-Control-Allow-Credentials` is now sent only alongside an `Allow-Origin` we actually issued. |
+| Tenant DSN without TLS | `disable`/`prefer`/`allow` refused in production on the form path; the raw-DSN path checked for the same property; SQL Server floors at TLS 1.2 and encrypts by default, and verifies only when asked to by name. |
+
+### Two rows were fatal for four hours, and are warnings — decided 2026-08-11
+
+The repo owner reverted both boot refusals after the change was pushed, and the
+reasoning is worth keeping because it is not a disagreement about the security:
+
+**A config check that stops the process converts a security fix into an outage
+on the very rollout that carries it.** `WHATSAPP_APP_SECRET` and `CORS_ORIGINS`
+were tolerated by the previous release, so the first deployment to enforce them
+is the one that fails to come up, and it fails at the worst moment — during a
+rollout whose changelog is about webhooks. Both now log at Warn and boot.
+
+**What this costs, stated plainly rather than softened.** The WhatsApp row costs
+nothing at all: `VerifyWebhook` answers false without a secret, so the endpoint
+is `401` either way and the warning only tells an operator why their inbound
+messages stopped. The `CORS_ORIGINS` row **does** leave a real hole open — an
+empty list reflects every `Origin` with credentials, and the dashboard
+authenticates with an `at` cookie, so any site a logged-in user visits can read
+their authenticated responses. That is a deployment-configuration problem now,
+not a code one, and the warning names it in those words.
+
+**The residual is a deployment check, not a ticket:** confirm `CORS_ORIGINS` is
+set on every production deployment. It is the one item here a green build cannot
+prove.
 
 ### The CORS claim, stated more precisely than the roadmap does
 
@@ -135,7 +159,7 @@ behaviour change to a public surface and belongs to whoever owns that decision.
 It surfaced because `cmd/api`'s test router uses `[]string{"*"}` and its CORS
 assertion had been passing only on the unconditional credentials header.
 
-### SQL Server: the breaking change, named
+### SQL Server: the breaking change, named — and then not taken
 
 `buildDSN` pinned `TrustServerCertificate=true` and `tlsmin=1.0`
 (`company.go:172-173`) with no way to say otherwise. That is encryption against
@@ -146,18 +170,30 @@ SQL Server now reads the same `ssl_mode` field the other two drivers do:
 
 | `ssl_mode` | DSN |
 | ---------- | --- |
-| unset, `require`, `verify-ca`, `verify-full` | `encrypt=true&TrustServerCertificate=false` |
-| `skip-verify` | `encrypt=true&TrustServerCertificate=true` |
+| unset, `require`, `skip-verify` | `encrypt=true&TrustServerCertificate=true` |
+| `verify-ca`, `verify-full` | `encrypt=true&TrustServerCertificate=false` |
 | `disable` | `encrypt=disable` (refused in production) |
 
-`tlsmin` is `1.2` in every case.
+`tlsmin` is `1.2` in every case, which is the half of the original change that
+survived and the half nothing has to opt into.
 
-**This will break a tenant whose SQL Server presents a self-signed certificate**
-— the default for an installation nobody has given a certificate to. They stay
-reachable by choosing `skip-verify` explicitly, which is the whole point of
-making it a choice, but they have to make it. The roadmap's own "What is owed"
-already asks whether any live tenant is on SQL Server; that question is now
-load-bearing for this change and not only for the `db_datareader` one.
+**The default was `TrustServerCertificate=false` for four hours and is `true`
+again, by the repo owner's decision on 2026-08-11.** Verification is the right
+end state and the cost of getting there this way was wrong: a self-signed
+certificate is what a default SQL Server installation presents, so the change
+breaks most on-prem tenants — and it breaks them at the *next DSN edit* rather
+than at the rollout, because `buildDSN` runs at registration and stored rows are
+untouched. An admin editing a password six weeks later would have met a TLS
+error with nothing connecting it to a default that moved underneath them.
+
+So verification is opt-in by name: `verify-ca` and `verify-full` mean what they
+say, and `require` means "encrypt" — the same reading Postgres gives it, which
+is why all three drivers spell the two ideas as separate words.
+
+**What is genuinely still owed** is the question the roadmap already asks:
+establish whether any live tenant is on SQL Server. If none is, this default can
+move with no migration and no warning; if one is, it moves with both. That is a
+five-minute query against the control database and it has not been run.
 
 Existing rows are untouched: `buildDSN` runs at registration, not at read.
 
@@ -329,7 +365,9 @@ Four things it did not say:
 | Departure | Argument |
 | --------- | -------- |
 | `T-H1` asks to "select the provider from config" — done via a `Transport` value passed to the handler, not a method on `whatsapp.Provider` | The interface has a fake in `internal/app/watcher_service_test.go`, owned by another track. `ResolveTransport` keeps one switch, which is the property the ticket actually wants. |
-| `T-H1` asks for an unset secret to be "fatal at startup". Fatal **in production**; `401` at request time everywhere | `T-H3`'s own table scopes this row to production, and an unconditional fatal would stop a development stack that has never configured WhatsApp from booting at all. The endpoint is closed in both cases; only the boot differs. |
+| `T-H1` asks for an unset secret to be "fatal at startup". It is a **Warn** in every environment; `401` at request time everywhere | Two decisions stacked. Fatal-in-production was the first (an unconditional fatal stops a dev stack that never configured WhatsApp from booting). The repo owner then reverted the production fatal on 2026-08-11: a check that refuses to start converts a security fix into an outage on the rollout carrying it. The endpoint is closed in every case; only the boot differs. |
+| `T-H3` asks for `CORS_ORIGINS` to be fatal in production. It is a **Warn** | Same decision, same date, and unlike the row above this one leaves a real hole open — see §"Two rows were fatal for four hours". It is now a deployment check rather than a code guarantee. |
+| `T-H3` asks for the SQL Server certificate to be verified. It encrypts by default and verifies on `verify-ca`/`verify-full` | Same decision, same date. Verifying by default breaks every tenant on a self-signed certificate, at their next DSN edit rather than at the rollout. `tlsmin=1.2` survives unconditionally. |
 | `T-H3` row 3 is implemented in `handlers/company.go`, outside this track's declared file ownership | The row cannot be implemented anywhere else — `buildDSN` is where the DSN is composed. The change is contained to `buildDSN`, one constructor option, and its own test file. |
 | `T-H15` resolves even when `allowPrivate` is set, where the previous code returned early | The pin is the point, and it is not a property only production should have. It also makes the fix observable against a loopback listener, which is the only kind of listener a test owns. |
 | `T-H15` drops `HTTPS_PROXY` support | Stated in §4. A pinned dial through a proxy pins the proxy. |

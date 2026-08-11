@@ -617,8 +617,15 @@ func (c *Config) Validate() error {
 		// is an unauthenticated path into a tenant's agent. VerifyWebhook now
 		// answers false without one rather than true, so a development box
 		// boots and returns 401; production must not be in that state at all.
+		//
+		// Warned rather than fatal, by owner's decision 2026-08-11: a boot that
+		// dies on a setting the previous release tolerated turns a security fix
+		// into an outage on the rollout that carries it. The refusal that
+		// actually protects the endpoint is at request time and is unaffected —
+		// VerifyWebhook answers false without a secret, so every callback is
+		// 401 whether or not anyone reads this line.
 		if c.IsProduction() && c.WhatsAppAppSecret == "" {
-			return fmt.Errorf("WHATSAPP_APP_SECRET is required in production: it is the only authentication /webhook/whatsapp has")
+			logrus.Warn("WHATSAPP_APP_SECRET is unset in production: /webhook/whatsapp is the tenant's agent behind one signature check, and without the secret every callback is refused 401 — inbound WhatsApp is effectively off until it is set")
 		}
 	case "twilio":
 		// TWILIO_AUTH_TOKEN is in this triple, and it is also the webhook
@@ -634,8 +641,13 @@ func (c *Config) Validate() error {
 	// Access-Control-Allow-Credentials is a browser's permission for any site
 	// to read an authenticated response. Survivable on a laptop where the only
 	// session is the developer's own; not in production.
+	//
+	// Warned rather than fatal, same decision and same date. This one keeps a
+	// real hole open, so say what it is rather than filing it as a nag: with
+	// the list empty, any site a logged-in user visits can read their
+	// authenticated dashboard responses. Set CORS_ORIGINS.
 	if c.IsProduction() && len(c.CORSOrigins) == 0 {
-		return fmt.Errorf("CORS_ORIGINS is required in production: an empty list reflects every Origin back with credentials")
+		logrus.Warn("CORS_ORIGINS is empty in production: the middleware reflects every Origin back with Access-Control-Allow-Credentials, which lets any site a logged-in user visits read their authenticated responses — set it to the dashboard host")
 	}
 
 	return nil

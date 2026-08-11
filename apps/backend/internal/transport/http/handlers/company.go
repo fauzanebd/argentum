@@ -211,15 +211,25 @@ func buildDSN(dbType, raw, host, port, user, pass, dbname, sslMode string, requi
 		// that can reach the address can present any certificate it likes
 		// (T-H3). The other two drivers already let the tenant make this choice
 		// by name; this one now does too, and its default verifies.
+		// The default does NOT verify, by owner's decision 2026-08-11. Making
+		// verification the default is the right end state and it is a breaking
+		// change for every SQL Server tenant on a self-signed certificate —
+		// which, on an on-prem warehouse, is most of them. It would not bite at
+		// rollout (buildDSN runs at registration, so stored rows are untouched)
+		// but it would bite the next admin to edit a DSN, with a TLS error and
+		// no clue that a default moved underneath them.
+		//
+		// So verification is opt-in by name, exactly as `verify-ca` and
+		// `verify-full` read: choose one and the certificate is checked.
 		switch sslMode {
 		case "disable":
 			q.Set("encrypt", "disable")
-		case "skip-verify":
-			q.Set("encrypt", "true")
-			q.Set("TrustServerCertificate", "true")
-		case "", "require", "verify-ca", "verify-full":
+		case "verify-ca", "verify-full":
 			q.Set("encrypt", "true")
 			q.Set("TrustServerCertificate", "false")
+		case "", "require", "skip-verify":
+			q.Set("encrypt", "true")
+			q.Set("TrustServerCertificate", "true")
 		default:
 			return "", fmt.Errorf("unsupported ssl_mode %q for sqlserver", sslMode)
 		}

@@ -19,6 +19,18 @@ the `T-S…` scope tickets or the `S-n` finding codes in the research docs.
 > built:** every ticket in Tracks B, C and D — `T-H4` → `T-H14` — which are
 > exactly as this document describes them.
 >
+> **Three of `T-H3`'s refusals were reverted by the repo owner the same day**,
+> after the work was pushed: an unset `WHATSAPP_APP_SECRET` and an empty
+> `CORS_ORIGINS` now log at Warn instead of refusing to boot, and SQL Server
+> encrypts by default and verifies only on `verify-ca`/`verify-full`. The reason
+> is one sentence — a config check that stops the process turns a security fix
+> into an outage on the rollout that carries it, and a moved TLS default breaks
+> tenants at their next DSN edit rather than at deploy. The argument, and the
+> one hole this genuinely leaves open (`CORS_ORIGINS`), are in
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md).
+> **Setting `CORS_ORIGINS` on every production deployment is now a deployment
+> check rather than a code guarantee.**
+>
 > **Still owed on what is built:** the live half. Every claim below is proven at
 > unit level and none against a running stack, so the "What is owed" section at
 > the end stands unchanged for `T-H1`, `T-H2`, `T-H3` and `T-H15`. The one that

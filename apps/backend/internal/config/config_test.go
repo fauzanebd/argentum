@@ -569,15 +569,18 @@ func TestValidateWhatsAppCredentialsAreProviderScoped(t *testing.T) {
 // refusal is scoped to Env=production rather than made unconditional — a
 // development stack that has never configured WhatsApp still boots.
 
-func TestValidateRequiresTheWebhookSecretInProduction(t *testing.T) {
+// A missing webhook secret warns and boots, in every environment (owner's
+// decision 2026-08-11: a fix that stops the process is an outage on the
+// rollout carrying it). What keeps the endpoint shut is VerifyWebhook
+// answering false without a secret, which is asserted in the whatsapp package
+// and does not depend on this.
+func TestValidateBootsWithoutTheWebhookSecret(t *testing.T) {
 	c := validCfg()
 	c.Env = "production"
 	c.CORSOrigins = []string{"https://app.example.com"}
 
-	if err := c.Validate(); err == nil {
-		t.Fatal("Validate() = nil in production with no WHATSAPP_APP_SECRET")
-	} else if !strings.Contains(err.Error(), "WHATSAPP_APP_SECRET") {
-		t.Errorf("err = %q, want it to name WHATSAPP_APP_SECRET", err)
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate() = %v in production with no WHATSAPP_APP_SECRET, want a warning and a boot", err)
 	}
 
 	c.WhatsAppAppSecret = "app-secret"
@@ -585,9 +588,6 @@ func TestValidateRequiresTheWebhookSecretInProduction(t *testing.T) {
 		t.Errorf("Validate() = %v with the secret set", err)
 	}
 
-	// Development boots without it. VerifyWebhook answers false rather than
-	// true there, so the endpoint is closed either way — this is about whether
-	// the process starts.
 	dev := validCfg()
 	dev.Env = "development"
 	if err := dev.Validate(); err != nil {
@@ -611,15 +611,17 @@ func TestValidateRequiresTheWebhookSecretInProduction(t *testing.T) {
 	}
 }
 
-func TestValidateRequiresCORSOriginsInProduction(t *testing.T) {
+// Same decision for CORS_ORIGINS, and this one leaves a real hole open rather
+// than merely a closed endpoint — an empty list reflects every Origin back
+// with credentials. It warns loudly and boots; the deployment is what has to
+// set it.
+func TestValidateBootsWithoutCORSOrigins(t *testing.T) {
 	c := validCfg()
 	c.Env = "production"
 	c.WhatsAppAppSecret = "app-secret"
 
-	if err := c.Validate(); err == nil {
-		t.Fatal("Validate() = nil in production with an empty CORS_ORIGINS")
-	} else if !strings.Contains(err.Error(), "CORS_ORIGINS") {
-		t.Errorf("err = %q, want it to name CORS_ORIGINS", err)
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate() = %v in production with an empty CORS_ORIGINS, want a warning and a boot", err)
 	}
 
 	c.CORSOrigins = []string{"https://app.example.com"}

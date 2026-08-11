@@ -78,12 +78,17 @@ func TestBuildDSNLeavesARawStringAlone(t *testing.T) {
 // SQL Server reads the same field the other two do (T-H3). It used to ignore it
 // and pin TrustServerCertificate=true, which is encryption against a listener
 // and nothing at all against something that can answer the address.
-func TestBuildDSNSQLServerVerifiesByDefault(t *testing.T) {
+// The default encrypts and does NOT verify (owner's decision 2026-08-11).
+// Making verification the default breaks every tenant on the self-signed
+// certificate a default SQL Server installation presents, and it breaks them
+// at the next DSN edit rather than at the rollout, which is the worst place to
+// find a moved default. Verification is opt-in by name — see the mode table.
+func TestBuildDSNSQLServerEncryptsByDefaultWithoutVerifying(t *testing.T) {
 	dsn, err := buildDSN("sqlserver", "", "db.example.com", "1433", "u", "p", "warehouse", "", false)
 	if err != nil {
 		t.Fatalf("buildDSN: %v", err)
 	}
-	for _, want := range []string{"encrypt=true", "TrustServerCertificate=false", "tlsmin=1.2"} {
+	for _, want := range []string{"encrypt=true", "TrustServerCertificate=true", "tlsmin=1.2"} {
 		if !strings.Contains(dsn, want) {
 			t.Errorf("dsn = %q, want it to contain %q", dsn, want)
 		}
@@ -96,10 +101,12 @@ func TestBuildDSNSQLServerHonoursTheChosenMode(t *testing.T) {
 		want    []string
 		wantErr bool
 	}{
-		{mode: "require", want: []string{"encrypt=true", "TrustServerCertificate=false"}},
+		// `require` means "encrypt", not "and check who answers" — the same
+		// reading Postgres gives it, and the reason verify-ca/verify-full are
+		// separate words in all three drivers.
+		{mode: "require", want: []string{"encrypt=true", "TrustServerCertificate=true"}},
 		{mode: "verify-full", want: []string{"encrypt=true", "TrustServerCertificate=false"}},
-		// The self-signed certificate every default SQL Server installation
-		// presents. It stays reachable, but only by saying so.
+		{mode: "verify-ca", want: []string{"encrypt=true", "TrustServerCertificate=false"}},
 		{mode: "skip-verify", want: []string{"encrypt=true", "TrustServerCertificate=true"}},
 		{mode: "disable", want: []string{"encrypt=disable"}},
 		{mode: "nonsense", wantErr: true},
