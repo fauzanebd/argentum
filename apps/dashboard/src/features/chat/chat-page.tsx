@@ -8,9 +8,12 @@ import {
 } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Send, Loader2, X } from "lucide-react";
+import { Send, Loader2, X, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Shimmer, Elapsed } from "@/components/ui/shimmer";
+import { useElapsedSeconds } from "@/hooks/use-elapsed";
+import { ThinkingTrace } from "./thinking-trace";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
@@ -33,6 +36,40 @@ import { PENDING_ACTIONS_KEY } from "@/features/actions/use-actions";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { formatLatencySeconds, formatMessageTimestamp } from "./format";
 import { apiErrorMessage } from "@/lib/api-error";
+
+/**
+ * The assistant turn currently streaming, as this component holds it.
+ *
+ * Every field except `jobId` and `startedAt` is filled by a different event
+ * type, and any of them can arrive first — a turn that opens with a tool call
+ * never sends `started` before it. `blankTurn` is what every handler falls back
+ * to for that reason: one place that knows the shape of an empty turn, so a new
+ * field cannot be forgotten by five call sites independently.
+ */
+type LiveTurn = {
+  jobId: string;
+  content: string;
+  /** Every thinking step of this turn, in arrival order (T-U4).
+   *
+   *  This was a single `thinking?: string` that each `thinking` event
+   *  overwrote, so the trace could only ever show the agent's most recent
+   *  sentence — the earlier steps arrived, were rendered for a moment, and were
+   *  dropped. They were always on the wire; nothing kept them. */
+  thinkingSteps: string[];
+  toolCalls?: Array<{ name: string; payload: unknown }>;
+  /** Tool-calling round the agent is on, and how many it may spend. A
+   *  multi-step turn can go quiet for tens of seconds between deltas; this is
+   *  what distinguishes "still working" from "stalled". */
+  iteration?: { current: number; max: number };
+  /** When the browser learned this turn had started, for the elapsed caption
+   *  (T-U3). A client clock reading: the `started` event carries no timestamp,
+   *  and this is the moment the reader began waiting anyway. */
+  startedAt: number;
+};
+
+function blankTurn(jobId: string): LiveTurn {
+  return { jobId, content: "", thinkingSteps: [], startedAt: Date.now() };
+}
 
 export function ChatPage() {
   const params = useParams({ strict: false }) as { threadId?: string };
@@ -67,16 +104,7 @@ export function ChatPage() {
 
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
 
-  const [liveAssistant, setLiveAssistant] = useState<{
-    jobId: string;
-    content: string;
-    thinking?: string;
-    toolCalls?: Array<{ name: string; payload: unknown }>;
-    /** Tool-calling round the agent is on, and how many it may spend. A
-     *  multi-step turn can go quiet for tens of seconds between deltas; this
-     *  is what distinguishes "still working" from "stalled". */
-    iteration?: { current: number; max: number };
-  } | null>(null);
+  const [liveAssistant, setLiveAssistant] = useState<LiveTurn | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -206,19 +234,28 @@ export function ChatPage() {
     if (evt.thread_id !== activeThreadIdRef.current) return;
     if (evt.type === "started") {
       finalReceivedRef.current = false;
-      setLiveAssistant({ jobId: evt.job_id, content: "" });
+      setLiveAssistant(blankTurn(evt.job_id));
     } else if (evt.type === "delta") {
       setLiveAssistant((prev) =>
         prev && prev.jobId === evt.job_id
           ? { ...prev, content: prev.content + (evt.content ?? "") }
-          : { jobId: evt.job_id, content: evt.content ?? "" },
+          : { ...blankTurn(evt.job_id), content: evt.content ?? "" },
       );
     } else if (evt.type === "thinking") {
-      setLiveAssistant((prev) =>
-        prev && prev.jobId === evt.job_id
-          ? { ...prev, thinking: evt.thinking_step }
-          : { jobId: evt.job_id, content: "", thinking: evt.thinking_step },
-      );
+      const step = evt.thinking_step?.trim();
+      if (step) {
+        setLiveAssistant((prev) =>
+          prev && prev.jobId === evt.job_id
+            ? // Append, but never twice in a row for the same sentence. The
+              // backend re-emits the current step alongside some iteration
+              // events, and a trace that lists "Checking the schema" four times
+              // reads as a stuck agent rather than a working one.
+              prev.thinkingSteps[prev.thinkingSteps.length - 1] === step
+              ? prev
+              : { ...prev, thinkingSteps: [...prev.thinkingSteps, step] }
+            : { ...blankTurn(evt.job_id), thinkingSteps: [step] },
+        );
+      }
     } else if (evt.type === "iteration") {
       const current = Number(evt.metadata?.iteration ?? 0);
       const max = Number(evt.metadata?.max_iterations ?? 0);
@@ -226,12 +263,12 @@ export function ChatPage() {
         setLiveAssistant((prev) =>
           prev && prev.jobId === evt.job_id
             ? { ...prev, iteration: { current, max } }
-            : { jobId: evt.job_id, content: "", iteration: { current, max } },
+            : { ...blankTurn(evt.job_id), iteration: { current, max } },
         );
       }
     } else if (evt.type === "tool_call" || evt.type === "tool_result") {
       setLiveAssistant((prev) => {
-        if (!prev) return { jobId: evt.job_id, content: "" };
+        if (!prev) return blankTurn(evt.job_id);
         const calls = prev.toolCalls ? [...prev.toolCalls] : [];
         if (evt.tool_call) {
           calls.push({
@@ -347,7 +384,7 @@ export function ChatPage() {
   }, [
     displayedMessages.length,
     liveAssistant?.content,
-    liveAssistant?.thinking,
+    liveAssistant?.thinkingSteps.length,
     liveAssistant?.toolCalls?.length,
   ]);
 
@@ -377,27 +414,33 @@ export function ChatPage() {
                 className="w-full"
               />
             )}
-            {/* Agent — pickable only here, before the thread exists */}
-            <AgentPicker
-              agents={agents.selectable}
-              value={pickedAgentId ?? agents.fallback?.id ?? null}
-              onChange={setPickedAgentId}
-              className="self-start"
-            />
-            {/* What this agent was made to be asked (T-B3). Only an agent
-                created from a template has any, and clicking one fills the
-                composer rather than sending: the first turn a customer runs is
-                the one they should have read first. */}
-            <StarterQuestions
-              questions={agents.starterQuestionsFor(newChatAgent)}
-              onPick={setInput}
-            />
-            {/* Composer */}
+            {/* Since T-U8 the agent picker and the starter questions are slots
+                inside the bar rather than two blocks stacked above it. Both are
+                still new-chat-only: the picker because a thread's agent is
+                fixed once it exists, the questions because they are what to ask
+                before the conversation has started. */}
             <ChatComposer
               value={input}
               onChange={setInput}
               onSend={send}
               disabled={sending}
+              context={
+                <AgentPicker
+                  agents={agents.selectable}
+                  value={pickedAgentId ?? agents.fallback?.id ?? null}
+                  onChange={setPickedAgentId}
+                />
+              }
+              suggestions={
+                /* What this agent was made to be asked (T-B3). Only an agent
+                   created from a template has any, and clicking one fills the
+                   composer rather than sending: the first turn a customer runs
+                   is the one they should have read first. */
+                <StarterQuestions
+                  questions={agents.starterQuestionsFor(newChatAgent)}
+                  onPick={setInput}
+                />
+              }
             />
           </div>
         </div>
@@ -426,9 +469,10 @@ export function ChatPage() {
                 <PendingBubble
                   key={`live-${liveAssistant.jobId}`}
                   content={liveAssistant.content}
-                  thinking={liveAssistant.thinking}
+                  thinkingSteps={liveAssistant.thinkingSteps}
                   toolCalls={liveAssistant.toolCalls}
                   iteration={liveAssistant.iteration}
+                  startedAt={liveAssistant.startedAt}
                 />
               )}
             </div>
@@ -547,20 +591,17 @@ function StarterQuestions({
 }) {
   if (questions.length === 0) return null;
   return (
-    <div className="w-full max-w-3xl self-start space-y-2">
-      <p className="px-1 text-xs text-muted-foreground">Try one of these:</p>
-      <div className="flex flex-wrap gap-2">
-        {questions.map((q) => (
-          <button
-            key={q}
-            type="button"
-            onClick={() => onPick(q)}
-            className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground shadow-sm transition-colors hover:border-primary/60 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {q}
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-wrap gap-1.5">
+      {questions.map((q) => (
+        <button
+          key={q}
+          type="button"
+          onClick={() => onPick(q)}
+          className="rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-muted-foreground shadow-hairline transition-colors hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {q}
+        </button>
+      ))}
     </div>
   );
 }
@@ -681,78 +722,190 @@ function MessageBubble({ message }: { message: Message }) {
           {formatMessageTimestamp(message.created_at)}
         </div>
         {/* Only the assistant's turns can be rated — a user rating their own
-            question is meaningless, and the API refuses it (T-Q2). */}
-        {!isUser && message.id && <MessageFeedback messageId={message.id} />}
+            question is meaningless, and the API refuses it (T-Q2). Copy sits
+            beside it in one row (T-U5) rather than in a second strip: they are
+            the same gesture, "do something with this answer". */}
+        {!isUser && message.id && (
+          <div className="mt-1.5">
+            <MessageFeedback
+              messageId={message.id}
+              leading={<CopyAnswer content={message.content} />}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 /* ── Pending (streaming) Bubble ─────────────────────────────────────── */
+/**
+ * The turn in flight (T-U3, T-U4, T-U5).
+ *
+ * Three signals, in the order a waiting reader wants them: that work is
+ * happening at all (the shimmer), how long it has been happening (the elapsed
+ * figure), and what it is doing (the trace, the tools, the text). The elapsed
+ * figure is the one that earns its place — a spinner looks identical whether
+ * the agent is on its fourth tool-calling round or the socket died.
+ */
 function PendingBubble({
   content,
-  thinking,
+  thinkingSteps,
   toolCalls,
   iteration,
+  startedAt,
 }: {
   content: string;
-  thinking?: string;
+  thinkingSteps: string[];
   toolCalls?: Array<{ name: string; payload: unknown }>;
   iteration?: { current: number; max: number };
+  startedAt: number;
 }) {
+  const elapsed = useElapsedSeconds(startedAt);
   const progress =
     iteration && iteration.current > 1
       ? iteration.max > 0
-        ? `Step ${iteration.current} of ${iteration.max}…`
-        : `Step ${iteration.current}…`
-      : "Thinking…";
+        ? `Step ${iteration.current} of ${iteration.max}`
+        : `Step ${iteration.current}`
+      : "Working";
+
   return (
-    <div className="flex gap-3 items-end">
-      <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0 bg-muted text-muted-foreground border border-border text-[11px] font-bold">
+    <div className="flex gap-3 items-start">
+      <div className="mt-0.5 h-7 w-7 rounded-full flex items-center justify-center shrink-0 bg-muted text-muted-foreground border border-border">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm text-foreground space-y-2">
-          {thinking && (
-            <div className="text-xs text-muted-foreground italic border-l-2 border-primary/40 pl-2">
-              {progress} {thinking}
-            </div>
-          )}
-          {content && <MarkdownRenderer content={content} />}
-          {!content && !thinking && (
-            <span className="text-muted-foreground italic text-xs">
-              {progress}
-            </span>
-          )}
-          {toolCalls && toolCalls.length > 0 && (
-            <div className="space-y-2">
-              {toolCalls.map((tc, i) => (
-                <ToolCallCard
-                  key={`${tc.name}-${i}`}
-                  name={tc.name}
-                  payload={tc.payload}
-                />
-              ))}
-            </div>
-          )}
+      <div className="flex-1 min-w-0 space-y-2">
+        {/* The status line, and the only element that speaks to a screen
+            reader. `Elapsed` is aria-hidden precisely because it changes ten
+            times a second; this sentence is what gets announced. */}
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 text-xs"
+        >
+          <span className="font-medium text-muted-foreground">{progress}</span>
+          <Elapsed startedAt={startedAt} />
         </div>
+
+        {thinkingSteps.length > 0 && (
+          <ThinkingTrace steps={thinkingSteps} elapsed={elapsed} live />
+        )}
+
+        {content ? (
+          <div className="text-sm leading-relaxed text-foreground">
+            <MarkdownRenderer content={content} />
+            <StreamingCaret />
+          </div>
+        ) : (
+          // Nothing to read yet. Two shimmer rules stand in for the answer, at
+          // the width text actually arrives in — a full-width block would
+          // promise more than most first lines deliver.
+          <div className="space-y-1.5 pt-0.5">
+            <Shimmer className="h-3 w-[62%]" />
+            <Shimmer className="h-3 w-[38%]" />
+          </div>
+        )}
+
+        {toolCalls && toolCalls.length > 0 && (
+          <div className="space-y-2">
+            {toolCalls.map((tc, i) => (
+              <ToolCallCard
+                key={`${tc.name}-${i}`}
+                name={tc.name}
+                payload={tc.payload}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+/**
+ * Copy the answer as the markdown the agent wrote (T-U5).
+ *
+ * The source text, not the rendered DOM: someone copying an answer is usually
+ * moving it into a document or a ticket, and a table pasted as run-together
+ * cells is worse than useless. Confirmation is the label changing for a beat —
+ * a toast for something this small is a notification nobody asked for.
+ */
+function CopyAnswer({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard access can be refused outright — an insecure origin, or a
+      // permission the user declined. Staying silent is right here: the button
+      // is a convenience, and the text is still selectable.
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      aria-label={copied ? "Answer copied" : "Copy answer"}
+      className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-positive-ink" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
+
+/**
+ * The block that trails streamed text.
+ *
+ * Rendered inline after the markdown rather than inside it: the renderer emits
+ * block elements, and a caret appended to the markup would sit on its own line
+ * under the paragraph it is supposed to be trailing.
+ */
+function StreamingCaret() {
+  return (
+    <span
+      aria-hidden
+      className="ml-0.5 inline-block h-3.5 w-[2px] translate-y-[2px] animate-pulse rounded-full bg-primary align-baseline"
+    />
+  );
+}
+
 /* ── Unified Chat Composer (used in both new-chat and thread view) ───── */
+/**
+ * The prompt bar (T-U8).
+ *
+ * Everything that describes the turn about to be sent now lives inside the bar
+ * rather than stacked above it: which agent will answer, what it can be asked,
+ * and how to send. Those were three separate blocks competing for the same
+ * vertical space on the new-chat screen, and the composer — the only one the
+ * customer came to use — was the one at the bottom.
+ *
+ * `context` and `suggestions` are slots because both are new-chat-only. Once a
+ * thread exists its agent is fixed and its starter questions have been answered
+ * or ignored, so on that screen the bar is the input and nothing else.
+ */
 function ChatComposer({
   value,
   onChange,
   onSend,
   disabled,
+  context,
+  suggestions,
   className,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   disabled: boolean;
+  context?: React.ReactNode;
+  suggestions?: React.ReactNode;
   className?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -766,6 +919,8 @@ function ChatComposer({
     }
   };
 
+  // Unchanged from before T-U8, deliberately. Enter/Shift+Enter is muscle
+  // memory and every rewrite of this pair reintroduces the same newline bug.
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -780,34 +935,48 @@ function ChatComposer({
           e.preventDefault();
           onSend();
         }}
-        className="w-full max-w-3xl mx-auto"
+        className="w-full max-w-3xl mx-auto space-y-2"
       >
-        <div className="w-full bg-card border border-border rounded-3xl p-3 shadow-sm focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary/50 transition-all">
-          <div className="flex min-h-12 items-center px-1.5">
-            <div className="flex-1 overflow-auto max-h-48">
+        {suggestions}
+        <div className="w-full rounded-xl border border-border bg-card p-2.5 shadow-card transition-all focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/30">
+          {context && (
+            <div className="mb-1.5 flex flex-wrap items-center gap-1.5 px-1">
+              {context}
+            </div>
+          )}
+          <div className="flex min-h-10 items-center px-1">
+            <div className="max-h-48 flex-1 overflow-auto">
               <Textarea
                 ref={textareaRef}
                 value={value}
                 onChange={handleChange}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask about your business…"
-                className="min-h-0 resize-none rounded-none border-0 p-0 text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent"
+                className="min-h-0 resize-none rounded-none border-0 bg-transparent p-0 text-[13px] placeholder:text-muted-subtle focus-visible:ring-0 focus-visible:ring-offset-0"
                 rows={1}
               />
             </div>
           </div>
-          <div className="flex items-center justify-between px-1.5 pt-1">
-            <p className="text-[11px] text-muted-foreground">
-              Enter to send · Shift+Enter for newline
+          <div className="flex items-center justify-between gap-2 px-1 pt-1">
+            <p className="min-w-0 truncate text-[11px] text-muted-subtle">
+              <kbd className="rounded border border-border bg-secondary px-1 font-sans text-[10px] text-muted-foreground">
+                Enter
+              </kbd>{" "}
+              to send ·{" "}
+              <kbd className="rounded border border-border bg-secondary px-1 font-sans text-[10px] text-muted-foreground">
+                Shift+Enter
+              </kbd>{" "}
+              for a newline
               {models?.primary.model && (
-                <span className="ml-2 opacity-70">· {models.primary.model}</span>
+                <span className="ml-1.5">· {models.primary.model}</span>
               )}
             </p>
             <Button
               type="submit"
               size="icon"
-              className="rounded-full h-8 w-8 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+              className="h-8 w-8 shrink-0 rounded-lg bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
               disabled={disabled || !value.trim()}
+              aria-label="Send"
             >
               <Send className="size-3.5" />
             </Button>

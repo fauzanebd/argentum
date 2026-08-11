@@ -20,7 +20,19 @@ import { Textarea } from "@/components/ui/textarea";
  * the same row — the endpoint upserts on (message, actor), so the follow-up
  * replaces rather than duplicates.
  */
-export function MessageFeedback({ messageId }: { messageId: string }) {
+export function MessageFeedback({
+  messageId,
+  /** Rendered at the head of the button row (T-U5).
+   *
+   *  A slot rather than a sibling because the reason box has to stack *under*
+   *  that row while the copy button sits *in* it. As siblings the two cannot
+   *  both be true, and the version that made them siblings put the textarea in
+   *  a vertically-centred flex row beside the copy icon. */
+  leading,
+}: {
+  messageId: string;
+  leading?: React.ReactNode;
+}) {
   const [rating, setRating] = useState<1 | -1 | null>(null);
   const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState("");
@@ -46,9 +58,11 @@ export function MessageFeedback({ messageId }: { messageId: string }) {
     }
   }
 
+  // No top margin of its own: since T-U5 the caller owns the spacing.
   return (
-    <div className="mt-1.5 flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1">
+        {leading}
         <button
           type="button"
           aria-label="This answer was right"
@@ -57,7 +71,7 @@ export function MessageFeedback({ messageId }: { messageId: string }) {
           onClick={() => void send(1)}
           className={cn(
             "rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50",
-            rating === 1 && "text-emerald-600 dark:text-emerald-400",
+            rating === 1 && "text-positive-ink",
           )}
         >
           <ThumbsUp className="h-3.5 w-3.5" />
@@ -70,14 +84,14 @@ export function MessageFeedback({ messageId }: { messageId: string }) {
           onClick={() => void send(-1)}
           className={cn(
             "rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50",
-            rating === -1 && "text-red-600 dark:text-red-400",
+            rating === -1 && "text-destructive-ink",
           )}
         >
           <ThumbsDown className="h-3.5 w-3.5" />
         </button>
         {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
         {failed && (
-          <span className="text-[11px] text-red-600 dark:text-red-400">
+          <span className="text-[11px] text-destructive-ink">
             could not save — try again
           </span>
         )}

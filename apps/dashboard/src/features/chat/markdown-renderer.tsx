@@ -1,6 +1,7 @@
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ExternalLink } from "lucide-react";
+import { CodeBlock } from "@/components/ui/code-block";
 
 interface MarkdownRendererProps {
   content: string;
@@ -42,11 +43,24 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           ol: ({ children }) => (
             <ol className="list-decimal pl-4 space-y-0.5">{children}</ol>
           ),
-          code: ({ children }) => (
-            <code className="rounded bg-muted px-1 py-0.5 text-xs font-mono">
-              {children}
-            </code>
-          ),
+          // react-markdown routes both `inline code` and ``` fences ``` through
+          // this one component, and tells them apart by the language class it
+          // puts on a fence. Inline stays a plain chip: a highlighter on a
+          // three-word span costs a module load and buys nothing (T-U6).
+          code: ({ className, children }) => {
+            const lang = /language-(\w+)/.exec(className ?? "")?.[1];
+            if (!lang) {
+              return (
+                <code className="rounded bg-muted px-1 py-0.5 text-xs font-mono">
+                  {children}
+                </code>
+              );
+            }
+            return <CodeBlock code={String(children).replace(/\n$/, "")} lang={lang} />;
+          },
+          // The fence's own <pre> would wrap CodeBlock in a second scroll
+          // container with its own padding. CodeBlock is the block element.
+          pre: ({ children }) => <>{children}</>,
           table: ({ children }) => (
             <div className="my-2 -mx-1 overflow-x-auto">
               <table className="min-w-full text-sm">{children}</table>

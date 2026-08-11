@@ -1,7 +1,9 @@
+import { useState } from "react";
 import {
   Database,
   BarChart3,
   CalendarClock,
+  ChevronDown,
   ExternalLink,
   FileText,
   Loader2,
@@ -11,6 +13,7 @@ import type { LucideIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import cronstrue from "cronstrue";
 import { cn } from "@/lib/utils";
+import { CodeBlock } from "@/components/ui/code-block";
 
 const TOOL_META: Record<string, { icon: LucideIcon; label: string }> = {
   run_sql: { icon: Database, label: "SQL query" },
@@ -56,6 +59,19 @@ function humanCron(expr: string): string | null {
   }
 }
 
+/**
+ * A tool call, as a chip that expands (T-U6).
+ *
+ * It was a block at the same visual weight as the answer, so a three-tool turn
+ * put three grey panels around two sentences of content. Collapsed it is now
+ * one line; the detail is unchanged underneath, and everything that decides
+ * *what* that detail says — `TOOL_META`, `mcpMeta`, `humanCron` — is exactly as
+ * it was. This ticket moved presentation only.
+ *
+ * The chip opens by default for nothing: a reader who wants to audit the SQL
+ * asks for it, and a reader who wants the answer should not have to scroll past
+ * it first.
+ */
 export function ToolCallCard({
   name,
   payload,
@@ -65,10 +81,11 @@ export function ToolCallCard({
   payload: unknown;
   loading?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
   const meta = mcpMeta(name) ?? TOOL_META[name] ?? { icon: Database, label: name };
   const Icon = meta.icon;
 
-  let summary: string | null = null;
+  let sql: string | null = null;
   let dashboardURL: string | null = null;
   let scheduleTaskId: string | null = null;
   let scheduleName: string | null = null;
@@ -76,7 +93,10 @@ export function ToolCallCard({
 
   if (payload && typeof payload === "object") {
     const p = payload as Record<string, unknown>;
-    if (typeof p.sql === "string") summary = p.sql.slice(0, 240);
+    // No longer truncated to 240 characters. It was truncated because it sat
+    // open in the timeline; behind a disclosure the whole statement can show,
+    // and half a query is not auditable.
+    if (typeof p.sql === "string") sql = p.sql;
     if (typeof p.dashboard_url === "string") dashboardURL = p.dashboard_url;
     if (typeof p.url === "string") dashboardURL = p.url;
 
@@ -92,39 +112,73 @@ export function ToolCallCard({
     }
   }
 
+  const isSchedule = name === "schedule_task";
+  const hasDetail =
+    sql !== null || dashboardURL !== null || isSchedule;
+
   return (
-    <div className={cn("rounded-md border bg-muted/30 px-3 py-2 text-xs")}>
-      <div className="flex items-center gap-1.5 font-medium text-muted-foreground mb-1">
-        {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
-        {meta.label}
-      </div>
-      {summary && (
-        <pre className="whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">{summary}</pre>
-      )}
-      {dashboardURL && (
-        <a
-          href={dashboardURL}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-primary underline mt-1"
-        >
-          Open dashboard <ExternalLink className="h-3 w-3" />
-        </a>
-      )}
-      {name === "schedule_task" && (scheduleName || scheduleCronText) && (
-        <div className="text-[11px] text-muted-foreground space-y-0.5 mt-0.5">
-          {scheduleName && <div className="font-medium text-foreground">{scheduleName}</div>}
-          {scheduleCronText && <div>{scheduleCronText}</div>}
+    <div className="text-xs">
+      <button
+        type="button"
+        disabled={!hasDetail}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={hasDetail ? open : undefined}
+        className={cn(
+          "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-secondary px-2.5 py-1 font-medium text-muted-foreground transition-colors",
+          hasDetail &&
+            "hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        )}
+      >
+        {loading ? (
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+        ) : (
+          <Icon className="h-3 w-3 shrink-0" />
+        )}
+        <span className="truncate">{meta.label}</span>
+        {hasDetail && (
+          <ChevronDown
+            className={cn(
+              "h-3 w-3 shrink-0 transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        )}
+      </button>
+
+      {open && hasDetail && (
+        <div className="mt-1.5 space-y-1.5 rounded-md border border-border bg-inset px-3 py-2">
+          {sql && <CodeBlock code={sql} lang="sql" className="my-0" />}
+
+          {isSchedule && (scheduleName || scheduleCronText) && (
+            <div className="space-y-0.5 text-[11px] text-muted-foreground">
+              {scheduleName && (
+                <div className="font-medium text-foreground">{scheduleName}</div>
+              )}
+              {scheduleCronText && <div>{scheduleCronText}</div>}
+            </div>
+          )}
+
+          {dashboardURL && (
+            <a
+              href={dashboardURL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-primary-ink underline underline-offset-2"
+            >
+              Open dashboard <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+
+          {isSchedule && (
+            <Link
+              to="/scheduled-tasks"
+              search={{ taskId: scheduleTaskId ?? undefined }}
+              className="inline-flex items-center gap-1 text-primary-ink underline underline-offset-2"
+            >
+              View task <ExternalLink className="h-3 w-3" />
+            </Link>
+          )}
         </div>
-      )}
-      {name === "schedule_task" && (
-        <Link
-          to="/scheduled-tasks"
-          search={{ taskId: scheduleTaskId ?? undefined }}
-          className="inline-flex items-center gap-1 text-primary underline mt-1"
-        >
-          View task <ExternalLink className="h-3 w-3" />
-        </Link>
       )}
     </div>
   );
