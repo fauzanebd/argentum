@@ -10,7 +10,12 @@
 
 import { join } from 'node:path';
 import { hexToCssHsl } from '../lib/color.mjs';
-import { banner, groupEntries, kebab, REPO_ROOT } from '../lib/tokens.mjs';
+import { banner, groupEntries, groupVisible, kebab, REPO_ROOT } from '../lib/tokens.mjs';
+
+/** The chart series the web sees, or none when the group is print-scoped. */
+function chartPalette(tokens) {
+  return groupVisible(tokens, 'chart', 'web') ? tokens.chart.palette : [];
+}
 
 export const CSS_OUT = join(REPO_ROOT, 'apps/dashboard/src/tokens.generated.css');
 
@@ -28,12 +33,36 @@ const COLOR_VARS = {
   'secondary-foreground': 'foreground',
   muted: 'surfaceSubtle',
   'muted-foreground': 'muted',
+  'muted-subtle': 'mutedSubtle',
+  inset: 'surfaceInset',
   accent: 'primary',
   'accent-foreground': 'primaryForeground',
+  'primary-tint': 'primaryTint',
+  'primary-ink': 'primaryInk',
   destructive: 'destructive',
   'destructive-foreground': 'destructiveForeground',
+  'destructive-tint': 'destructiveTint',
+  'destructive-ink': 'destructiveInk',
+  positive: 'positive',
+  // Nothing legible sits on a #189A4D or #EF720C fill except white, and both
+  // already have it under another name. A `positiveForeground` token would be a
+  // third #FFFFFF whose only job is to drift from the other two.
+  'positive-foreground': 'primaryForeground',
+  'positive-tint': 'positiveTint',
+  'positive-ink': 'positiveInk',
+  warning: 'warning',
+  'warning-foreground': 'primaryForeground',
+  'warning-tint': 'warningTint',
+  'warning-ink': 'warningInk',
   border: 'border',
-  input: 'surface',
+  'border-strong': 'borderStrong',
+  // --input is the *outline* of a control, never a fill: every use in the
+  // dashboard is `border-input` (input.tsx, textarea.tsx, select.tsx,
+  // button.tsx's outline variant). It therefore takes the interactive line
+  // colour, not the field fill — `field` below is the fill, and they are two
+  // tokens because a filled input still needs an edge on hover.
+  input: 'borderStrong',
+  field: 'field',
   ring: 'primary',
   'sidebar-background': 'sidebarSurface',
   'sidebar-foreground': 'sidebarForeground',
@@ -83,6 +112,16 @@ export function renderCSS(tokens) {
       );
     }
     lines.push(`  --${cssName}: ${hexToCssHsl(tok.hex)}; /* ${tok.hex} */`);
+  }
+
+  lines.push('');
+  lines.push('  /* Categorical chart series, by index (T-U11). Emitted as hex rather than');
+  lines.push('   * as the `H S% L%` triples above: nothing composes these through');
+  lines.push('   * hsl(), they are handed to a charting library as colour strings, and a');
+  lines.push('   * triple would have to be wrapped at every call site. tokens.json states');
+  lines.push('   * the CIE L* method that chose them and `make palette` verifies it. */');
+  for (const [i, tok] of chartPalette(tokens).entries()) {
+    lines.push(`  --chart-${i + 1}: ${tok.hex}; /* ${tok.doc} */`);
   }
 
   lines.push('');

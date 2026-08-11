@@ -22,49 +22,94 @@
  * The dark palette is hand-written on purpose: tokens.json is light-only because
  * documents are printed and forwarded, and a dark page has no meaning on paper. */
 .dark {
-  /* ── Argentum Dark Palette ────────────────────────────────────── */
-  /* base    #212427 → page background   */
-  /* surface #2A2D31 → sidebar, cards    */
-  /* elevated #313539 → hover, inputs   */
-  /* silver  #C0C0C0 → shimmer accent   */
+  /* ── Argentum Dark Palette (T-U1) ─────────────────────────────── */
+  /* page     #17181A → app background    */
+  /* canvas   #1C1D1F → recessed ground   */
+  /* surface  #232427 → sidebar, cards    */
+  /* hover    #2A2B2E → hover, quiet fill */
+  /* line     #2E3033 → hairlines         */
+  /*
+   * Five rungs, mirroring the light ramp rung for rung — `--card` is one step
+   * above `--background` in both modes, so a component that reads as raised in
+   * light does not read as recessed in dark.
+   *
+   * Every value here was measured against its own ground with the WCAG formula
+   * in src/lib/contrast.ts rather than judged by eye: body text (#F2F3F4 on
+   * #17181A) is 15.99:1, the same ink on a card is 13.97:1, secondary (#A5A8AD
+   * on #232427) is 6.51:1, and `--muted-subtle` (#6C6F75) is 3.08:1 —
+   * deliberately below the AA body floor, because it only ever carries
+   * placeholders and timestamps that are never the sole source of meaning.
+   *
+   * The status trio is lifted from the light values, which are mixed for a
+   * white ground and go muddy on a dark one: #189A4D → #3DBB72,
+   * #EF720C → #F68F3C, #E3474C → #EE5C61. The brand red is already light
+   * enough (L* 65.5) to survive the move unchanged, which is the whole reason
+   * it stays the accent in both modes.
+   *
+   * The `-ink` variants invert here. In light they are *darker* than the base
+   * so a sentence clears AA on white; in dark they are *lighter* than the base
+   * so the same sentence clears it on #232427. Measured on surface and on the
+   * matching tint: primary 6.57 / 5.34, positive 8.05 / 6.61, warning
+   * 7.98 / 6.38, destructive 6.35 / 5.17.
+   */
 
-  --background: 210 7% 15%;         /* #212427 */
-  --foreground: 60 5% 94%;          /* #F0F0EE */
+  --background: 210 5.7% 9.6%;      /* #17181A */
+  --foreground: 210 7.7% 95.3%;     /* #F2F3F4 */
 
-  --card: 210 7% 18%;               /* #2A2D31 */
-  --card-foreground: 60 5% 94%;
+  --card: 220 5.4% 14.5%;           /* #232427 */
+  --card-foreground: 210 7.7% 95.3%;
 
-  --popover: 210 7% 18%;
-  --popover-foreground: 60 5% 94%;
+  --popover: 220 5.4% 14.5%;        /* #232427 */
+  --popover-foreground: 210 7.7% 95.3%;
 
-  --primary: 0 87% 65%;             /* #F25C5C red stays */
+  --primary: 0 85.2% 65.5%;         /* #F25C5C — brand red, unchanged */
   --primary-foreground: 0 0% 100%;
+  --primary-tint: 345 19% 22.7%;    /* #442D30 — red at 16% over surface */
+  --primary-ink: 0 84.6% 75.5%;     /* #F58A8A */
 
-  --secondary: 210 7% 21%;          /* #313539 */
-  --secondary-foreground: 60 5% 94%;
+  --secondary: 225 5.3% 17.3%;      /* #2A2B2E */
+  --secondary-foreground: 210 7.7% 95.3%;
 
-  --muted: 210 7% 21%;
-  --muted-foreground: 213 5% 55%;   /* #8A8F98 */
+  --muted: 225 5.3% 17.3%;          /* #2A2B2E */
+  --muted-foreground: 220 4.4% 66.3%; /* #A5A8AD */
+  --muted-subtle: 220 4.1% 44.1%;   /* #6C6F75 */
+  --inset: 220 4.3% 12.7%;          /* #1F2022 */
 
-  --accent: 0 87% 65%;
+  --accent: 0 85.2% 65.5%;
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 63% 45%;
-  --destructive-foreground: 60 5% 94%;
+  --destructive: 358 79.4% 64.7%;   /* #EE5C61 */
+  --destructive-foreground: 0 0% 100%;
+  --destructive-tint: 345 19% 22.7%; /* #442D30 */
+  --destructive-ink: 358 84% 74.5%; /* #F58589 */
 
-  --border: 210 7% 23%;             /* #35393E */
-  --input: 210 7% 18%;
-  --ring: 0 87% 65%;
+  --positive: 145 50.4% 48.6%;      /* #3DBB72 */
+  --positive-foreground: 0 0% 100%;
+  --positive-tint: 145 21.7% 17.3%; /* #21372D */
+  --positive-ink: 145 54.8% 59.4%;  /* #5FD08D */
+
+  --warning: 27 91.2% 60%;          /* #F68F3C */
+  --warning-foreground: 0 0% 100%;
+  --warning-tint: 30 33.3% 20%;     /* #443023 */
+  --warning-ink: 27 94.6% 68.2%;    /* #FBA75F */
+
+  --border: 220 5.5% 19%;           /* #2E3033 */
+  --border-strong: 220 5.1% 24.3%;  /* #3A3C40 */
+  --input: 220 5.1% 24.3%;          /* #3A3C40 */
+  --field: 225 4.8% 17.5%;          /* #2B2C2F */
+  --ring: 0 85.2% 65.5%;
 
   /* ── Sidebar (dark) ──────────────────────────────────────────── */
-  --sidebar-background: 210 7% 18%; /* #2A2D31 */
-  --sidebar-foreground: 60 5% 88%;
-  --sidebar-primary: 0 87% 65%;
+  /* Sits on `surface`, one rung above the page — the same relationship the
+   * light mode has, where the sidebar is #FFFFFF on a #FAFAFB page. */
+  --sidebar-background: 220 5.4% 14.5%; /* #232427 */
+  --sidebar-foreground: 210 7.7% 95.3%;
+  --sidebar-primary: 0 85.2% 65.5%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 210 7% 24%;
-  --sidebar-accent-foreground: 60 5% 94%;
-  --sidebar-border: 210 7% 23%;
-  --sidebar-ring: 0 87% 65%;
+  --sidebar-accent: 225 5.3% 17.3%;     /* #2A2B2E */
+  --sidebar-accent-foreground: 210 7.7% 95.3%;
+  --sidebar-border: 220 5.5% 19%;       /* #2E3033 */
+  --sidebar-ring: 0 85.2% 65.5%;
 }
 
 @layer base {
@@ -79,6 +124,30 @@
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* ── Reduced motion, globally (T-U2) ────────────────────────────────── */
+/* src/lib/motion.ts gates every framer variant on the same preference, but only
+ * for components that import it. This block covers everything that does not:
+ * Tailwind's `animate-*` utilities, `transition-*`, Radix's own enter/exit
+ * animations from tailwindcss-animate, and the sidebar shimmer below.
+ *
+ * Not `animation: none` — an element whose entrance animation is removed
+ * outright can be left in its `from` state and never appear. Collapsing the
+ * duration instead runs the animation to completion in one frame, which ends
+ * with the element where it belongs.
+ *
+ * `scroll-behavior: auto` is here for the same reason it is in every version of
+ * this block: a smooth scroll is motion the user did not ask for either. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -135,6 +204,23 @@
 /* ── Logo invert for dark mode ──────────────────────────────────────── */
 .dark .argentum-logo {
   filter: invert(1) brightness(1.1);
+}
+
+/* ── Shiki dual theme (T-U6) ────────────────────────────────────────── */
+/* CodeBlock asks shiki for both themes at once, which it emits as a pair of
+ * custom properties per token rather than as two stylesheets. These two rules
+ * are what choose between them, so flipping `.dark` re-colours highlighted code
+ * with no re-highlight and no second render. */
+.shiki-block .shiki,
+.shiki-block .shiki span {
+  color: var(--shiki-light);
+  background-color: transparent;
+}
+
+.dark .shiki-block .shiki,
+.dark .shiki-block .shiki span {
+  color: var(--shiki-dark);
+  background-color: transparent;
 }
 
 /* ── Scrollbar styling ──────────────────────────────────────────────── */

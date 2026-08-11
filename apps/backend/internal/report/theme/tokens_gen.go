@@ -7,18 +7,18 @@ package theme
 
 // Brand colours. Light palette only — a document has no dark mode.
 var (
-	// ColorBackground — Page background (cream). Large fills, PDF page background.
-	ColorBackground = Color{R: 0xF5, G: 0xF5, B: 0xF0} // #F5F5F0
+	// ColorBackground — Page ground. Large fills, PDF page background.
+	ColorBackground = Color{R: 0xFA, G: 0xFA, B: 0xFB} // #FAFAFB
 
-	// ColorSurface — Cards, inputs, table bands — anything that sits on the background.
+	// ColorSurface — Cards, table bands — anything that sits on the background.
 	ColorSurface = Color{R: 0xFF, G: 0xFF, B: 0xFF} // #FFFFFF
 
-	// ColorSurfaceMuted — Slightly darker cream: hover states, alternating table rows.
-	ColorSurfaceMuted = Color{R: 0xF1, G: 0xF1, B: 0xEF} // #F1F1EF
+	// ColorSurfaceMuted — Hover fill and alternating table rows: one rung under the page.
+	ColorSurfaceMuted = Color{R: 0xF4, G: 0xF5, B: 0xF6} // #F4F5F6
 
-	// ColorSurfaceSubtle — Quietest fill: disabled controls, table header band, callout
+	// ColorSurfaceSubtle — Recessed ground: disabled controls, table header band, callout
 	// backgrounds.
-	ColorSurfaceSubtle = Color{R: 0xEC, G: 0xEC, B: 0xEA} // #ECECEA
+	ColorSurfaceSubtle = Color{R: 0xF1, G: 0xF2, B: 0xF3} // #F1F2F3
 
 	// ColorPrimary — Brand accent. Rules, KPI emphasis, focus ring, chart series 1.
 	ColorPrimary = Color{R: 0xF2, G: 0x5C, B: 0x5C} // #F25C5C
@@ -26,27 +26,29 @@ var (
 	// ColorPrimaryForeground — Text and icons on a primary fill.
 	ColorPrimaryForeground = Color{R: 0xFF, G: 0xFF, B: 0xFF} // #FFFFFF
 
-	// ColorForeground — Body text.
-	ColorForeground = Color{R: 0x0A, G: 0x0A, B: 0x0A} // #0A0A0A
+	// ColorForeground — Body text. Not #000 — a true black on a light ground is a contrast
+	// the eye reads as a shadow.
+	ColorForeground = Color{R: 0x1F, G: 0x21, B: 0x24} // #1F2124
 
 	// ColorMuted — Secondary text: captions, footers, page numbers, chart axis labels.
-	ColorMuted = Color{R: 0x6B, G: 0x6B, B: 0x6B} // #6B6B6B
+	ColorMuted = Color{R: 0x62, G: 0x65, B: 0x6B} // #62656B
 
 	// ColorBorder — Hairlines, table rules, card borders.
-	ColorBorder = Color{R: 0xE2, G: 0xE2, B: 0xDC} // #E2E2DC
+	ColorBorder = Color{R: 0xEC, G: 0xED, B: 0xEF} // #ECEDEF
 
 	// ColorDestructive — Errors and negative deltas.
-	ColorDestructive = Color{R: 0xEF, G: 0x43, B: 0x43} // #EF4343
+	ColorDestructive = Color{R: 0xE3, G: 0x47, B: 0x4C} // #E3474C
 
 	// ColorDestructiveForeground — Text on a destructive fill.
 	ColorDestructiveForeground = Color{R: 0xFF, G: 0xFF, B: 0xFF} // #FFFFFF
 
 	// ColorPositive — Good news: a delta moving the way the reader wants, a `good`
-	// callout.
-	ColorPositive = Color{R: 0x3F, G: 0x7A, B: 0x46} // #3F7A46
+	// callout, an action that executed.
+	ColorPositive = Color{R: 0x18, G: 0x9A, B: 0x4D} // #189A4D
 
-	// ColorWarning — A caveat that is not an error: a `warn` callout.
-	ColorWarning = Color{R: 0xB0, G: 0x7A, B: 0x16} // #B07A16
+	// ColorWarning — A caveat that is not an error: a `warn` callout, a proposal awaiting
+	// a decision.
+	ColorWarning = Color{R: 0xEF, G: 0x72, B: 0x0C} // #EF720C
 
 	// ColorInfo — Neutral emphasis: an `info` callout, the default tone.
 	ColorInfo = Color{R: 0x1C, G: 0x3A, B: 0x62} // #1C3A62
@@ -67,8 +69,8 @@ const (
 )
 
 // RadiusBase is the corner radius in millimetres — the print equivalent of the
-// dashboard's 0.75rem. Cards, callouts, KPI tiles.
-const RadiusBase = 3.18
+// dashboard's 0.5rem. Cards, callouts, KPI tiles.
+const RadiusBase = 2.12
 
 // TypeScale is the print type scale, in points.
 var TypeScale = TypeScaleTokens{

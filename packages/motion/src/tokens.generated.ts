@@ -5,42 +5,66 @@
 
 /** The design system's colours, for the two places with no plan to read. */
 export const TOKEN_COLOR = {
-  /** Page background (cream). Large fills, PDF page background. */
-  background: "#F5F5F0",
-  /** Cards, inputs, table bands — anything that sits on the background. */
+  /** Page ground. Large fills, PDF page background. */
+  background: "#FAFAFB",
+  /** Cards, table bands — anything that sits on the background. */
   surface: "#FFFFFF",
-  /** Slightly darker cream: hover states, alternating table rows. */
-  surfaceMuted: "#F1F1EF",
-  /** Quietest fill: disabled controls, table header band, callout backgrounds. */
-  surfaceSubtle: "#ECECEA",
+  /** Hover fill and alternating table rows: one rung under the page. */
+  surfaceMuted: "#F4F5F6",
+  /** Recessed ground: disabled controls, table header band, callout backgrounds. */
+  surfaceSubtle: "#F1F2F3",
   /** Brand accent. Rules, KPI emphasis, focus ring, chart series 1. */
   primary: "#F25C5C",
   /** Text and icons on a primary fill. */
   primaryForeground: "#FFFFFF",
-  /** Body text. */
-  foreground: "#0A0A0A",
+  /** Body text. Not #000 — a true black on a light ground is a contrast the eye reads as a shadow. */
+  foreground: "#1F2124",
   /** Secondary text: captions, footers, page numbers, chart axis labels. */
-  muted: "#6B6B6B",
+  muted: "#62656B",
   /** Hairlines, table rules, card borders. */
-  border: "#E2E2DC",
+  border: "#ECEDEF",
   /** Errors and negative deltas. */
-  destructive: "#EF4343",
+  destructive: "#E3474C",
   /** Text on a destructive fill. */
   destructiveForeground: "#FFFFFF",
-  /** Good news: a delta moving the way the reader wants, a `good` callout. */
-  positive: "#3F7A46",
-  /** A caveat that is not an error: a `warn` callout. */
-  warning: "#B07A16",
+  /** Good news: a delta moving the way the reader wants, a `good` callout, an action that executed. */
+  positive: "#189A4D",
+  /** A caveat that is not an error: a `warn` callout, a proposal awaiting a decision. */
+  warning: "#EF720C",
   /** Neutral emphasis: an `info` callout, the default tone. */
   info: "#1C3A62",
+  /** An inset panel on a card — a trace body, an expanded tool call. Between surface and surfaceMuted so it recedes without becoming a hover state. */
+  surfaceInset: "#F7F8F9",
+  /** Input and textarea fill. A filled field needs no border to read as editable, which is why it is a fill and not another line colour. */
+  field: "#F2F2F3",
+  /** Primary at chip strength: a selected row, an active nav item. Solid rather than an alpha so it composites the same on every surface rung. */
+  primaryTint: "#FDECEC",
+  /** Primary as text: a link, an active label. 5.50:1 on surface, 4.82:1 on primaryTint, 5.28:1 on background. */
+  primaryInk: "#C0353C",
+  /** Tertiary text: placeholders, disabled labels, timestamps. Below the WCAG AA body floor by design — it never carries meaning on its own. */
+  mutedSubtle: "#9A9DA3",
+  /** The outline of something interactive: a control, a field, an overlay. One rung darker than border so a button edge is visible where a card edge should not be. */
+  borderStrong: "#E0E2E5",
+  /** Destructive at chip strength: an error strip, a failed run. */
+  destructiveTint: "#FCECEC",
+  /** Destructive as text: an error sentence, a failure reason. 5.28:1 on surface, 4.61:1 on destructiveTint, 5.06:1 on background. */
+  destructiveInk: "#C7343A",
+  /** Positive at chip strength: a succeeded run, an approved proposal. */
+  positiveTint: "#E8F5ED",
+  /** Positive as text: "Approved and sent." 5.07:1 on surface, 4.52:1 on positiveTint, 4.86:1 on background. */
+  positiveInk: "#157F41",
+  /** Warning at chip strength: the approval card's ground. */
+  warningTint: "#FDF1E5",
+  /** Warning as text: "Approval needed". 5.42:1 on surface, 4.87:1 on warningTint, 5.20:1 on background. */
+  warningInk: "#A85207",
   /** Sidebar background — matches the chat composer, not the page cream. */
   sidebarSurface: "#FFFFFF",
-  /** Sidebar text. */
-  sidebarForeground: "#262626",
+  /** Sidebar text. The same ink as the page: a sidebar that whispers is a sidebar nobody navigates with. */
+  sidebarForeground: "#1F2124",
   /** Sidebar hover fill. */
-  sidebarAccent: "#E7E7E4",
+  sidebarAccent: "#F4F5F6",
   /** Sidebar text on a hover fill. */
-  sidebarAccentForeground: "#1A1A1A",
+  sidebarAccentForeground: "#1F2124",
 } as const;
 
 /**

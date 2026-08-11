@@ -10,35 +10,65 @@
 :root {
   /* Colours as bare `H S% L%` triples — the form shadcn/ui composes into
    * hsl(var(--x)). The hex in each comment is the value in tokens.json. */
-  --background: 60 20% 95.1%; /* #F5F5F0 */
-  --foreground: 0 0% 3.9%; /* #0A0A0A */
+  --background: 240 11.1% 98.2%; /* #FAFAFB */
+  --foreground: 216 7.5% 13.1%; /* #1F2124 */
   --card: 0 0% 100%; /* #FFFFFF */
-  --card-foreground: 0 0% 3.9%; /* #0A0A0A */
+  --card-foreground: 216 7.5% 13.1%; /* #1F2124 */
   --popover: 0 0% 100%; /* #FFFFFF */
-  --popover-foreground: 0 0% 3.9%; /* #0A0A0A */
+  --popover-foreground: 216 7.5% 13.1%; /* #1F2124 */
   --primary: 0 85.2% 65.5%; /* #F25C5C */
   --primary-foreground: 0 0% 100%; /* #FFFFFF */
-  --secondary: 60 6.7% 94.1%; /* #F1F1EF */
-  --secondary-foreground: 0 0% 3.9%; /* #0A0A0A */
-  --muted: 60 5% 92.2%; /* #ECECEA */
-  --muted-foreground: 0 0% 42%; /* #6B6B6B */
+  --secondary: 210 10% 96.1%; /* #F4F5F6 */
+  --secondary-foreground: 216 7.5% 13.1%; /* #1F2124 */
+  --muted: 210 7.7% 94.9%; /* #F1F2F3 */
+  --muted-foreground: 220 4.4% 40.2%; /* #62656B */
+  --muted-subtle: 220 4.7% 62.2%; /* #9A9DA3 */
+  --inset: 210 14.3% 97.3%; /* #F7F8F9 */
   --accent: 0 85.2% 65.5%; /* #F25C5C */
   --accent-foreground: 0 0% 100%; /* #FFFFFF */
-  --destructive: 0 84.3% 60%; /* #EF4343 */
+  --primary-tint: 0 81% 95.9%; /* #FDECEC */
+  --primary-ink: 357 56.7% 48%; /* #C0353C */
+  --destructive: 358.1 73.6% 58.4%; /* #E3474C */
   --destructive-foreground: 0 0% 100%; /* #FFFFFF */
-  --border: 60 9.4% 87.5%; /* #E2E2DC */
-  --input: 0 0% 100%; /* #FFFFFF */
+  --destructive-tint: 0 72.7% 95.7%; /* #FCECEC */
+  --destructive-ink: 357.6 58.6% 49.2%; /* #C7343A */
+  --positive: 144.5 73% 34.9%; /* #189A4D */
+  --positive-foreground: 0 0% 100%; /* #FFFFFF */
+  --positive-tint: 143.1 39.4% 93.5%; /* #E8F5ED */
+  --positive-ink: 144.9 71.6% 29%; /* #157F41 */
+  --warning: 27 90.4% 49.2%; /* #EF720C */
+  --warning-foreground: 0 0% 100%; /* #FFFFFF */
+  --warning-tint: 30 85.7% 94.5%; /* #FDF1E5 */
+  --warning-ink: 28 92% 34.3%; /* #A85207 */
+  --border: 220 8.6% 93.1%; /* #ECEDEF */
+  --border-strong: 216 8.8% 88.8%; /* #E0E2E5 */
+  --input: 216 8.8% 88.8%; /* #E0E2E5 */
+  --field: 240 4% 95.1%; /* #F2F2F3 */
   --ring: 0 85.2% 65.5%; /* #F25C5C */
   --sidebar-background: 0 0% 100%; /* #FFFFFF */
-  --sidebar-foreground: 0 0% 14.9%; /* #262626 */
+  --sidebar-foreground: 216 7.5% 13.1%; /* #1F2124 */
   --sidebar-primary: 0 85.2% 65.5%; /* #F25C5C */
   --sidebar-primary-foreground: 0 0% 100%; /* #FFFFFF */
-  --sidebar-accent: 60 5.9% 90%; /* #E7E7E4 */
-  --sidebar-accent-foreground: 0 0% 10.2%; /* #1A1A1A */
-  --sidebar-border: 60 9.4% 87.5%; /* #E2E2DC */
+  --sidebar-accent: 210 10% 96.1%; /* #F4F5F6 */
+  --sidebar-accent-foreground: 216 7.5% 13.1%; /* #1F2124 */
+  --sidebar-border: 220 8.6% 93.1%; /* #ECEDEF */
   --sidebar-ring: 0 85.2% 65.5%; /* #F25C5C */
 
-  --radius: 0.75rem; /* Cards, callouts, KPI tiles. */
+  /* Categorical chart series, by index (T-U11). Emitted as hex rather than
+   * as the `H S% L%` triples above: nothing composes these through
+   * hsl(), they are handed to a charting library as colour strings, and a
+   * triple would have to be wrapped at every call site. tokens.json states
+   * the CIE L* method that chose them and `make palette` verifies it. */
+  --chart-1: #F25C5C; /* series 1 — brand red */
+  --chart-2: #1C3A62; /* series 2 — navy */
+  --chart-3: #EAAA3E; /* series 3 — amber */
+  --chart-4: #2E7E71; /* series 4 — teal */
+  --chart-5: #774C96; /* series 5 — purple */
+  --chart-6: #CACCD1; /* series 6 — grey */
+  --chart-7: #713F1C; /* series 7 — brown */
+  --chart-8: #5CA8E0; /* series 8 — azure */
+
+  --radius: 0.5rem; /* Cards, callouts, KPI tiles. */
 
   /* Font stacks. index.css consumes these instead of naming the family. */
   --font-display: 'Space Grotesk', sans-serif;

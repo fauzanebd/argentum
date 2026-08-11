@@ -1,45 +1,16 @@
 /**
- * Argentum Design System — Color Tokens
+ * Which of the two palettes is showing.
  *
- * These are the single source of truth for the color palette.
- * CSS variables in index.css reference these values.
- * Change here to update the whole theme.
+ * This file used to also export `LIGHT_COLORS` and `DARK_COLORS` — two objects
+ * of hex literals under a header calling itself "the single source of truth for
+ * the color palette". It was not one. `packages/design-tokens/tokens.json` is,
+ * and has been since `T-R1`: it generates the dashboard's CSS variables, the Go
+ * report theme and the Remotion fallback, with `make tokens-check` diffing all
+ * three in CI. Nothing imported either object, so nothing broke when the light
+ * palette here drifted from the generated one — which it had.
+ *
+ * `T-U1` deleted them. A colour belongs in `tokens.json`; the dark palette,
+ * which is light-only there by design, belongs in `index.css`. Neither belongs
+ * in a `.ts` file that no component reads.
  */
-
-export const LIGHT_COLORS = {
-  /** Large background areas (page, sidebar) */
-  cream: "#F5F5F0",
-  /** Cards, sections, inputs, dropdowns */
-  white: "#FFFFFF",
-  /** Accent / decorative — send button, active indicator, hover accents */
-  red: "#F25C5C",
-  /** Primary text */
-  text: "#0A0A0A",
-  /** Muted text (subtitles, timestamps) */
-  textMuted: "#6B6B6B",
-  /** Borders */
-  border: "#E2E2DC",
-} as const;
-
-export const DARK_COLORS = {
-  /** Page / app background */
-  base: "#212427",
-  /** Sidebar, card surfaces */
-  surface: "#2A2D31",
-  /** Hover states, elevated elements */
-  elevated: "#313539",
-  /** Input backgrounds */
-  input: "#2A2D31",
-  /** Silver shimmer color for the floating sidebar */
-  silver: "#C0C0C0",
-  /** Accent — same red for consistency */
-  red: "#F25C5C",
-  /** Primary text */
-  text: "#F0F0EE",
-  /** Muted text */
-  textMuted: "#8A8F98",
-  /** Borders */
-  border: "#35393E",
-} as const;
-
 export type Theme = "light" | "dark";
