@@ -18,7 +18,7 @@
     "footer_top": 972,
     "title_rule_width": 193,
     "title_rule_thickness": 9,
-    "radius": 18,
+    "radius": 12,
     "spacing_sm": 23,
     "spacing_md": 34,
     "spacing_lg": 57,
@@ -35,28 +35,28 @@
     "name": "",
     "primary": "#F25C5C",
     "primary_on_dark": "#F25C5C",
-    "foreground": "#0A0A0A",
-    "background": "#F5F5F0",
-    "muted": "#6B6B6B",
-    "border": "#E2E2DC",
-    "dark": "#0A0A0A",
-    "on_dark": "#F5F5F0",
+    "foreground": "#1F2124",
+    "background": "#FAFAFB",
+    "muted": "#62656B",
+    "border": "#ECEDEF",
+    "dark": "#1F2124",
+    "on_dark": "#FAFAFB",
     "surface": "#FFFFFF",
-    "surface_subtle": "#ECECEA",
-    "positive": "#3F7A46",
-    "destructive": "#EF4343",
+    "surface_subtle": "#F1F2F3",
+    "positive": "#189A4D",
+    "destructive": "#E3474C",
     "tones": {
       "good": {
-        "accent": "#3F7A46",
-        "fill": "#F0F4F0"
+        "accent": "#189A4D",
+        "fill": "#EDF7F1"
       },
       "info": {
         "accent": "#1C3A62",
         "fill": "#EDEFF2"
       },
       "warn": {
-        "accent": "#B07A16",
-        "fill": "#F9F4EC"
+        "accent": "#EF720C",
+        "fill": "#FEF4EC"
       }
     },
     "credit": "Made with Argentum"
