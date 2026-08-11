@@ -181,7 +181,11 @@ function makeLauncher(o: InitOptions): HTMLButtonElement {
     border: "0",
     cursor: "pointer",
     zIndex: "2147483000",
-    background: o.theme?.primary ?? "#e11d48",
+    // color.primary from packages/design-tokens/tokens.json. A tenant accent
+    // still wins; this is the fallback for one that has set none, and until
+    // T-U9 it was #e11d48 — a red matching no token in the system, on the one
+    // element a visitor sees before they have opened anything.
+    background: o.theme?.primary ?? "#f25c5c",
     color: "#fff",
     fontSize: "24px",
     lineHeight: "1",

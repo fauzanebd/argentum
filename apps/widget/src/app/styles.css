@@ -4,27 +4,45 @@
 
    Two theme states, driven by `data-theme` on the root, which App.tsx sets from
    the host's `theme.mode` — including resolving `auto` once, at boot, rather
-   than leaving a media query to disagree with the tenant's explicit choice. */
+   than leaving a media query to disagree with the tenant's explicit choice.
+
+   ## Where these values come from (T-U9)
+
+   They are `packages/design-tokens/tokens.json`, copied by hand. The widget
+   cannot import `tokens.generated.css`: it ships inside an iframe on someone
+   else's page under a 15 KB loader / 80 KB app budget, and the whole point of
+   that budget is that it carries only what it uses.
+
+   Copied, therefore, but not invented — which is the difference this ticket
+   fixed. The accent here was `#e11d48`, a red that appears nowhere else in
+   Argentum and matched no token; a customer embedding the widget got the
+   product in a colour the product does not use. The dark palette was a
+   blue-grey (`#0b0f19`) against the dashboard's neutral one.
+
+   **If a value below changes in tokens.json, change it here too.** There is no
+   generator enforcing it, and that is a deliberate trade against the budget
+   rather than an oversight. */
 
 :root {
-  --argentum-primary: #e11d48;
-  --argentum-radius: 12px;
-  --bg: #ffffff;
-  --fg: #111827;
-  --muted: #6b7280;
-  --line: #e5e7eb;
-  --bubble: #f3f4f6;
-  --danger: #b91c1c;
+  --argentum-primary: #f25c5c; /* color.primary */
+  --argentum-radius: 8px; /* radius.base — 0.5rem */
+  --bg: #ffffff; /* color.surface */
+  --fg: #1f2124; /* color.foreground */
+  --muted: #62656b; /* color.muted */
+  --line: #ecedef; /* color.border */
+  --bubble: #f1f2f3; /* color.surfaceSubtle */
+  --danger: #c7343a; /* color.destructiveInk — text, so the ink not the fill */
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --bg: #0b0f19;
-  --fg: #e5e7eb;
-  --muted: #9ca3af;
-  --line: #1f2937;
-  --bubble: #111827;
-  --danger: #f87171;
+  /* The dashboard's hand-written dark ramp, same rungs. */
+  --bg: #232427; /* surface */
+  --fg: #f2f3f4; /* ink */
+  --muted: #a5a8ad; /* ink-2 */
+  --line: #2e3033; /* line */
+  --bubble: #2a2b2e; /* hover */
+  --danger: #f58589; /* destructive-ink, lifted for a dark ground */
   color-scheme: dark;
 }
 
