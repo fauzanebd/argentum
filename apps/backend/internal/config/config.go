@@ -580,6 +580,19 @@ func (c *Config) CreditsDefaultGrantMicroUSD() int64 {
 	return int64(c.CreditsDefaultGrantUSD * 1_000_000)
 }
 
+// whatsAppMetaConfigured reports whether anyone has begun configuring the Meta
+// WhatsApp provider. Any one of the four variables counts, deliberately: the
+// question it answers is "did an operator intend this channel", and a half-set
+// block is the shape that means yes and is broken. The webhook verify token is
+// in here because a deployment that has only completed Meta's subscription
+// handshake has intent and no credentials yet.
+func (c *Config) whatsAppMetaConfigured() bool {
+	return c.WhatsAppAccessToken != "" ||
+		c.WhatsAppPhoneNumberID != "" ||
+		c.WhatsAppAppSecret != "" ||
+		c.WhatsAppWebhookVerifyToken != ""
+}
+
 // Validate checks if required configuration is present
 func (c *Config) Validate() error {
 	if err := validateLLMInterfaceKind(c.EffectiveLLMInterface(), "LLM_INTERFACE", "LLM_PROVIDER"); err != nil {
@@ -601,15 +614,39 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("DB_PASSWORD is required")
 	}
 
-	// WhatsApp credentials are only required when the corresponding provider
-	// is selected. Twilio uses a different set of env vars.
+	// WhatsApp is optional, and this block is where that stopped being true.
+	// WHATSAPP_PROVIDER defaults to `whatsapp_business`, so these two
+	// credentials were required on every deployment — including the ones that
+	// have never sent a WhatsApp message and never intend to. A stack with no
+	// WhatsApp configuration could not boot at all, which is the trap
+	// `coverage/report-video.md` §6 recorded as "the API refuses to boot
+	// without WhatsApp credentials on a deployment that uses no WhatsApp", and
+	// which every gate run since has had to work around.
+	//
+	// The rule is now about intent rather than about the default:
+	//
+	//   - Nothing configured is a choice. WhatsApp is off, and silence is the
+	//     correct amount to say about a channel nobody asked for.
+	//   - Something configured but not all of it is a mistake, and gets a
+	//     warning naming the variable that is missing.
+	//
+	// Neither refuses to start. A missing credential turns one channel off; a
+	// process that will not boot turns every channel off, which is the larger
+	// failure by every measure — and it is the same argument as the two rows
+	// below it.
 	switch c.WhatsAppProvider {
 	case "whatsapp_business", "":
-		if c.WhatsAppAccessToken == "" {
-			return fmt.Errorf("WHATSAPP_ACCESS_TOKEN is required for whatsapp_business provider")
-		}
-		if c.WhatsAppPhoneNumberID == "" {
-			return fmt.Errorf("WHATSAPP_PHONE_NUMBER_ID is required for whatsapp_business provider")
+		if c.whatsAppMetaConfigured() {
+			var missing []string
+			if c.WhatsAppAccessToken == "" {
+				missing = append(missing, "WHATSAPP_ACCESS_TOKEN")
+			}
+			if c.WhatsAppPhoneNumberID == "" {
+				missing = append(missing, "WHATSAPP_PHONE_NUMBER_ID")
+			}
+			if len(missing) > 0 {
+				logrus.Warnf("WhatsApp is partly configured and cannot send: %s unset. Set them, or unset the other WHATSAPP_* variables to turn the channel off deliberately", strings.Join(missing, ", "))
+			}
 		}
 		// The app secret is the entirety of /webhook/whatsapp's authentication
 		// (T-H1/T-H3): the route is mounted outside middleware.Auth because the
@@ -624,15 +661,18 @@ func (c *Config) Validate() error {
 		// actually protects the endpoint is at request time and is unaffected —
 		// VerifyWebhook answers false without a secret, so every callback is
 		// 401 whether or not anyone reads this line.
-		if c.IsProduction() && c.WhatsAppAppSecret == "" {
+		if c.IsProduction() && c.whatsAppMetaConfigured() && c.WhatsAppAppSecret == "" {
 			logrus.Warn("WHATSAPP_APP_SECRET is unset in production: /webhook/whatsapp is the tenant's agent behind one signature check, and without the secret every callback is refused 401 — inbound WhatsApp is effectively off until it is set")
 		}
 	case "twilio":
 		// TWILIO_AUTH_TOKEN is in this triple, and it is also the webhook
 		// signing key — which is why the Twilio half of the rule above needs no
 		// separate check here.
+		//
+		// Selecting `twilio` explicitly is intent, so a half-filled triple is
+		// always worth a warning; it is still not worth refusing to boot over.
 		if c.TwilioAccountSID == "" || c.TwilioAuthToken == "" || c.TwilioFromNumber == "" {
-			return fmt.Errorf("TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER are required for twilio provider")
+			logrus.Warn("WHATSAPP_PROVIDER=twilio but TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_NUMBER are not all set: WhatsApp cannot send, and inbound callbacks are refused 401 because the auth token is also the webhook signing key")
 		}
 	}
 

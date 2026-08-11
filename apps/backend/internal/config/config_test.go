@@ -496,31 +496,44 @@ func TestValidateChecksBothInterfaceKinds(t *testing.T) {
 	}
 }
 
-func TestValidateWhatsAppCredentialsAreProviderScoped(t *testing.T) {
-	// Twilio and the Business API read entirely different env vars. Demanding
-	// both would make it impossible to run either.
-	t.Run("business api needs its own pair", func(t *testing.T) {
+// WhatsApp never blocks the boot. The distinction the code draws is between a
+// deployment that never configured it — silence — and one that configured half
+// of it, which warns. Neither is an error: a missing credential turns one
+// channel off, and a process that refuses to start turns every channel off.
+func TestValidateNeverBlocksTheBootOnWhatsApp(t *testing.T) {
+	// The regression this test exists for. WHATSAPP_PROVIDER defaults to
+	// `whatsapp_business`, so its two credentials were required on every
+	// deployment — including the ones that have never sent a WhatsApp message.
+	// `make api` on a stack with no WhatsApp could not start.
+	t.Run("no whatsapp configuration at all", func(t *testing.T) {
 		c := validCfg()
+		c.WhatsAppProvider = ""
 		c.WhatsAppAccessToken = ""
-		if err := c.Validate(); err == nil {
-			t.Fatal("Validate() = nil with no WhatsApp access token")
-		}
-		c = validCfg()
 		c.WhatsAppPhoneNumberID = ""
-		if err := c.Validate(); err == nil {
-			t.Fatal("Validate() = nil with no WhatsApp phone number id")
+		c.WhatsAppAppSecret = ""
+		c.WhatsAppWebhookVerifyToken = ""
+		if err := c.Validate(); err != nil {
+			t.Fatalf("Validate() = %v with no WhatsApp configuration; a deployment that does not use WhatsApp must boot", err)
+		}
+		if c.whatsAppMetaConfigured() {
+			t.Error("whatsAppMetaConfigured() = true with every WhatsApp variable empty")
 		}
 	})
 
-	t.Run("empty provider is treated as the business api", func(t *testing.T) {
+	t.Run("half-configured warns and still boots", func(t *testing.T) {
 		c := validCfg()
-		c.WhatsAppProvider = ""
-		if err := c.Validate(); err != nil {
-			t.Errorf("Validate() = %v, want nil", err)
-		}
 		c.WhatsAppAccessToken = ""
-		if err := c.Validate(); err == nil {
-			t.Error("Validate() = nil with no access token on the default provider")
+		if err := c.Validate(); err != nil {
+			t.Errorf("Validate() = %v with no access token, want a warning and a boot", err)
+		}
+		if !c.whatsAppMetaConfigured() {
+			t.Error("whatsAppMetaConfigured() = false with the phone number id set; intent is what it reads")
+		}
+
+		c = validCfg()
+		c.WhatsAppPhoneNumberID = ""
+		if err := c.Validate(); err != nil {
+			t.Errorf("Validate() = %v with no phone number id, want a warning and a boot", err)
 		}
 	})
 
@@ -542,8 +555,8 @@ func TestValidateWhatsAppCredentialsAreProviderScoped(t *testing.T) {
 		} {
 			cc := *c
 			drop(&cc)
-			if err := cc.Validate(); err == nil {
-				t.Error("Validate() = nil with an incomplete Twilio triple")
+			if err := cc.Validate(); err != nil {
+				t.Errorf("Validate() = %v with an incomplete Twilio triple, want a warning and a boot", err)
 			}
 		}
 	})
@@ -606,8 +619,8 @@ func TestValidateBootsWithoutTheWebhookSecret(t *testing.T) {
 		t.Errorf("Validate() = %v for a complete Twilio triple in production", err)
 	}
 	tw.TwilioAuthToken = ""
-	if err := tw.Validate(); err == nil {
-		t.Error("Validate() = nil in production with no Twilio auth token")
+	if err := tw.Validate(); err != nil {
+		t.Errorf("Validate() = %v in production with no Twilio auth token, want a warning and a boot", err)
 	}
 }
 

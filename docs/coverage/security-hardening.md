@@ -119,6 +119,36 @@ answers `401`.
 | `CORS_ORIGINS` empty | **Warns** in production. `Access-Control-Allow-Credentials` is now sent only alongside an `Allow-Origin` we actually issued. |
 | Tenant DSN without TLS | `disable`/`prefer`/`allow` refused in production on the form path; the raw-DSN path checked for the same property; SQL Server floors at TLS 1.2 and encrypts by default, and verifies only when asked to by name. |
 
+### WhatsApp no longer stops a deployment that does not use it
+
+Not a `T-H3` row, and older than this whole track. `WHATSAPP_PROVIDER` defaults
+to `whatsapp_business`, and `Validate()` required `WHATSAPP_ACCESS_TOKEN` and
+`WHATSAPP_PHONE_NUMBER_ID` whenever that provider was selected — so **every
+deployment had to hold WhatsApp credentials, including the ones that have never
+sent a WhatsApp message.** `config.Load()` returns the error and
+`cmd/api/main.go:30` is a `Fatalf`, so the process did not start.
+
+This is the trap [`report-video.md`](report-video.md) §6 recorded as *"the API
+refuses to boot without WhatsApp credentials on a deployment that uses no
+WhatsApp"*, and which the 2026-08-11 agent-quality gate had to work around
+again. It was filed as an environment note both times rather than as a defect.
+
+The rule is now about intent rather than about a default:
+
+| State | Behaviour |
+| ----- | --------- |
+| No `WHATSAPP_*` variable set | Channel off. Boots silently — there is nothing to say about a channel nobody asked for. |
+| Some set, some missing | Boots, with a warning naming the missing variable. |
+| `WHATSAPP_PROVIDER=twilio`, triple incomplete | Boots, with a warning. Selecting the provider explicitly is intent, so the warning always fires. |
+
+**Proven, not asserted:** the API binary was run against the local stack with
+`env -i` and no WhatsApp variable of any kind. It passes `config.Load()` — the
+`Argentum API server starting` line at `main.go:33` is printed *after* the
+`Fatalf` on `:30` that used to catch this — and goes on to fail at the control
+database, whose local volume password predates the missing `.env`. The
+config half is what this change owns and it is the half that is proven; a
+complete boot is owed with working database credentials.
+
 ### Two rows were fatal for four hours, and are warnings — decided 2026-08-11
 
 The repo owner reverted both boot refusals after the change was pushed, and the
