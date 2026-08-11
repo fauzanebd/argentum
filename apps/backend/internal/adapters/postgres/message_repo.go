@@ -51,6 +51,120 @@ func (r *MessageRepo) ListByThread(ctx context.Context, threadID string, limit, 
 	return out, rows.Err()
 }
 
+// GetForCompany reads one message with the tenant boundary inside the query
+// (T-Q2).
+//
+// The join to conversation_threads is the whole method: `messages` carries no
+// company_id, so every caller that wanted one message had to fetch it and then
+// compare — which is the pattern ThreadRepository.GetForCompany's own comment
+// calls "one forgotten comparison away from a cross-tenant read". Feedback is
+// the first route to take a bare message id from a request body, so it is the
+// first that could get that comparison wrong.
+func (r *MessageRepo) GetForCompany(ctx context.Context, companyID, id string) (*domain.Message, error) {
+	// Spelled out rather than derived from messageColumns: `id` and
+	// `created_at` exist on both tables, so the shared list is ambiguous under
+	// this join and no amount of rewriting it in Go is clearer than the eleven
+	// columns written down. scanMessage reads them in this order.
+	const q = `
+		SELECT m.id, m.thread_id, m.role, m.content,
+		       COALESCE(m.tool_calls::text, ''),
+		       m.tokens_in, m.tokens_out, m.latency_ms,
+		       COALESCE(m.metadata::text, ''),
+		       m.created_at
+		FROM messages m
+		JOIN conversation_threads t ON t.id = m.thread_id
+		WHERE m.id = $1 AND t.company_id = $2`
+	m, err := scanMessage(r.db.QueryRowContext(ctx, q, id, companyID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	return m, err
+}
+
+// ListRecentByThread returns the NEWEST limit messages, oldest-first within
+// that window (T-Q7).
+//
+// It exists because ListByThread is ascending with a LIMIT, so
+// `ListByThread(id, 20, 0)` is the *first* twenty messages of the thread —
+// and both callers that used it to mean "recent history" wanted the last
+// twenty. On a thread of thirty turns, memory hydration was replaying the
+// opening and the rolling summary was summarising it, so a long conversation
+// re-hydrated into its own beginning and the agent lost everything the user
+// had said since. Short threads hid it completely: below the limit the two
+// reads are identical, and every test thread is short.
+//
+// Descending in the query and reversed here, because the provider's message
+// list has to be chronological.
+func (r *MessageRepo) ListRecentByThread(ctx context.Context, threadID string, limit int) ([]*domain.Message, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	q := `SELECT ` + messageColumns + ` FROM messages
+		WHERE thread_id = $1
+		ORDER BY created_at DESC, id DESC LIMIT $2`
+	rows, err := r.db.QueryContext(ctx, q, threadID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []*domain.Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	reverseMessages(out)
+	return out, nil
+}
+
+func reverseMessages(m []*domain.Message) {
+	for i, j := 0, len(m)-1; i < j; i, j = i+1, j-1 {
+		m[i], m[j] = m[j], m[i]
+	}
+}
+
+// ListByThreadRole returns the most recent messages of one role, oldest-first
+// within the window (T-Q6).
+//
+// Newest-first in the query and reversed here, which is the opposite of
+// ListByThread and deliberate: the caller wants the LAST few tool-digest rows,
+// where ListByThread's ascending LIMIT would hand back the FIRST few — the
+// oldest work in a long conversation, which is the least likely to be what a
+// follow-up is following up on.
+func (r *MessageRepo) ListByThreadRole(ctx context.Context, threadID string, role domain.MessageRole, limit int) ([]*domain.Message, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 5
+	}
+	q := `SELECT ` + messageColumns + ` FROM messages
+		WHERE thread_id = $1 AND role = $2
+		ORDER BY created_at DESC LIMIT $3`
+	rows, err := r.db.QueryContext(ctx, q, threadID, string(role), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []*domain.Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	reverseMessages(out)
+	return out, nil
+}
+
 // messageColumns is the SELECT list the keyset reads share.
 const messageColumns = `
 	id, thread_id, role, content,

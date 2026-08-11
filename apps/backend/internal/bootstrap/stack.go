@@ -113,6 +113,29 @@ type Stack struct {
 	// numbers are defined before it decides how to answer.
 	Metrics *app.MetricService
 
+	// Feedback is what people thought of the answers (T-Q2) — the first signal
+	// this product has had about its own quality that does not come from the
+	// golden set. Read by the dashboard, and by T-Q8 before it will learn from
+	// a query.
+	//
+	// MessageFeedback is the repository behind it, exposed separately because
+	// the cookbook wants the negative-ids batch read and nothing else.
+	Feedback        *app.FeedbackService
+	MessageFeedback domain.MessageFeedbackRepository
+
+	// Cookbook is the tenant's own worked examples (T-Q8): what the harvester
+	// learned from agent_actions, and what a turn is shown before it writes a
+	// query. Both halves are nil on a deployment with no embedding support,
+	// which leaves every turn exactly as it is today.
+	Cookbook      *app.CookbookService
+	QueryExamples domain.QueryExampleRepository
+
+	// messageRepo is the concrete store behind Messages. Kept because two
+	// features need reads the shared interface deliberately does not carry:
+	// the tenant-scoped single-message read (T-Q2) and the per-role listing
+	// tool memory walks (T-Q6).
+	messageRepo *pgctl.MessageRepo
+
 	// Watchers is the eval/delivery half of T-08. The worker fires its
 	// HandleFire on each watcher:eval tick and installs it on the runner as the
 	// fire closer; it needs a real metric service, so it is built here beside the
@@ -177,7 +200,14 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 
 	s.Connections = pgctl.NewConnectionRepo(controlDB)
 	s.Threads = pgctl.NewThreadRepo(controlDB)
-	s.Messages = pgctl.NewMessageRepo(controlDB)
+	// Kept concretely as well as behind the interface, for companyRepo's reason
+	// one line down: FeedbackService needs the tenant-scoped single-message read
+	// (T-Q2), and domain.MessageRepository deliberately does not carry it —
+	// widening the shared interface would put a method six test stubs must
+	// implement and nothing else calls.
+	messageRepo := pgctl.NewMessageRepo(controlDB)
+	s.Messages = messageRepo
+	s.messageRepo = messageRepo
 	s.Usage = pgctl.NewUsageRepo(controlDB)
 	// Kept concretely as well as behind the interface: the branding record
 	// lives on the company row, and domain.CompanyRepository deliberately does
@@ -189,6 +219,9 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.Agents = pgctl.NewAgentRepo(controlDB)
 	s.CompanyProfiles = pgctl.NewCompanyProfileRepo(controlDB)
 	s.SourceProfiles = pgctl.NewSourceProfileRepo(controlDB)
+	s.MessageFeedback = pgctl.NewMessageFeedbackRepo(controlDB)
+	s.Feedback = app.NewFeedbackService(s.MessageFeedback, messageRepo)
+	s.QueryExamples = pgctl.NewQueryExampleRepo(controlDB)
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
 
@@ -238,6 +271,15 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.EmbedCache = llmtenant.NewEmbeddingCache(llmResolver, 100, 30*time.Minute)
 	s.EmbedCache.Start(ctx)
 	s.onClose(s.EmbedCache.CloseAll)
+
+	// The cookbook (T-Q8). Built here rather than beside the other repositories
+	// because it needs the embedding cache above: the harvester embeds each
+	// question it learns, and the turn-time retrieval embeds the question being
+	// asked.
+	s.Cookbook = app.NewCookbookService(
+		s.QueryExamples, pgctl.NewCookbookCandidateRepo(controlDB),
+		s.MessageFeedback, s.EmbedCache,
+	)
 
 	asynqOpt, err := queue.BuildRedisOpt(cfg.ResolvedAsynqRedisURL(), cfg.RedisPassword)
 	if err != nil {
@@ -785,6 +827,22 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 	// and every turn would panic on the first reply.
 	if s.Guardrails != nil && s.Companies != nil {
 		runner = runner.WithOutputRules(s.Guardrails, s.Companies)
+	}
+	// What earlier turns of this thread actually did (T-Q6). The concrete repo
+	// rather than the shared interface, for the reason app.ToolMemory gives.
+	if s.messageRepo != nil {
+		// PriorWorkTurns reaches WithToolMemory unchanged, including zero:
+		// PRIOR_WORK_TURNS=0 is the write-but-do-not-read setting the feature is
+		// measured with, and clamping it here would silently remove the control
+		// arm of that comparison.
+		runner = runner.WithToolMemory(s.messageRepo, s.Cfg.PriorWorkTurns)
+	}
+	// The tenant's own worked examples (T-Q8). Gated on the same embedding
+	// support the table picker needs — retrieval is a vector search — and on
+	// the tenant actually having a cookbook, which the repository reports as
+	// zero until the harvester has run.
+	if s.QueryExamples != nil && s.EmbedCache != nil && s.Cfg.CookbookTopK > 0 {
+		runner = runner.WithCookbook(s.QueryExamples, s.Cfg.CookbookTopK)
 	}
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)

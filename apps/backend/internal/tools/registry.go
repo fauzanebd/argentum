@@ -105,6 +105,12 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		NewCreateVisualizationTool(d.Pool, d.Connections, d.Metabase, d.MetabaseSource, d.Usage),
 		NewCreateDashboardTool(d.Metabase, d.Usage, d.Dashboards),
 		NewScheduleTaskTool(d.Scheduled),
+		// Asking, as an action (T-Q4). It has no dependencies at all, which is
+		// the point: the alternative to asking is always a tool call, and a
+		// sentence in the system prompt was losing to one. Registered
+		// unconditionally for that reason — a deployment where the agent cannot
+		// ask is a deployment where it guesses.
+		NewAskClarificationTool(),
 		// propose_action registers unconditionally, like the metric tools: a nil
 		// proposer still yields the name for the allowlist and the vocabulary, and
 		// reports "not configured" if executed. The one write-capable tool the

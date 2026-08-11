@@ -205,6 +205,23 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/threads/:id/stream":   domain.RoleMember,
 	"POST /api/chat":                domain.RoleMember,
 
+	// Answer feedback (T-Q2). Rating is member — deliberately the most open
+	// write in this table — because whoever read the answer is the only person
+	// who knows whether it was right, and a button behind an admin gate
+	// collects verdicts from the people least likely to be reading the day's
+	// chat. The blast radius is one row saying what one person thought.
+	//
+	// The aggregate reads are admin, on the audit log's line rather than the
+	// chat's: the tuning list quotes the questions that were answered badly
+	// across every thread in the company, which is a wider view than any one
+	// conversation gives — the same argument that puts GET /api/audit/actions
+	// on the admin side. The per-message read stays member so the UI can show
+	// somebody their own rating back.
+	"POST /api/messages/:id/feedback": domain.RoleMember,
+	"GET /api/messages/:id/feedback":  domain.RoleMember,
+	"GET /api/feedback":               domain.RoleAdmin,
+	"GET /api/feedback/summary":       domain.RoleAdmin,
+
 	// Saved dashboards and usage reporting.
 	"GET /api/dashboards":               domain.RoleMember,
 	"DELETE /api/dashboards/:id":        domain.RoleMember,
@@ -218,6 +235,16 @@ var apiPolicy = middleware.RolePolicy{
 
 	// Model catalogue — read-only metadata.
 	"GET /api/config/models": domain.RoleMember,
+
+	// The query cookbook (T-Q8). Admin throughout, on the audit log's line
+	// below and for its reason: every example carries the SQL the agent ran, so
+	// listing them reads the shape of the tenant's warehouse. The two writes are
+	// admin for a second reason — harvesting spends embedding calls, and
+	// forgetting throws away everything the agent has learned about this
+	// tenant's data.
+	"GET /api/cookbook":          domain.RoleAdmin,
+	"POST /api/cookbook/harvest": domain.RoleAdmin,
+	"DELETE /api/cookbook":       domain.RoleAdmin,
 
 	// Agent action audit log (T-05). Admin rather than member for the same
 	// reason the DSN routes are: every row carries the full SQL the agent ran,

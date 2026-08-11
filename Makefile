@@ -99,6 +99,11 @@ hooks: ## Enable .githooks (pre-push runs lint-go when a push touches Go)
 eval: ## Score the agent against the golden question set (T-01)
 	cd $(BACKEND) && go run ./cmd/eval -set testdata/eval/golden.yaml $(EVAL_ARGS)
 
+.PHONY: eval-matrix
+eval-matrix: ## Score the set across several models and print the comparison (T-Q5). MODELS=a,b
+	@test -n "$(MODELS)" || (echo "set MODELS=model-a,model-b" && exit 1)
+	cd $(BACKEND) && go run ./cmd/eval -set testdata/eval/golden.yaml -models "$(MODELS)" $(EVAL_ARGS)
+
 .PHONY: eval-dry
 eval-dry: ## Validate the golden set and seed the eval tenant without calling the LLM
 	cd $(BACKEND) && go run ./cmd/eval -set testdata/eval/golden.yaml -dry-run

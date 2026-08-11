@@ -46,10 +46,19 @@ func NewRunner(stack *bootstrap.Stack, tenant Tenant, timeout time.Duration) *Ru
 // Each case gets its own thread. That is not tidiness: threads carry agent
 // memory and a rolling summary, so sharing one would let case 7's answer
 // leak into case 8's context and make the score depend on file order.
+//
+// A case with follow-ups runs every turn in that one thread, sequentially, and
+// scores the last. The turns before it are recorded but not scored: what a
+// follow-up case asserts is where the conversation *ended up*, and a set-up
+// turn that phrases its answer unexpectedly is not a failure of the thing
+// under test. They are still reported on a failure, because "the follow-up
+// went wrong" is unreadable without the answer it followed.
 func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 	res := Result{ID: c.ID, Category: c.Category, Question: c.Question}
 
-	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
+	// One timeout for the whole case rather than per turn: a three-turn case is
+	// three agent runs, and the default was set for one.
+	runCtx, cancel := context.WithTimeout(ctx, r.timeout*time.Duration(len(c.Questions())))
 	defer cancel()
 
 	// No agent: the eval measures the deployment's default, which is what the
@@ -62,22 +71,60 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 	}
 	res.ThreadID = thread.ID
 
-	userMsg, err := r.stack.ThreadSvc.AppendUserMessage(runCtx, thread.ID, c.Question)
+	for i, question := range c.Questions() {
+		turn := r.runTurn(runCtx, c, thread.ID, question)
+		res.Turns = append(res.Turns, turn)
+		res.DurationMS += turn.DurationMS
+
+		// The last turn's reply and calls are the case's, and they are what
+		// Score sees. Assigned every iteration so an aborted case still reports
+		// the furthest it got rather than an empty reply.
+		res.Reply = turn.Reply
+		res.ToolCalls = turn.ToolCalls
+
+		if turn.Error != "" {
+			// A transport-level failure is not a wrong answer — it is a case
+			// that did not run. Recorded distinctly so a flaky provider does
+			// not silently depress the pass rate.
+			res.Error = turn.Error
+			res.Failures = []string{fmt.Sprintf("run failed on turn %d/%d: %s",
+				i+1, len(c.Questions()), turn.Error)}
+			return res
+		}
+	}
+
+	// Over the thread, so a multi-turn case reports what the whole conversation
+	// cost. That is the honest number for a set whose mean cost is compared
+	// run to run: the follow-up is work the tenant pays for.
+	r.attachUsage(runCtx, &res, thread.ID)
+	res.Failures = Score(c, res.Reply, res.ToolCalls)
+	res.Passed = len(res.Failures) == 0
+	return res
+}
+
+// runTurn runs one question against an existing thread and records what the
+// bus saw. Every turn builds its own ChatRunner and its own bus, exactly as
+// the worker does per task — sharing a bus across turns would pool their tool
+// calls and make `must_not_call` on a follow-up unassertable.
+func (r *Runner) runTurn(ctx context.Context, c Case, threadID, question string) TurnResult {
+	turn := TurnResult{Question: question}
+
+	userMsg, err := r.stack.ThreadSvc.AppendUserMessage(ctx, threadID, question)
 	if err != nil {
-		res.Failures = []string{fmt.Sprintf("append user message: %v", err)}
-		return res
+		turn.Error = fmt.Sprintf("append user message: %v", err)
+		return turn
 	}
 
 	bus := &recordingBus{}
 	runner := r.stack.NewChatRunner(bus, nil)
 
 	start := time.Now()
-	runErr := runner.Run(runCtx, queue.ChatRunPayload{
+	runErr := runner.Run(ctx, queue.ChatRunPayload{
 		CompanyID: r.tenant.CompanyID,
-		ThreadID:  thread.ID,
+		ThreadID:  threadID,
 		UserID:    r.tenant.UserID,
 		Channel:   domain.ChannelDashboard,
-		Message:   c.Question,
+		Message:   question,
 		// Assembled exactly as `POST /v1/reports` assembles it, from the same
 		// function, so that a case asserting "our own directive is not read as
 		// an injection" is asserting it about the directive that ships.
@@ -86,24 +133,13 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 		CompanyName:     r.tenant.CompanyName,
 		DefaultCurrency: r.tenant.Currency,
 	})
-	res.DurationMS = time.Since(start).Milliseconds()
-
-	res.Reply = bus.reply()
-	res.ToolCalls = bus.toolCalls()
-
+	turn.DurationMS = time.Since(start).Milliseconds()
+	turn.Reply = bus.reply()
+	turn.ToolCalls = bus.toolCalls()
 	if runErr != nil {
-		// A transport-level failure is not a wrong answer — it is a case
-		// that did not run. Recorded distinctly so a flaky provider does
-		// not silently depress the pass rate.
-		res.Error = runErr.Error()
-		res.Failures = []string{fmt.Sprintf("run failed: %v", runErr)}
-		return res
+		turn.Error = runErr.Error()
 	}
-
-	r.attachUsage(runCtx, &res, thread.ID)
-	res.Failures = Score(c, res.Reply, res.ToolCalls)
-	res.Passed = len(res.Failures) == 0
-	return res
+	return turn
 }
 
 // reportDirective returns the per-turn directive for a case that asked to be

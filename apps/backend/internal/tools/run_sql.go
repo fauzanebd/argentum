@@ -142,7 +142,22 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 
 	t.recorder.RecordSQL(ctx, companyID, tenantctx.ThreadID(ctx))
 
-	return string(marshalSQLResult(source.ID, source.DBType, result, t.maxBytes)), nil
+	// A query that ran and matched nothing gets asked why (T-Q9). Only in that
+	// case: the probe is a second round trip to the tenant's database, and a
+	// result with rows in it has already answered the question.
+	var probes []map[string]interface{}
+	if result.Count == 0 && !result.Truncated {
+		probes = probeEmptyResult(ctx, conn, t.schema, companyID, source.ID, source.DBType, params.SQL)
+		if len(probes) > 0 {
+			logrus.WithFields(logrus.Fields{
+				"company_id": companyID,
+				"source_id":  source.ID,
+				"probes":     probeJSON(probes),
+			}).Info("empty result probed: the filtered columns' actual values were returned to the agent")
+		}
+	}
+
+	return string(marshalSQLResult(source.ID, source.DBType, result, t.maxBytes, probes)), nil
 }
 
 // marshalSQLResult serialises a query result for the model, dropping rows from
@@ -156,8 +171,13 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 // Split out of Execute so the trimming loop is reachable without a live tenant
 // connection: it is the branch that decides how much of a result the model
 // ever sees.
-func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes int) []byte {
+func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes int, probes []map[string]interface{}) []byte {
 	payload := buildSQLPayload(sourceID, dbType, result)
+	// Before the shrink loop, and never shrunk away: the probe replaces the
+	// zero-row note, and a payload that lost it would tell the model nothing
+	// about why it got no rows. A zero-row result has no rows to drop anyway,
+	// so the loop below cannot run on the one payload this affects.
+	attachProbe(payload, probes)
 	out, _ := json.Marshal(payload)
 	if maxBytes <= 0 || len(out) <= maxBytes {
 		return out
@@ -170,6 +190,7 @@ func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes 
 		result.Count = len(rows)
 		result.Truncated = true
 		payload = buildSQLPayload(sourceID, dbType, result)
+		attachProbe(payload, probes)
 		out, _ = json.Marshal(payload)
 	}
 	return out

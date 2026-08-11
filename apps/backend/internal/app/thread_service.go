@@ -616,13 +616,51 @@ func (s *ThreadService) AppendAssistantMessage(
 	return m, nil
 }
 
-// refreshSummary regenerates the rolling thread summary from the last 12
-// messages. Runs asynchronously so it doesn't block the user response path.
+// recentMessages returns the newest n messages oldest-first, using the
+// descending read when the store has one (T-Q7).
+//
+// The fallback is the ascending read this service used to call directly, which
+// returns the OLDEST n — wrong for every caller here, and identical for every
+// thread shorter than n, which is why it survived. Kept as a fallback rather
+// than made a hard requirement because domain.MessageRepository is implemented
+// by six test stubs, and none of them has an opinion about ordering.
+func (s *ThreadService) recentMessages(ctx context.Context, threadID string, n int) ([]*domain.Message, error) {
+	type recentReader interface {
+		ListRecentByThread(ctx context.Context, threadID string, limit int) ([]*domain.Message, error)
+	}
+	if rr, ok := s.messages.(recentReader); ok {
+		return rr.ListRecentByThread(ctx, threadID, n)
+	}
+	return s.messages.ListByThread(ctx, threadID, n, 0)
+}
+
+// refreshSummary regenerates the rolling thread summary. Runs asynchronously
+// so it doesn't block the user response path.
+//
+// **Rolling, as in folded forward** (T-Q7). It reads the most recent messages
+// and the summary produced last time, and writes a summary of both — so the
+// text covers the whole conversation rather than its most recent window. Two
+// things were wrong before, and they compounded:
+//
+//   - It asked for `ListByThread(id, 12, 0)`, which is ascending with a LIMIT
+//     and therefore the FIRST twelve messages, while the comment above it said
+//     "the last 12". On a thread of forty messages this summarised the opening
+//     forever: every refresh re-read the same twelve rows and produced the same
+//     summary, so the column stopped tracking the conversation after turn six.
+//   - Nothing folded the old summary in, so even with the window fixed the
+//     summary could only ever describe the last few turns. What the agent loses
+//     to `historyLimit` is the *beginning* of a long conversation — usually
+//     where the user said what they were actually trying to find out.
+//
+// Both are fixed here, and the result is now injected into the turn
+// (ChatRunner.withThreadSummaryContext), which is the other half: the column
+// existed and was read only by the relatedness classifier and the title
+// generator. The agent itself had never seen it.
 func (s *ThreadService) refreshSummary(ctx context.Context, threadID string) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	msgs, err := s.messages.ListByThread(ctx, threadID, 12, 0)
+	msgs, err := s.recentMessages(ctx, threadID, 12)
 	if err != nil {
 		logrus.WithError(err).Warn("summary refresh: list messages")
 		return
@@ -631,14 +669,39 @@ func (s *ThreadService) refreshSummary(ctx context.Context, threadID string) {
 		return
 	}
 
+	// Read before the write, so the fold has something to fold. A failure here
+	// is not fatal: summarising the window alone is what this did before, and
+	// it is better than not summarising.
+	var previous string
+	if prior, err := s.threads.GetByID(ctx, threadID); err == nil {
+		previous = strings.TrimSpace(prior.Summary)
+	}
+
 	var b strings.Builder
 	for _, m := range msgs {
+		// Tool-digest rows are the agent's memory of its own work (T-Q6), not
+		// conversation. Summarising them would spend the budget describing SQL
+		// and produce a summary the relatedness classifier cannot use.
+		if m.Role == domain.MessageRoleTool {
+			continue
+		}
 		b.WriteString(string(m.Role))
 		b.WriteString(": ")
 		b.WriteString(m.Content)
 		b.WriteString("\n")
 	}
-	prompt := "Summarize this analytics conversation in 1–2 sentences (≤200 chars). Focus on the topic, not on individual numbers.\n\n" + b.String()
+
+	prompt := "Summarize this analytics conversation in 1–2 sentences (≤200 chars). " +
+		"Focus on the topic and on what the user is trying to find out, not on individual numbers.\n\n"
+	if previous != "" {
+		prompt = "Update a running summary of an analytics conversation. " +
+			"Write 1–2 sentences (≤200 chars) covering the WHOLE conversation — what the user is " +
+			"trying to find out overall — not only the latest messages. Keep what still matters from " +
+			"the earlier summary and fold in what is new. Focus on the topic, not on individual numbers.\n\n" +
+			"Earlier summary:\n" + previous + "\n\nMessages since:\n"
+	}
+	prompt += b.String()
+
 	resp, err := s.llm.Generate(ctx, prompt,
 		interfaces.WithSystemMessage("You produce ultra-concise topic summaries."),
 		interfaces.WithTemperature(0),

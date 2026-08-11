@@ -105,6 +105,13 @@ type apiDeps struct {
 	// The metric registry (T-06): the tenant's named, validated numbers, and the
 	// turn-time query path query_metric runs through.
 	metricSvc *app.MetricService
+	// Answer feedback (T-Q2): whether the people reading the answers thought
+	// they were right. The first quality signal in this product that does not
+	// come from the golden set.
+	feedbackSvc *app.FeedbackService
+	// The query cookbook (T-Q8): what the agent has learned about answering
+	// this tenant's questions against this tenant's warehouse.
+	cookbookSvc *app.CookbookService
 	// Watchers (T-08): CRUD and the dry-run. The API never fires or delivers —
 	// that is the worker's WatcherService — so this instance carries no delivery
 	// providers and no budget checker.

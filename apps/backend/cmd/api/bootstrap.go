@@ -408,6 +408,21 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// query_metric run the same SQL the same way.
 	deps.metricSvc = app.NewMetricService(pgctl.NewMetricRepo(controlDB), connRepo, deps.tenant)
 
+	// Answer feedback (T-Q2). It takes the concrete message repo rather than
+	// the shared interface: the tenant-scoped single-message read lives on
+	// *pgctl.MessageRepo alone, because widening domain.MessageRepository would
+	// put a method on six test stubs that nothing else calls.
+	feedbackRepo := pgctl.NewMessageFeedbackRepo(controlDB)
+	deps.feedbackSvc = app.NewFeedbackService(feedbackRepo, deps.msgRepo)
+
+	// The query cookbook (T-Q8). The API owns the admin surface — status,
+	// harvest, forget — while the turn-time retrieval lives in the worker's
+	// stack. Both read the same table; only the harvester writes it.
+	deps.cookbookSvc = app.NewCookbookService(
+		pgctl.NewQueryExampleRepo(controlDB), pgctl.NewCookbookCandidateRepo(controlDB),
+		feedbackRepo, deps.embedCache,
+	)
+
 	// Watchers (T-08): CRUD and the dry-run. It shares the metric service above,
 	// so a dry-run evaluates the same number the worker's fire path will. No
 	// delivery providers and no budget: the API neither fires nor bills — the

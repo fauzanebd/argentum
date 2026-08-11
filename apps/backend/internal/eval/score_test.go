@@ -175,3 +175,103 @@ func TestScoreNoFigure(t *testing.T) {
 		t.Errorf("failure = %q, want it to name the stated figure", got[0])
 	}
 }
+
+// contains_any is the assertion for a question with several honest answers.
+// Demanding all of them (Contains) would pin the model's phrasing, which is the
+// defect three cases of the original set were fixed for.
+func TestScoreContainsAny(t *testing.T) {
+	c := Case{
+		ID: "a", Lang: "en",
+		Expect: Expect{Kind: KindContains, ContainsAny: []string{"catalogue", "fact_sales", "which"}},
+	}
+	if got := Score(c, "I used the catalogue price from dim_products.", nil); len(got) != 0 {
+		t.Errorf("one matching phrase should pass, got %v", got)
+	}
+	if got := Score(c, "Which reading did you mean?", nil); len(got) != 0 {
+		t.Errorf("a different matching phrase should pass, got %v", got)
+	}
+	if got := Score(c, "The average is 42.", nil); len(got) == 0 {
+		t.Error("no matching phrase should fail")
+	}
+}
+
+// Contains and ContainsAny answer different questions and must not collapse
+// into each other: every phrase, versus at least one.
+func TestScoreContainsAnyDoesNotWeakenContains(t *testing.T) {
+	c := Case{
+		ID: "a", Lang: "en",
+		Expect: Expect{
+			Kind:        KindContains,
+			Contains:    []string{"december"},
+			ContainsAny: []string{"revenue", "sales"},
+		},
+	}
+	if got := Score(c, "Revenue was strong.", nil); len(got) == 0 {
+		t.Error("a missing Contains phrase must fail even when ContainsAny matched")
+	}
+	if got := Score(c, "December revenue was strong.", nil); len(got) != 0 {
+		t.Errorf("both satisfied should pass, got %v", got)
+	}
+}
+
+// The matrix's whole reason for existing is the disagreement list: an
+// aggregate pass rate says one model is better, and this says at what.
+func TestMatrixDisagreementsNamesOnlyCasesThatDiffer(t *testing.T) {
+	m := Matrix{
+		Set:    "s",
+		Models: []string{"model-a", "model-b"},
+		Reports: []Report{
+			{Results: []Result{
+				{ID: "both-pass", Category: "x", Passed: true},
+				{ID: "only-a", Category: "y", Passed: true},
+				{ID: "neither", Category: "z", Passed: false, Failures: []string{"a said no"}},
+			}},
+			{Results: []Result{
+				{ID: "both-pass", Category: "x", Passed: true},
+				{ID: "only-a", Category: "y", Passed: false, Failures: []string{"b got 12, wanted 42"}},
+				{ID: "neither", Category: "z", Passed: false, Failures: []string{"b said no"}},
+			}},
+		},
+	}
+
+	got := m.Disagreements()
+	if len(got) != 1 {
+		t.Fatalf("got %d disagreements, want 1: %+v", len(got), got)
+	}
+	d := got[0]
+	if d.ID != "only-a" {
+		t.Errorf("disagreement is %q, want only-a", d.ID)
+	}
+	if len(d.PassedOn) != 1 || d.PassedOn[0] != "model-a" {
+		t.Errorf("passed_on = %v, want [model-a]", d.PassedOn)
+	}
+	if len(d.FailedOn) != 1 || d.FailedOn[0] != "model-b" {
+		t.Errorf("failed_on = %v, want [model-b]", d.FailedOn)
+	}
+	if d.Failures["model-b"] != "b got 12, wanted 42" {
+		t.Errorf("failure text lost: %q", d.Failures["model-b"])
+	}
+}
+
+// A case every model fails is a property of the set or the prompt, not a
+// difference between models. Listing it under "the models disagree" would send
+// the reader looking for a model difference that is not there.
+func TestMatrixDisagreementsExcludesUniversalFailures(t *testing.T) {
+	m := Matrix{
+		Models: []string{"a", "b"},
+		Reports: []Report{
+			{Results: []Result{{ID: "hard", Passed: false}}},
+			{Results: []Result{{ID: "hard", Passed: false}}},
+		},
+	}
+	if got := m.Disagreements(); len(got) != 0 {
+		t.Errorf("a case both models failed was reported as a disagreement: %+v", got)
+	}
+}
+
+func TestMatrixWithOneModelHasNothingToCompare(t *testing.T) {
+	m := Matrix{Models: []string{"a"}, Reports: []Report{{Results: []Result{{ID: "x", Passed: false}}}}}
+	if got := m.Disagreements(); got != nil {
+		t.Errorf("a single-model matrix produced disagreements: %+v", got)
+	}
+}

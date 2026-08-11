@@ -28,6 +28,14 @@ func TestShippedGoldenSetIsValid(t *testing.T) {
 		"chart_dashboard":  3,
 		"indonesian":       5,
 		"guardrail":        4,
+		// T-Q1's five, 2026-08-11. The set read 40/40 for nine days, which is a
+		// set that cannot rank two prompts — these are the categories the
+		// baseline's own "what this baseline is not" section named as absent.
+		"follow_up":       3,
+		"zero_row_trap":   2,
+		"wrong_grain":     3,
+		"no_chart_wanted": 3,
+		"dirty_schema":    2,
 	}
 	got := set.Categories()
 	for cat, min := range required {
@@ -41,6 +49,76 @@ func TestShippedGoldenSetIsValid(t *testing.T) {
 	for _, c := range set.Cases {
 		if c.Category == "indonesian" && c.Lang != "id" {
 			t.Errorf("case %q is in the indonesian category but expects lang %q", c.ID, c.Lang)
+		}
+	}
+
+	// A follow-up case with no follow-ups is a single-turn case wearing the
+	// category's name, and it would report the category as covered while
+	// testing nothing multi-turn at all.
+	for _, c := range set.Cases {
+		if c.Category == "follow_up" && len(c.FollowUps) == 0 {
+			t.Errorf("case %q is in the follow_up category and asks only one turn", c.ID)
+		}
+	}
+}
+
+// The point of the category is that the naive query returns rows. A wrong_grain
+// case asserting a value rather than a shape would pass whenever the model got
+// lucky on a seed, so the category is pinned to the instrument that can see the
+// difference.
+func TestWrongGrainCasesAssertSQLShape(t *testing.T) {
+	set, err := LoadSet(filepath.Join("..", "..", "testdata", "eval", "golden.yaml"))
+	if err != nil {
+		t.Fatalf("golden set does not load: %v", err)
+	}
+	for _, c := range set.Cases {
+		if c.Category != "wrong_grain" {
+			continue
+		}
+		if c.Expect.Kind != KindSQLShape {
+			t.Errorf("case %q is wrong_grain but asserts %q, not sql_shape", c.ID, c.Expect.Kind)
+		}
+	}
+}
+
+func TestQuestionsIncludesFollowUpsInOrder(t *testing.T) {
+	c := Case{Question: "first", FollowUps: []string{"second", "third"}}
+	got := c.Questions()
+	want := []string{"first", "second", "third"}
+	if len(got) != len(want) {
+		t.Fatalf("Questions() returned %d turns, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("turn %d is %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// A case with no follow-ups is still one turn, not zero. RunCase loops over
+	// this, so an empty slice here would run nothing and score an empty reply.
+	if got := (Case{Question: "only"}).Questions(); len(got) != 1 || got[0] != "only" {
+		t.Errorf("single-turn Questions() = %v, want [only]", got)
+	}
+}
+
+func TestValidateRejectsBrokenFollowUps(t *testing.T) {
+	tests := []struct {
+		name string
+		set  Set
+	}{
+		{"empty follow-up", Set{Cases: []Case{{
+			ID: "a", Question: "q", Lang: "en", FollowUps: []string{"  "},
+			Expect: Expect{Kind: KindNumeric},
+		}}}},
+		// The report directive is written for one turn producing one file.
+		{"report format with follow-ups", Set{Cases: []Case{{
+			ID: "a", Question: "q", Lang: "en", ReportFormat: "pdf", FollowUps: []string{"and again"},
+			Expect: Expect{Kind: KindNumeric},
+		}}}},
+	}
+	for _, tt := range tests {
+		if err := tt.set.Validate(); err == nil {
+			t.Errorf("%s: Validate accepted an invalid set", tt.name)
 		}
 	}
 }

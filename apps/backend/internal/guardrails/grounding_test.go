@@ -1,0 +1,130 @@
+package guardrails
+
+import "testing"
+
+// The exact gap this check exists for. CheckFabrication passes this reply
+// completely — a data tool ran, rows came back, the magnitudes agree — and the
+// number is still not the number the query returned.
+func TestAFigureThatIsNotTheOneReturnedIsUngrounded(t *testing.T) {
+	returned := []float64{3863405700}
+	rep := CheckGrounding("Total sales were roughly 4,100,000,000 last month.", returned)
+
+	if !rep.Checked {
+		t.Fatal("the comparison did not run")
+	}
+	if rep.Clean() {
+		t.Errorf("4.1 billion was accepted against a returned 3,863,405,700: %+v", rep)
+	}
+}
+
+func TestTheFigureThatWasReturnedIsGrounded(t *testing.T) {
+	returned := []float64{3863405700, 310}
+	rep := CheckGrounding("Total sales were IDR 3,863,405,700 across 310 transactions.", returned)
+	if !rep.Clean() {
+		t.Errorf("the returned figure was reported as ungrounded: %+v", rep.Ungrounded)
+	}
+}
+
+// The system prompt REQUIRES this rendering for Indonesian replies. Without
+// magnitude matching, every correctly formatted Indonesian answer would report
+// as ungrounded and the instrument would be useless on half the traffic.
+func TestMagnitudeRenderingIsGrounded(t *testing.T) {
+	returned := []float64{3863405700}
+	for _, reply := range []string{
+		"Total penjualan Rp 3,86 Miliar.",
+		"Total sales were Rp 3.86 billion.",
+		"Sales reached 3,863.41 million.",
+	} {
+		if rep := CheckGrounding(reply, returned); !rep.Clean() {
+			t.Errorf("%q reported ungrounded figures %+v", reply, rep.Ungrounded)
+		}
+	}
+}
+
+// An analyst's reply legitimately contains arithmetic over what was returned.
+// Reporting those would drown the real signal.
+func TestSimpleDerivationsAreGrounded(t *testing.T) {
+	returned := []float64{3863405700, 3708552300}
+	// The difference between the two months, which the agent is asked to state.
+	rep := CheckGrounding("December beat November by 154,853,400.", returned)
+	if !rep.Clean() {
+		t.Errorf("a difference of two returned values was reported: %+v", rep.Ungrounded)
+	}
+
+	sum := CheckGrounding("Together the two months came to 7,571,958,000.", returned)
+	if !sum.Clean() {
+		t.Errorf("a sum of two returned values was reported: %+v", sum.Ungrounded)
+	}
+}
+
+// Years, quarters, list positions and "the top 10" are the overwhelming
+// majority of false positives, and none of them is a figure anyone fabricates.
+func TestSmallIntegersAreNotTreatedAsFigures(t *testing.T) {
+	returned := []float64{3863405700}
+	rep := CheckGrounding(
+		"In Q4 2024 the top 5 channels drove sales of IDR 3,863,405,700 over 31 days.", returned)
+	if !rep.Clean() {
+		t.Errorf("small integers were reported as ungrounded figures: %+v", rep.Ungrounded)
+	}
+}
+
+// A turn whose tools returned nothing numeric cannot be checked, and saying
+// every figure is ungrounded would be noise. CheckFabrication is the gate for
+// that case and already covers it.
+func TestNoReturnedNumbersMeansNoComparison(t *testing.T) {
+	rep := CheckGrounding("Sales were 3,863,405,700.", nil)
+	if rep.Checked {
+		t.Error("the comparison claimed to have run with nothing to compare against")
+	}
+	if !rep.Clean() {
+		t.Error("an unrunnable comparison reported failures")
+	}
+}
+
+// Download URLs are full of digits and a SQL block may quote literals. Neither
+// is a claim about the business.
+func TestLinksAndCodeAreNotProse(t *testing.T) {
+	returned := []float64{42000}
+	rep := CheckGrounding(
+		"Here is the file: [report](https://example.com/x/99887766?e=12345678) and the query was "+
+			"`SELECT 987654321 FROM t`. The total was 42,000.", returned)
+	if !rep.Clean() {
+		t.Errorf("digits from a link or a code span were treated as figures: %+v", rep.Ungrounded)
+	}
+}
+
+func TestCollectNumbersWalksAResultPayload(t *testing.T) {
+	payload := map[string]any{
+		"columns":   []any{"channel", "total"},
+		"row_count": 2,
+		"rows": []any{
+			map[string]any{"channel": "Online", "total": float64(1500000)},
+			// Drivers render DECIMAL as a string, which is every money column
+			// in this product's demo schema.
+			map[string]any{"channel": "In-Store", "total": "2500000.50"},
+		},
+	}
+	got := CollectNumbers(payload, 100)
+
+	want := map[float64]bool{1500000: false, 2500000.50: false}
+	for _, v := range got {
+		if _, ok := want[v]; ok {
+			want[v] = true
+		}
+	}
+	for v, found := range want {
+		if !found {
+			t.Errorf("CollectNumbers missed %v (got %v)", v, got)
+		}
+	}
+}
+
+func TestCollectNumbersIsBounded(t *testing.T) {
+	rows := make([]any, 0, 500)
+	for i := 0; i < 500; i++ {
+		rows = append(rows, map[string]any{"v": float64(i + 10000)})
+	}
+	if got := CollectNumbers(map[string]any{"rows": rows}, 50); len(got) > 50 {
+		t.Errorf("CollectNumbers returned %d values, cap was 50", len(got))
+	}
+}

@@ -3,6 +3,7 @@
 //	go run ./cmd/eval -set testdata/eval/golden.yaml
 //	go run ./cmd/eval -set testdata/eval/golden.yaml -only indonesian
 //	go run ./cmd/eval -set testdata/eval/golden.yaml -model anthropic/claude-haiku-4.5 -out report.json
+//	go run ./cmd/eval -models deepseek/deepseek-v3.2,anthropic/claude-haiku-4.5
 //
 // It runs the real agent — same factory, tools, guardrails and prompt as the
 // worker, wired by internal/bootstrap — against a seeded tenant on the demo
@@ -36,6 +37,15 @@ func main() {
 	var (
 		setPath = flag.String("set", "testdata/eval/golden.yaml", "path to the golden question set")
 		model   = flag.String("model", "", "override LLM_MODEL for this run")
+		// The matrix (T-Q5). Every quality number this project has published was
+		// measured on one model, so "did the prompt help?" and "would another
+		// model help more?" have been the same unanswered question.
+		//
+		// Separate from -model rather than -model taking a list, because the two
+		// produce different output: one report, or a comparison. A flag whose
+		// return type depends on how many commas are in it is a flag nobody can
+		// script against.
+		models  = flag.String("models", "", "comma-separated models to score the set against, in order; prints a comparison")
 		outPath = flag.String("out", "", "write the full JSON report here")
 		only    = flag.String("only", "", "comma-separated case ids or categories to run")
 		demoDSN = flag.String("demo-dsn", "postgres://demo:demo@localhost:5433/demo_analytics?sslmode=disable", "DSN of the demo tenant database to seed")
@@ -131,15 +141,15 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stack, err := bootstrap.New(ctx, cfg)
-	if err != nil {
-		fatalf("bootstrap: %v", err)
-	}
-	defer stack.Close()
-
-	tenant, err := eval.EnsureTenant(ctx, stack, *demoDSN, *metabaseHost, *withMetrics)
-	if err != nil {
-		fatalf("seed eval tenant: %v", err)
+	// Which models to score. One entry is the ordinary run and produces exactly
+	// the report this command has always produced; more than one produces the
+	// comparison as well.
+	modelList := []string{cfg.LLMModel}
+	if *models != "" {
+		modelList = splitModels(*models)
+		if len(modelList) == 0 {
+			fatalf("-models %q named none", *models)
+		}
 	}
 
 	fmt.Printf("eval set:   %s (%d cases", *setPath, len(set.Cases))
@@ -147,15 +157,108 @@ func main() {
 		fmt.Printf(", running %d", len(cases))
 	}
 	fmt.Printf(")\ncategories: %s\n", formatCategories(set.Categories()))
-	fmt.Printf("tenant:     %s (%s)\n", tenant.CompanyName, tenant.CompanyID)
-	fmt.Printf("model:      %s\n\n", cfg.LLMModel)
+	fmt.Printf("models:     %s\n\n", strings.Join(modelList, ", "))
 
-	if *dryRun {
-		fmt.Println("dry run: set and tenant validated, no LLM calls made.")
-		return
+	reports := make([]eval.Report, 0, len(modelList))
+	for _, m := range modelList {
+		rep, ok := runOneModel(ctx, cfg, m, set, cases, runOpts{
+			demoDSN:      *demoDSN,
+			metabaseHost: *metabaseHost,
+			withMetrics:  *withMetrics,
+			timeout:      *timeout,
+			dryRun:       *dryRun,
+			showModel:    len(modelList) > 1,
+		})
+		if !ok {
+			return // dry run: the tenant and set were validated, nothing was spent.
+		}
+		reports = append(reports, rep)
+		fmt.Print(rep.Text())
 	}
 
-	runner := eval.NewRunner(stack, tenant, *timeout)
+	// The comparison, and the reason -models exists. Skipped for a single model,
+	// where it would restate the report above it.
+	var matrix *eval.Matrix
+	if len(reports) > 1 {
+		matrix = &eval.Matrix{Set: set.Name, Models: modelList, Reports: reports}
+		fmt.Print(matrix.Text())
+	}
+
+	if *outPath != "" {
+		var payload any = reports[0]
+		if matrix != nil {
+			payload = matrix
+		}
+		raw, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			fatalf("marshal report: %v", err)
+		}
+		if err := os.WriteFile(*outPath, raw, 0o644); err != nil {
+			fatalf("write report: %v", err)
+		}
+		fmt.Printf("report written to %s\n", *outPath)
+	}
+
+	// Non-zero exit when anything failed on any model, so CI can gate on it
+	// later without a wrapper script.
+	for _, rep := range reports {
+		if rep.Failed > 0 {
+			flushTracing()
+			os.Exit(1)
+		}
+	}
+}
+
+// runOpts is what one model's run needs beyond the set. A struct because the
+// alternative is nine positional parameters, four of which are bools.
+type runOpts struct {
+	demoDSN      string
+	metabaseHost string
+	withMetrics  bool
+	timeout      time.Duration
+	dryRun       bool
+	// showModel prefixes each case line with the model, which is noise on a
+	// single-model run and the only way to read the output on a matrix one.
+	showModel bool
+}
+
+// runOneModel scores the whole set against one model and returns its report.
+// ok is false only for a dry run, which validates and spends nothing.
+//
+// A fresh stack per model, closed before the next one starts. The model is read
+// out of config when the LLM clients are built, so switching it means rebuilding
+// them — and sharing a stack across models would leave the second run scoring
+// the first model's clients, which is the kind of bug that produces a
+// suspiciously identical pass rate and no error at all.
+func runOneModel(
+	ctx context.Context, cfg *config.Config, model string,
+	set *eval.Set, cases []eval.Case, opts runOpts,
+) (eval.Report, bool) {
+	cfg.LLMModel = model
+
+	stack, err := bootstrap.New(ctx, cfg)
+	if err != nil {
+		fatalf("bootstrap (%s): %v", model, err)
+	}
+	defer stack.Close()
+
+	// Idempotent, and re-run per model on purpose: it is what guarantees each
+	// model meets the same tenant, the same sources and the same metric
+	// registry. Cheap next to one LLM call.
+	tenant, err := eval.EnsureTenant(ctx, stack, opts.demoDSN, opts.metabaseHost, opts.withMetrics)
+	if err != nil {
+		fatalf("seed eval tenant: %v", err)
+	}
+
+	if opts.dryRun {
+		fmt.Printf("tenant:     %s (%s)\n", tenant.CompanyName, tenant.CompanyID)
+		fmt.Println("dry run: set and tenant validated, no LLM calls made.")
+		return eval.Report{}, false
+	}
+
+	fmt.Printf("--- %s ---\ntenant: %s (%s)\n", model, tenant.CompanyName, tenant.CompanyID)
+
+	runner := eval.NewRunner(stack, tenant, opts.timeout)
 	started := time.Now()
 	results := make([]eval.Result, 0, len(cases))
 
@@ -173,27 +276,24 @@ func main() {
 			fmt.Printf("FAIL  (%.1fs)  %s\n", float64(res.DurationMS)/1000, firstFailure(res))
 		}
 	}
+	return eval.Summarize(set.Name, model, started, results), true
+}
 
-	report := eval.Summarize(set.Name, cfg.LLMModel, started, results)
-	fmt.Print(report.Text())
-
-	if *outPath != "" {
-		raw, err := json.MarshalIndent(report, "", "  ")
-		if err != nil {
-			fatalf("marshal report: %v", err)
+// splitModels parses the -models list, dropping blanks and duplicates. A
+// duplicate would run the same model twice and put two identical columns in the
+// comparison, which reads as a bug in the harness rather than in the flag.
+func splitModels(raw string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, 4)
+	for _, m := range strings.Split(raw, ",") {
+		m = strings.TrimSpace(m)
+		if m == "" || seen[m] {
+			continue
 		}
-		if err := os.WriteFile(*outPath, raw, 0o644); err != nil {
-			fatalf("write report: %v", err)
-		}
-		fmt.Printf("report written to %s\n", *outPath)
+		seen[m] = true
+		out = append(out, m)
 	}
-
-	// Non-zero exit when anything failed, so CI can gate on it later
-	// without a wrapper script.
-	if report.Failed > 0 {
-		flushTracing()
-		os.Exit(1)
-	}
+	return out
 }
 
 // nonLocalHost reports whether host is something other than loopback or a

@@ -183,3 +183,48 @@ func TestTenantToolsAreAcknowledgedWithoutBeingDescribed(t *testing.T) {
 		t.Error("the catalog named an MCP tool it has no line for")
 	}
 }
+
+// The chart-restraint rule (T-Q3) is the answer to the most expensive
+// measured habit this agent has: the T-01 baseline counted seven of
+// thirty-one cases building a Metabase card for a question that only asked
+// for a number, and the C-1 reply spent its last iteration on an unrequested
+// third chart — which is why its dashboard never landed.
+//
+// It travels with create_visualization rather than with the dashboard pair,
+// because an agent that can make a card it cannot wrap can waste a turn just
+// as thoroughly.
+func TestChartRestraintTravelsWithTheChartTool(t *testing.T) {
+	with := promptFor(t, "run_sql", "create_visualization")
+	if !strings.Contains(with, "A CHART IS SOMETHING THE USER ASKS FOR") {
+		t.Error("an agent that can draw charts was not told when not to")
+	}
+
+	// An agent with no chart tool must not be told to restrain from using it.
+	// A rule about a capability the turn does not have is noise in the prompt
+	// and one more thing for the model to reconcile.
+	without := promptFor(t, "run_sql", "get_schema")
+	if strings.Contains(without, "A CHART IS SOMETHING THE USER ASKS FOR") {
+		t.Error("an agent with no chart tool was given the chart-restraint rule")
+	}
+}
+
+// The restraint rule and the how-to-build-a-dashboard rule argue in opposite
+// directions, which is exactly the shape that caused the 2026-08-09
+// prompt-contradiction finding. They are reconciled by condition, not by
+// tone: one applies when a chart was asked for and the other when it was not,
+// and the second must say so in its first line.
+func TestChartRestraintAndDashboardRuleAreConditionedNotContradictory(t *testing.T) {
+	prompt := promptFor(t, "run_sql", "create_visualization", "create_dashboard")
+	if !strings.Contains(prompt, "When the user DOES want charts") {
+		t.Error("the dashboard rule does not state the condition under which it applies")
+	}
+	// And neither survives a turn whose deliverable is a file, which is what
+	// T-A2b's directive already forbids.
+	file := SystemPromptForTurn(
+		[]string{"run_sql", "create_visualization", "create_dashboard", "generate_document"},
+		PromptTurn{FileDeliverable: true},
+	)
+	if strings.Contains(file, "A CHART IS SOMETHING THE USER ASKS FOR") {
+		t.Error("the chart-restraint rule reached a file turn, where the chart rules are dropped")
+	}
+}

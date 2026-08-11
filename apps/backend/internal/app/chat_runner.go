@@ -177,6 +177,31 @@ type CompanyToolProvider interface {
 	CompanyTools(ctx context.Context, companyID string) []interfaces.Tool
 }
 
+// ToolMemory is what a turn writes about its own tool calls and reads about
+// the ones before it (T-Q6).
+//
+// Two methods, both already the shape the concrete repository has.
+// *postgres.MessageRepo satisfies it. Narrowed at the consumer and installed
+// through WithToolMemory rather than added to domain.MessageRepository for the
+// reason MessageLookup gives: the shared interface has six stubs across three
+// packages, and none of them has an opinion about tool rows.
+//
+// Nil is legal and is exactly today's behaviour — the behaviour this product
+// has had since threading shipped, where a follow-up turn began knowing what
+// was said and nothing about what was done.
+type ToolMemory interface {
+	Append(ctx context.Context, m *domain.Message) error
+	ListByThreadRole(ctx context.Context, threadID string, role domain.MessageRole, limit int) ([]*domain.Message, error)
+	// ListRecentByThread is the NEWEST n messages, oldest-first (T-Q7).
+	//
+	// It rides on this interface rather than getting one of its own because it
+	// is the same store, reached the same way, installed by the same call. What
+	// it fixes is that domain.MessageRepository's only windowed read is
+	// ascending — so "the last twenty messages" was unsayable, and hydration
+	// asked for the first twenty instead.
+	ListRecentByThread(ctx context.Context, threadID string, limit int) ([]*domain.Message, error)
+}
+
 // MetricCatalog is the half of the metric registry a turn reads (T-07): the
 // company's enabled metrics, injected into the turn context so the agent knows
 // which authoritative numbers exist before it reaches for run_sql. Narrowed at
@@ -257,6 +282,19 @@ type ChatRunner struct {
 	embRepo    domain.TableEmbeddingRepository
 	embedCache *llmtenant.EmbeddingCache
 	embTopK    int
+
+	// What the previous turns of this thread actually did (T-Q6). Nil disables
+	// both halves — nothing is written and nothing is read — which is the
+	// behaviour every turn had before this ticket.
+	toolMemory   ToolMemory
+	priorWorkMax int
+
+	// The tenant's own worked examples (T-Q8). Nil is legal and is every
+	// deployment until the harvester has run. Retrieval also needs embedCache
+	// above — the same client the table picker uses — so a tenant with no
+	// embedding credentials silently gets today's prompt.
+	cookbook     domain.QueryExampleRepository
+	cookbookTopK int
 }
 
 // NewChatRunner wires the worker's dependencies. scheduled is optional;
@@ -413,6 +451,56 @@ func (r *ChatRunner) WithLark(p lark.Provider) *ChatRunner {
 // for chat:run tasks on the Slack channel. Mirrors WithLark.
 func (r *ChatRunner) WithSlack(p slack.Provider) *ChatRunner {
 	r.slackProv = p
+	return r
+}
+
+// WithToolMemory lets a turn read what the turns before it did, and record
+// what it did for the turns after (T-Q6).
+//
+// turns caps how many previous turns' worth of digests are carried. A negative
+// value means the default of 3 — three because the block competes with the
+// user's own question for the model's attention, and a conversation's
+// fourth-to-last turn is rarely what a follow-up is following up on.
+//
+// **Zero is meaningful and is not the default**: it writes the digests and
+// reads none of them. That is the setting this feature is measured with — the
+// same deployment, the same rows accumulating, with only the injection off —
+// and collapsing it into the default would make the comparison unrunnable.
+//
+// Optional in the way WithRoster is: a nil memory writes nothing and reads
+// nothing, and every turn behaves exactly as it did before.
+func (r *ChatRunner) WithToolMemory(m ToolMemory, turns int) *ChatRunner {
+	if m == nil {
+		return r
+	}
+	if turns < 0 {
+		turns = 3
+	}
+	r.toolMemory = m
+	r.priorWorkMax = turns
+	return r
+}
+
+// WithCookbook shows a turn the tenant's own worked examples (T-Q8).
+//
+// topK <= 0 falls back to 3. Three because each example carries a question and
+// up to 800 characters of SQL, and the block is competing with the source
+// catalog, the metric catalog, the table hint and the user's actual question
+// for the model's attention. A cookbook that fills the context is a cookbook
+// that makes answers worse.
+//
+// Optional in the way WithTablePicker is, and inert without it: retrieval
+// needs the embedding cache, so a runner given a cookbook and no embeddings
+// silently skips.
+func (r *ChatRunner) WithCookbook(repo domain.QueryExampleRepository, topK int) *ChatRunner {
+	if repo == nil {
+		return r
+	}
+	if topK <= 0 {
+		topK = 3
+	}
+	r.cookbook = repo
+	r.cookbookTopK = topK
 	return r
 }
 
@@ -588,16 +676,38 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	agentMsg = withSourcesContext(agentMsg, sources)
 	agentMsg = r.withMetricsContext(ctx, agentMsg, p.CompanyID)
 	agentMsg = r.withActionsContext(ctx, agentMsg, p.CompanyID)
-	agentMsg = r.withRelevantTablesContext(ctx, agentMsg, p.Message, sources)
+	// One embedding call per turn, shared by the table picker and the cookbook
+	// (T-Q8). Both ask the same question of the same sentence; doing it twice
+	// would be two network round trips before the model is called at all.
+	questionVec := r.questionVector(ctx, p.CompanyID, p.Message)
+	agentMsg = r.withCookbookContext(ctx, agentMsg, questionVec)
+	agentMsg = r.withRelevantTablesContext(ctx, agentMsg, questionVec, sources)
+	// Last, so it sits closest to the user's own words — above only the
+	// language reminder, whose position is itself the fix for a measured
+	// regression (T-Q6). What this conversation has already done is the block
+	// most likely to make the difference between one tool call and four, and
+	// the table hint immediately below it is advice about work that may now be
+	// unnecessary.
+	agentMsg = r.withPriorWorkContext(ctx, agentMsg, p.ThreadID)
+	// Above the prior-work block, because it is background rather than
+	// instruction: what the conversation is about, then what has already been
+	// done about it (T-Q7). Fires only on threads longer than the memory
+	// window, which is where the agent would otherwise have forgotten the
+	// opening.
+	agentMsg = r.withThreadSummaryContext(ctx, agentMsg, p.ThreadID)
 
 	// Try streaming first; fall back to blocking Run if the LLM doesn't
 	// support it.
 	var response string
 	var streaming bool
+	// Filled by the streaming path with every number the data tools returned
+	// (T-Q9). Empty after a blocking run, which produces no tool events at all
+	// — CheckGrounding reports Checked=false for that and says nothing.
+	var returnedNumbers []float64
 	if agent.GetLLM().SupportsStreaming() {
 		sp := p
 		sp.Message = agentMsg
-		if streamResp, err := r.runStream(ctx, agent, sp); err == nil {
+		if streamResp, err := r.runStream(ctx, agent, sp, &returnedNumbers); err == nil {
 			response = streamResp
 			streaming = true
 		} else {
@@ -615,6 +725,10 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	latency := time.Since(start)
 	metrics.Default().RecordTurn(latency)
 	response = r.rejectFabrication(ctx, p, response, tracker)
+	// After the fabrication gate and before the redaction: this measures the
+	// text the agent actually produced, and a reply the gate has already
+	// replaced is not one whose figures say anything about the agent (T-Q9).
+	r.checkGrounding(p, response, returnedNumbers)
 	// After the fabrication check, never before it: that check reads the figures
 	// in the reply and compares them against the turn's evidence, and a redaction
 	// that has already blanked part of the text would have it judging a sentence
@@ -963,11 +1077,29 @@ func sha256Hex(s string) string {
 // runStream executes the agent with streaming and fans out delta / thinking /
 // tool_call / tool_result events to the EventBus. It returns the full
 // assembled response text.
-func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p queue.ChatRunPayload) (string, error) {
+func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p queue.ChatRunPayload, groundTruth *[]float64) (string, error) {
 	events, err := agent.RunStream(ctx, p.Message)
 	if err != nil {
 		return "", err
 	}
+
+	// What this turn did, for the turns after it (T-Q6). Collected here because
+	// this is the only place both an argument list and its result are in hand:
+	// the audit decorator sees them too, but it writes a control-plane row the
+	// agent never reads, and the SDK does not hand the pair back anywhere else.
+	//
+	// The consequence is that the blocking fallback path below records nothing.
+	// That is honest rather than convenient — a turn that fell back to blocking
+	// produced no tool events at all — and it is the rarer path: every provider
+	// this deployment supports streams.
+	var digests []ToolDigest
+	defer func() { r.rememberToolWork(ctx, p, digests) }()
+
+	// The numbers the data tools returned, for the grounding check (T-Q9).
+	// Assigned to the runner-independent slice the caller reads through the
+	// closure below, because runStream returns only the text.
+	var returnedNumbers []float64
+	defer func() { *groundTruth = returnedNumbers }()
 
 	var fullResponse strings.Builder
 	maxIterations := agentbudget.FromContext(ctx).Budget().MaxIterations
@@ -1029,6 +1161,27 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 				if evt.ToolCall.Result != "" {
 					_ = json.Unmarshal([]byte(evt.ToolCall.Result), &res)
 				}
+				// The digest, built from the arguments and the result together
+				// (T-Q6). Arguments are re-parsed here rather than carried from
+				// the tool_call event above, because the two events are not
+				// guaranteed to pair up one-to-one in the stream and matching
+				// them would be a state machine to maintain for no gain.
+				callArgs := map[string]interface{}{}
+				if evt.ToolCall.Arguments != "" {
+					_ = json.Unmarshal([]byte(evt.ToolCall.Arguments), &callArgs)
+				}
+				digests = append(digests, BuildToolDigest(evt.ToolCall.Name, callArgs, res))
+
+				// Every number this turn's data tools actually returned (T-Q9),
+				// for the grounding check after the answer is written. Only the
+				// data tools: a Metabase card id and a document's byte count are
+				// numbers no reply should be quoting as a business figure, and
+				// counting them as evidence would ground a fabrication.
+				if agentbudget.IsDataTool(evt.ToolCall.Name) && len(returnedNumbers) < maxGroundingNumbers {
+					returnedNumbers = append(returnedNumbers,
+						guardrails.CollectNumbers(res, maxGroundingNumbers-len(returnedNumbers))...)
+				}
+
 				_ = r.bus.Publish(p.ThreadID, ChatEvent{
 					JobID:     p.UserMsgID,
 					ThreadID:  p.ThreadID,
@@ -1088,6 +1241,189 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 	}
 
 	return fullResponse.String(), nil
+}
+
+// maxGroundingNumbers bounds how many returned values the grounding check
+// holds (T-Q9). The comparison is quadratic in this slice, and a hundred-row
+// result with twenty columns is two thousand numbers. Two hundred covers every
+// aggregate and the head of any result set, which is what a reply quotes.
+const maxGroundingNumbers = 200
+
+// checkGrounding measures whether the figures in a finished reply are the
+// figures the tools returned (T-Q9).
+//
+// **It reports and does not rewrite.** rejectFabrication above is the gate; it
+// asks whether evidence exists, and a reply stating "roughly 4.1 billion" over
+// a query that returned 3,863,405,700 passes it — evidence existed, rows came
+// back, the magnitudes agree. This asks the narrower question and writes the
+// answer to the log, because an analyst's reply legitimately carries numbers no
+// query returned (a delta, a percentage, a per-unit figure) and blocking those
+// is the guardrail-overreach cycle this repo has already been through.
+//
+// So it is an instrument. The wrong-but-nonempty rate is currently not merely
+// unenforced but unmeasured, and nothing can be tightened before it is counted.
+func (r *ChatRunner) checkGrounding(p queue.ChatRunPayload, response string, returned []float64) {
+	rep := guardrails.CheckGrounding(response, returned)
+	if rep.Clean() {
+		return
+	}
+	logrus.WithFields(logrus.Fields{
+		"company_id":       p.CompanyID,
+		"thread_id":        p.ThreadID,
+		"message_id":       p.UserMsgID,
+		"stated":           len(rep.Stated),
+		"ungrounded":       fmt.Sprint(rep.Ungrounded),
+		"returned_numbers": len(returned),
+	}).Warn("reply states a figure no tool result contains; not blocked, recorded for review")
+}
+
+// rememberToolWork records what this turn did, as one `role: tool` message
+// (T-Q6).
+//
+// One row per turn rather than one per call: the follow-up reads them as a
+// block, and a turn that made seven calls would otherwise put seven rows
+// between two sentences of conversation — which is the same crowding-out that
+// makes `historyLimit` a worse number than it looks.
+//
+// Best-effort throughout. A turn that answered correctly and failed to write
+// its own memory is a turn that answered correctly; failing it here would
+// trade a delivered answer for a bookkeeping error. Detached from the request
+// context for the audit decorator's reason: the turn this describes may
+// already be over.
+func (r *ChatRunner) rememberToolWork(ctx context.Context, p queue.ChatRunPayload, digests []ToolDigest) {
+	if r.toolMemory == nil || len(digests) == 0 {
+		return
+	}
+	kept := DedupeDigests(digests)
+	if len(kept) == 0 {
+		return
+	}
+
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+
+	msg := &domain.Message{
+		ThreadID: p.ThreadID,
+		Role:     domain.MessageRoleTool,
+		Content:  EncodeDigests(kept),
+		// Metadata rather than ToolCalls: the dashboard renders `tool_calls` on
+		// a message as expandable cards, and these rows are not shown at all —
+		// the assistant turn beside them already carries the cards a reader
+		// wants. This is memory, not transcript.
+		Metadata: map[string]interface{}{
+			"kind":       "tool_digest",
+			"turn_msg":   p.UserMsgID,
+			"tool_calls": len(kept),
+		},
+	}
+	if err := r.toolMemory.Append(writeCtx, msg); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": p.CompanyID,
+			"thread_id":  p.ThreadID,
+		}).Warn("tool memory write failed; the next turn will start without this turn's work")
+	}
+}
+
+// priorWork reads what earlier turns of this thread did (T-Q6).
+//
+// Empty is the answer for every failure and for the first turn of every
+// conversation, which is the common case: nothing here is a permission, and a
+// turn that cannot read its own history must still answer.
+func (r *ChatRunner) priorWork(ctx context.Context, threadID string) []ToolDigest {
+	// priorWorkMax == 0 is the write-but-do-not-read setting — see
+	// WithToolMemory. Checked before the query rather than after, so the
+	// measurement it exists for does not also measure a database read.
+	if r.toolMemory == nil || r.priorWorkMax <= 0 || threadID == "" {
+		return nil
+	}
+	rows, err := r.toolMemory.ListByThreadRole(ctx, threadID, domain.MessageRoleTool, r.priorWorkMax)
+	if err != nil {
+		logrus.WithError(err).WithField("thread_id", threadID).
+			Warn("tool memory read failed; this turn starts without the earlier turns' work")
+		return nil
+	}
+	var out []ToolDigest
+	for _, row := range rows {
+		out = append(out, DecodeDigests(row.Content)...)
+	}
+	// Deduped across turns as well as within one: a conversation that has read
+	// the same schema in three consecutive turns should say so once.
+	return DedupeDigests(out)
+}
+
+// withThreadSummaryContext prepends the conversation's rolling summary, but
+// only when the turn's memory does not already hold the whole thread (T-Q7).
+//
+// **The gap.** `conversation_threads.summary` has existed since the threading
+// migration and the agent has never seen it: it is read by the relatedness
+// classifier deciding whether a new message continues the thread, and by the
+// title generator. Meanwhile `historyLimit` drops everything older than twenty
+// messages, so on a long conversation the agent forgets the opening — which is
+// usually where the user said what they were actually trying to find out.
+// The summary of that opening was sitting in a column two feet away.
+//
+// **Only when it adds something.** A thread inside the window is already fully
+// in memory, and pasting a summary of messages the model can read verbatim
+// would spend context restating them, less accurately. So this fires on long
+// threads alone, which are also the only threads where it could help.
+func (r *ChatRunner) withThreadSummaryContext(ctx context.Context, msg, threadID string) string {
+	if r.threadRepo == nil || threadID == "" {
+		return msg
+	}
+	// Cheap and exact: if the thread is no longer than what hydration keeps,
+	// there is nothing older to summarise. Counting is one indexed query, and
+	// getting this wrong in the other direction — injecting always — is how a
+	// two-turn conversation ends up with a paragraph about itself in its
+	// prompt.
+	count, err := r.messageCount(ctx, threadID)
+	if err != nil || count <= r.historyLimit {
+		return msg
+	}
+	thread, err := r.threadRepo.GetByID(ctx, threadID)
+	if err != nil {
+		logrus.WithError(err).WithField("thread_id", threadID).
+			Debug("thread summary lookup failed; this turn runs without it")
+		return msg
+	}
+	summary := strings.TrimSpace(thread.Summary)
+	if summary == "" {
+		return msg
+	}
+	return "[System context: This conversation is longer than what you can see above. " +
+		"Summary of the whole conversation so far, including the parts no longer in view: " +
+		summary + "\nTreat it as background about what the user is working towards. " +
+		"It contains no figures you may quote — re-run a query for any number you state.]\n\n" + msg
+}
+
+// messageCount reads how long the thread is. Narrowed inline because
+// domain.MessageRepository carries CountByThread and the runner holds the
+// interface already; a store without it simply skips the summary.
+func (r *ChatRunner) messageCount(ctx context.Context, threadID string) (int, error) {
+	type counter interface {
+		CountByThread(ctx context.Context, threadID string) (int, error)
+	}
+	c, ok := r.messages.(counter)
+	if !ok {
+		return 0, errors.ErrUnsupported
+	}
+	return c.CountByThread(ctx, threadID)
+}
+
+// withPriorWorkContext prepends what this conversation has already done.
+//
+// Composed into the user message beside the source catalog and the table hint,
+// rather than replayed into the SDK's memory — see RenderPriorWork for why
+// that is a protocol constraint and not a preference.
+func (r *ChatRunner) withPriorWorkContext(ctx context.Context, msg, threadID string) string {
+	block := RenderPriorWork(r.priorWork(ctx, threadID))
+	if block == "" {
+		return msg
+	}
+	logrus.WithFields(logrus.Fields{
+		"thread_id":   threadID,
+		"block_chars": len(block),
+	}).Debug("prior-turn tool work injected")
+	return block + msg
 }
 
 // iterationOf reads the tool-calling iteration number an SDK stream event was
@@ -1251,7 +1587,34 @@ func (r *ChatRunner) hydrateMemory(ctx context.Context, agent *sdkagent.Agent, p
 	ctx, span := tracing.Step(ctx, "memory.hydrate")
 	defer func() { tracing.End(span, err) }()
 
-	msgs, err := r.messages.ListByThread(ctx, p.ThreadID, r.historyLimit, 0)
+	// Fetched wider than the window and trimmed after filtering (T-Q6). The
+	// thread now carries a `role: tool` row per turn that hydration must skip,
+	// and a plain LIMIT would spend roughly a third of the window on rows this
+	// loop then discards — quietly shortening the conversation the agent
+	// remembers, on exactly the long threads where remembering matters.
+	fetch := r.historyLimit
+	if r.toolMemory != nil {
+		fetch *= 2
+	}
+
+	// The NEWEST `fetch` messages, not the oldest (T-Q7).
+	//
+	// ListByThread is ascending with a LIMIT, so the call this replaces —
+	// `ListByThread(id, 20, 0)` — was the first twenty messages of the thread.
+	// On any conversation longer than the window, hydration was replaying the
+	// opening and dropping everything the user had said since. Below twenty
+	// messages the two reads are identical, which is why every test thread and
+	// every demo hid it.
+	//
+	// The old call is kept as the fallback for a runner with no tool memory
+	// installed: the eval harness and the runner tests build one, their threads
+	// are short, and the two reads agree there.
+	var msgs []*domain.Message
+	if r.toolMemory != nil {
+		msgs, err = r.toolMemory.ListRecentByThread(ctx, p.ThreadID, fetch)
+	} else {
+		msgs, err = r.messages.ListByThread(ctx, p.ThreadID, fetch, 0)
+	}
 	if err != nil {
 		return err
 	}
@@ -1270,10 +1633,27 @@ func (r *ChatRunner) hydrateMemory(ctx context.Context, agent *sdkagent.Agent, p
 		}
 	}
 
+	added := 0
 	for _, m := range msgs {
+		// The window is over conversation turns, not over rows — see the fetch
+		// above. Enforced here rather than by the query because only this loop
+		// knows which rows count.
+		if added >= r.historyLimit {
+			break
+		}
 		// Skip the current user message; the agent will add it itself
 		// during Run/RunStream.
 		if m.Role == domain.MessageRoleUser && m.Content == p.Message && m.ID == p.UserMsgID {
+			continue
+		}
+		// Tool-digest rows never enter the provider's message list (T-Q6). A
+		// tool-result message is only valid immediately after the assistant
+		// message whose tool_call_id it answers, and a row synthesised in a
+		// previous turn has no such id — Anthropic and OpenAI both reject the
+		// sequence, so replaying these would break every follow-up turn on the
+		// thread rather than inform it. They reach the model as the context
+		// block RenderPriorWork composes instead.
+		if m.Role == domain.MessageRoleTool {
 			continue
 		}
 		sdkMsg := interfaces.Message{
@@ -1283,6 +1663,7 @@ func (r *ChatRunner) hydrateMemory(ctx context.Context, agent *sdkagent.Agent, p
 		if err := mem.AddMessage(ctx, sdkMsg); err != nil {
 			logrus.WithError(err).Warn("hydrate memory: add message")
 		}
+		added++
 	}
 	return nil
 }
@@ -1343,7 +1724,7 @@ func withCurrencyContext(msg, currency string) string {
 // `tables` argument instead of dumping the full catalog. Silent skip when
 // the feature is off, the source has no embeddings, or the embedding API
 // fails — the agent's regular get_schema flow still works.
-func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg, userMsg string, sources []*domain.DBConnection) string {
+func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg string, questionVec []float32, sources []*domain.DBConnection) string {
 	// Plain End rather than tracing.End: every failure in here is a deliberate
 	// silent skip, so there is no error to record — what the waterfall answers
 	// is how long the embedding round-trip cost before the turn even started.
@@ -1366,31 +1747,14 @@ func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg, userMsg
 		return msg
 	}
 
-	embClient, err := r.embedCache.For(ctx, companyID)
-	if err != nil {
-		logrus.WithError(err).WithField("company_id", companyID).Warn("table picker: resolve embedding client failed; skipping hint")
+	// The vector is computed once per turn and passed in (T-Q8): the cookbook
+	// asks the same question of the same text, and embedding it twice would be
+	// two network round trips before the model is even called.
+	qv := questionVec
+	if len(qv) == 0 {
+		logrus.WithField("company_id", companyID).Debug("table picker: no question vector; skipping hint")
 		return msg
 	}
-	if embClient == nil {
-		logrus.WithField("company_id", companyID).Info("table picker: no embedding client for tenant (no key); skipping hint")
-		return msg
-	}
-
-	embedStart := time.Now()
-	vecs, err := embClient.Embed(ctx, []string{userMsg})
-	if err != nil || len(vecs) == 0 {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"company_id": companyID,
-			"model":      embClient.Model(),
-		}).Warn("table picker: embed user message failed; skipping hint")
-		return msg
-	}
-	logrus.WithFields(logrus.Fields{
-		"company_id":  companyID,
-		"model":       embClient.Model(),
-		"duration_ms": time.Since(embedStart).Milliseconds(),
-	}).Debug("table picker: user message embedded")
-	qv := vecs[0]
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "[System context: Likely-relevant tables (top-%d semantic match per source):\n", r.embTopK)
@@ -1441,6 +1805,127 @@ func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg, userMsg
 		"total_tables_hinted": hintedTotal,
 	}).Info("table picker: hint injected")
 	return b.String()
+}
+
+// questionVector embeds the user's message once for every consumer that wants
+// it: the table picker and the cookbook (T-Q8).
+//
+// Returns nil for every ordinary reason a tenant has no embeddings — no cache
+// wired, no credentials, an API that failed — and each of those disables the
+// features that need it rather than the turn. Skipped entirely when nothing
+// would use the vector, so a deployment with neither feature pays nothing.
+func (r *ChatRunner) questionVector(ctx context.Context, companyID, userMsg string) []float32 {
+	if r.embedCache == nil || strings.TrimSpace(userMsg) == "" {
+		return nil
+	}
+	if r.embRepo == nil && r.cookbook == nil {
+		return nil
+	}
+
+	ctx, span := tracing.Step(ctx, "embed_question")
+	defer span.End()
+
+	client, err := r.embedCache.For(ctx, companyID)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("embed question: resolving the client failed; the table hint and cookbook are skipped")
+		return nil
+	}
+	if client == nil {
+		logrus.WithField("company_id", companyID).
+			Debug("embed question: no embedding credentials for this tenant")
+		return nil
+	}
+
+	start := time.Now()
+	vecs, err := client.Embed(ctx, []string{userMsg})
+	if err != nil || len(vecs) == 0 {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": companyID, "model": client.Model(),
+		}).Warn("embed question: failed; the table hint and cookbook are skipped")
+		return nil
+	}
+	logrus.WithFields(logrus.Fields{
+		"company_id":  companyID,
+		"model":       client.Model(),
+		"duration_ms": time.Since(start).Milliseconds(),
+	}).Debug("embed question: done")
+	return vecs[0]
+}
+
+// withCookbookContext shows the turn how this tenant's own questions have been
+// answered before (T-Q8).
+//
+// **What it is for.** Every turn rediscovers that "revenue" means
+// SUM(sales_amount) in this warehouse, that the fiscal year starts in April,
+// that "active customers" excludes the test accounts. The table picker narrows
+// which tables to read and stops there. This carries the rest — and it costs no
+// new data collection, because `agent_actions` has been recording the SQL of
+// every query since T-05.
+//
+// **The two constraints in the block's wording** are both failure modes rather
+// than politeness. The examples are old, so their numbers are stale — a model
+// that quotes one has stated a figure no tool produced this turn, which is the
+// worst failure this product has. And the examples are a precedent, not an
+// answer: a question that resembles a previous one is not the previous one, and
+// an agent that pattern-matches too hard will answer last week's question with
+// this week's words.
+func (r *ChatRunner) withCookbookContext(ctx context.Context, msg string, questionVec []float32) string {
+	if r.cookbook == nil || len(questionVec) == 0 {
+		return msg
+	}
+
+	ctx, span := tracing.Step(ctx, "cookbook")
+	defer span.End()
+
+	companyID := tenantctx.CompanyID(ctx)
+	// Scoped to the sources this turn may read. A permission, not a filter: an
+	// agent scoped away from a warehouse must not be shown queries against it,
+	// or its prompt carries the table names the scope exists to hide (T-S2).
+	scope := agentscope.FromContext(ctx)
+	hits, err := r.cookbook.TopK(ctx, companyID, scope.SourceIDs, questionVec, r.cookbookTopK)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("cookbook: lookup failed; this turn runs without examples")
+		return msg
+	}
+	if len(hits) == 0 {
+		return msg
+	}
+
+	var b strings.Builder
+	b.WriteString("[System context: How questions like this one have been answered before, ")
+	b.WriteString("for THIS organization's own data. Use them for the table and column names, ")
+	b.WriteString("the joins, and the conventions they show — this is how your predecessors ")
+	b.WriteString("read this warehouse.\n")
+	b.WriteString("Two rules. These are PRECEDENTS, not answers: adapt the SQL to what is actually ")
+	b.WriteString("being asked now, and if none of them fits, write your own query and ignore them. ")
+	b.WriteString("And they are OLD: the row counts below are from when they ran, so never quote a ")
+	b.WriteString("number from here — run the query.\n")
+
+	ids := make([]int64, 0, len(hits))
+	for _, h := range hits {
+		ids = append(ids, h.ID)
+		fmt.Fprintf(&b, " - Asked: %s\n   Source: %s\n   SQL: %s\n",
+			oneLineDigest(h.Question), h.SourceID, oneLineDigest(h.SQL))
+	}
+	b.WriteString("]\n\n")
+
+	// Bookkeeping, detached and best-effort: which examples keep matching real
+	// questions is how anyone prunes this later, and it must not be able to
+	// slow down or fail a turn.
+	go func(ids []int64) {
+		markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := r.cookbook.MarkUsed(markCtx, ids, time.Now()); err != nil {
+			logrus.WithError(err).Debug("cookbook: marking examples used failed")
+		}
+	}(ids)
+
+	logrus.WithFields(logrus.Fields{
+		"company_id": companyID, "examples": len(hits),
+	}).Debug("cookbook: examples injected")
+	return b.String() + msg
 }
 
 // withSourcesContext prepends the catalog of available data sources so the

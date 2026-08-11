@@ -129,6 +129,19 @@ func scoreContains(c Case, reply string) []string {
 			failures = append(failures, fmt.Sprintf("reply contains %q and should not", unwanted))
 		}
 	}
+	if len(c.Expect.ContainsAny) > 0 {
+		found := false
+		for _, want := range c.Expect.ContainsAny {
+			if strings.Contains(lower, strings.ToLower(want)) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			failures = append(failures, fmt.Sprintf(
+				"reply contains none of %q", strings.Join(c.Expect.ContainsAny, ", ")))
+		}
+	}
 	return failures
 }
 

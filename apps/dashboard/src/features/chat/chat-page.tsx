@@ -27,6 +27,7 @@ import { useAgents } from "./use-agents";
 import { AgentBadge, AgentPicker } from "./agent-picker";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
+import { MessageFeedback } from "./message-feedback";
 import { PendingApprovals } from "@/features/actions/approval-card";
 import { PENDING_ACTIONS_KEY } from "@/features/actions/use-actions";
 import { MarkdownRenderer } from "./markdown-renderer";
@@ -322,7 +323,14 @@ export function ChatPage() {
     const threadOptimistic = optimisticMessages.filter(
       (m) => m.thread_id === activeThreadId,
     );
-    const merged = [...persistedMessages, ...threadOptimistic];
+    const merged = [...persistedMessages, ...threadOptimistic]
+      // role="tool" rows are the agent's memory of its own work (T-Q6), not
+      // transcript: one row per turn holding the digests a later turn reads.
+      // The assistant message beside them already carries the tool cards a
+      // reader wants, and MessageBubble treats anything that is not "user" as
+      // an assistant turn — so leaving them in would render a block of JSON
+      // in the middle of the conversation.
+      .filter((m) => m.role !== "tool");
     const map = new Map<string, Message>();
     for (const m of merged) map.set(m.id, m);
     return Array.from(map.values()).sort(
@@ -672,6 +680,9 @@ function MessageBubble({ message }: { message: Message }) {
             : ""}
           {formatMessageTimestamp(message.created_at)}
         </div>
+        {/* Only the assistant's turns can be rated — a user rating their own
+            question is meaningless, and the API refuses it (T-Q2). */}
+        {!isUser && message.id && <MessageFeedback messageId={message.id} />}
       </div>
     </div>
   );

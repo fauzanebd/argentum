@@ -37,6 +37,12 @@ const (
 	TypeWebhookDeliver   = "webhook:deliver"
 	TypeBusinessInfer    = "business:infer"
 	TypeWatcherEval      = "watcher:eval"
+	// TypeCookbookHarvest mines finished turns into query examples (T-Q8). It
+	// carries no payload: the harvest is deployment-wide and finds its own
+	// tenants from recent activity, which is the difference between a job that
+	// keeps working as companies are added and one that has to be told about
+	// each of them.
+	TypeCookbookHarvest = "cookbook:harvest"
 )
 
 // WatcherEvalPayload is the body of a `watcher:eval` task (T-08). Only the id,

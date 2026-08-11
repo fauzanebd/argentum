@@ -69,7 +69,35 @@ type Case struct {
 	// only honest way to test it is to assemble the turn the same way the
 	// route does.
 	ReportFormat string `yaml:"report_format,omitempty"`
-	Expect       Expect `yaml:"expect"`
+	// FollowUps are further questions asked in the SAME thread, in order,
+	// after Question has been answered. Empty for every case this set held
+	// before 2026-08-11, which is why it is a slice on the existing struct
+	// rather than a new case shape: a one-turn case is a case with no
+	// follow-ups, and the loader must keep reading the forty that predate it.
+	//
+	// It exists because the baseline names multi-turn as the largest untested
+	// surface this product has, and "untested" was literal — `Question` was one
+	// string, so no case could ask a second question at all. The failures it
+	// covers are the ones a user meets first: a follow-up that re-derives the
+	// number differently, or one that re-runs `get_schema` because nothing
+	// carried the first turn's work forward (T-Q6).
+	//
+	// **The assertion is scored against the LAST turn only**, and its tool
+	// checks see only that turn's calls. That is the whole point of the shape:
+	// `must_not_call: [get_schema]` on a follow-up asserts the agent did not
+	// look the schema up *again*, which is unsayable if the calls of every turn
+	// are pooled.
+	FollowUps []string `yaml:"follow_ups,omitempty"`
+	Expect    Expect   `yaml:"expect"`
+}
+
+// Questions returns every turn the case asks, in order: the question, then any
+// follow-ups. Never empty — Validate rejects a case with no question.
+func (c Case) Questions() []string {
+	out := make([]string, 0, 1+len(c.FollowUps))
+	out = append(out, c.Question)
+	out = append(out, c.FollowUps...)
+	return out
 }
 
 // Expect is the assertion attached to a case.
@@ -99,6 +127,20 @@ type Expect struct {
 	// asserting the agent did not answer a question it should have
 	// deflected.
 	NotContains []string `yaml:"not_contains,omitempty"`
+
+	// ContainsAny passes when **at least one** phrase appears, where Contains
+	// demands all of them.
+	//
+	// It exists for the assertions that are about a *choice* rather than a
+	// wording: an ambiguous question is answered well by naming which reading
+	// was taken, and there are five honest ways to name it. Listing them under
+	// Contains would demand the agent say all five; asserting only one of them
+	// would be pinning the model's phrasing, which is the defect three cases of
+	// the original set were fixed for (see `guardrail-off-topic-recipe`).
+	//
+	// Distinct from OrContains, which is narrower and rescues a *numeric* case
+	// where declining to produce the number is also correct.
+	ContainsAny []string `yaml:"contains_any,omitempty"`
 
 	// OrContains rescues a numeric case when the agent legitimately
 	// declines to produce the number. "What were our total sales last
@@ -182,6 +224,18 @@ func (s *Set) Validate() error {
 		case c.ReportFormat != "" && !domain.DocumentFormat(c.ReportFormat).Valid():
 			return fmt.Errorf("case %q: report_format must be one of pdf, pptx, xlsx, csv, got %q", c.ID, c.ReportFormat)
 		}
+		for j, f := range c.FollowUps {
+			if strings.TrimSpace(f) == "" {
+				return fmt.Errorf("case %q: follow_ups[%d] is empty", c.ID, j)
+			}
+		}
+		// A report case runs the `POST /v1/reports` assembly, whose directive is
+		// written for one turn producing one file. What a second turn against the
+		// same directive means is undefined, and a case whose meaning is undefined
+		// scores noise.
+		if c.ReportFormat != "" && len(c.FollowUps) > 0 {
+			return fmt.Errorf("case %q: report_format and follow_ups are mutually exclusive", c.ID)
+		}
 		seen[c.ID] = true
 
 		switch c.Expect.Kind {
@@ -191,6 +245,7 @@ func (s *Set) Validate() error {
 			}
 		case KindContains, KindRefusal:
 			if len(c.Expect.Contains) == 0 && len(c.Expect.NotContains) == 0 &&
+				len(c.Expect.ContainsAny) == 0 &&
 				len(c.Expect.MustCall) == 0 && len(c.Expect.MustNotCall) == 0 &&
 				!c.Expect.NoFigure {
 				return fmt.Errorf("case %q: kind %q asserts nothing", c.ID, c.Expect.Kind)

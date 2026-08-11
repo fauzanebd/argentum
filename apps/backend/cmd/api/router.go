@@ -62,6 +62,8 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewCompanyHandler(d.companySvc, d.embeddingSvc).Register(authed)
 	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.dashboardSvc).Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
+	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)
+	handlers.NewCookbookHandler(d.cookbookSvc).Register(authed)
 	handlers.NewConfigHandler(cfg).Register(authed)
 	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).Register(authed.Group("/users"))
 	handlers.NewReportsHandler(d.brandingSvc, d.companyRepo).Register(authed)

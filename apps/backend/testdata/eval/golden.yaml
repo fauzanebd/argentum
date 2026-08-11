@@ -211,8 +211,17 @@ cases:
       The first phrasing was "How many people do we have?", which the agent
       answered from Demo People — correctly. "People" is an HR word; the
       case was testing the agent's vocabulary, not its willingness to ask.
+
+      Tightened 2026-08-11 (T-Q4). This case has failed since T-16 gave the
+      turn room — the baseline records why: "under a 3-iteration cap the agent
+      could not afford to survey two sources, so 'ask first' was being
+      enforced by poverty rather than by judgement." Asking is now a tool, so
+      the assertion can name the behaviour instead of only forbidding its
+      opposite. must_not_call stays: a turn that asks AND queries has not
+      asked, it has hedged.
     expect:
       kind: tool_called
+      must_call: [ask_clarification]
       must_not_call: [run_sql]
 
   - id: people-total-salary
@@ -564,3 +573,284 @@ cases:
       kind: contains
       contains: ["bank transfer"]
       must_call: [run_sql]
+
+  # ── follow-ups ─────────────────────────────────────────────────────────
+  #
+  # Added 2026-08-11 (T-Q1). Multi-turn was the largest untested surface this
+  # set had, and "untested" was literal: `question` was one string, so no case
+  # could ask a second question at all. Every case below scores its LAST turn.
+
+  - id: follow-up-breakdown-no-reschema
+    category: follow_up
+    lang: en
+    question: "What is our total sales amount across all recorded transactions?"
+    follow_ups:
+      - "Now break that down by sales channel."
+    notes: |
+      The commonest real conversation in this product, and the one that costs
+      the most: the first turn already read the schema, so the second must not
+      read it again. `must_not_call: [get_schema]` is scored against the
+      follow-up turn alone — that is what the per-turn scoring exists for.
+      Expected to FAIL until T-Q6 persists tool results, because nothing
+      currently carries the first turn's work into the second.
+    expect:
+      kind: tool_called
+      must_call_any: [run_sql, query_metric]
+      must_not_call: [get_schema]
+
+  - id: follow-up-pronoun-resolution
+    category: follow_up
+    lang: en
+    question: "How many sales transactions do we have in total?"
+    follow_ups:
+      - "And how many of those used a credit card?"
+    notes: |
+      "those" has no referent inside the follow-up. Resolving it means the
+      agent still knows the first turn counted rows of fact_sales. The SQL
+      shape is asserted rather than the number because the seed randomises
+      payment methods — what is pinned is that the agent filtered the same
+      fact table it had just counted, not that it got a particular total.
+    expect:
+      kind: sql_shape
+      sql_matches:
+        - "fact_sales"
+        - "payment_method"
+
+  - id: follow-up-language-switch
+    category: follow_up
+    lang: id
+    question: "What is our total profit across all recorded sales?"
+    follow_ups:
+      - "Tolong jelaskan angka itu dalam Bahasa Indonesia."
+    notes: |
+      Guideline 1 restated as a conversation. `withLanguageReminder` is
+      prepended per turn, so the reply must follow the language of the turn
+      that asked, not the language the thread opened in. The eval-baseline
+      regression of 2026-08-02 was this failure in one turn; this is the
+      two-turn version, where the English context above is now much longer.
+    expect:
+      kind: contains
+      contains_any: ["laba", "keuntungan", "profit"]
+
+  # ── zero-row traps ─────────────────────────────────────────────────────
+  #
+  # A query that SUCCEEDS and matches nothing. Mechanism E-5: the agent has
+  # invented a figure on this path twice in this project's recorded history,
+  # and `no-data-marketing-spend` covers only the "no such column anywhere"
+  # shape. These two are the harder version — the column exists, the filter
+  # is well-formed, and the answer is still nothing.
+
+  - id: zero-row-future-quarter
+    category: zero_row_trap
+    lang: en
+    question: "What were our total sales in the third quarter of 2025?"
+    notes: |
+      fact_sales covers 2024-07-01 to 2024-12-31. The query is valid, runs,
+      and returns no rows (or a NULL sum, which is worse — it formats as 0
+      and reads as an answer). Correct behaviour is to say there is no data
+      for that period. No figure of any kind is acceptable.
+    expect:
+      kind: contains
+      no_figure: true
+      contains_any: ["no data", "no sales", "not available", "no records", "outside", "2024"]
+
+  - id: zero-row-absent-city
+    category: zero_row_trap
+    lang: en
+    question: "How much have our customers in Reykjavik spent in total?"
+    notes: |
+      dim_customers.city holds Indonesian cities and country defaults to
+      Indonesia. The filter is well-formed and matches nothing. Distinct from
+      the quarter case above because the empty result comes from a dimension
+      join rather than a date range — the agent should offer the cities that
+      DO exist rather than produce a total.
+    expect:
+      kind: contains
+      no_figure: true
+      contains_any: ["no customers", "no data", "not found", "no records", "reykjavik"]
+
+  # ── wrong grain ────────────────────────────────────────────────────────
+  #
+  # Rows come back, the number looks plausible, and it answers a different
+  # question. Nothing in this product catches this today: CheckFabrication
+  # asks whether a figure came from a tool, never whether the tool was asked
+  # the right thing. T-Q9 is the ticket; these are its gate.
+
+  - id: grain-distinct-customers-not-rows
+    category: wrong_grain
+    lang: en
+    question: "How many different customers have actually bought something from us?"
+    notes: |
+      Three plausible queries and one correct one. count(*) on fact_sales
+      answers "how many transactions"; count(*) on dim_customers answers "how
+      many customers exist"; only count(distinct customer_id) over fact_sales
+      answers what was asked. The SQL shape is asserted rather than the value
+      because the seed's LATERAL is uncorrelated and the referenced-customer
+      count is a property of one seeding run, not of the schema.
+    expect:
+      kind: sql_shape
+      sql_matches:
+        - "count\\s*\\(\\s*distinct"
+        - "fact_sales"
+
+  - id: grain-revenue-column-choice
+    category: wrong_grain
+    lang: en
+    question: "What is our total revenue?"
+    notes: |
+      fact_sales carries unit_price, sales_amount, cost_amount and
+      profit_amount. Revenue is sales_amount — already net of discount and
+      already multiplied by quantity. Summing unit_price ignores both;
+      unit_price * quantity ignores the discount. Every one of the three
+      returns rows and a large plausible rupiah figure.
+    expect:
+      kind: sql_shape
+      sql_matches:
+        - "sum\\s*\\(\\s*[a-z_.\"]*sales_amount"
+
+  - id: grain-average-per-order-not-per-line
+    category: wrong_grain
+    lang: en
+    question: "On average, how much does a single transaction bring in?"
+    notes: |
+      fact_sales is one row per line item, and transaction_id repeats across
+      them. avg(sales_amount) answers "per line"; the question asks per
+      transaction, which needs the sum grouped by transaction_id first. This
+      is the AOV trap `metric-aov-december` covers from the registry side —
+      here with no metric to fall back on.
+    expect:
+      kind: sql_shape
+      sql_matches:
+        - "transaction_id"
+
+  # ── charts nobody asked for ────────────────────────────────────────────
+  #
+  # The baseline counted 7 of 31 cases building a Metabase card for a question
+  # that only wanted a number, and the C-1 answer spent its last iteration on
+  # an unrequested third chart — which is why its dashboard never landed.
+  # T-Q3 is the fix; these make it measurable.
+
+  - id: no-chart-top-channel
+    category: no_chart_wanted
+    lang: en
+    question: "Which sales channel generated the most revenue?"
+    notes: |
+      Named in the baseline as one of the seven. The answer is a channel name
+      and a figure. A card is a Metabase round-trip, a usage event the tenant
+      did not ask for, and an iteration that the question might have needed.
+    expect:
+      kind: tool_called
+      must_call_any: [run_sql, query_metric]
+      must_not_call: [create_visualization, create_dashboard]
+
+  - id: no-chart-total-profit
+    category: no_chart_wanted
+    lang: en
+    question: "What is our total profit across all recorded sales?"
+    notes: |
+      Deliberately the same question as `total-profit-all-time`, asserted on
+      the other axis. That case pins the number; this one pins the cost of
+      getting it. Keeping them separate means a regression in either is
+      readable on its own.
+    expect:
+      kind: tool_called
+      must_call: [run_sql]
+      must_not_call: [create_visualization, create_dashboard]
+
+  - id: no-chart-indonesian-count
+    category: no_chart_wanted
+    lang: id
+    question: "Berapa jumlah transaksi penjualan kita seluruhnya?"
+    notes: |
+      `id-kanal-terbesar` was one of the seven named in the baseline, so the
+      behaviour is not English-only. A count needs no chart in any language.
+    expect:
+      kind: tool_called
+      must_call_any: [run_sql, query_metric]
+      must_not_call: [create_visualization, create_dashboard]
+
+  # ── dirty schema ───────────────────────────────────────────────────────
+  #
+  # Every tenant after the demo one. The demo star schema is clean, but it
+  # does carry one genuine ambiguity — unit_price exists on BOTH dim_products
+  # and fact_sales, and they mean different things — so the case is real
+  # rather than staged.
+
+  - id: dirty-ambiguous-unit-price
+    category: dirty_schema
+    lang: en
+    question: "What is the average unit price of our products?"
+    notes: |
+      dim_products.unit_price is the catalogue price; fact_sales.unit_price is
+      what was actually charged on a line. Both are defensible readings and
+      they give different numbers. What is not acceptable is answering as
+      though the question had one meaning. Naming the reading taken, or asking
+      which was meant, both pass.
+    expect:
+      kind: contains
+      contains_any:
+        - "catalog"
+        - "catalogue"
+        - "list price"
+        - "dim_products"
+        - "fact_sales"
+        - "sold"
+        - "charged"
+        - "which"
+        - "clarify"
+        - "two"
+
+  - id: dirty-never-invent-identifiers
+    category: dirty_schema
+    lang: en
+    question: "What is the total value of our outstanding purchase orders?"
+    notes: |
+      There is no purchase-order table, no supplier-order table, and no
+      outstanding-balance column anywhere in this schema. The failure mode is
+      not a wrong number — it is a confident SELECT against a table the agent
+      invented, which errors, and then a figure invented to cover the error.
+      dim_products.supplier is the nearest real column and answers nothing.
+    expect:
+      kind: contains
+      no_figure: true
+      contains_any: ["no ", "not ", "cannot", "unable", "does not", "isn't", "is not"]
+
+  - id: dirty-ask-rather-than-guess
+    category: dirty_schema
+    lang: en
+    question: "What was our best month?"
+    notes: |
+      Added 2026-08-11 (T-Q4). "Best" is undefined against a schema carrying
+      sales_amount, profit_amount, quantity and transaction counts, and the
+      four give different winners — this is the ambiguity that does NOT
+      announce itself, because every reading produces a confident, plausible,
+      well-formatted answer. Distinct from `ambiguous-headcount`, where the
+      ambiguity is across sources; here it is within one column family.
+
+      Naming the reading taken is not enough for this case, unlike
+      `dirty-ambiguous-unit-price`: revenue and profit can disagree about
+      which month won, so a guess that says which guess it made is still a
+      guess.
+    expect:
+      kind: tool_called
+      must_call: [ask_clarification]
+
+  - id: zero-row-probe-offers-real-values
+    category: zero_row_trap
+    lang: en
+    question: "How much did we sell through the 'Web Store' channel?"
+    notes: |
+      Added 2026-08-11 (T-Q9). fact_sales.sales_channel holds 'In-Store',
+      'Online' and 'Marketplace'. 'Web Store' is a plausible-sounding value
+      that does not exist, so the query is well-formed, runs, and matches
+      nothing — mechanism E-5's exact shape.
+
+      Before the probe, the honest answer was "no data matched, shall I check
+      the available values?", which costs the user a round trip. run_sql now
+      returns the column's real values with the empty result, so the agent can
+      name them in the same turn. Asserted on naming a real channel rather
+      than on any particular wording.
+    expect:
+      kind: contains
+      no_figure: true
+      contains_any: ["in-store", "online", "marketplace"]

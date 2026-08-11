@@ -20,14 +20,37 @@ type Result struct {
 	// rather than the answer being wrong.
 	Error string `json:"error,omitempty"`
 
+	// Reply and ToolCalls are the LAST turn's — the one Score judged. For a
+	// single-turn case that is the only turn; for a follow-up case the earlier
+	// ones are in Turns.
 	Reply     string           `json:"reply"`
 	ToolCalls []ToolInvocation `json:"tool_calls,omitempty"`
+
+	// Turns is every turn the case ran, in order, scored or not. Always at
+	// least one. It is what makes a follow-up failure diagnosable: "the agent
+	// re-ran get_schema" means nothing without the turn that already ran it.
+	Turns []TurnResult `json:"turns,omitempty"`
 
 	DurationMS int64   `json:"duration_ms"`
 	TokensIn   int64   `json:"tokens_in"`
 	TokensOut  int64   `json:"tokens_out"`
 	CostUSD    float64 `json:"cost_usd"`
 	LLMCalls   int64   `json:"llm_calls"`
+}
+
+// TurnResult is one turn of a case. A single-turn case has exactly one and it
+// duplicates the Result's own Reply/ToolCalls, which is the cheaper trade: the
+// alternative is a report reader having to know which cases are multi-turn
+// before they can find the reply.
+type TurnResult struct {
+	Question   string           `json:"question"`
+	Reply      string           `json:"reply"`
+	ToolCalls  []ToolInvocation `json:"tool_calls,omitempty"`
+	DurationMS int64            `json:"duration_ms"`
+	// Error is set when this turn failed to run at all, which abandons the
+	// case — there is no honest way to ask a follow-up to an answer that never
+	// arrived.
+	Error string `json:"error,omitempty"`
 }
 
 // Report is a whole run.
@@ -169,6 +192,18 @@ func (r Report) Text() string {
 			for _, f := range res.Failures {
 				fmt.Fprintf(&b, "    ✗ %s\n", f)
 			}
+			// The turns before the scored one, so a follow-up failure can be
+			// read. Skipped entirely for a single-turn case, where they would
+			// only repeat the two lines below.
+			if len(res.Turns) > 1 {
+				for i, t := range res.Turns[:len(res.Turns)-1] {
+					fmt.Fprintf(&b, "    turn %d: %s\n", i+1, truncate(oneLine(t.Question), 120))
+					fmt.Fprintf(&b, "      tools: %s\n", describeCalls(t.ToolCalls))
+					fmt.Fprintf(&b, "      reply: %s\n", truncate(oneLine(t.Reply), 200))
+				}
+				fmt.Fprintf(&b, "    turn %d (scored): %s\n", len(res.Turns),
+					truncate(oneLine(res.Turns[len(res.Turns)-1].Question), 120))
+			}
 			fmt.Fprintf(&b, "    tools: %s\n", describeCalls(res.ToolCalls))
 			fmt.Fprintf(&b, "    reply: %s\n", truncate(oneLine(res.Reply), 300))
 		}
@@ -186,4 +221,143 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// Matrix is one run of the same set across several models (T-Q5).
+//
+// It exists because every number this project has ever published about agent
+// quality was measured on `deepseek/deepseek-v3.2` and nothing else. The
+// baseline says so on its own headline line, and a pass rate on one model is a
+// fact about that model as much as about the prompt — which makes "did this
+// prompt change help?" and "would a different model help more?" the same
+// unanswered question.
+//
+// Reports are in the order the models were given, which is the order they ran.
+type Matrix struct {
+	Set     string   `json:"set"`
+	Models  []string `json:"models"`
+	Reports []Report `json:"reports"`
+}
+
+// Disagreement is one case the models did not answer equally well. It is the
+// most useful row this comparison produces: an aggregate pass rate says one
+// model is better, and this says at what.
+type Disagreement struct {
+	ID       string            `json:"id"`
+	Category string            `json:"category"`
+	PassedOn []string          `json:"passed_on"`
+	FailedOn []string          `json:"failed_on"`
+	Failures map[string]string `json:"failures,omitempty"`
+}
+
+// Disagreements returns the cases whose outcome differed between models,
+// ordered as the set was. A case every model failed is NOT a disagreement — it
+// is a property of the set or the prompt, which is a different finding and one
+// the per-model failure lists already carry.
+func (m Matrix) Disagreements() []Disagreement {
+	if len(m.Reports) < 2 {
+		return nil
+	}
+	// Ordered by the first report, so the output reads in set order rather
+	// than in map order.
+	var out []Disagreement
+	for _, base := range m.Reports[0].Results {
+		d := Disagreement{ID: base.ID, Category: base.Category, Failures: map[string]string{}}
+		for i, rep := range m.Reports {
+			model := m.Models[i]
+			var found *Result
+			for j := range rep.Results {
+				if rep.Results[j].ID == base.ID {
+					found = &rep.Results[j]
+					break
+				}
+			}
+			if found == nil {
+				continue
+			}
+			if found.Passed {
+				d.PassedOn = append(d.PassedOn, model)
+			} else {
+				d.FailedOn = append(d.FailedOn, model)
+				if len(found.Failures) > 0 {
+					d.Failures[model] = found.Failures[0]
+				}
+			}
+		}
+		if len(d.PassedOn) > 0 && len(d.FailedOn) > 0 {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// Text renders the comparison a human pastes into a ticket gate.
+func (m Matrix) Text() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "\n=== Argentum eval matrix — %s ===\n", m.Set)
+	fmt.Fprintf(&b, "models: %s\n\n", strings.Join(m.Models, ", "))
+
+	fmt.Fprintf(&b, "%-34s %8s %10s %10s %12s\n", "model", "pass", "mean lat", "mean cost", "total cost")
+	for i, rep := range m.Reports {
+		fmt.Fprintf(&b, "%-34s %7.1f%% %9.0fms %10.6f %12.6f\n",
+			truncate(m.Models[i], 34), rep.PassRat*100,
+			rep.MeanLatencyMS, rep.MeanCostUSD, rep.TotalCostUSD)
+	}
+
+	// Per category, side by side. An aggregate that moves two points can hide
+	// a category that collapsed, which is the whole argument for CategoryScore
+	// existing in the first place.
+	cats := map[string]bool{}
+	for _, rep := range m.Reports {
+		for c := range rep.ByCategory {
+			cats[c] = true
+		}
+	}
+	names := make([]string, 0, len(cats))
+	for c := range cats {
+		names = append(names, c)
+	}
+	sort.Strings(names)
+
+	b.WriteString("\n--- by category ---\n")
+	fmt.Fprintf(&b, "%-20s", "")
+	for _, model := range m.Models {
+		fmt.Fprintf(&b, " %14s", truncate(model, 14))
+	}
+	b.WriteString("\n")
+	for _, cat := range names {
+		fmt.Fprintf(&b, "%-20s", cat)
+		for _, rep := range m.Reports {
+			cs, ok := rep.ByCategory[cat]
+			if !ok {
+				fmt.Fprintf(&b, " %14s", "—")
+				continue
+			}
+			fmt.Fprintf(&b, " %13.0f%%", cs.PassRate*100)
+		}
+		b.WriteString("\n")
+	}
+
+	dis := m.Disagreements()
+	if len(dis) == 0 {
+		b.WriteString("\nNo case changed outcome between models. A difference in pass rate would\n" +
+			"then be arithmetic rather than behaviour — check the per-model failures.\n")
+		return b.String()
+	}
+
+	b.WriteString("\n--- cases the models disagree on ---\n")
+	b.WriteString("The rows worth reading. An aggregate says one model is better; these say at what.\n")
+	for _, d := range dis {
+		fmt.Fprintf(&b, "\n  %s [%s]\n", d.ID, d.Category)
+		fmt.Fprintf(&b, "    passed: %s\n", strings.Join(d.PassedOn, ", "))
+		fmt.Fprintf(&b, "    failed: %s\n", strings.Join(d.FailedOn, ", "))
+		for _, model := range d.FailedOn {
+			if why := d.Failures[model]; why != "" {
+				fmt.Fprintf(&b, "      %s: %s\n", truncate(model, 24), truncate(why, 160))
+			}
+		}
+	}
+	b.WriteString("\n")
+	return b.String()
 }

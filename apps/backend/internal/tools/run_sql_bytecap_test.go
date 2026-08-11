@@ -34,7 +34,7 @@ func decode(t *testing.T, raw []byte) map[string]interface{} {
 
 func TestMarshalSQLResultUnderTheCapIsUntouched(t *testing.T) {
 	res := wideResult(5, 10)
-	out := marshalSQLResult("src-1", "postgres", res, 200_000)
+	out := marshalSQLResult("src-1", "postgres", res, 200_000, nil)
 
 	m := decode(t, out)
 	if got := m["row_count"]; got != float64(5) {
@@ -57,7 +57,7 @@ func TestMarshalSQLResultTrimsWideRowsToFit(t *testing.T) {
 	res := wideResult(50, 1000)
 	const cap = 8000
 
-	out := marshalSQLResult("src-1", "postgres", res, cap)
+	out := marshalSQLResult("src-1", "postgres", res, cap, nil)
 	if len(out) > cap {
 		t.Fatalf("payload is %d bytes, want ≤ %d", len(out), cap)
 	}
@@ -99,7 +99,7 @@ func TestMarshalSQLResultKeepsAsManyRowsAsFit(t *testing.T) {
 	res := wideResult(40, 500)
 	const cap = 6000
 
-	marshalSQLResult("src-1", "postgres", res, cap)
+	marshalSQLResult("src-1", "postgres", res, cap, nil)
 	kept := len(res.Rows)
 	if kept == 0 || kept == 40 {
 		t.Fatalf("kept %d of 40 rows; the cap did not bite as intended", kept)
@@ -117,7 +117,7 @@ func TestMarshalSQLResultCapDisabled(t *testing.T) {
 	// A non-positive cap disables trimming, per NewRunSQLTool's contract.
 	for _, maxBytes := range []int{0, -1} {
 		res := wideResult(20, 1000)
-		out := marshalSQLResult("src-1", "postgres", res, maxBytes)
+		out := marshalSQLResult("src-1", "postgres", res, maxBytes, nil)
 		m := decode(t, out)
 		if got := m["row_count"]; got != float64(20) {
 			t.Errorf("maxBytes=%d: row_count = %v, want all 20 rows", maxBytes, got)
@@ -136,7 +136,7 @@ func TestMarshalSQLResultSingleUnshrinkableRow(t *testing.T) {
 	res := wideResult(1, 5000)
 	const cap = 100
 
-	out := marshalSQLResult("src-1", "postgres", res, cap)
+	out := marshalSQLResult("src-1", "postgres", res, cap, nil)
 	m := decode(t, out)
 
 	rows, _ := m["rows"].([]interface{})
@@ -159,7 +159,7 @@ func TestMarshalSQLResultZeroRowsKeepsItsOwnNote(t *testing.T) {
 	// A genuinely empty result is not a truncated one, and the byte cap must
 	// not turn it into one. This is the T-16 fabrication guard.
 	res := &db.QueryResult{Columns: []string{"total"}, Rows: []map[string]interface{}{}}
-	out := marshalSQLResult("src-1", "postgres", res, 10)
+	out := marshalSQLResult("src-1", "postgres", res, 10, nil)
 
 	m := decode(t, out)
 	if m["truncated"] != false {
@@ -176,7 +176,7 @@ func TestMarshalSQLResultAlwaysReturnsValidJSON(t *testing.T) {
 	// returns this string straight into the conversation.
 	for _, maxBytes := range []int{-1, 0, 1, 50, 500, 5000, 50000} {
 		res := wideResult(30, 400)
-		out := marshalSQLResult("src-1", "postgres", res, maxBytes)
+		out := marshalSQLResult("src-1", "postgres", res, maxBytes, nil)
 		m := decode(t, out)
 		if m["source_id"] != "src-1" {
 			t.Errorf("maxBytes=%d: source_id = %v, want src-1", maxBytes, m["source_id"])

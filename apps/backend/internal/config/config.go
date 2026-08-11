@@ -141,6 +141,21 @@ type Config struct {
 	MaxQueriesPerMinute int
 	ContextMaxTurns     int
 	HistoryHydrateLimit int // max prior messages re-loaded into agent memory per turn
+	// PriorWorkTurns is how many previous turns' tool digests a turn reads
+	// (T-Q6). Three because the block competes with the user's own question for
+	// the model's attention, and a conversation's fourth-to-last turn is rarely
+	// what a follow-up is following up on. Zero disables the read but not the
+	// write, which is the setting for measuring whether it helps.
+	PriorWorkTurns int
+	// CookbookTopK is how many worked examples a turn is shown (T-Q8). Zero
+	// switches retrieval off without stopping the harvest, which is how the
+	// feature is measured: the same deployment, the same examples accumulating,
+	// with only the injection off.
+	CookbookTopK int
+	// CookbookHarvestCron is when the worker mines finished turns into
+	// examples. Empty disables the harvest without disabling retrieval, so a
+	// deployment can stop learning and keep using what it has already learned.
+	CookbookHarvestCron string
 	CacheTTLShort       int // seconds
 	CacheTTLLong        int // seconds
 	MaxQueryRows        int // hard ceiling on rows returned by run_sql per query
@@ -428,6 +443,9 @@ func Load() (*Config, error) {
 		MaxQueriesPerMinute: getEnvAsInt("MAX_QUERIES_PER_MINUTE", 10),
 		ContextMaxTurns:     getEnvAsInt("CONTEXT_MAX_TURNS", 3),
 		HistoryHydrateLimit: getEnvAsInt("HISTORY_HYDRATE_LIMIT", 20),
+		PriorWorkTurns:      getEnvAsInt("PRIOR_WORK_TURNS", 3),
+		CookbookTopK:        getEnvAsInt("COOKBOOK_TOP_K", 3),
+		CookbookHarvestCron: getEnv("COOKBOOK_HARVEST_CRON", "17 * * * *"),
 		CacheTTLShort:       getEnvAsInt("CACHE_TTL_SHORT", 300),
 		CacheTTLLong:        getEnvAsInt("CACHE_TTL_LONG", 86400),
 		MaxQueryRows:        getEnvAsInt("MAX_QUERY_ROWS", 100),

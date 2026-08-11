@@ -167,6 +167,7 @@ func main() {
 	mux.HandleFunc(queue.TypeWebhookDeliver, makeWebhookDeliverHandler(webhookDeliverer))
 	mux.HandleFunc(queue.TypeBusinessInfer, makeBusinessInferHandler(stack.Inference))
 	mux.HandleFunc(queue.TypeWatcherEval, makeWatcherEvalHandler(stack.Watchers))
+	mux.HandleFunc(queue.TypeCookbookHarvest, makeCookbookHarvestHandler(stack.Cookbook))
 
 	// --- Periodic task manager ---
 	// Polls scheduled_tasks every SyncInterval and registers/refreshes one
@@ -206,6 +207,32 @@ func main() {
 		logrus.Info("watcher subsystem enabled")
 	} else {
 		logrus.Info("watcher subsystem disabled (WATCHER_ENABLED=false)")
+	}
+
+	// --- Cookbook harvest (T-Q8) ---
+	// A plain scheduler entry rather than a third PeriodicTaskManager: the
+	// harvest has no per-tenant configuration to poll for — one tick covers the
+	// deployment, and the handler finds its own tenants from recent activity.
+	//
+	// Hourly by default. The work is incremental (ExistingOrigins stops it
+	// re-learning) so a tick on a quiet deployment costs two queries and no
+	// embedding calls; on a busy one, hourly keeps the cookbook close enough to
+	// the conversation that a question asked this morning can help this
+	// afternoon. Zero switches it off, which leaves retrieval reading whatever
+	// has already been harvested.
+	if cfg.CookbookHarvestCron != "" {
+		sched := asynq.NewScheduler(stack.AsynqOpt, nil)
+		if _, err := sched.Register(cfg.CookbookHarvestCron,
+			asynq.NewTask(queue.TypeCookbookHarvest, nil)); err != nil {
+			logrus.WithError(err).Error("cookbook harvest: bad cron; the harvest will not run")
+		} else if err := sched.Start(); err != nil {
+			logrus.WithError(err).Error("cookbook harvest: scheduler failed to start")
+		} else {
+			defer sched.Shutdown()
+			logrus.WithField("cron", cfg.CookbookHarvestCron).Info("cookbook harvest scheduled")
+		}
+	} else {
+		logrus.Info("cookbook harvest disabled (COOKBOOK_HARVEST_CRON empty)")
 	}
 
 	// Run blocks until OS signal. Capture signals here so we can shut
@@ -375,6 +402,37 @@ func makeWatcherEvalHandler(svc *app.WatcherService) asynq.HandlerFunc {
 			return asynq.SkipRetry
 		}
 		return svc.HandleFire(ctx, p.WatcherID)
+	}
+}
+
+// makeCookbookHarvestHandler mines finished turns into query examples (T-Q8).
+//
+// No payload and no per-tenant scheduling: the handler asks which companies
+// have run a query since the window opened and harvests those. A job that had
+// to be told about each tenant would silently stop covering the ones added
+// after it was configured.
+//
+// Errors are swallowed to nil. A harvest that fails changes nothing about what
+// the agent can do — the cookbook is an improvement on today's prompt, never a
+// prerequisite for it — and letting asynq retry a deployment-wide scan on a
+// backoff would put the whole fleet's embedding spend behind one bad tenant.
+func makeCookbookHarvestHandler(svc *app.CookbookService) asynq.HandlerFunc {
+	return func(ctx context.Context, _ *asynq.Task) error {
+		if svc == nil {
+			return nil
+		}
+		results := svc.HarvestAll(ctx, time.Time{}, 100)
+		var learned, negative int
+		for _, r := range results {
+			learned += r.Learned
+			negative += r.SkippedNegative
+		}
+		logrus.WithFields(logrus.Fields{
+			"companies":        len(results),
+			"learned":          learned,
+			"skipped_negative": negative,
+		}).Info("cookbook harvest tick complete")
+		return nil
 	}
 }
 

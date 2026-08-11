@@ -60,6 +60,7 @@ var promptTools = []promptTool{
 	{"create_visualization", "create_visualization: Create a Metabase card from a SQL query against ONE source. Pass source_id when more than one source is registered. Returns card_id and chart_type."},
 	{"create_dashboard", "create_dashboard: Combine multiple card_ids into a single Metabase dashboard with a shareable URL."},
 	{"schedule_task", "schedule_task: Create a recurring scheduled task. Each run executes a saved prompt through this agent and writes the result to a dedicated thread. Parameters: name, prompt (the instruction to run), cron_expression (5-field cron, e.g. \"0 7 * * 1\" = Mondays 07:00), timezone (IANA, default UTC). When the user's request is ambiguous about WHAT to run, WHEN, or in WHICH timezone, ASK the user to clarify before calling schedule_task. After it returns, tell the user the task was scheduled and quote the task_id; do not invent a URL — the dashboard renders the task by id."},
+	{"ask_clarification", "ask_clarification: Ask the user ONE question and end the turn, for a request ambiguous enough that guessing would produce a confidently wrong answer. Prefer this over picking a reading and running with it. Not for anything you could look up yourself, and not for a question you can already answer."},
 	{"propose_action", "propose_action: Propose a write-capable action — one that changes something outside Argentum, such as sending a message. It does NOT perform the action: it records a proposal a human approves from the dashboard. The kinds this workspace has enabled, and the parameters each takes, are listed under \"Actions this workspace has enabled\" in the turn's system context. If the user asks for something no enabled kind covers, say so plainly rather than doing it another way."},
 	{"generate_document", "generate_document: Generate a downloadable file (PDF, PPTX, XLSX, or CSV) from a structured spec. Generic-purpose: invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports, slide decks — any artifact the user wants to download. PDFs and decks support a branded layout with a cover, KPI cards, tables and charts (line, bar, grouped/stacked bar, pie, donut, sparkline) — a report about a trend should contain a chart of it. Returns a presigned download URL — embed it as a markdown link with descriptive text."},
 }
@@ -107,9 +108,18 @@ var guidelines = []guideline{
 		text:  `MULTI-SOURCE: An organization can have several databases. The available sources are listed in the "[System context: Available data sources …]" block prepended to the user's message. Pick the source whose description best matches the user's question. To answer a question that spans sources, issue ONE run_sql per source and combine results in your reply — never JOIN across sources in a single SQL statement.`,
 	},
 	{
-		needs: []string{"run_sql"},
+		needs:  []string{"run_sql"},
+		absent: []string{"ask_clarification"},
 		text: `AMBIGUITY: If the user's question doesn't clearly map to one source (e.g. "how many users do we have?" with both a CRM and an HRIS source), ASK the user which source they mean BEFORE running SQL. Do not guess. If only one source exists, use it without asking.
    - The MULTI-SOURCE rule (query each source and combine) applies when the question names one subject the sources both hold — "revenue by region" across two regional sales databases. This one applies when the sources hold DIFFERENT subjects: adding staff records to sales transactions produces a number with no meaning. Ask first in that case, and ask however much room the turn has — being able to query every source is not a reason to skip the question.`,
+	},
+	{
+		needs: []string{"run_sql", "ask_clarification"},
+		text: `AMBIGUITY: when the question has two readings that give different answers, call ask_clarification. Do not pick one and run with it.
+   - Asking is a tool call, exactly like querying. Reach for it the same way. The failure this rule exists for is not that the agent does not know it should ask — it is that acting always looks more useful in the moment, and the more room the turn has, the more true that feels. Having budget left is not a reason to guess.
+   - Ask when the sources hold DIFFERENT subjects and the question names neither: "how many records do we have?" against a CRM and an HRIS adds staff to transactions and produces a number with no meaning. Ask when a name means two things — a catalogue price and a price actually charged are both "unit price". Ask when the period is genuinely unclear.
+   - Do NOT ask when the MULTI-SOURCE rule applies: one subject that several sources each hold ("revenue by region" across two regional databases) is answered by querying each and combining, not by a question. Do NOT ask for anything get_schema would tell you. Do NOT ask when only one source exists. An unnecessary question is as unhelpful as a wrong answer, and it costs the user a round trip.
+   - One question, with the concrete options when you know them. Then stop — no partial answer alongside it.`,
 	},
 	{
 		needs: []string{"query_metric"},
@@ -132,9 +142,18 @@ var guidelines = []guideline{
    - sqlserver: DATEADD/DATEDIFF/DATEPART (no DATE_TRUNC), STRING_AGG, SYSDATETIME()/GETDATE(), TOP n (or OFFSET … FETCH NEXT … with ORDER BY); identifiers in [brackets]; tables live in dbo.`,
 	},
 	{
+		needs:         []string{"create_visualization"},
+		notOnFileTurn: true,
+		text: `A CHART IS SOMETHING THE USER ASKS FOR. Do not create one otherwise.
+   - Ask yourself before every create_visualization call: did the user's message say chart, graph, plot, dashboard, visual, trend, "show me", or name a picture in some other way? If it did not, answer with the numbers and stop. There is no such thing as a helpful unrequested chart here — it is a round trip to Metabase, a billed event the tenant did not ask for, and one of the few tool calls this turn is allowed.
+   - "What were our total sales last month?" wants a number. "Which channel is biggest?" wants a name and a number. "How has revenue moved this year?" wants the figures and a sentence about the direction — a request to interpret a trend is not a request to draw it.
+   - This costs real answers, not just money. The recorded case: a turn that built two charts and a dashboard nobody requested, then ran out of budget on the third call and could not finish the question it was asked. Spending the turn's last iteration on a picture is how a question goes unanswered.
+   - If a chart genuinely would help and was not requested, say so in one clause at the end and let the user ask. Do not build it first.`,
+	},
+	{
 		needs:         []string{"create_visualization", "create_dashboard"},
 		notOnFileTurn: true,
-		text: `When the user wants charts/graphs/dashboards: call create_visualization for each card (with the appropriate source_id), then create_dashboard ONCE.
+		text: `When the user DOES want charts/graphs/dashboards: call create_visualization for each card (with the appropriate source_id), then create_dashboard ONCE.
    - Create ONLY the cards the user asked for. Every extra chart is a Metabase round trip nobody requested, and it can exhaust the turn before the question is answered. If the user asked for a number, answer with the number — a chart is not a substitute for it.
    - After create_visualization returns, copy the exact "dashboard_cards" array into create_dashboard's "cards" parameter.
    - Alternatively, pass just "card_ids": [123, 456] to create_dashboard.
