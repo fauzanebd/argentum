@@ -1264,6 +1264,76 @@ export interface MessageFilter {
 }
 
 //////////
+// source: message_feedback.go
+
+/**
+ * FeedbackRating is what somebody said about one answer: it was right, or it
+ * was not.
+ * Two values, deliberately. A five-point scale measures how a reader *feels*
+ * about an answer, and what this type is for is whether the answer was
+ * correct — the one property this product's whole guardrail stack is arranged
+ * around and the one nothing has ever recorded. A neutral middle would be
+ * indistinguishable from the absent row that already means "nobody said".
+ */
+export type FeedbackRating = number /* int16 */;
+/**
+ * FeedbackDown is the row that matters. A wrong answer that nobody flags
+ * is a wrong answer that gets learned from (T-Q8).
+ */
+export const FeedbackDown: FeedbackRating = -1;
+/**
+ * FeedbackUp is the label the cookbook reads, and the weaker of the two
+ * signals: a reader who is not checking will approve a plausible answer.
+ * It is why T-Q8 requires more than this before it will keep an example.
+ */
+export const FeedbackUp: FeedbackRating = 1;
+/**
+ * FeedbackReasonMaxChars caps the free-text reason.
+ * Generous, because the reason is the most useful column in the table for
+ * anyone tuning the agent and the least predictable in length — "the number is
+ * double what it should be, I think it's counting line items not orders" is
+ * the sentence that makes a bug findable, and it is 96 characters. The cap
+ * exists to bound the row, not to discipline the writer.
+ */
+export const FeedbackReasonMaxChars = 2000;
+/**
+ * MessageFeedback is one actor's verdict on one assistant message.
+ */
+export interface MessageFeedback {
+  id: string;
+  company_id: string;
+  thread_id: string;
+  message_id: string;
+  rating: FeedbackRating;
+  reason?: string;
+  /**
+   * ActorKind and ActorRef name the witness in the same vocabulary
+   * agent_actions uses (T-05), so "who complained" is answerable in the
+   * terms the audit log already speaks. A dashboard user, a widget visitor
+   * and an API caller are three different kinds of witness and must stay
+   * distinguishable — a tenant's own analyst noticing a wrong number is
+   * worth more than an anonymous thumbs-down from their customer's website.
+   */
+  actor_kind: ActorKind;
+  actor_ref?: string;
+  created_at: string;
+  updated_at: string;
+}
+/**
+ * FeedbackSummary is the roll-up for one tenant over a window: how many
+ * answers were rated, and how many of them were wrong.
+ * The denominator is deliberately the number of *rated* answers rather than
+ * the number of turns. A rate over all turns measures how often people press
+ * the button, which moves whenever the UI moves; a rate over rated turns
+ * measures the agent. Both are worth knowing and only one of them is this.
+ */
+export interface FeedbackSummary {
+  rated: number /* int */;
+  up: number /* int */;
+  down: number /* int */;
+}
+
+//////////
 // source: metric.go
 
 /**
@@ -1352,6 +1422,75 @@ export interface AllowedPhoneNumber {
   phone_number: string;
   label?: string;
   added_at: string;
+}
+
+//////////
+// source: query_example.go
+
+/**
+ * QueryExample is one worked example from a tenant's own history: a question
+ * somebody asked, and the SQL that answered it (T-Q8).
+ * It is the answer to a cost this product pays on every single turn — the
+ * agent rediscovering how this company's questions map onto this company's
+ * schema. The table picker narrows *which tables*; nothing until now carried
+ * forward that "revenue" means SUM(sales_amount) here, or that the fiscal year
+ * starts in April. All of it was already recorded in `agent_actions`; this is
+ * that history distilled into something a prompt can hold.
+ */
+export interface QueryExample {
+  id: number /* int64 */;
+  company_id: string;
+  /**
+   * SourceID is which warehouse the query ran against. An example is only an
+   * example for its own source: the same question against a different
+   * database is a different answer, and offering the wrong dialect's SQL is
+   * worse than offering none.
+   */
+  source_id: string;
+  question: string;
+  sql: string;
+  row_count: number /* int */;
+  /**
+   * OriginMessageID is the turn this was learned from. It makes the example
+   * auditable, and it is the unique key that stops a re-run of the harvester
+   * writing the same turn twice.
+   */
+  origin_message_id: string;
+  model: string;
+  uses: number /* int */;
+  last_used_at?: string;
+  created_at: string;
+}
+/**
+ * QueryExampleHit is one retrieved example and how close it was.
+ */
+export interface QueryExampleHit {
+  QueryExample: QueryExample;
+  distance: number /* float32 */;
+}
+/**
+ * QueryExampleMaxSQLChars bounds the SQL an example may carry into a prompt.
+ * Three examples at this size is roughly 2,400 characters of context, which is
+ * the same order as the source catalog block a turn already pays for. A query
+ * longer than this is usually a report query rather than the answer to a
+ * question, and a bad example to imitate.
+ */
+export const QueryExampleMaxSQLChars = 800;
+/**
+ * CookbookCandidate is one finished turn the harvester is considering (T-Q8):
+ * a question somebody asked, and the SQL that answered it.
+ * A candidate is not yet an example. It has passed the SQL-level filters —
+ * the query ran, returned rows, and a person asked for it — and has still to
+ * clear the two the service applies: nobody marked the answer wrong (T-Q2),
+ * and the cookbook does not already hold this turn.
+ */
+export interface CookbookCandidate {
+  MessageID: string;
+  SourceID: string;
+  Question: string;
+  SQL: string;
+  RowCount: number /* int */;
+  RanAt: string;
 }
 
 //////////
