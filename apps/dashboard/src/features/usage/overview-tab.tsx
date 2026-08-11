@@ -1,9 +1,28 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { lazy, Suspense } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { CompanyCredits, UsageSummary } from "@argentum/api-types";
 import { EVENT_LABELS, microToUsd } from "./labels";
+
+/**
+ * recharts is ~390 kB and this tab is the only screen that draws a chart.
+ * Imported eagerly it rode in the main chunk, which every route pays for —
+ * including the chat page, where nobody is looking at a bar chart. Same
+ * treatment as the syntax highlighter in T-U6.
+ */
+const BreakdownChart = lazy(() =>
+  import("@/components/ui/chart").then((m) => ({ default: m.BreakdownChart })),
+);
 
 export function OverviewTab() {
   const { data: summary, isLoading } = useQuery({
@@ -82,22 +101,27 @@ export function OverviewTab() {
             {new Date(summary.to).toLocaleDateString()}
           </CardDescription>
         </CardHeader>
-        <CardContent className="divide-y divide-border/50">
-          {Object.entries(summary.event_counts).length === 0 && (
+        <CardContent>
+          {Object.entries(summary.event_counts).length === 0 ? (
             <div className="text-sm text-muted-foreground py-4">No usage recorded yet.</div>
+          ) : (
+            <Suspense
+              fallback={
+                <Skeleton
+                  style={{ height: Object.keys(summary.event_counts).length * 28 + 24 }}
+                />
+              }
+            >
+              <BreakdownChart
+                data={Object.entries(summary.event_counts).map(([type, count]) => ({
+                  label: EVENT_LABELS[type] ?? type,
+                  value: summary.cost_by_event_type_usd[type] ?? 0,
+                  hint: `${count.toLocaleString()} events`,
+                }))}
+                format={(v) => `$${v.toFixed(4)}`}
+              />
+            </Suspense>
           )}
-          {Object.entries(summary.event_counts).map(([type, count]) => {
-            const cost = summary.cost_by_event_type_usd[type] ?? 0;
-            return (
-              <div key={type} className="flex items-center justify-between py-3">
-                <div>
-                  <div className="text-sm font-medium">{EVENT_LABELS[type] ?? type}</div>
-                  <div className="text-xs text-muted-foreground">{count.toLocaleString()} events</div>
-                </div>
-                <Badge variant="secondary">${cost.toFixed(4)}</Badge>
-              </div>
-            );
-          })}
         </CardContent>
       </Card>
 
@@ -107,22 +131,40 @@ export function OverviewTab() {
             <CardTitle>By model</CardTitle>
             <CardDescription>Cost and tokens per model.</CardDescription>
           </CardHeader>
-          <CardContent className="divide-y divide-border/50">
-            {models.map(([model, cost]) => {
-              const tin = summary.tokens_in_by_model?.[model] ?? 0;
-              const tout = summary.tokens_out_by_model?.[model] ?? 0;
-              return (
-                <div key={model} className="flex items-center justify-between py-3">
-                  <div>
-                    <div className="text-sm font-medium font-mono">{model}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {tin.toLocaleString()} in · {tout.toLocaleString()} out
-                    </div>
-                  </div>
-                  <Badge variant="secondary">${cost.toFixed(4)}</Badge>
-                </div>
-              );
-            })}
+          <CardContent className="px-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Model</TableHead>
+                  <TableHead className="text-right">Tokens in</TableHead>
+                  <TableHead className="text-right">Tokens out</TableHead>
+                  <TableHead className="text-right">Cost</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {models.map(([model, cost]) => {
+                  const tin = summary.tokens_in_by_model?.[model] ?? 0;
+                  const tout = summary.tokens_out_by_model?.[model] ?? 0;
+                  return (
+                    <TableRow key={model}>
+                      <TableCell className="font-mono">{model}</TableCell>
+                      {/* tabular-nums so the digits line up column-wise; without
+                          it a proportional font makes 1,000 and 9,999 different
+                          widths and the column stops being scannable. */}
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {tin.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {tout.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums font-medium">
+                        ${cost.toFixed(4)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}

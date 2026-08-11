@@ -16,6 +16,7 @@ import { DocumentsNav } from "@/components/layout/documents-nav";
 import { ApprovalsNav } from "@/components/layout/approvals-nav";
 import { GeneratedDashboards } from "@/components/layout/generated-dashboards";
 import { NavUser } from "@/components/layout/nav-user";
+import { CommandPalette } from "@/features/search/command-palette";
 import { useThemeStore } from "@/store/theme";
 import { APP_VERSION, BUILD_DATE, BUILD_DAY } from "@/lib/version";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,9 @@ import { cn } from "@/lib/utils";
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
+      {/* Mounted here rather than per-route so ⌘K works everywhere behind the
+          auth gate, and nowhere in front of it (T-U10). */}
+      <CommandPalette />
       <div className="relative flex h-dvh w-full">
         <AppSidebar />
         <SidebarInset className="flex flex-col overflow-hidden">
