@@ -5733,3 +5733,590 @@ using the same fallback.
 - Per-tenant motion configuration or template selection *(backlog, with a trigger)*
 - Transitions between scenes beyond the shared curve
 - Anything audio
+
+---
+
+# Sprint 3 — The AI-native interface (`T-U1` → `T-U11`)
+
+The dashboard is an agent product wearing shadcn's defaults. A turn that thinks,
+calls three tools and asks permission renders as an italic line, three grey boxes
+and an amber div — the same chrome a settings form gets. These eleven tickets
+give the agent surface a design language of its own.
+
+The reference is [Beautiful UI](https://beautiful-ui-five.vercel.app/) by Turbo,
+whose nineteen primitives map almost one-to-one onto surfaces Argentum already
+has. **It ships no source, no registry and no package.** Every ticket below is a
+reimplementation against its behaviour, not an install — which is also why the
+conventions' "extend the existing Radix primitives rather than add a component
+library" is not in tension with any of them.
+
+Measured token extraction: `docs/research/beautiful-ui-tokens.md`.
+
+**Order matters.** `T-U1` moves the palette every other ticket paints with, and
+it moves it in three formats at once. It lands alone, first.
+
+## T-U1 · Re-skin the token layer
+**Repo:** PKG FE BE · **Size:** 1d · **Deps:** T-R1 · **Priority:** P0
+
+### Why
+
+Two problems with one root. The palette is a warm cream chosen when this was a
+document renderer with a dashboard attached, and every status colour that lands
+on it reads as decoration — an amber "needs approval" chip on cream is a colour
+scheme, not a state. Meanwhile the dashboard states three meanings the token file
+already defines (`positive`, `warning`) in raw Tailwind instead: `amber-300/60`
+and `emerald-600` on `approval-card.tsx`, twenty-seven such classes across twelve
+files. Those are a second palette that no generator emits and no CI check diffs.
+
+Blocks every other `T-U` ticket: they all paint with what this one publishes.
+
+### Do
+
+- `packages/design-tokens/tokens.json`:
+  - Neutral ramp replaces the cream one — `background` `#FAFAFB`, `surfaceMuted`
+    `#F4F5F6`, `surfaceSubtle` `#F1F2F3`, `foreground` `#1F2124`, `muted`
+    `#62656B`, `border` `#ECEDEF`
+  - New web-scoped rungs: `surfaceInset`, `field`, `mutedSubtle`, `borderStrong`
+  - `positive` `#189A4D` and `warning` `#EF720C`, both promoted `print` → `all`.
+    `info` stays print-only
+  - `destructive` `#E3474C`
+  - `*Tint` and `*Ink` siblings for primary / positive / warning / destructive,
+    web-scoped
+  - `radius.base` `0.75rem` → `0.5rem` (`mm` 3.18 → 2.12)
+- `packages/design-tokens/scripts/gen-css.mjs` — map every new web-scoped token
+  in `COLOR_VARS`. **`--input` takes `borderStrong`, not `field`:** every use in
+  the dashboard is `border-input` (`input.tsx`, `textarea.tsx`, `select.tsx`,
+  `button.tsx`'s outline variant), so it is an outline colour and always was
+- `apps/dashboard/tailwind.config.ts` — publish the new slots, and add composite
+  `boxShadow` levels (`hairline`, `control`, `card`, `raised`, `overlay`,
+  `field`) that carry their own ring
+- `apps/dashboard/src/index.css` — rewrite the hand-written `.dark` block against
+  the new ramp, including the inverted `*-ink` values
+- `apps/dashboard/src/lib/theme.ts` — delete `LIGHT_COLORS` / `DARK_COLORS`, keep
+  the `Theme` type
+
+### Notes for the implementer
+
+- **A fill colour and a text colour are different jobs.** `#F25C5C` is 3.25:1 on
+  white and `#EF720C` is 2.97:1 — fine behind white glyphs, both fail WCAG AA the
+  moment they are the sentence. That is what the `*Ink` siblings are for, and
+  why the `-ink` values invert in dark mode. Every ratio in `tokens.json` was
+  computed, not judged; recompute rather than trust them if a hex moves.
+- One radius token, not two. Tailwind derives `md` and `sm` as
+  `calc(var(--radius) - 2px)` / `- 4px`, so 8px publishes a 6px control and a 4px
+  inner element for free.
+- Shadows stay in `tailwind.config.ts` rather than `tokens.json`. They are web
+  chrome with no meaning on paper, and the same reasoning already keeps the
+  dashboard's spacing and type scale out of the token file. Adding a group to
+  `tokens.json` also forces an edit to `gen-go.mjs`'s `HANDLED` set for a
+  generator that would emit nothing.
+- `gen-css.mjs` **throws** on a web-visible token nobody maps. That is the
+  guard-rail, not an obstacle — a token added without a mapping would otherwise
+  vanish silently.
+- The chart palette is not touched. It is a verified CIE L* ladder and
+  `make palette --check` enforces floors that a hand-picked colour will fail.
+
+### Acceptance
+
+- [x] `make tokens-check` clean — drift, palette floors and motion guards
+- [x] Light and dark both resolve every new variable in the browser, and `-ink`
+      is darker than its base in light and lighter in dark
+- [x] Chart palette unchanged; all eight series still clear every floor
+- [x] `go build ./...` clean against the regenerated `tokens_gen.go`
+- [x] No component file changed in this ticket — it publishes, it does not consume
+- [ ] One generated PDF and one rendered video reviewed by eye **← open**
+
+### Gate
+
+`make tokens && make tokens-check`, `pnpm --filter dashboard build && lint`,
+`go build ./...`. Then read the resolved custom properties out of the running
+dashboard in both modes and paste them.
+
+### Out of scope
+
+- Any component adopting the new tokens — `T-U3` onward
+- The widget's palette — `T-U9`
+- The print type scale, and the font family (see `T-U8`'s note)
+
+### Status
+
+Code landed with this ticket rather than after it, against `AGENTS.md` §1.3. The
+sequence was inverted deliberately once, to get the measured palette in front of
+the repo owner before eleven tickets were written against a guess — the earlier
+research summary had the accent hues, the radius direction and the ground colour
+all wrong. Every later `T-U` ticket follows the normal order.
+
+The PDF/video review is the one open acceptance item: it needs a running backend
+and a tenant database, which this session did not have. **Do not close this
+ticket on the CI checks alone** — the drift check proves the three formats agree
+with each other, not that the new palette is legible on paper.
+
+## T-U2 · Motion primitives
+**Repo:** FE · **Size:** 0.5d · **Deps:** T-U1 · **Priority:** P1
+
+### Why
+
+`framer-motion@12` has been a dashboard dependency with zero imports in `src/`.
+Every `T-U` ticket from `T-U3` on wants the same four movements; without a shared
+file they will be written four times with four timing feels, which is the
+"enterprise-grade" failure `T-V5` names in miniature.
+
+### Do
+
+- New `apps/dashboard/src/lib/motion.ts`: spring presets, stagger, shimmer sweep,
+  token fade-in, and one shared easing curve
+- Every variant gated on `prefers-reduced-motion` — export a `useReducedMotion`
+  wrapper so a component cannot forget
+
+### Notes for the implementer
+
+- Copy `T-V5`'s rule: anything that moves for longer than its text takes to read
+  is delaying the reader. Durations belong in this file, not in components.
+- No component changes here. A primitives ticket that also edits five components
+  cannot be reverted when a timing turns out wrong.
+
+### Acceptance
+
+- [x] Every exported variant respects `prefers-reduced-motion` — spatial keys
+      dropped, opacity kept, `staggerChildren` 0.13 → 0, shimmer class → `""`
+- [x] Variant *names* are identical in both modes, so `initial="hidden"` keeps
+      working rather than throwing on a missing variant
+- [x] No component imports it yet
+- [x] JS bundle unchanged (1,325.81 kB) — framer-motion is still tree-shaken out
+      because nothing consumes it. CSS +0.81 kB for the shimmer and the guard
+- [x] The curve and all three durations equal `packages/motion/src/anim.ts`
+
+### Gate
+
+`pnpm --filter dashboard build && pnpm --filter dashboard lint` → 0 errors.
+
+The reduced-motion behaviour was exercised directly rather than asserted: bundle
+`src/lib/motion.ts` with `framer-motion` stubbed, call each hook with the
+preference forced both ways, and diff the returned variants. The workspace has no
+test runner, so that script is not committed — adding `vitest` is a dependency
+decision this ticket does not get to make. **If a runner ever lands, this is the
+first thing that deserves a test.**
+
+Also confirm the CSS guard reaches the bundle:
+`grep prefers-reduced-motion dist/assets/*.css`.
+
+### Out of scope
+
+Adopting the variants anywhere — that is each consuming ticket's job.
+`<MotionConfig reducedMotion="user">` in `main.tsx` belongs to `T-U3`, the first
+ticket that actually animates something.
+
+## T-U3 · Loading state with elapsed time
+**Repo:** FE · **Size:** 0.5d · **Deps:** T-U2 · **Priority:** P1
+
+### Why
+
+A turn that takes twenty seconds and a turn that has hung look identical: one
+spinning `Loader2` in `PendingBubble` (`features/chat/chat-page.tsx:709`). The
+data to say more is already streaming — `iteration.current` / `max` arrives on
+every pending bubble and renders only as `"Step 3 of 8…"`.
+
+### Do
+
+- New `components/ui/shimmer.tsx`
+- Rework `PendingBubble`'s avatar and progress line to show a shimmer plus
+  elapsed seconds, counting from the turn's start
+
+### Notes for the implementer
+
+Elapsed time is client-side from first token — the backend sends no start
+timestamp. Do not add one for this.
+
+### Acceptance
+
+- [ ] Elapsed time visible within 1s of send and stops at the final token
+- [ ] Reduced-motion users get the timer without the shimmer
+- [ ] A turn that errors stops the timer rather than counting forever
+
+### Gate
+
+`make web`, send a question that takes >5s, screenshot at 1s / 5s / done.
+
+### Out of scope
+
+Per-tool progress — `T-U6`.
+
+## T-U4 · Thinking trace
+**Repo:** FE · **Size:** 1.5d · **Deps:** T-U2 · **Priority:** P1
+
+### Why
+
+The agent's reasoning renders as one italic string behind a left border
+(`chat-page.tsx:716-720`). It is the single strongest signal that the product is
+doing work, and it currently reads as a caption.
+
+### Do
+
+- New `features/chat/thinking-trace.tsx` — collapsible, step-indexed, per-step
+  icons for reason / search / SQL, collapsed by default with a "Thought for Ns"
+  summary
+- Consume it from `PendingBubble` and from settled assistant messages
+
+### Notes for the implementer
+
+- **The backend streams `thinking` as flat text** (`use-thread-stream.ts`). Parse
+  steps where the shape allows and fall back to today's single block where it
+  does not. A trace that renders nothing because the text did not match a regex
+  is worse than the italic line it replaced.
+- Structured step events are a backend change and a separate ticket. **Do not
+  widen this one into it.**
+
+### Acceptance
+
+- [ ] Unparseable thinking text still renders in full
+- [ ] Collapsed by default; expansion survives new tokens arriving
+- [ ] A turn with no thinking renders no trace, not an empty shell
+
+### Gate
+
+`make web`, one turn with tool use and one without; screenshot collapsed and
+expanded.
+
+### Out of scope
+
+Backend structured-step streaming. Per-step timing.
+
+## T-U5 · Streaming text
+**Repo:** FE · **Size:** 1d · **Deps:** T-U2 · **Priority:** P1
+
+### Why
+
+Streamed text appears in place with no indication it is still arriving, so a
+paused stream and a finished answer look the same.
+
+### Do
+
+- Token fade-in and a caret on the live turn, using `T-U2`'s variants
+- Follow-up action row on completion (copy, retry, rate) in `MessageBubble`,
+  folding in the existing `MessageFeedback`
+
+### Notes for the implementer
+
+Do not animate settled messages on mount — scrolling back through a thread must
+not replay every turn.
+
+### Acceptance
+
+- [ ] Caret only on the live turn, and it disappears at the final token
+- [ ] Scrolling to older messages triggers no animation
+- [ ] Reduced motion drops the fade, keeps the caret
+
+### Gate
+
+`make web`, screenshot mid-stream and settled; scroll a long thread and confirm
+nothing replays.
+
+### Out of scope
+
+Inline source citations — the backend attaches no sources today.
+
+## T-U6 · Tool chips
+**Repo:** FE · **Size:** 1.5d · **Deps:** T-U1 · **Priority:** P1
+
+### Why
+
+Every tool call renders at the same weight as the answer — a grey block per call,
+so a three-tool turn is three blocks of chrome around two sentences of content.
+
+### Do
+
+- `features/chat/tool-call-card.tsx` → compact chip, expandable to today's detail
+- `shiki` for the `run_sql` payload (`tool-call-card.tsx:102`, an unstyled `<pre>`
+  slice) and for fenced code in `features/chat/markdown-renderer.tsx`
+
+### Notes for the implementer
+
+- **Presentation only.** Keep `TOOL_META`, `mcpMeta()`, `prettifySlug()` and
+  `humanCron()` exactly as they are — `mcpMeta` in particular is `T-M3`'s work to
+  make an MCP tool name read as "Helpdesk · search tickets".
+- Load the SQL grammar and **one** theme lazily. A 1 MB wasm blob on the critical
+  path is a regression; `prism-react-renderer` is the fallback if it cannot be
+  made to pay for itself.
+
+### Acceptance
+
+- [ ] Every tool kind still resolves its icon and label, MCP tools included
+- [ ] Highlighter is not in the initial chunk — prove it from the build output
+- [ ] A tool with an unrecognised name still renders
+
+### Gate
+
+`pnpm --filter dashboard build` with the chunk list pasted. One turn calling
+`run_sql`, `create_visualization` and an MCP tool, screenshotted.
+
+### Out of scope
+
+Changing which tools exist or what they return.
+
+## T-U7 · Approval card
+**Repo:** FE · **Size:** 1d · **Deps:** T-U1, T-U6 · **Priority:** P0
+
+### Why
+
+The human-in-the-loop decision is the highest-stakes control in the product and
+the least designed: a hardcoded `amber-300/60` div with two buttons. It is also
+the worst offender in `T-U1`'s audit — `emerald-600`, `amber-700` and
+`amber-500/30` all appear in one 134-line file.
+
+### Do
+
+- Rebuild `features/actions/approval-card.tsx` on `warning` / `positive` /
+  `destructive` tint+ink pairs; delete every raw palette class
+- Add the state timeline the file already branches on
+  (`approval-card.tsx:66-81`): proposed → approved → executed / rejected /
+  failed / expired
+
+### Notes for the implementer
+
+**Do not touch `canDecide` or the `NOT_YOURS` copy.** Which roles may decide is
+per company per kind, the backend computes it, and this file deliberately does
+not re-derive it (`approval-card.tsx:38-43`). A role check written here would be
+wrong for every kind whose `allowed_roles` is not `["admin"]`.
+
+Likewise leave `describe()` alone — the sentence comes from the same backend code
+that knows what Execute will do.
+
+### Acceptance
+
+- [ ] Zero raw Tailwind palette classes remain in the file
+- [ ] All six states render distinctly, in both modes
+- [ ] A viewer who may not decide still sees disabled buttons and the explanation
+- [ ] Approving still executes exactly once
+
+### Gate
+
+`make web`, drive a proposal through approve and through reject; screenshot every
+state in both modes. Grep the file for palette classes and show no matches.
+
+### Out of scope
+
+The approvals nav badge. Bulk approve. Changing the decision API.
+
+## T-U8 · Prompt bar
+**Repo:** FE · **Size:** 1.5d · **Deps:** T-U1, T-U2 · **Priority:** P1
+
+### Why
+
+The composer is where every session starts and it offers no affordances — no
+indication of what the agent can be asked, what it will run against, or what
+commands exist.
+
+### Do
+
+- `ChatComposer` (`chat-page.tsx:745-819`) → source chips, `/` command
+  affordance, agent picker moved into the bar
+- Fold `StarterQuestions` (`chat-page.tsx:541`) in as suggestion chips
+- Tighten the web type scale here first: body 14px → 13px, meta 12px → 11px
+
+### Notes for the implementer
+
+Keep the auto-grow textarea and the Enter / Shift+Enter handling. They work, and
+every rewrite of that pair reintroduces the same newline bug.
+
+The font family does **not** change. Space Grotesk is embedded as TTF in the Go
+report renderer and registered with maroto (`internal/report/theme/fonts.go`);
+swapping it means shipping font files to the backend and re-verifying every PDF's
+metrics. Density is the goal, not the typeface.
+
+### Acceptance
+
+- [ ] Enter sends, Shift+Enter newlines, textarea still grows to its cap
+- [ ] Agent picker still only offered before a thread exists
+- [ ] Starter questions still fill the composer rather than sending
+
+### Gate
+
+`make web`, screenshot the new-chat and in-thread composers; send with both key
+combinations.
+
+### Out of scope
+
+File upload. Actually implementing slash commands — the affordance only.
+
+## T-U9 · Re-skin the embeddable widget
+**Repo:** WID · **Size:** 1d · **Deps:** T-U1 · **Priority:** P1
+
+### Why
+
+The widget's default accent is `#e11d48` — not the brand `#F25C5C`, and not
+close. A customer embedding Argentum on their own page gets a product in a colour
+Argentum does not use anywhere else.
+
+### Do
+
+- `apps/widget/src/app/styles.css` — align its `:root` and `[data-theme="dark"]`
+  blocks to `T-U1`'s values, both modes
+- Carry over the chat surface's radius and density
+
+### Notes for the implementer
+
+- Preact, no Tailwind, no new dependencies. The 250 lines of hand-written CSS are
+  the design system here.
+- The widget cannot import `tokens.generated.css`: it ships inside an iframe on a
+  customer's page and the whole point of the size budget is that it carries only
+  what it uses. Copying the values with a comment naming `tokens.json` as the
+  source is correct; a build step that inlines them is a separate conversation.
+- Tenant `theme.mode` override in `App.tsx` keeps working, including `auto`.
+
+### Acceptance
+
+- [ ] Loader ≤ 15 KB and app ≤ 80 KB gzipped
+- [ ] Both themes render, and a tenant `theme.mode` of `auto` still resolves once at boot
+- [ ] No `#e11d48` anywhere in the widget
+
+### Gate
+
+`pnpm --filter widget build && pnpm --filter @argentum/widget-app size` — paste
+both numbers against their budgets.
+
+### Out of scope
+
+Sharing a package with the dashboard. Tenant-configurable accent.
+
+## T-U10 · Command palette
+**Repo:** FE · **Size:** 1.5d · **Deps:** T-U1 · **Priority:** P2
+
+### Why
+
+There is no global search. Threads, documents, scheduled tasks and settings are
+reachable only by navigation, and a customer with three hundred threads has no
+way back to one of them.
+
+### Do
+
+- `cmdk` → `components/ui/command.tsx` in the existing shadcn idiom
+- ⌘K over threads, documents, scheduled tasks, settings tabs and agents
+
+### Notes for the implementer
+
+Search is client-side over what TanStack Query already holds. A server-side
+search endpoint is a backend ticket, and the client-side version is worth
+shipping first to find out which surfaces people actually reach for.
+
+### Acceptance
+
+- [ ] ⌘K and Ctrl+K both open it; Escape closes and restores focus
+- [ ] Filtering searches every listed surface, not just threads
+- [ ] It does not open while the composer has focus and text selected
+
+### Gate
+
+`make web`, open from three routes, navigate to a thread and a settings tab.
+
+### Out of scope
+
+Server-side search. Fuzzy ranking beyond `cmdk`'s default.
+
+## T-U11 · Table primitive and insight cards
+**Repo:** FE · **Size:** 2d · **Deps:** T-U1 · **Priority:** P2
+
+### Why
+
+`components/ui/` has no table. Every data surface — the usage tabs, documents,
+API keys — is a `div` + `divide-y` stack with its own column widths, so none of
+them sort, none align, and a change to row density is a change to nine files.
+`overview-tab.tsx` shows four KPI numbers with no chart in a product whose whole
+job is analytics.
+
+### Do
+
+- `components/ui/table.tsx` — the missing primitive, with a zebra token already
+  published by `T-U1`
+- Migrate `features/usage/*.tsx` onto it
+- `recharts` for sparklines and trend charts in `overview-tab.tsx`
+
+### Notes for the implementer
+
+**Bind recharts to `tokens.json`'s `chart.palette`.** It is an eight-series CIE
+L* ladder verified against greyscale, deuteranopia and protanopia, and the
+dashboard has been ignoring it while the PDF renderer uses it. A chart coloured
+by eye here is the drift `T-R3` spent a ticket ending.
+
+### Acceptance
+
+- [ ] Every migrated tab renders the same data as before
+- [ ] Chart series colours come from the token palette — no literals
+- [ ] Tables scroll horizontally on mobile rather than overflowing the page
+
+### Gate
+
+`pnpm --filter dashboard build`, screenshot every usage tab before and after.
+
+### Out of scope
+
+Sorting and pagination. The documents and settings tables — a later ticket once
+the primitive has proven itself on usage.
+
+---
+
+## Sprint 3 delivery log
+
+State of `T-U1` → `T-U11` as of 2026-08-11. Written here rather than as eleven
+edited checkbox lists because one fact applies to nine of them and deserves
+saying once: **no ticket in this sprint has been verified against a running
+backend.** The environment had no API and no tenant database.
+
+What that does and does not cover is below, per ticket, and it is the first
+thing to re-check before any of this is called done.
+
+### Landed and verified
+
+| Ticket | Verified how |
+| --- | --- |
+| `T-U1` token layer | `make tokens-check` ×3 files, palette floors, contrast computed per value, both palettes read out of the running app |
+| `T-U2` motion primitives | Hooks exercised with `framer-motion` stubbed, preference forced both ways |
+| `T-U3` loading state | Rendered against fixtures: shimmer + elapsed, both themes |
+| `T-U4` thinking trace | Rendered collapsed and expanded, 3 steps with per-kind icons; empty-steps case renders nothing |
+| `T-U5` streaming text | Caret and copy button build and typecheck; **not** seen mid-stream |
+| `T-U6` tool chips + shiki | Five chip kinds rendered incl. MCP and loading; SQL highlighted in both themes; 6 lazy chunks, none in the initial bundle, no wasm |
+| `T-U7` approval card | Zero raw palette classes remain; six tones defined; **states not driven through a real proposal** |
+| `T-U8` prompt bar | Builds and typechecks; **not** exercised with a live send |
+| `T-U9` widget | `pnpm size` → loader 1.8 KB / 15, app 31.8 KB / 80; no `#e11d48` anywhere |
+| `T-U10` command palette | Typechecks against TanStack's typed routes, which is what proves every `navigate` target and search param exists |
+| `T-U11` table + charts | Table rendered with fixtures; chart palette emitted as `--chart-1…8` and Go output confirmed unchanged |
+
+### Bug found by the visual pass, and fixed
+
+Dark mode rendered half of every highlighted SQL statement invisible. Shiki
+writes the light theme's colour as an **inline** `style` on every span, and an
+inline style beats a stylesheet rule at any specificity — so
+`.dark .shiki span { color: var(--shiki-dark) }` in `index.css` never applied
+and light-theme greys were painted on the dark ground. Fixed with
+`defaultColor: false`, which makes shiki emit only the custom properties.
+
+Worth recording because the build was green, the types were sound, and the
+lint was clean through all of it. Only looking at the screen found it.
+
+### Open
+
+- **`T-U1`'s PDF/video review.** Still the one unchecked acceptance box in the
+  sprint. The palette moved in all three formats; `tokens-check` proves they
+  agree with each other and nothing proves the new values are legible on paper.
+- **Live-stream behaviour for `T-U3`/`T-U4`/`T-U5`.** The elapsed timer, the
+  caret, step accumulation and the "don't replay animations when scrolling
+  back" acceptance all need a real turn.
+- **`T-U7`'s six states** need a real proposal driven through approve and
+  reject.
+- **A sparkline for `T-U11`.** `UsageSummary` carries totals and per-category
+  aggregates and no time series at all, so there is nothing to plot. The tab
+  got a categorical breakdown instead. A bucketed usage endpoint is a backend
+  ticket; drawing a shape that looks like time out of data that has none was
+  the worse option.
+- **No test runner.** `T-U2`'s gating was proved with a throwaway script
+  because the workspace has none. Every component in this sprint is untested in
+  the sense CI would mean.
+
+### Dependencies added
+
+`shiki@4` (6 lazy chunks, JS regex engine, no wasm), `cmdk`, `recharts@2`
+(365 KB, lazy — it is one tab's chart and was riding in the main chunk until it
+was split out). All three were agreed before use, per the conventions' rule on
+new libraries.
+
+Main chunk across the sprint: 1,326 KB → 1,485 KB. The 159 KB is framer-motion
+plus cmdk plus this sprint's own components; shiki and recharts are outside it.
