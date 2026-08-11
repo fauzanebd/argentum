@@ -57,3 +57,51 @@ func TestBuildSQLPayloadRowsCarryNoNote(t *testing.T) {
 		t.Errorf("a successful result carries a note: %v", payload["note"])
 	}
 }
+
+// An aggregate over no matching rows is one row of NULLs, not zero rows — and
+// it is the shape of the C-1 question ("what were our total sales last month?")
+// that this product was built to stop fabricating. Until 2026-08-11 the payload
+// carried row_count 1, no note and no probe, so the model was handed
+// `[{"total": null}]` and told nothing was wrong with it. Found by running the
+// T-Q9 probe against the demo warehouse; every test here used a row-returning
+// SELECT.
+func TestBuildSQLPayloadNotesAnAggregateOverNoRows(t *testing.T) {
+	payload := buildSQLPayload("src-1", "postgres", &db.QueryResult{
+		Columns: []string{"total"},
+		Rows:    []map[string]interface{}{{"total": nil}},
+		Count:   1,
+	})
+	note, _ := payload["note"].(string)
+	if !strings.Contains(note, "ZERO rows") {
+		t.Errorf("note = %q, want the no-data note", note)
+	}
+}
+
+// COUNT(*) over an empty set returns 0, not NULL. That is an honest answer and
+// must never be reported as "nothing matched" — the distinction is the reason
+// matchedNothing tests for NULL rather than for a falsy value.
+func TestMatchedNothingAcceptsAZeroCount(t *testing.T) {
+	res := &db.QueryResult{
+		Columns: []string{"n"},
+		Rows:    []map[string]interface{}{{"n": 0}},
+		Count:   1,
+	}
+	if matchedNothing(res) {
+		t.Error("a COUNT(*) of 0 was treated as no data; it is data")
+	}
+	if _, exists := buildSQLPayload("src-1", "postgres", res)["note"]; exists {
+		t.Error("a COUNT(*) of 0 carried a no-data note")
+	}
+}
+
+// A partially-NULL row is data. Only every-column-NULL is the empty-aggregate
+// signature.
+func TestMatchedNothingIgnoresAPartiallyNullRow(t *testing.T) {
+	if matchedNothing(&db.QueryResult{
+		Columns: []string{"total", "label"},
+		Rows:    []map[string]interface{}{{"total": nil, "label": "Online"}},
+		Count:   1,
+	}) {
+		t.Error("a row with one real value was treated as no data")
+	}
+}

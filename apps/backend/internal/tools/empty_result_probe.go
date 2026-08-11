@@ -123,16 +123,27 @@ var literalPredicate = regexp.MustCompile(
 // the bare column name to find which table holds it.
 var aliasQualified = regexp.MustCompile(`(?i)^[a-z_][a-z0-9_]*\.`)
 
+// whereKeyword finds the start of the WHERE clause.
+//
+// A regex on word boundaries rather than `strings.Index(lower, " where ")`,
+// which is what this was until 2026-08-11 and which required a literal SPACE
+// on both sides. Models write multi-line SQL — the WHERE goes on its own line,
+// preceded by a newline — so the index never matched, `parseEqualityFilters`
+// returned nothing, and the whole T-Q9 probe was unreachable on every real
+// query. Every unit test in this package used a single-line query, so the tests
+// and the code agreed and both disagreed with production. Found by running the
+// probe against the demo warehouse, not by reading it.
+var whereKeyword = regexp.MustCompile(`(?is)\bwhere\b`)
+
 func parseEqualityFilters(sql string) []equalityFilter {
 	// Only the WHERE clause. A literal in a SELECT list or a JOIN condition is
 	// not what the user filtered on, and probing it would answer a question
 	// nobody asked.
-	lower := strings.ToLower(sql)
-	idx := strings.Index(lower, " where ")
-	if idx < 0 {
+	loc := whereKeyword.FindStringIndex(sql)
+	if loc == nil {
 		return nil
 	}
-	where := sql[idx+len(" where "):]
+	where := sql[loc[1]:]
 
 	seen := map[string]bool{}
 	var out []equalityFilter

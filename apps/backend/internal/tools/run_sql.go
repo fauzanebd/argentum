@@ -146,7 +146,7 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 	// case: the probe is a second round trip to the tenant's database, and a
 	// result with rows in it has already answered the question.
 	var probes []map[string]interface{}
-	if result.Count == 0 && !result.Truncated {
+	if matchedNothing(result) {
 		probes = probeEmptyResult(ctx, conn, t.schema, companyID, source.ID, source.DBType, params.SQL)
 		if len(probes) > 0 {
 			logrus.WithFields(logrus.Fields{
@@ -214,7 +214,7 @@ func buildSQLPayload(sourceID, dbType string, result *db.QueryResult) map[string
 	// zero-row result, a figure with no origin in the data. The empty set
 	// alone was not enough of a signal — asked the same way about November
 	// it answered honestly — so the result now says in words what it means.
-	if result.Count == 0 && !result.Truncated {
+	if matchedNothing(result) {
 		payload["note"] = "The query succeeded but matched ZERO rows. There is no figure in this result. " +
 			"Tell the user no data matched, and say what you filtered on so they can correct it. " +
 			"Do NOT state a total, count or amount — there isn't one. If you suspect the filter is " +
@@ -222,4 +222,43 @@ func buildSQLPayload(sourceID, dbType string, result *db.QueryResult) map[string
 			"offer to check the available values."
 	}
 	return payload
+}
+
+// matchedNothing reports whether a successful query found no data — in either
+// of the two shapes that produces.
+//
+// The obvious shape is zero rows. The other one is an aggregate over an empty
+// set, which Postgres, MySQL and SQL Server all answer with exactly ONE row
+// whose every column is NULL — and that is the shape of the question this
+// product exists to get right. `SELECT SUM(sales_amount) … WHERE month_name =
+// 'December'` against the padded `'December '` labels of E-5 returns
+// `[{"total": null}]`, not `[]`: row_count 1, no zero-row note, no probe. The
+// agent was handed a result with a row in it and answered **IDR 1,488,000**.
+//
+// So the count test alone left the fabrication mechanism's own question shape
+// uncovered. Found by running the T-Q9 probe against the demo warehouse on
+// 2026-08-11; every test of this path had used a row-returning SELECT.
+//
+// COUNT(*) is deliberately safe here: over an empty set it returns 0, not
+// NULL, so an honest "there are none" is never mistaken for "nothing matched".
+func matchedNothing(result *db.QueryResult) bool {
+	if result == nil || result.Truncated {
+		return false
+	}
+	if result.Count == 0 {
+		return true
+	}
+	if result.Count != 1 || len(result.Rows) != 1 || len(result.Columns) == 0 {
+		return false
+	}
+	row := result.Rows[0]
+	if len(row) == 0 {
+		return false
+	}
+	for _, v := range row {
+		if v != nil {
+			return false
+		}
+	}
+	return true
 }

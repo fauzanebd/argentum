@@ -14,6 +14,14 @@ finding codes in the research docs.
 >
 > Three defects were found and fixed on the way, each pre-dating this roadmap.
 > They are recorded in §"Defects found while building this".
+>
+> **Half-gated the same day.** Everything that needs the stack and nothing else
+> was run, and the paragraph above was right: it found **three more defects**,
+> two of them in what `run_sql` tells the model when a query matched nothing.
+> All six are now in §"What is owed", with transcripts in
+> [`../coverage/agent-quality.md`](../coverage/agent-quality.md). What is still
+> unrun is everything needing a model — and it is blocked on a missing `.env`
+> rather than on a decision about cost.
 
 **Smarter** and **reliable** are two goals with two different instruments, and
 this repo currently has neither working:
@@ -267,30 +275,47 @@ unusable for exactly the agents most likely to need it.
 
 ## What is owed
 
-Nothing here is blocked on writing code. Every item needs the stack up, model
-spend, or a browser — the three buckets
-[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) sorts by,
-and its own opening claim applies unchanged: *the live half found something the
-unit tests could not, on every ticket where it was run.*
+**Revised 2026-08-11, after the stack-only half was run.** Full transcripts in
+[`../coverage/agent-quality.md`](../coverage/agent-quality.md); the backlog entry
+is [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1b.
 
-**Needs the stack, nothing else** — the bucket that gets run, and the one that
-has produced eleven findings across three sittings:
+The prediction at the top of this file was right, and the price of being right
+was **three more defects** — bringing this roadmap's total to six, of which the
+three below were found by running it rather than by writing it. All three are
+the same shape as the original three: *the tests and the code agreed with each
+other, and both disagreed with production.*
 
-- Migrations `054` and `055` up **and** down against a real Postgres.
-- One `POST /api/messages/:id/feedback` round trip, plus the refusals: a user's
-  own message (400), another tenant's message (404), a second vote replacing
-  the first rather than duplicating.
-- A two-turn conversation with `PRIOR_WORK_TURNS=3`, confirming the second turn
-  does not call `get_schema` — and the same with `=0`, confirming it does. That
-  pair is the T-Q6 measurement; the write-but-do-not-read setting exists for it.
-- A thread past 20 messages, confirming the summary block appears and that
-  hydration now carries the recent turns rather than the opening. This is
-  defect 1 above, and it needs a long thread to see at all.
-- `POST /api/cookbook/harvest` against a tenant with history, then a turn that
-  retrieves an example. Then the gate: thumbs-down an answer, re-harvest, and
-  confirm `skipped_negative` moved and the example was not written.
-- A zero-row query against a real warehouse, confirming `available_values`
-  comes back with the column's actual contents.
+| Found | What it was | Where |
+| ----- | ----------- | ----- |
+| **4** | **`T-Q8`'s verdict gate could never fire.** A verdict is filed against the *assistant* message (`Rate` refuses anything else); a candidate is keyed by the *user* message (717 of 717 real rows). `negative[c.MessageID]` looked a question up in a table of answers, so `skipped_negative` was structurally zero and **every turn a human marked wrong was learned from anyway** — the exact failure this page names as making T-Q8 negative-value. Fixed with `AnswerMessageID` + `VerdictKeys()` | `internal/domain/query_example.go`, `cookbook_candidate_repo.go`, `cookbook_service.go` |
+| **5** | **`T-Q9`'s probe never ran on a real query.** The WHERE clause was located with `strings.Index(lower, " where ")` — a literal space on both sides. Models write multi-line SQL, so nothing ever probed. Every unit case was one line | `internal/tools/empty_result_probe.go` |
+| **6** | **The fabrication mechanism's own question shape was uncovered.** An aggregate over no rows returns ONE all-NULL row, not zero rows, so `SELECT SUM(…) WHERE <no match>` — the `C-1` question, the `E-5` landmine — got no zero-row note and no probe. Fixed with `matchedNothing`; `COUNT(*) = 0` is deliberately still data | `internal/tools/run_sql.go` |
+
+**~~Needs the stack, nothing else~~ — run 2026-08-11.** Four of the six passed
+or were fixed and re-proven:
+
+- ~~Migrations `054` and `055` up **and** down against a real Postgres.~~
+  **Pass**, including down against populated tables. §1.
+- ~~A second vote replacing the first rather than duplicating.~~ **Pass** at the
+  storage layer. §2. **The 400 and the 404 are still owed** — they are decided in
+  `FeedbackService.Rate` and `GetForCompany`, above the repository, and need the
+  API booted.
+- ~~A thread past 20 messages, confirming hydration carries the recent turns.~~
+  **Pass** on a real 58-message thread: **zero overlap** between the old window
+  and the new one. §5. The summary *block* reaching a prompt still needs a turn.
+- ~~A zero-row query confirming `available_values` returns the column's real
+  contents.~~ **Pass after two fixes.** §4.
+- `POST /api/cookbook/harvest` — the candidate query is proven on **121 real
+  candidates** and the negative gate is fixed and re-proven, but the harvest
+  that *writes* an example needs an embedding call. §3.
+
+**Blocked on a missing file, which is new and worse than a cost.** There is no
+`.env` in this tree — only a stale `.env.example`. `LLM_API_KEY`,
+`ARGENTUM_JWT_SECRET`, `ARGENTUM_DSN_KEY` and `DB_PASSWORD` are all absent, so
+neither `cmd/api` nor `cmd/worker` boots and **model spend on 2026-08-11 was
+$0.00** — not declined, unavailable. Everything below waits on that one file.
+(The control Postgres volume was initialised with a `metabase` role rather than
+the `argentum` `docker-compose.yml` declares; a recreated `.env` must match it.)
 
 **Needs model spend:**
 
@@ -306,6 +331,19 @@ has produced eleven findings across three sittings:
 - A before/after on `T-Q3`, which is a prompt change with an argument behind it
   and no number — exactly the shape `docs/coverage/eval-baseline.md` rule 1
   exists to stop shipping unmeasured.
+- The `T-Q6` pair itself (`PRIOR_WORK_TURNS=3` vs `=0`) and the `T-Q7` summary
+  block, moved down from the stack-only bucket on 2026-08-11: both need a real
+  turn, so both need a model. The T-Q6 baseline is recorded — `messages.role` on
+  the local control DB is 535 `user`, 535 `assistant` and **no `tool` rows at
+  all**, so the first successful turn on this build is visible as a third row.
+- The `T-Q8` harvest that writes an example, and a turn that retrieves one. One
+  embedding call per example; everything above `client.Embed` is proven.
+
+**One item is owed that was not owed this morning.** The 2026-08-11 gate changed
+`run_sql`'s payload on both no-data paths (defects 5 and 6). Rule 1 of
+`eval-baseline.md` makes that a re-run of the set — so the eval above now
+answers two questions, not one, and the `zero_row_trap` category is the one to
+read first.
 
 **Needs a browser:** the feedback control in the chat transcript — the thumbs,
 the reason box after a thumbs-down, and that `role: tool` rows stay invisible.

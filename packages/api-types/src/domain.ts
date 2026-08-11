@@ -1485,7 +1485,29 @@ export const QueryExampleMaxSQLChars = 800;
  * and the cookbook does not already hold this turn.
  */
 export interface CookbookCandidate {
+  /**
+   * MessageID is the USER message — the question. It is what
+   * agent_actions.message_id points at, and what becomes
+   * QueryExample.OriginMessageID.
+   */
   MessageID: string;
+  /**
+   * AnswerMessageID is the assistant message that replied to it, and it is a
+   * separate field because the two ids live in disjoint spaces.
+   * A verdict is recorded against the ANSWER: FeedbackService.Rate refuses
+   * anything that is not an assistant message (ErrNotAssistantMessage), so
+   * every row in message_feedback is keyed by an assistant message id. Every
+   * row in agent_actions is keyed by the user message that provoked the turn
+   * — verified against 717 real rows, of which 717 join to role='user' and 0
+   * to role='assistant'.
+   * So the harvester's verdict gate cannot be asked about MessageID: it would
+   * be looking up a question in a table that only holds answers, and the
+   * answer is always "nobody complained". That is the defect this field
+   * exists to close, and it is invisible to a unit test whose fake keys the
+   * verdict map on whatever id the candidate carries.
+   * Empty when no assistant reply can be found for the turn.
+   */
+  AnswerMessageID: string;
   SourceID: string;
   Question: string;
   SQL: string;

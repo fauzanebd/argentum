@@ -87,6 +87,9 @@ func (f fakeCandidates) CompaniesWithActivity(context.Context, time.Time) ([]str
 type fakeVerdicts struct {
 	negative map[string]bool
 	err      error
+	// asked records the ids the gate looked up, so a test can assert the
+	// harvester consults the id space message_feedback actually holds.
+	asked *[]string
 }
 
 func (f fakeVerdicts) Upsert(context.Context, *domain.MessageFeedback) error { return nil }
@@ -99,7 +102,10 @@ func (f fakeVerdicts) ListByCompany(context.Context, string, bool, int, int) ([]
 func (f fakeVerdicts) Summarize(context.Context, string, time.Time, time.Time) (domain.FeedbackSummary, error) {
 	return domain.FeedbackSummary{}, nil
 }
-func (f fakeVerdicts) NegativeMessageIDs(context.Context, string, []string) (map[string]bool, error) {
+func (f fakeVerdicts) NegativeMessageIDs(_ context.Context, _ string, ids []string) (map[string]bool, error) {
+	if f.asked != nil {
+		*f.asked = append(*f.asked, ids...)
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -109,9 +115,14 @@ func (f fakeVerdicts) NegativeMessageIDs(context.Context, string, []string) (map
 	return f.negative, nil
 }
 
+// candidate builds a turn the way the repository returns one: MessageID is the
+// user's question, AnswerMessageID is the assistant reply. The two must differ,
+// because in production they always do and a fake that reuses one id hides the
+// entire verdict gate — which is exactly what this file used to do.
 func candidate(id, sql string) domain.CookbookCandidate {
 	return domain.CookbookCandidate{
-		MessageID: id, SourceID: "src-1", Question: "what were sales last month?",
+		MessageID: id, AnswerMessageID: id + "-answer",
+		SourceID: "src-1", Question: "what were sales last month?",
 		SQL: sql, RowCount: 12, RanAt: time.Now(),
 	}
 }
@@ -119,6 +130,14 @@ func candidate(id, sql string) domain.CookbookCandidate {
 // The gate this ticket is gated on. An answer somebody marked wrong must never
 // become an example: `result_status = ok` means the query executed, never that
 // it answered.
+//
+// The verdict is keyed on the ANSWER's message id, which is the only kind
+// message_feedback holds — FeedbackService.Rate refuses anything that is not an
+// assistant message. Until 2026-08-11 this test filed it against the question's
+// id instead, which the service also read, so test and code agreed and both
+// disagreed with production: no real thumbs-down could ever match a real
+// candidate, and every turn somebody called wrong was learned from anyway.
+// Found against the live control database, not here.
 func TestHarvestRefusesToLearnFromAnAnswerMarkedWrong(t *testing.T) {
 	examples := &fakeExamples{}
 	embedder := &fakeEmbedder{}
@@ -128,7 +147,7 @@ func TestHarvestRefusesToLearnFromAnAnswerMarkedWrong(t *testing.T) {
 			candidate("msg-good", "SELECT SUM(sales_amount) FROM fact_sales"),
 			candidate("msg-bad", "SELECT SUM(unit_price) FROM fact_sales"),
 		}},
-		fakeVerdicts{negative: map[string]bool{"msg-bad": true}},
+		fakeVerdicts{negative: map[string]bool{"msg-bad-answer": true}},
 		embedder,
 	)
 
@@ -146,6 +165,37 @@ func TestHarvestRefusesToLearnFromAnAnswerMarkedWrong(t *testing.T) {
 	// The gate runs BEFORE the embedding call, so a rejected turn costs nothing.
 	if embedder.calls != 1 {
 		t.Errorf("embedded %d questions, want 1 — a rejected turn was embedded anyway", embedder.calls)
+	}
+}
+
+// The gate must ask about the id space message_feedback actually holds.
+//
+// Separate from the test above because that one can be satisfied by a service
+// that reads the right id for the wrong reason; this one pins the query. Every
+// row in message_feedback is keyed by an assistant message, so a harvest that
+// never names an answer id has a verdict gate that cannot fire — which is what
+// shipped, and what the live control database showed on 121 real candidates.
+func TestHarvestAsksAboutTheAnswerNotOnlyTheQuestion(t *testing.T) {
+	var asked []string
+	svc := NewCookbookService(
+		&fakeExamples{},
+		fakeCandidates{items: []domain.CookbookCandidate{candidate("msg-1", "SELECT SUM(x) FROM fact_sales")}},
+		fakeVerdicts{asked: &asked},
+		&fakeEmbedder{},
+	)
+	if _, err := svc.Harvest(context.Background(), "co-1", time.Time{}, 10); err != nil {
+		t.Fatalf("Harvest: %v", err)
+	}
+
+	var sawAnswer bool
+	for _, id := range asked {
+		if id == "msg-1-answer" {
+			sawAnswer = true
+		}
+	}
+	if !sawAnswer {
+		t.Errorf("the verdict gate was asked about %v — never about the answer id, "+
+			"which is the only kind message_feedback holds", asked)
 	}
 }
 

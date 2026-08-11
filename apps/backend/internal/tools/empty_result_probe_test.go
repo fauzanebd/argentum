@@ -41,6 +41,31 @@ func TestParseEqualityFiltersFindsWhatWasFilteredOn(t *testing.T) {
 			column: "channel",
 			value:  "Onlin",
 		},
+		{
+			// Every other case on this list is one line, and that is how the
+			// clause finder shipped requiring a literal space before WHERE.
+			// Models write SQL like this, so the probe never ran in production.
+			// Found against the demo warehouse on 2026-08-11.
+			name: "WHERE on its own line, as a model writes it",
+			sql: "SELECT fs.transaction_id\n" +
+				"FROM fact_sales fs\n" +
+				"JOIN dim_date dd ON dd.date_id = fs.date_id\n" +
+				"WHERE dd.month_name = 'december'",
+			column: "month_name",
+			value:  "december",
+		},
+		{
+			name:   "WHERE followed by a newline",
+			sql:    "SELECT * FROM t\nWHERE\n  city = 'Reykjavik'",
+			column: "city",
+			value:  "Reykjavik",
+		},
+		{
+			name:   "tab-indented WHERE",
+			sql:    "SELECT * FROM t\n\tWHERE\tcity = 'Oslo'",
+			column: "city",
+			value:  "Oslo",
+		},
 	}
 	for _, tt := range tests {
 		got := parseEqualityFilters(tt.sql)

@@ -124,8 +124,17 @@ func (s *CookbookService) Harvest(ctx context.Context, companyID string, since t
 	// Both gates as batch reads before the loop, so a harvest of forty
 	// candidates costs two queries rather than eighty.
 	ids := make([]string, 0, len(cands))
+	// The verdict gate reads a DIFFERENT set of ids from the origin gate, and
+	// conflating the two is a defect this ticket shipped with: `ids` below is
+	// the questions, because that is what query_examples.origin_message_id
+	// holds; `verdictIDs` is the questions AND the answers, because a verdict is
+	// only ever filed against an assistant message. Asking message_feedback
+	// about a question id is asking a table of answers about something it
+	// cannot contain, and it returns "nobody complained" every time.
+	verdictIDs := make([]string, 0, len(cands)*2)
 	for _, c := range cands {
 		ids = append(ids, c.MessageID)
+		verdictIDs = append(verdictIDs, c.VerdictKeys()...)
 	}
 	known, err := s.examples.ExistingOrigins(ctx, companyID, ids)
 	if err != nil {
@@ -135,7 +144,7 @@ func (s *CookbookService) Harvest(ctx context.Context, companyID string, since t
 	// mean learning from turns whose verdicts we could not read, and "we could
 	// not check" must never resolve to "assume it was fine" for the one gate
 	// that exists to keep wrong answers out.
-	negative, err := s.feedback.NegativeMessageIDs(ctx, companyID, ids)
+	negative, err := s.feedback.NegativeMessageIDs(ctx, companyID, verdictIDs)
 	if err != nil {
 		return out, fmt.Errorf("read feedback verdicts: %w", err)
 	}
@@ -153,7 +162,7 @@ func (s *CookbookService) Harvest(ctx context.Context, companyID string, since t
 		case known[c.MessageID]:
 			out.SkippedKnown++
 			continue
-		case negative[c.MessageID]:
+		case isNegative(negative, c):
 			out.SkippedNegative++
 			logrus.WithFields(logrus.Fields{
 				"company_id": companyID,
@@ -204,6 +213,21 @@ func (s *CookbookService) Harvest(ctx context.Context, companyID string, since t
 		"failed":           out.Failed,
 	}).Info("cookbook harvest complete")
 	return out, nil
+}
+
+// isNegative reports whether anyone marked this turn wrong, on either of the
+// ids a verdict could name.
+//
+// A free function rather than a method on the candidate because the map is the
+// harvester's, not the domain's — and it is a function rather than an inline
+// loop so the gate has one name to grep for.
+func isNegative(negative map[string]bool, c domain.CookbookCandidate) bool {
+	for _, id := range c.VerdictKeys() {
+		if negative[id] {
+			return true
+		}
+	}
+	return false
 }
 
 // HarvestAll runs the harvest for every company with recent activity. This is

@@ -37,6 +37,15 @@ bucket was the difference between an afternoon and a backlog entry, and the
 count is now eleven findings across three sittings of a gate that only ever
 needed the stack.
 
+**Revised 2026-08-11 — §1b, and the count is fourteen across four sittings.**
+The agent-quality track's stack-only half was run and produced **three more
+defects**, all fixed and re-proven, two of them in the one place this repo has
+spent a year trying to make honest: what `run_sql` tells the model when a query
+matched nothing. Same ninety minutes, same bucket, same result. It also added a
+constraint this file has not carried before — a gate can be blocked by a missing
+*credential file* rather than by a cost, and that is worse, because a cost can be
+decided and a missing file just looks like a passing test suite.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of three things: the stack up, money spent, or a message sent to a real
 person's phone.
@@ -103,6 +112,31 @@ What the run needed that no document names: the API refuses to boot without
 WhatsApp credentials on a deployment that uses no WhatsApp
 ([`report-video.md`](report-video.md) §6).
 
+## 1b. ~~Needs the local stack, nothing else~~ — added and run 2026-08-11
+
+The agent-quality track (`T-Q1`→`T-Q9`) landed nine tickets code-complete and
+ungated on 2026-08-11. Its stack-only half was run the same day and produced
+**three defects, all fixed and re-proven** — the fifth time this bucket has paid.
+Full transcripts in [`agent-quality.md`](agent-quality.md).
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-Q2` | Migrations `054` and `055` up **and** down against a real Postgres | **Pass, 2026-08-11.** Up/down/up clean from version 53, with the down run against *populated* tables — two feedback rows and a `query_examples` row carrying a real 1536-dim vector. All constraints, the partial index and three cascading FKs verified; `055`'s down correctly leaves the `vector` extension alone, because `table_embeddings` has needed it since `013` ([`agent-quality.md`](agent-quality.md) §1) |
+| `T-Q2` | A second vote replacing the first rather than duplicating | **Pass, 2026-08-11.** Same row id, `created_at` preserved, `updated_at` moved; a different actor is a second row; `rating = 0` refused by the CHECK; `Summarize`'s FILTER counts agree. The **400 and 404 refusals are still owed** — they are decided above the repository and need the API booted ([`agent-quality.md`](agent-quality.md) §2) |
+| `T-Q8` | `POST /api/cookbook/harvest` against a tenant with history, then the negative gate | **Failed, then fixed and re-proven.** The candidate query works — **121 real candidates** out of 741 `agent_actions` rows — but the verdict gate could never fire: `message_feedback.message_id` is always an *assistant* message (`Rate` refuses anything else), `agent_actions.message_id` is always the *user* message (717 of 717), so `negative[c.MessageID]` looked a question up in a table of answers. `skipped_negative` was structurally zero and every turn a human marked wrong was learned from anyway — the exact failure the roadmap names as making T-Q8 negative-value. Fixed with `AnswerMessageID` + `VerdictKeys()`; the gate now fires on the real turn that slipped through. **The write half — a harvest that stores an example — still needs embedding credentials** ([`agent-quality.md`](agent-quality.md) §3) |
+| `T-Q9` | A zero-row query against a real warehouse, confirming `available_values` returns the column's actual contents | **Failed twice, then fixed and re-proven.** `parseEqualityFilters` found the WHERE clause with `strings.Index(lower, " where ")` — a literal space on both sides — so **multi-line SQL, which is all a model writes, never probed at all**. And `run_sql` tested `Count == 0` for both the note and the probe, missing the shape that produced the original fabrication: an aggregate over no rows returns ONE all-NULL row, so `SELECT SUM(…) WHERE <no match>` got no note, no probe, and a row in the payload. Both fixed; the probe now returns the demo warehouse's real `month_name` and `city` values, quoted, on both query shapes ([`agent-quality.md`](agent-quality.md) §4) |
+| `T-Q7` | A thread past 20 messages, confirming hydration carries the recent turns rather than the opening | **Pass, 2026-08-11.** A real 58-message thread: the old `ListByThread(id, 20, 0)` window ends at 14:27 on 08-04, the new `ListRecentByThread` window starts at 14:37 and runs to the thread's last message on 08-07 — **zero overlapping messages**. Roadmap defect 1 seen for the first time on data rather than by reading. The rolling-summary *block* reaching a prompt is still owed and needs a turn ([`agent-quality.md`](agent-quality.md) §5) |
+
+**And a bucket this file has not had before: blocked on a missing credential
+file, not on cost.** There is no `.env` in the working tree — only a stale
+`.env.example` — so `LLM_API_KEY`, `ARGENTUM_JWT_SECRET`, `ARGENTUM_DSN_KEY` and
+`DB_PASSWORD` are all absent and neither `cmd/api` nor `cmd/worker` can boot.
+Every remaining `T-Q` gate sits behind that one file, including all of §2's
+model-spend items for this track. **Model spend for the 2026-08-11 sitting was
+$0.00** — not declined, unavailable. Note also that the control Postgres volume
+was initialised with a `metabase` role rather than the `argentum` the current
+`docker-compose.yml` declares, so a recreated `.env` has to match the volume.
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |
@@ -112,6 +146,12 @@ WhatsApp credentials on a deployment that uses no WhatsApp
 | `T-R4` | Three unautomatable applications of the deck renderer | Opening the generated `.pptx` in PowerPoint, Keynote and Google Slides. No test can do this |
 | `T-18` | The final eval run → `docs/coverage/eval-sprint1.md`, compared against baseline | One full run of the golden set. **Order matters:** run `T-07b`'s before/after pair first, or the guardrail question gets answered against a baseline this run has already moved ([`launch-hygiene.md`](launch-hygiene.md) §6) |
 | The prompt-contradiction fix (2026-08-09) | `report-directive-is-not-an-injection` passing on both models | The guardrail slice is ~$0.42 on haiku (8 cases, measured 2026-08-08); the full set is ~$2.10. The fix removes the chart guidelines from a turn whose deliverable is a file, which is a mechanism with an argument behind it and **no number** — the deterministic half is tested, and whether the case now passes is exactly what a golden set exists to answer ([`delivery-log.md`](delivery-log.md) Phase 2g) |
+| `T-Q1` | `make eval` on the extended **55-case** set | One full run. **The roadmap predicts 70–85% and the prediction is the point**: above 95% means the new cases are too easy and rule 3 of [`eval-baseline.md`](eval-baseline.md) says harden them rather than bank the number. Four cases are written to FAIL until their ticket works end to end. Now also owed for a second reason — the 2026-08-11 gate changed `run_sql`'s payload on both no-data paths ([`agent-quality.md`](agent-quality.md) §4), which rule 1 says re-runs the set |
+| `T-Q5` | `make eval-matrix MODELS=…` across 2–3 models | The full-set figure per model. **Do not run before `T-Q1`'s single-model number exists** — it answers "which model?" before "does the set discriminate at all?", and multiplies the spend to do it |
+| `T-Q3` | A before/after on the chart-restraint prompt change | 2 × full set. A prompt change with an argument behind it and no number — the shape rule 1 exists to stop shipping |
+| `T-Q6` | A two-turn conversation at `PRIOR_WORK_TURNS=3` and again at `=0`, confirming the second turn does not / does call `get_schema` | Four turns. The write-but-do-not-read setting exists for exactly this pair, and `messages.role` on the local control DB still shows **no `tool` rows at all** ([`agent-quality.md`](agent-quality.md) §5) |
+| `T-Q7` | The rolling-summary block appearing in a turn on a thread past 20 messages | One turn on the existing 58-message thread. The *read* is proven; this is the injection |
+| `T-Q8` | A harvest that writes an example, and a turn that retrieves one | Embedding calls only, one per example. Every gate above `client.Embed` is proven ([`agent-quality.md`](agent-quality.md) §3) |
 | ~~`T-17`~~ | ~~`curl` the exposition; one trace waterfall for a tool-calling turn~~ | **Both run 2026-08-08 — ticket closed.** Exposition: 401 / 401 / 200 with the right token, queue gauges reading a queue discovered from Redis. Waterfall: one `agent.turn` of 7,750 ms with 18 ms inside `query_metric`, which is the LLM/SQL split the ticket asked for. It cost one case of model spend, and it found the defect §9 records — `memory.hydrate` was landing in its own trace ([`observability.md`](observability.md) §8–§9) |
 
 ~~`T-17`'s exposition half needs no spend and was not run on 2026-08-04~~ —

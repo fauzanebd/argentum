@@ -53,8 +53,21 @@ func (r *CookbookCandidateRepo) Candidates(
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	// The LATERAL is the verdict gate's other half. agent_actions.message_id is
+	// the user's question; message_feedback is only ever keyed by an assistant
+	// message, because FeedbackService.Rate refuses to rate anything else.
+	// Without resolving the reply here, the service would ask "did anyone mark
+	// this wrong?" about an id that table can never contain, and the answer
+	// would always be no. See domain.CookbookCandidate.AnswerMessageID.
+	//
+	// First assistant message at or after the question, in the same thread:
+	// ChatRunner writes the user row before it runs the turn and the assistant
+	// row when it completes, so that is the reply. LEFT JOIN rather than inner,
+	// because a turn that never produced a reply is still a candidate — it just
+	// has no verdict to check.
 	const q = `
 		SELECT a.message_id::text,
+		       COALESCE(ans.id::text, ''),
 		       a.source_id,
 		       COALESCE(a.rows_returned, 0),
 		       COALESCE(a.args_redacted->>'query', a.args_redacted->>'sql', ''),
@@ -62,6 +75,14 @@ func (r *CookbookCandidateRepo) Candidates(
 		       a.created_at
 		FROM agent_actions a
 		JOIN messages m ON m.id = a.message_id
+		LEFT JOIN LATERAL (
+		    SELECT r.id FROM messages r
+		    WHERE r.thread_id = m.thread_id
+		      AND r.role = 'assistant'
+		      AND r.created_at >= m.created_at
+		    ORDER BY r.created_at ASC, r.id ASC
+		    LIMIT 1
+		) ans ON TRUE
 		WHERE a.company_id = $1
 		  AND a.tool_name = 'run_sql'
 		  AND a.result_status = 'ok'
@@ -84,7 +105,7 @@ func (r *CookbookCandidateRepo) Candidates(
 	var out []domain.CookbookCandidate
 	for rows.Next() {
 		var c domain.CookbookCandidate
-		if err := rows.Scan(&c.MessageID, &c.SourceID, &c.RowCount,
+		if err := rows.Scan(&c.MessageID, &c.AnswerMessageID, &c.SourceID, &c.RowCount,
 			&c.SQL, &c.Question, &c.RanAt); err != nil {
 			return nil, err
 		}
