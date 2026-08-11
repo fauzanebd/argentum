@@ -59,7 +59,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	if rateLimiter := middleware.NewRateLimiter(d.rdb, 60, 1.0); rateLimiter != nil {
 		authed.Use(rateLimiter.Middleware())
 	}
-	handlers.NewCompanyHandler(d.companySvc, d.embeddingSvc).Register(authed)
+	handlers.NewCompanyHandler(d.companySvc, d.embeddingSvc).
+		WithRequiredTLS(cfg.IsProduction()).
+		Register(authed)
 	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.dashboardSvc).Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
 	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)
@@ -276,7 +278,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	).WithDashboards(d.dashboardSvc).Register(v1)
 
 	webhookGroup := r.Group("/webhook")
-	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, cfg.WhatsAppWebhookVerifyToken).
+	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, d.waTransport, cfg.WhatsAppWebhookVerifyToken).
 		Register(webhookGroup)
 	if d.discordSvc != nil {
 		handlers.NewDiscordWebhookHandler(d.discordSvc).Register(webhookGroup)

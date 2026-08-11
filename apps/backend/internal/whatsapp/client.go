@@ -44,8 +44,12 @@ func NewWhatsAppClient(apiVersion, phoneNumberID, accessToken, appSecret string)
 // The url parameter is not used for WhatsApp Business API but included for interface compatibility
 func (c *WhatsAppClient) VerifyWebhook(body []byte, signature string, url string) bool {
 	if c.appSecret == "" {
-		logrus.Warn("App secret not configured, skipping signature verification")
-		return true
+		// Fail closed (T-H1). This returned true, which turned the one check
+		// standing between the internet and a tenant's whole tool surface into
+		// a log line. Production refuses to boot without the secret; a
+		// development box boots and answers 401 here.
+		logrus.Warn("WhatsApp app secret is not configured; the webhook signature cannot be verified")
+		return false
 	}
 
 	// The signature is in format "sha256=<hash>"
@@ -61,9 +65,18 @@ func (c *WhatsAppClient) VerifyWebhook(body []byte, signature string, url string
 	return hmac.Equal([]byte(expectedSignature), []byte(computedSignature))
 }
 
-// VerifyToken validates the webhook verification token
-func (c *WhatsAppClient) VerifyToken(token, challenge string) bool {
-	return token == challenge
+// VerifyToken validates the token Meta echoes during the GET subscription
+// handshake against the one this deployment was configured with.
+//
+// An unset expected token made this `"" == ""` for a caller who sent no token
+// at all, so anyone who found the URL could complete the handshake. Compared in
+// constant time because the expected value is a shared secret and `==` returns
+// on the first differing byte, which is a prefix oracle.
+func (c *WhatsAppClient) VerifyToken(token, expected string) bool {
+	if expected == "" {
+		return false
+	}
+	return hmac.Equal([]byte(token), []byte(expected))
 }
 
 // ParseWebhook parses the incoming webhook payload

@@ -11,11 +11,35 @@ the `T-S…` scope tickets or the `S-n` finding codes in the research docs.
 > and are already applied inline. Track A survived re-verification unchanged and
 > is still live on `main`.
 
-> **Nothing here is code-complete.** This roadmap was written from a read of the
-> shipped code, not from a test run, and one item in Track A is a live
-> authentication bypass rather than a hardening idea. Track A should land before
-> the next customer conversation; the rest is ordered by what a security
-> questionnaire asks about, not by what is interesting to build.
+> **Status, 2026-08-11.** **Track A and `T-H15` are built and unit-gated.**
+> `T-H1`, `T-H2`, `T-H3` (all three rows) and `T-H15` landed together; the
+> record, the deviations and what each ticket's Test section actually proved are
+> in [`../coverage/security-hardening.md`](../coverage/security-hardening.md).
+> `make vet` / `make test` / `make lint-go` / `make build` are clean. **Not
+> built:** every ticket in Tracks B, C and D — `T-H4` → `T-H14` — which are
+> exactly as this document describes them.
+>
+> **Still owed on what is built:** the live half. Every claim below is proven at
+> unit level and none against a running stack, so the "What is owed" section at
+> the end stands unchanged for `T-H1`, `T-H2`, `T-H3` and `T-H15`. The one that
+> matters most is `T-H1`'s: whether the reverse proxy in front of `cmd/api`
+> preserves the `Host` header the Twilio signature is computed over is not
+> something a handler test can see, and it is the likeliest way a correct
+> implementation rejects genuine traffic.
+>
+> **One thing this document does not say, found while building it:**
+> `ENABLE_WHATSAPP` is read by no Go file. `/webhook/whatsapp` was mounted on
+> every deployment regardless, so `T-H1` applied to deployments whose operator
+> believed the channel was off. Three further corrections are in
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §6;
+> every `file:line` this document cites for Track A and `T-H15` was re-checked
+> before being acted on and **all of them were correct**.
+
+> **Nothing in Tracks B, C or D is code-complete.** This roadmap was written
+> from a read of the shipped code, not from a test run, and one item in Track A
+> was a live authentication bypass rather than a hardening idea. That one is
+> closed; the rest is ordered by what a security questionnaire asks about, not
+> by what is interesting to build.
 
 The product's security story is genuinely good and mostly already built: the
 model holds no connection, tenant identity comes from the session rather than
@@ -30,18 +54,18 @@ That is the part that survives review. This document is the rest.
 
 | Claim we want to make | State today |
 | --------------------- | ----------- |
-| Inbound channels are authenticated | **False for WhatsApp.** Signature failure logs and continues (`webhook.go:63-65`); the verifier is a stub (`whatsapp/twilio.go:194`). |
+| Inbound channels are authenticated | **True as of 2026-08-11**, at unit level. `T-H1` and `T-H2` closed the WhatsApp bypass and the two conditional Lark checks; no live gate has been run. |
 | Generated SQL cannot mutate | True for Postgres/MySQL via read-only tx; **false for SQL Server** (`sqlserver/conn.go:33-35`); no statement validation anywhere. |
 | Every query is bounded | True for `run_sql`; **false for saved charts**, which Metabase re-executes on its own connection (`create_visualization.go:162`). |
 | Untrusted data cannot steer the agent | **Unaddressed.** Guardrails are `scope: input` / `scope: output`; tool results are never screened. |
-| Outbound callbacks cannot reach internal addresses | **Partly.** Every resolved address is checked (`webhookout/target.go:56-64`), but the check and the dial are separate resolutions — see `T-H15`. |
+| Outbound callbacks cannot reach internal addresses | **True as of 2026-08-11.** `T-H15` pinned the address that passed the check; the dial no longer re-resolves. |
 | Customer data can be deleted on request | **No erasure path.** Retention exists for API-observability rows only; conversation content is unbounded. |
 
 ---
 
-## Track A — The bypass (1.25d) · do first, do this week
+## Track A — The bypass (1.25d) · **built 2026-08-11**, unit-gated only
 
-### `T-H1` WhatsApp webhook authentication — 0.5d
+### `T-H1` WhatsApp webhook authentication — 0.5d · **built**
 
 `apps/backend/internal/transport/http/handlers/webhook.go:63` verifies the Twilio
 signature and then ignores the result:
@@ -93,7 +117,7 @@ HMAC-SHA256 and compares with `hmac.Equal` — and is the shape to copy.
 request with no signature header is 401; a form-encoded request against a
 Meta-configured deployment is 401.
 
-### `T-H2` Lark webhook — unconditional verification — 0.25d
+### `T-H2` Lark webhook — unconditional verification — 0.25d · **built**
 
 `apps/backend/internal/transport/http/handlers/lark_webhook.go:89` verifies the
 signature only `if sig != ""`, and `:111` checks the verification token only
@@ -105,7 +129,7 @@ app id.
 
 Make both checks unconditional. A missing signature is a failed signature.
 
-### `T-H3` Fail-closed configuration — 0.5d
+### `T-H3` Fail-closed configuration — 0.5d · **built**
 
 Two settings still degrade quietly instead of refusing to start. The third row
 was **partly fixed upstream** and is restated here to what remains:
@@ -322,7 +346,7 @@ keys" with something other than "not yet".
 
 ---
 
-## `T-H15` Callback egress is checked, then re-resolved — 0.5d · new
+## `T-H15` Callback egress is checked, then re-resolved — 0.5d · **built 2026-08-11**
 
 Added by the 2026-08-11 re-verification. The first draft listed webhook egress
 under "already built" and described it as address-pinned. It is not.
@@ -357,11 +381,11 @@ address on the second lookup must fail to connect, not merely fail the check.
 
 | Track | Days | Land by | Removes |
 | ----- | ---- | ------- | ------- |
-| A — the bypass | 1.25 | This week | A live unauthenticated action path |
+| A — the bypass | 1.25 | ~~This week~~ **built 2026-08-11** | A live unauthenticated action path |
 | B — written claims | 5.0 | This quarter | Four of the five limitations disclosed in the customer brief |
 | C — untrusted content | 4.0 | Next | The gap a competent reviewer opens with |
 | D — enterprise asks | 3.5 | Next | Three recurring questionnaire line items |
-| `T-H15` | 0.5 | With Track A | A server-side request forgery window |
+| `T-H15` | 0.5 | ~~With Track A~~ **built 2026-08-11** | A server-side request forgery window |
 
 Track A is not sequenced against anything, and `T-H15` is small enough to ride
 with it. Track B and Track C are independent of each other and can run in either

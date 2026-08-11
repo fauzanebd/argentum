@@ -1,11 +1,15 @@
 package whatsapp
 
 import (
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -173,32 +177,77 @@ func (c *TwilioClient) SendResponse(phoneNumber string, response *models.AgentRe
 	return c.SendMessage(phoneNumber, message)
 }
 
-// VerifyWebhook validates the Twilio webhook signature
-func (c *TwilioClient) VerifyWebhook(body []byte, signature string, url string) bool {
+// VerifyWebhook validates the X-Twilio-Signature header on an inbound webhook.
+//
+// Twilio signs HMAC-SHA1 — not SHA256, which the comment this replaced claimed —
+// over the request URL followed by the POST parameters sorted by name, each name
+// written immediately before its value with no delimiter, keyed by the account's
+// auth token and base64-encoded.
+// https://www.twilio.com/docs/usage/security#validating-requests
+//
+// body is the form the caller already parsed and re-encoded with
+// url.Values.Encode. That is a lossless round trip back to the parameters
+// Twilio signed, and it keeps the Provider interface one shape for both
+// transports rather than adding a Twilio-only method to it.
+func (c *TwilioClient) VerifyWebhook(body []byte, signature string, requestURL string) bool {
 	if c.authToken == "" {
-		logrus.Warn("Auth token not configured, skipping signature verification")
-		return true
+		// Fail closed. This returned true until T-H1, which made the signature
+		// check a no-op on any deployment that had not set TWILIO_AUTH_TOKEN —
+		// and the signature is the only authentication /webhook/whatsapp has.
+		// Config validation refuses to boot a production process without the
+		// token; this is the request-time half of the same rule, for the
+		// development box that is allowed to boot without one.
+		logrus.Warn("Twilio auth token is not configured; the webhook signature cannot be verified")
+		return false
 	}
-
-	// Twilio webhook signature verification
-	// https://www.twilio.com/docs/usage/security#validating-requests
-	expectedSignature := computeTwilioSignature(url, body, c.authToken)
-
-	return signature == expectedSignature
+	if signature == "" {
+		return false
+	}
+	params, err := url.ParseQuery(string(body))
+	if err != nil {
+		return false
+	}
+	got, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return false
+	}
+	return hmac.Equal(got, twilioSignature(c.authToken, requestURL, params))
 }
 
-// computeTwilioSignature computes the expected Twilio signature
-func computeTwilioSignature(url string, body []byte, authToken string) string {
-	// Twilio signature = Base64(HMAC-SHA256(authToken, url + body))
-	// Implementation simplified - in production use proper HMAC
-	return "" // Placeholder - implement if needed
+// twilioSignature computes the raw HMAC Twilio would have sent for this URL and
+// these parameters.
+//
+// Repeated parameter names are written in arrival order under one sorted key.
+// Twilio's own helper libraries model the form as a map and therefore have no
+// answer for the case at all, and a WhatsApp callback does not repeat a name —
+// so this picks the one order that is at least deterministic rather than
+// pretending there is a spec to follow.
+func twilioSignature(authToken, requestURL string, params url.Values) []byte {
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	mac := hmac.New(sha1.New, []byte(authToken))
+	mac.Write([]byte(requestURL))
+	for _, k := range keys {
+		for _, v := range params[k] {
+			mac.Write([]byte(k))
+			mac.Write([]byte(v))
+		}
+	}
+	return mac.Sum(nil)
 }
 
-// VerifyToken is not used for Twilio (no verification token needed)
-func (c *TwilioClient) VerifyToken(token, challenge string) bool {
-	// Twilio doesn't use verify tokens like WhatsApp Business API
-	// Return true to pass through
-	return true
+// VerifyToken refuses the Meta GET handshake, which Twilio has no equivalent of.
+//
+// It returned true unconditionally, so a Twilio deployment would echo any
+// `hub.challenge` back to anyone who asked. The handler no longer routes the
+// handshake here at all (it is chosen by transport now), and this is the second
+// answer to the same question.
+func (c *TwilioClient) VerifyToken(token, expected string) bool {
+	return false
 }
 
 // GetAccountSID returns the account SID

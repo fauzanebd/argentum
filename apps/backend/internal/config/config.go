@@ -611,10 +611,31 @@ func (c *Config) Validate() error {
 		if c.WhatsAppPhoneNumberID == "" {
 			return fmt.Errorf("WHATSAPP_PHONE_NUMBER_ID is required for whatsapp_business provider")
 		}
+		// The app secret is the entirety of /webhook/whatsapp's authentication
+		// (T-H1/T-H3): the route is mounted outside middleware.Auth because the
+		// caller is Meta and holds no Argentum credential, so an unset secret
+		// is an unauthenticated path into a tenant's agent. VerifyWebhook now
+		// answers false without one rather than true, so a development box
+		// boots and returns 401; production must not be in that state at all.
+		if c.IsProduction() && c.WhatsAppAppSecret == "" {
+			return fmt.Errorf("WHATSAPP_APP_SECRET is required in production: it is the only authentication /webhook/whatsapp has")
+		}
 	case "twilio":
+		// TWILIO_AUTH_TOKEN is in this triple, and it is also the webhook
+		// signing key — which is why the Twilio half of the rule above needs no
+		// separate check here.
 		if c.TwilioAccountSID == "" || c.TwilioAuthToken == "" || c.TwilioFromNumber == "" {
 			return fmt.Errorf("TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER are required for twilio provider")
 		}
+	}
+
+	// An empty CORS_ORIGINS makes the middleware reflect whatever Origin it is
+	// handed, and the dashboard authenticates with a cookie — reflection plus
+	// Access-Control-Allow-Credentials is a browser's permission for any site
+	// to read an authenticated response. Survivable on a laptop where the only
+	// session is the developer's own; not in production.
+	if c.IsProduction() && len(c.CORSOrigins) == 0 {
+		return fmt.Errorf("CORS_ORIGINS is required in production: an empty list reflects every Origin back with credentials")
 	}
 
 	return nil

@@ -1,10 +1,12 @@
 package webhookout
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // CheckTarget refuses a callback URL we should not be pointed at, without
@@ -32,37 +34,104 @@ func CheckTarget(raw string, allowPrivate bool) error {
 	return err
 }
 
-// CheckResolvedTarget is CheckTarget plus DNS, and is what the sender uses
-// immediately before making the request.
+// Resolver is the name lookup this package uses. `*net.Resolver` satisfies it
+// as written, which is the point: production passes net.DefaultResolver, and a
+// test passes one that answers differently on the second call — the only way to
+// demonstrate a rebinding window, since no real DNS name can be asked to open
+// one on cue.
+type Resolver interface {
+	LookupIP(ctx context.Context, network, host string) ([]net.IP, error)
+}
+
+// ResolveTarget is CheckTarget plus DNS, and is what the sender uses
+// immediately before making the request. It hands back the addresses that
+// passed so the caller can dial one of *them* rather than resolving again.
+//
+// Returning the addresses is the whole of T-H15. The check and the dial used to
+// be two independent resolutions — CheckResolvedTarget asked, then
+// `http.Client` asked again from the same URL string — and a record with a
+// short TTL that answers publicly to the first question and 169.254.169.254 to
+// the second walks past a guard that only ever saw the first answer.
 //
 // Every answer has to pass, not merely the first: we do not choose which
 // address the dialer picks, and a name that resolves to both a public address
 // and 169.254.169.254 is the shape of an attack rather than a coincidence.
 // A name that does not resolve fails here — correctly, since a callback to it
 // could not be delivered anyway.
-func CheckResolvedTarget(raw string, allowPrivate bool) error {
+//
+// allowPrivate relaxes which addresses are acceptable; it does not skip the
+// resolution. The pin is what makes the dial predictable, and a development
+// deployment wants that property as much as a production one does.
+func ResolveTarget(ctx context.Context, raw string, allowPrivate bool, res Resolver) (*url.URL, []net.IP, error) {
 	u, err := parseTarget(raw, allowPrivate)
 	if err != nil {
-		return err
-	}
-	if allowPrivate {
-		return nil
+		return nil, nil, err
 	}
 	host := u.Hostname()
-	if net.ParseIP(host) != nil {
-		// Already checked as a literal by parseTarget.
-		return nil
+	if ip := net.ParseIP(host); ip != nil {
+		// A literal has nothing to re-resolve into, and parseTarget has already
+		// run it past checkIP.
+		return u, []net.IP{ip}, nil
 	}
-	addrs, err := net.LookupIP(host)
-	if err != nil {
-		return fmt.Errorf("callback_url host does not resolve")
+	if res == nil {
+		res = net.DefaultResolver
 	}
-	for _, ip := range addrs {
-		if err := checkIP(ip); err != nil {
-			return err
+	addrs, err := res.LookupIP(ctx, "ip", host)
+	if err != nil || len(addrs) == 0 {
+		return nil, nil, fmt.Errorf("callback_url host does not resolve")
+	}
+	if !allowPrivate {
+		for _, ip := range addrs {
+			if err := checkIP(ip); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
-	return nil
+	return u, addrs, nil
+}
+
+// CheckResolvedTarget is ResolveTarget for a caller that wants only the verdict.
+func CheckResolvedTarget(raw string, allowPrivate bool) error {
+	_, _, err := ResolveTarget(context.Background(), raw, allowPrivate, nil)
+	return err
+}
+
+// pinnedDial returns a DialContext that connects to one of addrs and to nothing
+// else, whatever the name resolves to by the time the dial happens.
+//
+// This is the second half of T-H15: ResolveTarget decides the address, and
+// without this the standard library resolves the name a second time inside
+// http.Transport, so the decision would apply to an answer nobody dialled. The
+// port is taken from the address the transport asked for — that comes from the
+// URL, which was already parsed — and the host in it is discarded.
+//
+// checkIP runs again here, which is redundant on every path that reaches it
+// today and deliberately so: this hook sees the address the stack is actually
+// about to connect to, so it is the last place a mistake anywhere above can
+// still be stopped.
+func pinnedDial(addrs []net.IP, allowPrivate bool) func(context.Context, string, string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		_, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("callback target %q has no port", addr)
+		}
+		lastErr := error(fmt.Errorf("callback_url has no address left to try"))
+		for _, ip := range addrs {
+			if !allowPrivate {
+				if err := checkIP(ip); err != nil {
+					lastErr = err
+					continue
+				}
+			}
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		return nil, lastErr
+	}
 }
 
 // parseTarget does the network-free half and hands back the parsed URL.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -124,11 +125,24 @@ type SubscriptionHealth interface {
 type Deliverer struct {
 	deliveries   domain.WebhookDeliveryRepository
 	secrets      SecretResolver
-	client       *http.Client
+	timeout      time.Duration
 	allowPrivate bool
 	maxAttempts  int
+	resolver     Resolver
 	health       SubscriptionHealth
 	disableAt    int
+}
+
+// WithResolver replaces the name lookup used before each attempt.
+//
+// It exists for T-H15's gate and nothing else: a DNS rebinding window is a
+// resolver that answers differently on the second call, and no real name can be
+// asked to do that on cue. nil leaves net.DefaultResolver in place.
+func (d *Deliverer) WithResolver(r Resolver) *Deliverer {
+	if r != nil {
+		d.resolver = r
+	}
+	return d
 }
 
 // WithSubscriptions makes terminal outcomes count against the subscription that
@@ -157,9 +171,35 @@ func NewDeliverer(deliveries domain.WebhookDeliveryRepository, secrets SecretRes
 		// A tenant's server holding the connection open must not hold a worker
 		// slot with it. Ten seconds is generous for "acknowledge receipt",
 		// which is all a receiver should be doing before it answers.
-		client:       &http.Client{Timeout: 10 * time.Second},
+		timeout:      10 * time.Second,
 		allowPrivate: allowPrivate,
 		maxAttempts:  maxAttempts,
+	}
+}
+
+// clientFor builds the client for one attempt, dialling only the addresses that
+// passed the check immediately above the call (T-H15).
+//
+// A client per attempt rather than one on the struct. The pin belongs to this
+// URL's resolution, and the alternative — one shared transport reading the pin
+// off the request context — buys connection reuse at the price of having to
+// argue about which pooled connection a later delivery to the same host may
+// reuse. A webhook sender makes a few requests a minute.
+//
+// No Proxy, where http.DefaultTransport would have honoured HTTPS_PROXY. A
+// proxy resolves the name itself, so a pinned dial through one pins the address
+// of the proxy and nothing else: the guard would read as present and do
+// nothing. A deployment that must egress through a proxy has to enforce this at
+// the proxy, and should discover that from a failed dial rather than from a
+// delivery that reached the metadata endpoint.
+func (d *Deliverer) clientFor(addrs []net.IP) *http.Client {
+	return &http.Client{
+		Timeout: d.timeout,
+		Transport: &http.Transport{
+			DialContext:           pinnedDial(addrs, d.allowPrivate),
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: d.timeout,
+		},
 	}
 }
 
@@ -183,8 +223,11 @@ func (d *Deliverer) Deliver(ctx context.Context, deliveryID string) error {
 	}
 	// Resolved here, and not at registration: DNS can change between the two,
 	// and a name that answers with an internal address is only discoverable by
-	// asking immediately before the request.
-	if err := CheckResolvedTarget(rec.URL, d.allowPrivate); err != nil {
+	// asking immediately before the request. The addresses come back so the
+	// dial below goes to one of them rather than to whatever a second lookup
+	// would have said (T-H15).
+	_, addrs, err := ResolveTarget(ctx, rec.URL, d.allowPrivate, d.resolver)
+	if err != nil {
 		d.record(ctx, rec, domain.WebhookFailed, 0, err.Error())
 		return nil
 	}
@@ -205,7 +248,10 @@ func (d *Deliverer) Deliver(ctx context.Context, deliveryID string) error {
 	req.Header.Set(DeliveryHeader, rec.ID)
 	req.Header.Set(SignatureHeader, Sign(secret, time.Now(), rec.Payload))
 
-	resp, err := d.client.Do(req)
+	client := d.clientFor(addrs)
+	defer client.CloseIdleConnections()
+
+	resp, err := client.Do(req)
 	if err != nil {
 		// No HTTP status at all — DNS, TLS, a timeout. Recorded as status 0,
 		// which is the distinction the log exists to preserve: "your server

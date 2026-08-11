@@ -157,13 +157,17 @@ func TestV1EmitsNoCORSHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
-	apiReq.Header.Set("Origin", "https://dashboard.example")
+	// An origin the test router actually allowlists. It used to be a made-up
+	// one, because Allow-Credentials was sent unconditionally and Allow-Origin
+	// only for a match — T-H3 pairs the two, so the assertion now has to use an
+	// origin that would really be allowed. (This router's list is the literal
+	// string "*", which this middleware matches literally and not as a
+	// wildcard.)
+	apiReq.Header.Set("Origin", "*")
 	apiW := httptest.NewRecorder()
 	r.ServeHTTP(apiW, apiReq)
-	// Allow-Credentials rather than Allow-Origin: the latter is only echoed
-	// for an origin on the allowlist, and this router's allowlist is "*"
-	// literally, so a made-up origin would not get one either way.
-	if apiW.Header().Get("Access-Control-Allow-Credentials") == "" {
+	if apiW.Header().Get("Access-Control-Allow-Origin") == "" ||
+		apiW.Header().Get("Access-Control-Allow-Credentials") == "" {
 		t.Error("/api lost its CORS headers")
 	}
 }

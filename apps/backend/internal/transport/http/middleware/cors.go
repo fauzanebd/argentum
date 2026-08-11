@@ -18,6 +18,11 @@ import (
 // is how the browser path and the machine path get conflated, and the browser
 // path is deliberately a different credential (T-19's embed key).
 //
+// That reflecting behaviour is now development-only in practice: `Validate()`
+// refuses to start a production process with an empty CORS_ORIGINS (T-H3). It
+// stays here rather than becoming a refusal in the middleware because a laptop
+// running the dashboard on an unexpected port is the case it exists for.
+//
 // The check is a prefix rather than a group registration because this
 // middleware is installed on the engine, above every group: a group-level
 // install would have to be repeated for health, webhooks and the Metabase
@@ -34,14 +39,21 @@ func CORS(allowOrigins []string, skipPrefixes ...string) gin.HandlerFunc {
 				return
 			}
 		}
-		origin := c.GetHeader("Origin")
-		if origin != "" {
+		if origin := c.GetHeader("Origin"); origin != "" {
+			// Vary regardless of the verdict. A cache that stored an allowed
+			// origin's response without it would serve that response, headers
+			// and all, to the next origin that asks.
+			c.Header("Vary", "Origin")
 			if _, ok := allowed[origin]; ok || len(allowed) == 0 {
 				c.Header("Access-Control-Allow-Origin", origin)
-				c.Header("Vary", "Origin")
+				// Credentials only alongside an origin we actually allowed.
+				// A browser needs the pair, so sending this one unconditionally
+				// was inert — but it is a header saying yes next to no header
+				// saying who, and the next reader of an audit trace should not
+				// have to work out that it does not count.
+				c.Header("Access-Control-Allow-Credentials", "true")
 			}
 		}
-		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Allow-Headers",
 			"Authorization, Content-Type, X-Requested-With, X-Twilio-Signature, X-Hub-Signature-256")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")

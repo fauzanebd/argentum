@@ -559,6 +559,84 @@ func TestValidateWhatsAppCredentialsAreProviderScoped(t *testing.T) {
 	})
 }
 
+// --- Fail-closed in production (T-H3) ----------------------------------------
+//
+// Two settings degraded quietly instead of refusing to start. The webhook app
+// secret unset made VerifyWebhook `return true`, which is the whole of
+// /webhook/whatsapp's authentication; an empty CORS_ORIGINS makes the
+// middleware reflect any Origin while the dashboard authenticates with a
+// cookie. Both are survivable on a laptop and neither is in production, so the
+// refusal is scoped to Env=production rather than made unconditional — a
+// development stack that has never configured WhatsApp still boots.
+
+func TestValidateRequiresTheWebhookSecretInProduction(t *testing.T) {
+	c := validCfg()
+	c.Env = "production"
+	c.CORSOrigins = []string{"https://app.example.com"}
+
+	if err := c.Validate(); err == nil {
+		t.Fatal("Validate() = nil in production with no WHATSAPP_APP_SECRET")
+	} else if !strings.Contains(err.Error(), "WHATSAPP_APP_SECRET") {
+		t.Errorf("err = %q, want it to name WHATSAPP_APP_SECRET", err)
+	}
+
+	c.WhatsAppAppSecret = "app-secret"
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate() = %v with the secret set", err)
+	}
+
+	// Development boots without it. VerifyWebhook answers false rather than
+	// true there, so the endpoint is closed either way — this is about whether
+	// the process starts.
+	dev := validCfg()
+	dev.Env = "development"
+	if err := dev.Validate(); err != nil {
+		t.Errorf("Validate() = %v in development with no app secret", err)
+	}
+
+	// Twilio's signing key is TWILIO_AUTH_TOKEN, which the triple below already
+	// requires — in every environment, which is why there is no production-only
+	// branch for it.
+	tw := validCfg()
+	tw.Env = "production"
+	tw.CORSOrigins = []string{"https://app.example.com"}
+	tw.WhatsAppProvider = "twilio"
+	tw.TwilioAccountSID, tw.TwilioAuthToken, tw.TwilioFromNumber = "AC1", "tok", "+1415"
+	if err := tw.Validate(); err != nil {
+		t.Errorf("Validate() = %v for a complete Twilio triple in production", err)
+	}
+	tw.TwilioAuthToken = ""
+	if err := tw.Validate(); err == nil {
+		t.Error("Validate() = nil in production with no Twilio auth token")
+	}
+}
+
+func TestValidateRequiresCORSOriginsInProduction(t *testing.T) {
+	c := validCfg()
+	c.Env = "production"
+	c.WhatsAppAppSecret = "app-secret"
+
+	if err := c.Validate(); err == nil {
+		t.Fatal("Validate() = nil in production with an empty CORS_ORIGINS")
+	} else if !strings.Contains(err.Error(), "CORS_ORIGINS") {
+		t.Errorf("err = %q, want it to name CORS_ORIGINS", err)
+	}
+
+	c.CORSOrigins = []string{"https://app.example.com"}
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate() = %v with an origin list", err)
+	}
+
+	// An empty list is the default only when an operator has explicitly set the
+	// variable to nothing; the built-in default is localhost, which is why this
+	// does not break a development boot.
+	dev := validCfg()
+	dev.Env = "development"
+	if err := dev.Validate(); err != nil {
+		t.Errorf("Validate() = %v in development with an empty CORS_ORIGINS", err)
+	}
+}
+
 func TestIsDevelopmentAndIsProduction(t *testing.T) {
 	cases := []struct {
 		env      string

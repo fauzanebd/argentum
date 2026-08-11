@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,12 +20,26 @@ import (
 type CompanyHandler struct {
 	svc       *app.CompanyService
 	embedding *app.EmbeddingService
+	// requireTLS refuses a connection that would cross the network in
+	// plaintext (T-H3). Set from config.IsProduction(): `disable` is a
+	// reasonable choice against a database on the same laptop, and is a
+	// warehouse credential plus every row it can read in the clear anywhere
+	// else.
+	requireTLS bool
 }
 
 // NewCompanyHandler wires the company service. embeddingSvc is optional;
 // pass nil to disable the reindex-embeddings endpoint (it will return 503).
 func NewCompanyHandler(svc *app.CompanyService, embeddingSvc *app.EmbeddingService) *CompanyHandler {
 	return &CompanyHandler{svc: svc, embedding: embeddingSvc}
+}
+
+// WithRequiredTLS refuses to register a connection whose DSN would not encrypt.
+// Off by default, because the constructor's other caller is a test and a
+// development stack registers the demo database over plaintext loopback.
+func (h *CompanyHandler) WithRequiredTLS(required bool) *CompanyHandler {
+	h.requireTLS = required
+	return h
 }
 
 // Register installs the routes. Caller is expected to wrap the group with the
@@ -122,14 +137,34 @@ func resolveSSLMode(dbType, requested string) (string, error) {
 	return driverValue, nil
 }
 
+// plaintextModes are the ssl_mode values that permit an unencrypted
+// connection. `prefer` is in here and `skip-verify` is not, which is the
+// distinction the whole floor turns on: prefer *silently falls back* to
+// plaintext when the server declines TLS, where skip-verify encrypts and
+// declines only to check who it is talking to.
+var plaintextModes = map[string]bool{"disable": true, "allow": true, "prefer": true}
+
 // buildDSN constructs a driver-specific DSN from discrete fields.
-// If raw is non-empty it is returned as-is (advanced mode).
-func buildDSN(dbType, raw, host, port, user, pass, dbname, sslMode string) (string, error) {
+// If raw is non-empty it is checked and returned as-is (advanced mode).
+//
+// requireTLS refuses anything that would cross the network unencrypted, on
+// both paths. The raw path used to be exempt by construction — it is returned
+// verbatim, so the mode table below never sees it — which made "paste your own
+// DSN" the way around every transport rule the form enforces (T-H3).
+func buildDSN(dbType, raw, host, port, user, pass, dbname, sslMode string, requireTLS bool) (string, error) {
 	if raw != "" {
+		if requireTLS {
+			if err := rawDSNEncrypts(dbType, raw); err != nil {
+				return "", err
+			}
+		}
 		return raw, nil
 	}
 	if host == "" || port == "" || dbname == "" {
 		return "", fmt.Errorf("host, port and database name are required")
+	}
+	if requireTLS && plaintextModes[sslMode] {
+		return "", fmt.Errorf("ssl_mode %q sends this connection's credentials and rows in plaintext; use require, skip-verify or verify-full", sslMode)
 	}
 	driverSSL, err := resolveSSLMode(dbType, sslMode)
 	if err != nil {
@@ -168,14 +203,102 @@ func buildDSN(dbType, raw, host, port, user, pass, dbname, sslMode string) (stri
 		}
 		q := u.Query()
 		q.Set("database", dbname)
-		q.Set("encrypt", "true")
-		q.Set("TrustServerCertificate", "true")
-		q.Set("tlsmin", "1.0")
+		// go-mssqldb has no single mode word, so the choice is spelled across
+		// two parameters: `encrypt` decides whether there is TLS at all, and
+		// `TrustServerCertificate` decides whether the certificate behind it is
+		// checked. The pair was pinned to true/true, which is encrypted against
+		// somebody listening and wide open to somebody answering — anything
+		// that can reach the address can present any certificate it likes
+		// (T-H3). The other two drivers already let the tenant make this choice
+		// by name; this one now does too, and its default verifies.
+		switch sslMode {
+		case "disable":
+			q.Set("encrypt", "disable")
+		case "skip-verify":
+			q.Set("encrypt", "true")
+			q.Set("TrustServerCertificate", "true")
+		case "", "require", "verify-ca", "verify-full":
+			q.Set("encrypt", "true")
+			q.Set("TrustServerCertificate", "false")
+		default:
+			return "", fmt.Errorf("unsupported ssl_mode %q for sqlserver", sslMode)
+		}
+		// TLS 1.0 was the floor only because go-mssqldb's own default is 1.0
+		// and nobody had raised it. Nothing this product connects to in 2026
+		// needs it, and a floor is the one place a downgrade is negotiated.
+		q.Set("tlsmin", "1.2")
 		u.RawQuery = q.Encode()
 		return u.String(), nil
 	default:
 		return "", fmt.Errorf("unsupported db_type %q", dbType)
 	}
+}
+
+// tlsParams names, per driver, the DSN parameter that decides transport
+// security and the values of it that permit plaintext. The absent case is not
+// listed because it is not a value: none of the three defaults to a mode that
+// cannot end in plaintext — libpq's `prefer` downgrades silently,
+// go-sql-driver sends no TLS at all unless `tls` is set, and go-mssqldb's
+// `encrypt` default has moved between major versions. So the rule below is not
+// "does this DSN switch TLS off" but "does it switch TLS on, in so many words".
+var tlsParams = map[string]struct {
+	key       string
+	plaintext map[string]bool
+}{
+	"postgres": {"sslmode", plaintextModes},
+	// `preferred` is go-sql-driver's spelling of libpq's `prefer` and belongs
+	// with `false` rather than with `skip-verify`: it negotiates TLS and
+	// connects in the clear when the server declines.
+	"mysql":     {"tls", map[string]bool{"false": true, "0": true, "": true, "preferred": true}},
+	"sqlserver": {"encrypt", map[string]bool{"false": true, "0": true, "disable": true}},
+}
+
+// rawDSNEncrypts refuses an advanced-mode DSN that does not name transport
+// security or names it off.
+//
+// A raw DSN is the admin's own string and is never rewritten — that is what
+// advanced mode means, and it stays true. What changes is that in production it
+// is now read before it is stored, because "paste a raw DSN" was otherwise the
+// documented way around the mode the form insists on.
+func rawDSNEncrypts(dbType, raw string) error {
+	spec, ok := tlsParams[dbType]
+	if !ok {
+		return nil
+	}
+	values := dsnParamValues(raw, spec.key)
+	if len(values) == 0 {
+		return fmt.Errorf("this DSN does not set %s; production requires it, because the driver's default permits an unencrypted connection", spec.key)
+	}
+	// Every occurrence has to pass, not the first: a password containing the
+	// parameter's name is far-fetched, and reading the wrong one in the
+	// permissive direction is the only mistake here that matters.
+	for _, v := range values {
+		if spec.plaintext[strings.ToLower(v)] {
+			return fmt.Errorf("this DSN sets %s=%s, which sends credentials and rows in plaintext", spec.key, v)
+		}
+	}
+	return nil
+}
+
+// dsnParamValues reads one parameter out of a DSN without knowing which of the
+// three grammars it is written in.
+//
+// All three separate parameters with `&`, `;` or whitespace, all three write
+// them `key=value`, and that is enough to find one key in any of them. A parser
+// per driver would be three parsers to keep correct — including libpq's
+// keyword/value form, which is not a URL at all — for one string comparison.
+func dsnParamValues(raw, key string) []string {
+	var out []string
+	for _, field := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '&' || r == ';' || r == '?' || r == ' ' || r == '\t'
+	}) {
+		k, v, ok := strings.Cut(field, "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(k), key) {
+			continue
+		}
+		out = append(out, strings.Trim(strings.TrimSpace(v), `'"`))
+	}
+	return out
 }
 
 func (h *CompanyHandler) listConnections(c *gin.Context) {
@@ -217,7 +340,7 @@ func (h *CompanyHandler) addConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName, req.SSLMode)
+	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName, req.SSLMode, h.requireTLS)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -310,7 +433,7 @@ func (h *CompanyHandler) updateConnectionDSN(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName, req.SSLMode)
+	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName, req.SSLMode, h.requireTLS)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -466,7 +589,7 @@ func (h *CompanyHandler) testConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName, req.SSLMode)
+	dsn, err := buildDSN(req.DBType, req.DSN, req.Host, req.Port, req.Username, req.Password, req.DBName, req.SSLMode, h.requireTLS)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

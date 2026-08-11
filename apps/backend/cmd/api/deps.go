@@ -143,6 +143,10 @@ type apiDeps struct {
 	slackDedupe  slack.Deduper
 
 	wa whatsapp.Provider
+	// waTransport is which of the two WhatsApp providers this deployment runs.
+	// The webhook handler authenticates by it rather than by sniffing the
+	// request, which is what T-H1 fixed.
+	waTransport whatsapp.Transport
 
 	llmCache   *llmtenant.ClientCache
 	embedCache *llmtenant.EmbeddingCache

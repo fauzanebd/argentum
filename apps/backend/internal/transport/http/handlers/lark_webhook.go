@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/hmac"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -18,8 +19,8 @@ import (
 // /webhook/lark/events/:app_id so the handler can resolve the company before
 // signature verification.
 //
-// Inbound flow: parse envelope (decrypt if encrypted) → verify
-// verification_token matches → if event has X-Lark-Signature, verify HMAC →
+// Inbound flow: parse envelope (decrypt if encrypted) → verify the HMAC when
+// the tenant configured an encrypt key → verify verification_token matches →
 // dispatch:
 //   - url_verification → echo challenge.
 //   - im.message.receive_v1 → require @mention of bot_open_id, run allowlist
@@ -66,6 +67,16 @@ func (h *LarkWebhookHandler) events(c *gin.Context) {
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}
+	// A tenant with neither an encrypt key nor a verification token has given
+	// this handler nothing to check a caller against, and the token comparison
+	// below would then be `"" == ""` — true for everyone who knows the app id.
+	// Refuse rather than run an unauthenticated ingress into their agent.
+	if cred.EncryptKey == "" && cred.VerificationToken == "" {
+		logrus.WithField("app_id", appID).
+			Warn("lark webhook: neither encrypt_key nor verification_token is configured; refusing")
+		c.Status(http.StatusUnauthorized)
+		return
+	}
 
 	body, err := c.GetRawData()
 	if err != nil {
@@ -80,18 +91,24 @@ func (h *LarkWebhookHandler) events(c *gin.Context) {
 		return
 	}
 
-	// Verify HMAC signature when Lark sent one. Lark only signs when
-	// encrypt_key is configured.
+	// Verify the HMAC signature whenever the tenant configured an encrypt key,
+	// which is the condition under which Lark signs at all.
+	//
+	// Unconditionally within that (T-H2). This used to run only `if sig != ""`,
+	// and the caller writes that header — omitting it skipped the check
+	// entirely. A missing signature is a failed signature, and lark.VerifySignature
+	// says so itself.
 	if cred.EncryptKey != "" {
-		sig := c.GetHeader("X-Lark-Signature")
-		ts := c.GetHeader("X-Lark-Request-Timestamp")
-		nonce := c.GetHeader("X-Lark-Request-Nonce")
-		if sig != "" {
-			if err := lark.VerifySignature(cred.EncryptKey, ts, nonce, sig, body); err != nil {
-				logrus.WithError(err).WithField("app_id", appID).Warn("lark webhook: signature verify failed")
-				c.Status(http.StatusUnauthorized)
-				return
-			}
+		if err := lark.VerifySignature(
+			cred.EncryptKey,
+			c.GetHeader("X-Lark-Request-Timestamp"),
+			c.GetHeader("X-Lark-Request-Nonce"),
+			c.GetHeader("X-Lark-Signature"),
+			body,
+		); err != nil {
+			logrus.WithError(err).WithField("app_id", appID).Warn("lark webhook: signature verify failed")
+			c.Status(http.StatusUnauthorized)
+			return
 		}
 	}
 
@@ -99,7 +116,7 @@ func (h *LarkWebhookHandler) events(c *gin.Context) {
 	// matches what we have on file so an attacker who guesses the URL can't
 	// trick us into echoing arbitrary strings.
 	if env.Type == "url_verification" {
-		if env.Token != cred.VerificationToken {
+		if !tokenMatches(env.Token, cred.VerificationToken) {
 			c.Status(http.StatusUnauthorized)
 			return
 		}
@@ -108,7 +125,10 @@ func (h *LarkWebhookHandler) events(c *gin.Context) {
 	}
 
 	// All other events carry the verification token in header.token (v2).
-	if env.Header.Token != "" && env.Header.Token != cred.VerificationToken {
+	// Unconditional for the same reason as the signature: this was gated on
+	// `env.Header.Token != ""`, so a body with the field left out was a body
+	// with no token to check.
+	if !tokenMatches(env.Header.Token, cred.VerificationToken) {
 		logrus.WithField("app_id", appID).Warn("lark webhook: verification_token mismatch")
 		c.Status(http.StatusUnauthorized)
 		return
@@ -203,6 +223,21 @@ func (h *LarkWebhookHandler) events(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusOK)
+}
+
+// tokenMatches compares a presented verification token against the stored one
+// in constant time, and refuses when nothing is stored.
+//
+// Both halves matter. The empty check keeps `"" == ""` from authenticating a
+// caller who sent no token against a tenant who configured none — the handler
+// refuses that tenant outright above, and this is the second answer. The
+// constant-time comparison is because the token is a shared secret and `==`
+// returns on the first differing byte.
+func tokenMatches(presented, stored string) bool {
+	if stored == "" {
+		return false
+	}
+	return hmac.Equal([]byte(presented), []byte(stored))
 }
 
 func firstNonEmpty(vals ...string) string {

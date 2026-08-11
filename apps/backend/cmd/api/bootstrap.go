@@ -265,7 +265,12 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	if err != nil {
 		return nil, fmt.Errorf("WhatsApp provider: %w", err)
 	}
+	waTransport, err := whatsapp.ResolveTransport(cfg.WhatsAppProvider)
+	if err != nil {
+		return nil, fmt.Errorf("WhatsApp provider: %w", err)
+	}
 	deps.wa = waProvider
+	deps.waTransport = waTransport
 
 	// Report branding (T-R5). The logo lives in the same bucket the generated
 	// documents do, so the API needs the storage client the worker already

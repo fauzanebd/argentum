@@ -249,11 +249,12 @@ Request:
 Public ingress for Lark event callbacks. The `app_id` in the path is used to resolve the tenant and load `verification_token` / `encrypt_key` / `bot_open_id` — header and body values are not trusted for tenant lookup.
 
 Flow per request:
-1. Look up credentials by `app_id`. `404` if unknown, `503` if `enabled=false`.
+1. Look up credentials by `app_id`. `404` if unknown, `503` if `enabled=false`, `401` if the row has **neither** `encrypt_key` nor `verification_token` — there is then nothing to authenticate a caller against.
 2. Parse envelope (decrypt with `encrypt_key` if encrypted).
-3. If `encrypt_key` is set and Lark sent `X-Lark-Signature`, verify HMAC (`ts`, `nonce`, body). `401` on mismatch.
-4. Branch on event type:
-   - **`url_verification`** — verify `token` matches `verification_token`, then echo `{ "challenge": "..." }`. This is what the Open Platform calls when you save the request URL.
+3. If `encrypt_key` is set, verify the HMAC over (`ts`, `nonce`, body). `401` on mismatch **and on a missing `X-Lark-Signature` header** — a missing signature is a failed signature (T-H2). Lark only signs when `encrypt_key` is configured, which is why the check is conditional on the key and not on the header.
+4. Verify `verification_token`, unconditionally and in constant time. `401` on mismatch, including when the body omits the field.
+5. Branch on event type:
+   - **`url_verification`** — echo `{ "challenge": "..." }`. This is what the Open Platform calls when you save the request URL.
    - **`im.message.receive_v1`** — see below.
    - **Anything else** — silent `200` so Lark stops retrying.
 
