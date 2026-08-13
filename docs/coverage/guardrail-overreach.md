@@ -1,10 +1,13 @@
 # T-07b · Guardrail over-reach — coverage
 
-**Status: CODE COMPLETE (2026-08-03), one acceptance item owed.** The rules are
-narrowed, they now actually run on the path every chat turn takes, and the
-over-redaction that made switching them on unsafe is a per-company setting. What
-is outstanding is the `make eval` run on both sides of the activation, which
-costs real LLM spend against a live stack — §4.
+**Status: CODE COMPLETE (2026-08-03); the owed eval pair ran 2026-08-13 and
+answered a smaller question than it was written for.** The rules are narrowed,
+they now actually run on the path every chat turn takes, and the over-redaction
+that made switching them on unsafe is a per-company setting. The pair
+(`off` 35/39, `strict` 35/40) shows activation is free on ordinary BI traffic —
+and could show nothing else, because **the golden set holds no email, phone or
+NIK on any tree**, so no case in it can score differently under a redaction rule
+(§4). A third false positive was also fixed the same day (§5).
 
 ## 1. Done, and verified by `go test ./internal/guardrails/... ./internal/app/...`
 

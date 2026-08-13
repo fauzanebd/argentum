@@ -1492,7 +1492,7 @@ run was one of the lucky ones. Evidence and audit rows:
 
 ### Acceptance
 
-- [ ] Ten consecutive `POST /v1/reports` calls with the quickstart's prompt produce ten documents — **outstanding, needs a live server and a billable key**
+- [~] Ten consecutive `POST /v1/reports` calls with the quickstart's prompt produce ten documents — **run 2026-08-13: 5 of 10, and 0 of 10 refused by a guardrail.** The ticket's own question is answered — `agent_actions` holds no `guardrail` row, against four refusals in five before the fix — but the acceptance line is not met, for three unrelated reasons: two turns hung on the provider, two answered without calling `generate_document`, and one collected another report's document ([`../coverage/api-reports.md`](../coverage/api-reports.md) §7a)
 - [x] An injection inside the caller's own `prompt` is still blocked — `bootstrap.TestAnInjectionInTheCallersPromptIsStillRefused`, through the real `config/guardrails.yaml`
 - [ ] `docs/api/examples/run.sh agentic` passes without needing its retry — **outstanding**, same reason; the comment claiming the job is expected red is gone
 - [x] The eval set covers both directions — `report-directive-is-not-an-injection` and `report-directive-does-not-admit-an-injection`, run through the same `app.ReportDirective` the route calls

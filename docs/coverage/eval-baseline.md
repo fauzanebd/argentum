@@ -3,13 +3,19 @@
 First measured agent-quality signal this project has had. Every prompt or model
 change from here is compared against this number.
 
-> **2026-08-13 — the number went down, and the baseline stands.** Sprint 1's
-> final run scored **87.5% (35/40)** against the 100% below, on the same model
-> and set. Two defects reproduce rather than flake, one of them this file's own
-> language regression returning: mean input tokens have gone from **5,385** to
-> **6,753** since 2026-08-02, and `withLanguageReminder`'s grip is a function of
-> exactly that distance. Full write-up, both halves of `T-07b`'s pair, and the
-> spend: [`eval-sprint1.md`](eval-sprint1.md).
+> **2026-08-13 — a 87.5% (35/40) that this file does not accept as a
+> measurement of current `main`.** It was run at commit `4caf1fa`, 45 commits
+> behind, on the 40-case set — so it scores the agent *before* `T-Q1`→`T-Q9` and
+> before the fifteen cases that took the set to 55. Recorded because two of its
+> failures reproduced and one was re-verified as still live upstream, not
+> because the number is comparable to the 100% below. **This file's next real
+> entry is `T-Q1`'s run on the 55-case set.** Detail, both halves of `T-07b`'s
+> pair, and the spend: [`eval-sprint1.md`](eval-sprint1.md).
+>
+> One thing in it is worth reading regardless of the tree, because it is about
+> this file's own rules: on that run `withLanguageReminder`'s failure tracked
+> **mean input tokens rising 5,385 → 6,753**. If `T-Q1` sees it again, prompt
+> length is the variable to look at first.
 
 **Current: 97.0% (32/33)** — `T-16`, 2026-07-27. The `T-01` baseline it replaces
 (96.8%, 31 cases) is preserved below, because the comparison between them is

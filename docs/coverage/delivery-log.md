@@ -2468,6 +2468,7 @@ rules, and the three that are the reason §1 reads the socket peer: a caller on
 `192.168.1.4` sending `X-Forwarded-For: 127.0.0.1`, then `X-Real-IP`, then a
 bearer token, and `404` every time. No defect.
 
+<<<<<<< HEAD
 **The rest of the day's work was measured against the stale tree and is filed
 that way**: an eval pair and a final-score run on the 40-case set that predates
 `T-Q1`→`T-Q9` ([`eval-sprint1.md`](eval-sprint1.md)), and `T-A2b`'s ten live
@@ -2475,6 +2476,91 @@ report calls ([`api-reports.md`](api-reports.md) §7a). The report gate found a
 defect that is still present on `origin/main` and is fixed here: a report whose
 turn died of `context deadline exceeded` could never be marked failed, because
 `CompleteReport` did its first read on that same dead context.
+=======
+**The gate could not run against the real local database, and this is the part
+worth carrying forward.** `cmd/api` dies at startup on the local `argentum`
+control DB: `schema_migrations` says `version 55` and `migrations/control/` stops
+at `046`, so golang-migrate cannot find a down file for the version it is sitting
+on. No branch in this repo's history ever added a migration above `046`, so that
+row was not written by this tree. The run used a fresh `argentum_t17` database
+migrated from scratch — fine for a gate that only reads its own counters, useless
+for anything needing the 30 companies of accumulated gate tenants. Deciding
+whether to force the row back to `046` or to rebuild the database is an owner's
+call and is filed in [`live-gate-backlog.md`](live-gate-backlog.md) §2.
+
+**The eval runs came after, and they are the day's real news** —
+[`eval-sprint1.md`](eval-sprint1.md). `T-07b`'s pair and `T-18`'s final run, in
+the order the backlog prescribes, for $0.156. **`T-18`'s gate is not met: 87.5%
+(35/40) against a 100% baseline**, and two of the five failures reproduce on
+demand rather than flake.
+
+The first is this log's own language regression coming back. `ambiguous-headcount`
+and `guardrail-off-topic-recipe` answer an English question in Indonesian, twice
+out of two re-runs each — a correct clarification and a correct refusal, both in
+the wrong language. `withLanguageReminder` is still applied on every turn and the
+eval tenant has no company profile, so neither of the obvious suspects holds.
+What has changed is length: **5,385 mean input tokens on 2026-08-02, 6,753
+today**. The reminder's own comment says the rule loses its grip as the distance
+between it and the question grows, and 1,368 tokens of that distance have been
+added since the run that scored 100%. Second time, same mechanism — which is why
+another prompt line is the least promising fix.
+
+The second is `create_visualization` refusing a tenant with two sources —
+*"multiple data sources available; specify source_id"*, with both ids in the
+message — and the agent calling it again unchanged until `iteration budget spent
+(8 of 8)` ends the turn before `create_dashboard`. Two failures in three
+attempts. The information it needs is in the error and in its own previous
+`get_schema` call.
+
+**And `T-07b`'s pair could not measure what it was for.** The golden set holds no
+email, phone or NIK, so no case can score differently under a redaction rule. The
+pair proves activation is free on ordinary BI traffic and says nothing about the
+answer full of customer contacts that `contact_ok` exists for. That needs cases
+nobody has written.
+
+**One provider anomaly worth keeping.** The `off` run's first case came back with
+DeepSeek FIM special tokens wrapped around a hallucinated tool dialogue — a fake
+conversation with a plausible figure, `tool_calls=1`, `data_calls=0`, no SQL run.
+`T-16`'s fabrication guard replaced it. That guard was written against a model
+guessing; this is the first time it has caught a model *malfunctioning*, and it
+did not need to know the difference.
+
+**`T-A2b`'s ten calls ran last, and answered their own question while failing
+their acceptance line** — [`api-reports.md`](api-reports.md) §7a. Ten
+`POST /v1/reports` with the quickstart's prompt: **no `guardrail` row in
+`agent_actions` at all**, against four refusals in five before the directive
+moved out of the user message. That is the ticket. The line it was written as —
+ten calls, ten documents — came back 5 of 10, and none of the five misses was a
+refusal.
+
+Two of them were defects this run found, and the first is fixed. **The terminal
+status write ran on the context that had just died.** `CompleteReport` took the
+turn's context and opened with a `Get` on it, so a turn that ended *because* its
+deadline expired could not be marked failed — the caller polls `queued` with an
+empty `error` forever, which is this ticket's own silent shape reached by a
+different road. It now uses `context.WithTimeout(context.WithoutCancel(ctx),
+10s)`, the idiom three other call sites in this repo already use, with a test
+that fails against the old code.
+
+**The second is open and is the more interesting one.** All ten calls sent the
+same `user_ref`, so all ten reports shared one thread — and a report that timed
+out at 03:52 was completed carrying a document created at 04:02 **by a different
+report**. `NewestForThreadSince` bounds the lookup below by the report's own
+`created_at` and not above, and the comment beside it says the bound exists so a
+caller cannot "download a file answering a question they did not ask". It stops
+that happening with an older document and not with a newer one. Identical prompts
+made it harmless here. The fix is to stop deriving the id at all — the turn that
+called `generate_document` already knows it — and that is a signature change
+through `ChatRunner` and `cmd/worker`, so it is written down rather than made.
+
+**An unplanned dividend:** an `argentum_jaeger` container is running on the
+development machine (OTLP `4317`, UI `16686`). The trace-waterfall half of
+`T-17`'s gate was blocked on "a collector, which is not in the compose file" —
+the collector now exists locally, so that item needs only a turn's LLM spend. The
+compose file still does not have it, so it is not yet repeatable by anyone else.
+
+---
+>>>>>>> fd370d0 (fix(reports): a report that outlived its turn's context still gets a verdict)
 
 ## What the history says about how this project is built
 

@@ -49,9 +49,11 @@ local `argentum`: `schema_migrations` held `version 55` while this tree's
 file for the version it was sitting on. **The database was not ahead of the
 repo; the checkout was behind it** — `origin/main` carries migrations through
 `055`. Fetching first would have turned a puzzling failure into an obvious one.
-`METABASE_URL` in `.env` points at the remote server, and an eval run registers
-databases in whatever Metabase it is given, so it was overridden — no local eval
-should ever be pointed at the deployed one.
+
+**Metabase was pointed somewhere on purpose.** `METABASE_URL` in `.env` is the
+remote server, and an eval run registers databases in whatever Metabase it is
+given, so it was overridden to the compose one — a local eval should never be
+aimed at the deployed instance, and nothing in `cmd/eval` currently stops it.
 
 The `off` run was killed by the harness at case 40 of 40 before it could write
 its summary, so its numbers are reconstructed from its log: 39 results, 35 pass.
@@ -144,6 +146,17 @@ The error text is already as helpful as an error can be. That points the fix at
 the tool rather than the prompt: `create_visualization` could inherit the
 `source_id` the same turn's `get_schema` or `run_sql` already used, which is the
 information the agent demonstrably has and does not carry across the call.
+
+`ResolveSource` (`internal/tools/source_resolve.go:36`) is the one choke point
+all three tools go through, and its own comment states the assumption this run
+falsified: *"the agent reads the menu in the tool error and retries with an
+id."* Two of three times, it did not. **Whether to weaken that is a design
+call, not a bug fix** — the explicitness is deliberate, and the same function
+enforces the roster's source allowlist, so a turn-scoped default must not become
+a way to reach a source the agent is not scoped to. The narrow version is: when
+`requestedID` is empty and a source was already resolved *in this turn*, reuse
+that one rather than erroring, and leave the multi-source menu for turns that
+have not touched a source yet.
 
 ## 5. One provider anomaly, and the guard that caught it
 

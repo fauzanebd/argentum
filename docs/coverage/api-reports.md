@@ -604,15 +604,70 @@ the set cannot drift from the shipped text.
 | `go build`, `go vet`, `golangci-lint`, `go test -race ./...` | ✅ clean |
 | Nine new unit tests across three packages | ✅ |
 | Two eval cases, one per direction | ✅ in the set; `make eval` is a live run and has not been executed for this ticket |
-| Ten consecutive `POST /v1/reports` calls produce ten documents | ⏳ **outstanding** — needs a live server, a real LLM key and the demo warehouse |
-| `docs/api/examples/run.sh agentic` passes without its retry | ⏳ **outstanding**, same reason; the nightly `agentic-examples` job is the standing check |
+| Ten consecutive `POST /v1/reports` calls produce ten documents | ❌ **run 2026-08-13: 5 of 10** — and **0 of 10 were guardrail refusals**, which is the thing this ticket is about (§7a) |
+| `docs/api/examples/run.sh agentic` passes without its retry | ⏳ **outstanding** — not reached; the ten-call run above consumed the session's budget for this path |
 
-The two outstanding items are the ticket's stated gate and they are honest to
-report as not done here: both require a running API, worker, Redis, MinIO and a
-billable LLM key. The unit and eval coverage above is what can be asserted
-without them, and it fails against the old code — `handlers.TestNoInstruction­
-BlockTravelsInTheUserMessage` is a direct assertion about the string `T-A2`
-used to send.
+The unit and eval coverage above is what can be asserted without a live stack,
+and it fails against the old code — `handlers.TestNoInstruction­BlockTravelsInThe­UserMessage`
+is a direct assertion about the string `T-A2` used to send.
+
+### 7a. The live run, 2026-08-13 — the ticket's question is answered, the acceptance line is not met
+
+Ten consecutive `POST /v1/reports`, the quickstart's prompt
+(*"Total revenue by month for 2024, with a bar chart."*), one tenant, the demo
+warehouse, local MinIO, one worker.
+
+**The result the ticket exists for: `agent_actions` holds no `guardrail` row at
+all.** Not one refusal in ten attempts, against four in five before the fix. The
+directive is out of the user message and the classifier no longer sees it — that
+half is proven live.
+
+**The acceptance line as written is still not met: 5 documents in 10 calls.**
+None of the five misses is a guardrail refusal; they are three distinct
+failures, and two of them are defects this run found.
+
+| Outcome | Count | What it was |
+| ------- | ----- | ----------- |
+| `completed` with a document | 5 | The intended path, 58–68s each |
+| stuck at `queued`, empty `error` | 2 | `chat:run` failed with `context deadline exceeded` — the provider hung, and **the status write could not run on the turn's dead context** (defect 1, fixed) |
+| `completed`, no document | 2 | The residual below: the model answered without calling `generate_document`. Also one `generate_document` error |
+| `completed` with **another report's** document | 1 | Defect 2, open |
+
+**Defect 1 — the terminal status is written on the context that just died.
+Fixed 2026-08-13.** `CompleteReport` received the turn's context and its first
+call was `reports.Get(ctx, …)`; when a turn ends *because* that context expired,
+that read fails, the function logs *"report job not found while completing; the
+caller will keep polling"* and returns — so the branch that writes `failed` is
+exactly the branch that cannot run when a turn times out. The caller polls a
+report that will never move, with an empty `error` column: the same silent shape
+this ticket was raised for, from a different cause. Every read and write in
+`CompleteReport` now runs on `context.WithTimeout(context.WithoutCancel(ctx),
+10s)` — the idiom already used by the audit decorator, `recordBlockedTurn` and
+`ActionService`. Pinned by `app.TestCompleteReportWritesTheTerminalStatusOnADeadContext`,
+which fails against the old code with `status = "queued"`.
+
+**Defect 2 — a report can be handed a document generated for a different
+request. Open.** All ten calls passed `user_ref: "quickstart"`, so all ten
+reports share one thread. Report `f34741df` (created 03:52:08) timed out and
+generated nothing; it was later completed carrying document `24b9f73a`, which
+was **created at 04:02:27 by report `6047bf2e`** — a request made nine minutes
+after it.
+
+`CompleteReport` attaches `docs.NewestForThreadSince(companyID, threadID,
+rep.CreatedAt)`. Its comment says the bound exists so that *"a turn that
+generated nothing would otherwise attach the previous turn's document, and the
+caller would download a file answering a question they did not ask"* — and the
+bound is one-sided. It excludes documents older than the report and does nothing
+about newer ones, so in a shared thread a slow report collects a later report's
+file. Here every prompt was identical, so the content was harmless; with two
+different prompts the caller downloads the answer to somebody else's question,
+and nothing in the response says so.
+
+The fix is not another bound: `generate_document` runs *inside* the turn, so the
+turn already knows the id it produced and could pass it to `CompleteReport`
+instead of having it re-derived by a query that cannot distinguish turns. That is
+a signature change through `ChatRunner` and `cmd/worker`, so it is filed here as
+a decision rather than made silently.
 
 ### Residual
 

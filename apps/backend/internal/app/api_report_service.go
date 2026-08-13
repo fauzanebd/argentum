@@ -81,10 +81,23 @@ func NewAPIReportService(
 // report and answered in prose — that is a real outcome, and reporting it as a
 // failure would tell an integrator to retry something that will do the same
 // thing again. The absent `document_id` is what says what happened.
+//
+// **Every read and write here runs on a context detached from the turn's**, for
+// the reason `T-A2b`'s gate of 2026-08-13 made concrete: three of eight reports
+// sat at `queued` with an empty `error` column forever. The turn had died of
+// `context deadline exceeded`, and the first thing this function does with that
+// same context is a `Get` — which fails, logs *"the caller will keep polling"*
+// and returns, so the branch that writes `failed` is precisely the branch that
+// cannot run when a turn times out. The status write is not part of the turn's
+// work; it is what has to happen *because* the turn ended, most of all when it
+// ended badly. Same idiom as the audit decorator and `recordBlockedTurn`.
 func (s *APIReportService) CompleteReport(ctx context.Context, reportID, threadID string, runErr error) {
 	if s == nil || s.reports == nil || reportID == "" {
 		return
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
 	rep, err := s.reports.Get(ctx, reportID)
 	if err != nil {
 		logrus.WithError(err).WithField("report_id", reportID).

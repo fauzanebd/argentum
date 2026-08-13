@@ -235,6 +235,57 @@ func TestCompleteReportToleratesAMissingRow(t *testing.T) {
 		CompleteReport(context.Background(), "rep-missing", "th-1", nil)
 }
 
+// ctxAwareReports fails every call once its context is done, which is what a
+// real driver does and what the plain fake above does not. Without this the
+// regression below cannot be written: every other test in this file would pass
+// against a service that ignores cancellation entirely.
+type ctxAwareReports struct{ *fakeReports }
+
+func (f ctxAwareReports) Get(ctx context.Context, id string) (*domain.APIReport, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.fakeReports.Get(ctx, id)
+}
+
+func (f ctxAwareReports) Complete(ctx context.Context, id string, status domain.APIReportStatus, documentID, errMsg string, at time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f.fakeReports.Complete(ctx, id, status, documentID, errMsg, at)
+}
+
+// The turn's context is dead by the time this runs, and that is the normal
+// case rather than the exotic one: a turn that overran its deadline is exactly
+// the turn whose report has to be marked failed.
+//
+// `T-A2b`'s gate on 2026-08-13 found three of eight reports sitting at `queued`
+// with an empty `error` column for this reason — `chat:run` failed with
+// `context deadline exceeded`, and every read and write in here was on that
+// same context, so the row never moved and the caller polled a report that
+// would never finish. The symptom is the one `T-A2b` exists to prevent, from a
+// different cause.
+func TestCompleteReportWritesTheTerminalStatusOnADeadContext(t *testing.T) {
+	reports := ctxAwareReports{newFakeReports(queuedReport())}
+
+	dead, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	NewAPIReportService(reports, &fakeDocLookup{}, nil, nil).
+		CompleteReport(dead, "rep-1", "th-1", context.DeadlineExceeded)
+
+	got := reports.rows["rep-1"]
+	if got.Status != domain.APIReportFailed {
+		t.Fatalf("status = %q, want failed — the caller is polling a report that will never finish", got.Status)
+	}
+	if got.Error == "" {
+		t.Error("a failed report carries no message for the integrator")
+	}
+	if got.CompletedAt == nil {
+		t.Error("completed_at was not set")
+	}
+}
+
 // A nil service is what a stack with no `/v1` report routes installs, and
 // ChatRunner calls through it on every turn that carries a report id.
 func TestCompleteReportOnANilServiceIsANoOp(t *testing.T) {
