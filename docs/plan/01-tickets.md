@@ -2127,7 +2127,7 @@ rate **and** the token delta — this should reduce mean input tokens measurably
 
 ---
 
-## T-07b · Fix guardrail over-reach — **CODE COMPLETE 2026-08-03, one item owed**
+## T-07b · Fix guardrail over-reach — **DONE 2026-08-13, pair run**
 **Repo:** BE, FE, PKG · **Size:** ~~0.5d~~ **1d** · **Deps:** T-02 · **Priority:** P1
 **Migration:** `045_company_pii_redaction_mode`.
 
@@ -2136,8 +2136,15 @@ rate **and** the token delta — this should reduce mean input tokens measurably
 > rules now run on the streaming path, and they run under
 > `companies.pii_redaction_mode`, which is what makes activating them safe.
 > Record: [`../coverage/guardrail-overreach.md`](../coverage/guardrail-overreach.md).
-> **Owed:** the `make eval` run on both sides of the activation — live LLM spend,
-> flagged for the owner rather than spent unasked (§4 there).
+> **The pair ran 2026-08-13** — `off` 35/39, `strict` 35/40 — and established
+> that activation costs nothing on ordinary BI traffic. It could not establish
+> more than that: the golden set contains no email, phone or NIK, so **no case in
+> it can score differently under a redaction rule**
+> ([`../coverage/eval-sprint1.md`](../coverage/eval-sprint1.md) §2). The set
+> needs PII-shaped cases before this question is really answered — filed there,
+> not here, because it is a golden-set change.
+> **A third false positive was also fixed on 2026-08-13** (`501566e`): naming an
+> `mcp__<server>__<tool>` identifier is no longer read as an override attempt.
 
 **Findings Q-4, Q-6.** Redaction rules break legitimate BI output; the
 system-prompt-leak rule false-positives on "what can you do?".
@@ -2873,14 +2880,27 @@ and nothing is wrong with the data being exported; what is missing is the join.
 
 ---
 
-## T-18 · Launch hygiene — **MOSTLY DONE 2026-08-03, eval run outstanding**
+## T-18 · Launch hygiene — **eval run 2026-08-13 on a stale tree; the closing figure is still owed**
 **Repo:** BE, FE, LP · **Size:** 1.5d · **Deps:** all · **Priority:** P1
 
-> **Status.** Six of seven items closed. Record:
-> [`../coverage/launch-hygiene.md`](../coverage/launch-hygiene.md).
-> **Owed:** the final eval run, which needs model spend — and should run *after*
-> `T-07b`'s before/after pair, or the guardrail question gets answered against a
-> moved baseline.
+> **Status.** Seven of seven items done; the gate is the open part, and it is
+> open on a measurement rather than on missing work. Records:
+> [`../coverage/launch-hygiene.md`](../coverage/launch-hygiene.md) and
+> [`../coverage/eval-sprint1.md`](../coverage/eval-sprint1.md).
+> **The final eval ran in the prescribed order** (after `T-07b`'s pair) and
+> scored **87.5% (35/40) against a 100% baseline** — **on a working tree 45
+> commits behind `origin/main`**, so it measures the agent as it stood at
+> `4caf1fa`, before `T-Q1`→`T-Q9` and before the fifteen cases that took the set
+> to 55. **That is not this sprint's closing figure and this row does not claim
+> to be one**; `T-Q1`'s run on the 55-case set is. What survives the staleness is
+> two failures that reproduced and were then re-verified as still present in
+> `origin/main`'s source: `create_visualization` retrying without `source_id`
+> until the iteration budget ends the turn (`ResolveSource` is unchanged
+> upstream), and an English question answered in Indonesian, which on that tree
+> tracked prompt growth from 5,385 to 6,753 mean input tokens — the mechanism
+> `withLanguageReminder`'s own comment predicts. Whether the second still
+> reproduces after the quality track is **unmeasured**, and `T-Q1`'s run is where
+> it gets answered.
 
 **Do:**
 - ~~**Landing page (P-1)**~~ — **done**, and wider than asked: Telegram, Slack,

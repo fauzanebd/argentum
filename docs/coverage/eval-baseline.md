@@ -3,6 +3,14 @@
 First measured agent-quality signal this project has had. Every prompt or model
 change from here is compared against this number.
 
+> **2026-08-13 — the number went down, and the baseline stands.** Sprint 1's
+> final run scored **87.5% (35/40)** against the 100% below, on the same model
+> and set. Two defects reproduce rather than flake, one of them this file's own
+> language regression returning: mean input tokens have gone from **5,385** to
+> **6,753** since 2026-08-02, and `withLanguageReminder`'s grip is a function of
+> exactly that distance. Full write-up, both halves of `T-07b`'s pair, and the
+> spend: [`eval-sprint1.md`](eval-sprint1.md).
+
 **Current: 97.0% (32/33)** — `T-16`, 2026-07-27. The `T-01` baseline it replaces
 (96.8%, 31 cases) is preserved below, because the comparison between them is
 most of what this file is for.

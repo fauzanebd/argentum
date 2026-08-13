@@ -101,8 +101,16 @@ layer that reads it: the turn, the settings form, and the repository's write.
   | `contact_ok` | `1. **Ahmad Wijaya** - ahmad.wijaya@email.com` … three of three |
 
   So the rules fire on the streaming path a real turn takes, and the mode is
-  what decides — which is the half the unit tests could not reach. The eval pair
-  above is still owed and is now the only item left on this ticket.
+  what decides — which is the half the unit tests could not reach.
+
+  **The eval pair ran 2026-08-13** — `off` 35/39, `strict` 35/40 — and the
+  finding is that it could not measure the thing it was for: the 40-case golden
+  set contains no email address, phone number or NIK, so no case can score
+  differently under a redaction rule. Activation costs nothing on ordinary BI
+  traffic, which was the worry; whether it costs anything on an answer full of
+  customer contacts is still unmeasured, and needs cases that do not exist yet
+  ([`eval-sprint1.md`](eval-sprint1.md) §2). With that, this ticket has no item
+  left that a run can close.
 
 ## 5. `semantic_prompt_injection` false positives, measured twice — partially addressed
 
