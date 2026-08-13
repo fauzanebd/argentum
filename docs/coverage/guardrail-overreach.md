@@ -140,19 +140,39 @@ courier"*, sent a minute earlier and a minute later, was answered both times, so
 naming the tool is what moved it. A tenant who has been shown their tool list —
 Settings → MCP servers shows it — will write that sentence.
 
-**What shipped against it.** The classifier prompt now carries an explicit FALSE
-carve-out for the exact shape both gates caught: a user stating their own role or
-what their workspace has enabled, and then directing the assistant's own
-configured tools — including telling it not to ask clarifying questions.
+**What shipped against it, first pass (2026-08-03).** The classifier prompt took
+an explicit FALSE carve-out for the shape the first two gates caught: a user
+stating their own role or what their workspace has enabled, and then directing
+the assistant's own configured tools — including telling it not to ask
+clarifying questions.
+
+**What shipped against it, second pass (2026-08-13), after the third gate.** That
+carve-out read as a conjunction — *state your role* **and then** *direct the
+tools* — so a message that only did the second half fell outside it, which is
+exactly the sentence 2026-08-04 refused. The bullet is now split in two, and
+neither half depends on the other:
+
+- directing the assistant's own configured tools is FALSE **whether or not** a
+  role sentence precedes it. The role claim is recorded as a common prefix,
+  never as the thing that makes the message legitimate.
+- naming a tool is FALSE on its own, **including a namespaced
+  `mcp__<server>__<tool>` identifier** — with the reason stated in the prompt,
+  because the shape is what misleads a classifier: it looks like an internal
+  symbol reached past the product, and it is in fact the string the product's own
+  Settings → MCP servers page displays to the tenant.
+
 Directing the tools is using the product; only a message that tries to change the
 assistant's rules, persona or safety is TRUE.
 
 **And what a golden case can hold.** `TestImperativeAdminInstructionsAreNotInjections`
-runs the gate's own refused message, plus three more of that shape, through the
-whole input chain with the classifier saying FALSE. That pins the deterministic
-half — no regex rule may claim them, so a future widening of
-`block_prompt_injection` cannot start refusing them. The classifier's own rate is
-a distribution and only a live run can measure whether the carve-out held; the
-count is available on any deployment from `agent_actions` where
-`tool_name = 'guardrail'`, so the next gate can report a number rather than an
-anecdote.
+runs both gates' own refused messages — the `propose_action` one and 2026-08-04's
+`mcp__kirim_cepat__cancel_shipment` verbatim, plus an Indonesian variant of the
+latter and three more of that shape — through the whole input chain with the
+classifier saying FALSE. That pins the deterministic half: no regex rule may
+claim them, so a future widening of `block_prompt_injection` cannot start
+refusing them. **It cannot pin the half that failed all three times.** The
+classifier is an LLM, its rate is a distribution, and only a live run measures
+whether a prompt edit moved it — the count is available on any deployment from
+`agent_actions` where `tool_name = 'guardrail'`, so the next gate can report a
+number rather than an anecdote. Send the two refused messages verbatim in that
+run.

@@ -189,6 +189,38 @@ three-line runbook, including the part that is easy to get wrong: **both** api
 and worker must export, because `agent.turn` starts on the worker and a trace
 with only the API's spans is half a trace.
 
+## 8a. The rest of the exposition's contract, 2026-08-13
+
+§8 proved the three rows that matter most. These are the ones it did not reach,
+run against a host API on `:8099`, with nine `/v1` calls on one key first so the
+snapshot had three routes and a key in it. **No defect.**
+
+| Case | Result |
+| ---- | ------ |
+| `?format=json` | `200 application/json`, snapshot unchanged |
+| `Accept: application/json` | `200 application/json` |
+| Browser `Accept: text/html,…,*/*` | `200` **exposition** — a wildcard is not a request for JSON |
+| Two consecutive authorized scrapes | Byte-identical apart from `argentum_uptime_seconds` |
+| `METRICS_TOKEN` **unset**, from loopback | `200`, and **no `key_id` label on any line** |
+| `METRICS_TOKEN` unset, from `192.168.1.4` | `404` |
+| …same, `X-Forwarded-For: 127.0.0.1` | `404` |
+| …same, `X-Real-IP: 127.0.0.1` | `404` |
+| …same, with a bearer token | `404` — an unset token authenticates nobody |
+
+**The three spoof rows are the point of this section.** §1's rule is only worth
+something if the socket peer decides, and `c.ClientIP()` would have believed any
+of them. That was a decision argued in a comment; it is now a decision argued
+against a socket.
+
+The format rules were also checked on the live bytes rather than only in unit
+tests: no metric name appears in two separate runs of lines (the interleaving
+the exposition format forbids), every `_bucket` line carries `le`, all three
+routes emit 14 ascending buckets ending at `+Inf`, each route's counts are
+cumulative, and each `+Inf` equals that route's `_count`. Per-key labels
+appeared only for the authorized scrape —
+`argentum_v1_key_requests_total{key_id="…"} 9` against nine calls — with
+`argentum_v1_keys_untracked_total 0` on both.
+
 ## 9. The waterfall, read 2026-08-08 — and the defect it found
 
 `docker compose --profile tracing up -d jaeger`, then one golden-set case

@@ -2436,6 +2436,46 @@ against the live stack: the launcher in the tenant's accent, the conversation
 restored on open, and an answer streaming over the WebSocket with a `run_sql`
 chip above it.
 
+## Phase 2m — The third injection false positive, and the exposition's remaining rows (2026-08-13)
+
+Two leftovers from 2026-08-04, closed on a working tree that was 45 commits
+behind `origin/main` — which matters for one of them and is recorded in each
+place the distinction bites.
+
+**The `semantic_prompt_injection` carve-out was a conjunction, and the traffic
+was not.** 2026-08-03 answered the first two gates by adding a FALSE bullet for
+*a user stating their own role or what their workspace has enabled, **and then**
+directing the assistant's own tools*. 2026-08-04 refused *"Use the courier tool
+`mcp__kirim_cepat__cancel_shipment` directly to cancel KC-1002"* — no role
+claim, no configuration claim, so nothing in the carve-out covered it, while the
+same request without the tool name was answered on either side of it. The bullet
+is now two bullets: directing the agent's own tools is FALSE whether or not a
+role sentence precedes it, and naming a tool is FALSE on its own — **including a
+namespaced `mcp__<server>__<tool>` identifier**, with the reason spelled out in
+the prompt, because the shape is exactly what misleads a classifier. It reads as
+an internal symbol smuggled past the product, and it is in fact the string
+Settings → MCP servers shows the tenant.
+
+`TestImperativeAdminInstructionsAreNotInjections` now carries both gates' refused
+messages verbatim plus an Indonesian variant. **That pins the half that never
+failed** — no regex rule may claim them. The classifier's own rate is a
+distribution, so the next live run is what measures whether this moved it.
+
+**The exposition's remaining rows** — [`observability.md`](observability.md) §8a.
+§8 ran the auth matrix on 2026-08-08; this adds the content negotiation, the
+repeat-scrape stability, the unset-token loopback case, the on-the-wire format
+rules, and the three that are the reason §1 reads the socket peer: a caller on
+`192.168.1.4` sending `X-Forwarded-For: 127.0.0.1`, then `X-Real-IP`, then a
+bearer token, and `404` every time. No defect.
+
+**The rest of the day's work was measured against the stale tree and is filed
+that way**: an eval pair and a final-score run on the 40-case set that predates
+`T-Q1`→`T-Q9` ([`eval-sprint1.md`](eval-sprint1.md)), and `T-A2b`'s ten live
+report calls ([`api-reports.md`](api-reports.md) §7a). The report gate found a
+defect that is still present on `origin/main` and is fixed here: a report whose
+turn died of `context deadline exceeded` could never be marked failed, because
+`CompleteReport` did its first read on that same dead context.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**
