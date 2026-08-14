@@ -201,27 +201,66 @@ func sameMagnitudeRendering(stated, actual float64) bool {
 // parseLoose reads a number written with either separator convention.
 //
 // Indonesian uses "." for thousands and "," for decimals; English is the
-// reverse; and the reply is required to follow the user's language. Rather
-// than guess the convention from the locale, both are tried and the reading
-// that yields a plausible number wins — a wrong reading here produces a
-// spurious ungrounded figure in a log line, which is the cheapest possible
-// failure for this code.
+// reverse; and the reply is required to follow the user's language. The
+// convention is decided from the token's own shape rather than from the
+// locale, because the locale is not available here and the reply may mix
+// languages anyway.
+//
+// This used to try English first and return the first reading that parsed,
+// which is not the same thing as the comment above it claimed ("the reading
+// that yields a plausible number wins"). Stripping the commas out of an
+// Indonesian decimal always parses: "Rp 21,23 Miliar" came back as **2123**,
+// a four-digit integer a hundred times the real value that no tool ever
+// returned — so every Indonesian magnitude sentence produced a spurious
+// ungrounded figure. Observed on two different models on 2026-08-14, on the
+// product's primary language, in the instrument whose whole value is that its
+// output is worth reading.
 func parseLoose(raw string) (float64, bool) {
 	raw = strings.Trim(raw, ".,")
 	if raw == "" {
 		return 0, false
 	}
-	// English: commas group, dot is the decimal point.
-	if v, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", ""), 64); err == nil {
-		return v, true
+	dots := strings.Count(raw, ".")
+	commas := strings.Count(raw, ",")
+
+	switch {
+	case dots > 0 && commas > 0:
+		// Both present: the rightmost is the decimal point and the other groups.
+		// "12,462,599.03" and "12.462.599,03" are the same number.
+		if strings.LastIndex(raw, ".") > strings.LastIndex(raw, ",") {
+			raw = strings.ReplaceAll(raw, ",", "")
+		} else {
+			raw = strings.ReplaceAll(raw, ".", "")
+			raw = strings.ReplaceAll(raw, ",", ".")
+		}
+	case dots > 1:
+		raw = strings.ReplaceAll(raw, ".", "") // "3.863.405.700"
+	case commas > 1:
+		raw = strings.ReplaceAll(raw, ",", "") // "3,863,405,700"
+	case dots == 1 || commas == 1:
+		sep := "."
+		if commas == 1 {
+			sep = ","
+		}
+		i := strings.Index(raw, sep)
+		before, after := raw[:i], raw[i+1:]
+		// A single separator with exactly three digits after it is a grouping
+		// mark only when what precedes it is itself a group — "12.500" is
+		// twelve thousand five hundred, but "1234.000" is a driver rendering a
+		// DECIMAL and is 1234. Everything else is a decimal separator, which is
+		// what makes "21,23" read as 21.23 instead of 2123.
+		if len(after) == 3 && len(before) >= 1 && len(before) <= 3 {
+			raw = before + after
+		} else {
+			raw = before + "." + after
+		}
 	}
-	// Indonesian: dots group, comma is the decimal point.
-	swapped := strings.ReplaceAll(raw, ".", "")
-	swapped = strings.ReplaceAll(swapped, ",", ".")
-	if v, err := strconv.ParseFloat(swapped, 64); err == nil {
-		return v, true
+
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, false
 	}
-	return 0, false
+	return v, true
 }
 
 // CollectNumbers pulls every numeric value out of a tool result, whatever

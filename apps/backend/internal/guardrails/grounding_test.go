@@ -1,6 +1,9 @@
 package guardrails
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // The exact gap this check exists for. CheckFabrication passes this reply
 // completely — a data tool ran, rows came back, the magnitudes agree — and the
@@ -94,6 +97,47 @@ func TestASentenceFinalYearIsStillAYear(t *testing.T) {
 	quantities := CheckGrounding("The two lines came to 2,024 and 2024.50 units.", []float64{99})
 	if len(quantities.Ungrounded) != 2 {
 		t.Errorf("a grouped or fractioned number stopped being treated as a quantity: %+v", quantities.Ungrounded)
+	}
+}
+
+// An Indonesian decimal comma is a decimal comma, not a thousands separator
+// with the digits shuffled. Found on 2026-08-14: the reply "Rp 21,23 Miliar"
+// was read as 2123 — a figure no tool returned, on the two cases whose answers
+// are written in the product's primary language, on both models scored that
+// day.
+func TestAnIndonesianDecimalIsNotAFourDigitInteger(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want float64
+	}{
+		{"21,23", 21.23}, // ID magnitude: "Rp 21,23 Miliar"
+		{"21.23", 21.23}, // EN magnitude: "Rp 21.23 billion"
+		{"12.462.599,03", 12462599.03},
+		{"12,462,599.03", 12462599.03},
+		{"3.863.405.700", 3863405700},
+		{"3,863,405,700", 3863405700},
+		{"12.500", 12500},  // ID thousands — a group is 1–3 digits then 3
+		{"1,234", 1234},    // EN thousands, same shape
+		{"1234.000", 1234}, // a driver rendering DECIMAL(…,3), not 1.234m
+		{"3863405700.00", 3863405700},
+	} {
+		got, ok := parseLoose(tc.raw)
+		if !ok {
+			t.Errorf("parseLoose(%q) refused a number it should read", tc.raw)
+			continue
+		}
+		if math.Abs(got-tc.want) > 0.001 {
+			t.Errorf("parseLoose(%q) = %v, want %v", tc.raw, got, tc.want)
+		}
+	}
+
+	// The end-to-end shape: the magnitude sentence is a rendering of the figure
+	// the tool returned, so nothing is ungrounded.
+	rep := CheckGrounding(
+		"Total penjualan Anda **Rp 21.231.619.600** (sekitar **Rp 21,23 Miliar**).",
+		[]float64{21231619600})
+	if !rep.Clean() {
+		t.Errorf("an Indonesian magnitude rendering was reported as ungrounded: %+v", rep.Ungrounded)
 	}
 }
 
