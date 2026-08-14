@@ -68,6 +68,35 @@ func TestSmallIntegersAreNotTreatedAsFigures(t *testing.T) {
 	}
 }
 
+// A year that closes a sentence arrives from the regex with the full stop
+// attached — `2024.` rather than `2024` — and the year filter reads a token's
+// punctuation to tell a calendar year from a decimal quantity. Until 2026-08-14
+// it was handed the untrimmed token while the parser got a trimmed one, so it
+// judged every sentence-final year to be a quantity and reported it.
+//
+// The case above hid this by writing the year mid-sentence. It was found on the
+// third case of an eval run, where the reply below produced
+// `ungrounded="[2024]"` — and the noise matters more than it looks: this
+// instrument exists to *count* the wrong-but-nonempty rate, and almost every
+// reply about a time window ends a sentence with a year.
+func TestASentenceFinalYearIsStillAYear(t *testing.T) {
+	returned := []float64{1348}
+	rep := CheckGrounding(
+		"We have **1,348** sales transactions in total, covering the period "+
+			"from 1 July 2024 to 31 December 2024.", returned)
+	if !rep.Clean() {
+		t.Errorf("a sentence-final year was reported as an ungrounded figure: %+v", rep.Ungrounded)
+	}
+
+	// The trade the filter documents must survive the fix: a grouped or
+	// fractioned number is a quantity even when it looks like a year, and
+	// trimming only the outer punctuation leaves both of those intact.
+	quantities := CheckGrounding("The two lines came to 2,024 and 2024.50 units.", []float64{99})
+	if len(quantities.Ungrounded) != 2 {
+		t.Errorf("a grouped or fractioned number stopped being treated as a quantity: %+v", quantities.Ungrounded)
+	}
+}
+
 // A turn whose tools returned nothing numeric cannot be checked, and saying
 // every figure is ungrounded would be noise. CheckFabrication is the gate for
 // that case and already covers it.

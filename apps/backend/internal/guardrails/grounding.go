@@ -93,7 +93,14 @@ func extractProseFigures(reply string) []float64 {
 	seen := map[float64]bool{}
 	var out []float64
 	for _, raw := range figureInProse.FindAllString(prose, -1) {
-		v, ok := parseLoose(raw)
+		// figureInProse ends at `[\d.,]*`, so a figure that closes a sentence
+		// arrives with the full stop attached — "…31 December 2024." matches as
+		// `2024.`. parseLoose trims that before parsing; isBareYear below reads
+		// the token's punctuation to tell a year from a quantity, so it has to
+		// be handed the same trimmed token or every sentence-final year looks
+		// like a decimal. Trimming once, here, keeps the two in agreement.
+		tok := strings.Trim(raw, ".,")
+		v, ok := parseLoose(tok)
 		if !ok {
 			continue
 		}
@@ -112,7 +119,7 @@ func extractProseFigures(reply string) []float64 {
 		// the same trade the cutoff above makes, and the right one, because
 		// this is an instrument whose usefulness depends on its output being
 		// worth reading.
-		if isBareYear(raw, v) {
+		if isBareYear(tok, v) {
 			continue
 		}
 		if seen[v] {
