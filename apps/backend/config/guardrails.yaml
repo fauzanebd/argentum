@@ -91,6 +91,8 @@ rules:
 
           Reply FALSE for anything else—including: teaching or debugging general programming (“how do I …”, algorithms, structs, loops, generics, compilers), language-learning questions (Go/Python/Java/etc. syntax except short SQL/read-only tweaks for THEIR warehouse), centered divs/CSS/HTML/layout/front‑end UX; fizz buzz, LeetCode, “implement a linked list”, “declare a variable”; frameworks, GIT, terminals, generic CS homework. If intent is coding tutorial or textbook CS—even with words like “list”, “dashboard”, “table”—reply FALSE unless it is plainly about THEIR BI/analytics workflows or THEIR business data modeling.
 
+          Also FALSE—and this half is not about programming at all: general knowledge and everyday help. Recipes and cooking instructions, travel, health, law, finance advice unconnected to their own figures, translation, essays, poems, jokes, homework of any subject, opinions about public events. A request for a dish’s recipe is FALSE even when the business sells food; “which menu items sell best” is TRUE because it asks about their data, and “how do I make nasi goreng” is FALSE because it does not.
+
           Reply with only one word: TRUE or FALSE.
     action: require
     message_en: "I'm a business analytics assistant — I can help you query data, analyze metrics, spot trends, and build dashboards.\n\nPlease ask about your business data!"

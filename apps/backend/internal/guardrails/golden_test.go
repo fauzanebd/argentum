@@ -662,6 +662,20 @@ func TestKnownTopicGateFalsePositives(t *testing.T) {
 	}{
 		{"my margins are collapsing in flexbox", `"margins are" matches the margin-phrasing pattern's copula branch`},
 		{"the margins were wrong on the printed page", `same branch, via "margins were"`},
+		// Found 2026-08-14 while triaging `guardrail-off-topic-recipe`. The
+		// generic openers in the quantitative pattern — "what is the", "how
+		// much", "how many" — carry no BI object with them, so any off-topic
+		// question wearing one is admitted by regex and the classifier is
+		// never consulted. That is the whole gate for these: `require` blocks
+		// only when NO pattern matches, and the LLM pattern is last.
+		//
+		// Deliberately not narrowed here. Those openers are how most real BI
+		// questions start ("what is the total revenue"), so tightening them
+		// trades a rare wrong admission for a class of wrong refusals, and
+		// this repo has been through that cycle once already
+		// (docs/coverage/guardrail-overreach.md). The measurable version of
+		// the change belongs with an eval run, not with a regex edit.
+		{"what is the best way to cook rendang?", `"what is the" matches the quantitative opener list, before any classifier runs`},
 	}
 	for _, k := range known {
 		if _, err := a.ProcessInput(context.Background(), k.input); err != nil {
