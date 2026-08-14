@@ -66,14 +66,20 @@ type RateInput struct {
 // and every read of this table afterwards — the tuning list, T-Q8's join —
 // would be reading a lie it has no way to detect.
 func (s *FeedbackService) Rate(ctx context.Context, in RateInput) (*domain.MessageFeedback, error) {
+	// Wrapped in domain.ErrInvalidInput, all three, because the transport maps
+	// an unrecognised error to 500 — and every one of these is the caller's
+	// mistake, not ours. A client that omits `rating` was answered "rating must
+	// be 1 or -1, got 0" over a 500 until the live gate on 2026-08-14 sent one:
+	// the field comment two types up already calls that shape a client bug, and
+	// a client bug reported as a server fault gets retried and pages an operator.
 	if !in.Rating.Valid() {
-		return nil, fmt.Errorf("rating must be 1 or -1, got %d", in.Rating)
+		return nil, fmt.Errorf("%w: rating must be 1 or -1, got %d", domain.ErrInvalidInput, in.Rating)
 	}
 	if in.CompanyID == "" || in.MessageID == "" {
-		return nil, fmt.Errorf("company and message are required")
+		return nil, fmt.Errorf("%w: company and message are required", domain.ErrInvalidInput)
 	}
 	if !in.ActorKind.Valid() {
-		return nil, fmt.Errorf("unknown actor kind %q", in.ActorKind)
+		return nil, fmt.Errorf("%w: unknown actor kind %q", domain.ErrInvalidInput, in.ActorKind)
 	}
 
 	msg, err := s.messages.GetForCompany(ctx, in.CompanyID, in.MessageID)
@@ -141,7 +147,7 @@ func (s *FeedbackService) Summary(ctx context.Context, companyID string, from, t
 		from = to.AddDate(0, 0, -30)
 	}
 	if !from.Before(to) {
-		return domain.FeedbackSummary{}, fmt.Errorf("from must be before to")
+		return domain.FeedbackSummary{}, fmt.Errorf("%w: from must be before to", domain.ErrInvalidInput)
 	}
 	return s.repo.Summarize(ctx, companyID, from, to)
 }

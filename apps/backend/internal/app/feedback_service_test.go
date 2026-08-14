@@ -127,9 +127,20 @@ func TestRateRejectsBadInput(t *testing.T) {
 		{"no message", RateInput{CompanyID: "co", Rating: 1, ActorKind: domain.ActorKindUser}},
 		{"unknown actor", RateInput{CompanyID: "co", MessageID: "m", Rating: 1, ActorKind: "ghost"}},
 	}
+	// The assertion is the sentinel, not merely non-nil. This test passed for
+	// three days against a Rate that returned bare fmt.Errorf values, and the
+	// handler's default arm turns anything it does not recognise into a 500 —
+	// so "rating must be 1 or -1, got 0" reached clients as a server fault
+	// (live gate, 2026-08-14). err != nil is the assertion that agreed with the
+	// code and disagreed with production.
 	for _, tt := range tests {
-		if _, err := svc.Rate(context.Background(), tt.in); err == nil {
+		_, err := svc.Rate(context.Background(), tt.in)
+		if err == nil {
 			t.Errorf("%s: Rate accepted invalid input", tt.name)
+			continue
+		}
+		if !errors.Is(err, domain.ErrInvalidInput) {
+			t.Errorf("%s: err = %v, want it wrapped in domain.ErrInvalidInput so the transport answers 400", tt.name, err)
 		}
 	}
 }
@@ -182,7 +193,11 @@ func TestDownRateOfAnEmptyWindowIsZeroNotUndefined(t *testing.T) {
 func TestSummaryRejectsInvertedWindow(t *testing.T) {
 	svc := NewFeedbackService(&fbRepo{}, fbMessages{msg: assistantMsg()})
 	now := time.Now()
-	if _, err := svc.Summary(context.Background(), "co-1", now, now.Add(-time.Hour)); err == nil {
-		t.Error("Summary accepted a window that ends before it starts")
+	_, err := svc.Summary(context.Background(), "co-1", now, now.Add(-time.Hour))
+	if err == nil {
+		t.Fatal("Summary accepted a window that ends before it starts")
+	}
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Errorf("err = %v, want it wrapped in domain.ErrInvalidInput so the transport answers 400", err)
 	}
 }

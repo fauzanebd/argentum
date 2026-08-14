@@ -134,7 +134,8 @@ func feedbackFail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "no such message"})
-	case errors.Is(err, app.ErrNotAssistantMessage):
+	case errors.Is(err, app.ErrNotAssistantMessage),
+		errors.Is(err, domain.ErrInvalidInput):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
