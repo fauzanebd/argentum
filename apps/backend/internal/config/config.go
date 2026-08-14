@@ -555,16 +555,62 @@ func (c *Config) EffectiveClassifierModel() string {
 }
 
 // EffectiveEmbeddingAPIKey returns EMBEDDING_API_KEY when set, otherwise
-// LLMAPIKey when the primary LLM is OpenAI (same credentials). Returns ""
-// when no usable key is configured — caller should treat that as "disable".
+// LLMAPIKey when the embedding endpoint and the primary LLM endpoint are the
+// same host — which is the only case in which "same credentials" is true.
+// Returns "" when no usable key is configured; the caller treats that as
+// "disable".
+//
+// The host check was added 2026-08-14, after the fallback sent an OpenRouter
+// key to api.openai.com on every turn of an eval run. `LLM_INTERFACE=openai`
+// names a *wire protocol*, not a vendor: every OpenAI-compatible gateway —
+// OpenRouter, Together, vLLM, a corporate proxy — sets it, and this deployment
+// pairs it with an `sk-or-v1-…` key. The old condition read that as "the
+// primary LLM is OpenAI, so the key is an OpenAI key", which stopped being
+// true the moment anyone put a gateway in front.
+//
+// The failure was loud in one sense and silent in the worst one: the embedding
+// call 401s and the table hint is skipped with a warning, so nothing breaks
+// visibly — while a live credential is transmitted to a third party that did
+// not issue it and cannot be expected to discard it. A leaked key is not
+// undone by the request failing.
 func (c *Config) EffectiveEmbeddingAPIKey() string {
 	if k := strings.TrimSpace(c.EmbeddingAPIKey); k != "" {
 		return k
 	}
-	if c.EffectiveLLMInterface() == LLMInterfaceOpenAI {
-		return strings.TrimSpace(c.LLMAPIKey)
+	if c.EffectiveLLMInterface() != LLMInterfaceOpenAI {
+		return ""
 	}
-	return ""
+	if !sameAPIHost(c.EmbeddingBaseURL, c.LLMBaseURL) {
+		return ""
+	}
+	return strings.TrimSpace(c.LLMAPIKey)
+}
+
+// defaultOpenAIHost is where an OpenAI-interface client goes when no base URL
+// is configured, and therefore what an empty base URL has to be compared as.
+const defaultOpenAIHost = "api.openai.com"
+
+// sameAPIHost reports whether two base URLs address the same API host, with an
+// empty value meaning OpenAI's own endpoint. A URL that will not parse is
+// treated as a different host: the question being asked is "may this key be
+// sent there", and the safe answer to "I cannot tell" is no.
+func sameAPIHost(a, b string) bool {
+	return apiHost(a) == apiHost(b)
+}
+
+func apiHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return defaultOpenAIHost
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" {
+		return "unparseable:" + raw
+	}
+	return strings.ToLower(u.Hostname())
 }
 
 // CreditsDefaultGrantMicroUSD converts the operator-facing dollar amount to

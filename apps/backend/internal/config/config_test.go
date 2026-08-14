@@ -122,32 +122,79 @@ func TestEffectiveEmbeddingAPIKey(t *testing.T) {
 	// OpenAI's wire protocol. Borrowing an Anthropic key for an OpenAI
 	// embeddings call sends a live credential to the wrong vendor, so the
 	// non-OpenAI case must return "" — the caller reads that as "disabled".
+	//
+	// Speaking the protocol is necessary and not sufficient, which is the part
+	// this test did not cover until 2026-08-14. Every OpenAI-compatible gateway
+	// sets iface=openai, so the interface says nothing about who issued the
+	// key; only the endpoint does. The base-URL cases below are a real incident
+	// rather than a hypothetical — an `sk-or-v1-…` OpenRouter key went to
+	// api.openai.com on every turn of an eval run, 401ing each time, which
+	// hid the leak behind a warning about a skipped table hint.
 	cases := []struct {
 		name         string
 		embeddingKey string
 		llmKey       string
 		iface        string
 		provider     string
+		llmBase      string
+		embedBase    string
 		want         string
 	}{
-		{"explicit key wins", "sk-embed", "sk-llm", "openai", "", "sk-embed"},
-		{"explicit key wins even on anthropic", "sk-embed", "sk-llm", "anthropic", "", "sk-embed"},
-		{"borrows the llm key on openai", "", "sk-llm", "openai", "", "sk-llm"},
-		{"borrows via the provider fallback", "", "sk-llm", "", "openai", "sk-llm"},
-		{"refuses to borrow an anthropic key", "", "sk-llm", "anthropic", "", ""},
-		{"refuses to borrow a gemini key", "", "sk-llm", "gemini", "", ""},
-		{"no key anywhere", "", "", "openai", "", ""},
-		{"trims the explicit key", "  sk-embed  ", "", "openai", "", "sk-embed"},
-		{"trims the borrowed key", "", "  sk-llm  ", "openai", "", "sk-llm"},
-		{"whitespace-only explicit key falls through", "   ", "sk-llm", "openai", "", "sk-llm"},
+		{"explicit key wins", "sk-embed", "sk-llm", "openai", "", "", "", "sk-embed"},
+		{"explicit key wins even on anthropic", "sk-embed", "sk-llm", "anthropic", "", "", "", "sk-embed"},
+		{"borrows the llm key on openai", "", "sk-llm", "openai", "", "", "", "sk-llm"},
+		{"borrows via the provider fallback", "", "sk-llm", "", "openai", "", "", "sk-llm"},
+		{"refuses to borrow an anthropic key", "", "sk-llm", "anthropic", "", "", "", ""},
+		{"refuses to borrow a gemini key", "", "sk-llm", "gemini", "", "", "", ""},
+		{"no key anywhere", "", "", "openai", "", "", "", ""},
+		{"trims the explicit key", "  sk-embed  ", "", "openai", "", "", "", "sk-embed"},
+		{"trims the borrowed key", "", "  sk-llm  ", "openai", "", "", "", "sk-llm"},
+		{"whitespace-only explicit key falls through", "   ", "sk-llm", "openai", "", "", "", "sk-llm"},
+
+		// The gateway cases.
+		{
+			name: "refuses to send a gateway key to openai", llmKey: "sk-or-v1-x", iface: "openai",
+			llmBase: "https://openrouter.ai/api/v1", embedBase: "https://api.openai.com/v1", want: "",
+		},
+		{
+			name: "refuses when only the llm is on a gateway", llmKey: "sk-or-v1-x", iface: "openai",
+			llmBase: "https://openrouter.ai/api/v1", embedBase: "", want: "",
+		},
+		{
+			name: "refuses when only embeddings are on a gateway", llmKey: "sk-openai", iface: "openai",
+			llmBase: "", embedBase: "https://openrouter.ai/api/v1", want: "",
+		},
+		{
+			name: "borrows when both sit on the same gateway", llmKey: "sk-or-v1-x", iface: "openai",
+			llmBase: "https://openrouter.ai/api/v1", embedBase: "https://openrouter.ai/api/v1", want: "sk-or-v1-x",
+		},
+		{
+			name: "same host, different path and scheme still borrows", llmKey: "sk-x", iface: "openai",
+			llmBase: "https://gw.internal/v1", embedBase: "http://GW.Internal/v2/embeddings", want: "sk-x",
+		},
+		{
+			name: "a schemeless host is still a host", llmKey: "sk-x", iface: "openai",
+			llmBase: "openrouter.ai/api/v1", embedBase: "https://openrouter.ai/api/v1", want: "sk-x",
+		},
+		{
+			name: "an explicit key is never blocked by the host check", embeddingKey: "sk-embed",
+			llmKey: "sk-or-v1-x", iface: "openai",
+			llmBase: "https://openrouter.ai/api/v1", embedBase: "https://api.openai.com/v1", want: "sk-embed",
+		},
+		{
+			name: "an unparseable base url is treated as a different host", llmKey: "sk-x", iface: "openai",
+			llmBase: "://nonsense", embedBase: "", want: "",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &Config{
-				EmbeddingAPIKey: tc.embeddingKey,
-				LLMAPIKey:       tc.llmKey,
-				LLMInterface:    tc.iface,
-				LLMProvider:     tc.provider,
+				EmbeddingAPIKey:  tc.embeddingKey,
+				LLMAPIKey:        tc.llmKey,
+				LLMInterface:     tc.iface,
+				LLMProvider:      tc.provider,
+				LLMBaseURL:       tc.llmBase,
+				EmbeddingBaseURL: tc.embedBase,
 			}
 			if got := c.EffectiveEmbeddingAPIKey(); got != tc.want {
 				t.Errorf("EffectiveEmbeddingAPIKey() = %q, want %q", got, tc.want)

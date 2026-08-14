@@ -47,7 +47,7 @@ func Build(cfg *config.Config) Client {
 	}
 	apiKey := cfg.EffectiveEmbeddingAPIKey()
 	if apiKey == "" {
-		logrus.Warn("embedding: EMBEDDING_API_KEY not set (and LLM is not OpenAI); table picker disabled")
+		logrus.Warn("embedding: EMBEDDING_API_KEY not set, and the primary LLM key cannot be borrowed — it is either not an OpenAI-interface key or it belongs to a different host than EMBEDDING_BASE_URL. Table picker and cookbook retrieval are disabled; set EMBEDDING_API_KEY to enable them")
 		return nil
 	}
 	if cfg.EmbeddingProvider != "" && cfg.EmbeddingProvider != "openai" {
