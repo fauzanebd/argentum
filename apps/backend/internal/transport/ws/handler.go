@@ -8,6 +8,7 @@ package ws
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
 )
@@ -154,6 +156,13 @@ func (h *Handler) pump(c *gin.Context, threadID string, upgrader websocket.Upgra
 	}
 	msgCh := pubsub.Channel()
 
+	// The turn already running, if there is one (T-U12). Read after the
+	// subscription is live, never before: an event published in between is
+	// seen twice, which the client reconciles, while one published before a
+	// snapshot taken first would be lost outright — and a lost `final` is a
+	// spinner that never stops.
+	h.sendLiveTurn(ctx, conn, threadID)
+
 	// Reader goroutine — discards client frames but keeps the pong
 	// handler firing. Cancels ctx on read error so the writer loop and
 	// pubsub subscription exit cleanly.
@@ -189,5 +198,40 @@ func (h *Handler) pump(c *gin.Context, threadID string, upgrader websocket.Upgra
 				return
 			}
 		}
+	}
+}
+
+// sendLiveTurn writes the `state` frame for a socket that opened while the
+// agent was mid-turn — the case of a reader who left this conversation for
+// another one and came back. Without it the connection is silent until the
+// agent's next token, which on a turn waiting for a slow tool reads as a thread
+// where nothing was ever asked.
+//
+// Every failure here is silent by design: this frame is a courtesy, and a
+// client that does not get one is exactly the client every release before this
+// one had.
+func (h *Handler) sendLiveTurn(ctx context.Context, conn *websocket.Conn, threadID string) {
+	turn, err := eventbus.LoadLiveTurn(ctx, h.rdb, threadID)
+	if err != nil {
+		logrus.WithError(err).WithField("thread_id", threadID).
+			Warn("live-turn snapshot read failed")
+		return
+	}
+	if turn == nil {
+		return
+	}
+	body, err := json.Marshal(app.ChatEvent{
+		JobID:     turn.JobID,
+		ThreadID:  threadID,
+		Type:      app.EventState,
+		Live:      turn,
+		Timestamp: time.Now(),
+	})
+	if err != nil {
+		return
+	}
+	conn.SetWriteDeadline(time.Now().Add(writeWait))
+	if err := conn.WriteMessage(websocket.TextMessage, body); err != nil {
+		logrus.WithError(err).Debug("live-turn snapshot write failed")
 	}
 }

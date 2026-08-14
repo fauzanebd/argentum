@@ -6340,3 +6340,66 @@ new libraries.
 
 Main chunk across the sprint: 1,326 KB → 1,485 KB. The 159 KB is framer-motion
 plus cmdk plus this sprint's own components; shiki and recharts are outside it.
+
+---
+
+## T-U12 · Resume the turn in flight
+**Repo:** BE + FE · **Size:** 1d · **Deps:** T-U3, T-U4 · **Priority:** P1
+
+### Why
+
+Ask a question, open another conversation while it runs, come back: the thread
+shows no shimmer, no elapsed figure and no thinking trace — nothing, for as long
+as the agent takes to produce its next token. On a turn waiting through a slow
+tool that is tens of seconds of a screen that looks like the question was never
+sent, and the reader's reasonable conclusion is that it was lost.
+
+Nothing was lost. Leaving the thread closes its WebSocket
+(`use-thread-stream.ts` cleanup) and `chat-page.tsx` clears `liveAssistant`;
+the socket that reopens on the way back carries only what happens *next*, and
+the state built up from the events that already went by has no other home.
+
+### Do
+
+- `app.LiveTurn` + `EventState` — a `state` frame carrying the running turn
+- `eventbus`: fold every published event into a per-thread snapshot in the same
+  pipeline as the PUBLISH; delete it on `final`/`error`, TTL it otherwise
+- `ws.pump`: read the snapshot after SUBSCRIBE and greet the client with it
+- `chat-page.tsx`: hydrate `liveAssistant` from the frame, and drop the one
+  event a resumed socket can be told twice
+
+### Notes for the implementer
+
+- **Order inside the pipeline is load-bearing.** Snapshot first, PUBLISH
+  second: the window between them can duplicate an event, which the client
+  drops by `last_event_at`, where the reverse order loses one — and a lost
+  `final` is a spinner that never stops.
+- **Fold the events in the bus, not at the runner's ~20 publish sites.** An
+  event type added later is then covered by construction.
+- The snapshot is never a second place a turn's result is stored: it dies with
+  the turn, and the transcript is the record.
+
+### Acceptance
+
+- [ ] A turn survives leaving the conversation and coming back: shimmer,
+      elapsed seconds, thinking trace and tool cards all return
+- [ ] Elapsed counts from when the *agent* started, not from the reconnect
+- [x] A finished turn resumes nothing — no spinner above a settled answer
+- [x] A retried job does not resume the abandoned attempt's trace
+- [x] A worker killed mid-turn cannot leave a spinner behind (TTL)
+
+### Gate
+
+`go test ./internal/transport/eventbus/...`, and a >20s turn left and returned
+to in the dashboard.
+
+The snapshot half is covered by `livestate_test.go` against miniredis —
+accumulation, both endings, the retry, the caps and the TTL. The two unchecked
+boxes are the ones only a running backend can close: nothing here has been
+watched mid-turn in a browser.
+
+### Out of scope
+
+The widget (`apps/widget`), which ignores the frame: its bubble model has no
+place to put a turn it did not start. The threads list showing which
+conversations are working.

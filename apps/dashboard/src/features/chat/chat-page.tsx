@@ -71,6 +71,39 @@ function blankTurn(jobId: string): LiveTurn {
   return { jobId, content: "", thinkingSteps: [], startedAt: Date.now() };
 }
 
+/**
+ * The turn that was already running when this socket opened (T-U12).
+ *
+ * A thread's WebSocket closes when the reader opens another conversation, so
+ * everything the agent did while they were away arrived on a socket nobody was
+ * holding. The one that opens on the way back is greeted with this — the same
+ * turn, as far as it has got — instead of staying silent until the agent's next
+ * token, which on a turn waiting for a slow tool was tens of seconds of a
+ * screen that looked like nothing had been asked.
+ *
+ * `started_at` is the server's clock here, unlike a turn watched from the
+ * start, and that is the point: the elapsed caption should say how long the
+ * agent has been working, not how long this browser has been looking at it.
+ */
+function resumedTurn(live: NonNullable<ChatEvent["live"]>): LiveTurn {
+  const startedAt = Date.parse(live.started_at);
+  return {
+    jobId: live.job_id,
+    content: live.content ?? "",
+    thinkingSteps: live.thinking_steps ?? [],
+    toolCalls: (live.tool_calls ?? []).map((tc) => ({
+      name: tc.name,
+      // A tool_result was recorded with its result and a tool_call with its
+      // arguments; whichever the snapshot kept is the payload for the card.
+      payload: tc.result ?? tc.arguments ?? {},
+    })),
+    iteration: live.iteration
+      ? { current: live.iteration, max: live.max_iterations ?? 0 }
+      : undefined,
+    startedAt: Number.isNaN(startedAt) ? Date.now() : startedAt,
+  };
+}
+
 export function ChatPage() {
   const params = useParams({ strict: false }) as { threadId?: string };
   const navigate = useNavigate();
@@ -156,6 +189,12 @@ export function ChatPage() {
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finalReceivedRef = useRef(false);
+  /** The one event a resumed socket can be told twice (T-U12). The server
+   *  subscribes before it reads the snapshot it greets us with, so an event
+   *  published in that window is both counted in the snapshot and delivered
+   *  after it — appending it again would double a word or a tool card. Held in
+   *  a ref because events arrive faster than state settles. */
+  const resumeEchoRef = useRef<{ jobId: string; ts: string } | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
   const stopPolling = useCallback(() => {
@@ -210,6 +249,7 @@ export function ChatPage() {
   useLayoutEffect(() => {
     setLiveAssistant(null);
     setError(null);
+    resumeEchoRef.current = null;
 
     const prev = prevThreadIdRef.current;
     if (prev === undefined) {
@@ -232,7 +272,27 @@ export function ChatPage() {
 
   useThreadStream(activeThreadId, (evt: ChatEvent) => {
     if (evt.thread_id !== activeThreadIdRef.current) return;
-    if (evt.type === "started") {
+
+    const echo = resumeEchoRef.current;
+    if (echo && evt.job_id === echo.jobId && evt.timestamp === echo.ts) {
+      resumeEchoRef.current = null;
+      return;
+    }
+
+    if (evt.type === "state") {
+      // Nothing running: the socket opened between turns, which is every
+      // ordinary connection and needs no state on the screen.
+      if (!evt.live) {
+        resumeEchoRef.current = null;
+        return;
+      }
+      resumeEchoRef.current = {
+        jobId: evt.live.job_id,
+        ts: evt.live.last_event_at,
+      };
+      finalReceivedRef.current = false;
+      setLiveAssistant(resumedTurn(evt.live));
+    } else if (evt.type === "started") {
       finalReceivedRef.current = false;
       setLiveAssistant(blankTurn(evt.job_id));
     } else if (evt.type === "delta") {
@@ -283,6 +343,7 @@ export function ChatPage() {
       });
     } else if (evt.type === "final") {
       finalReceivedRef.current = true;
+      resumeEchoRef.current = null;
       setLiveAssistant(null);
       setOptimisticMessages((prev) =>
         prev.filter((m) => m.thread_id !== evt.thread_id),
@@ -297,6 +358,7 @@ export function ChatPage() {
       qc.invalidateQueries({ queryKey: PENDING_ACTIONS_KEY });
     } else if (evt.type === "error") {
       finalReceivedRef.current = true;
+      resumeEchoRef.current = null;
       setLiveAssistant(null);
       setError(evt.error ?? "Something went wrong");
       stopPolling();

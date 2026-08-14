@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
 )
@@ -75,6 +76,12 @@ func NewRedisBus(rdb *redis.Client) *RedisBus {
 // Publish serializes evt and PUBLISHes it to argentum:thread:{threadID}.
 // Network errors are surfaced; subscriber count is ignored (no live WS
 // is a normal state, e.g. WhatsApp-only threads).
+//
+// The same call folds the event into the thread's live-turn snapshot (T-U12),
+// in one pipeline with the PUBLISH: a client that opens its socket mid-turn is
+// greeted with that snapshot, so the two must not be able to disagree about
+// what has already happened. Doing it here rather than at the ~20 publish sites
+// in the runner is what makes that guarantee hold for events added later.
 func (b *RedisBus) Publish(threadID string, evt app.ChatEvent) error {
 	if threadID == "" {
 		return fmt.Errorf("eventbus: empty threadID")
@@ -83,8 +90,26 @@ func (b *RedisBus) Publish(threadID string, evt app.ChatEvent) error {
 	if err != nil {
 		return fmt.Errorf("eventbus: marshal event: %w", err)
 	}
-	if err := b.rdb.Publish(context.Background(), ChannelFor(threadID), body).Err(); err != nil {
-		return fmt.Errorf("eventbus: publish: %w", err)
+	ctx := context.Background()
+	pipe := b.rdb.Pipeline()
+	// Snapshot first, PUBLISH second, and the order is load-bearing. Between
+	// the two commands a reconnecting client can read a snapshot that already
+	// counts an event its socket is about to receive — a duplicate, which the
+	// snapshot's `last_event_at` lets the client drop. Publishing first would
+	// invert that into an event delivered to nobody and missing from the
+	// snapshot the next connection reads, which nothing can recover.
+	recordLive(ctx, pipe, threadID, evt)
+	pub := pipe.Publish(ctx, ChannelFor(threadID), body)
+	if _, err := pipe.Exec(ctx); err != nil {
+		// Exec reports the first command that failed. Only the PUBLISH is
+		// worth failing the call over — a snapshot that did not get written
+		// costs a reconnecting reader a few seconds of missing spinner, and
+		// the turn itself is unaffected.
+		if pubErr := pub.Err(); pubErr != nil {
+			return fmt.Errorf("eventbus: publish: %w", pubErr)
+		}
+		logrus.WithError(err).WithField("thread_id", threadID).
+			Warn("live-turn snapshot write failed")
 	}
 	return nil
 }
