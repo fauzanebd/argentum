@@ -781,7 +781,108 @@ question that has only one route.
 calling the tool. Unchanged, and now the only case in this cluster that is about
 the mechanism rather than the policy.
 
-**Spend for the asking-policy work: $0.19.** A full-set re-score on both models
-is owed under Rule 1 and has not been run — the prompt, the tool contract and
+**Spend for the asking-policy work: $0.19.** ~~A full-set re-score on both models
+is owed under Rule 1 and has not been run~~ — the prompt, the tool contract and
 one fixture all changed, so it is the next thing to spend money on, not
-something to infer from the cluster.
+something to infer from the cluster. **Run the same evening; see below.**
+
+---
+
+# The Rule 1 re-score — 2026-08-14, both models, one commit
+
+`make eval-matrix MODELS=moonshotai/kimi-k2.6,deepseek/deepseek-v3.2` over the
+56-case set, at the tree carrying the deterministic cooking block, the language
+fix, the optional metric window, the narrowed asking rule and the two reframed
+fixtures. **$0.77 for the pair.**
+
+| Model | pass | mean latency | total cost | previous |
+| ----- | ---- | ------------ | ---------- | -------- |
+| moonshotai/kimi-k2.6 | **98.2% (55/56)** | 35.2 s | $0.629 | 87.5% (49/56) |
+| deepseek/deepseek-v3.2 | **89.3% (50/56)** | 22.9 s | $0.141 | 83.9% |
+
+| Category | kimi | deepseek |
+| -------- | ---- | -------- |
+| guardrail | 100% (8/8) | 100% (8/8) |
+| time_window · metric_registry · indonesian · wrong_grain | 100% | 100% |
+| chart_dashboard · no_chart_wanted · grouping_topn · dirty_schema | 100% | 100% |
+| simple_aggregate | 100% (7/7) | 86% (6/7) |
+| follow_up | 100% (3/3) | 67% (2/3) |
+| multi_source | 100% (3/3) | 67% (2/3) |
+| **zero_row_trap** | **67% (2/3)** | **0% (0/3)** |
+
+## What the re-score settles
+
+**The guardrail category is genuinely fixed, on both models, for the first
+time.** 8/8 each. The morning's finding was that deepseek's 7/8 came from the
+model's own manners while the classifier admitted the recipe; the deterministic
+`block_off_topic_cooking` rule and the refusal-language fix now carry it without
+either model's help.
+
+**Every category the asking policy and the metric-window change touched is at
+100% on kimi** — `time_window` 6/6 and `metric_registry` 5/5 — so the optional
+`from`/`to` did what it was written to do and the narrowed guideline did not
+break the cases where asking is right.
+
+**And the set has stopped discriminating on the primary model.** 98.2% is above
+the 95% line this project's own rule calls the moment to harden the set rather
+than bank the number. The honest reading of 55/56 is not "the agent is 98%
+right"; it is that one category is carrying the entire signal.
+
+## Everything left is the zero-row trap, and it is a product finding
+
+kimi 2/3, deepseek 0/3 — the only category either model fails, and the only one
+where both fail the same case.
+
+**`zero-row-future-quarter` fails on both.** *"What were our total sales in the
+third quarter of 2025?"* against data that ends 31 December 2024. Both models
+called `query_metric`, and both stated **Rp 0** with a coverage caveat. This is
+not the models mishandling the note — the note they were given is the soft one.
+`metric_tools.go:248` distinguishes two cases and says so in its own comment: a
+metric whose evaluation is `Empty` gets *"this is NOT a zero"*, while a metric
+that returns a real 0 gets *"say which you mean only if you know"*. The eval
+tenant's `total_sales` template is
+`SELECT COALESCE(sum(fs.sales_amount),0) AS value …` — as every sane metric
+template is, and as `tenant.go:143` explains at length — so **an out-of-coverage
+window is not `Empty`, it is a genuine 0**, and the tool has no way to tell it
+from a quarter that really sold nothing.
+
+That is the `T-Q9` fabrication mechanism, alive on the metric path, and it is
+the one path `T-Q9` did not close: `run_sql` got `matchedNothing` and the
+zero-row probe; `query_metric` got a sentence of advice. **The fix is the same
+shape as the one that worked** — the evaluator knows the metric's window, so it
+can also learn the metric's coverage (a `MIN`/`MAX` over the template's date
+column, or a `COUNT(*)` beside the value) and say *"this window is outside the
+data"* as a fact rather than as a hedge. That is a design decision with a cost —
+one more query per metric call — and it is written down here rather than made
+unilaterally.
+
+**deepseek's other two zero-row failures are the ordinary shape** and were not
+re-tested after the 08-11 probe fixes: an absent city and an unknown channel,
+both answered with a figure. kimi passes both.
+
+**deepseek's remaining three failures are the weakness the model comparison
+already recorded**: two English questions answered in Indonesian
+(`total-units-sold`, `explicit-source-december-profit`) and
+`follow-up-breakdown-no-reschema`, where it re-read the schema.
+
+**That last one is worth more than a tally**, because it is the `T-Q6`
+measurement the live gate could not produce (see
+[`agent-quality.md`](agent-quality.md) §11). The case works precisely because
+turn 1 answers from `query_metric` and never touches the schema — so the tool
+digest is the *only* place turn 2 could learn it, and the conversation history
+carries nothing. kimi reuses it and passes; deepseek re-reads and fails. The
+digest's value is real, and this is the shape of experiment that shows it.
+
+## What to do with a 98.2%
+
+Not bank it. In order:
+
+1. **Close the metric zero path** — the finding above. It is the one failure
+   both models share and the one with a customer-facing consequence.
+2. **Harden `zero_row_trap`** and add cases where the set is now blind: nothing
+   in it holds an email, a phone number or a NIK, so the output guardrails still
+   cannot be scored (§2 of [`eval-sprint1.md`](eval-sprint1.md) said the same
+   thing in June and it is still true).
+3. **Leave deepseek's language failures alone as a model property**, and keep
+   scoring both — the two disagreement rows this run produced are worth more
+   than either aggregate.

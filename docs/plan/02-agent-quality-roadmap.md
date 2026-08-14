@@ -297,9 +297,15 @@ or were fixed and re-proven:
 - ~~Migrations `054` and `055` up **and** down against a real Postgres.~~
   **Pass**, including down against populated tables. §1.
 - ~~A second vote replacing the first rather than duplicating.~~ **Pass** at the
-  storage layer. §2. **The 400 and the 404 are still owed** — they are decided in
-  `FeedbackService.Rate` and `GetForCompany`, above the repository, and need the
-  API booted.
+  storage layer. §2. ~~**The 400 and the 404 are still owed**~~ — **run
+  2026-08-14 with the API booted, and it is defect 7.** Both 404s pass, and a
+  foreign message id is indistinguishable from a nonexistent one. But a missing
+  or out-of-range `rating` came back **500**: the validation errors were bare
+  `fmt.Errorf` values and `feedbackFail` maps the unrecognised to 500, so the
+  one failure the handler's own comment calls "a client bug" was reported as a
+  server fault. The unit test asserted `err != nil` and agreed with the code.
+  Wrapped in `domain.ErrInvalidInput`, mapped to 400, tests tightened to the
+  sentinel, re-proven over HTTP.
 - ~~A thread past 20 messages, confirming hydration carries the recent turns.~~
   **Pass** on a real 58-message thread: **zero overlap** between the old window
   and the new one. §5. The summary *block* reaching a prompt still needs a turn.
@@ -336,16 +342,38 @@ the `argentum` `docker-compose.yml` declares; a recreated `.env` must match it.)
   (`follow-up-breakdown-no-reschema` needs T-Q6; `ambiguous-headcount` and
   `dirty-ask-rather-than-guess` need the model to actually reach for
   `ask_clarification`).
-- `make eval-matrix MODELS=…` across 2–3 models. Every quality number this
-  project has ever published is `deepseek/deepseek-v3.2` and nothing else.
+- ~~`make eval-matrix MODELS=…` across 2–3 models.~~ **Run 2026-08-14 twice:
+  once as two single-model runs, and once for real after the classifier and
+  asking-policy work — kimi-k2.6 **98.2% (55/56)** / $0.629 against
+  deepseek-v3.2 **89.3% (50/56)** / $0.141, $0.77 for the pair.** `guardrail` is
+  8/8 on both for the first time. The set is now **above the 95% line this file
+  calls the moment to harden rather than bank**, and the reason is that one
+  category carries the whole signal: `zero_row_trap` (kimi 2/3, deepseek 0/3) is
+  the only category either model fails. The case both fail is a product finding
+  — a `COALESCE(sum(…),0)` metric template makes an out-of-coverage window a
+  genuine 0, so `query_metric` cannot say "this is NOT a zero" and both models
+  answered Rp 0 for a quarter the data does not reach
+  ([`../coverage/eval-q1.md`](../coverage/eval-q1.md)).
 - A before/after on `T-Q3`, which is a prompt change with an argument behind it
   and no number — exactly the shape `docs/coverage/eval-baseline.md` rule 1
   exists to stop shipping unmeasured.
-- The `T-Q6` pair itself (`PRIOR_WORK_TURNS=3` vs `=0`) and the `T-Q7` summary
-  block, moved down from the stack-only bucket on 2026-08-11: both need a real
-  turn, so both need a model. The T-Q6 baseline is recorded — `messages.role` on
-  the local control DB is 535 `user`, 535 `assistant` and **no `tool` rows at
-  all**, so the first successful turn on this build is visible as a third row.
+- ~~The `T-Q6` pair itself (`PRIOR_WORK_TURNS=3` vs `=0`) and the `T-Q7` summary
+  block~~ — **both run 2026-08-14, eight turns, ~$0.30.**
+  **`T-Q7` passes**: `thread summary injected summary_chars=202 message_count=60
+  history_window=20` on the 58-message thread, and the reply reconstructs the
+  opening alert. That log line did not exist — the function had four silent exits
+  and no success log, so an injected summary and a skipped one were
+  indistinguishable, and one of the exits disables the feature on every thread.
+  **`T-Q6`'s mechanism passes and its acceptance line does not measure it.** The
+  `tool` rows exist now (the baseline below is closed), and injection fires at
+  `=3` and never at `=0` while the rows are written at both — but the two arms
+  produced *identical* tool sequences over three turns each. Inside
+  `CONTEXT_MAX_TURNS` the assistant's own prior message quotes the SQL it ran, so
+  the digest is repeating what the model can already read; T-Q6 only earns its
+  place once the tool turn has fallen out of the window. **A two-turn
+  conversation cannot produce this difference on any model that reads its own
+  history**, which makes the acceptance line as written unmeasurable rather than
+  unmet. Re-specify it against a thread longer than the memory window.
 - The `T-Q8` harvest that writes an example, and a turn that retrieves one. One
   embedding call per example; everything above `client.Embed` is proven.
 

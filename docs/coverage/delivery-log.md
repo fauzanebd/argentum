@@ -2774,6 +2774,84 @@ implementation route goes stale the moment the product grows a better route.
 
 ---
 
+## Phase 2p — The Rule 1 re-score, and four gates off the backlog (2026-08-14)
+
+**The re-score first, because everything else waited behind it.**
+`make eval-matrix` over both models on one commit: **kimi-k2.6 98.2% (55/56) at
+$0.629, deepseek-v3.2 89.3% (50/56) at $0.141.** `guardrail` is **8/8 on both**
+for the first time — the deterministic cooking block and the refusal-language
+fix now carry a category that had been depending on deepseek's own manners — and
+every category the asking-policy and metric-window work touched is at 100% on
+kimi.
+
+**98.2% is not a result to bank, by this project's own rule.** Above 95% means
+the set has stopped discriminating, and the shape of the remaining failures says
+the same thing: `zero_row_trap` is the only category either model fails, and it
+is carrying the entire signal.
+
+**The case both models fail is a product finding, not a fixture one.** *"Total
+sales in Q3 2025"* against data ending in December 2024 comes back as **Rp 0** on
+both. The eval tenant's metric template is `COALESCE(sum(…),0)` — as every sane
+template is — so an out-of-coverage window is not `Empty` and the tool hands the
+model the soft note (*"say which you mean only if you know"*) rather than the
+hard one (*"this is NOT a zero"*). `metric_tools.go:248` predicts this in its own
+comment. It is the `T-Q9` fabrication mechanism alive on the one path `T-Q9`
+did not close, and the fix has a cost — one coverage query per metric call — so
+it is written down rather than made unilaterally.
+
+**Four live gates ran the same evening, and two found defects.**
+
+- **`T-Q2`'s door** (§10 of [`agent-quality.md`](agent-quality.md)). Both 404s
+  pass and the tenant boundary holds. A missing or out-of-range `rating`
+  answered **500**: bare `fmt.Errorf` values, and `feedbackFail` maps the
+  unrecognised to 500 — so the one input the handler's own comment calls a
+  client bug was reported as a server fault. The unit test asserted
+  `err != nil` and agreed with the code. Wrapped in `domain.ErrInvalidInput`,
+  mapped to 400, tests tightened to the sentinel.
+- **`T-H3`'s boot matrix** (§10 of
+  [`security-hardening.md`](security-hardening.md)). All four required variables
+  refuse with exit 1 on the real path; the WhatsApp rows warn and boot; all three
+  plaintext-DSN registrations 400 over HTTP. **Two CORS findings**: the
+  production warning could not fire for an unset or empty `CORS_ORIGINS` because
+  `getEnv` substitutes the development default — so the likeliest production
+  mistake silently left `http://localhost:5173` as the only allowed origin — and
+  `middleware/cors.go` still claimed `Validate()` refuses to boot in that state,
+  which stopped being true at `6248963`.
+- **`T-Q7`** (§12). The summary block reaches a prompt on the 58-message thread,
+  and the reply reconstructs the opening alert. **The log line proving it did not
+  exist**: four silent exits, no success log, and nothing else records the
+  composed user message — so an injected summary and a skipped one were
+  byte-identical in the log, and one of those exits disables the feature on every
+  thread while looking like a short conversation.
+- **`T-H15`** (§11 of `security-hardening.md`). A rebinding resolver — public at
+  check time, loopback by dial time — through the real `Deliverer` over real
+  sockets: the dial went to the checked address, the loopback listener counted
+  nothing, and the same answer dialled without the pin reached it. Not through
+  `cmd/worker`, because the public rebinder is filtered by this machine's
+  upstream resolver on 14 of 14 lookups.
+
+**`T-Q6` is the one that came back with a smaller answer than the ticket
+asked.** Its mechanism is proven — `role='tool'` rows exist, injection fires at
+`PRIOR_WORK_TURNS=3` and never at `=0`, rows written at both — but two
+three-turn conversations at the two settings produced **identical tool
+sequences**. Inside `CONTEXT_MAX_TURNS` the assistant's own prior message quotes
+the SQL it ran, so the digest repeats what the model can already read. The value
+is real and appears where the history cannot help: the eval's
+`follow-up-breakdown-no-reschema` — turn 1 answered from `query_metric`, so the
+schema is *only* in the digest — passes on kimi and fails on deepseek. **A
+two-turn conversation cannot measure this**, and the acceptance line should be
+re-specified against a thread longer than the memory window.
+
+**And a finding that belongs to the machine.** A `cmd/worker` started on
+10 August was still consuming the `chat:run` queue with the pre-restore
+`ARGENTUM_DSN_KEY`: the turns it stole answered *"there appears to be a
+decryption problem with the database connection string"* and wrote a plausible
+SQL answer around the failure. Two gate turns were lost before `ps` explained
+why the worker log had stopped growing. Nothing in asynq says which worker took
+a task, and nothing notices that two workers disagree about the key.
+
+`go build ./...`, `go vet`, `gofmt` and `go test ./...` clean over the backend.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

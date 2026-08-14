@@ -495,3 +495,118 @@ listening on; it answered `/health` with `200` and the webhook path with a
 *typed JSON* `404` envelope, which reads exactly like Argentum with the route
 missing. The real Argentum 404 is gin's plain `404 page not found`. Bind to a
 port checked free with `lsof`, and read the 404's body before believing it.
+
+## 10. `T-H3` — the boot matrix, run 2026-08-14
+
+The claim this gate exists for is not that `Validate()` is correct — a unit test
+already says that — but that `cmd/api` reaches it on the path a deployment takes.
+It does: `config.Load()` calls `Validate()` at `config.go:508` and `main.go:28`
+is `Load`'s only caller before anything else happens.
+
+Run against a built `cmd/api` binary in a directory holding a copy of the
+working `.env`, with one variable blanked per boot and `ENV=production`. An
+empty value is not the same as an unset one to `godotenv`, which is why the
+override works: the variable is present in the environment, so the `.env` value
+is not substituted.
+
+```
+LLM_API_KEY=          → exit 1  "Failed to load config: LLM_API_KEY is required"
+ARGENTUM_JWT_SECRET=  → exit 1  "ARGENTUM_JWT_SECRET is required"
+ARGENTUM_DSN_KEY=     → exit 1  "ARGENTUM_DSN_KEY is required (64 hex chars)"
+DB_PASSWORD=          → exit 1  "DB_PASSWORD is required"
+```
+
+**The warn-rather-than-refuse rows behave as the 2026-08-11 decision says.**
+Production boot with `WHATSAPP_ACCESS_TOKEN` set and nothing else WhatsApp-shaped
+logged both warnings — the missing `WHATSAPP_PHONE_NUMBER_ID`, and the unset
+`WHATSAPP_APP_SECRET` — and then booted: `/health` `200 {"status":"ok"}`,
+`/ready` `200 {"ready":true}`.
+
+### The raw-DSN half, over HTTP
+
+Three registrations against the running production process, all with
+`skip_test` so the refusal being measured is the transport rule and not
+reachability:
+
+```
+POST /api/connections  dsn=postgres://…/demo_analytics            → 400
+  "this DSN does not set sslmode; production requires it, because the
+   driver's default permits an unencrypted connection"
+POST /api/connections  dsn=postgres://…?sslmode=disable           → 400
+  "this DSN sets sslmode=disable, which sends credentials and rows in plaintext"
+POST /api/connections  host/port form, ssl_mode=disable           → 400
+  "ssl_mode \"disable\" sends this connection's credentials and rows in
+   plaintext; use require, skip-verify or verify-full"
+```
+
+`requireTLS` is `cfg.IsProduction()` (`cmd/api/router.go:63`), so all three are
+development-permitted by design — the laptop case — and closed in production.
+
+### And the gate found two things about CORS
+
+**1. The production warning could not fire for the input a deployment produces.**
+`CORS_ORIGINS` is read with `getEnv("CORS_ORIGINS", "http://localhost:5173")`,
+and `getEnv` treats unset and empty identically, so `len(CORSOrigins) == 0` —
+the condition `Validate()` warns on — is reachable only from a value that parses
+to nothing, such as `" , "`. Booting production with `CORS_ORIGINS=` unset or
+empty produced **no warning at all** and left the process allowing exactly one
+origin: the development default. The dashboard's own requests would be refused
+by the browser, with nothing in the log to say why. A second warning now names
+that case, and it is what an operator actually sees:
+
+```
+CORS_ORIGINS is unset in production: the only allowed origin is the development
+default ["http://localhost:5173"], so the dashboard's own requests will be
+refused by the browser — set it to the dashboard host
+```
+
+**2. The hole itself is real, and now photographed.** With
+`CORS_ORIGINS=" , "` in production the middleware reflected an unlisted origin:
+
+```
+curl -H "Origin: https://evil.example" http://localhost:8098/health
+  Access-Control-Allow-Origin: https://evil.example
+  Access-Control-Allow-Credentials: true
+```
+
+That is the documented consequence of the owner's warn-rather-than-refuse
+decision, so it is not a regression — but `middleware/cors.go` claimed in its own
+comment that `Validate()` *refuses to start* a production process in this state.
+It warns. The comment is corrected, in the file, with the date this run
+disproved it.
+
+## 11. `T-H15` — the resolver that changes its answer, run 2026-08-14
+
+The one claim in this track that cannot be shown with a static read: that the
+address checked is the address dialled. Driven through the real
+`webhookout.Deliverer` — the same constructor `cmd/worker/main.go:107` uses —
+with a `Resolver` that answers `192.0.2.1` (TEST-NET-1, routable and
+unreachable) the first time and `127.0.0.1` every time after, and a raw TCP
+listener on `127.0.0.1:9099` counting connections rather than requests, because
+the callback path is https and a wrong dial would fail the handshake *after*
+making the connection it was not supposed to make.
+
+```
+0. control  dial 127.0.0.1:9099 directly            → listener accepted 1
+1. Deliver() with the rebinding resolver            → "dial tcp 192.0.2.1:9099:
+     connect: network is unreachable"; resolver answered ONCE; listener still 1
+2. Deliver() with a resolver that is loopback at check time
+                                                    → "callback_url resolves to
+     a loopback address"; listener still 1
+3. the same rebound answer, dialled without the pin → listener accepted 2
+```
+
+Line 1 is the property: the name resolved to loopback by dial time and the
+connection went to the checked address anyway, because `http.Transport` never
+got to resolve — `pinnedDial` took the port from the address it was handed and
+threw the host away. Line 3 is the control that makes line 1 mean something: the
+same answer, dialled the ordinary way, reaches the listener.
+
+**What this does not cover.** It ran in a gate binary, not inside `cmd/worker`,
+because making the worker's own resolver rebind needs DNS this machine cannot
+supply: the public rebinder answered with the public half of the pair on 14 of
+14 lookups, which is an upstream resolver filtering rebinding, and `/etc/hosts`
+cannot flip an answer between two lookups milliseconds apart. What the worker
+adds over what was run is one line of wiring — `NewDeliverer(...)` at
+`cmd/worker/main.go:107`, the same call the gate makes — and that is a read, not
+a measurement.

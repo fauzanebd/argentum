@@ -447,17 +447,31 @@ that the live half finds what unit tests cannot.
   the one measurement that matters most in this document, and it is five minutes
   with `curl` once the stack is up.
 - `T-H2` — a Lark event with the signature header omitted, expecting 401.
-- `T-H3` — boot with each setting empty, expecting a refusal to start in
-  production mode and a clean boot in development; plus a raw-DSN registration
-  with no TLS parameters, expecting a refusal.
+- ~~`T-H3` — boot with each setting empty~~ — **run 2026-08-14.** All four
+  required variables refuse with exit 1 on the real `cmd/api` path; the WhatsApp
+  rows warn and boot as decided; all three plaintext-DSN registrations answer
+  400 over HTTP. **Two CORS findings came out of it**: the production
+  `CORS_ORIGINS` warning could not fire for an unset or empty value, because
+  `getEnv` substitutes the development default — so the likeliest production
+  mistake left the process allowing only `http://localhost:5173`, silently — and
+  `middleware/cors.go` still claimed `Validate()` refuses to boot in that state,
+  which stopped being true at `6248963`. Both fixed
+  ([`../coverage/security-hardening.md`](../coverage/security-hardening.md) §10).
 - `T-H4` — the validator against a real warehouse on all three dialects,
   including one query that legitimately uses a CTE and one that uses a window
   function, to confirm the parse does not reject working analytics SQL.
 - `T-H6` — the purge and the erasure endpoint against a company with history,
   confirming audit rows survive and conversation rows do not.
-- `T-H15` — a controlled resolver that changes its answer between the two
-  lookups. This is the only claim in this document that cannot be shown with a
-  static read.
+- ~~`T-H15` — a controlled resolver that changes its answer between the two
+  lookups.~~ **Run 2026-08-14, over real sockets.** Public at check time,
+  loopback by dial time: the connection went to the checked address, the
+  loopback listener counted nothing, and the same rebound answer dialled without
+  the pin reached it — the control that makes the result mean something. It ran
+  through the real `Deliverer` in a gate binary rather than inside `cmd/worker`,
+  because the public rebinder's answers are filtered by the upstream resolver on
+  this machine (14 of 14 lookups returned the public half). The worker's own
+  wiring is the same `NewDeliverer` call, read rather than measured
+  ([`../coverage/security-hardening.md`](../coverage/security-hardening.md) §11).
 
 **Needs model spend:** `T-H11`'s category, run against the current model. Note
 that every published quality number for this project is `deepseek/deepseek-v3.2`,

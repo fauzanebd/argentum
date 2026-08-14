@@ -535,3 +535,130 @@ person to read *this* file will hit it before they read that one.
 all clean. One unrelated failure in `cmd/api` (`TestV1EmitsNoCORSHeaders`)
 belongs to concurrent work in `middleware/cors.go` and `router.go`, untouched
 here.
+
+---
+
+# The second sitting — 2026-08-14, with the API and worker booted
+
+Three of §7's rows needed the API up and nothing else; a fourth needed a handful
+of turns. All four were run against `cmd/api` on `:8080`, `cmd/worker`, and the
+control database that has been carrying every gate transcript this repo owns.
+
+## 10. `T-Q2` — the door, not the storage · **defect 4, fixed**
+
+§2 proved the row. This is the four responses a client actually sees:
+
+```
+POST /api/messages/<a user message>/feedback   {"rating":-1}   → 400
+  "only an assistant message can be rated"
+POST /api/messages/<another tenant's>/feedback {"rating":-1}   → 404  "no such message"
+POST /api/messages/<nonexistent uuid>/feedback {"rating":1}    → 404  "no such message"
+POST /api/messages/<own assistant msg>/feedback {"reason":"…"} → 500  ← the defect
+POST /api/messages/<own assistant msg>/feedback {"rating":5}   → 500  ← the defect
+```
+
+**The 404 half passes and the tenant boundary holds** — a bare uuid from another
+company is indistinguishable from one that does not exist, which is what
+`TestRatePropagatesNotFound` was written for and what the door now confirms.
+
+**The 400 half had a hole exactly where the handler's own comment says a client
+bug lives.** `rateReq.Rating` carries the comment *"a request that forgot the
+field means a client bug"*; `Rate` answered that bug with a bare
+`fmt.Errorf("rating must be 1 or -1, got %d")`, and `feedbackFail`'s default arm
+turns anything it does not recognise into a **500**. So the likeliest client
+mistake was reported as a server fault — the shape that gets retried, pages an
+operator, and tells the client author nothing.
+
+The unit test did not catch it because the unit test asserted `err == nil` was
+false. *The tests and the code agreed with each other and both disagreed with
+the transport* — the fourth time this file has recorded that sentence.
+
+Fixed by wrapping all three validation errors (and `Summary`'s inverted window)
+in `domain.ErrInvalidInput`, the sentinel `chat_enqueuer.go` already uses for
+this, and mapping it in `feedbackFail`. `TestRateRejectsBadInput` and
+`TestSummaryRejectsInvertedWindow` now assert the sentinel rather than
+non-nil. Re-proven over HTTP:
+
+```
+{"reason":"no rating field"} → 400  "invalid input: rating must be 1 or -1, got 0"
+{"rating":5}                 → 400  "invalid input: rating must be 1 or -1, got 5"
+GET /api/feedback/summary?from=2026-08-14&to=2026-08-01
+                             → 400  "invalid input: from must be before to"
+```
+
+## 11. `T-Q6` — the pair, and why it does not measure what it was written to
+
+The write half is closed by observation rather than argument: **`messages` now
+holds `role = 'tool'` rows**, the column §5 recorded as having none. The first
+gate turn produced
+`[{"tool":"get_schema","source_id":"b115f224…","rows":-1},{"tool":"run_sql",…}]`.
+
+The read half is closed too, and needed a log line to see: `withPriorWorkContext`
+logs `prior-turn tool work injected` at debug, and it fires on every turn of a
+thread that has a digest at `PRIOR_WORK_TURNS=3` and **never** at `=0`, while the
+digest rows keep being written at both. The write-but-do-not-read setting does
+exactly what its comment claims.
+
+**What the pair does not show is the behaviour the ticket predicted.** Two
+three-turn conversations, same questions, same model, one at `=3` and one at
+`=0`:
+
+| Turn | `PRIOR_WORK_TURNS=3` | `PRIOR_WORK_TURNS=0` |
+| ---- | -------------------- | -------------------- |
+| 1 — revenue by sales channel | `get_schema`, `run_sql` | `get_schema`, `run_sql` |
+| 2 — same for the top 3 cities | `get_schema`, `run_sql` | `get_schema`, `run_sql` |
+| 3 — highest average order value by payment method | `run_sql` | `run_sql` |
+
+Identical. The reason is structural and worth more than the measurement would
+have been: **the conversation history already carries the schema.** Every
+assistant turn on this product quotes the SQL it ran, and `CONTEXT_MAX_TURNS`
+keeps the last turns verbatim in memory — so inside the window the digest is
+telling the model something it can already read. Setting the window to 1 did not
+separate them either; the previous turn is still visible at that setting.
+
+So the honest statement of T-Q6's value is narrower than the roadmap's: the
+digest is load-bearing **only for a turn whose earlier tool work has fallen out
+of the memory window**, which on this deployment means a conversation longer
+than `CONTEXT_MAX_TURNS`, not a second turn. The pair `=3` vs `=0` measures that
+correctly only on a long thread, and the ticket's acceptance line — *"a two-turn
+conversation"* — cannot produce a difference on any model that reads its own
+history.
+
+## 12. `T-Q7` — the summary reaches a prompt · **pass**
+
+One turn on the 58-message thread from §5
+(`4d5f66db…`, 30 assistant messages, `HISTORY_HYDRATE_LIMIT=20`):
+
+```
+thread summary injected  summary_chars=202  message_count=60  history_window=20
+```
+
+and the answer reconstructs the thread's opening — *"the watcher flagged Active
+customers at 50 for 3–4 Aug 2026, breaching the threshold of > 10"* — which is
+the alert the summary column holds and the part of the conversation the hydration
+window no longer covers.
+
+**The line above did not exist before this gate, and that is the finding.**
+`withThreadSummaryContext` had four silent exits and no successful-injection
+log, while nothing else in the process records the composed user message — so
+"the summary was injected" and "the summary was skipped" produced byte-identical
+logs, and the only way to tell them apart was to read the model's reply and
+guess. Worse, one of those exits is `messageCount` failing: a store without
+`CountByThread` disables T-Q7 on *every* thread and looks exactly like a short
+conversation. Both now log, at debug.
+
+## 13. What the second sitting cost
+
+Under two hours, about **$0.30 of model spend** across eight gate turns, one
+defect fixed, and one feature made observable.
+
+**And one finding that belongs to the machine rather than to the product.** A
+`cmd/worker` **started on 10 August and still running** was consuming the same
+`chat:run` queue: it holds the pre-restore `ARGENTUM_DSN_KEY`, so the turns it
+picked up answered *"there appears to be a decryption problem with the database
+connection string"* and then wrote a plausible SQL answer around the failure. Two
+gate turns were lost to it before `ps` explained why the worker log had stopped
+growing. Nothing in asynq identifies which worker took a task, and nothing in the
+product notices that two workers disagree about the key — the same blind spot
+[`live-gate-backlog.md`](live-gate-backlog.md) §1b records for undecryptable
+rows, one layer up.
