@@ -742,6 +742,11 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// that has already blanked part of the text would have it judging a sentence
 	// the agent did not write.
 	response = r.applyOutputRules(ctx, p, response)
+	// Last, and after the redaction on purpose: `strict` blanking an entire
+	// short reply reaches the user as the same blank message, so the guard has
+	// to see what completeWith is about to persist rather than what the agent
+	// produced.
+	response = r.rescueEmptyReply(ctx, p, response, tracker, streaming)
 	r.completeWith(ctx, p, response, 0, 0, latency)
 	return nil
 }
@@ -987,6 +992,62 @@ func (r *ChatRunner) applyOutputRules(ctx context.Context, p queue.ChatRunPayloa
 		}).Info("output guardrails redacted part of the reply")
 	}
 	return processed
+}
+
+// rescueEmptyReply turns a blank answer into a sentence, and records the turn
+// that produced one.
+//
+// The failure it covers is not hypothetical and not an error path: twice in 58
+// scored turns of the 2026-08-14 run the agent called its tools, the tools
+// succeeded, and the reply was the empty string — once after a `create_dashboard`
+// that actually built a dashboard nothing was said about
+// (docs/coverage/eval-q1.md). No component upstream of here looks at the reply
+// and asks whether there is one.
+//
+// **The log line is the diagnosis and the replacement is the mitigation**, and
+// they are separate on purpose. `streaming` is the field that matters most:
+// the two candidate mechanisms are a final provider message with no text and a
+// reply lost in the delta assembly, and only the streaming path has the second.
+// The rest of the snapshot says whether the turn did any work, which is what
+// decides which sentence the user gets.
+//
+// The audit row uses its own tool name rather than `final_answer`. This is not
+// a guardrail firing — nothing was refused — and counting it as one would
+// corrupt the only number that says how often the product refuses to answer.
+func (r *ChatRunner) rescueEmptyReply(
+	ctx context.Context, p queue.ChatRunPayload, response string,
+	tracker *agentbudget.Tracker, streaming bool,
+) string {
+	snap := tracker.Snapshot()
+	replacement, empty := guardrails.CheckEmptyReply(response, guardrails.TurnEvidence{
+		ToolCalls:        snap.ToolCalls,
+		DataCalls:        snap.DataCalls,
+		DataRows:         snap.DataRows,
+		DeliverableCalls: snap.DeliverableCalls,
+		EmptyResults:     snap.EmptyResults,
+		Exhausted:        snap.Exhausted,
+		Reason:           snap.Reason,
+		Tools:            snap.Tools,
+	}, p.Message)
+	if !empty {
+		return response
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"company_id":  p.CompanyID,
+		"thread_id":   p.ThreadID,
+		"streaming":   streaming,
+		"tool_calls":  snap.ToolCalls,
+		"data_calls":  snap.DataCalls,
+		"data_rows":   snap.DataRows,
+		"tool_errors": snap.ToolErrors,
+		"exhausted":   snap.Exhausted,
+		"reason":      snap.Reason,
+		"tools":       strings.Join(snap.Tools, ","),
+		"elapsed_ms":  snap.Elapsed.Milliseconds(),
+	}).Error("the turn produced an empty reply; replaced with a message that says what ran")
+	r.recordBlockedTurn(ctx, p, "empty_reply", "the turn finished with no reply text")
+	return replacement
 }
 
 // actorOf decides who a turn is attributable to. A scheduled run is not the

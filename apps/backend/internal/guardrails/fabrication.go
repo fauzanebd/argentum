@@ -25,6 +25,11 @@ type TurnEvidence struct {
 	// which dimension ran out.
 	Exhausted bool
 	Reason    string
+	// Tools names what ran, in call order. CheckFabrication ignores it — it
+	// judges evidence, and a tool name is not evidence — but CheckEmptyReply
+	// has nothing else to tell the user what happened, because on that path
+	// the reply itself is empty.
+	Tools []string
 }
 
 // grounded reports whether anything in the turn could have produced a figure.
