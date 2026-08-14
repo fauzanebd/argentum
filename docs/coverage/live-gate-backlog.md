@@ -137,6 +137,54 @@ $0.00** — not declined, unavailable. Note also that the control Postgres volum
 was initialised with a `metabase` role rather than the `argentum` the current
 `docker-compose.yml` declares, so a recreated `.env` has to match the volume.
 
+### The `.env` was rebuilt on 2026-08-14 — three of the four are closed
+
+`apps/backend/.env` exists again and `cmd/api` boots against the real control
+database: `control DB schema already up to date`, `Listening on :8080`,
+`/health` `ok`, `/ready` `{"ready":true}`. Of the four missing variables, three
+needed no owner at all:
+
+- **`DB_PASSWORD`, `DB_USER`, `DB_NAME`** — read straight off the running
+  `argentum_postgres` container, which has been up throughout. The paragraph
+  above was right that the volume disagrees with `docker-compose.yml`, and it
+  matters more than it reads: the volume holds **30 companies, 494 threads,
+  1,070 messages and 741 `agent_actions`** — every gate transcript this repo
+  has. Booting against compose's `argentum`/`argentum123` defaults creates an
+  empty database and silently makes every prior gate unreproducible.
+- **`ARGENTUM_JWT_SECRET`** — minted fresh. The only cost is that sessions
+  issued under the old one are invalid, and there are none.
+- **`ARGENTUM_DSN_KEY`** — minted fresh, and this one is **not** free. See
+  below.
+- **`LLM_API_KEY`** — still owed, and still the only thing standing between this
+  repo and §2. Nothing local can supply it.
+
+**The DSN key is the part worth writing down.** `db_connections.dsn_encrypted`
+holds 20 AES-GCM ciphertexts written under the key that went missing with the
+old file. A new key does not damage them — the rows are untouched and the
+original still decrypts them if it turns up — but under the new key every stored
+tenant connection fails to decrypt, so the warehouses the 2026-08-11 gates ran
+against are unreachable *by those rows*. Three ways out, cheapest first: the
+original key, if it is in a password manager; re-registering the connections,
+which is data entry rather than recovery because all 20 point at local demo
+containers; or reading the plaintext copy Metabase keeps.
+
+**That third option working is itself a finding.** `argentum_metabase` runs with
+no `MB_ENCRYPTION_SECRET_KEY`, so `metabase_database.details` is unencrypted and
+every DSN `UpsertWarehouse` ever mirrored is readable from the `metabase_app`
+database. It is filed against `T-H5`/`T-D15` in
+[`../plan/03-security-hardening-roadmap.md`](../plan/03-security-hardening-roadmap.md),
+and it means the Metabase decommission has to destroy that datastore rather than
+just stop pointing at it.
+
+**One more thing that cost this session time and will cost the next one the
+same.** `docker` on `PATH` is the nix build at 24.0.5, whose API version 1.43 is
+below the daemon's minimum of 1.44, so `docker ps` answers *"client version 1.43
+is too old"*. §1a above already records this exact error being misread as
+"Docker is not running" and costing a day. The daemon was up and healthy both
+times. The working client is Docker Desktop's own, at
+`/Applications/Docker.app/Contents/Resources/bin/docker` (29.1.3) — put it ahead
+of the nix profile on `PATH`.
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |

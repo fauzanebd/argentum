@@ -195,7 +195,31 @@ the list of names that would have worked.
 This is defence in depth, not a replacement for grants — say so in the ticket, so
 nobody later reads the validator as permission to loosen the login.
 
-### `T-H5` Metabase isolation — 1.0d
+### ~~`T-H5` Metabase isolation — 1.0d~~ · **dropped 2026-08-14, decommission decided**
+
+> **Decided by the repo owner, 2026-08-14: Metabase is being decommissioned
+> (`T-D15`), so this ticket is not being built.** The check the box below asked
+> for has been made and the answer is the decommission. What that decision buys
+> is 1.0d; what it costs is that every row in the table below stays true until
+> `T-D1`→`T-D16` land — saved charts keep running unbounded, unaudited, on
+> Metabase's own connection, against a mirrored copy of the tenant DSN.
+>
+> **And the copy is in cleartext.** `argentum_metabase` runs with no
+> `MB_ENCRYPTION_SECRET_KEY` set (its environment carries only
+> `MB_EMBEDDING_SECRET_KEY`, which signs embedding JWTs and is a different
+> thing, still at `change_me_in_production`). Metabase encrypts
+> `metabase_database.details` only when that variable is set, so on this
+> deployment every tenant DSN `UpsertWarehouse` has ever mirrored — host, user
+> and password — is readable by anything that can reach the `metabase_app`
+> database, which includes the Metabase admin account Argentum itself drives.
+> This is a statement about the container's configuration rather than a read of
+> the column: the read was attempted on 2026-08-14 and correctly refused.
+> **Confirm it before the decommission plan treats the Metabase datastore as
+> containing nothing sensitive** — the decommission has to include destroying
+> that store, not just switching the renderer off.
+>
+> The original ticket body follows unchanged, because it is the description of
+> what the product carries until `T-D15` closes.
 
 `apps/backend/internal/tools/create_visualization.go:162` hands model-authored
 SQL to Metabase as a native card (`DatasetQuery: metabase.BuildDatasetQuery(...)`,
@@ -212,9 +236,11 @@ Metabase API key; pin the Metabase version and put it on a patch cadence (this
 product has a pre-auth RCE history — CVE-2023-38646); keep it off any network
 path a tenant can reach directly.
 
-> **Check against `04-native-dashboards-roadmap.md` before starting.** That
+> ~~**Check against `04-native-dashboards-roadmap.md` before starting.** That
 > roadmap removes Metabase entirely (`T-D15`). If the decommission is going to
-> land first, this ticket is wasted work — decide the order once.
+> land first, this ticket is wasted work — decide the order once.~~
+> **Decided 2026-08-14: decommission. This ticket is not being built** — see the
+> note at the top of the section.
 
 ### `T-H6` Retention and erasure — 1.5d
 
