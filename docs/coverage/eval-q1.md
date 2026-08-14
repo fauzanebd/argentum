@@ -252,21 +252,98 @@ again here on kimi-k2.6, so it is not one model's blind spot. Fixed in `2e0ab22`
 call that omits `source_id` with the same one, with the recalled id re-checked
 against the scope-filtered catalog so it can never widen the roster's allowlist.
 
+## What was fixed the same day
+
+Four of the items below were code, and they landed on 2026-08-14 against this
+run's findings. None of them has been scored — that is what the re-run in *What
+is owed* is for.
+
+**The empty reply now says what ran.** `guardrails.CheckEmptyReply` sits between
+`applyOutputRules` and `completeWith`, and a turn that finishes with no text is
+replaced by a sentence naming the tools it called — *"I did the work for this —
+get_schema, create_visualization, create_dashboard — but the turn ended without
+a written answer"* — in the question's own language. It writes an audit row
+under its own tool name, `empty_reply`, rather than `final_answer`: nothing was
+refused, and counting it as a guardrail would corrupt the only number that says
+how often this product declines to answer. **The mitigation is not the
+diagnosis.** The log line beside it carries `streaming`, which is the field that
+separates the two candidate mechanisms, and that still needs a turn watched
+live.
+
+**`query_metric` got `T-Q9`'s treatment.** A NULL value — what every dialect
+returns for an aggregate over no rows — is no longer an error at query time and
+no longer reads as a number. `metric.Evaluation` carries `Empty`, the tool
+answers `value: null` with `row_count: 0` and a note in the shape of `run_sql`'s
+zero-row note, and `agentbudget` therefore counts the turn as having no
+evidence, so a reply that states a figure anyway is replaced by the fabrication
+guard. Three consequences that were not obvious from the ticket:
+
+- **A watcher would have broken.** `WatcherService.evaluate` read a NULL as
+  `ErrInvalidInput` and treated it as no-data; a successful evaluation carrying
+  `Value: 0` would have made every `lt` watcher breach on periods the warehouse
+  has no data for, and stopped `no_data` breaching on exactly the ones it exists
+  for. The check moved with the fact.
+- **No delta across an empty window**, because "down 100% on last year" is the
+  version of this defect that reaches a customer unprompted.
+- **The save path is unmoved.** A metric that matches nothing over the
+  validation window is still refused — with a sentence that names what happened
+  rather than "column is not a number (value is null)".
+
+A real zero keeps its zero and gains a caveat: a `COALESCE(SUM(x), 0)` template
+answers an empty window with a genuine `0`, and nothing at this layer can tell
+that from a period that summed to nothing.
+
+**The `grain-average-per-order-not-per-line` case was wrong about the data, not
+just about the source.** Measured against the demo warehouse on 2026-08-14:
+`fact_sales` holds 1,348 rows and **1,348 distinct `transaction_id`s**, with no
+transaction carrying more than one line. So `avg(sales_amount)` and
+avg-of-sum-grouped-by-transaction are the same number, the trap the case was
+written for is not in the fixture, and its `transaction_id` assertion was
+ceremony that a `query_metric` answer could never satisfy. It now asserts the
+figure with `must_call_any: [run_sql, query_metric]` and has moved to
+`simple_aggregate` — a `wrong_grain` case must assert an SQL shape, and this one
+has no grain left to assert.
+
+`wrong_grain` needed a third case and got a measured one:
+**`grain-spend-per-customer-not-per-row`**. `avg(sales_amount)` is 15,750,459.64
+and average total spend per buying customer is 10,615,809,800 — three orders of
+magnitude apart, both plausible rupiah figures, and only one of them answers the
+question. The shape is asserted rather than the value, because the seed's
+uncorrelated LATERAL leaves only **2** of 50 customers present in `fact_sales`.
+
+**The off-topic classifier's FALSE list was all programming.** Everything it
+enumerated was code, CSS or textbook CS, so "anything else" was carrying the
+recipe case alone. It now names the other half explicitly — recipes, travel,
+health, law, essays, homework — with the distinction spelled out: *"which menu
+items sell best" is TRUE because it asks about their data, and "how do I make
+nasi goreng" is FALSE because it does not.* A regex on the word "recipe" would
+have refused a restaurant tenant's real question, which is the cycle
+[`guardrail-overreach.md`](guardrail-overreach.md) records.
+
+**And triaging that case found a hole worth naming.** The topic rule is
+`action: require` — it blocks only when *no* pattern matches, and the classifier
+is the last pattern — so any question wearing a generic opener is admitted by
+regex before the classifier is consulted at all. *"What is the best way to cook
+rendang?"* passes on `what is the`. Not narrowed: those openers are how most
+real BI questions start, and trading a rare wrong admission for a class of wrong
+refusals is the trade this repo has already made once. Pinned as current
+behaviour in `TestKnownTopicGateFalsePositives`.
+
 ## What is owed
 
-- **A re-run on the fixes.** Three of this run's conditions have changed since it
-  started: the Metabase credentials, `ResolveSource`, and the grounding filter.
-  The `chart_dashboard` category was re-run on its own immediately afterwards
-  ($0.046, 3 cases) and stayed at 2/3 by swapping which case failed; a full
-  re-score belongs with the next batch of agent changes rather than on its own,
-  per rule 1.
+- **A re-run on the fixes.** Now six conditions have changed since this run
+  started: the Metabase credentials, `ResolveSource`, the grounding filter, and
+  the three above. The `chart_dashboard` category was re-run on its own
+  immediately afterwards ($0.046, 3 cases) and stayed at 2/3 by swapping which
+  case failed; a full re-score belongs with the next batch of agent changes
+  rather than on its own, per rule 1. The set is now **56 cases**.
 - **A second look at the empty reply**, which is the one finding here that a
   re-run will not settle — it is non-deterministic and it appeared twice in
-  58 turns. The guard is cheap; the diagnosis is what needs a turn watched
+  58 turns. The guard has landed; the diagnosis is what needs a turn watched
   live.
 - **A decision on `ask_clarification`.** Three cases hang on it and the two
   shapes pull opposite ways. Nothing should be tightened before that is decided.
-- **`query_metric`'s zero-row story**, which is a code fix and not a gate.
+  This is the only failure cause from this run with no code against it.
 - **The model comparison.** `make eval-matrix MODELS=moonshotai/kimi-k2.6,deepseek/deepseek-v3.2`
   is the only honest way to say whether the model change helped, and it is
   `T-Q5`. At $0.441 per model-run, the pair is roughly $0.90 — cheap enough that

@@ -2468,15 +2468,16 @@ rules, and the three that are the reason §1 reads the socket peer: a caller on
 `192.168.1.4` sending `X-Forwarded-For: 127.0.0.1`, then `X-Real-IP`, then a
 bearer token, and `404` every time. No defect.
 
-<<<<<<< HEAD
 **The rest of the day's work was measured against the stale tree and is filed
 that way**: an eval pair and a final-score run on the 40-case set that predates
 `T-Q1`→`T-Q9` ([`eval-sprint1.md`](eval-sprint1.md)), and `T-A2b`'s ten live
 report calls ([`api-reports.md`](api-reports.md) §7a). The report gate found a
 defect that is still present on `origin/main` and is fixed here: a report whose
 turn died of `context deadline exceeded` could never be marked failed, because
-`CompleteReport` did its first read on that same dead context.
-=======
+`CompleteReport` did its first read on that same dead context. The rest of this
+section is that day's detail, and every claim in it describes the 45-commit-stale
+tree unless it says otherwise.
+
 **The gate could not run against the real local database, and this is the part
 worth carrying forward.** `cmd/api` dies at startup on the local `argentum`
 control DB: `schema_migrations` says `version 55` and `migrations/control/` stops
@@ -2559,8 +2560,69 @@ development machine (OTLP `4317`, UI `16686`). The trace-waterfall half of
 the collector now exists locally, so that item needs only a turn's LLM spend. The
 compose file still does not have it, so it is not yet repeatable by anyone else.
 
+## Phase 2n — `T-Q1`'s failures answered in code, and a conflict marker in this file (2026-08-14)
+
+Five fixes against [`eval-q1.md`](eval-q1.md)'s nine failures, none of them
+scored yet, plus one piece of damage this log did to itself.
+
+**This file carried unresolved merge-conflict markers on `main` for a day.**
+`a79084d` committed `<<<<<<< HEAD`, `=======` and `>>>>>>> fd370d0` around
+Phase 2m: two real records — main's framing paragraph and the stale-tree
+branch's detail — left side by side with the markers between them. Both sides
+are kept; the framing paragraph now says outright that everything after it
+describes the 45-commit-stale tree, which is the sentence the conflict was
+about. **A green `go test ./...` says nothing about the prose**, and nothing in
+CI reads this directory.
+
+**A turn can no longer do all its work and say nothing.** The empty-reply guard
+runs last, after the redaction, because a `strict` policy blanking a short reply
+reaches the user as the same blank message the model's own empty string does.
+What the user gets instead names the tools the turn called, in the question's
+language; what the operator gets is a log line carrying `streaming`, which is
+the field that separates a provider's textless final message from a reply lost
+in the delta assembly. The audit row is `empty_reply`, not `final_answer`:
+counting a fault as a refusal would corrupt the number that says how often this
+product refuses.
+
+**`query_metric` had never been given `T-Q9`'s zero-row distinction**, so a
+window the warehouse holds no data for came back as `Rp 0`. A NULL is now
+`Empty` rather than an error, `row_count` is 0, and the fabrication guard
+therefore catches a reply that states a figure anyway. **The interesting part is
+what else read that NULL**: `WatcherService.evaluate` had been relying on the
+*error* to mean no-data, so the honest fix would have made every `lt` watcher
+breach on empty periods and stopped `no_data` breaching at all. Found by
+grepping the three consumers of `metric.Result` before changing it, which is
+five minutes and the difference between a fix and an incident.
+
+**A golden case was wrong about the fixture, and the fixture is the thing that
+settles it.** `grain-average-per-order-not-per-line` asserted `transaction_id`
+in the SQL on the stated premise that `fact_sales` is one row per line item.
+Queried on the day: 1,348 rows, 1,348 distinct transaction ids, no transaction
+with two lines. The trap does not exist, the assertion was ceremony, and the
+`query_metric` answer it failed was the better one. Replaced in `wrong_grain` by
+a trap that *is* in the data — average spend per customer, 10,615,809,800
+against a naive 15,750,459.64 — with the shape asserted rather than the value,
+because only 2 of 50 customers appear in `fact_sales` at all.
+
+**The off-topic classifier's FALSE list enumerated nothing but programming**, so
+the recipe request had only "anything else" holding it. The list now names the
+other half, and says which side a food business's question falls on. No regex on
+the word "recipe": that would refuse a restaurant tenant asking about their own
+menu, which is the overreach cycle this repo has already been through.
+
+**And the triage found a hole nobody had written down.** The topic gate is
+`action: require` — it blocks only when *no* pattern matches, and the classifier
+is the last pattern — so a generic opener admits anything before the classifier
+runs. *"What is the best way to cook rendang?"* passes on `what is the`.
+Deliberately not narrowed, and pinned as current behaviour in
+`TestKnownTopicGateFalsePositives` so the fix is a decision rather than an
+accident.
+
+`go build`, `go vet ./...`, `go test ./...` (48 packages) and `golangci-lint`
+over the four touched packages are clean. Every claim above is a unit-level
+claim; the eval re-run that would score them is owed and is one run, not five.
+
 ---
->>>>>>> fd370d0 (fix(reports): a report that outlived its turn's context still gets a verdict)
 
 ## What the history says about how this project is built
 

@@ -155,8 +155,11 @@ needed no owner at all:
   issued under the old one are invalid, and there are none.
 - **`ARGENTUM_DSN_KEY`** — minted fresh, and this one is **not** free. See
   below.
-- **`LLM_API_KEY`** — still owed, and still the only thing standing between this
-  repo and §2. Nothing local can supply it.
+- **`LLM_API_KEY`** — ~~still owed, and still the only thing standing between
+  this repo and §2. Nothing local can supply it.~~ **Supplied later the same
+  day.** `T-Q1`'s 55-case run spent $0.441 against `moonshotai/kimi-k2.6`
+  ([`eval-q1.md`](eval-q1.md)), which is this row closing itself. §2's remaining
+  rows are now blocked on a decision to spend, not on a missing file.
 
 **The DSN key is the part worth writing down.** `db_connections.dsn_encrypted`
 holds 20 AES-GCM ciphertexts written under the key that went missing with the
