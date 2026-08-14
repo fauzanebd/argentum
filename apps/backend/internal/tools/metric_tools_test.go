@@ -93,3 +93,101 @@ func TestQueryMetricResultGroundsTheTurn(t *testing.T) {
 			"metric's own figure would be replaced with an incomplete-answer message", rows)
 	}
 }
+
+// The Q3-2025 case from the 2026-08-14 run: a window the warehouse holds no
+// data for came back as "Rp 0", which is a different sentence from "we have no
+// data for that period" and the only one of the two that is false.
+func TestAnEmptyWindowIsNotAZero(t *testing.T) {
+	res := oneMetricResult(false)
+	res.Primary = metric.Evaluation{Empty: true, From: res.Primary.From, To: res.Primary.To}
+	tool := NewQueryMetricTool(&fakeMetricStore{result: res}, nil)
+	ctx := tenantctx.WithCompanyID(context.Background(), "c1")
+
+	out, err := tool.Execute(ctx, `{"metric_key":"revenue","from":"2025-07-01","to":"2025-09-30"}`)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("result is not JSON: %v", err)
+	}
+	if payload["value"] != nil {
+		t.Errorf("value = %v, want null — a zero in that field is the claim being denied", payload["value"])
+	}
+	if payload["row_count"] != float64(0) {
+		t.Errorf("row_count = %v, want 0", payload["row_count"])
+	}
+	if payload["note"] == nil {
+		t.Error("the result carries no note: the empty set alone was not enough of a signal for run_sql either")
+	}
+
+	// And the end it is felt at: no evidence, so a reply that states a figure
+	// anyway is replaced rather than sent.
+	tracker := agentbudget.New(agentbudget.Budget{MaxIterations: 8})
+	tracker.Observe("query_metric", out, nil)
+	snap := tracker.Snapshot()
+	if snap.DataRows != 0 || snap.EmptyResults != 1 {
+		t.Errorf("tracker read the empty window as evidence: rows=%d empty=%d", snap.DataRows, snap.EmptyResults)
+	}
+}
+
+// A comparison window past the start of the warehouse is the commoner half,
+// and reading it as zero produces the growth figure that is hardest to unsay.
+func TestAnEmptyComparisonWindowCarriesNoValue(t *testing.T) {
+	res := oneMetricResult(true)
+	res.Comparison = &metric.Evaluation{Empty: true, From: res.Comparison.From, To: res.Comparison.To}
+	res.Delta, res.DeltaPct = nil, nil
+	tool := NewQueryMetricTool(&fakeMetricStore{result: res}, nil)
+	ctx := tenantctx.WithCompanyID(context.Background(), "c1")
+
+	out, err := tool.Execute(ctx, `{"metric_key":"revenue","from":"2024-12-01","to":"2024-12-31","compare_to":"same_period_last_year"}`)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("result is not JSON: %v", err)
+	}
+	cmp, ok := payload["comparison"].(map[string]any)
+	if !ok {
+		t.Fatalf("comparison missing from the payload: %s", out)
+	}
+	if cmp["value"] != nil {
+		t.Errorf("comparison value = %v, want null", cmp["value"])
+	}
+	if _, has := payload["delta_pct"]; has {
+		t.Error("a percentage change was reported against a window with no data")
+	}
+	// The primary window has a real figure, and it is still evidence.
+	if payload["row_count"] != float64(1) {
+		t.Errorf("row_count = %v, want 1: the primary window returned a number", payload["row_count"])
+	}
+}
+
+// A genuine zero keeps its zero. What it gains is a sentence telling the model
+// not to guess which kind of zero it is — a COALESCE(SUM(x), 0) template
+// answers an empty window with a real 0 and this tool cannot tell them apart.
+func TestARealZeroIsStillZeroWithACaveat(t *testing.T) {
+	res := oneMetricResult(false)
+	res.Primary.Value = 0
+	tool := NewQueryMetricTool(&fakeMetricStore{result: res}, nil)
+	ctx := tenantctx.WithCompanyID(context.Background(), "c1")
+
+	out, err := tool.Execute(ctx, `{"metric_key":"revenue","from":"2024-12-01","to":"2024-12-31"}`)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("result is not JSON: %v", err)
+	}
+	if payload["value"] != float64(0) {
+		t.Errorf("value = %v, want 0", payload["value"])
+	}
+	if payload["row_count"] != float64(1) {
+		t.Errorf("row_count = %v, want 1: the metric did evaluate", payload["row_count"])
+	}
+	if payload["note"] == nil {
+		t.Error("a zero carries no caveat, so the model cannot tell it from an empty window")
+	}
+}

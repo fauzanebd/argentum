@@ -179,14 +179,23 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 	// parse the key off the tool's own result, and a metric result that omitted
 	// it counted as no evidence at all — so a reply carrying a figure this tool
 	// had just returned was replaced with "my query returned no data", which is
-	// the opposite of what happened. One evaluation is exactly one row by
-	// construction: the registry refuses to save a template that returns any
-	// other number, and a null value is an error rather than a zero. A compared
-	// call ran the template twice, and says two, on the same reasoning that
-	// meters it twice above.
-	rows := 1
-	if res.Comparison != nil {
-		rows = 2
+	// the opposite of what happened. An evaluation that produced a number is
+	// exactly one row by construction — the registry refuses to save a template
+	// that returns any other count — and a compared call that produced two
+	// numbers says two, on the same reasoning that meters it twice above.
+	//
+	// A window the metric matched nothing in is worth no rows, and saying so
+	// here is what makes the rest of the system treat it as the empty result it
+	// is: agentbudget counts a row_count of 0 as an empty result rather than as
+	// evidence, so T-16's fabrication check replaces a reply that states a
+	// figure anyway. Counting a NULL as a row is how "Rp 0" reached a
+	// customer-facing sentence (T-Q9, docs/coverage/eval-q1.md).
+	rows := 0
+	if !res.Primary.Empty {
+		rows++
+	}
+	if res.Comparison != nil && !res.Comparison.Empty {
+		rows++
 	}
 	payload := map[string]any{
 		"metric_key": res.Metric.Key,
@@ -196,15 +205,47 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 		"value":      res.Primary.Value,
 		"window":     map[string]string{"from": res.Primary.From.Format(time.RFC3339), "to": res.Primary.To.Format(time.RFC3339)},
 	}
+	// The note carries the distinction in words, for the same reason run_sql's
+	// zero-row note does: the empty set alone was not enough of a signal there
+	// either, and the model asked the same question a different way answered
+	// honestly. `value` is null rather than 0 — a zero in that field is the
+	// thing being denied.
+	if res.Primary.Empty {
+		payload["value"] = nil
+		payload["note"] = "This metric ran over the window and matched ZERO rows, so it has NO value — " +
+			"this is NOT a zero. Tell the user there is no data for this period, name the window you " +
+			"asked for, and offer to check which periods the data covers. Do NOT say the metric was 0, " +
+			"and do NOT state any total for this window."
+	} else if res.Primary.Value == 0 {
+		// A real zero, and the one case where the tool cannot settle the
+		// question on its own: a template written as COALESCE(SUM(x), 0)
+		// answers an empty window with a genuine 0 and this path has no way to
+		// tell it from a period that really summed to nothing. The model is
+		// told to check rather than assert, which is cheap and only fires on a
+		// zero.
+		payload["note"] = "The value is exactly 0. If this metric sums or counts, a 0 can also mean the " +
+			"window matched no rows — say which you mean only if you know, and otherwise say the metric " +
+			"returned 0 for this window and offer to confirm the data's coverage."
+	}
 	if res.Metric.Currency != "" {
 		payload["currency"] = res.Metric.Currency
 	}
 	if res.Comparison != nil {
-		payload["comparison"] = map[string]any{
+		cmp := map[string]any{
 			"basis":  string(compare),
 			"value":  res.Comparison.Value,
 			"window": map[string]string{"from": res.Comparison.From.Format(time.RFC3339), "to": res.Comparison.To.Format(time.RFC3339)},
 		}
+		// Same rule one window over. A comparison period we hold no data for is
+		// the commoner half of the pair — "the same period last year" reaches
+		// past the start of most warehouses — and reading it as zero produces
+		// the growth figure that is hardest to unsay.
+		if res.Comparison.Empty {
+			cmp["value"] = nil
+			cmp["note"] = "The comparison window matched ZERO rows: there is no value to compare " +
+				"against, and no growth or decline can be stated. Say the comparison period has no data."
+		}
+		payload["comparison"] = cmp
 		if res.Delta != nil {
 			payload["delta"] = *res.Delta
 		}

@@ -411,11 +411,24 @@ func (s *WatcherService) evaluate(ctx context.Context, w *domain.Watcher, m *dom
 		}
 		return breachResult{}, err
 	}
+	// A NULL value used to arrive here as ErrInvalidInput and take the branch
+	// above. It is now a successful evaluation carrying Empty (T-Q9's metric
+	// half), so this is the same decision moved to where the fact now lives —
+	// and it has to be made, because Value is 0 on an empty evaluation: a
+	// `lt` watcher would breach on every period the warehouse holds no data
+	// for, and `no_data` would stop breaching on exactly the ones it is for.
+	if res.Primary.Empty {
+		return breachResult{noData: true, breached: w.Comparator == domain.WatcherComparatorNoData}, nil
+	}
 
 	br := breachResult{}
 	v := res.Primary.Value
 	br.metricValue = &v
-	if res.Comparison != nil {
+	// Left unset when the comparison window matched nothing: the briefing renders
+	// this figure, and 0 there is a number the period does not have. The
+	// percentage comparators are already safe — Query leaves DeltaPct nil on an
+	// empty side, and both branches below require it.
+	if res.Comparison != nil && !res.Comparison.Empty {
 		cv := res.Comparison.Value
 		br.comparisonValue = &cv
 	}

@@ -196,11 +196,17 @@ func (s *MetricService) Query(
 			return nil, err
 		}
 		res.Comparison = &cmp
-		delta := primary.Value - cmp.Value
-		res.Delta = &delta
-		if cmp.Value != 0 {
-			pct := delta / abs(cmp.Value) * 100
-			res.DeltaPct = &pct
+		// No delta when either side matched nothing. Subtracting from an absent
+		// number produces the same false statement the zero did — "down 100% on
+		// last quarter" for a quarter we hold no data for — and it would carry
+		// further, because a watcher fires on a delta.
+		if !primary.Empty && !cmp.Empty {
+			delta := primary.Value - cmp.Value
+			res.Delta = &delta
+			if cmp.Value != 0 {
+				pct := delta / abs(cmp.Value) * 100
+				res.DeltaPct = &pct
+			}
 		}
 	}
 	return res, nil
@@ -217,6 +223,9 @@ func (s *MetricService) Test(ctx context.Context, companyID string, in MetricInp
 	}
 	ev, err := s.evaluate(ctx, companyID, m, metric.ValidationWindow(s.now()))
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseEmptyValidation(ev); err != nil {
 		return nil, err
 	}
 	return &ev, nil
@@ -266,6 +275,16 @@ func (s *MetricService) evaluate(ctx context.Context, companyID string, m *domai
 			"%w: the result has no column %q — value_column must name a selected column",
 			domain.ErrInvalidInput, m.ValueColumn)
 	}
+	// NULL is not a broken template: it is what SUM, AVG and MAX return over an
+	// empty set, on all three dialects. Reported rather than refused, so the
+	// caller can say "no data in this window" instead of either a wrong zero or
+	// an error message about types (T-Q9's distinction, which run_sql has had
+	// since 2026-08-11 and this path had not). The save and Test paths still
+	// refuse it — see validated() and Test() — because a metric that matches
+	// nothing over the validation window is a definition nobody should keep.
+	if raw == nil {
+		return metric.Evaluation{From: w.From, To: w.To, RenderedSQL: sql, Empty: true}, nil
+	}
 	value, err := toFloat(raw)
 	if err != nil {
 		return metric.Evaluation{}, fmt.Errorf("%w: column %q is not a number (%v)", domain.ErrInvalidInput, m.ValueColumn, err)
@@ -281,10 +300,36 @@ func (s *MetricService) validated(ctx context.Context, companyID string, in Metr
 		return nil, err
 	}
 	// The save-defining check: render it, run it, and require one numeric row.
-	if _, err := s.evaluate(ctx, companyID, m, metric.ValidationWindow(s.now())); err != nil {
+	ev, err := s.evaluate(ctx, companyID, m, metric.ValidationWindow(s.now()))
+	if err != nil {
+		return nil, err
+	}
+	if err := refuseEmptyValidation(ev); err != nil {
 		return nil, err
 	}
 	return m, nil
+}
+
+// refuseEmptyValidation keeps the save and Test paths exactly as strict as they
+// were before evaluate started reporting NULL instead of erroring on it.
+//
+// The turn-time reading changed and this one did not, on purpose. A metric that
+// matches nothing over the *validation* window is a definition an admin should
+// fix before it is stored — a filter that never matches, a column that is
+// always NULL, a table that has not been loaded — and a stored metric that
+// silently answers "no data" every time is the shape nobody notices. What
+// changed is the sentence: "matched no rows" says what to look at, where "is
+// not a number (value is null)" reads as a type error in a template that has
+// none.
+func refuseEmptyValidation(ev metric.Evaluation) error {
+	if !ev.Empty {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: the metric ran but matched no rows over the validation window (%s to %s), so it has no "+
+			"value — check the filters and the date column before saving it",
+		domain.ErrInvalidInput,
+		ev.From.Format("2006-01-02"), ev.To.Format("2006-01-02"))
 }
 
 // validatedFields does the structural validation without touching the database,

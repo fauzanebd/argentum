@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,20 +120,72 @@ func TestQueryRejectsMoreThanOneRow(t *testing.T) {
 	}
 }
 
-// value_column must name a real column, and it must be numeric — a null is an
-// error, not a silent zero.
+// value_column must name a real column, and it must be numeric.
 func TestQueryRejectsMissingColumnAndNonNumeric(t *testing.T) {
 	missing := &fakeConn{result: oneRow("other", 1)}
 	if _, err := newService(missing, metricFixture()).Query(context.Background(), "co-1", "revenue", jan(1), jan(31), ""); err == nil {
 		t.Error("a result without value_column must be refused")
 	}
-	null := &fakeConn{result: oneRow("v", nil)}
-	if _, err := newService(null, metricFixture()).Query(context.Background(), "co-1", "revenue", jan(1), jan(31), ""); err == nil {
-		t.Error("a null value must be refused, not read as 0")
-	}
 	text := &fakeConn{result: oneRow("v", "not a number")}
 	if _, err := newService(text, metricFixture()).Query(context.Background(), "co-1", "revenue", jan(1), jan(31), ""); err == nil {
 		t.Error("a non-numeric value must be refused")
+	}
+}
+
+// A NULL is what every dialect returns for SUM over an empty window, so at
+// query time it is a fact about the data and not a broken definition: reported
+// as Empty, never as the zero that reached a customer as "Rp 0" (T-Q9,
+// docs/coverage/eval-q1.md).
+func TestQueryReportsAnEmptyWindowRatherThanZero(t *testing.T) {
+	null := &fakeConn{result: oneRow("v", nil)}
+	res, err := newService(null, metricFixture()).Query(context.Background(), "co-1", "revenue", jan(1), jan(31), "")
+	if err != nil {
+		t.Fatalf("a null value must be reported, not refused: %v", err)
+	}
+	if !res.Primary.Empty {
+		t.Error("a null value was read as a number")
+	}
+	if res.Primary.Value != 0 {
+		t.Errorf("value = %v; an empty evaluation carries no value and 0 is the placeholder", res.Primary.Value)
+	}
+}
+
+// And no delta across it. "Down 100% on last year" for a year we hold no data
+// for is the sentence a watcher would otherwise send unprompted.
+func TestNoDeltaWhenEitherWindowIsEmpty(t *testing.T) {
+	null := &fakeConn{result: oneRow("v", nil)}
+	res, err := newService(null, metricFixture()).Query(
+		context.Background(), "co-1", "revenue", jan(1), jan(31), metric.ComparePreviousPeriod)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if res.Comparison == nil {
+		t.Fatal("the comparison window was not evaluated")
+	}
+	if res.Delta != nil || res.DeltaPct != nil {
+		t.Errorf("a delta was computed across an empty window: delta=%v pct=%v", res.Delta, res.DeltaPct)
+	}
+}
+
+// The save path is unmoved: a metric that matches nothing over the validation
+// window is a definition to fix, not a metric to store.
+func TestSaveStillRefusesAMetricThatMatchesNothing(t *testing.T) {
+	null := &fakeConn{result: oneRow("v", nil)}
+	svc := newService(null, metricFixture())
+
+	m := metricFixture()
+	_, err := svc.Create(context.Background(), "co-1", "user-1", MetricInput{
+		SourceID: m.SourceID, Key: m.Key, Label: m.Label, SQLTemplate: m.SQLTemplate,
+		ValueColumn: m.ValueColumn, Grain: m.Grain, Unit: m.Unit, Currency: m.Currency,
+	})
+	if err == nil {
+		t.Fatal("a metric that matched no rows was saved")
+	}
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Errorf("err = %v, want ErrInvalidInput", err)
+	}
+	if !strings.Contains(err.Error(), "matched no rows") {
+		t.Errorf("the refusal does not say what happened: %v", err)
 	}
 }
 
