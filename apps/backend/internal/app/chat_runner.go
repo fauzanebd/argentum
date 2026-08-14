@@ -1445,7 +1445,15 @@ func (r *ChatRunner) withThreadSummaryContext(ctx context.Context, msg, threadID
 	// two-turn conversation ends up with a paragraph about itself in its
 	// prompt.
 	count, err := r.messageCount(ctx, threadID)
-	if err != nil || count <= r.historyLimit {
+	if err != nil {
+		// Split from the length test so a store without CountByThread is not
+		// silently the same event as a short thread: that error disables T-Q7
+		// entirely, on every thread, and looks exactly like the feature working.
+		logrus.WithError(err).WithField("thread_id", threadID).
+			Debug("thread length unavailable; this turn runs without the summary")
+		return msg
+	}
+	if count <= r.historyLimit {
 		return msg
 	}
 	thread, err := r.threadRepo.GetByID(ctx, threadID)
@@ -1458,6 +1466,18 @@ func (r *ChatRunner) withThreadSummaryContext(ctx context.Context, msg, threadID
 	if summary == "" {
 		return msg
 	}
+	// Logged for the same reason withPriorWorkContext logs: nothing downstream
+	// records the composed user message, so without this line the only way to
+	// tell an injected summary from a skipped one is to read the model's reply
+	// and guess. Every branch above returns silently, and three of them are
+	// indistinguishable from "the thread is short" — which is what made this
+	// gate unobservable when it was first run (2026-08-14).
+	logrus.WithFields(logrus.Fields{
+		"thread_id":      threadID,
+		"summary_chars":  len(summary),
+		"message_count":  count,
+		"history_window": r.historyLimit,
+	}).Debug("thread summary injected")
 	return "[System context: This conversation is longer than what you can see above. " +
 		"Summary of the whole conversation so far, including the parts no longer in view: " +
 		summary + "\nTreat it as background about what the user is working towards. " +
