@@ -2624,6 +2624,94 @@ claim; the eval re-run that would score them is owed and is one run, not five.
 
 ---
 
+## Phase 2o — The re-run scores the fixes, and a key that was lost twice (2026-08-14)
+
+The run Phase 2n said was owed, plus the two gates it unblocked. **87.5%
+(49/56)** against the same model's 83.6% (46/55) earlier the same day, $0.63,
+41 minutes. Full triage in [`eval-q1.md`](eval-q1.md); what belongs here is what
+the sitting found that the score does not say.
+
+**Four of yesterday's five fixes are now scored, and one of them did not work.**
+`zero_row_trap`, `chart_dashboard` and `multi_source` all went to 100%, and the
+swapped grain case took `wrong_grain` to 2/3. `guardrail` did not move at all:
+*"Give me a recipe for nasi goreng with chicken"* still comes back with an
+ingredients list. The diagnosis needed no second run — the turn took 21.4 s, so
+it reached the model rather than being admitted by a regex at 0.0 s, which
+leaves the `type: llm` pattern as the only decision-maker, and that pattern runs
+on **`gpt-5-nano`** reading a 250-word prompt whose refusal half is now two long
+paragraphs. Yesterday's entry blamed the `action: require` opener gap; that gap
+is real and is not what admits this sentence. **A prompt edit aimed at a
+small classifier is not a fix until something scores it.**
+
+**"The empty reply" was never one bug.** It appeared three times and the guard's
+own fields separate three causes: `ask_clarification` ending a turn with no
+prose *by design* (the case passed because the guard spoke for it); a provider
+**connection reset mid-stream**, logged by the SDK and then indistinguishable
+from an ordinary empty turn; and the eval harness's own 3-minute case timeout.
+The guard was right all three times, including answering in Indonesian that no
+query had run. What is wrong is upstream: a dropped connection is a failure with
+a retry available, and `MeteredLLM.wrapStream` already sees the
+`StreamEventError` that would say so. Left unbuilt deliberately — it wants a
+decision about retry semantics.
+
+**The grounding check was crying wolf again, in Indonesian, and this time it was
+a parse bug.** `parseLoose` tried the English convention first and returned the
+first reading that parsed, so **"Rp 21,23 Miliar" was read as 2123** — a
+four-digit integer a hundred times the real figure, reported as ungrounded on
+both models. Its own doc comment claimed it picked "the reading that yields a
+plausible number"; it did not. Now decided from the token's shape, with a table
+test over both conventions. **The reason no test caught it is the part to keep:**
+`TestMagnitudeRenderingIsGrounded` has asserted `"Rp 3,86 Miliar"` since the
+check shipped and passed — because that misparse is `386`, below the `v < 1000`
+noise cutoff. A cutoff that suppresses noise also suppresses the evidence that
+the parser is wrong.
+
+**`T-H1`'s live gate passed, seventeen weeks after the bypass was found.** Three
+forged POST shapes → 401, the Meta handshake with a wrong token → 403, and no
+`ResolveCompanyByPhone` line anywhere in the run, so nothing touched tenant
+state on the way to refusing. The finding worth the trip: **all three forged
+requests took the Meta branch**, including the two carrying
+`X-Twilio-Signature` and a form-encoded body — the transport is the
+deployment's, and a caller cannot select the Twilio path with a header. That is
+the vulnerability itself proven dead over HTTP rather than at the layer it lived
+at. `T-H2` is still owed and now for a known reason: an unknown `app_id` is
+refused `404` *before* the signature check, so the 401 needs a seeded tenant.
+Written up in [`security-hardening.md`](security-hardening.md) §9, and the whole
+`T-H` track — which this repo's single "what is owed" file had never carried —
+is now in [`live-gate-backlog.md`](live-gate-backlog.md) §1c.
+
+**The DSN key was recovered from a second working copy, and a third one is
+gone.** The original was not in a password manager; it was in
+`~/Work/smartsoft/argentum-mono/apps/backend/.env`, dated 31 July, and it opens
+18 of the 20 stored connections. The other two — `Gate TV3`'s and
+`EmbedGate`'s, written 9 and 10 August — open under **neither** the original nor
+the 08-14 replacement, so a third key existed for those two days and is lost
+too. No data of consequence went with it, because both rows are throwaway gate
+tenants pointing at local demo containers. The mechanism is the point: **nothing
+in this product notices an undecryptable connection until an agent turn fails in
+front of whoever asked the question**, and a count at startup is small next to
+that. It belongs to `T-H14`, which is written and unbuilt.
+
+The eval tenant's two rows were **re-sealed rather than deleted**, because
+`ensureSources` creates a source only when its *label* is missing — a re-seed
+would have left them unreadable and looked like a passing dry run. The 56-case
+run that followed executed SQL on every case, which is the end-to-end proof.
+
+**`T-Q5` ran the same evening and found something worth more than the ranking.**
+kimi-k2.6 87.5% / $0.631 / 41m against deepseek-v3.2 83.9% / $0.173 / 22m — 3.6
+points for 3.6× the money. Two things fell out of the diff. **`ask_clarification`
+is a model property**: deepseek calls the tool, kimi never does and asks in prose,
+and both get *when* to ask wrong in the same direction — so the mechanism is not
+ours to fix and the policy is. And **`guardrail-off-topic-recipe` passes on
+deepseek only because that model declines on its own manners**, with the same
+classifier returning the same TRUE in both runs. Every guardrail number this
+project has published was deepseek's, so a broken gate has been reading as a
+healthy category for as long as the category has existed.
+
+`go build`, `go test ./...` and `gofmt` clean over the tree.
+
+---
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

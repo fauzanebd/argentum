@@ -411,15 +411,18 @@ header. It now asserts against an origin the test router actually allowlists.
 ## 8. What is still owed
 
 **The live half.** Everything above is unit-level. The roadmap's "What is owed"
-asks for each of these against a running stack, and none of them has been run:
+asks for each of these against a running stack. **`T-H1`'s was run on 2026-08-14
+— see §9**; the rest have not been:
 
-- `T-H1` — a forged form POST against a running API, before and after. The
-  handler test is the same assertion at the same layer the bypass lived at, so
-  the marginal finding is deployment-shaped: whether the reverse proxy in front
-  of the API preserves the `Host` header the signature is computed over. That is
-  the one thing a unit test cannot see, and it is the thing most likely to make
-  a correct implementation reject genuine traffic.
-- `T-H2` — a real Lark event with the header omitted.
+- ~~`T-H1` — a forged form POST against a running API~~ **run 2026-08-14, §9.**
+  What it proved is the branch selection and the fail-closed path, over HTTP,
+  on a deployment holding no secret. What it did **not** prove is the part this
+  bullet said was the marginal finding: whether the reverse proxy in front of
+  the API preserves the `Host` header the signature is computed over. The run
+  had no proxy in front of it, so that question is untouched and is the reason
+  this row is not struck out whole.
+- `T-H2` — a real Lark event with the header omitted. **Attempted 2026-08-14 and
+  it needs a seeded tenant** — see §9.
 - `T-H3` — a boot with each setting empty in production mode, and a raw-DSN
   registration with no TLS parameters through the dashboard. `Validate()` is
   tested directly; that it is called on the path `cmd/api` actually takes is not.
@@ -435,3 +438,60 @@ the tenant DSN or for the SQL Server read-only story — those are `T-H5` and
 answer to "is any live tenant on SQL Server" before it reaches production. If
 one is, they need telling which of `require` and `skip-verify` describes their
 server before their next connection edit, not after.
+
+---
+
+## 9. The live gate — `T-H1` run 2026-08-14
+
+`cmd/api` on `:8080` against the rebuilt `.env` and the compose stack. This
+deployment is the shape that matters for the bypass: **Meta transport, and no
+`WHATSAPP_APP_SECRET` set** — exactly the configuration in which
+`VerifyWebhook` used to `return true` and log a line.
+
+```
+1. forged Twilio POST, no signature        → HTTP 401
+   -d "From=whatsapp:+62…&Body=what were our total sales last month&MessageSid=SMforged1"
+2. forged Twilio POST, bogus signature     → HTTP 401
+   -H "X-Twilio-Signature: aGVsbG93b3JsZGhlbGxvd29ybGQxMjM0NTY3OA=="
+3. Meta JSON POST, no X-Hub-Signature-256  → HTTP 401
+4. Meta GET handshake, wrong verify token  → HTTP 403
+```
+
+Three refusals, three log lines, and **no `inbound from unknown phone number`
+line in the whole run** — the refusal happens before `ResolveCompanyByPhone`, so
+nothing touched tenant state and nothing was enqueued.
+
+**The finding worth having run it for is which branch the forged requests took.**
+All three logged `whatsapp webhook: Meta signature verification failed` —
+including the two that carried `X-Twilio-Signature` and a form-encoded body.
+That is the actual `T-H1` vulnerability, proven dead over HTTP rather than in a
+handler test: the transport is the deployment's, and a caller cannot select the
+Twilio path by sending a header. Each 401 was preceded by
+`WhatsApp app secret is not configured; the webhook signature cannot be
+verified`, which is the fail-closed branch running in the deployment that used
+to fail open.
+
+**What this does not cover.** No reverse proxy sat in front of the process, so
+the `Host`-header question §8 names is exactly as open as it was. It needs a
+deployment, not a stack.
+
+### `T-H2` needs a seeded tenant, and that is the whole finding
+
+The Lark route is `/webhook/lark/events/:app_id` and mounts only when
+`LARK_ENABLED=true`; the working `.env` sets it false, so on the default local
+deployment the route does not exist (`404`). Booted a second process with
+`LARK_ENABLED=true` and the route appears — and then refuses an unknown
+`app_id` with **`404` before any signature work happens**
+(`lark_webhook.go:57-65`, `ResolveCompanyByAppID` ahead of the header checks).
+
+So the 401 this gate is after is only reachable for an app id that exists in
+`company_lark_credentials` with an encrypt key. That is a seeding step through
+the product's own configuration path — not model spend, not a workspace, not a
+handset — and it is why this item stayed open rather than passing today.
+
+**One accident worth a line, because it cost ten minutes.** The second process
+was aimed at `:8081`, which another project on this machine was already
+listening on; it answered `/health` with `200` and the webhook path with a
+*typed JSON* `404` envelope, which reads exactly like Argentum with the route
+missing. The real Argentum 404 is gin's plain `404 page not found`. Bind to a
+port checked free with `lsof`, and read the 404's body before believing it.

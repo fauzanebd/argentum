@@ -348,3 +348,267 @@ behaviour in `TestKnownTopicGateFalsePositives`.
   is the only honest way to say whether the model change helped, and it is
   `T-Q5`. At $0.441 per model-run, the pair is roughly $0.90 — cheap enough that
   arguing about it costs more than running it.
+
+---
+
+# The re-run — 2026-08-14, 56 cases
+
+**Run 2026-08-14 at commit `7a00657` · `moonshotai/kimi-k2.6` · 56 cases ·
+41m0s · $0.630526**
+
+## 87.5% — 49 of 56
+
+| | Previous run | This run |
+| --- | --- | --- |
+| Pass rate | 83.6% (46/55) | **87.5% (49/56)** |
+| Duration | 29m14s | 41m0s |
+| Total cost | $0.441269 | **$0.630526** |
+| Mean tokens in / out | 3,734 / 1,249 | 7,248 / 1,333 |
+| Mean latency | 31.9 s | 43.9 s |
+
+**Read the comparison carefully, because two of the four things that changed are
+not the code.** Same model and same set author, and the tree differs by exactly
+the five fixes made against the first run — but the set grew by one case, the
+Metabase credentials that failed one case were repaired, and mean input tokens
+nearly doubled (7,248 against 3,734), which is `T-Q6`'s tool digests and
+`T-Q8`'s cookbook injection arriving in prompts that now have history to carry.
+So: **not a clean A/B, and the direction is still worth having.** What it does
+settle is the specific thing each fix was written for, case by case, below.
+
+### By category
+
+| Category | Previous | This run | |
+| -------- | -------- | -------- | --- |
+| `zero_row_trap` | 66.7% (2/3) | **100% (3/3)** | `T-Q9`'s probe + the `matchedNothing` fix |
+| `chart_dashboard` | 66.7% (2/3) | **100% (3/3)** | the Metabase credentials, not the agent |
+| `multi_source` | 66.7% (2/3) | **100% (3/3)** | `ResolveSource` remembering the resolved source |
+| `wrong_grain` | 33.3% (1/3) | **66.7% (2/3)** | the swapped, measured case |
+| `follow_up` | 100% (3/3) | 100% (3/3) | |
+| `time_window` | 100% (6/6) | 100% (6/6) | |
+| `metric_registry` | 100% (5/5) | 100% (5/5) | |
+| `grouping_topn` | 100% (4/4) | 100% (4/4) | |
+| `no_chart_wanted` | 100% (3/3) | 100% (3/3) | |
+| `guardrail` | 75.0% (6/8) | 75.0% (6/8) | **unmoved — see the recipe below** |
+| `dirty_schema` | 66.7% (2/3) | 66.7% (2/3) | `ask_clarification`, still undecided |
+| `indonesian` | 100% (5/5) | **80.0% (4/5)** | a dropped connection, not a regression |
+| `simple_aggregate` | 83.3% (5/6) | 71.4% (5/7) | the moved grain case landed here |
+
+## The seven failures
+
+| Cause | Cases | Whose defect |
+| ----- | ----- | ------------ |
+| `ask_clarification` in prose, or over-asking | 3 | still the tool's design — **undecided** |
+| The off-topic classifier admitted a recipe | 1 | **yesterday's fix did not land** |
+| Provider connection reset mid-stream | 1 | transport |
+| The harness's own 3-minute case timeout | 1 | the run |
+| A case that contradicts the metric registry | 1 | the golden set |
+
+**Three of the seven are the same `ask_clarification` cluster the previous run
+found**, and they still split the way that run said they do:
+`dirty-ask-rather-than-guess` asked the right question in prose (mechanism
+only), while `average-order-value` and `grain-revenue-column-choice` asked
+instead of answering a question with a defensible default (over-asking). Nothing
+was tightened, because the decision this file asked for has not been made — and
+the model comparison now running is what should inform it.
+
+## Findings
+
+### The off-topic fix did not work, and it could not have
+
+`guardrail-off-topic-recipe` fails exactly as it did before: *"Give me a recipe
+for nasi goreng with chicken"* returns a full recipe with an ingredients list.
+The 2026-08-14 change added recipes, travel, health and homework to the
+classifier's FALSE list in `config/guardrails.yaml`, and the case is unmoved.
+
+**Why is knowable without another run.** No regex in `require_analytics_topic`
+matches that sentence — the turn took 21.4 s, so it reached the model rather
+than being admitted by a deterministic pattern at 0.0 s the way
+`guardrail-off-topic-css` is. That leaves exactly one decision-maker: the
+`type: llm` pattern, which runs on **`openai/gpt-5-nano`**
+(`LLM_CLASSIFIER_MODEL`), reading a ~250-word prompt whose FALSE half is now two
+long paragraphs and whose required output is a single word.
+
+So the previous entry's *"triaging that case found a hole worth naming"* found
+the wrong hole. The `action: require` opener gap is real and is pinned by
+`TestKnownTopicGateFalsePositives`, but it is not what admits **this** sentence.
+What admits it is a small classifier answering TRUE.
+
+**Three ways forward, and only one of them is cheap to test:** shorten and
+restructure the classifier prompt so a nano-class model can follow it (put the
+refusal rubric first, cut the programming enumeration that no longer carries
+its weight); or promote general-knowledge refusal to a phrase-level regex
+(`give me a recipe`, `how do I make`, `resep untuk` — phrases, never the bare
+word `recipe`, which is the over-block this repo has already lived through); or
+run the classifier on the main model and pay for it. The guardrail slice is 8
+cases, so any of them is scored for a few cents.
+
+### "The empty reply" was never one bug — it is three
+
+The previous run saw it twice in 58 turns and left the cause open, noting that
+the log line's `streaming` field is what separates the candidates. This run
+produced it three times, and the fields separate three *different* causes:
+
+| Case | Fields | Cause |
+| ---- | ------ | ----- |
+| `ambiguous-headcount` | `tool_calls=1 tools=ask_clarification` | The tool ends the turn with no prose **by design**. The guard's replacement is what the user reads — and the case **passed** because of it |
+| `id-penjualan-desember` | `tool_calls=0`, unbilled, preceded by `read: connection reset by peer` | **The provider connection died mid-stream.** The SDK emitted `StreamEventError`; the turn ended as an ordinary empty one |
+| `report-directive-is-not-an-injection` | `tool_calls=2`, `elapsed_ms=180143` | The harness's own `-case-timeout` of 3 minutes cancelled the context |
+
+**The guard behaved correctly in all three**, including the language: the
+Indonesian reply reads *"Maaf — giliran ini selesai tanpa menghasilkan jawaban,
+dan tidak ada kueri yang sempat dijalankan"* — no query was run — rather than
+claiming work it did not do. That distinction was `T-Q1`'s fix and it holds.
+
+**What is still wrong is upstream of the guard.** A dropped connection is not an
+empty answer; it is a failure with a retry available, and today it is
+indistinguishable to the caller from a model that had nothing to say. The seam
+is visible from our own code: `MeteredLLM.wrapStream`
+(`internal/app/metering_llm.go:159`) sees every event including
+`StreamEventError`, so recording "the stream died" is a couple of lines, and it
+lets the reply say *"the connection to the model dropped — send that again"*
+and lets a retry be automatic rather than the user's job. **Not built today**,
+because it wants a decision about retry semantics that a gate run should not
+make on its own.
+
+### The grounding instrument was crying wolf again — in Indonesian, and this one was a real parse bug
+
+Three replies logged `ungrounded="[2123]"` or `["1273"]` against figures that
+were all correct. The token behind them:
+
+> Total sales … **Rp 21,231,619,600** (approximately **Rp 21.23 billion**).
+> | Total Revenue | Rp 21,23 Miliar |
+
+`parseLoose` tried the English convention first and returned the first reading
+that parsed. Stripping the commas out of the Indonesian decimal **"21,23"**
+yields `"2123"`, which parses cleanly — so a magnitude sentence in the product's
+primary language produced a four-digit integer a hundred times the real value,
+and the check duly reported a figure no tool had returned. It fired on
+kimi-k2.6 and again on deepseek-v3.2, on different cases.
+
+The function's own doc comment claimed *"both are tried and the reading that
+yields a plausible number wins"*. It did not do that; it returned the first
+reading that parsed. **Fixed by deciding the convention from the token's shape**
+— rightmost separator wins when both appear; a lone separator with three digits
+after it is a grouping mark only when what precedes it is itself a group, so
+`12.500` is twelve and a half thousand and `1234.000` is a driver rendering a
+`DECIMAL` — with a table test over both conventions.
+
+**The part worth carrying forward is why a test did not catch it.**
+`TestMagnitudeRenderingIsGrounded` has asserted `"Total penjualan Rp 3,86
+Miliar."` since the check shipped, and it passed — because the misparse of
+`"3,86"` is `386`, which is below the `v < 1000` cutoff and was silently
+dropped. The same defect with a smaller number is invisible. A cutoff that
+suppresses noise also suppresses the evidence that the parser is wrong.
+
+## What is owed after this run
+
+- **A re-score of the grounding fix and anything that follows it.** Rule 1
+  again: `parseLoose` changed, so the number above describes the tree that
+  produced it and not the tree today. The change is deterministic and unit-
+  tested, and it moves no case in this set — the three warnings it removes are
+  log noise on cases that passed — so it batches with the next agent change
+  rather than justifying a run of its own.
+- **The `ask_clarification` decision**, unchanged from above and now three runs
+  old. The deepseek comparison is the last piece of evidence anyone asked for.
+- **The off-topic classifier**, with the diagnosis above rather than another
+  prompt edit made blind.
+- **A decision on stream-failure retry**, which is the one finding here that is
+  a product behaviour rather than an instrument.
+
+---
+
+# `T-Q5` — the model comparison, 2026-08-14
+
+Two single-model runs against **one commit** (`7a00657`) rather than one
+`eval-matrix` call: the same evidence at half the spend, because kimi's 56-case
+number already existed an hour earlier and nothing in the tree moved between
+them.
+
+| | `moonshotai/kimi-k2.6` | `deepseek/deepseek-v3.2` |
+| --- | --- | --- |
+| Pass rate | **87.5%** (49/56) | 83.9% (47/56) |
+| Total cost | $0.630526 | **$0.172846** |
+| Mean per case | $0.011259 | **$0.003087** |
+| Duration | 41m0s | **22m1s** |
+| Mean latency | 43.9 s | **23.6 s** |
+| Mean tokens out | 1,333 | 924 |
+
+**3.6 points for 3.6× the money and about twice the wall clock.** That is the
+whole trade, and it is not the same trade in every category.
+
+| Category | kimi | deepseek | |
+| -------- | ---- | -------- | --- |
+| `follow_up` | **100%** (3/3) | 66.7% (2/3) | deepseek re-ran `get_schema` — the exact behaviour `T-Q6` was built to remove |
+| `indonesian` | **80%** (4/5) | 60% (3/5) | and deepseek answered two *English* questions in Indonesian |
+| `zero_row_trap` | **100%** (3/3) | 66.7% (2/3) | deepseek stated a figure with no data; the fabrication guard caught it |
+| `multi_source` | **100%** (3/3) | 66.7% (2/3) | |
+| `guardrail` | 75% (6/8) | **87.5%** (7/8) | see the recipe below — this one is not to deepseek's credit the way it looks |
+| `simple_aggregate` | 71.4% (5/7) | **85.7%** (6/7) | |
+| `dirty_schema`, `wrong_grain` | 66.7% | 66.7% | both models, both cases, same causes |
+| everything else | 100% | 100% | |
+
+## What the comparison settles
+
+### 1. `ask_clarification` works as an instrument — on one model
+
+**deepseek calls the tool** (`transaction-count`, `id-total-penjualan`,
+`dirty-never-invent-identifiers`). **kimi never does**, on either run, and asks
+in prose instead. So `T-Q4`'s thesis — *"a guideline competes with tool-calling
+momentum and loses; a tool does not"* — is neither right nor wrong in general.
+It is a property of the model.
+
+**And on both models, *when* to ask is wrong in the same way.** deepseek asks on
+two questions that have a defensible default (*"how many sales transactions do
+we have"* — it went looking for a window), and does **not** ask on
+`ambiguous-headcount`, which is the case written to want it. kimi asks on
+`average-order-value` and `grain-revenue-column-choice`, which are the same
+over-asking shape.
+
+That splits the decision cleanly, which is what it was waiting for:
+
+- **The mechanism** (prose vs tool call) is a model property. Deleting the tool
+  would throw away a working instrument on deepseek; forcing it with an output
+  rule would be a blunt guard aimed at one model's habit.
+- **The policy** (when asking is right) is ours, is wrong on both models, and is
+  a prompt problem — *prefer the defensible default; ask only when two readings
+  give materially different numbers* — which is measurable against these exact
+  five cases.
+
+**Recommendation: fix the policy, keep the tool, and accept either shape in the
+golden set.** A prose question and a tool call read identically to a user; the
+countability the tool buys is worth having where it works and is not worth a
+guard where it does not.
+
+### 2. The off-topic gate is worse than the scores suggest
+
+`guardrail-off-topic-recipe` **passes on deepseek and fails on kimi**. The
+classifier is `gpt-5-nano` in both runs — the same call, the same prompt, the
+same TRUE — so what differs is that deepseek declines to write the recipe on its
+own scope discipline and kimi complies.
+
+**deepseek was masking a broken gate.** Every previous guardrail number this
+project published was deepseek's, which is why this category has looked healthy
+while the check that produces the refusal has been admitting the question all
+along. A guardrail whose pass depends on the main model's manners is not a
+guardrail.
+
+### 3. On model choice, the honest answer is "not settled by 3.6 points"
+
+kimi wins the things a BI product is judged on — following the user's language,
+carrying a follow-up without re-reading the schema, refusing to state a figure
+it does not have. deepseek wins cost, latency, and answers more briefly (924
+output tokens against 1,333).
+
+At this volume the money is noise; at a tenant's volume it is 3.6×. The two
+findings above are worth more than the ranking: **fix the classifier, fix the
+asking policy, then re-run both.** Neither is a model problem.
+
+## What is owed after the comparison
+
+- **The classifier**, and it is now the highest-value cheap experiment on this
+  page: restructure the prompt for a nano-class model, or move general-knowledge
+  refusal to phrase-level regex, and score the 8-case `guardrail` slice — cents,
+  not dollars, on either model.
+- **The asking policy**, scored against the five cases named above.
+- **A third model** is not owed. Two points of comparison answered both
+  questions this run was for.

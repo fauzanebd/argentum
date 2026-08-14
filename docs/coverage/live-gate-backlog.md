@@ -171,6 +171,41 @@ original key, if it is in a password manager; re-registering the connections,
 which is data entry rather than recovery because all 20 point at local demo
 containers; or reading the plaintext copy Metabase keeps.
 
+### Resolved 2026-08-14, and it found a third key nobody knew about
+
+**The original key was in a second working copy of this repository** —
+`~/Work/smartsoft/argentum-mono/apps/backend/.env`, dated 31 July — not in a
+password manager. It opens the rows; the freshly minted key opens none of them.
+Restored into the working `.env` with a comment saying so, and **verified over
+all 20 rows**: 18 decrypt.
+
+**The other two do not, and they are the finding.** `Gate TV3`'s
+`Demo analytics` (2026-08-09) and `EmbedGate`'s unlabelled source (2026-08-10)
+open under *neither* key — not the 31-July original, not the 2026-08-14
+replacement. Both blobs are well-formed and 94 bytes; both fail the GCM tag. So
+a **third `ARGENTUM_DSN_KEY` existed between 9 and 10 August and is gone too**,
+which means this is not one lost file, it is a pattern nobody was measuring.
+
+The data loss is nil — both rows belong to throwaway gate tenants and point at
+local demo containers, and neither was mirrored to Metabase — but the mechanism
+is the same one that would take a customer's connection with it.
+
+**Two things follow, and neither is a gate:**
+
+- **Nothing in the product notices.** A row that cannot be decrypted is
+  discovered by an agent turn failing at query time, in front of whoever asked
+  the question. A startup or admin-facing count — *"N of M stored connections
+  do not decrypt under the current key"* — is small, and it is the difference
+  between an operator knowing and a tenant finding out. It belongs with `T-H14`
+  (key management), which is written and unbuilt.
+- **The eval tenant's two rows were re-sealed rather than deleted.** They had
+  been written under the 08-14 key hours earlier; `ensureSources` only creates
+  a source when its *label* is missing, so a re-seed would have left them
+  unreadable and looked like a passing dry run. Decrypted with the retiring
+  key, re-encrypted under the restored one, and checked back out of the
+  database. The full 56-case run that followed executed SQL on every case,
+  which is the end-to-end proof the restore worked.
+
 **That third option working is itself a finding.** `argentum_metabase` runs with
 no `MB_ENCRYPTION_SECRET_KEY`, so `metabase_database.details` is unencrypted and
 every DSN `UpsertWarehouse` ever mirrored is readable from the `metabase_app`
@@ -188,6 +223,27 @@ times. The working client is Docker Desktop's own, at
 `/Applications/Docker.app/Contents/Resources/bin/docker` (29.1.3) — put it ahead
 of the nix profile on `PATH`.
 
+## 1c. The hardening track was never in this file — added and half-run 2026-08-14
+
+**This file said "every acceptance item this repo currently owes … in one
+place" and carried no `T-H` row at all.** The security-hardening track landed
+four tickets code-complete and unit-gated on 2026-08-11 with its own "What is
+owed" list, and that list was never folded in here — so the one bucket this
+project's record says gets run did not know about it. Folded in now.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-H1` | A forged form POST against a running API | **Pass, 2026-08-14.** Three forged shapes 401, the GET handshake 403, nothing enqueued — and all three took the **Meta** branch including the two carrying `X-Twilio-Signature`, which is the bypass itself proven dead over HTTP rather than in a handler test ([`security-hardening.md`](security-hardening.md) §9) |
+| `T-H2` | A Lark event with the signature header omitted, expecting 401 | **Owed, and now for a known reason.** The route is `/webhook/lark/events/:app_id`, mounts only under `LARK_ENABLED=true`, and refuses an unknown app id with `404` *before* any signature work. The 401 needs a seeded `company_lark_credentials` row with an encrypt key — a seeding step through the product's own configuration path, not a cost |
+| `T-H3` | Boot with each setting empty in production mode; a raw-DSN registration with no TLS parameters | **Owed.** `Validate()` is tested directly; that `cmd/api` calls it on the path it actually takes is not |
+| `T-H15` | A resolver that changes its answer between the two lookups, through a real worker | **Owed.** Exercised in-process only |
+
+**And one item that is not a stack gate at all:** `T-H1`'s marginal finding was
+always deployment-shaped — whether the reverse proxy in front of `cmd/api`
+preserves the `Host` header the Twilio signature is computed over. Today's run
+had no proxy in front of it, so that question is exactly as open as it was. It
+belongs beside `T-14`'s Helm hostname in §4, because both need an operator.
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |
@@ -198,7 +254,8 @@ of the nix profile on `PATH`.
 | `T-18` | The final eval run → [`eval-sprint1.md`](eval-sprint1.md), compared against baseline | **Run 2026-08-13 in the prescribed order — 87.5% (35/40) against a 100% baseline — but on a tree 45 commits stale**, so the number describes the agent *before* the quality track and `T-Q1`'s fifteen new cases. It is not the sprint's closing figure and the row stays open; what it does carry forward is two defects re-verified against `origin/main` (§the file). **The real closing run is `T-Q1`'s, on the 55-case set** — one run, not two |
 | The prompt-contradiction fix (2026-08-09) | `report-directive-is-not-an-injection` passing on both models | The guardrail slice is ~$0.42 on haiku (8 cases, measured 2026-08-08); the full set is ~$2.10. The fix removes the chart guidelines from a turn whose deliverable is a file, which is a mechanism with an argument behind it and **no number** — the deterministic half is tested, and whether the case now passes is exactly what a golden set exists to answer ([`delivery-log.md`](delivery-log.md) Phase 2g) |
 | ~~`T-Q1`~~ | ~~`make eval` on the extended **55-case** set~~ | **Run 2026-08-14 — 83.6%, 46/55, $0.441, inside the predicted band.** The set discriminates, which was the point; four of the five categories `T-Q1` added are where the failures concentrate. It cost $0.44 rather than the $2.10 the estimate carried. Full triage in [`eval-q1.md`](eval-q1.md), and only three of the nine failures are the agent getting an answer wrong — three more are `ask_clarification` being answered in prose instead of called, one is a case that contradicts the metric registry, one was this run's Metabase credentials, and one is an empty reply whose cause is open. **On a different model from every prior number** (kimi-k2.6, owner's choice the same day), so it is a new baseline and not a delta |
-| `T-Q5` | `make eval-matrix MODELS=…` across 2–3 models | The full-set figure per model. **Do not run before `T-Q1`'s single-model number exists** — it answers "which model?" before "does the set discriminate at all?", and multiplies the spend to do it |
+| ~~`T-Q1`~~ | ~~A re-score of the five 2026-08-14 fixes~~ | **Run 2026-08-14 — 87.5%, 49/56, $0.631**, same model on the 56-case set. `zero_row_trap`, `chart_dashboard` and `multi_source` went to 100%; `guardrail` did not move, and the reason is the finding — the off-topic fix was a prompt edit to a classifier running on `gpt-5-nano`, and it still admits the recipe. Three empty replies with three distinct causes, and a real Indonesian number-parsing defect in the grounding check, fixed with a table test ([`eval-q1.md`](eval-q1.md) *The re-run*) |
+| ~~`T-Q5`~~ | ~~`make eval-matrix MODELS=…` across 2–3 models~~ | **Run 2026-08-14 — kimi-k2.6 87.5% / $0.631 against deepseek-v3.2 83.9% / $0.173**, as two single-model runs against one commit rather than one matrix call: the same evidence at half the spend. It answered more than "which model?" — `ask_clarification` is called by deepseek and never by kimi, so the tool is a model property and the *asking policy* is ours and wrong on both; and the recipe case passes on deepseek only because that model declines on its own manners, which means **deepseek has been masking a classifier that admits off-topic questions** in every guardrail number this project has published ([`eval-q1.md`](eval-q1.md) *T-Q5*) |
 | `T-Q3` | A before/after on the chart-restraint prompt change | 2 × full set. A prompt change with an argument behind it and no number — the shape rule 1 exists to stop shipping |
 | `T-Q6` | A two-turn conversation at `PRIOR_WORK_TURNS=3` and again at `=0`, confirming the second turn does not / does call `get_schema` | Four turns. The write-but-do-not-read setting exists for exactly this pair, and `messages.role` on the local control DB still shows **no `tool` rows at all** ([`agent-quality.md`](agent-quality.md) §5) |
 | `T-Q7` | The rolling-summary block appearing in a turn on a thread past 20 messages | One turn on the existing 58-message thread. The *read* is proven; this is the injection |

@@ -319,7 +319,17 @@ the `argentum` `docker-compose.yml` declares; a recreated `.env` must match it.)
 
 **Needs model spend:**
 
-- `make eval` on the 55-case set. **The number this roadmap predicts is 70–85%,
+- ~~`make eval` on the 55-case set.~~ **Run twice on 2026-08-14** — 83.6%
+  (46/55) at `1b42d99`, then **87.5% (49/56)** at `7a00657` after the five
+  fixes the first run produced, both on `moonshotai/kimi-k2.6`, $1.07 the pair.
+  The prediction held: the set landed inside 70–85% on its first run and did not
+  need hardening. Triage in [`../coverage/eval-q1.md`](../coverage/eval-q1.md).
+  **What the second run settled and what it did not:** `zero_row_trap`,
+  `chart_dashboard` and `multi_source` reached 100%, while `guardrail` did not
+  move at all — the off-topic fix was a prompt edit to a classifier running on
+  `gpt-5-nano`, and it still admits the recipe. The original wording is kept
+  below because its logic is what made the run worth doing.
+  **The number this roadmap predicts is 70–85%,
   and that prediction is the point** — if it comes back above 95%, the new
   cases are too easy and the honest response is to harden them, not to bank it.
   Note that four cases are written to FAIL until their ticket works end to end
