@@ -51,6 +51,20 @@ var modelPricing = map[string]ModelPricing{
 	// https://openrouter.ai/deepseek/deepseek-v3.2 — refresh occasionally.
 	"deepseek-v3.2":          {InputCostPer1K: 0.000231, OutputCostPer1K: 0.000451},
 	"deepseek/deepseek-v3.2": {InputCostPer1K: 0.000231, OutputCostPer1K: 0.000451},
+
+	// Moonshot — OpenRouter list price, read from its /models endpoint
+	// 2026-08-14. https://openrouter.ai/moonshotai/kimi-k2.6
+	//
+	// Added when kimi-k2.6 became the primary model. Without an entry it fell
+	// through to DefaultPricing, which approximates GPT-4o at $5/M in and
+	// $15/M out — 5.3× and 3.75× the real rate. That is not a reporting
+	// nicety: CREDITS_ENFORCEMENT_ENABLED refuses a turn at a 402 off these
+	// numbers, so an unpriced primary model exhausts a tenant's grant four to
+	// five times faster than the spend it represents.
+	"kimi-k2.6":            {InputCostPer1K: 0.00095, OutputCostPer1K: 0.004},
+	"moonshotai/kimi-k2.6": {InputCostPer1K: 0.00095, OutputCostPer1K: 0.004},
+	"kimi-k2.5":            {InputCostPer1K: 0.00057, OutputCostPer1K: 0.00285},
+	"moonshotai/kimi-k2.5": {InputCostPer1K: 0.00057, OutputCostPer1K: 0.00285},
 }
 
 // LookupModelPricing exposes lookupModelPricing for callers outside the app
