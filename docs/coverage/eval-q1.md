@@ -694,3 +694,94 @@ language following, not a regression.
 
 **Total spend for the whole classifier exercise: $0.14.** The full-set re-score
 that Rule 1 now requires is owed and batches with the asking-policy change.
+
+---
+
+# The asking policy — 2026-08-14
+
+## The diagnosis changed the fix
+
+All four over-asks across both models were the **same question — which time
+window?** — on questions that already said all-time: *"what is our average order
+value"*, *"how many sales transactions do we have in total"*, *"berapa total
+penjualan sepanjang waktu"*. Two facts explain it and neither is a prompt
+failure:
+
+- `query_metric` made `from` and `to` **required**
+- the defined-metrics context block carries key, label, unit, grain and
+  description — and **no coverage dates**
+
+So a question naming no period left three bad options: invent a range, abandon
+the authoritative metric for `run_sql`, or ask. The models asked. **The existing
+guideline already told them not to over-ask** — it lost, because a guideline
+loses to a missing affordance.
+
+## What shipped
+
+**`from` and `to` are optional; omitting both means every period the data
+holds.** Backward compatible — an explicit window behaves exactly as before, and
+the MCP surface keeps working. Half a window is still an error, because guessing
+which half the caller meant is how a metric answers a question nobody asked.
+
+The bounds are argued in the code rather than picked round: the floor is 1900
+(SQL Server's `datetime` starts in 1753) and the ceiling is one year out rather
+than 2999, because **MySQL's `TIMESTAMP` ends in 2038** and a metric that fails
+on the tenant with the oldest MySQL is worse than one that misses a forecast row
+dated more than a year ahead. The payload says `window_scope: all_available_data`
+so the model describes an all-time total instead of quoting 1900 at the user.
+
+## And the first prompt rule was too broad — measured, not guessed
+
+The guideline shipped alongside it said, in effect, *don't ask which window*.
+Scored immediately, it had fixed the four over-asks **and broken the two cases
+where asking is right**: kimi stopped calling `ask_clarification` on
+`ambiguous-headcount`, and deepseek guessed on `dirty-ask-rather-than-guess`
+instead of asking. Net on the eight-case cluster: deepseek 3/8 → 5/8, and
+**kimi 5/8 → 4/8**.
+
+This is precisely what the model comparison predicted — *"a single fix aimed at
+'clarification' will get one of them wrong"* — and it was caught because the
+cluster was re-scored rather than reasoned about.
+
+Narrowed to say the paragraph is about the time window and nothing else, and
+that which-source / which-metric / two-readings ambiguity still calls the tool:
+
+| Cluster (8 cases) | before | broad rule | narrowed |
+| --- | --- | --- | --- |
+| kimi-k2.6 | 5/8 | 4/8 | **7/8** |
+| deepseek-v3.2 | 3/8 | 5/8 | **8/8** |
+
+**`dirty-ask-rather-than-guess` now passes on both** — which means kimi *does*
+call `ask_clarification` when the rule stops over-reaching. The model comparison
+concluded the tool was never called on kimi; that was true of the prompt it was
+reading at the time, and it is not a fixed property of the model. The comparison's
+split still holds — mechanism vs policy — but the mechanism half is softer than
+it looked.
+
+## One case was wrong again, and in the same way as yesterday's
+
+`grain-revenue-column-choice` asked *"What is our total revenue?"* and asserted
+an SQL shape. This tenant defines a `revenue` metric and the system prompt tells
+the agent to prefer it, so the agent called `query_metric` and wrote no SQL —
+correctly. **The case asserted SQL against a question the product answers
+without SQL**, and it failed on both models for that reason.
+
+Reframed to *"Break down our total revenue by sales channel"*: no defined metric
+covers a breakdown (the three are scalars), so `run_sql` is the only route and
+the `sales_amount` vs `unit_price` trap is live again. Passes on both models.
+
+That is the second fixture defect of this shape in two days. The pattern worth
+naming: **a golden case that pins an implementation route goes stale the moment
+the product grows a better route.** Assert the answer, or assert a shape for a
+question that has only one route.
+
+## What is left in the cluster
+
+`ambiguous-headcount` on kimi — it asks the right question in prose instead of
+calling the tool. Unchanged, and now the only case in this cluster that is about
+the mechanism rather than the policy.
+
+**Spend for the asking-policy work: $0.19.** A full-set re-score on both models
+is owed under Rule 1 and has not been run — the prompt, the tool contract and
+one fixture all changed, so it is the next thing to spend money on, not
+something to infer from the cluster.

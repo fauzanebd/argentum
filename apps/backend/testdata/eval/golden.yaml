@@ -696,13 +696,25 @@ cases:
   - id: grain-revenue-column-choice
     category: wrong_grain
     lang: en
-    question: "What is our total revenue?"
+    question: "Break down our total revenue by sales channel."
     notes: |
       fact_sales carries unit_price, sales_amount, cost_amount and
       profit_amount. Revenue is sales_amount — already net of discount and
       already multiplied by quantity. Summing unit_price ignores both;
       unit_price * quantity ignores the discount. Every one of the three
       returns rows and a large plausible rupiah figure.
+
+      The question asked "What is our total revenue?" until 2026-08-14, and on
+      that phrasing the case could not pass: this tenant defines a `revenue`
+      metric, the system prompt tells the agent to PREFER DEFINED METRICS, and
+      so it correctly called query_metric and wrote no SQL at all. The case was
+      asserting an SQL shape against a question the product answers without
+      SQL — it failed on both models, and it was the fixture that was wrong.
+
+      A breakdown by channel is covered by no defined metric (the three are
+      scalars: revenue, order_count, aov), so run_sql is the only route and the
+      column choice is live again. Distinct from online-channel-revenue, which
+      filters to one channel and asserts a value rather than a shape.
     expect:
       kind: sql_shape
       sql_matches:

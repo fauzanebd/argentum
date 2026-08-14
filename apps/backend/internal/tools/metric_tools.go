@@ -101,7 +101,10 @@ func (t *QueryMetricTool) Name() string { return "query_metric" }
 
 func (t *QueryMetricTool) Description() string {
 	return "Return the value of a defined metric over a date window. Pass metric_key (from list_metrics), " +
-		"from and to as YYYY-MM-DD dates. Optionally pass compare_to ('previous_period' or " +
+		"and optionally from and to as YYYY-MM-DD dates. OMIT from and to for an all-time question " +
+		"('in total', 'all time', 'across all transactions', 'sepanjang waktu') — the metric is then " +
+		"evaluated over every period the data holds. Do not ask the user which window they meant when " +
+		"they did not name one. Optionally pass compare_to ('previous_period' or " +
 		"'same_period_last_year') to also get the comparison value and the delta. Use this instead of " +
 		"run_sql whenever a metric covers the question — the number is authoritative and consistent."
 }
@@ -109,8 +112,8 @@ func (t *QueryMetricTool) Description() string {
 func (t *QueryMetricTool) Parameters() map[string]interfaces.ParameterSpec {
 	return map[string]interfaces.ParameterSpec{
 		"metric_key": {Type: "string", Description: "The metric's key, as returned by list_metrics (e.g. 'revenue').", Required: true},
-		"from":       {Type: "string", Description: "Window start, inclusive, as YYYY-MM-DD (or RFC3339).", Required: true},
-		"to":         {Type: "string", Description: "Window end as YYYY-MM-DD (or RFC3339). Whether it is inclusive depends on the metric's definition.", Required: true},
+		"from":       {Type: "string", Description: "Optional. Window start, inclusive, as YYYY-MM-DD (or RFC3339). Omit together with 'to' to cover all available data.", Required: false},
+		"to":         {Type: "string", Description: "Optional. Window end as YYYY-MM-DD (or RFC3339); whether it is inclusive depends on the metric's definition. Omit together with 'from' to cover all available data.", Required: false},
 		"compare_to": {
 			Type:        "string",
 			Description: "Optional. 'previous_period' compares against the immediately preceding window of equal length; 'same_period_last_year' compares against the same window one year earlier.",
@@ -144,13 +147,31 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 	if strings.TrimSpace(p.MetricKey) == "" {
 		return "", fmt.Errorf("metric_key is required")
 	}
-	from, err := parseWindowBound(p.From)
-	if err != nil {
-		return "", fmt.Errorf("from: %w", err)
-	}
-	to, err := parseWindowBound(p.To)
-	if err != nil {
-		return "", fmt.Errorf("to: %w", err)
+	var from, to time.Time
+	allTime := strings.TrimSpace(p.From) == "" && strings.TrimSpace(p.To) == ""
+	if allTime {
+		// Both omitted means "every period the data holds" (2026-08-14). They
+		// were both required until then, and a question that names no window —
+		// "what is our total revenue", "berapa total penjualan sepanjang waktu"
+		// — left the model three bad options: invent a range, abandon the
+		// authoritative metric for run_sql, or ask. Two eval runs took the
+		// third, on four cases across two models, against a guideline that
+		// already told them not to. A guideline loses to a missing affordance.
+		//
+		// One bound without the other stays an error: "from 2024-07-01" with no
+		// end is a window the caller half-specified, and guessing which half
+		// they meant is how a metric answers a question nobody asked.
+		from, to = allTimeWindow()
+	} else {
+		var err error
+		from, err = parseWindowBound(p.From)
+		if err != nil {
+			return "", fmt.Errorf("from: %w", err)
+		}
+		to, err = parseWindowBound(p.To)
+		if err != nil {
+			return "", fmt.Errorf("to: %w", err)
+		}
 	}
 	compare := metric.Comparison(strings.TrimSpace(p.CompareTo))
 
@@ -204,6 +225,14 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 		"row_count":  rows,
 		"value":      res.Primary.Value,
 		"window":     map[string]string{"from": res.Primary.From.Format(time.RFC3339), "to": res.Primary.To.Format(time.RFC3339)},
+	}
+	if allTime {
+		// Say the window was not the caller's, or the model quotes 1900 at a
+		// user who asked about their total sales. What it should say is "all
+		// time", which is what was actually computed.
+		payload["window_scope"] = "all_available_data"
+		payload["window_note"] = "No window was requested, so this covers ALL available data. " +
+			"Describe it as the all-time total; do not quote these bounds as if the user chose them."
 	}
 	// The note carries the distinction in words, for the same reason run_sql's
 	// zero-row note does: the empty set alone was not enough of a signal there
@@ -271,6 +300,22 @@ func (t *QueryMetricTool) unknownKey(ctx context.Context, companyID, key string)
 		"note":           "Pass one of available_keys, or use run_sql if no metric covers the question.",
 	})
 	return string(out)
+}
+
+// allTimeWindow is the window a call that named none is evaluated over: wide
+// enough to hold every row a warehouse plausibly carries, and no wider.
+//
+// The bounds are not arbitrary. The floor is 1900-01-01 because SQL Server's
+// `datetime` begins in 1753 and MySQL's `DATE` in 1000, so anything earlier
+// buys nothing and risks a dialect rejecting the literal. The ceiling is one
+// year out rather than a round 2999 because MySQL's `TIMESTAMP` ends in 2038:
+// a template comparing a TIMESTAMP column against a year-3000 literal is a
+// error or a silent truncation depending on the server's mode, and a metric
+// that fails on the tenant with the oldest MySQL is worse than one that misses
+// a forecast row dated more than a year ahead.
+func allTimeWindow() (time.Time, time.Time) {
+	return time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Now().UTC().AddDate(1, 0, 0).Truncate(24 * time.Hour)
 }
 
 // parseWindowBound accepts a plain date (the common case the model is told to

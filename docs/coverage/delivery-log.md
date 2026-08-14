@@ -2738,6 +2738,38 @@ matched nothing, and all twenty-odd cases reported as blocked by the topic rule.
 It reads like the rule went haywire and is a test fixture keyed to prose. Both
 sides now carry a comment naming the other.
 
+**The asking policy turned out not to be a prompt problem.** All four over-asks
+across both models were the same question — *which time window?* — on questions
+that already said all-time, and `query_metric` made `from`/`to` required while
+the metrics context block carried no coverage dates. The model's three options
+were invent a range, abandon the authoritative metric, or ask; the guideline
+telling it not to over-ask had already lost, because **a guideline loses to a
+missing affordance**. Both bounds are now optional and mean "every period the
+data holds", with the floor at 1900 for SQL Server's `datetime` and the ceiling
+one year out rather than 2999 for MySQL's `TIMESTAMP`.
+
+**The prompt rule that shipped with it was too broad, and the re-score caught
+it.** It fixed the four over-asks and broke the two cases where asking is right
+— kimi stopped calling `ask_clarification`, deepseek guessed — taking kimi's
+eight-case cluster from 5/8 to 4/8 while deepseek went 3/8 to 5/8. Narrowed to
+name the time window and nothing else: **kimi 7/8, deepseek 8/8**. The model
+comparison had predicted exactly this (*"a single fix aimed at 'clarification'
+will get one of them wrong"*), and it was caught by scoring rather than by
+reasoning.
+
+**One of those passes revises this morning's conclusion.**
+`dirty-ask-rather-than-guess` now passes on kimi, so kimi *does* call
+`ask_clarification` once the rule stops over-reaching — the comparison's
+"never calls the tool" was true of the prompt it read at the time, not of the
+model.
+
+**And a second fixture defect of the same shape as yesterday's.**
+`grain-revenue-column-choice` asserted an SQL shape for *"What is our total
+revenue?"*, which this product answers from a defined metric without SQL at all,
+so it could not pass. Reframed to a channel breakdown, which no scalar metric
+covers. The pattern is worth the name: a golden case that pins an
+implementation route goes stale the moment the product grows a better route.
+
 `go build`, `go test ./...` and `gofmt` clean over the tree.
 
 ---

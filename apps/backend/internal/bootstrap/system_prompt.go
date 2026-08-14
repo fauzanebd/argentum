@@ -123,7 +123,9 @@ var guidelines = []guideline{
 	},
 	{
 		needs: []string{"query_metric"},
-		text:  `PREFER DEFINED METRICS OVER run_sql. The "[System context: Defined metrics …]" block prepended to the user's message lists the organization's authoritative numbers. If one of them answers the question, call query_metric with its key — that number is validated and consistent across conversations, where a re-derived SELECT can differ turn to turn. Only fall back to run_sql for questions no defined metric covers, and when you do, you may say the answer is computed ad hoc.`,
+		text: `PREFER DEFINED METRICS OVER run_sql. The "[System context: Defined metrics …]" block prepended to the user's message lists the organization's authoritative numbers. If one of them answers the question, call query_metric with its key — that number is validated and consistent across conversations, where a re-derived SELECT can differ turn to turn. Only fall back to run_sql for questions no defined metric covers, and when you do, you may say the answer is computed ad hoc.
+   - A question that names no period is an ALL-TIME question: "what is our total revenue", "how many transactions do we have", "berapa total penjualan sepanjang waktu". Call query_metric with metric_key and NO from/to — the metric then covers every period the data holds — and describe the answer as the all-time total. Do not ask which window they meant, do not invent one, and do not abandon the metric for run_sql to get around it. A metric's grain ("per month") is the shape of its definition, not a limit on the window you may ask for.
+   - That paragraph is about the TIME WINDOW and nothing else. It is not a reason to stop asking: if the ambiguity is which source, which metric, or which of two readings the user means — "what was our best month" is best by revenue, by orders, or by average order value — ask_clarification is still the right call, and an unnamed period is not what makes those questions ambiguous.`,
 	},
 	{
 		needs: []string{"run_sql", "get_schema"},

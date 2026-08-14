@@ -48,7 +48,13 @@ func (l *recordingLLM) Generate(_ context.Context, prompt string, opts ...interf
 	l.systems = append(l.systems, o.SystemMessage)
 	// The topic classifier fails closed, so a stub that answered FALSE would
 	// block every input and the tests would pass for the wrong reason.
-	if strings.Contains(o.SystemMessage, "You gate user messages") {
+	//
+	// Keyed to the topic pattern's first line in config/guardrails.yaml, which
+	// carries a comment pointing back here. Reword it there without changing
+	// this and every test in this file starts failing as "refused, but not by
+	// the rule I meant" — which is what happened when the prompt was rewritten
+	// on 2026-08-14.
+	if strings.Contains(o.SystemMessage, topicClassifierMarker) {
 		return "TRUE", nil
 	}
 	if strings.Contains(o.SystemMessage, "prompt-injection intent") {
@@ -64,6 +70,11 @@ func (l *recordingLLM) Generate(_ context.Context, prompt string, opts ...interf
 	}
 	return l.reply, nil
 }
+
+// topicClassifierMarker is the phrase that identifies config/guardrails.yaml's
+// `type: llm` topic pattern by its system message. It lives in one place so a
+// prompt reword breaks one line rather than every test that stubs a verdict.
+const topicClassifierMarker = "belongs to a business analytics assistant"
 
 func (l *recordingLLM) GenerateWithTools(ctx context.Context, prompt string, _ []interfaces.Tool, opts ...interfaces.GenerateOption) (string, error) {
 	return l.Generate(ctx, prompt, opts...)
@@ -85,7 +96,7 @@ func (l *recordingLLM) judged() []string {
 	defer l.mu.Unlock()
 	var out []string
 	for i, sys := range l.systems {
-		if strings.Contains(sys, "You gate user messages") || strings.Contains(sys, "prompt-injection intent") {
+		if strings.Contains(sys, topicClassifierMarker) || strings.Contains(sys, "prompt-injection intent") {
 			out = append(out, l.prompts[i])
 		}
 	}

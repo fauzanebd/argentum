@@ -191,3 +191,100 @@ func TestARealZeroIsStillZeroWithACaveat(t *testing.T) {
 		t.Error("a zero carries no caveat, so the model cannot tell it from an empty window")
 	}
 }
+
+// windowCapturingStore records the window it was asked for, which is the only
+// way to prove what an omitted one resolves to.
+type windowCapturingStore struct {
+	result   *metric.Result
+	gotFrom  time.Time
+	gotTo    time.Time
+	numCalls int
+}
+
+func (s *windowCapturingStore) ListEnabled(context.Context, string) ([]*domain.MetricDefinition, error) {
+	return []*domain.MetricDefinition{s.result.Metric}, nil
+}
+
+func (s *windowCapturingStore) Query(_ context.Context, _, _ string, from, to time.Time, _ metric.Comparison) (*metric.Result, error) {
+	s.gotFrom, s.gotTo, s.numCalls = from, to, s.numCalls+1
+	return s.result, nil
+}
+
+// A question that names no period is answered over all of the data, not by
+// asking the user which period they meant.
+//
+// from and to were both required until 2026-08-14, so "what is our total
+// revenue" left the model three bad options — invent a range, abandon the
+// authoritative metric for run_sql, or ask — and two eval runs took the third
+// on four cases across two models, against a guideline that already told them
+// not to. A guideline loses to a missing affordance.
+func TestAnOmittedWindowCoversAllAvailableData(t *testing.T) {
+	store := &windowCapturingStore{result: oneMetricResult(false)}
+	tool := NewQueryMetricTool(store, nil)
+	ctx := tenantctx.WithCompanyID(context.Background(), "c1")
+
+	out, err := tool.Execute(ctx, `{"metric_key":"revenue"}`)
+	if err != nil {
+		t.Fatalf("a call with no window was refused: %v", err)
+	}
+	if store.numCalls != 1 {
+		t.Fatalf("store called %d times, want 1", store.numCalls)
+	}
+	if store.gotFrom.Year() != 1900 {
+		t.Errorf("window start = %s, want the 1900 floor", store.gotFrom)
+	}
+	// One year out, per the MySQL TIMESTAMP ceiling argument in allTimeWindow.
+	if !store.gotTo.After(time.Now().UTC()) || store.gotTo.After(time.Now().UTC().AddDate(1, 0, 1)) {
+		t.Errorf("window end = %s, want roughly one year from now", store.gotTo)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("result is not JSON: %v", err)
+	}
+	if payload["window_scope"] != "all_available_data" {
+		t.Errorf("window_scope = %v, so the model cannot tell this was not the caller's window", payload["window_scope"])
+	}
+	if payload["window_note"] == nil {
+		t.Error("no window_note, so the model may quote 1900 at a user who asked for a total")
+	}
+}
+
+// A caller who named one bound half-specified a window, and guessing the other
+// half is how a metric answers a question nobody asked.
+func TestHalfAWindowIsAnError(t *testing.T) {
+	tool := NewQueryMetricTool(&windowCapturingStore{result: oneMetricResult(false)}, nil)
+	ctx := tenantctx.WithCompanyID(context.Background(), "c1")
+
+	for _, args := range []string{
+		`{"metric_key":"revenue","from":"2024-07-01"}`,
+		`{"metric_key":"revenue","to":"2024-12-31"}`,
+	} {
+		if _, err := tool.Execute(ctx, args); err == nil {
+			t.Errorf("%s was accepted; half a window should be refused", args)
+		}
+	}
+}
+
+// The window a caller does name is still the window that runs.
+func TestAnExplicitWindowIsUnchanged(t *testing.T) {
+	store := &windowCapturingStore{result: oneMetricResult(false)}
+	tool := NewQueryMetricTool(store, nil)
+	ctx := tenantctx.WithCompanyID(context.Background(), "c1")
+
+	out, err := tool.Execute(ctx, `{"metric_key":"revenue","from":"2024-12-01","to":"2024-12-31"}`)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if store.gotFrom != time.Date(2024, 12, 1, 0, 0, 0, 0, time.UTC) ||
+		store.gotTo != time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC) {
+		t.Errorf("window = %s .. %s, want the dates the caller passed", store.gotFrom, store.gotTo)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("result is not JSON: %v", err)
+	}
+	if _, ok := payload["window_scope"]; ok {
+		t.Error("an explicit window was labelled all-time")
+	}
+}
