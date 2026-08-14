@@ -193,7 +193,7 @@ func (a *Analytics) ProcessOutputFor(ctx context.Context, output string, mode PI
 // on the original user input. Falls back to the generic Message field.
 func resolveMessage(rule Rule, userInput string, fallback string) string {
 	if userInput != "" && rule.MessageID != "" && rule.MessageEN != "" {
-		if looksIndonesian(userInput) {
+		if looksIndonesian(userQuestionOnly(userInput)) {
 			return rule.MessageID
 		}
 		return rule.MessageEN
@@ -204,11 +204,34 @@ func resolveMessage(rule Rule, userInput string, fallback string) string {
 	return fallback
 }
 
+// systemContextBlock matches the bracketed preludes the chat runner prepends to
+// a user's message — the defined-metrics list, the relevant-table hint, the
+// cookbook's retrieved examples.
+var systemContextBlock = regexp.MustCompile(`(?s)\[System context:.*?\]\s*`)
+
+// userQuestionOnly strips those preludes, because what reaches this package is
+// the composed prompt and not the sentence the user typed.
+//
+// Found 2026-08-14: an English question — "Give me a recipe for nasi goreng
+// with chicken" — was refused in Indonesian. The user's own sentence carries no
+// Indonesian marker; the injected context does, because this tenant's history
+// is full of questions that begin "Berapa…" and T-Q8 retrieves them as
+// few-shot examples. The more a tenant uses the product in Indonesian, the more
+// certainly its English speakers get Indonesian refusals.
+func userQuestionOnly(text string) string {
+	return strings.TrimSpace(systemContextBlock.ReplaceAllString(text, ""))
+}
+
 // looksIndonesian returns true if the text contains common Indonesian words.
+//
+// "data" was on this list until 2026-08-14 and is a word in both languages —
+// on a business-intelligence product, where "show me the data" is the median
+// English question. It is removed rather than kept with a caveat: a marker that
+// fires on the most common word in the domain is not evidence of anything.
 var indonesianMarkers = regexp.MustCompile(
 	`(?i)\b(saya|aku|kamu|anda|bisa|tidak|apa|siapa|bagaimana|mengapa|kenapa|` +
 		`tolong|bantu|terima kasih|makasih|halo|hai|selamat|mohon|mau|ingin|` +
-		`berapa|dimana|kapan|silakan|data|tampilkan|tunjukkan|cari|hitung|` +
+		`berapa|dimana|kapan|silakan|tampilkan|tunjukkan|cari|hitung|` +
 		`bulan|tahun|minggu|hari|kemarin|lalu|tren|laporan|dasbor)\b`)
 
 func looksIndonesian(text string) bool {

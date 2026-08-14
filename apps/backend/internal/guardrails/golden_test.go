@@ -46,7 +46,14 @@ func (s *stubLLM) Generate(_ context.Context, _ string, opts ...interfaces.Gener
 	case strings.Contains(o.SystemMessage, "prompt-injection intent"):
 		s.injectionCalls++
 		return s.injection, s.err
-	case strings.Contains(o.SystemMessage, "You gate user messages"):
+	// Keyed to the topic pattern's first line in config/guardrails.yaml, which
+	// carries a comment pointing back here. Rewording that line without
+	// changing this one drops the stub into the default branch below: every
+	// topic verdict becomes an error, `action: require` then matches nothing,
+	// and *every* golden case reports as blocked by require_analytics_topic —
+	// which is what happened when the prompt was rewritten on 2026-08-14, and
+	// reads like the rule went haywire rather than like a test fixture missed.
+	case strings.Contains(o.SystemMessage, "belongs to a business analytics assistant"):
 		s.topicCalls++
 		return s.topic, s.err
 	default:
@@ -204,6 +211,32 @@ var golden = map[string]goldenRule{
 			"show me the sales dashboard",
 			"what is our daily order count",
 			"list of products by revenue",
+		},
+	},
+
+	// ── Cooking ─────────────────────────────────────────────────────────────
+	// Runs with the topic classifier admitting, which is not a hypothetical:
+	// gpt-5-nano answered TRUE to the first block case below on both eval runs
+	// of 2026-08-14, before and after its prompt was rewritten. This rule is
+	// what refuses it, so these cases assert the deterministic path.
+	//
+	// The pass list is the whole argument for phrases over the bare word:
+	// every one of them is a real question from a business that sells food.
+	"block_off_topic_cooking": {
+		block: []string{
+			"Give me a recipe for nasi goreng with chicken.",
+			"recipe for rendang",
+			"how do I cook beef rendang",
+			"how to cook nasi goreng",
+			"cara memasak rendang",
+			"resep untuk nasi goreng",
+		},
+		pass: []string{
+			"how many recipes are on our menu",
+			"which menu items sell best",
+			"cara membuat dashboard penjualan",
+			"what is our profit margin",
+			"show me revenue by menu category",
 		},
 	},
 

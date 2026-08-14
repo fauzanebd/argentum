@@ -83,17 +83,37 @@ rules:
       # Minimal greetings/meta only (glue + ambiguous follow-ups defer to llm topic pattern).
       - type: regex
         pattern: "(?i)\\b(hello|halo|hi|hai|hey|thanks|thank you|terima kasih|makasih|who are you|who are u|who r u|siapa kamu|what can you|what can u|apa yang bisa|bisa apa|test|testing|chat|ping)\\b"
+      # Rewritten 2026-08-14 for the model that actually runs it.
+      #
+      # This pattern is evaluated by LLM_CLASSIFIER_MODEL — gpt-5-nano on every
+      # deployment so far — and the previous version was ~250 words of prose
+      # whose refusal half was two long paragraphs of enumeration. It answered
+      # TRUE to "Give me a recipe for nasi goreng with chicken" on both eval
+      # runs of 2026-08-14, which is the case the enumeration was written for.
+      # The rule now comes first, the test is one sentence, and the examples are
+      # the two that were actually confused. Length is a feature here: a small
+      # model that has to hold a list of twelve exclusions has stopped applying
+      # a rule and started matching vibes.
+      #
+      # The first line below is load-bearing for the tests: stubLLM in
+      # internal/guardrails/golden_test.go routes the topic verdict by matching
+      # "belongs to a business analytics assistant". Reword it there too, or
+      # every golden case starts reporting as blocked by this rule.
       - type: llm
         pattern: |
-          You gate user messages for a business analytics assistant only: KPIs/metrics, BI, dashboards/reports/charts, querying or exploring organizational sales/finance/ops/supply-chain data (any human language).
+          Decide whether a message belongs to a business analytics assistant.
 
-          Reply TRUE for questions about that scope, tiny talk (hi/thanks), asking what this assistant does, brief follow‑ups referencing prior metrics in this assistant, AND short SQL/analysis questions strictly about THEIR business data pipelines or warehouse.
+          The test is whose data answers it. If answering means reading THIS organization's own business data — or is small talk with the assistant itself — the answer is TRUE. Otherwise FALSE.
 
-          Reply FALSE for anything else—including: teaching or debugging general programming (“how do I …”, algorithms, structs, loops, generics, compilers), language-learning questions (Go/Python/Java/etc. syntax except short SQL/read-only tweaks for THEIR warehouse), centered divs/CSS/HTML/layout/front‑end UX; fizz buzz, LeetCode, “implement a linked list”, “declare a variable”; frameworks, GIT, terminals, generic CS homework. If intent is coding tutorial or textbook CS—even with words like “list”, “dashboard”, “table”—reply FALSE unless it is plainly about THEIR BI/analytics workflows or THEIR business data modeling.
+          TRUE: metrics, KPIs, sales, revenue, orders, customers, inventory, finance, ops; reports, dashboards, charts of their data; a short SQL or schema question about their own warehouse; a brief follow-up to a previous answer ("why?", "break that down", "ok"); a greeting, thanks, or asking what this assistant can do.
 
-          Also FALSE—and this half is not about programming at all: general knowledge and everyday help. Recipes and cooking instructions, travel, health, law, finance advice unconnected to their own figures, translation, essays, poems, jokes, homework of any subject, opinions about public events. A request for a dish’s recipe is FALSE even when the business sells food; “which menu items sell best” is TRUE because it asks about their data, and “how do I make nasi goreng” is FALSE because it does not.
+          FALSE: everything else. Two families are the ones people get wrong:
+          1. Teaching or debugging code — algorithms, syntax, frameworks, CSS or layout, git, terminals, CS homework — even when the words "table", "list" or "dashboard" appear.
+          2. General knowledge and everyday help — recipes and cooking, travel, health, law, personal finance, translation, essays, poems, jokes, homework in any subject, opinions about public events.
 
-          Reply with only one word: TRUE or FALSE.
+          "Which menu items sell best" is TRUE: it reads their sales data. "Give me a recipe for nasi goreng" is FALSE: it does not, and it stays FALSE for a restaurant.
+
+          Answer with one word: TRUE or FALSE.
     action: require
     message_en: "I'm a business analytics assistant — I can help you query data, analyze metrics, spot trends, and build dashboards.\n\nPlease ask about your business data!"
     message_id: "Saya asisten analitik bisnis — saya bisa membantu query data, analisis metrik, melihat tren, dan membuat dasbor.\n\nSilakan tanya seputar data bisnis Anda!"
@@ -129,6 +149,42 @@ rules:
         pattern: "(?i)\\btime\\s+complexity\\b|\\bspace\\s+complexity\\b|\\bbig\\s*-?\\s*o\\s*\\(|\\bO\\(\\s*n\\s*\\)\\b"
     action: block
     message: "I'm focused on business analytics and org data—not general programming tutorials or language coursework. Ask about KPIs, reports, dashboards, metrics, or your business data instead."
+
+  # Cooking instructions — deterministic, because the topic classifier does not
+  # catch them and two attempts at teaching it to have now failed.
+  #
+  # The `type: llm` topic pattern names recipes explicitly and still answered
+  # TRUE on 2026-08-14, before and after the prompt was rewritten rule-first for
+  # the nano-class model that evaluates it. Both eval runs admitted "Give me a
+  # recipe for nasi goreng with chicken"; kimi-k2.6 wrote the recipe, and
+  # deepseek-v3.2 declined on its own manners, which is not a guardrail.
+  #
+  # Scope is deliberately the observed class — food preparation — and not the
+  # rest of the general-knowledge half (travel, health, law, essays). Those are
+  # still the classifier's, unguarded, and that is written down rather than
+  # papered over with ten more regexes nobody has seen fail.
+  #
+  # Every pattern is a PHRASE. The bare word "recipe" is not blockable: a food
+  # business legitimately asks "how many recipes are on our menu" and "which
+  # menu items sell best", and refusing those is the over-block this repo has
+  # already lived through once. Same for "cara membuat", which begins
+  # "cara membuat dashboard penjualan" as often as it begins a dish.
+  - name: block_off_topic_cooking
+    description: "Block requests for cooking instructions, which the topic classifier admits"
+    scope: input
+    patterns:
+      - type: regex
+        pattern: "(?i)\\brecipes?\\s+for\\b"
+      - type: regex
+        pattern: "(?i)\\bgive\\s+me\\s+(?:a|the)\\s+recipe\\b"
+      - type: regex
+        pattern: "(?i)\\bhow\\s+(?:do\\s+i|to)\\s+cook\\b"
+      - type: regex
+        pattern: "(?i)\\bcara\\s+memasak\\b|\\bresep\\s+(?:untuk|masakan|memasak)\\b"
+    action: block
+    message_en: "I'm a business analytics assistant — I work with your organization's data, not recipes. Ask me about sales, metrics, reports or dashboards instead."
+    message_id: "Saya asisten analitik bisnis — saya bekerja dengan data organisasi Anda, bukan resep masakan. Silakan tanya soal penjualan, metrik, laporan, atau dasbor."
+    message: "I'm a business analytics assistant — I work with your organization's data, not recipes. Ask me about sales, metrics, reports or dashboards instead."
 
   # Block prompt injection attempts
   - name: block_prompt_injection
