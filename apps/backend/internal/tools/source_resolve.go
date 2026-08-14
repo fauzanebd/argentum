@@ -18,9 +18,19 @@ import (
 //   - 0 connections → "no DB connection registered" error.
 //   - 1 connection,  empty requestedID → use it.
 //   - 1 connection,  non-empty requestedID → validate ownership.
-//   - >1 connections, empty requestedID → error listing available sources;
-//     the agent reads the menu in the tool error and retries with an id.
+//   - >1 connections, empty requestedID → the source this turn already
+//     resolved, if there is one and it is still in the allowed catalog;
+//     otherwise an error listing available sources.
 //   - >1 connections, non-empty requestedID → validate ownership.
+//
+// The turn-scoped reuse was added 2026-08-14 for the retry loop in
+// coverage/eval-sprint1.md §4: the menu is a fine answer to "which source?"
+// and a useless one to an agent that already picked, which called the tool
+// again unchanged until its iteration budget ran out. It is narrow on purpose,
+// and the two limits are what keep it honest — it only ever answers with an id
+// this turn already resolved, and that id is re-checked against the filtered
+// catalog below, so it can never widen what the roster allows. A turn that has
+// touched no source still gets the menu.
 //
 // This is the choke point every data tool goes through — get_schema, run_sql
 // and create_visualization all call it — which is why the roster's source
@@ -47,13 +57,25 @@ func ResolveSource(ctx context.Context, repo domain.ConnectionRepository, compan
 	}
 	if requestedID == "" {
 		if len(conns) == 1 {
+			rememberSource(ctx, conns[0].ID)
 			return conns[0], nil
+		}
+		// Continue against the source this turn already chose. The lookup runs
+		// over `conns`, which is post-filter, so a remembered id the roster no
+		// longer allows simply is not found and the menu is shown instead.
+		if prior := recalledSource(ctx); prior != "" {
+			for _, c := range conns {
+				if c.ID == prior {
+					return c, nil
+				}
+			}
 		}
 		return nil, fmt.Errorf("multiple data sources available; specify source_id. Available: %s",
 			formatSourceMenu(conns))
 	}
 	for _, c := range conns {
 		if c.ID == requestedID {
+			rememberSource(ctx, c.ID)
 			return c, nil
 		}
 	}

@@ -28,6 +28,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/slack"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
+	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/tracing"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
@@ -581,6 +582,13 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// audit row for a turn that fails to build an agent at all — carries it.
 	agentRow := r.resolveAgent(ctx, p)
 	ctx = agentscope.WithScope(ctx, scopeOf(agentRow))
+
+	// One turn, one source memory. After the scope, because what it may recall
+	// is bounded by what the scope allows, and installed here so that every
+	// tool call the turn makes shares it — a source resolved by get_schema is
+	// what the create_visualization two calls later is missing
+	// (coverage/eval-sprint1.md §4).
+	ctx = tools.WithTurnSource(ctx)
 
 	// The tenant's own MCP tools for this turn (T-M2), resolved from the scope
 	// just installed: empty binding means none, so this is nil for every turn
