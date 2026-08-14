@@ -2708,6 +2708,36 @@ classifier returning the same TRUE in both runs. Every guardrail number this
 project has published was deepseek's, so a broken gate has been reading as a
 healthy category for as long as the category has existed.
 
+**The classifier experiment ran the same day and refuted its own
+recommendation.** The topic prompt was rewritten rule-first for the nano-class
+model that evaluates it — the test in one sentence, the two confused families,
+the twelve-item programming enumeration cut — and the recipe case failed again
+on both models at temperature 0. Neither reply was our refusal message, which is
+how we know the classifier admitted it twice. So `block_off_topic_cooking`
+shipped instead: four phrase-level patterns, refused at **0.0 s with no model
+call**. Phrases and not the bare word, with a golden pass list of five real
+questions from a business that sells food. The rest of the general-knowledge
+half is still the classifier's and therefore still unguarded, which is now
+written down rather than papered over.
+
+**Blocking it exposed a second bug in our own refusal.** The case failed again
+on language: an English question refused in Indonesian. `resolveMessage` reads
+the *composed* prompt, so the marker that chose the language came out of
+`T-Q8`'s retrieved examples — somebody else's question — and the more Indonesian
+a tenant's history, the more reliably its English speakers get Indonesian
+refusals. Under it, `data` was on the Indonesian marker list: a word in both
+languages and the median English question on a BI product. Both fixed with the
+preludes stripped before detection. **kimi's guardrail slice went 6/8 → 8/8**;
+deepseek stayed 7/8 on a case whose own notes say the refusal is the model's own
+words, having passed it an hour earlier.
+
+**Rewriting a prompt changed nothing and broke every golden case.** `stubLLM`
+routes the topic verdict by matching the literal phrase *"You gate user
+messages"*, which the rewrite deleted — so the stub errored, `action: require`
+matched nothing, and all twenty-odd cases reported as blocked by the topic rule.
+It reads like the rule went haywire and is a test fixture keyed to prose. Both
+sides now carry a comment naming the other.
+
 `go build`, `go test ./...` and `gofmt` clean over the tree.
 
 ---

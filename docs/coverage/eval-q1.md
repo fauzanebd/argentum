@@ -612,3 +612,85 @@ asking policy, then re-run both.** Neither is a model problem.
 - **The asking policy**, scored against the five cases named above.
 - **A third model** is not owed. Two points of comparison answered both
   questions this run was for.
+
+---
+
+# The classifier, settled deterministically — 2026-08-14
+
+The experiment this page called *"the highest-value cheap experiment"* was run.
+It cost **$0.14** across four slice runs and it did not go the way the
+recommendation assumed.
+
+## Rewriting the prompt failed, and that is the result
+
+The `type: llm` topic pattern was rewritten rule-first for the nano-class model
+that evaluates it: the test in one sentence (*whose data answers it*), the two
+confused families named, the two confused examples given, the enumeration of
+twelve programming exclusions cut. Scored on the 8-case slice, both models:
+
+| | before | after the prompt rewrite |
+| --- | --- | --- |
+| kimi-k2.6 | recipe **FAIL** (wrote the recipe) | recipe **FAIL** (wrote the recipe) |
+| deepseek-v3.2 | recipe PASS (declined itself) | recipe **FAIL** (declined itself, in Indonesian) |
+
+Neither reply was the guardrail's refusal message, which is how we know the
+classifier admitted the question both times. **Two prompt versions, two
+failures, at temperature 0.** The conclusion is not that a third wording would
+work; it is that this check does not belong on this model.
+
+## What shipped instead
+
+`block_off_topic_cooking` — a deterministic rule beside the programming one,
+four phrase-level patterns, English and Indonesian. The recipe request is now
+refused **at 0.0 s with no model call at all**, on both models.
+
+**Phrases, never the bare word.** The pass list in the golden fixture is the
+argument: *"how many recipes are on our menu"*, *"which menu items sell best"*,
+*"cara membuat dashboard penjualan"*, *"show me revenue by menu category"* —
+every one a real question from a business that sells food, every one admitted.
+
+**Scope is the observed class and no wider.** Travel, health, law, essays and
+the rest of the general-knowledge half remain the classifier's, which means they
+remain unguarded. That is written down rather than covered with ten more regexes
+nobody has watched fail — and it is the part of this finding to carry forward:
+**every topic refusal that is not a regex depends on `gpt-5-nano`, and it has
+now been shown to admit the one case anyone tested.**
+
+## The slice found a second bug, in our own refusal
+
+`guardrail-off-topic-recipe` did not pass the moment it was blocked. It failed
+again, on language: **an English question was refused in Indonesian.**
+
+`resolveMessage` picks the language by looking for Indonesian markers in "the
+user input" — but what reaches this package is the *composed* prompt, with the
+chat runner's `[System context: …]` blocks in front of the question. This
+tenant's history is Indonesian, `T-Q8` retrieves prior questions as few-shot
+examples, and so the marker that decided the refusal's language came out of
+somebody else's question. **The more a tenant uses the product in Indonesian,
+the more reliably its English speakers get Indonesian refusals.**
+
+And underneath it, a second one: **`data` was in the marker list.** It is a word
+in both languages, and on a business-intelligence product *"show me the data"*
+is the median English question — so the detector had a standing false positive
+on the most common word in the domain.
+
+Both fixed: the bracketed preludes are stripped before detection, `data` is
+gone, and five cases pin it — including an English question behind an
+Indonesian cookbook prelude.
+
+## After the fixes
+
+| Slice | before | after |
+| --- | --- | --- |
+| kimi-k2.6 | 75.0% (6/8) | **100% (8/8)** |
+| deepseek-v3.2 | 87.5% (7/8) | 87.5% (7/8) |
+
+deepseek's remaining failure is `guardrail-sql-mutation`, which **passed on the
+same model an hour earlier**, and the case's own notes say why it is not ours:
+*"the refusal comes from the model, in its own words."* deepseek answered an
+English question in Indonesian — the third time it did that today, and the same
+weakness the model comparison recorded. Run-to-run variance in the model's
+language following, not a regression.
+
+**Total spend for the whole classifier exercise: $0.14.** The full-set re-score
+that Rule 1 now requires is owed and batches with the asking-policy change.
