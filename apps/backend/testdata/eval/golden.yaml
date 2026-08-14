@@ -708,20 +708,65 @@ cases:
       sql_matches:
         - "sum\\s*\\(\\s*[a-z_.\"]*sales_amount"
 
+  # Filed here rather than under wrong_grain, where it was written: see its
+  # notes. A wrong_grain case must assert an SQL shape (case_test.go pins that,
+  # because a value assertion passes whenever the model gets lucky on a seed),
+  # and this one no longer has a grain to assert. The id keeps its old name so
+  # the runs that scored it are still findable.
   - id: grain-average-per-order-not-per-line
-    category: wrong_grain
+    category: simple_aggregate
     lang: en
     question: "On average, how much does a single transaction bring in?"
     notes: |
-      fact_sales is one row per line item, and transaction_id repeats across
-      them. avg(sales_amount) answers "per line"; the question asks per
-      transaction, which needs the sum grouped by transaction_id first. This
-      is the AOV trap `metric-aov-december` covers from the registry side —
-      here with no metric to fall back on.
+      **The trap this case was written for is not in the fixture, measured
+      2026-08-14.** It asserted `transaction_id` in the SQL on the stated
+      premise that "fact_sales is one row per line item, and transaction_id
+      repeats across them". Against the demo warehouse: 1,348 rows, 1,348
+      distinct transaction_ids, and no transaction with more than one line. So
+      avg(sales_amount) and avg-of-sum-grouped-by-transaction are the same
+      number — 15,750,459.64 — and there is no grain to get wrong.
+
+      It failed the 2026-08-14 run on `sql_shape: agent executed no SQL` after
+      the agent answered that exact figure from `query_metric`, which is the
+      metric registry working as designed (docs/coverage/eval-q1.md). The old
+      assertion punished the better source for a trap that is not there.
+
+      What it measures now is the paraphrase — "how much does a single
+      transaction bring in" is `average-order-value` in other words — and that
+      the number came from a tool rather than from the model. To make it a
+      grain case again, the seed has to produce multi-line transactions; that
+      moves `average-order-value`'s expected value too, so it is a change to
+      the fixture and not to this case.
+    expect:
+      kind: numeric
+      value: 15750459.64
+      tolerance: 0.02
+      must_call_any: [run_sql, query_metric]
+
+  - id: grain-spend-per-customer-not-per-row
+    category: wrong_grain
+    lang: en
+    question: "On average, how much has each customer who buys from us spent with us in total?"
+    notes: |
+      Written 2026-08-14 to replace the grain trap
+      `grain-average-per-order-not-per-line` claimed and the fixture does not
+      have. This one is measured: avg(sales_amount) over fact_sales is
+      15,750,459.64 and the answer to the question asked is 10,615,809,800 —
+      three orders of magnitude apart, both plausible-looking rupiah figures,
+      and only the second one is per customer. The correct query sums by
+      customer first (GROUP BY customer_id) or divides by
+      count(DISTINCT customer_id).
+
+      The shape is asserted and not the value, for this category's usual
+      reason and one extra: the seed's LATERAL is uncorrelated, so only **2**
+      of the 50 rows in dim_customers appear in fact_sales at all. The figure
+      is a property of one seeding run; the grain is a property of the
+      question.
     expect:
       kind: sql_shape
       sql_matches:
-        - "transaction_id"
+        - "fact_sales"
+        - "(group\\s+by\\s+[a-z_.\"]*customer_id|count\\s*\\(\\s*distinct\\s+[a-z_.\"]*customer_id)"
 
   # ── charts nobody asked for ────────────────────────────────────────────
   #
