@@ -126,6 +126,10 @@ type Config struct {
 	ControlMigrationsDir string
 	CookieSecure         bool
 	CORSOrigins          []string
+	// corsOriginsSet records that CORS_ORIGINS carried a value, as opposed to
+	// the development default standing in for one. Unexported: it is about how
+	// the process was configured, not about what it should do.
+	corsOriginsSet bool
 
 	// Conversation threading
 	ThreadIdleMinutes  int    // gap that triggers a topic-relevance check
@@ -428,6 +432,12 @@ func Load() (*Config, error) {
 		ControlMigrationsDir: getEnv("CONTROL_MIGRATIONS_DIR", "migrations/control"),
 		CookieSecure:         getEnv("COOKIE_SECURE", "false") == "true",
 		CORSOrigins:          splitCSV(getEnv("CORS_ORIGINS", "http://localhost:5173")),
+		// Whether an operator said anything at all, kept apart from what the
+		// list ended up being. getEnv treats unset and empty alike and hands
+		// back the development default, so `len(CORSOrigins) == 0` — the
+		// condition Validate warns on — is unreachable for the two inputs a
+		// production deployment actually produces (live gate, 2026-08-14).
+		corsOriginsSet: strings.TrimSpace(os.Getenv("CORS_ORIGINS")) != "",
 
 		// Conversation threading
 		ThreadIdleMinutes:  getEnvAsInt("THREAD_IDLE_MINUTES", 30),
@@ -734,6 +744,14 @@ func (c *Config) Validate() error {
 	// authenticated dashboard responses. Set CORS_ORIGINS.
 	if c.IsProduction() && len(c.CORSOrigins) == 0 {
 		logrus.Warn("CORS_ORIGINS is empty in production: the middleware reflects every Origin back with Access-Control-Allow-Credentials, which lets any site a logged-in user visits read their authenticated responses — set it to the dashboard host")
+	}
+	// The line above only fires for a value that parses to nothing — `,` or a
+	// lone space. Unset and empty both take the development default instead, so
+	// the most likely production mistake was the one nothing said anything
+	// about: the deployment allows http://localhost:5173 and refuses the real
+	// dashboard, which reads to everyone involved as the API being down.
+	if c.IsProduction() && !c.corsOriginsSet {
+		logrus.Warnf("CORS_ORIGINS is unset in production: the only allowed origin is the development default %q, so the dashboard's own requests will be refused by the browser — set it to the dashboard host", c.CORSOrigins)
 	}
 
 	return nil

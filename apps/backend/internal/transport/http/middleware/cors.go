@@ -18,10 +18,15 @@ import (
 // is how the browser path and the machine path get conflated, and the browser
 // path is deliberately a different credential (T-19's embed key).
 //
-// That reflecting behaviour is now development-only in practice: `Validate()`
-// refuses to start a production process with an empty CORS_ORIGINS (T-H3). It
-// stays here rather than becoming a refusal in the middleware because a laptop
-// running the dashboard on an unexpected port is the case it exists for.
+// That reflecting behaviour is development-only in intent, not by enforcement:
+// `Validate()` *warns* on an empty CORS_ORIGINS in production and starts anyway
+// (T-H3, owner's decision 2026-08-11 — a boot that dies on a setting the
+// previous release tolerated turns a security fix into an outage). This comment
+// claimed a refusal until the live gate on 2026-08-14 booted production with
+// `CORS_ORIGINS=" , "` and watched an unlisted Origin come back reflected with
+// Access-Control-Allow-Credentials. The reflection stays here rather than
+// becoming a refusal in the middleware because a laptop running the dashboard
+// on an unexpected port is the case it exists for.
 //
 // The check is a prefix rather than a group registration because this
 // middleware is installed on the engine, above every group: a group-level
