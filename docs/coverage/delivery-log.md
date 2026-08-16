@@ -3076,6 +3076,24 @@ macOS; a `python3` fork + `os.setsid` around a **prebuilt** binary (not `go run`
 whose child dies with its parent) survived every later arm. Recovering the 49
 completed cases rather than restarting saved about $0.55.
 
+**6. And pushing it closed `T-H13` by failing.** The commit above went to `main`,
+which is the first time `Security scanning` has run on anything, and it went red:
+**`GO-2026-6222`**, excessive memory allocation decoding VP8L in
+`golang.org/x/image@v0.43.0`, with a reachable trace rather than a transitive
+advisory — `internal/branding/service.go:197` → `NormalizeLogo` → `image.Decode`
+→ `vp8l.Decode`. The input is a tenant's uploaded logo, so a crafted WebP is an
+OOM on the API from an ordinary authenticated path. Bumped to `v0.45.0`
+(`x/sys` and `x/text` came along), `govulncheck` reads *No vulnerabilities
+found*, and the branding and report packages pass.
+
+**Nothing in this repository changed to cause it.** `c74a890` ran all three
+scanners by hand on 08-14 and recorded them green, and that was true when it was
+written; the advisory database moved underneath it. A scanner that runs on every
+push catches that and a person checking once does not, which is the whole reason
+the ticket exists — and it took eleven days from the ticket landing to the job
+ever executing. `dependency-review` is still unrun: it is gated on
+`github.event_name == 'pull_request'`, and nothing has opened one.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**
