@@ -371,3 +371,37 @@ prefix, last-used, scopes and a `Revoked` badge on the key step 8 revoked.
   a key whose author was offboarded shows no author. The alternative —
   cascading — would delete a working integration when someone leaves, which is
   strictly worse.
+
+## 6. Found 2026-08-16: two scopes were offered with no description
+
+`GET /api/api-keys/scopes` serves the checkbox list the dashboard renders when a
+tenant mints a key, and §2 states the reason it is served rather than hardcoded
+in the frontend: *a scope added on the backend appears in the UI without a second
+edit, and there is exactly one place where a capability is described to a human.*
+
+**The second half was not true.** `scopeDescription` is a map, a missing key
+yields `""`, and the endpoint serves the scope regardless — so `read:data` and
+`write:visualizations`, the two scopes `T-14` added to `domain.AllScopes` on
+2026-08-04, have been offered with an empty sentence ever since:
+
+```
+read:data              writes=false   ""
+write:visualizations   writes=true    ""
+```
+
+The blank one matters more than the pair suggests. `read:data` is the **widest
+read capability a key can carry** — `run_sql` over every table the connection can
+see, which is why §3 of [`mcp-server.md`](mcp-server.md) argues at length that it
+must not be folded into `read:metrics`. The dashboard was asking an admin to tick
+it with nothing beside it.
+
+**Found by a gate that was not looking for it.** The endpoint was called while
+minting the `read:data` key that drove the `T-H7`/`T-H10` gates
+([`live-gate-backlog.md`](live-gate-backlog.md) §1d).
+
+**Fixed the same day**, with both sentences written and two tests:
+`TestEveryScopeHasADescription` over `domain.AllScopes`, and
+`TestScopesEndpointDescribesEveryScope` over the response, because the map being
+complete is not the claim — the payload being complete is. Both fail on the old
+map and name both scopes. Re-read live off the rebuilt binary: ten scopes, ten
+sentences.

@@ -46,6 +46,16 @@ constraint this file has not carried before — a gate can be blocked by a missi
 *credential file* rather than by a cost, and that is worse, because a cost can be
 decided and a missing file just looks like a passing test suite.
 
+**Revised 2026-08-16 — §1d is run, and the bucket has now paid six times out of
+six.** The three stack-only gates the 2026-08-14 build owed all passed, and the
+sitting's one defect came from an endpoint none of them was aimed at: the
+dashboard has been offering `read:data` — arbitrary SQL over a tenant's whole
+warehouse — as a checkbox with no description beside it since `T-14`. §1d has
+the table. **Everything still open in this file needs model spend, a Slack
+workspace, a real handset, a Kubernetes cluster, a second browser, or an
+operator.** Nothing is blocked on writing code, and nothing is blocked on the
+stack.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of three things: the stack up, money spent, or a message sent to a real
 person's phone.
@@ -244,19 +254,41 @@ preserves the `Host` header the Twilio signature is computed over. Today's run
 had no proxy in front of it, so that question is exactly as open as it was. It
 belongs beside `T-14`'s Helm hostname in §4, because both need an operator.
 
-## 1d. Owed by the 2026-08-14 build — stack only, and not yet run
+## 1d. ~~Owed by the 2026-08-14 build — stack only~~ — run 2026-08-16
 
 Seven items landed that afternoon: `T-H7`, `T-H10`, `T-H13`, the metric zero
 path, the DSN-key count, the `T-Q6` re-spec and the deletion of
-`internal/cache`. All are unit-gated; three owe a live half, and none of the
-three needs money.
+`internal/cache`. All are unit-gated; three owed a live half, and none of the
+three needed money. **All three were run on 2026-08-16 — three passes and one
+defect, found in an endpoint none of them was aimed at.** That is the **sixth
+sitting** of the bucket that only ever needs the stack, and the sixth to find
+something no unit test had. Full transcript: [`delivery-log.md`](delivery-log.md)
+Phase 2r; the mechanics are in
+[`security-hardening.md`](security-hardening.md) §15.
 
-| Owed by | The gate | State |
-| ------- | -------- | ----- |
-| `T-H7` | One turn with a literal in the query, read back out of the API log: the Info line carries `'?'`, and the raw statement appears only under `LOG_LEVEL=debug` | **Owed.** A table test covers the normaliser and a second asserts a NIK and an email are absent as substrings; what neither can see is the log line a running API actually emits ([`security-hardening.md`](security-hardening.md) §12) |
-| `T-H10` | A zero-row query filtered on an email column under each of `strict`, `contact_ok` and `off` — refused, allowed, allowed — and an ordinary label column still probing under `strict` | **Owed.** The refusal is asserted on a recording connection, so "the column never reached the database" is already proven at unit level; what a stack adds is the tenant's real `pii_redaction_mode` reaching the tool ([`security-hardening.md`](security-hardening.md) §13) |
-| The DSN-key count | Boot `cmd/api` against the control database and read the line: `18 of 20` is the number this machine should produce, because two rows have been undecryptable since 10 August | **Owed, and it is the cheapest gate in this file** — one boot, one log line, and the answer is already known from the by-hand check that found the third key. If it says anything other than 18 of 20, the check is wrong |
-| `T-H13` | The job runs and blocks on GitHub | **Owed, and not runnable locally.** All three scanners were run by hand on 2026-08-14 and are green; the assertion is that CI does it on the next pull request |
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-H7` | One turn with a literal in the query, read back out of the API log: the Info line carries `'?'`, and the raw statement appears only under `LOG_LEVEL=debug` | **Pass, 2026-08-16.** At `LOG_LEVEL=info`: `t1.email = '?'`, `t1.customer_id = ?`, both comments dropped, aliases and table names intact, **no `sql_raw` key**, and the email, the NIK and the phone number all absent as substrings from the whole Info slice rather than from that line alone. At `debug`: the same Info line plus the statement byte-for-byte. The probe's own line reads `probed_columns: dim_customers.email` while the tool hands twenty real addresses to the caller ([`security-hardening.md`](security-hardening.md) §15) |
+| `T-H10` | A zero-row query filtered on an email column under each of `strict`, `contact_ok` and `off` — refused, allowed, allowed — and an ordinary label column still probing under `strict` | **Pass on all four, 2026-08-16, and the refusal is proven at the network.** With `log_statement = all` on the demo warehouse, the `strict` run shows only the user's own query in the database's log — no probe crossed the socket; `contact_ok` and `off` both show `SELECT DISTINCT email …` and return twenty real addresses; and a `city` filter under `strict` still returns the seven real cities, so T-Q9's case survived the fix. The tenant's mode was changed through `PUT /api/settings`, which is the product's own path ([`security-hardening.md`](security-hardening.md) §15) |
+| The DSN-key count | Boot `cmd/api` against the control database and read the line: `18 of 20` is the number this machine should produce, because two rows have been undecryptable since 10 August | **Pass, 2026-08-16 — `total 20, undecryptable 2, companies 2`,** and the two ids resolve to `Demo analytics` (Gate TV3, 08-09) and `EmbedGate`'s unlabelled source (08-10): the same pair §1b found by hand. `GET /api/connections/key-health` answered the per-tenant question (`total 1, undecryptable 0` for the gate tenant), and `cmd/mcp` swept on its own boot too. **The expected number moves to 2 of 21 from now on** — the gate tenant registered a working connection and was left in the database, as every prior gate tenant has been |
+| `T-H13` | The job runs and blocks on GitHub | **Still owed, and not runnable locally.** All three scanners were run by hand on 2026-08-14 and are green; the assertion is that CI does it on the next pull request |
+
+**The defect this sitting found is not in either ticket.**
+`GET /api/api-keys/scopes` served `read:data` and `write:visualizations` with an
+empty `description` — the two scopes `T-14` added to the vocabulary and not to
+the map that describes them — so the dashboard offered the **widest read
+capability a key can carry** (arbitrary SQL over every table a connection can
+see) as a checkbox with no sentence beside it. The endpoint was being called to
+mint the key the other gates needed. Fixed, with a test that fails on the old
+map and names both scopes ([`api-keys.md`](api-keys.md) §6).
+
+**And the driver is worth recording, because the next gate on a tool will want
+it.** `run_sql` is not reachable from `cmd/api` — a turn runs in `cmd/worker`
+behind a model — so these were driven through **`cmd/mcp`**, which adapts the
+same registry instance rather than reimplementing it: a `read:data` key and
+three JSON-RPC posts run the exact code path a turn runs, with the arguments
+chosen by the gate. What it cannot show is a *model-generated* statement
+carrying the literals, which is the half no stack can supply anyway.
 
 ## 2. Needs the stack **and** real LLM spend
 

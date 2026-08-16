@@ -732,9 +732,86 @@ them green was not free:
   the list is written down here, so raising it is a decision rather than a
   discovery.
 
-**What is owed on all three.** `T-H7` and `T-H10` are unit-gated only. The live
+~~**What is owed on all three.** `T-H7` and `T-H10` are unit-gated only. The live
 half is one turn each against a running stack: a query with a literal in it,
 read back out of the API log; and a zero-row query filtered on an email column
-under each of the three redaction modes. `T-H13` cannot be gated locally at all
-— the assertion is that the job runs and blocks on GitHub, which is the first
-pull request after this lands.
+under each of the three redaction modes.~~ **Both were run on 2026-08-16 — §15.**
+`T-H13` cannot be gated locally at all — the assertion is that the job runs and
+blocks on GitHub, which is the first pull request after this lands.
+
+## 15. `T-H7` and `T-H10` — the live gate, run 2026-08-16
+
+Both passed. The DSN-key boot count passed with them, and the sitting's one
+defect is in §6 of [`api-keys.md`](api-keys.md) rather than here.
+
+### How they were driven, and why it is not a turn
+
+`run_sql` is not reachable from `cmd/api`: a chat turn executes in `cmd/worker`,
+behind a model. So the gate used **`cmd/mcp`**, which is not a second
+implementation of anything — `internal/mcpserver` adapts the registry instance
+`internal/bootstrap` builds, wrapped by the same budget guard and audit
+decorator. A `read:data` key and three JSON-RPC posts over the streamable HTTP
+transport run the exact code path a turn runs, with the statement chosen by the
+gate rather than by a model.
+
+Setup was a tenant (`Gate H7H10`), the demo warehouse registered through
+`POST /api/connections`, and one key. **The limit worth stating:** this proves
+the log line, not that a *model-written* statement carries literals of the kind
+the normaliser is aimed at. No stack can prove the second; the eval set is where
+that question lives.
+
+### `T-H7`, at both levels
+
+One statement carrying an email literal, a sixteen-digit NIK inside a `/* */`
+comment, an eleven-digit phone number, a `--` comment and a `t1.` alias. At
+`LOG_LEVEL=info`, which is what `.env` runs at:
+
+```json
+{"level":"info","msg":"Executing SQL query","company_id":"…","db_type":"postgres","source_id":"…",
+ "sql":"SELECT t1.city, t1.customer_segment\nFROM dim_customers AS t1\nWHERE t1.email = '?'   \n  AND t1.customer_id = ?\n  AND t1.phone = '?'\n   \nLIMIT ?"}
+```
+
+The aliases and the table name survive, both comments are gone, `LIMIT 10`
+became `LIMIT ?`, and **there is no `sql_raw` key on the line**. The leak check
+was run over the whole Info-level slice rather than over that one line:
+`ahmad.wijaya@email.com`, `3201234567890123` and `0812345678901` are absent as
+substrings from all of it. Re-run at `LOG_LEVEL=debug`, the same Info line
+appears and `{"level":"debug","msg":"Executing SQL query (literals intact)","sql_raw":…}`
+beside it, with the statement byte-for-byte.
+
+**The probe's own line, which is the sharpest result of the sitting.** Under
+`contact_ok` at Info, `run_sql` handed **twenty real customer email addresses to
+the caller** — the tenant's policy permits exactly that — and wrote none of them
+anywhere:
+
+```json
+{"level":"info","msg":"empty result probed: the filtered columns' actual values were returned to the agent",
+ "company_id":"…","source_id":"…","probed_columns":"dim_customers.email"}
+```
+
+No `probes` key, and no `@email.com` in the slice. Before `T-H7` that line *was*
+the payload. At `debug` the payload is there, which is what reproducing a probe
+needs.
+
+### `T-H10`, four cases, and a refusal proven at the network
+
+The unit test asserts that a refused column never reaches the tenant's database
+by recording on a fake connection. The live version asserts it from the other
+end: `ALTER SYSTEM SET log_statement = 'all'` on the demo warehouse, then read
+Postgres's own log.
+
+| Mode | Query | Payload | The warehouse's statement log |
+| ---- | ----- | ------- | ----------------------------- |
+| `strict` | `WHERE email = 'budi@examle.co.id'` (0 rows) | Plain zero-row note, **no `available_values`** | `BEGIN READ ONLY` / the user's SELECT / `ROLLBACK` — **and nothing else** |
+| `contact_ok` | same | 20 real addresses, `you_filtered_for: budi@examle.co.id` | the user's SELECT, then `SELECT DISTINCT email FROM dim_customers WHERE email IS NOT NULL ORDER BY email LIMIT 20` |
+| `off` | same | 20 real addresses | same as `contact_ok` |
+| `strict` | `WHERE city = 'Jakartaa'` (0 rows) | 7 real cities — `"Bandung"`, `"Jakarta"`, … | the user's SELECT, then the `DISTINCT city` probe |
+
+The fourth row is the one that says the fix did not cost T-Q9 its case. That
+query also *selected* `email` while filtering on `city`, and only the filtered
+column was probed — the probe follows the WHERE clause, not the projection.
+
+The mode was moved between runs with `PUT /api/settings`, the product's own
+path, and read back from `GET /api/settings` — so what the gate proves is the
+tenant's real stored policy reaching the tool, which was the only part unit
+tests could not reach. `log_statement` was reset afterwards.

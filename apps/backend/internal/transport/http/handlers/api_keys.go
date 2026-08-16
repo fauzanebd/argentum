@@ -80,15 +80,29 @@ func (h *APIKeysHandler) Register(rg *gin.RouterGroup) {
 // is served rather than hardcoded in the frontend so that a scope added on the
 // backend — `T-A1` adds two — appears in the UI without a second edit, and so
 // there is exactly one place where a capability is described to a human.
+//
+// That promise was half-kept until 2026-08-16. `T-14` added `read:data` and
+// `write:visualizations` to the vocabulary and not to this map, so the dashboard
+// offered two checkboxes with a blank sentence beside them — and the blank one
+// was on the widest read capability a key can carry, arbitrary SQL over every
+// table the connection can see. Found by the 2026-08-16 §1d gate, which read
+// `GET /api/api-keys/scopes` while minting a key it needed for something else
+// (`docs/coverage/live-gate-backlog.md` §1d). `TestEveryScopeHasADescription` is
+// what makes the next omission a failing test rather than a blank checkbox.
 var scopeDescription = map[domain.Scope]string{
 	domain.ScopeReadMetrics:   "Read the metric registry.",
 	domain.ScopeReadThreads:   "Read conversation threads and their messages.",
 	domain.ScopeReadUsage:     "Read token usage and the credit balance.",
 	domain.ScopeReadAudit:     "Read the agent action log, including the SQL the agent ran.",
 	domain.ScopeReadDocuments: "List generated documents and get fresh download links.",
-	domain.ScopeWriteChat:     "Ask the agent a question. This spends the workspace's credits.",
-	domain.ScopeWriteActions:  "Execute an action on the workspace's behalf.",
-	domain.ScopeWriteReports:  "Generate a report. Rendering a supplied spec is free; asking the agent to write one spends credits.",
+	// The one that reads the warehouse itself rather than anything Argentum
+	// recorded about it, which is why the sentence says so: a key holding this
+	// can run any SELECT the connection permits, over every table it can see.
+	domain.ScopeReadData:            "Query the workspace's connected databases over MCP: list the sources, read a table's schema, and run read-only SQL against any table the connection can see.",
+	domain.ScopeWriteChat:           "Ask the agent a question. This spends the workspace's credits.",
+	domain.ScopeWriteActions:        "Execute an action on the workspace's behalf.",
+	domain.ScopeWriteReports:        "Generate a report. Rendering a supplied spec is free; asking the agent to write one spends credits.",
+	domain.ScopeWriteVisualizations: "Create a Metabase chart or dashboard. It writes to Metabase, never to the workspace's own systems.",
 }
 
 func (h *APIKeysHandler) scopes(c *gin.Context) {

@@ -2928,6 +2928,86 @@ three redaction modes, the boot count — which should read *18 of 20* on this
 machine), the CI job proving itself on GitHub, and one full-set re-score for the
 metric zero path.
 
+## Phase 2r — §1d run: three gates, and a blank sentence beside the widest scope (2026-08-16)
+
+The stack-only half of the 2026-08-14 build, run the next working morning.
+About an hour, `$0.00` of model spend, and the sixth sitting of the bucket this
+project's record says always pays. **Three gates passed and one defect was found
+— not in the code the gates were aimed at, but in an endpoint one of them had to
+call on the way.**
+
+**1. The boot count reads exactly what the by-hand check predicted.** `cmd/api`
+against the control database: `total 20`, `undecryptable 2`, `companies 2`, with
+the ids. Those two rows are `Demo analytics` (2026-08-09, Gate TV3) and the
+unlabelled `EmbedGate` source (2026-08-10) — the pair §1b found opening under
+neither the 31-July key nor the 08-14 replacement. **18 of 20**, as
+[`live-gate-backlog.md`](live-gate-backlog.md) §1d said it should, which is the
+whole value of a gate whose answer is known in advance: if it had said anything
+else, the by-hand check was wrong. `GET /api/connections/key-health` answered the
+per-tenant question for the gate tenant (`total 1, undecryptable 0`), and
+`cmd/mcp` ran the same sweep on its own boot — `total 21` once the gate tenant's
+connection existed, the same two unreadable.
+
+**2. The gates were driven without an LLM, deliberately.** `run_sql` is not
+reachable from `cmd/api`: a turn runs in `cmd/worker` behind a model. But the
+MCP server exposes the same tool instance — `internal/mcpserver` adapts the
+registry rather than reimplementing it — so a `read:data` key and forty lines of
+JSON-RPC drive the exact code path a turn drives, with the arguments chosen by
+the gate instead of by a model. A tenant (`Gate H7H10`), the demo warehouse
+registered through `POST /api/connections`, and a key was the whole setup. **What
+this does not prove** is the one thing a model adds: that a turn's *generated*
+SQL carries the literals this normaliser sees. The log line is the same line.
+
+**3. `T-H7` passes on both halves.** One statement carrying an email literal, a
+sixteen-digit NIK inside a `/* */` comment, a phone number, a `--` comment and a
+`t1.` alias. At `LOG_LEVEL=info` — what `.env` runs at — the `sql` field is the
+shape: `t1.email = '?'`, `t1.customer_id = ?`, both comments gone, the aliases
+and table names intact, and **no `sql_raw` key at all**. All three secrets are
+absent as substrings from the entire Info-level slice, not just from that line.
+At `LOG_LEVEL=debug` the same Info line appears and `sql_raw` beside it, with the
+statement byte-for-byte.
+
+**4. `T-H10` passes on all four cases, and one of them is proven at the
+network.** Under `strict`, the zero-row `email = 'budi@examle.co.id'` query
+returned the plain note and no `available_values` — and the demo warehouse's own
+statement log (`log_statement = all` for the duration) shows *only the user's
+query*: `BEGIN READ ONLY`, the SELECT, `ROLLBACK`. No probe. Under `contact_ok`
+the same request produced `SELECT DISTINCT email FROM dim_customers …` in that
+log and twenty real addresses in the payload; under `off`, the same. Under
+`strict` again, a filter on `city` still probes and returns the seven real cities
+— T-Q9's case survives the fix, which was the trade worth checking. The query
+that did it *selected* `email` while filtering on `city`, and only the filtered
+column was probed.
+
+**5. And the probe's own log line, which is the sharpest single result here.**
+Under `contact_ok` at Info, the tool handed **twenty real customer addresses to
+the caller** — the tenant's policy says that is allowed — and wrote **none of
+them to the log**: `probed_columns: dim_customers.email`, no `probes` key, and no
+`@email.com` anywhere in the slice. Before `T-H7`, that line was the payload.
+
+**6. The defect: two scopes are offered with no description.**
+`GET /api/api-keys/scopes` exists so that a scope added on the backend reaches
+the dashboard "without a second edit, and so there is exactly one place where a
+capability is described to a human" — its own comment. `T-14` added `read:data`
+and `write:visualizations` to the vocabulary and not to that map, so both have
+been served with `"description": ""` ever since, and the blank one is on the
+**widest read capability a key can carry**: arbitrary SQL over every table the
+connection can see. A tenant ticking that box in the dashboard was told nothing
+about it. Fixed with two sentences, and with `TestEveryScopeHasADescription` plus
+its over-the-wire twin — proven failing on the old map, naming both scopes, then
+re-read live off the rebuilt binary.
+
+**Found the way the last five sittings' findings were found**: not by looking at
+the thing under test. The scopes endpoint was called to mint a key for `T-H7`.
+
+**What §1d still owes:** `T-H13`, which is not runnable here — the assertion is
+that the CI job runs and blocks on the next pull request.
+
+**One note for the next run.** `ALTER SYSTEM SET log_statement = 'all'` on the
+target warehouse plus `pg_reload_conf()` is the cheapest way to assert a query
+did *not* happen, which is otherwise the hardest kind of claim to gate. Reset it
+afterwards (`ALTER SYSTEM RESET log_statement`) — this run did.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**
