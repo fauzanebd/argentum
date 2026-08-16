@@ -3008,6 +3008,74 @@ target warehouse plus `pg_reload_conf()` is the cheapest way to assert a query
 did *not* happen, which is otherwise the hardest kind of claim to gate. Reset it
 afterwards (`ALTER SYSTEM RESET log_statement`) — this run did.
 
+## Phase 2s — The two owed re-scores, and the discovery that the set has weather (2026-08-16)
+
+The metric zero path's rule 1 re-score and `T-Q3`'s before/after, run in one
+sitting for **$1.15 across eleven invocations**. Both answered. What neither was
+asked, and what the sitting is actually worth, is the third result: **this set
+has a ±2-case run-to-run noise band, and this project has been publishing
+one-case deltas as findings.**
+
+**1. The metric zero path works.** `zero-row-future-quarter` — the case both
+models failed on 08-14 with "Rp 0" — passes on kimi, and the reply carries the
+warehouse's true coverage window, *"1 July 2024 to 31 December 2024"*, which is
+in neither the question nor the prompt. `zero_row_trap` 2/3 → **3/3**. On
+deepseek the case still fails, but on different behaviour: it names the coverage
+correctly, then volunteers the covered period's total, which `no_figure: true`
+refuses. Nothing was over-hedged — `simple_aggregate` 7/7 on both.
+
+**2. Half of deepseek's failure list was one defect, and it is a retry loop.**
+`query_metric` refuses a window carrying one bound, deliberately. It refused with
+a *Go error*, and deepseek answers an error by re-sending the identical call:
+seven `{"metric_key":"revenue","to":"2024-12-31"}` in one turn, then `blocked` by
+T-16's budget, then a reply with no figure. **Five of ten failures**, eight
+iterations each, and the model narrates the correction it never makes: *"I need
+to specify both the start and end dates."*
+
+The refusal is now a result the model can act on — `halfWindow`, the same trade
+`unknownKey` already makes — with `row_count: 0` so it cannot ground a figure,
+and a test proven failing on the old code first. **Then the honest part: it does
+not rescue the turn.** Re-run, the calls come back `ok` and deepseek sends the
+same arguments anyway (0/3). A prompt bullet spelling out that the bounds travel
+together did no better (0/3, twice) and was **reverted under rule 1** rather than
+shipped. What is left is a repeat-guard in the agent loop, which is where the
+failure actually lives — ten other tool paths return a Go error to a caller
+mistake and nothing about the loop is specific to this one.
+
+**3. The attribution arms are what make the numbers mean anything.** Every
+regression was re-run at `65642c3`, the commit the 08-14 re-score was taken at,
+with `internal/eval` and `golden.yaml` byte-identical across the two. All five
+deepseek failures reproduce there. **Nothing this repo shipped since the last
+measurement caused its seven-point drop** — the defect was latent from the
+optional-window change on 08-14 and waited for a model to trigger it.
+
+**4. And kimi's two "regressions" are weather.** Both passed at `65642c3`, so
+they looked caused. Re-run three more times on main: `last-month-relative` fails
+1 of 4, `dirty-ask-rather-than-guess` 2 of 4. Both are the same behaviour — the
+agent asks a clarifying question where the case wants a figure. **kimi is 96.4%
+or 98.2% depending on the day.** The 08-14 entry reading "98.2%, up from 87.5%"
+is, in its first half, a sample.
+
+**5. `T-Q3` is measured at last, and the answer is no.** 54/56 with the
+chart-restraint guideline and 54/56 without it, from two different pairs of
+failures. deepseek's before-arm built no unrequested chart at all. kimi's built
+exactly one — a card and a dashboard for `id-kanal-terbesar` — which is one event
+inside the noise band §4 measured. The ticket keeps its argument and still has no
+number.
+
+**What it did produce is an instrument fix.** All three `no_chart_wanted`
+assertions are in English; the one violation landed on the Indonesian twin of one
+of them, which asserted `must_call: [run_sql]` and nothing about charts — so the
+set scored it a pass. A restraint rule written in English was only ever tested in
+English. All five `indonesian` cases now carry `must_not_call`, verified free
+against both arms of today's data.
+
+**One process note, because it cost twenty minutes.** The first invocation was
+killed at case 50 of 56 by the harness running it. `setsid` does not exist on
+macOS; a `python3` fork + `os.setsid` around a **prebuilt** binary (not `go run`,
+whose child dies with its parent) survived every later arm. Recovering the 49
+completed cases rather than restarting saved about $0.55.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

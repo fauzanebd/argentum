@@ -344,18 +344,56 @@ func TestAnOmittedWindowCoversAllAvailableData(t *testing.T) {
 }
 
 // A caller who named one bound half-specified a window, and guessing the other
-// half is how a metric answers a question nobody asked.
-func TestHalfAWindowIsAnError(t *testing.T) {
-	tool := NewQueryMetricTool(&windowCapturingStore{result: oneMetricResult(false)}, nil)
+// half is how a metric answers a question nobody asked. So it is still refused —
+// but as a result rather than as an error.
+//
+// The distinction is the whole test. Until 2026-08-16 this returned a Go error,
+// and the eval run that day caught deepseek-v3.2 sending
+// {"metric_key":"revenue","to":"2024-12-31"} six times in one turn, reading the
+// same error each time, until the iteration budget ended the turn with no
+// figure. Three time_window cases died that way. An error the model cannot act
+// on is a loop; a result naming the missing bound is a correction.
+func TestHalfAWindowIsRefusedAsAResultTheModelCanAct(t *testing.T) {
+	store := &windowCapturingStore{result: oneMetricResult(false)}
+	tool := NewQueryMetricTool(store, nil)
 	ctx := tenantctx.WithCompanyID(context.Background(), "c1")
 
-	for _, args := range []string{
-		`{"metric_key":"revenue","from":"2024-07-01"}`,
-		`{"metric_key":"revenue","to":"2024-12-31"}`,
+	for _, tc := range []struct{ args, sent, missing string }{
+		{`{"metric_key":"revenue","from":"2024-07-01"}`, `"from"`, `"to"`},
+		{`{"metric_key":"revenue","to":"2024-12-31"}`, `"to"`, `"from"`},
 	} {
-		if _, err := tool.Execute(ctx, args); err == nil {
-			t.Errorf("%s was accepted; half a window should be refused", args)
+		out, err := tool.Execute(ctx, tc.args)
+		if err != nil {
+			t.Errorf("%s returned a Go error (%v); the model loops on those", tc.args, err)
+			continue
 		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(out), &payload); err != nil {
+			t.Fatalf("result is not JSON: %v", err)
+		}
+		msg, _ := payload["error"].(string)
+		if !strings.Contains(msg, tc.sent) || !strings.Contains(msg, tc.missing) {
+			t.Errorf("error = %q, want it to name both %s (sent) and %s (missing)", msg, tc.sent, tc.missing)
+		}
+		note, _ := payload["note"].(string)
+		if !strings.Contains(note, "BOTH") || !strings.Contains(note, "NEITHER") {
+			t.Errorf("note = %q, want both legal shapes spelled out", note)
+		}
+		if !strings.Contains(note, "unchanged") {
+			t.Errorf("note = %q, want it to say not to repeat the call unchanged", note)
+		}
+		// A refusal is not evidence, and agentbudget reads this field.
+		if rc, ok := payload["row_count"].(float64); !ok || rc != 0 {
+			t.Errorf("row_count = %v, want 0 — a refusal must not ground a figure", payload["row_count"])
+		}
+		if _, ok := payload["value"]; ok {
+			t.Errorf("%s produced a value key; a refused window has no value", tc.args)
+		}
+	}
+
+	// And the refusal is a refusal: nothing reached the warehouse.
+	if store.numCalls != 0 {
+		t.Errorf("store called %d times, want 0 — half a window must not be guessed at", store.numCalls)
 	}
 }
 

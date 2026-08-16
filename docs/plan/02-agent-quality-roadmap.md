@@ -391,9 +391,22 @@ the `argentum` `docker-compose.yml` declares; a recreated `.env` must match it.)
   genuine 0, so `query_metric` cannot say "this is NOT a zero" and both models
   answered Rp 0 for a quarter the data does not reach
   ([`../coverage/eval-q1.md`](../coverage/eval-q1.md)).
-- A before/after on `T-Q3`, which is a prompt change with an argument behind it
-  and no number — exactly the shape `docs/coverage/eval-baseline.md` rule 1
-  exists to stop shipping unmeasured.
+- ~~A before/after on `T-Q3`~~ — **run 2026-08-16, and it found nothing.** Same
+  model, same tenant, differing in the prompt only: **54/56 with the guideline
+  and 54/56 without**, from two different pairs of failures. deepseek's
+  before-arm produced no unrequested chart on the six chart cases or the
+  Indonesian five. kimi's off-arm produced exactly one — a card and a dashboard
+  for `id-kanal-terbesar` — and the same sitting measured a **±2-case
+  run-to-run noise band on this set**, which is larger than the effect. So T-Q3
+  is still a prompt change with no number behind it; what changed is that this
+  is measured rather than assumed.
+  **The ticket did expose a real gap in the instrument.** All three
+  `no_chart_wanted` cases are in English, and the one violation landed on an
+  Indonesian question wanting a channel name and a figure — the exact shape the
+  guideline's own text uses as its example — where the case asserted only
+  `must_call: [run_sql]`. All five `indonesian` cases now carry
+  `must_not_call: [create_visualization, create_dashboard]`
+  ([`../coverage/eval-q1.md`](../coverage/eval-q1.md) §5).
 - ~~The `T-Q6` pair itself (`PRIOR_WORK_TURNS=3` vs `=0`) and the `T-Q7` summary
   block~~ — **both run 2026-08-14, eight turns, ~$0.30.**
   **`T-Q7` passes**: `thread summary injected summary_chars=202 message_count=60

@@ -163,6 +163,8 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 		// they meant is how a metric answers a question nobody asked.
 		w := metric.AllTimeWindow(time.Now())
 		from, to = w.From, w.To
+	} else if strings.TrimSpace(p.From) == "" || strings.TrimSpace(p.To) == "" {
+		return t.halfWindow(p.From, p.To), nil
 	} else {
 		var err error
 		from, err = parseWindowBound(p.From)
@@ -369,6 +371,44 @@ func (t *QueryMetricTool) unknownKey(ctx context.Context, companyID, key string)
 		"error":          fmt.Sprintf("no metric with key %q", key),
 		"available_keys": keys,
 		"note":           "Pass one of available_keys, or use run_sql if no metric covers the question.",
+	})
+	return string(out)
+}
+
+// halfWindow answers a call that named one bound of the window and not the
+// other.
+//
+// Refusing to guess the missing half is deliberate and older than this function
+// — the all-time branch above says why. What did not work was refusing with a Go
+// error. The 2026-08-16 eval run caught deepseek-v3.2 answering "What were our
+// total sales in December 2024?" with {"metric_key":"revenue","to":"2024-12-31"},
+// reading `from: a date is required (YYYY-MM-DD)`, and sending the identical
+// call five more times until T-16's iteration budget ended the turn. Three
+// time_window cases died that way in one run, each costing eight iterations to
+// produce no figure at all. An error the model reads and cannot act on is a
+// loop, and the budget is the only thing that ends it.
+//
+// So the refusal is a result instead. It is the trade unknownKey already makes
+// for an unknown metric key: a recoverable mistake the model can correct is
+// worth more than a correct error it cannot. It names the bound that arrived,
+// the one that did not, and both legal shapes — and it says not to repeat the
+// call unchanged, because that is the observed failure and not a hypothetical.
+//
+// row_count is 0 for the same reason the empty and out-of-coverage branches set
+// it: a refusal is not evidence, and agentbudget reads this field to decide
+// whether the turn retrieved anything.
+func (t *QueryMetricTool) halfWindow(rawFrom, rawTo string) string {
+	sent, missing := "from", "to"
+	if strings.TrimSpace(rawFrom) == "" && strings.TrimSpace(rawTo) != "" {
+		sent, missing = "to", "from"
+	}
+	out, _ := json.Marshal(map[string]any{
+		"error": fmt.Sprintf("a window needs both bounds: %q was sent without %q", sent, missing),
+		"note": "Call query_metric again in one of the two shapes it accepts: with BOTH from and to as " +
+			"YYYY-MM-DD (December 2024 is from=2024-12-01, to=2024-12-31), or with NEITHER, which " +
+			"evaluates the metric over every period the data holds. Do not send the same call again " +
+			"unchanged.",
+		"row_count": 0,
 	})
 	return string(out)
 }

@@ -274,6 +274,16 @@ cases:
       must_call: [create_visualization]
 
   # ── Indonesian ─────────────────────────────────────────────────────────
+  # The chart-restraint assertion these five carry was added 2026-08-16, and the
+  # reason is a gap rather than a hypothesis. `no_chart_wanted` asserts
+  # must_not_call on three questions that want a number, and all three are in
+  # English — so when the T-Q3 before/after arm caught kimi building a card AND a
+  # dashboard for "Kanal penjualan mana yang paling besar nilainya?", the set
+  # scored it a pass. The restraint rule was written in one language and tested
+  # in one language; a model that reads the guideline in English and answers in
+  # Indonesian was never measured. None of these five asks for a picture, and
+  # with the guideline in place neither model builds one on any of them, so the
+  # assertion costs nothing and closes the asymmetry.
   - id: id-total-penjualan
     category: indonesian
     lang: id
@@ -283,6 +293,7 @@ cases:
       kind: numeric
       value: 21231619600
       must_call_any: [run_sql, query_metric]
+      must_not_call: [create_visualization, create_dashboard]
 
   - id: id-penjualan-desember
     category: indonesian
@@ -292,6 +303,7 @@ cases:
       kind: numeric
       value: 3863405700
       must_call_any: [run_sql, query_metric]
+      must_not_call: [create_visualization, create_dashboard]
 
   - id: no-data-marketing-spend
     category: time_window
@@ -321,10 +333,17 @@ cases:
     category: indonesian
     lang: id
     question: "Kanal penjualan mana yang paling besar nilainya?"
+    notes: |
+      The Indonesian twin of no-chart-top-channel, and the case that earned
+      this category its must_not_call: with T-Q3's guideline removed, kimi
+      answered it with a Metabase card and a dashboard nobody asked for
+      (2026-08-16). It wants a channel name and a figure, which is the exact
+      shape the guideline's own text uses as its example.
     expect:
       kind: contains
       contains: ["In-Store"]
       must_call: [run_sql]
+      must_not_call: [create_visualization, create_dashboard]
 
   - id: id-total-laba-rupiah
     category: indonesian
@@ -339,6 +358,7 @@ cases:
       kind: numeric
       value: 5865819600
       must_call: [run_sql]
+      must_not_call: [create_visualization, create_dashboard]
 
   - id: id-jumlah-transaksi
     category: indonesian
@@ -349,6 +369,7 @@ cases:
       value: 1348
       tolerance: 0.001
       must_call_any: [run_sql, query_metric]
+      must_not_call: [create_visualization, create_dashboard]
 
   # ── guardrails ─────────────────────────────────────────────────────────
   - id: guardrail-off-topic-css

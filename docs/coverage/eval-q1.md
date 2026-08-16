@@ -962,3 +962,211 @@ to read second is any `zero_row_trap` case that *passed*, because a probe that
 turns a genuine zero into a hedge would be a regression the aggregate might
 hide. Eleven unit tests cover the mechanism — including that a quiet February
 inside the data is still reported as a plain 0 — and none of them is a model.
+
+---
+
+# The metric zero re-score, and T-Q3 — 2026-08-16, `5fbeb0a`
+
+Two owed measurements run in one sitting on one commit, plus the arms it took to
+believe either of them. **$1.15 across eleven invocations.** The set answered
+the question it was asked, and then answered a larger one nobody had asked it:
+**how much of this project's published quality numbers is signal.**
+
+| Model | today | 2026-08-14 | delta |
+| ----- | ---- | ---------- | ----- |
+| `moonshotai/kimi-k2.6` | **96.4% (54/56)** · $0.62 | 98.2% (55/56) · $0.629 | −1 case |
+| `deepseek/deepseek-v3.2` | **82.1% (46/56)** · $0.144 · 17m53s | 89.3% (50/56) · $0.141 | −4 cases |
+
+kimi's run is two invocations of the same binary against the same tenant — 49
+cases, then the 7 the first was killed before reaching. The harness prints one
+summary per invocation, so the 96.4% here is arithmetic over 56 case results
+rather than a line the tool printed.
+
+## 1. The metric zero path did what it was written to do
+
+**`zero-row-future-quarter` passes on kimi, and the reply is the proof rather
+than the verdict:**
+
+> The data does not cover the third quarter of 2025 (July–September 2025). Our
+> available sales data runs from **1 July 2024 to 31 December 2024**, so I can't
+> provide a total for Q3 2025.
+
+That coverage window is not in the question, not in the metric definition and
+not in the prompt. It reached the model because `zeroCoverage` spent two queries
+on a zero and came back `after_coverage`. On 08-14 the same case on the same
+model answered **Rp 0** with a caveat. `zero_row_trap` goes 2/3 → **3/3** on
+kimi.
+
+**On deepseek the case still fails, and the failure is a different one.** It
+also names the true coverage window — the probe is working — and then volunteers
+the covered period's total, which the case refuses with `no_figure: true`:
+
+> …the "Demo Retail" database only covers data from 1 July 2024 to 31 December
+> 2024. This means we don't have data for 2025 at all. … Based on the available
+> data, I can tell you that: **Total sales from July 1, 2024 to December 31,
+> 2024 were R…**
+
+A wrong figure for the window asked about has become a right figure for a window
+clearly labelled as a different one. Worth recording as a move rather than as a
+repeat failure — the fabrication mechanism the ticket targeted is gone on both
+models, and what is left is a helpfulness reflex the assertion is strict about
+on purpose.
+
+**And no zero was over-hedged.** `simple_aggregate` is 7/7 on both models,
+`metric_registry` 5/5 on kimi, and the quiet-period cases still report a plain
+figure. The regression this re-score was told to look for did not happen.
+
+## 2. Half of deepseek's failures are one defect, and it is a retry loop
+
+`time_window` fell from 6/6 to **2/6**. Every one of those losses, plus
+`id-penjualan-desember`, is the same mechanism — and the harness recorded it in
+full:
+
+```
+query_metric {"metric_key": "revenue", "to": "2024-12-31"}   ×7, identical
+```
+
+| case | tool calls | half-specified |
+| ---- | ---------- | -------------- |
+| `december-2024-sales` | 7 | 7 |
+| `november-2024-sales` | 7 | 7 |
+| `q4-2024-sales` | 7 | 7 |
+| `last-month-relative` | 7 | 6 |
+| `id-penjualan-desember` | 7 | 7 |
+
+`query_metric` accepts both bounds or neither; one bound is refused, deliberately
+— guessing the missing half is how a metric answers a question nobody asked.
+Until today it was refused with a **Go error**, and deepseek's response to that
+error is to send the identical call again. Six times, then `blocked` by T-16's
+iteration budget, and the turn ends with no figure. The model even narrates the
+correction it does not make: *"I need to specify both the start and end dates
+for December 2024. Let me query for the full month:"* — followed by the same
+call.
+
+**Five of ten failures on this model are that one loop.** Each cost eight
+iterations to produce nothing.
+
+### What was fixed, and the two things that did not fix it
+
+**Fixed: the refusal is a result, not an error** (`metric_tools.go`,
+`halfWindow`). It names the bound that arrived, the one that did not, both legal
+shapes, and says not to repeat the call unchanged; `row_count` is 0 so a refusal
+never grounds a figure, and nothing reaches the warehouse. This is the trade
+`unknownKey` already makes for an unknown metric key, applied to the other
+recoverable mistake in the same tool. The test was proven failing on the old
+code first.
+
+**It does not rescue the turn, and that is the finding.** Re-run on the three
+cases, the calls now come back `ok` with `rows_returned 0` — and deepseek sends
+the same arguments anyway. **0/3.**
+
+**Nor does a prompt sentence.** A guideline bullet spelling out *"from and to
+travel together… a named period is two dates, not one"* was written, built and
+measured against the same three cases, twice: **0/3 and 0/3**. Under rule 1 that
+is a measured null, so it was reverted rather than shipped — a prompt line that
+buys nothing is prompt weight every turn pays for.
+
+**What is left is structural, and it is written down rather than built.** A tool
+called with byte-identical arguments that returns the same refusal twice in one
+turn should end the loop rather than let the budget end the turn — a guard in the
+agent loop, not in this tool, because nothing about the failure is specific to
+`query_metric`. Ten other tool paths return a Go error for a caller mistake
+(`create_dashboard`, `create_visualization`, `run_sql`, `schedule_task`, and
+`query_metric`'s own malformed-date branch). Only this one has been observed
+looping; the mechanism does not care.
+
+## 3. The attribution arms, and what they cost to believe
+
+Every regression was re-run at **`65642c3`** — the commit the 08-14 re-score was
+taken at, and the last before the metric zero path. `internal/eval` and
+`golden.yaml` are byte-identical across the two commits, so the only variable is
+the product.
+
+| Case | main | `65642c3` | Reading |
+| ---- | ---- | --------- | ------- |
+| `december-2024-sales` (ds) | FAIL | **FAIL** | Latent since the optional window (`f2997c0`), not shipped since |
+| `november-2024-sales` (ds) | FAIL | **FAIL** | Same |
+| `q4-2024-sales` (ds) | FAIL | **FAIL** | Same |
+| `last-month-relative` (ds) | FAIL | **FAIL** | Same |
+| `ambiguous-headcount` (ds) | FAIL | **FAIL** | Same |
+| `last-month-relative` (kimi) | FAIL | PASS | See below |
+| `dirty-ask-rather-than-guess` (kimi) | FAIL | PASS | See below |
+
+**Nothing this repo shipped since the last measurement caused deepseek's drop.**
+Seven points of pass rate moved because the model behaved differently on a
+Tuesday, on a defect that had been sitting there since 08-14 waiting for a model
+to trigger it.
+
+## 4. The number this set produces has ±2 cases of noise, measured
+
+kimi's two failures looked like a regression and are not. The pair was re-run on
+main three more times:
+
+| case | run 1 | 2 | 3 | 4 |
+| ---- | ----- | - | - | - |
+| `last-month-relative` | FAIL | PASS | PASS | PASS |
+| `dirty-ask-rather-than-guess` | FAIL | FAIL | PASS | PASS |
+
+Both are the same behaviour: the agent asks a clarifying question — sometimes by
+calling `ask_clarification`, sometimes in prose — where the case wants a figure
+or the tool call. Neither is deterministic.
+
+**So kimi is 96.4% or 98.2% depending on the day, and this project has been
+reading one-run deltas of one and two cases as results.** The 08-14 entry above
+reads "98.2%, up from 87.5%" — the first half of that is a sample. Any future
+comparison smaller than about three cases on this set needs repeats or it is
+describing the weather.
+
+## 5. T-Q3: measured at last, and the answer is no
+
+The before-arm removed the `A CHART IS SOMETHING THE USER ASKS FOR` guideline
+(and reverted `DOES want` → `wants`) from a tree that was restored immediately
+afterwards, built as its own binary, and run against the same tenant.
+
+| kimi, 56 cases | pass | `create_visualization` | `create_dashboard` |
+| -------------- | ---- | ---------------------- | ------------------ |
+| guideline on | 54/56 | 4 | 3 |
+| guideline off | 54/56 | 5 | 4 |
+
+Identical scores from two different pairs of failures, which §4 now explains.
+The pass rate cannot see this ticket.
+
+The tool counts nearly can. With the guideline removed, kimi built one card and
+one dashboard nobody asked for — on **`id-kanal-terbesar`**, *"Kanal penjualan
+mana yang paling besar nilainya?"* On deepseek the same before-arm produced
+**no** extra chart, on either the six chart cases or the Indonesian five.
+
+**One event, on one model, inside a ±2 noise band, is not a result.** T-Q3
+remains a prompt change with an argument behind it and no number — the honest
+outcome of finally running the arm, and cheaper to know than to keep assuming.
+
+### The instrument gap it exposed is real regardless
+
+`no_chart_wanted` asserts `must_not_call` on three questions that want a number,
+and **all three are in English.** The one unrequested chart this sitting saw
+landed on the Indonesian twin of one of them, where the case asserts only
+`must_call: [run_sql]` — so the set scored it a pass. A restraint rule written in
+English and tested in English never measured the language a model might answer
+in.
+
+All five `indonesian` cases now carry `must_not_call: [create_visualization,
+create_dashboard]`. It costs nothing per run: with the guideline in place neither
+model builds a chart on any of them, verified against both arms of today's data.
+The set stays at 56 cases and gets stricter, which is what §"above the 95% line"
+has been asking for since 08-14.
+
+## What is owed after this sitting
+
+- **The repeat-guard**, above. It is the only fix left with evidence behind it,
+  and it belongs in the agent loop.
+- **A re-score of the hardened set**, under rule 1 — five cases gained an
+  assertion. Cheap and low-risk: today's data says every one of them passes it.
+- **Repeats, not single runs, for anything smaller than three cases.** §4 is the
+  argument; the cost is linear and the alternative is publishing weather.
+- **`metric-uncovered-question-falls-back`** failed on deepseek with seven tool
+  calls and no half-window call — an unexamined failure, not triaged here.
+- **The grounding check has no notion of a sum.** Three passing cases logged
+  *"reply states a figure no tool result contains"* for `21,231,619,600`, which
+  is exactly the total of the three channel figures `run_sql` returned. The
+  check compares against returned cells; the most common honest derivation an
+  analyst writes is a total of them.
