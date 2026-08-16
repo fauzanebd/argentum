@@ -82,10 +82,14 @@ func (p CreditPolicy) Normalize() CreditPolicy {
 }
 
 // BudgetCache keeps the balance lookup off the per-turn hot path. It is
-// deliberately a byte store rather than a BudgetState store so the Redis
-// implementation can live next to this file without internal/cache — which
-// owns SQL-result and conversation caching, with its own client and its own
-// TTL policy — having to import internal/app.
+// deliberately a byte store rather than a BudgetState store, so the Redis
+// implementation can live next to this file without a caching package having
+// to import internal/app.
+//
+// It used to say "without internal/cache". That package was dead — imported by
+// no Go file, its InvalidateSQLCache a `return nil`, its InferQueryType
+// string-matching the year "2023" — and was deleted on 2026-08-14. This is now
+// the only cache in the backend.
 type BudgetCache interface {
 	Get(ctx context.Context, key string) ([]byte, bool)
 	Set(ctx context.Context, key string, val []byte, ttl time.Duration)

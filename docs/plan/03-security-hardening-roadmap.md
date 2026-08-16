@@ -47,6 +47,20 @@ the `T-S…` scope tickets or the `S-n` finding codes in the research docs.
 > every `file:line` this document cites for Track A and `T-H15` was re-checked
 > before being acted on and **all of them were correct**.
 
+> **Revised 2026-08-14: `T-H7`, `T-H10` and `T-H13` are built and unit-gated**,
+> and `T-H5` is dropped (the decommission was decided; see its section). What
+> remains unbuilt in Tracks B, C and D is `T-H4`, `T-H6`, `T-H8`, `T-H9`,
+> `T-H11`, `T-H12` and `T-H14`. The record is in
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md)
+> §12–§14.
+>
+> **`T-H13` did not land quietly.** Its first govulncheck run found **25 called
+> vulnerabilities** — reachable symbols, not affected-version noise — against
+> the sentence below claiming this project's dependencies are *"current today"*.
+> Seven modules were bumped and the Go directive moved to 1.26.6 to close the
+> eighteen that were the standard library; the scanners are green at the commit
+> that adds them, which is the only state in which a blocking gate is honest.
+
 > **Nothing in Tracks B, C or D is code-complete.** This roadmap was written
 > from a read of the shipped code, not from a test run, and one item in Track A
 > was a live authentication bypass rather than a hardening idea. That one is
@@ -267,7 +281,7 @@ Audit rows are the deliberate exception — they hold no result contents by desi
 (`apps/backend/migrations/control/023_agent_actions.up.sql:30`, `args_redacted`)
 and should outlive conversations. Say so in the ticket and in the brief.
 
-### `T-H7` Query text out of the logs — 0.5d
+### `T-H7` Query text out of the logs — 0.5d · **built 2026-08-14**
 
 `run_sql.go:126-131` logs the executed SQL at `Info` with literals intact (the
 `sql` field is set at `:130`), so a `WHERE nik = '…'` lands in operational logs
@@ -315,7 +329,7 @@ The decorator shape is already established: `tools.WithAudit` and
 covered without its author knowing
 (`apps/backend/internal/tools/audit.go:31-46`). Same pattern.
 
-### `T-H10` PII-aware empty-result probe — 0.5d
+### `T-H10` PII-aware empty-result probe — 0.5d · **built 2026-08-14**
 
 `apps/backend/internal/tools/empty_result_probe.go:182` (`distinctValues`)
 answers a zero-row query by returning the column's distinct values to the model.
@@ -358,14 +372,27 @@ Enforce it where `ResolveSource` already enforces source scope, and filter
 `get_schema` to match — an agent told about a table its tools will then refuse is
 the most confusing failure available here.
 
-### `T-H13` Security scanning in CI — 0.5d
+### `T-H13` Security scanning in CI — 0.5d · **built 2026-08-14**
 
 `.github/workflows/ci.yaml` runs `go vet`, `golangci-lint` and `go test -race`.
 No `govulncheck`, no `gosec`, no dependency review, no secret scanning — verified
-by search across `.github/`. Add them. Dependencies are current today (Go 1.26.1,
+by search across `.github/`. Add them. ~~Dependencies are current today (Go 1.26.1,
 gin 1.12.0, jwt/v5 5.3.1, `golang.org/x/crypto` 0.50.0 — all four confirmed in
-`apps/backend/go.mod`) and this is what keeps them that way without anyone
+`apps/backend/go.mod`)~~ and this is what keeps them that way without anyone
 remembering to look.
+
+> **Built 2026-08-14, and the struck-out sentence is why the ticket was worth
+> more than half a day.** The versions were exactly as stated and the claim they
+> supported was wrong: govulncheck's first run found **25 called
+> vulnerabilities** — reachable symbols, not affected-version noise — seven
+> modules' worth plus eighteen in the standard library at go1.26.2. "Current"
+> was being read off `go.mod` by a human, which is the reading a scanner exists
+> to replace. Seven bumps and a Go directive of 1.26.6 took it to zero;
+> `gitleaks` (full history), `govulncheck`, `gosec` at high/high and
+> `dependency-review-action` on PRs now all block. The 15 medium-severity gosec
+> findings the bar excludes are itemised in
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §14,
+> so raising the bar is a decision rather than a discovery.
 
 ### `T-H14` Key management — 1.5d
 
@@ -462,6 +489,15 @@ that the live half finds what unit tests cannot.
   function, to confirm the parse does not reject working analytics SQL.
 - `T-H6` — the purge and the erasure endpoint against a company with history,
   confirming audit rows survive and conversation rows do not.
+- `T-H7` — one turn with a literal in the query, read back out of the API log:
+  the Info line must carry `'?'` and the raw statement must appear only under
+  `LOG_LEVEL=debug`.
+- `T-H10` — a zero-row query filtered on an email column, under each of the
+  three redaction modes, confirming the probe is refused under `strict` and
+  runs under `contact_ok` — and that an ordinary label column still probes
+  under `strict`, which is the T-Q9 behaviour this ticket must not have cost.
+- `T-H13` — the job itself, which cannot be gated locally: the assertion is
+  that it runs and blocks on GitHub, on the first pull request after it lands.
 - ~~`T-H15` — a controlled resolver that changes its answer between the two
   lookups.~~ **Run 2026-08-14, over real sockets.** Public at check time,
   loopback by dial time: the connection went to the checked address, the

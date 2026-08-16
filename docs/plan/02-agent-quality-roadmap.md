@@ -118,6 +118,43 @@ a small sample) as `role=tool`, and rehydrate it compactly. The schema already
 holds the role and `Message.ToolCalls`; the audit path already computes most of
 the digest (`internal/tools/audit.go` `digestArgs`).
 
+#### Acceptance, re-specified 2026-08-14
+
+The original line — *a two-turn conversation at `PRIOR_WORK_TURNS=3` and again
+at `=0`* — was run on 2026-08-14 and **cannot measure this ticket**, which is a
+different result from failing it. Both arms wrote the `role=tool` rows,
+injection fired at `=3` and never at `=0`, and the six turns produced
+**identical tool sequences** — because inside `CONTEXT_MAX_TURNS` (default 3,
+`config.go:454`) the assistant's own prior message quotes the SQL it ran, so the
+digest repeats what the model can already read
+([`../coverage/agent-quality.md`](../coverage/agent-quality.md) §11).
+
+A digest only earns its place where the history cannot help. So the measurement
+has to put the tool call *outside* what the model can read, one of two ways:
+
+1. **The cheap arm, and the one that has already produced evidence.** The eval
+   case `follow-up-breakdown-no-reschema` works precisely because turn 1 is
+   answered from `query_metric` and never touches the schema — the assistant's
+   prose has no SQL in it to re-read, so the digest is the *only* place turn 2
+   could learn what was queried. On the 2026-08-14 matrix run it passed on
+   kimi-k2.6 and failed on deepseek-v3.2, which is the shape of the difference
+   the ticket claims. **Pass: that case passes at `PRIOR_WORK_TURNS=3` and
+   fails at `=0`, on one model, two runs of one case.** Two cases of spend, not
+   two full sets.
+2. **The thread arm, for the property at production shape.** A thread where the
+   turn that ran the query has fallen out of the hydration window: turn 1
+   answers from `query_metric`, then more than `CONTEXT_MAX_TURNS` turns of
+   unrelated conversation, then a follow-up that needs turn 1's work. **Pass: at
+   `=3` the follow-up calls neither `get_schema` nor a re-derivation of the same
+   query and its answer agrees with turn 1's; at `=0` it re-derives.** This is
+   the arm that also exercises `ListRecentByThread`, and it is the one a
+   two-turn conversation could never reach on any model that reads its own
+   history.
+
+What is *not* the acceptance line any more: any comparison whose two arms are
+short enough for the assistant's own transcript to carry the answer. That
+measures the transcript.
+
 ### `T-Q7` Rolling summary beyond the window — 1.0d
 `historyLimit` truncates at 20 and drops the rest. A long thread loses its
 opening — which is usually where the user said what they were actually trying to
@@ -373,7 +410,11 @@ the `argentum` `docker-compose.yml` declares; a recreated `.env` must match it.)
   place once the tool turn has fallen out of the window. **A two-turn
   conversation cannot produce this difference on any model that reads its own
   history**, which makes the acceptance line as written unmeasurable rather than
-  unmet. Re-specify it against a thread longer than the memory window.
+  unmet. ~~Re-specify it against a thread longer than the memory window.~~
+  **Re-specified 2026-08-14** — see §T-Q6 "Acceptance, re-specified" above. The
+  cheap arm is two runs of one eval case (`follow-up-breakdown-no-reschema` at
+  `PRIOR_WORK_TURNS=3` and `=0`), which is the measurement the matrix run
+  produced by accident and this line now asks for on purpose.
 - The `T-Q8` harvest that writes an example, and a turn that retrieves one. One
   embedding call per example; everything above `client.Embed` is proven.
 

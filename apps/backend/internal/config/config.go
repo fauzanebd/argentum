@@ -160,10 +160,24 @@ type Config struct {
 	// examples. Empty disables the harvest without disabling retrieval, so a
 	// deployment can stop learning and keep using what it has already learned.
 	CookbookHarvestCron string
-	CacheTTLShort       int // seconds
-	CacheTTLLong        int // seconds
-	MaxQueryRows        int // hard ceiling on rows returned by run_sql per query
-	MaxQueryResultBytes int // hard ceiling on serialized JSON size for a run_sql result
+	// MetricZeroCoverageProbe decides whether a metric that returns exactly 0
+	// spends two more queries finding out whether that is a real zero.
+	//
+	// It exists because `query_metric` could not tell the two apart. Every sane
+	// metric template is written `COALESCE(SUM(x), 0)`, so a window the data
+	// does not reach comes back as a genuine 0 rather than as NULL — and both
+	// models answered "Rp 0" for Q3 2025 against a warehouse ending in December
+	// 2024, with a coverage caveat the tool had told them to hedge with
+	// (docs/coverage/eval-q1.md, the Rule 1 re-score). The zero-row half of that
+	// mechanism was closed for run_sql by T-Q9 and left open here.
+	//
+	// On by default, and the cost is bounded by the condition: the probe fires
+	// only when the value is exactly 0, and never on the ordinary answer.
+	MetricZeroCoverageProbe bool
+	CacheTTLShort           int // seconds
+	CacheTTLLong            int // seconds
+	MaxQueryRows            int // hard ceiling on rows returned by run_sql per query
+	MaxQueryResultBytes     int // hard ceiling on serialized JSON size for a run_sql result
 
 	// Per-turn agent budget (T-16). Replaces the hard 3-iteration cap that
 	// made the agent fabricate a figure rather than admit it ran out of
@@ -456,6 +470,9 @@ func Load() (*Config, error) {
 		PriorWorkTurns:      getEnvAsInt("PRIOR_WORK_TURNS", 3),
 		CookbookTopK:        getEnvAsInt("COOKBOOK_TOP_K", 3),
 		CookbookHarvestCron: getEnv("COOKBOOK_HARVEST_CRON", "17 * * * *"),
+
+		MetricZeroCoverageProbe: getEnv("METRIC_ZERO_COVERAGE_PROBE", "true") == "true",
+
 		CacheTTLShort:       getEnvAsInt("CACHE_TTL_SHORT", 300),
 		CacheTTLLong:        getEnvAsInt("CACHE_TTL_LONG", 86400),
 		MaxQueryRows:        getEnvAsInt("MAX_QUERY_ROWS", 100),

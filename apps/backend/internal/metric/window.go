@@ -49,6 +49,30 @@ func (w Window) Shift(c Comparison) (Window, error) {
 	}
 }
 
+// AllTimeWindow is the window a call that named none is evaluated over: wide
+// enough to hold every row a warehouse plausibly carries, and no wider. It is
+// also the outer bound the zero-coverage probe measures against, which is why
+// it lives here rather than beside query_metric — one definition of "all the
+// data", used by the tool that asks for it and by the check that reasons about
+// what lies outside a window.
+//
+// The bounds are not arbitrary. The floor is 1900-01-01 because SQL Server's
+// `datetime` begins in 1753 and MySQL's `DATE` in 1000, so anything earlier
+// buys nothing and risks a dialect rejecting the literal. The ceiling is one
+// year out rather than a round 2999 because MySQL's `TIMESTAMP` ends in 2038: a
+// template comparing a TIMESTAMP column against a year-3000 literal is an error
+// or a silent truncation depending on the server's mode, and a metric that
+// fails on the tenant with the oldest MySQL is worse than one that misses a
+// forecast row dated more than a year ahead.
+//
+// `now` is passed in for the same reason ValidationWindow takes it.
+func AllTimeWindow(now time.Time) Window {
+	return Window{
+		From: time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:   now.UTC().AddDate(1, 0, 0).Truncate(24 * time.Hour),
+	}
+}
+
 // ValidationWindow is the trailing-7-day window a metric is rendered and
 // executed against when it is saved (T-06): recent enough to hit real data,
 // wide enough that a daily-grain metric returns a row. `now` is passed in rather

@@ -57,6 +57,7 @@ func (h *CompanyHandler) Register(rg *gin.RouterGroup) {
 	rg.DELETE("/connections/:id", h.deleteConnection)
 	rg.POST("/connections/test", h.testConnection)
 	rg.POST("/connections/:id/test", h.testConnectionByID)
+	rg.GET("/connections/key-health", h.connectionKeyHealth)
 
 	rg.GET("/phones", h.listPhones)
 	rg.POST("/phones", h.addPhone)
@@ -663,6 +664,28 @@ func (h *CompanyHandler) deletePhone(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// connectionKeyHealth answers "do our stored connections still open?".
+//
+// A connection whose `dsn_encrypted` was sealed under a key this deployment no
+// longer holds is discovered today by an agent turn failing at query time, in
+// front of whoever asked the question — three DSN keys existed on this project
+// inside a fortnight and two rows survive none of them
+// (`docs/coverage/live-gate-backlog.md` §1b). The startup sweep says it once
+// for the whole deployment; this is the same count for one tenant, where the
+// admin who can fix it is looking.
+//
+// It returns ids and labels and no ciphertext, and it is a read: nothing here
+// re-seals a row. Recovery is either the old key or re-registering the
+// connection, and both are decisions rather than a button.
+func (h *CompanyHandler) connectionKeyHealth(c *gin.Context) {
+	health, err := h.svc.DSNKeyHealth(c.Request.Context(), companyID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, health)
 }
 
 func (h *CompanyHandler) getSettings(c *gin.Context) {

@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
+	"github.com/fauzanebd/argentum/internal/domain"
 )
 
 // probeEmptyResult answers "why did nothing match?" inside the call that
@@ -44,7 +45,7 @@ import (
 // and the caller keeps the zero-row note it already had.
 func probeEmptyResult(
 	ctx context.Context, conn db.Conn, schema SchemaProvider,
-	companyID, sourceID, dbType, sql string,
+	companyID, sourceID, dbType, sql string, mode domain.PIIRedactionMode,
 ) []map[string]interface{} {
 	if conn == nil || schema == nil {
 		return nil
@@ -57,6 +58,7 @@ func probeEmptyResult(
 	if err != nil || meta == nil || len(meta.Tables) == 0 {
 		return nil
 	}
+	mode = normalizePIIMode(mode)
 
 	out := make([]map[string]interface{}, 0, maxProbes)
 	for _, f := range filters {
@@ -65,6 +67,17 @@ func probeEmptyResult(
 		}
 		table, ok := tableHolding(meta, f.column)
 		if !ok {
+			continue
+		}
+		// The column's name, before its contents are fetched: an `email` column
+		// under `strict` is not queried at all, so the disclosure this refuses
+		// never crosses the network (T-H10).
+		if class := classifyColumnName(f.column); !probeAllows(class, mode) {
+			logrus.WithFields(logrus.Fields{
+				"company_id": companyID, "source_id": sourceID,
+				"table": table, "column": f.column,
+				"pii_class": string(class), "pii_mode": string(mode),
+			}).Info("empty-result probe skipped a PII column; the reply keeps the plain zero-row note")
 			continue
 		}
 		values, err := distinctValues(ctx, conn, dbType, table, f.column)
@@ -76,6 +89,19 @@ func probeEmptyResult(
 			continue
 		}
 		if len(values) == 0 {
+			continue
+		}
+		// And the column's contents, because a name says only what somebody
+		// chose to call it. `keterangan` holding twenty email addresses is the
+		// case the name list cannot catch, and the whole column is dropped
+		// rather than the offending values, so the answer is never a filtered
+		// sample of the same class of thing.
+		if class := classifyValues(values); !probeAllows(class, mode) {
+			logrus.WithFields(logrus.Fields{
+				"company_id": companyID, "source_id": sourceID,
+				"table": table, "column": f.column,
+				"pii_class": string(class), "pii_mode": string(mode),
+			}).Info("empty-result probe discarded a column whose values are PII; the reply keeps the plain zero-row note")
 			continue
 		}
 		out = append(out, map[string]interface{}{
@@ -245,6 +271,18 @@ func attachProbe(payload map[string]interface{}, probes []map[string]interface{}
 	}
 	payload["available_values"] = probes
 	payload["note"] = probeNote
+}
+
+// probedColumns names the columns a probe disclosed, without disclosing them
+// again in the log. `table.column`, in the order they were probed.
+func probedColumns(probes []map[string]interface{}) string {
+	names := make([]string, 0, len(probes))
+	for _, p := range probes {
+		table, _ := p["table"].(string)
+		column, _ := p["column"].(string)
+		names = append(names, table+"."+column)
+	}
+	return strings.Join(names, ",")
 }
 
 // probeJSON is a test and logging convenience: the probe result as it appears

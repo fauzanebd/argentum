@@ -2852,6 +2852,82 @@ a task, and nothing notices that two workers disagree about the key.
 
 `go build ./...`, `go vet`, `gofmt` and `go test ./...` clean over the backend.
 
+## Phase 2q — Seven items off the list, and a scanner that contradicted the roadmap (2026-08-14)
+
+No eval spend and no live gate: everything here is code, unit tests and the
+documents that describe them. Seven items, taken in the order the backlog put
+them.
+
+**1. The metric zero path is closed.** `query_metric` could not tell a genuine 0
+from a window the data does not reach, because a `COALESCE(sum(...),0)` template
+converts the unambiguous NULL into an ambiguous 0 before the tool sees it — the
+T-Q9 fabrication mechanism on the one path T-Q9 left open, and the only case
+both models failed in the Rule 1 re-score. On a zero, and only on a zero, the
+service now runs the same metric over everything before the window and
+everything after it, and returns one of four verdicts. Two of them —
+`after_coverage`, `before_coverage` — also set `row_count` to 0 and `value` to
+null, so T-16's grounding check *replaces* a reply that states a total rather
+than trusting the model to take advice. **The re-score Rule 1 requires has not
+been run**, and `zero-row-future-quarter` is therefore not yet known to pass.
+
+**2. A deployment now knows whether its own key opens its own rows.** Nothing in
+the product noticed a `db_connections` row sealed under a retired
+`ARGENTUM_DSN_KEY`; the discovery path was an agent turn failing at query time
+in front of whoever asked. Both `cmd/api` and the shared stack now sweep at boot
+— *"N of M stored connections do not decrypt under the current key"*, at Warn,
+with the ids — and `GET /api/connections/key-health` answers the same question
+per tenant for the admin who can act on it. Never fatal: a deployment whose key
+has moved on still serves every tenant whose rows were re-sealed.
+
+**3. `internal/cache` is deleted.** Dead in every re-verification pass since the
+native-dashboards roadmap was written: imported by no Go file,
+`InvalidateSQLCache` a `return nil`, `InferQueryType` string-matching the year
+`"2023"`.
+
+**4. T-Q6's acceptance line was re-specified rather than re-run.** The 08-14 gate
+proved the mechanism and could not measure the value, because inside
+`CONTEXT_MAX_TURNS` the assistant's own message quotes the SQL the digest
+repeats. The new line has a cheap arm — `follow-up-breakdown-no-reschema` at
+`PRIOR_WORK_TURNS=3` and `=0`, two cases of spend, which is the measurement the
+matrix run produced by accident — and a thread arm for production shape.
+
+**5. `T-H7`: query text out of the logs.** The executed statement was logged at
+Info with literals intact, so a question about one person wrote their identifier
+into the operational log. A single-pass normaliser puts the shape at Info and
+the raw statement at Debug. Numbers are normalised too, which is the half that
+matters here: a NIK is sixteen digits and an Indonesian mobile is eleven. **The
+empty-result probe's own log line was the same bug one file over** — it logged
+the probe's entire disclosure at Info — and now names columns instead.
+
+**6. `T-H10`: the empty-result probe is PII-aware.** Filter on an email column,
+match nothing, and T-Q9's probe returned twenty real addresses the user's own
+query did not fetch, on a path no output guardrail sees. A column whose *name*
+announces its class is refused before the query runs; a column whose *values*
+give it away is dropped whole after one. The tenant's `pii_redaction_mode`
+decides, and unset, unknown or unreadable all read as strict.
+
+**7. `T-H13`: three scanners in CI — and the first run contradicted the roadmap
+that asked for them.** That document said this project's dependencies were
+"current today" and listed four versions to prove it. `govulncheck` found **25
+called vulnerabilities** — reachable symbols, not affected-version noise. Seven
+modules were bumped (grpc, x/net, x/text, excelize, quic-go, the aws-sdk pair,
+otel across five modules) and eighteen were the standard library at go1.26.2,
+closed by moving `go.mod` to `go 1.26.6`. After both: zero. `gitleaks` over the
+full history, `gosec` at high/high where the tree is clean, and
+`dependency-review-action` on PRs join it, all blocking — **and all four were
+made green before being made blocking**, because a scanner introduced red is a
+scanner people learn to route around. The 15 medium-severity gosec findings the
+bar excludes are itemised rather than silently skipped.
+
+`go build ./...`, `go vet`, `golangci-lint` (0 issues), `gofmt` and
+`go test -race ./...` clean over the backend.
+
+**What this phase owes**, in [`live-gate-backlog.md`](live-gate-backlog.md) §1d
+and §2: three stack-only gates that need no money (the log line, the probe under
+three redaction modes, the boot count — which should read *18 of 20* on this
+machine), the CI job proving itself on GitHub, and one full-set re-score for the
+metric zero path.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

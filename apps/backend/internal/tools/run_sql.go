@@ -30,6 +30,19 @@ type RunSQLTool struct {
 	// schema turns a driver's name error into the list of names that would
 	// have worked. Optional: nil leaves the driver's own message untouched.
 	schema SchemaProvider
+	// companies supplies the tenant's PII redaction mode, which decides what
+	// the empty-result probe may disclose (T-H10). Optional: nil reads as
+	// strict, so a build that forgets to wire it discloses less rather than
+	// more.
+	companies PIIPolicyLookup
+}
+
+// PIIPolicyLookup is the one question run_sql asks of the company repository:
+// this tenant's redaction policy. domain.CompanyRepository satisfies it;
+// narrowed here so the tool does not acquire the whole repository, and so a
+// test can answer it without a database.
+type PIIPolicyLookup interface {
+	GetByID(ctx context.Context, id string) (*domain.Company, error)
 }
 
 // UsageRecorder is the narrow interface tools depend on for metering. Kept
@@ -73,6 +86,35 @@ func NewRunSQLTool(pool *db.TenantConnPool, repo domain.ConnectionRepository, re
 func (t *RunSQLTool) WithSchema(p SchemaProvider) *RunSQLTool {
 	t.schema = p
 	return t
+}
+
+// WithPIIPolicy lets the empty-result probe honour the tenant's redaction mode
+// (T-H10). A tenant on `contact_ok` has said they want customer contact details
+// in answers, and a tenant on `off` has switched redaction off entirely; both
+// are decisions the probe should follow rather than second-guess.
+//
+// Optional, and unset means strict: the probe discloses data the user's own
+// query did not return, so "we could not find out what this tenant allows" has
+// to answer the same way as "this tenant allows nothing".
+func (t *RunSQLTool) WithPIIPolicy(p PIIPolicyLookup) *RunSQLTool {
+	t.companies = p
+	return t
+}
+
+// piiMode reads the tenant's policy, on the zero-row path only — the probe is
+// the only thing that consults it, and it fires on a result with no rows in it.
+// A lookup that fails is strict, and says so once at Warn rather than silently.
+func (t *RunSQLTool) piiMode(ctx context.Context, companyID string) domain.PIIRedactionMode {
+	if t.companies == nil {
+		return domain.PIIRedactionStrict
+	}
+	c, err := t.companies.GetByID(ctx, companyID)
+	if err != nil || c == nil {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("pii policy lookup failed; the empty-result probe is treated as strict")
+		return domain.PIIRedactionStrict
+	}
+	return normalizePIIMode(c.PIIRedactionMode)
 }
 
 func (t *RunSQLTool) Name() string { return "run_sql" }
@@ -123,12 +165,22 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 		return "", err
 	}
 
+	// The statement's shape at Info, its values at Debug (T-H7). This line used
+	// to carry `params.SQL` verbatim, so a question about one person wrote that
+	// person's identifier into the operational log on the level production runs
+	// at. What an operator reads a query log for — which tables, how often,
+	// whether a turn is looping — is all in the normalised form.
 	logrus.WithFields(logrus.Fields{
 		"company_id": companyID,
 		"source_id":  source.ID,
 		"db_type":    source.DBType,
-		"sql":        params.SQL,
+		"sql":        normalizeSQLForLog(params.SQL),
 	}).Info("Executing SQL query")
+	logrus.WithFields(logrus.Fields{
+		"company_id": companyID,
+		"source_id":  source.ID,
+		"sql_raw":    params.SQL,
+	}).Debug("Executing SQL query (literals intact)")
 
 	conn, err := t.pool.For(ctx, companyID, source.ID)
 	if err != nil {
@@ -147,13 +199,23 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 	// result with rows in it has already answered the question.
 	var probes []map[string]interface{}
 	if matchedNothing(result) {
-		probes = probeEmptyResult(ctx, conn, t.schema, companyID, source.ID, source.DBType, params.SQL)
+		probes = probeEmptyResult(ctx, conn, t.schema, companyID, source.ID, source.DBType, params.SQL, t.piiMode(ctx, companyID))
 		if len(probes) > 0 {
+			// Which columns, not what is in them (T-H7/T-H10). This line used to
+			// log `probeJSON(probes)`, so a probe's whole disclosure — the real
+			// contents of a filtered column — was written to the operational log
+			// as well as handed to the model. The values are still available at
+			// Debug for anyone reproducing a probe.
+			logrus.WithFields(logrus.Fields{
+				"company_id":     companyID,
+				"source_id":      source.ID,
+				"probed_columns": probedColumns(probes),
+			}).Info("empty result probed: the filtered columns' actual values were returned to the agent")
 			logrus.WithFields(logrus.Fields{
 				"company_id": companyID,
 				"source_id":  source.ID,
 				"probes":     probeJSON(probes),
-			}).Info("empty result probed: the filtered columns' actual values were returned to the agent")
+			}).Debug("empty result probe payload")
 		}
 	}
 

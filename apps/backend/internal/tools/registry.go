@@ -44,8 +44,13 @@ type RegistryDeps struct {
 	// gets.
 	Schema *GetSchemaTool
 	// Usage may be nil; each tool substitutes a no-op recorder.
-	Usage    UsageRecorder
-	Metabase *metabase.Client
+	Usage UsageRecorder
+	// Companies supplies the tenant's PII redaction mode to run_sql's
+	// empty-result probe (T-H10). Nil is legal — the probe then discloses
+	// neither contact nor identity columns, which is the strict reading and the
+	// right default for a build that has no company repository to hand.
+	Companies PIIPolicyLookup
+	Metabase  *metabase.Client
 	// MetabaseSource resolves a tenant source id to a Metabase database id. It
 	// is the connection repository in both processes, named separately because
 	// create_visualization asks it a different question than the others do.
@@ -101,7 +106,8 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// fails on a name the source does not have answers with the names it does,
 		// off the cache above rather than another introspection.
 		NewRunSQLTool(d.Pool, d.Connections, d.Usage, d.MaxQueryRows, d.MaxQueryResultBytes).
-			WithSchema(schema),
+			WithSchema(schema).
+			WithPIIPolicy(d.Companies),
 		NewCreateVisualizationTool(d.Pool, d.Connections, d.Metabase, d.MetabaseSource, d.Usage),
 		NewCreateDashboardTool(d.Metabase, d.Usage, d.Dashboards),
 		NewScheduleTaskTool(d.Scheduled),

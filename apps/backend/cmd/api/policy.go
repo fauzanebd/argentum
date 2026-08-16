@@ -54,6 +54,12 @@ var apiPolicy = middleware.RolePolicy{
 	"DELETE /api/connections/:id":                      domain.RoleAdmin,
 	"POST /api/connections/test":                       domain.RoleAdmin,
 	"POST /api/connections/:id/test":                   domain.RoleAdmin,
+	// Which stored connections no longer decrypt under this deployment's
+	// ARGENTUM_DSN_KEY. Admin rather than member, on the line drawn for the
+	// writes above: it names credentials that need re-registering, which is a
+	// piece of operational state a member can neither act on nor should have to
+	// read.
+	"GET /api/connections/key-health": domain.RoleAdmin,
 
 	// The agent roster (T-S1). Reads are member because T-S3 puts this list in
 	// the chat picker, and an agent nobody but an admin can see is a settings

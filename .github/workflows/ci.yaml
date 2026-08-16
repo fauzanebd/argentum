@@ -155,6 +155,84 @@ jobs:
           go build -o /tmp/worker  ./cmd/worker
           go build -o /tmp/discord ./cmd/discord
 
+  # T-H13. Before this job the pipeline ran `go vet`, `golangci-lint` and
+  # `go test -race` and nothing that knew what a CVE is. Three scanners, each
+  # answering a different question, and the reason each one blocks rather than
+  # reports is that all three were run locally on 2026-08-14 and made green
+  # first — a scanner introduced red is a scanner somebody learns to ignore.
+  security:
+    name: Security scanning
+    needs: changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # Full history: the secret scan reads commits, not just the tree, and a
+      # shallow clone would pass a repository whose key is one commit back.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Committed credentials, in the history as well as the tree. This repo
+      # has lost three ARGENTUM_DSN_KEYs to untracked .env files
+      # (docs/coverage/live-gate-backlog.md §1b); the opposite mistake — a key
+      # that reaches a commit — is the one that cannot be undone by finding the
+      # file again.
+      #
+      # gitleaks-action is free for personal repositories and for public ones;
+      # an organisation account needs GITLEAKS_LICENSE in secrets, and the job
+      # fails with a message saying so rather than silently passing.
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # A dependency added in a pull request, judged before it merges. Only
+      # meaningful on a PR — there is no base to diff a push against.
+      - name: Dependency review
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+      - name: Setup Go
+        if: needs.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/v')
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: apps/backend/go.sum
+
+      # Known vulnerabilities in what we actually call. govulncheck reports on
+      # reachable symbols rather than on module versions, which is why the
+      # first run of it here found 25 called vulnerabilities in a dependency
+      # set the security roadmap had described as current: the versions were
+      # recent and the standard library was six patches behind. All 25 are
+      # closed at the commit that adds this job.
+      - name: Vulnerable dependencies (govulncheck)
+        if: needs.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/v')
+        working-directory: apps/backend
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      # Insecure code, as opposed to insecure dependencies.
+      #
+      # **The bar is high/high deliberately, and here is what it excludes.**
+      # At medium/medium this tree reports 15 findings, every one of them
+      # examined on 2026-08-14 and none of them a defect: eight G202 SQL
+      # concatenations that build a filter clause out of fixed fragments in
+      # internal/adapters/postgres, three G304 reads of our own config paths,
+      # one G306 on the eval CLI's report file, one G505 for crypto/sha1 —
+      # which is Twilio's signature algorithm and therefore not ours to choose
+      # (T-H1) — and two high-severity/medium-confidence ones worth their own
+      # look: an int→uint32 conversion in internal/auth/password.go and a
+      # goroutine on context.Background in internal/app/thread_service.go.
+      # Raising the bar later is an edit to this line; the list above is here
+      # so that raising it is a decision rather than a discovery.
+      - name: Insecure code (gosec)
+        if: needs.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/v')
+        working-directory: apps/backend
+        run: go run github.com/securego/gosec/v2/cmd/gosec@latest -quiet -severity high -confidence high ./...
+
   tokens:
     name: Design tokens
     needs: changes

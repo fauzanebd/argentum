@@ -117,7 +117,7 @@ export interface ChatEvent {
 }
 /**
  * LiveTurn is everything a turn still running has produced so far, as the
- * first frame of a socket that opened in the middle of it (T-U9).
+ * first frame of a socket that opened in the middle of it (T-U12).
  * A WebSocket carries what happens *next*, which is enough only for a reader
  * who was watching from the start. Leaving one conversation for another closes
  * its socket, and the one that reopens on the way back used to say nothing at

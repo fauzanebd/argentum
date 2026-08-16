@@ -76,7 +76,7 @@ original draft's "What is actually here to build on" and the previous pass's
 | **Declarative route RBAC** | ❌ Absent — "No `cmd/api/policy.go`" | ✅ **Shipped, and load-bearing.** `cmd/api/policy.go` (24 kB) + `policy_test.go`, `internal/transport/http/middleware/rolepolicy.go`. **Unlisted routes are denied** (`rolepolicy.go:34-39`). `T-D10` must add its routes or the build fails. |
 | **Tool registry** | ❌ Absent — "tools wired inline in `cmd/worker/main.go`" | ✅ **Shipped.** `internal/tools/registry.go`, with a `MetabaseSource` field at `:49-52` that exists solely for `create_visualization`. |
 | **The dashboard frontend** | ❌ "not in this repo — no `.tsx` file exists anywhere in this checkout" | ✅ **Present.** 105 files under `apps/dashboard/src/` — 82 `.tsx`, 21 `.ts`, 2 `.css`. Eleven feature directories. **No `dashboards` feature, no `/dashboards` route.** |
-| `internal/cache/` | ❌ Dead code | ✅ **Still dead.** No Go file imports it; the only mention is a comment at `internal/app/credits.go:86`. `InvalidateSQLCache` returns nil (`internal/cache/redis.go:294-296`); `InferQueryType` still string-matches `"2023"`…`"2020"` (`redis.go:126`). Delete it. |
+| `internal/cache/` | ❌ Dead code | ✅ **Deleted 2026-08-14.** It was dead in every pass: no Go file imported it, `InvalidateSQLCache` was a `return nil` (`redis.go:294-296`) and `InferQueryType` string-matched `"2023"`…`"2020"` (`redis.go:126`). The comment at `internal/app/credits.go:86` that named it has been rewritten. |
 | Read-only execution, 3 dialects, timeout | ✅ Shipped | ✅ Confirmed — `internal/adapters/db/driver.go:28-47` |
 | Tenant connection pool, DSN-rotation detection | ✅ Shipped | ✅ Confirmed — resolver returns a `version` token (`pool.go:23`), pool compares it on every hit (`pool.go:92`) |
 | Schema introspection | ✅ Shipped | ✅ Confirmed — `driver.go:47` (`ExtractSchema`) |
@@ -577,8 +577,9 @@ because `MetricService.Query` owns its own rendering. Same TTL, same
 singleflight.
 
 TTL `DASHBOARD_PANEL_CACHE_TTL`, default 60s. Write a small Redis helper next to
-the resolver; **do not** use `internal/cache/` — re-verified as still dead code,
-imported by nothing.
+the resolver. `internal/cache/` is no longer an option to reject: it was deleted
+on 2026-08-14, having been imported by nothing for the whole life of this
+document.
 
 **No stale-while-revalidate.** The failure that is real on day one is the
 thundering herd: twenty people open the same dashboard at 09:00 and twelve panels

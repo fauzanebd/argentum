@@ -61,10 +61,22 @@ type MetricService struct {
 	// now is time.Now, injected so validate-on-save and comparison windows are
 	// deterministic in tests.
 	now func() time.Time
+	// zeroProbe decides whether a value of exactly 0 is investigated rather
+	// than hedged over. See zeroCoverage and config.MetricZeroCoverageProbe.
+	zeroProbe bool
 }
 
 func NewMetricService(repo domain.MetricRepository, conns MetricSourceLookup, pool MetricConnResolver) *MetricService {
-	return &MetricService{repo: repo, conns: conns, pool: pool, now: time.Now}
+	return &MetricService{repo: repo, conns: conns, pool: pool, now: time.Now, zeroProbe: true}
+}
+
+// WithZeroCoverageProbe turns the zero investigation on or off
+// (config.MetricZeroCoverageProbe). On by default, because the alternative is
+// the behaviour that put "Rp 0" in front of a question about a quarter the
+// data does not reach.
+func (s *MetricService) WithZeroCoverageProbe(on bool) *MetricService {
+	s.zeroProbe = on
+	return s
 }
 
 // MetricInput is one submitted metric. HigherIsBetter and Enabled are pointers
@@ -178,9 +190,15 @@ func (s *MetricService) Query(
 	if !m.Enabled {
 		return nil, fmt.Errorf("%w: metric %q is disabled", domain.ErrInvalidInput, key)
 	}
-	primary, err := s.evaluate(ctx, companyID, m, metric.Window{From: from, To: to})
+	window := metric.Window{From: from, To: to}
+	primary, err := s.evaluate(ctx, companyID, m, window)
 	if err != nil {
 		return nil, err
+	}
+	// A value of exactly 0 is the one answer this path cannot interpret on its
+	// own, so it is the one answer that buys two more queries.
+	if s.zeroProbe && !primary.Empty && primary.Value == 0 {
+		primary.Zero = s.zeroCoverage(ctx, companyID, m, window)
 	}
 	res := &metric.Result{Metric: m, Primary: primary}
 	if compare != "" {
@@ -290,6 +308,87 @@ func (s *MetricService) evaluate(ctx context.Context, companyID string, m *domai
 		return metric.Evaluation{}, fmt.Errorf("%w: column %q is not a number (%v)", domain.ErrInvalidInput, m.ValueColumn, err)
 	}
 	return metric.Evaluation{Value: value, From: w.From, To: w.To, RenderedSQL: sql}, nil
+}
+
+// zeroCoverage finds out what a metric's 0 means, by running the same metric
+// over everything before the requested window and everything after it.
+//
+// **The failure it closes.** `COALESCE(SUM(x), 0)` — which is how a metric
+// template should be written, and how `tenant.go` explains at length that it
+// must be — turns "no rows in this window" into a genuine 0. So the NULL that
+// `Evaluation.Empty` reports never arrives, `query_metric` fell back to a
+// sentence asking the model to hedge, and both models answered **Rp 0** with a
+// caveat for Q3 2025 against a warehouse ending in December 2024
+// (docs/coverage/eval-q1.md). It is the T-Q9 fabrication mechanism on the one
+// path T-Q9 did not close.
+//
+// **What each probe proves.** A non-zero value on one side is proof of data on
+// that side. A zero on a side proves nothing by itself — it carries the same
+// ambiguity as the original — so the verdicts below are about where non-zero
+// values were *seen*, which is enough to answer the question that reaches a
+// customer: is this window inside the data or outside it.
+//
+// **A side window that does not exist is not a failed probe.** Asking about all
+// time leaves nothing outside the window by construction, so "no non-zero value
+// there" is a fact rather than an omission, and it is counted as one. A probe
+// that *errors* is different: the answer is unknown, the whole coverage is
+// dropped, and the caller keeps the hedged note. Half a verdict is worse than
+// none, because it reads as certainty.
+//
+// Cost: two evaluations, only ever on a zero.
+func (s *MetricService) zeroCoverage(ctx context.Context, companyID string, m *domain.MetricDefinition, w metric.Window) *metric.ZeroCoverage {
+	all := metric.AllTimeWindow(s.now())
+
+	before, okBefore := s.sideValue(ctx, companyID, m, metric.Window{From: all.From, To: w.From})
+	if !okBefore {
+		return nil
+	}
+	after, okAfter := s.sideValue(ctx, companyID, m, metric.Window{From: w.To, To: all.To})
+	if !okAfter {
+		return nil
+	}
+
+	sawBefore := before != nil && *before != 0
+	sawAfter := after != nil && *after != 0
+
+	cov := &metric.ZeroCoverage{Before: before, After: after}
+	switch {
+	case sawBefore && sawAfter:
+		cov.Verdict = metric.ZeroInsideCoverage
+	case sawBefore:
+		cov.Verdict = metric.ZeroAfterCoverage
+	case sawAfter:
+		cov.Verdict = metric.ZeroBeforeCoverage
+	default:
+		cov.Verdict = metric.ZeroEverywhere
+	}
+	logrus.WithFields(logrus.Fields{
+		"company_id": companyID, "metric": m.Key, "verdict": string(cov.Verdict),
+		"window_from": w.From.Format("2006-01-02"), "window_to": w.To.Format("2006-01-02"),
+	}).Info("metric returned zero; coverage probed")
+	return cov
+}
+
+// sideValue evaluates one side window. It returns (value, true) for a window
+// that ran, (nil, true) for one that could not hold data — an empty or inverted
+// range, or an evaluation that matched nothing — and (nil, false) only when the
+// probe failed, which is the case that must not be read as an answer.
+func (s *MetricService) sideValue(ctx context.Context, companyID string, m *domain.MetricDefinition, w metric.Window) (*float64, bool) {
+	if !w.From.Before(w.To) {
+		return nil, true
+	}
+	ev, err := s.evaluate(ctx, companyID, m, w)
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": companyID, "metric": m.Key,
+		}).Warn("zero-coverage probe failed; the answer keeps its hedge")
+		return nil, false
+	}
+	if ev.Empty {
+		return nil, true
+	}
+	v := ev.Value
+	return &v, true
 }
 
 // validated turns input into a metric, checked all the way through an actual

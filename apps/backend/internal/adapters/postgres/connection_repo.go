@@ -96,6 +96,32 @@ func (r *ConnectionRepo) ListByCompany(ctx context.Context, companyID string) ([
 	return out, rows.Err()
 }
 
+// ListAll reads every stored connection, across every tenant.
+//
+// The one caller is the startup key check (app.LogDSNKeyCoverage): whether the
+// `ARGENTUM_DSN_KEY` this process holds opens the rows this database has is a
+// question about the deployment, not about a company, and it is answered once
+// at boot rather than per request. Deliberately absent from
+// domain.ConnectionRepository for that reason — a cross-tenant read has no
+// business on the interface the request path holds.
+func (r *ConnectionRepo) ListAll(ctx context.Context) ([]*domain.DBConnection, error) {
+	q := `SELECT ` + connColumns + ` FROM db_connections ORDER BY created_at`
+	rows, err := r.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*domain.DBConnection
+	for rows.Next() {
+		c, err := scanConn(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 func (r *ConnectionRepo) Update(ctx context.Context, c *domain.DBConnection) error {
 	const q = `
 		UPDATE db_connections

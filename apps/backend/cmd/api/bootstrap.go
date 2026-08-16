@@ -118,6 +118,14 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		time.Duration(cfg.EmbedSessionTTLMinutes)*time.Minute,
 	)
 
+	// Does the key this process holds open the rows this database has? Asked
+	// once, at boot, because the alternative discovery path is an agent turn
+	// failing at query time in front of a customer — which is how the two rows
+	// this deployment has lost were actually found. Never fatal: a deployment
+	// whose key has moved on still serves every tenant whose rows were
+	// re-sealed, and refusing to boot would take those down too.
+	app.LogDSNKeyCoverage(ctx, connRepo, dsnCipher)
+
 	resolver := pgctl.NewConnectionResolver(connRepo, dsnCipher)
 	deps.tenant = db.NewTenantConnPool(resolver, 200, 30*time.Minute)
 	tenCtx, cancelTen := context.WithCancel(ctx)
@@ -411,7 +419,8 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// The metric registry (T-06). It renders each definition against the tenant
 	// pool with the window bound as parameters, so validate-on-save and
 	// query_metric run the same SQL the same way.
-	deps.metricSvc = app.NewMetricService(pgctl.NewMetricRepo(controlDB), connRepo, deps.tenant)
+	deps.metricSvc = app.NewMetricService(pgctl.NewMetricRepo(controlDB), connRepo, deps.tenant).
+		WithZeroCoverageProbe(cfg.MetricZeroCoverageProbe)
 
 	// Answer feedback (T-Q2). It takes the concrete message repo rather than
 	// the shared interface: the tenant-scoped single-message read lives on

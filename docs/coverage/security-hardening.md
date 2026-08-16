@@ -610,3 +610,131 @@ cannot flip an answer between two lookups milliseconds apart. What the worker
 adds over what was run is one line of wiring — `NewDeliverer(...)` at
 `cmd/worker/main.go:107`, the same call the gate makes — and that is a read, not
 a measurement.
+
+---
+
+# Track B and D, first three tickets — `T-H7`, `T-H10`, `T-H13`, built 2026-08-14
+
+Three tickets that had nothing to do with each other and one thing in common:
+each is a disclosure or a blind spot that no test in this repo could have
+failed on, because nothing was looking. `go build`, `go vet`, `go test -race`,
+`golangci-lint` and `gofmt` clean over the backend.
+
+## 12. `T-H7` — query text out of the logs
+
+`run_sql.go` logged the executed statement at **Info** with its literals
+intact, so a turn asking about one person wrote that person's identifier into
+the operational log, at the level production runs at, on the path logs are
+shipped from.
+
+**What shipped.** `normalizeSQLForLog` (`internal/tools/sql_log.go`), a
+single-pass scanner: single-quoted strings become `'?'` (doubled-quote escapes
+included), standalone numbers become `?`, `--` and `/* */` comments are dropped
+whole, and double-quoted or backticked identifiers are copied through because
+they are names. Info carries the normalised form under the same `sql` key it
+always had; the raw statement moved to **Debug** under `sql_raw`.
+
+**Numbers, not just strings.** A NIK is sixteen digits, an Indonesian mobile is
+eleven or twelve, and an account id is whatever the tenant made it — a
+normaliser that only handled quoted literals would have missed the class that
+matters most. Digits that follow an identifier character are left alone, so
+`fact_sales_2024`, `t2.col1` and `x_1` survive while `= 42` does not, and a
+value carrying a decimal point stays a number rather than being read as an
+identifier.
+
+**And the probe's own log line was the same bug one file over.** T-Q9's
+empty-result probe logged `probeJSON(probes)` at Info — which is the probe's
+entire disclosure, the real contents of a filtered column, written to the log
+as well as handed to the model. Info now names the columns
+(`customers.city,orders.channel`) and the payload moved to Debug.
+
+Two tests: a table of shapes, and a leak test that asserts the *absence* of a
+NIK and an email as substrings of the output, in a query, in an IN list, in a
+comment and unquoted. The second is the one that fails if somebody adds a
+branch that copies a literal through.
+
+## 13. `T-H10` — the empty-result probe discloses a column's real contents
+
+`distinctValues` answers a zero-row query by returning the filtered column's
+actual values. That is the right answer for `month_name = 'December'` against a
+column padded to `'December '` — the case T-Q9 exists for — and the wrong one
+for `email = 'budi@examle.co.id'` against a column of real customer addresses:
+a typo'd domain returns twenty real emails the user's own query did not fetch,
+on a path no output guardrail sees, because guardrails run on the reply and
+this is a tool result.
+
+**Two filters, because either alone is wrong** (`internal/tools/probe_pii.go`):
+
+| Filter | Catches | Misses |
+| ------ | ------- | ------ |
+| Column name (`email`, `no_hp`, `nik`, `npwp`, `card_number`, …) | The column that announces itself — and it is refused **before** the query runs, so the disclosure never crosses the network | A column called `keterangan` that happens to hold addresses |
+| Value shape (email, phone, 13–19 digit runs, SSN) | That column, after one probe query | Nothing this repo has seen |
+
+A column that fails either check is dropped **whole** rather than value by
+value: one email among twenty rows means the column holds emails, and returning
+the other nineteen would disclose the same class of thing while looking
+careful.
+
+**The tenant's policy decides.** `strict` (and unset, and unknown, and a
+company row that could not be read) discloses neither class; `contact_ok`
+allows contact-class columns, because that mode *is* a tenant saying they want
+customer contact details in answers; `off` allows both. The lookup is on
+`RunSQLTool` behind `WithPIIPolicy`, consulted only on the zero-row path, and a
+build that forgets to wire it gets strict.
+
+**What it deliberately does not do.** It never widens what the query returned —
+the probe only runs on a result with zero rows in it, so everything it
+discloses is data the user's own query did not fetch. That asymmetry is why the
+default is the protective one even though `PIIRedactionMode` defaults to strict
+for a different reason.
+
+Four tests, including the two that matter: a refused column must not reach the
+tenant's database at all (asserted on a recording connection, because a probe
+that runs and then discards its answer has already read the data), and the
+ordinary label column must still answer under strict — the T-Q9 case is not
+worth trading for this one.
+
+## 14. `T-H13` — security scanning in CI, and what the first run found
+
+Three scanners in a new `security` job in `.github/workflows/ci.yaml`:
+**gitleaks** over the full history (secret scanning), **govulncheck** and
+**gosec** over the backend, plus `actions/dependency-review-action` on pull
+requests. All four block. `fetch-depth: 0`, because a shallow clone would pass
+a repository whose key is one commit back.
+
+**Every one was run locally first and made green, which is the point.** A
+scanner introduced red is a scanner somebody learns to route around. Making
+them green was not free:
+
+- **govulncheck found 25 called vulnerabilities** — reachable symbols, not
+  merely affected module versions — in a dependency set
+  `03-security-hardening-roadmap.md` §`T-H13` had described as *"current
+  today"*. It was right about the versions and the versions were not the
+  question.
+- **Seven modules were bumped**: grpc 1.79.3 → 1.82.1, x/net 0.53 → 0.56,
+  x/text 0.38 → 0.39, excelize 2.10.1 → 2.11.0, quic-go 0.59.0 → 0.59.1, the
+  aws-sdk eventstream + bedrockruntime pair, and otel 1.40 → 1.44 across the
+  five modules that version together.
+- **The other eighteen were the standard library**, at go1.26.2, with the last
+  of their fixes in **1.26.6** — so `go.mod`'s directive moved to `go 1.26.6`.
+  CI and all four Dockerfiles ask for `1.26`, which resolves to the newest
+  patch, so the directive is what stops a developer's older toolchain building
+  what CI would refuse. After both: **0 called vulnerabilities.**
+- **gosec is gated at high severity + high confidence**, where this tree is
+  clean. At medium/medium it reports 15, every one examined and none a defect:
+  eight G202 SQL concatenations building filter clauses out of fixed fragments
+  in `internal/adapters/postgres`, three G304 reads of our own config paths,
+  one G306 on the eval CLI's report file, one G505 for `crypto/sha1` — which is
+  Twilio's signature algorithm and therefore not ours to choose (`T-H1`) — and
+  two worth a look of their own: an int→uint32 conversion in
+  `internal/auth/password.go:80` and a goroutine on `context.Background` in
+  `internal/app/thread_service.go:614`. The bar is a line in the workflow and
+  the list is written down here, so raising it is a decision rather than a
+  discovery.
+
+**What is owed on all three.** `T-H7` and `T-H10` are unit-gated only. The live
+half is one turn each against a running stack: a query with a literal in it,
+read back out of the API log; and a zero-row query filtered on an email column
+under each of the three redaction modes. `T-H13` cannot be gated locally at all
+— the assertion is that the job runs and blocks on GitHub, which is the first
+pull request after this lands.

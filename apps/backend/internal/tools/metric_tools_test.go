@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,6 +190,98 @@ func TestARealZeroIsStillZeroWithACaveat(t *testing.T) {
 	}
 	if payload["note"] == nil {
 		t.Error("a zero carries no caveat, so the model cannot tell it from an empty window")
+	}
+}
+
+// And what the caveat becomes once the service has actually checked (2026-08-14).
+//
+// The hedge above is what shipped "Rp 0" for Q3 2025 against a warehouse ending
+// in December 2024, on both models, in the same eval run. A verdict turns the
+// same branch into a statement — and for the two verdicts that mean "this
+// window is outside the data" it also empties `row_count`, so T-16's grounding
+// check treats a stated total as ungrounded rather than trusting the model to
+// follow advice.
+func TestAZeroOutsideTheDataIsNotEvidence(t *testing.T) {
+	before := 1000.0
+	after := 1000.0
+
+	cases := []struct {
+		name        string
+		coverage    *metric.ZeroCoverage
+		wantRows    float64
+		wantValue   any
+		wantPhrases []string
+	}{
+		{
+			name:        "after the data ends",
+			coverage:    &metric.ZeroCoverage{Verdict: metric.ZeroAfterCoverage, Before: &before},
+			wantRows:    0,
+			wantValue:   nil,
+			wantPhrases: []string{"NOT an answer", "AFTER the end of the data", "Do NOT state 0"},
+		},
+		{
+			name:        "before the data begins",
+			coverage:    &metric.ZeroCoverage{Verdict: metric.ZeroBeforeCoverage, After: &after},
+			wantRows:    0,
+			wantValue:   nil,
+			wantPhrases: []string{"BEFORE the data begins", "does not go back that far"},
+		},
+		{
+			// The other half: a checked zero is reported plainly, with no
+			// caveat at all. A tool that hedges on every zero teaches the model
+			// to ignore the hedge.
+			name:        "inside the data",
+			coverage:    &metric.ZeroCoverage{Verdict: metric.ZeroInsideCoverage, Before: &before, After: &after},
+			wantRows:    1,
+			wantValue:   float64(0),
+			wantPhrases: []string{"genuinely 0", "no coverage caveat is needed"},
+		},
+		{
+			name:        "zero everywhere",
+			coverage:    &metric.ZeroCoverage{Verdict: metric.ZeroEverywhere},
+			wantRows:    1,
+			wantValue:   float64(0),
+			wantPhrases: []string{"every other period", "broken metric definition"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := oneMetricResult(false)
+			res.Primary.Value = 0
+			res.Primary.Zero = tc.coverage
+			tool := NewQueryMetricTool(&fakeMetricStore{result: res}, nil)
+			ctx := tenantctx.WithCompanyID(context.Background(), "c1")
+
+			out, err := tool.Execute(ctx, `{"metric_key":"revenue","from":"2025-07-01","to":"2025-10-01"}`)
+			if err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(out), &payload); err != nil {
+				t.Fatalf("result is not JSON: %v", err)
+			}
+
+			if payload["row_count"] != tc.wantRows {
+				t.Errorf("row_count = %v, want %v", payload["row_count"], tc.wantRows)
+			}
+			if payload["value"] != tc.wantValue {
+				t.Errorf("value = %v, want %v", payload["value"], tc.wantValue)
+			}
+			note, _ := payload["note"].(string)
+			for _, phrase := range tc.wantPhrases {
+				if !strings.Contains(note, phrase) {
+					t.Errorf("note = %q, want it to contain %q", note, phrase)
+				}
+			}
+			cov, ok := payload["zero_coverage"].(map[string]any)
+			if !ok {
+				t.Fatalf("zero_coverage missing from the payload: %v", payload["zero_coverage"])
+			}
+			if cov["verdict"] != string(tc.coverage.Verdict) {
+				t.Errorf("verdict = %v, want %q", cov["verdict"], tc.coverage.Verdict)
+			}
+		})
 	}
 }
 

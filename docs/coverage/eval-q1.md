@@ -877,8 +877,12 @@ digest's value is real, and this is the shape of experiment that shows it.
 
 Not bank it. In order:
 
-1. **Close the metric zero path** — the finding above. It is the one failure
-   both models share and the one with a customer-facing consequence.
+1. ~~**Close the metric zero path**~~ — **built 2026-08-14, unscored.** See
+   *The metric zero path* below. It is the one failure both models share and the
+   one with a customer-facing consequence. **The re-score Rule 1 requires has
+   not been run**, so `zero-row-future-quarter` is not yet known to pass: what
+   exists is the mechanism and eleven unit tests, on the tree that scored
+   98.2%/89.3%.
 2. **Harden `zero_row_trap`** and add cases where the set is now blind: nothing
    in it holds an email, a phone number or a NIK, so the output guardrails still
    cannot be scored (§2 of [`eval-sprint1.md`](eval-sprint1.md) said the same
@@ -886,3 +890,75 @@ Not bank it. In order:
 3. **Leave deepseek's language failures alone as a model property**, and keep
    scoring both — the two disagreement rows this run produced are worth more
    than either aggregate.
+
+---
+
+# The metric zero path — closed 2026-08-14, not yet scored
+
+The Rule 1 re-score above left exactly one failure shared by both models, and
+named it a product finding rather than a fixture one: *"What were our total
+sales in Q3 2025?"* against data ending 31 December 2024 came back as **Rp 0**
+with a coverage caveat, on kimi and on deepseek. The cause was not the models
+mishandling the note. It was the note.
+
+## What was wrong
+
+`metric_tools.go` distinguished two cases and could only detect one of them.
+An evaluation that returns NULL is `Empty`, and gets the hard sentence — *this
+is NOT a zero*. An evaluation that returns a real 0 got the soft one — *say
+which you mean only if you know*. But the eval tenant's `total_sales` template
+is `SELECT COALESCE(sum(fs.sales_amount),0) AS value …`, as every sane template
+is and as `tenant.go:143` explains at length, **so an out-of-coverage window is
+never `Empty`**. The COALESCE converts the unambiguous NULL into an ambiguous 0
+before the tool ever sees it, and the hard branch was unreachable for the exact
+question that needed it.
+
+That is the T-Q9 fabrication mechanism, alive on the one path T-Q9 did not
+close.
+
+## What shipped
+
+**Two extra queries, on a zero and never otherwise.** When a metric evaluates
+to exactly 0, `MetricService` re-runs the same metric over everything *before*
+the requested window and everything *after* it
+(`internal/app/metric_service.go`, `zeroCoverage`). Four verdicts come out
+(`internal/metric/result.go`):
+
+| Verdict | What was observed | What the model is told |
+| ------- | ----------------- | ---------------------- |
+| `after_coverage` | non-zero before the window, nothing after | This 0 is NOT an answer: the window is after the end of the data. Do NOT state 0 |
+| `before_coverage` | non-zero after, nothing before | The window is before the data begins |
+| `inside_coverage` | non-zero on both sides | The 0 is genuine, **checked rather than assumed** — report it plainly, no caveat |
+| `everywhere` | nothing on either side | The metric returns zero for every period: a broken definition or an unloaded table, not a fact about this period |
+
+**The verdict changes the payload, not only the prose.** `after_coverage` and
+`before_coverage` set `row_count` to 0 and `value` to null — the same fields the
+`Empty` branch has always written — so `agentbudget` stops counting the result
+as evidence and T-16's grounding check *replaces* a reply that states a total
+anyway. The difference matters: everything above is advice a model may follow,
+and this is a rule it cannot talk itself out of.
+
+**Asymmetric proof, deliberately.** A non-zero value on one side proves data
+exists there. A zero on a side proves nothing — it carries the identical
+ambiguity — so the verdicts are phrased as where non-zero values were *seen*.
+Two facts about the sides are enough for the only question that reaches a
+customer: is this window inside the data or outside it.
+
+**A side window that cannot exist is a fact, not a gap.** Asking about all time
+leaves nothing outside the window by construction, so "no non-zero value there"
+counts as observed. A probe that *errors* is different: the whole coverage is
+dropped and the old hedge comes back, because half a verdict reads as certainty.
+
+`METRIC_ZERO_COVERAGE_PROBE=true` by default; the switch exists because the cost
+is real, and the condition bounds it — an ordinary answer still runs exactly one
+query, asserted in a test.
+
+## What is owed
+
+**The re-score.** Rule 1 makes a change to what reaches the model a re-run of
+the set, and this changes both the note and the payload on every zero. The case
+to read first is `zero-row-future-quarter`, which both models failed; the case
+to read second is any `zero_row_trap` case that *passed*, because a probe that
+turns a genuine zero into a hedge would be a regression the aggregate might
+hide. Eleven unit tests cover the mechanism — including that a quiet February
+inside the data is still reported as a plain 0 — and none of them is a model.

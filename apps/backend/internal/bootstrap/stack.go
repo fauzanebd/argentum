@@ -231,6 +231,15 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	}
 	s.DSNCipher = dsnCipher
 
+	// The same boot-time question cmd/api asks: does this process's
+	// ARGENTUM_DSN_KEY open the stored connections? It matters more here, if
+	// anything — the worker is where a turn actually resolves a DSN, so a
+	// mismatch surfaces as an agent answering that it cannot reach the
+	// warehouse. A stale worker holding a retired key ate two gate turns on
+	// 2026-08-14 before `ps` explained why (docs/coverage/delivery-log.md
+	// Phase 2p); this line is what that morning was missing.
+	app.LogDSNKeyCoverage(ctx, s.Connections, dsnCipher)
+
 	resolver := pgctl.NewConnectionResolver(s.Connections, dsnCipher)
 	s.TenantPool = db.NewTenantConnPool(resolver, 200, 30*time.Minute)
 	s.TenantPool.Start(ctx)
@@ -359,7 +368,8 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// The metric registry (T-06/T-07). The worker runs its tools, so it gets a
 	// real service; validate-on-save, the dashboard Test button and query_metric
 	// all render through this one path, so the number is the same everywhere.
-	s.Metrics = app.NewMetricService(pgctl.NewMetricRepo(controlDB), s.Connections, s.TenantPool)
+	s.Metrics = app.NewMetricService(pgctl.NewMetricRepo(controlDB), s.Connections, s.TenantPool).
+		WithZeroCoverageProbe(cfg.MetricZeroCoverageProbe)
 
 	// Watchers (T-08). Built with the real metric service, so a watcher fires off
 	// the same number query_metric returns, and with the budget checker, so an
@@ -441,11 +451,13 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	)
 
 	s.Tools = tools.Registry(tools.RegistryDeps{
-		Pool:                s.TenantPool,
-		Connections:         s.Connections,
-		Redis:               s.Redis,
-		Schema:              schemaTool,
-		Usage:               s.UsageSvc,
+		Pool:        s.TenantPool,
+		Connections: s.Connections,
+		Redis:       s.Redis,
+		Schema:      schemaTool,
+		Usage:       s.UsageSvc,
+		// The tenant's redaction policy, for the empty-result probe (T-H10).
+		Companies:           s.Companies,
 		Metabase:            metabaseClient,
 		MetabaseSource:      s.Connections,
 		Dashboards:          app.NewDashboardService(dashboardRepo, metabaseClient),

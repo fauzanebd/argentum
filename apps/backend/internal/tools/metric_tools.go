@@ -161,7 +161,8 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 		// One bound without the other stays an error: "from 2024-07-01" with no
 		// end is a window the caller half-specified, and guessing which half
 		// they meant is how a metric answers a question nobody asked.
-		from, to = allTimeWindow()
+		w := metric.AllTimeWindow(time.Now())
+		from, to = w.From, w.To
 	} else {
 		var err error
 		from, err = parseWindowBound(p.From)
@@ -246,15 +247,30 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 			"asked for, and offer to check which periods the data covers. Do NOT say the metric was 0, " +
 			"and do NOT state any total for this window."
 	} else if res.Primary.Value == 0 {
-		// A real zero, and the one case where the tool cannot settle the
-		// question on its own: a template written as COALESCE(SUM(x), 0)
-		// answers an empty window with a genuine 0 and this path has no way to
-		// tell it from a period that really summed to nothing. The model is
-		// told to check rather than assert, which is cheap and only fires on a
-		// zero.
-		payload["note"] = "The value is exactly 0. If this metric sums or counts, a 0 can also mean the " +
-			"window matched no rows — say which you mean only if you know, and otherwise say the metric " +
-			"returned 0 for this window and offer to confirm the data's coverage."
+		// A real zero — and until 2026-08-14 the one case this tool could not
+		// settle, because a template written as COALESCE(SUM(x), 0) answers an
+		// empty window with a genuine 0. The model was told to hedge, and two
+		// models duly reported "Rp 0" with a caveat for a quarter the warehouse
+		// does not reach (docs/coverage/eval-q1.md). The service now spends two
+		// queries either side of the window on exactly this branch, and the
+		// note says what was found rather than asking the model to guess.
+		note, coverage := zeroNote(res.Primary.Zero)
+		payload["note"] = note
+		if coverage != nil {
+			payload["zero_coverage"] = coverage
+			// A window the data does not reach has no figure in it, so it says
+			// so in the field the rest of the system reads for evidence — the
+			// same 0 the Empty branch above writes, for the same reason.
+			// agentbudget stops counting this as evidence and T-16's grounding
+			// check replaces a reply that states a total anyway, which is the
+			// difference between advice the model may take and a rule it
+			// cannot talk itself out of.
+			switch res.Primary.Zero.Verdict {
+			case metric.ZeroAfterCoverage, metric.ZeroBeforeCoverage:
+				payload["row_count"] = 0
+				payload["value"] = nil
+			}
+		}
 	}
 	if res.Metric.Currency != "" {
 		payload["currency"] = res.Metric.Currency
@@ -286,6 +302,61 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 	return string(out), nil
 }
 
+// zeroNote turns the coverage verdict into the sentence the model reads, and
+// the small object a support conversation reads.
+//
+// The four verdicts are four different things to say, and the reason they are
+// worded as facts rather than as advice is the run that produced this code: the
+// hedged version ("say which you mean only if you know") was correct English
+// and lost to a number, on both models, on the one case in the golden set that
+// asks about a period the data does not hold.
+//
+// A nil coverage is the probe switched off or a probe that failed. The hedge
+// comes back, unchanged, because it is still better than a confident sentence
+// drawn from nothing.
+func zeroNote(cov *metric.ZeroCoverage) (string, map[string]any) {
+	if cov == nil {
+		return "The value is exactly 0. If this metric sums or counts, a 0 can also mean the " +
+			"window matched no rows — say which you mean only if you know, and otherwise say the metric " +
+			"returned 0 for this window and offer to confirm the data's coverage.", nil
+	}
+
+	out := map[string]any{"verdict": string(cov.Verdict)}
+	if cov.Before != nil {
+		out["value_before_window"] = *cov.Before
+	}
+	if cov.After != nil {
+		out["value_after_window"] = *cov.After
+	}
+
+	switch cov.Verdict {
+	case metric.ZeroAfterCoverage:
+		return "This 0 is NOT an answer: the window you asked for is AFTER the end of the data. " +
+			"The same metric returns a non-zero value for periods before this window and nothing at all " +
+			"after it. Tell the user the data does not cover the period they asked about, name the " +
+			"window, and offer to report the most recent period that does have data. Do NOT state 0, " +
+			"and do NOT state any total for this window.", out
+	case metric.ZeroBeforeCoverage:
+		return "This 0 is NOT an answer: the window you asked for is BEFORE the data begins. " +
+			"The same metric returns a non-zero value for periods after this window and nothing at all " +
+			"before it. Tell the user the data does not go back that far, name the window, and offer " +
+			"the earliest period that does have data. Do NOT state 0 as a result.", out
+	case metric.ZeroInsideCoverage:
+		return "The value is genuinely 0, and this was checked rather than assumed: the same metric " +
+			"returns non-zero values both before and after this window, so the data covers the period " +
+			"and the total for it really is zero. Report 0 plainly — no coverage caveat is needed.", out
+	case metric.ZeroEverywhere:
+		return "The value is 0 for this window AND for every other period the data holds — the metric " +
+			"never returns anything but zero. That is a broken metric definition or a table that has " +
+			"not been loaded, not a fact about the period the user asked about. Say that the metric " +
+			"reports nothing anywhere and suggest checking its definition; do NOT present 0 as this " +
+			"period's result.", out
+	default:
+		return "The value is exactly 0 and its coverage could not be checked. Say the metric returned " +
+			"0 for this window and offer to confirm which periods the data covers.", out
+	}
+}
+
 func (t *QueryMetricTool) unknownKey(ctx context.Context, companyID, key string) string {
 	var keys []string
 	if metrics, err := t.store.ListEnabled(ctx, companyID); err == nil {
@@ -302,21 +373,10 @@ func (t *QueryMetricTool) unknownKey(ctx context.Context, companyID, key string)
 	return string(out)
 }
 
-// allTimeWindow is the window a call that named none is evaluated over: wide
-// enough to hold every row a warehouse plausibly carries, and no wider.
-//
-// The bounds are not arbitrary. The floor is 1900-01-01 because SQL Server's
-// `datetime` begins in 1753 and MySQL's `DATE` in 1000, so anything earlier
-// buys nothing and risks a dialect rejecting the literal. The ceiling is one
-// year out rather than a round 2999 because MySQL's `TIMESTAMP` ends in 2038:
-// a template comparing a TIMESTAMP column against a year-3000 literal is a
-// error or a silent truncation depending on the server's mode, and a metric
-// that fails on the tenant with the oldest MySQL is worse than one that misses
-// a forecast row dated more than a year ahead.
-func allTimeWindow() (time.Time, time.Time) {
-	return time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC),
-		time.Now().UTC().AddDate(1, 0, 0).Truncate(24 * time.Hour)
-}
+// The all-time window moved to metric.AllTimeWindow on 2026-08-14, because the
+// zero-coverage probe measures against the same bounds and two definitions of
+// "all the data" would eventually disagree. The reasoning behind the floor and
+// the ceiling travelled with it.
 
 // parseWindowBound accepts a plain date (the common case the model is told to
 // send) or a full RFC3339 timestamp. A plain date is midnight UTC, which is the
