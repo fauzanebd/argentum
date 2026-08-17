@@ -46,7 +46,7 @@ type V1ChatHandler struct {
 	// syncTimeout caps how long the synchronous door holds a connection. It is
 	// deliberately a cap on the *wait*, never on the turn.
 	syncTimeout time.Duration
-	dashboards  *app.DashboardService
+	dashboards  *app.MetabaseDashboardService
 	// heartbeat is heartbeatEvery in production and is never configured. It is
 	// a field only so a test can watch a beat arrive without sleeping for one.
 	heartbeat time.Duration
@@ -94,7 +94,7 @@ func NewV1ChatHandler(
 // WithDashboards lets `DELETE /v1/threads/:id` clean up the saved dashboards a
 // turn produced, exactly as the dashboard's own delete does. Two surfaces
 // deleting the same thing differently is how orphan rows appear.
-func (h *V1ChatHandler) WithDashboards(d *app.DashboardService) *V1ChatHandler {
+func (h *V1ChatHandler) WithDashboards(d *app.MetabaseDashboardService) *V1ChatHandler {
 	h.dashboards = d
 	return h
 }

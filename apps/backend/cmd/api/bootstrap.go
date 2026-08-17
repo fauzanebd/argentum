@@ -220,8 +220,8 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		tableEmbRepo := pgctl.NewTableEmbeddingRepo(controlDB)
 		deps.embeddingSvc = app.NewEmbeddingService(connRepo, connRepo, tableEmbRepo, apiSchemaTool, deps.embedCache)
 	}
-	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
-	deps.dashboardSvc = app.NewDashboardService(dashboardRepo, mbCli)
+	savedDashboardRepo := pgctl.NewSavedDashboardRepo(controlDB)
+	deps.metabaseDashboardSvc = app.NewMetabaseDashboardService(savedDashboardRepo, mbCli)
 	classifierLLM := lightLLMClient
 	if cfg.ClassifierModel != "" {
 		rawClassifier, err := llmclient.BuildClassifier(cfg)
@@ -355,7 +355,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			Usage:               deps.usageSvc,
 			Metabase:            mbCli,
 			MetabaseSource:      connRepo,
-			Dashboards:          deps.dashboardSvc,
+			Dashboards:          deps.metabaseDashboardSvc,
 			Scheduled:           deps.scheduledSvc,
 			Docs:                deps.docGen,
 			MaxQueryRows:        cfg.MaxQueryRows,

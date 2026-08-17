@@ -94,17 +94,17 @@ func testDeps(cfg *config.Config, signer *auth.TokenSigner) *apiDeps {
 		cfg:    cfg,
 		signer: signer,
 
-		authSvc:      app.NewAuthService(nil, nil, signer),
-		teamSvc:      app.NewTeamService(nil, nil),
-		apiKeySvc:    app.NewAPIKeyService(nil),
-		agentSvc:     app.NewAgentService(nil, nil, nil),
-		companySvc:   &app.CompanyService{},
-		usageSvc:     &app.UsageService{},
-		dashboardSvc: app.NewDashboardService(nil, nil),
-		scheduledSvc: app.NewScheduledTaskService(nil, nil, nil, nil),
-		discordSvc:   app.NewDiscordService(nil, nil, nil, nil),
-		larkSvc:      app.NewLarkService(nil, nil, nil),
-		slackSvc:     app.NewSlackService(nil, nil, nil),
+		authSvc:              app.NewAuthService(nil, nil, signer),
+		teamSvc:              app.NewTeamService(nil, nil),
+		apiKeySvc:            app.NewAPIKeyService(nil),
+		agentSvc:             app.NewAgentService(nil, nil, nil),
+		companySvc:           &app.CompanyService{},
+		usageSvc:             &app.UsageService{},
+		metabaseDashboardSvc: app.NewMetabaseDashboardService(nil, nil),
+		scheduledSvc:         app.NewScheduledTaskService(nil, nil, nil, nil),
+		discordSvc:           app.NewDiscordService(nil, nil, nil, nil),
+		larkSvc:              app.NewLarkService(nil, nil, nil),
+		slackSvc:             app.NewSlackService(nil, nil, nil),
 	}
 }
 

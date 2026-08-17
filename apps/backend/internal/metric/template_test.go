@@ -82,47 +82,24 @@ func TestRenderRejectsUnknownTokenAndMissingWindow(t *testing.T) {
 	}
 }
 
-func TestValidateTemplateAcceptsASingleSelect(t *testing.T) {
-	ok := []string{
-		`SELECT sum(x) AS v FROM t WHERE d >= {{from}} AND d < {{to}}`,
-		`  select count(*) as v from t where ts between {{from}} and {{to}} ;`,
-		`WITH w AS (SELECT * FROM t WHERE d >= {{from}} AND d < {{to}}) SELECT count(*) AS v FROM w`,
-		// A status literally named 'deleted' must not trip the keyword scan.
-		`SELECT count(*) AS v FROM orders WHERE status = 'deleted' AND d >= {{from}} AND d < {{to}}`,
-		// REPLACE() is a read-only function, not the REPLACE statement.
-		`SELECT sum(REPLACE(amount, ',', '')::numeric) AS v FROM t WHERE d >= {{from}} AND d < {{to}}`,
+// The structural table — single SELECT, scrubbed comments, forbidden keywords —
+// moved to internal/sqlguard with the code under T-H4 step 1. What stays here is
+// the metric's own contract with it: the window is the whole vocabulary, both
+// bounds required.
+func TestValidateTemplateDelegatesWithTheWindowTokens(t *testing.T) {
+	if err := ValidateTemplate(`SELECT sum(x) AS v FROM t WHERE d >= {{from}} AND d < {{to}}`); err != nil {
+		t.Errorf("a windowed single SELECT must pass: %v", err)
 	}
-	for _, s := range ok {
-		if err := ValidateTemplate(s); err != nil {
-			t.Errorf("ValidateTemplate rejected a valid template: %q\n  %v", s, err)
-		}
+	if err := ValidateTemplate(`SELECT count(*) AS v FROM t`); err == nil {
+		t.Error("a template with no window must be refused")
 	}
-}
-
-func TestValidateTemplateRejectsNonSelectAndMultiStatement(t *testing.T) {
-	bad := map[string]string{
-		"delete":         `DELETE FROM t WHERE d >= {{from}} AND d < {{to}}`,
-		"update":         `UPDATE t SET x = 1 WHERE d >= {{from}} AND d < {{to}}`,
-		"drop appended":  `SELECT 1 AS v WHERE d >= {{from}} AND d < {{to}}; DROP TABLE t`,
-		"two selects":    `SELECT 1 AS v WHERE d >= {{from}}; SELECT 1 WHERE d < {{to}}`,
-		"cte then write": `WITH w AS (SELECT 1) INSERT INTO t SELECT * FROM w WHERE d >= {{from}} AND d < {{to}}`,
-		"no window":      `SELECT count(*) AS v FROM t`,
-		"select into":    `SELECT * INTO t2 FROM t WHERE d >= {{from}} AND d < {{to}}`,
+	if err := ValidateTemplate(`SELECT 1 AS v WHERE d >= {{from}} AND d < {{to}}; DROP TABLE t`); err == nil {
+		t.Error("a second statement must be refused")
 	}
-	for name, s := range bad {
-		if err := ValidateTemplate(s); err == nil {
-			t.Errorf("%s: ValidateTemplate accepted an invalid template: %q", name, s)
-		}
-	}
-}
-
-// A semicolon or a keyword hidden in a comment must not fool the single-
-// statement or keyword checks.
-func TestValidateTemplateScrubsComments(t *testing.T) {
-	if err := ValidateTemplate("SELECT 1 AS v -- ; DROP TABLE t\nFROM t WHERE d >= {{from}} AND d < {{to}}"); err != nil {
-		t.Errorf("a comment holding ; and DROP should be ignored: %v", err)
-	}
-	if err := ValidateTemplate("SELECT 1 AS v /* delete */ FROM t WHERE d >= {{from}} AND d < {{to}}"); err != nil {
-		t.Errorf("a block comment holding a keyword should be ignored: %v", err)
+	// The gate's finding: an unknown token used to pass validate and fail at
+	// render, turning a 400 the admin could act on into a 500. Now it is refused
+	// where it can be reported.
+	if err := ValidateTemplate(`SELECT 1 AS v WHERE x = {{evil}} AND d >= {{from}} AND d < {{to}}`); err == nil {
+		t.Error("an unknown {{token}} must be refused at validate")
 	}
 }

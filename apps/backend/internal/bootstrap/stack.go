@@ -323,7 +323,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword,
 	)
 	s.MetabaseSync = app.NewMetabaseWarehouseSync(metabaseClient)
-	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
+	savedDashboardRepo := pgctl.NewSavedDashboardRepo(controlDB)
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
 	s.Documents = documentRepo
 
@@ -460,7 +460,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		Companies:           s.Companies,
 		Metabase:            metabaseClient,
 		MetabaseSource:      s.Connections,
-		Dashboards:          app.NewDashboardService(dashboardRepo, metabaseClient),
+		Dashboards:          app.NewMetabaseDashboardService(savedDashboardRepo, metabaseClient),
 		Scheduled:           s.ScheduledSvc,
 		Docs:                s.Docs,
 		Metrics:             s.Metrics,

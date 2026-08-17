@@ -62,7 +62,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewCompanyHandler(d.companySvc, d.embeddingSvc).
 		WithRequiredTLS(cfg.IsProduction()).
 		Register(authed)
-	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.dashboardSvc).Register(authed)
+	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.metabaseDashboardSvc).Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
 	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)
 	handlers.NewCookbookHandler(d.cookbookSvc).Register(authed)
@@ -92,8 +92,8 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewActionsHandler(d.actionSvc).Register(authed)
 	handlers.NewHTTPEndpointsHandler(d.httpEndpointSvc).Register(authed)
 	handlers.NewWebhooksHandler(d.webhookSubsSvc).Register(authed)
-	if d.dashboardSvc != nil {
-		handlers.NewDashboardHandler(d.dashboardSvc).Register(authed)
+	if d.metabaseDashboardSvc != nil {
+		handlers.NewDashboardHandler(d.metabaseDashboardSvc).Register(authed)
 	}
 	if d.scheduledSvc != nil {
 		handlers.NewScheduledTasksHandler(d.scheduledSvc).Register(authed)
@@ -275,7 +275,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewV1ChatHandler(
 		chatEnqueuerOrNil(d.chatEnq), d.threadRepo, d.msgRepo, turnUsageOrNil(d.usageRepo), d.rdb, d.idemStore,
 		time.Duration(cfg.APIV1SyncTimeoutSeconds)*time.Second,
-	).WithDashboards(d.dashboardSvc).Register(v1)
+	).WithDashboards(d.metabaseDashboardSvc).Register(v1)
 
 	webhookGroup := r.Group("/webhook")
 	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, d.waTransport, cfg.WhatsAppWebhookVerifyToken).

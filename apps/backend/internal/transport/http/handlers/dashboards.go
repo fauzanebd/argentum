@@ -8,10 +8,11 @@ import (
 	"github.com/fauzanebd/argentum/internal/app"
 )
 
-// DashboardHandler exposes saved dashboard endpoints.
-type DashboardHandler struct{ svc *app.DashboardService }
+// DashboardHandler exposes the Metabase-backed saved dashboard endpoints (006).
+// The native dashboards (056) get their own routes under T-D10.
+type DashboardHandler struct{ svc *app.MetabaseDashboardService }
 
-func NewDashboardHandler(svc *app.DashboardService) *DashboardHandler {
+func NewDashboardHandler(svc *app.MetabaseDashboardService) *DashboardHandler {
 	return &DashboardHandler{svc: svc}
 }
 
