@@ -11,6 +11,23 @@ four team routes. The rest of the gap is a hand-count that had drifted; the
 number above is left as written because the tables below, not the headline,
 are what this document is for.
 
+> **Re-checked 2026-08-17, and the honest headline is that this file lags the
+> router by a long way.** `cmd/api/policy.go` classifies **143** authenticated
+> `/api` routes today, against the ~74 this document's tables cover — the gap is
+> every surface added after `T-R5`: metrics, watchers, actions, agents and
+> bindings, API keys, embed keys and sessions, MCP servers, the cookbook,
+> message feedback, company profile, documents and shares, Slack, and all of
+> `/v1`. Those live in their own coverage docs
+> ([`api-foundation.md`](api-foundation.md), [`api-reports.md`](api-reports.md),
+> [`api-chat.md`](api-chat.md), [`api-keys.md`](api-keys.md),
+> [`metric-registry.md`](metric-registry.md), [`watchers.md`](watchers.md),
+> [`action-framework.md`](action-framework.md), [`embed-auth.md`](embed-auth.md),
+> [`mcp-source.md`](mcp-source.md)) and in `openapi/v1.yaml`, which is
+> generated and gated. **The tables below were corrected where they were
+> *wrong*; they are still not complete.** `TestEveryAuthedRouteIsClassified` and
+> the spec are the source of truth — this remains a reading copy, and the count
+> above is the number to check it against.
+
 `Auth` column: `—` public, `JWT` any authenticated member, `JWT+` admin only,
 `HMAC` signature-verified webhook.
 
@@ -108,10 +125,22 @@ are what this document is for.
 
 ## Dashboards and scheduled tasks
 
+**`/api/dashboards` changed hands in `T-D10` (2026-08-17).** It now serves
+dashboards this product executes itself; the Metabase-backed list moved to
+`/api/saved-dashboards`. The native one got the good name because it is the one
+that stays — `T-D15` removes the other. **There is deliberately no create or
+update route**: a dashboard is authored by the agent through `create_dashboard`,
+and a second authoring surface would be a second place for the validation rules
+to drift before there is a UI that needs one.
+
 | Method | Path                                          | Auth | Notes                     |
 | ------ | --------------------------------------------- | ---- | ------------------------- |
-| GET    | `/api/dashboards`                             | JWT  | Saved dashboards           |
-| DELETE | `/api/dashboards/:id`                         | JWT  | Delete                     |
+| GET    | `/api/dashboards`                             | JWT  | Native dashboards, definition only |
+| GET    | `/api/dashboards/:id`                         | JWT  | One spec                   |
+| GET    | `/api/dashboards/:id/data`                    | JWT  | Resolved panels. Separate from the definition on purpose: opening a dashboard runs a dozen queries against a tenant warehouse, and a client that only wants the title should not have to. `?refresh=1` is read and dropped until `T-D8` |
+| DELETE | `/api/dashboards/:id`                         | JWT+ | Admin — a dashboard is a dozen panels somebody's Monday depends on |
+| GET    | `/api/saved-dashboards`                       | JWT  | The Metabase-backed list, until `T-D15` |
+| DELETE | `/api/saved-dashboards/:id`                   | JWT  | Delete                     |
 | GET    | `/api/scheduled-tasks`                        | JWT  | List                       |
 | POST   | `/api/scheduled-tasks`                        | JWT  | Create                     |
 | GET    | `/api/scheduled-tasks/:id`                    | JWT  | Detail                     |
@@ -166,17 +195,39 @@ are what this document is for.
 
 ## Agent tools (worker in-process registry)
 
-Not HTTP-reachable. Registered in `cmd/worker/main.go:156`.
+Not HTTP-reachable. Built by `internal/tools.Registry()`
+(`internal/tools/registry.go:94-130`) — **not** `cmd/worker/main.go:156`, which
+is where this table said to look until 2026-08-17. `Names()` on that same list is
+what the agents API serves as checkboxes, so the registry cannot drift from the
+allowlist UI.
 
 | Tool                   | Params                                            | Metered as         | Conditional              |
 | ---------------------- | ------------------------------------------------- | ------------------ | ------------------------ |
 | `list_sources`         | —                                                 | —                  | always                    |
 | `get_schema`           | `source_id?`, `tables?`                           | —                  | always                    |
+| `list_metrics`         | —                                                 | —                  | always (empty without a registry) |
+| `query_metric`         | `metric_key`, `from?`, `to?`, `grain?`            | `sql_query`        | always                    |
 | `run_sql`              | `sql`, `source_id?`                               | `sql_query`        | always                    |
-| `create_visualization` | SQL + chart spec + `source_id?`                   | `metabase_card`    | always                    |
-| `create_dashboard`     | `cards[]` or `card_ids[]`                         | `metabase_dashboard` | always                  |
-| `generate_document`    | `format`, `content`, `spec_version?`, `locale?`, `currency?`, `meta?` | `document_generated` | only if `MINIO_ENDPOINT` |
+| `create_dashboard`     | `title`, `panels[]`, `description?`, `source_id?`, `filters?`, `timezone?` | `metabase_dashboard` — see below | always      |
 | `schedule_task`        | `name`, `prompt`, `cron_expression`, `timezone`   | —                  | always                    |
+| `ask_clarification`    | `question`                                        | —                  | always, and with no dependencies at all (`T-Q4`) |
+| `propose_action`       | `kind`, `params`                                  | —                  | always; refuses with "not configured" when no registry is wired |
+| `generate_document`    | `format`, `content`, `spec_version?`, `locale?`, `currency?`, `meta?` | `document_generated` | only if `MINIO_ENDPOINT` |
+
+Plus the tenant's own MCP tools, namespaced per registered server and discovered
+at runtime (`T-M1`→`T-M4`) — those are per-tenant and so not in a static table.
+
+**`create_visualization` is gone** (`T-D11`, 2026-08-17), and with it the
+four-calls-per-chart round trip. `create_dashboard` no longer takes `cards[]`;
+it carries every panel inline and returns `dashboard_id`, `url`, `row_count` and
+per-panel warnings.
+
+**Two metering names now lie, and the lie is deliberate.** A native dashboard is
+recorded as `metabase_dashboard` (`internal/domain/usage.go:15`, via
+`RecordMetabaseDashboard`) because renaming the event kind would split every
+historical rollup at an arbitrary date for a cosmetic gain. `metabase_card` is
+now a kind **nothing writes** — it stays defined so old rows still decode.
+Rename both when `T-D16` drops the Metabase columns, not before.
 
 `generate_document`'s parameters grew in `T-R2`. The contract is additive:
 `spec_version: 2` opts a PDF into the branded layout, and `locale` / `currency`

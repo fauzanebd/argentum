@@ -3,6 +3,17 @@
 Written 2026-07-26. Findings below were verified in source; each carries the file
 that proves it.
 
+> **Read as a snapshot, not as a to-do list (noted 2026-08-17).** Most of Part I
+> has been built since: watchers make the product initiate (`T-08`/`T-09`), the
+> action framework makes it act behind approval (`T-10`→`T-12b`), `/v1` and the
+> MCP server make it callable by other agents (`T-13`/`T-14`/`T-A1`→`T-A5`), the
+> widget puts it on the customer's own site (`T-19`→`T-23`), and dashboards are
+> native rather than Metabase links (`T-D11`). For what is true today, read
+> [`../coverage/feature-coverage.md`](../coverage/feature-coverage.md); for what
+> is left, the four roadmaps in [`../plan/`](../plan/). This file is kept
+> unedited because the *reasoning* — why an answering machine is a weaker
+> product than one that notices — is what the roadmaps were built from.
+
 ## Part I — The strategic gap
 
 ### Stated goal

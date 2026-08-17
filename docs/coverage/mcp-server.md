@@ -36,16 +36,23 @@ this ticket.
 | ---- | ----- |
 | `list_sources`, `get_schema`, `run_sql` | `read:data` |
 | `list_metrics`, `query_metric` | `read:metrics` |
-| `create_visualization`, `create_dashboard` | `write:visualizations` |
+| `create_dashboard` | `write:visualizations` |
 
-Seven, not eight: `list_watchers` was listed here and in the setup guide until
-the 2026-08-04 gate found that no such tool has ever existed (§7).
+**Six as of 2026-08-17**, and the count has now moved twice for two different
+reasons. It was written as eight; `list_watchers` came off when the 2026-08-04
+gate found that no such tool has ever existed (§7); `create_visualization` came
+off when `T-D11` deleted it along with the Metabase card it made. The scope
+outlived the tool deliberately — `write:visualizations` is re-pointed at
+`create_dashboard` rather than retired, because a scope is a permission name and
+retiring it would cost every integrator holding a key a rotation to buy nothing.
+The capability it grants is unchanged and still exactly one tool wide
+(`internal/mcpserver/server.go:56-69`).
 
 **Absent: `generate_document`, `schedule_task`, `propose_action`.** Each spends
 money, changes something outside Argentum, or produces an artifact somebody has
 to be told about. An MCP client is an agent we did not write, reasoning without
 our system prompt and without the guardrails a turn runs under — so it gets the
-read surface plus the two Metabase writes, and everything that changes the world
+read surface plus dashboard creation, and everything that changes the world
 stays behind a turn or behind `/v1`. A test asserts the exclusion by name, so
 adding one of them back is a deliberate edit rather than a registry change
 nobody noticed.

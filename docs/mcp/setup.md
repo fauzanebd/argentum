@@ -20,8 +20,7 @@ need:
 | `run_sql` | `read:data` | A read-only query. Always read-only — this is enforced in the driver, not in a prompt |
 | `list_metrics` | `read:metrics` | The metric registry: what is defined, and its grain |
 | `query_metric` | `read:metrics` | One defined metric's value for a window |
-| `create_visualization` | `write:visualizations` | A Metabase card |
-| `create_dashboard` | `write:visualizations` | A Metabase dashboard from cards |
+| `create_dashboard` | `write:visualizations` | A live dashboard: every panel in one call, stored as a spec Argentum runs itself, returned as a URL. Panels re-run when somebody opens it |
 
 **Scopes are fixed when the key is minted.** There is no edit — adding a
 capability means a new key. Mint the narrowest set that does the job; a key that
@@ -55,9 +54,14 @@ project:
 custom header will work. The server name in the handshake is `argentum`.
 
 Check it connected by asking your agent to list its tools; the Argentum ones are
-the seven in the table above, minus any this deployment does not run —
-`create_visualization` and `create_dashboard` are absent where Metabase is not
-configured.
+the six in the table above, minus any this deployment does not run.
+
+**Changed 2026-08-17.** `create_visualization` was removed with the Metabase
+card it created; `create_dashboard` now carries the panels itself and needs no
+Metabase. The `write:visualizations` scope is unchanged and now grants exactly
+that one tool, so **keys minted before this date keep working** — a scope is a
+permission name, not a tool name, and retiring it would have cost every
+integrator a rotation to buy nothing.
 
 Watchers are not on this surface. They are configured and read in the dashboard,
 and a breach reaches you as a message on your channels or as a
@@ -75,8 +79,8 @@ dashboard writes one for a user. Settings → API keys shows the traffic;
 Argentum — generating and storing a document, scheduling a task, proposing an
 action for approval — are not on this surface. An MCP client is an agent
 Argentum did not write, reasoning without Argentum's system prompt and without
-the guardrails a turn runs under, so what it gets is the read surface plus the
-two Metabase writes. Those capabilities stay behind a turn or behind `/v1`.
+the guardrails a turn runs under, so what it gets is the read surface plus
+dashboard creation. Those capabilities stay behind a turn or behind `/v1`.
 
 **Queries are read-only and capped.** `run_sql` runs inside a read-only
 transaction with a statement timeout, and results are capped at the same row and

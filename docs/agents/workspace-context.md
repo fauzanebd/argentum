@@ -14,13 +14,15 @@ pipeline.
 │   ├── backend/          Go: cmd/{api,worker,discord}, internal/, migrations/, config/, openapi/
 │   ├── dashboard/        React 18 + Vite + TanStack — the customer web app
 │   ├── landing/          React 18 + Vite — marketing site
+│   ├── render/           Node 22 + Remotion + ffmpeg — a video plan in over HTTP, an MP4 out (T-V2)
 │   └── widget/           Preact — embeddable chat widget (created in T-21)
 ├── packages/
 │   ├── api-types/        TS types generated from Go structs (T-02b)
 │   ├── argentum-node/    @argentum/sdk — the public API from Node (T-A4)
 │   ├── argentum-python/  argentum — the same, sync and async (T-A4)
 │   ├── openapi-tools/    Everything generated from openapi/v1.yaml (T-A4)
-│   └── chat-ui/          Chat components shared by dashboard + widget (T-21)
+│   ├── design-tokens/    One token source → dashboard CSS + Go report theme (T-R1); `make palette` gates the chart ramps
+│   └── motion/           The Remotion compositions a video plan is drawn with (T-V2)
 ├── docs/                 This documentation — now tracked
 ├── .github/workflows/    One pipeline, path-filtered per app
 ├── pnpm-workspace.yaml
@@ -65,8 +67,10 @@ Need to change...                      | Go to
 A business rule                        | `internal/app/*_service.go`
 An entity or repository contract        | `internal/domain/` — interface first, then adapter
 A SQL query against the control plane   | `internal/adapters/postgres/*_repo.go`
-Something the agent can do              | `internal/tools/` + register in `cmd/worker/main.go`
-The agent's instructions                | `buildSystemPrompt()` in `cmd/worker/main.go:426`
+Something the agent can do              | `internal/tools/` + register in `tools.Registry()` (`internal/tools/registry.go`) — one list, and `Names()` off it is what the allowlist UI offers
+The agent's instructions                | `internal/bootstrap/system_prompt.go` — `SystemPromptForTurn()` composes the tool catalog **per turn** from the tools that turn actually holds; there is no constant listing them
+A dashboard panel, filter or spec rule  | `internal/dashboard/` (binding, resolve) and `internal/dashboard/spec/` (shape, validation, projection)
+A rule about what SQL may contain       | `internal/sqlguard/` — one `ValidateStatement` serving the metric registry, a panel at save, the same panel at resolve
 A guardrail                             | `config/guardrails.yaml`
 An HTTP route                           | `internal/transport/http/handlers/` + `cmd/api/router.go` — **and an entry in `cmd/api/policy.go`**, or it 403s and CI fails
 Dependency wiring (API)                 | `cmd/api/bootstrap.go`
@@ -88,6 +92,8 @@ API client                   | `src/lib/api.ts`
 Auth state                   | `src/store/auth.ts` (Zustand)
 Live chat stream             | `src/features/chat/use-thread-stream.ts`
 Routing                      | `src/routes/index.tsx` (TanStack Router)
+A chart or dashboard panel   | `src/features/dashboards/panel.tsx` — recharts stays lazy behind `React.lazy`; a static import moved the main bundle 1,488 kB → 1,911 kB
+Chart colours                | **Not here.** `packages/design-tokens/tokens.json` → `make palette` gates both ramps → `tokens.generated.css`. A component picking its own hex is how a palette stops being measurable
 
 ## The eight things that will bite you
 

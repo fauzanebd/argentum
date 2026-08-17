@@ -110,6 +110,11 @@ docs/
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals
 │   ├── 01-tickets.md             Ticket-level, agent-executable units
+│   ├── 02-agent-quality-roadmap.md      T-Q1→T-Q9 smarter and more reliable
+│   ├── 03-security-hardening-roadmap.md T-H1→T-H15 what a review finds first
+│   ├── 04-native-dashboards-roadmap.md  T-D1→T-D21 replacing Metabase
+│   ├── 05-next-steps-and-dashboard-revision.md
+│   │                             T-Q10/T-U13 suggested next steps; T-D22/T-D23 revising a dashboard
 │   └── backlog.md                Deferred work with rationale
 └── agents/
     ├── workspace-context.md      Repo map, invariants, danger zones

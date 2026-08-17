@@ -6,8 +6,17 @@ measurement). These are actual results, not estimates.
 
 ## Headline
 
-> **Current reading, 2026-08-09: 46 of 73 Go packages have tests** (`go list -f
-> '{{if or .TestGoFiles .XTestGoFiles}}…'`). Was 43 of 69 on 2026-08-08; the
+> **Current reading, 2026-08-17: 52 of 76 Go packages have tests** (`go list -f
+> '{{if or .TestGoFiles .XTestGoFiles}}…'`). Was 46 of 73 on 2026-08-09. The
+> native dashboards build is the whole of the move and it went the right way:
+> `internal/dashboard`, `internal/dashboard/spec` and `internal/sqlguard` all
+> arrived **with** tests — `params_test.go`, `resolve_test.go`,
+> `project_test.go`, `validate_test.go`, `window_test.go`, `template_test.go`,
+> `statement_test.go` — and `internal/app/dashboard_service_test.go` grew with
+> the service. That is a phase where the numerator moved faster than the
+> denominator, which had not happened before.
+>
+> Previous reading, 2026-08-09: 46 of 73. Was 43 of 69 on 2026-08-08; the
 > video track added `internal/report/videoplan`, `internal/report/video`,
 > `internal/report/canvas` and `internal/report/flow`, and three of the four
 > arrived with their own tests. The denominator moved as much as the

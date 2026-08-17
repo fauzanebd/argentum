@@ -16,7 +16,10 @@ All paths below are relative to `apps/backend/` unless shown otherwise.
 ls apps/backend/migrations/control/ | tail -3
 ```
 
-Last applied is `022_report_branding` (`T-R5`). Sprint 1 pre-assigned numbers in
+Last applied is **`056_dashboards`** (`T-D5`, 2026-08-17) — the sentence here
+read `022_report_branding` for three weeks, which is exactly the drift the `ls`
+above exists to prevent, so run it rather than trusting this line. Sprint 1
+pre-assigned numbers in
 [`../../plan/01-tickets.md`](../../plan/01-tickets.md) — check that table before
 claiming, and note that the pre-assignment has now shifted **twice**: `T-04` was
 filed as `027` and landed as `021`, `T-R5` was filed as `030` and landed as

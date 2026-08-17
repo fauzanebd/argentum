@@ -371,6 +371,15 @@ Worth noting what this does **not** fix: `Smoke Test Co` and any tenant
 created outside the API keeps its NULL. If a future ticket finds
 `create_visualization` broken for a hand-seeded tenant, this is why.
 
+**Obsolete as of 2026-08-17, and worth keeping for the shape.** `T-D11` deleted
+`create_visualization`; `create_dashboard` is native and needs no Metabase
+database id, so no eval case depends on this sync any more. `syncToMetabase`
+still runs in `internal/eval/tenant.go` — idempotent, one round trip per source
+at setup — and its warnings now say that failing it is harmless. It goes with
+`T-D15`. The finding itself is the one to remember: **three cases were scoring
+the agent's reaction to a broken tool and reading as a capability result**,
+which is a failure mode no pass rate can show you.
+
 ---
 
 ## State left behind

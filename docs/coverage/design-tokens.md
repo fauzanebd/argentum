@@ -178,6 +178,28 @@ the tightest pair. **`T-R3` still owes the formal verification**: a colour-visio
 simulation and a greyscale contact sheet. The ladder is the design; the proof is
 that ticket's gate item.
 
+**Two ramps since 2026-08-17.** The eight above were verified against paper,
+deuteranopia and protanopia — and never against the surface a dashboard is drawn
+on, because when they were written the dashboard had no charts. On a dark card,
+series 2 (navy) measured **1.35:1** and series 7 (brown) **1.80:1**.
+`tokens.json` now carries `chart.paletteDark`, emitted under `.dark`, and
+`make palette` checks **both** ramps plus contrast against each ground. Four of
+the eight did not move — the method was measure-first and lift only the
+failures, so a reader switching theme does not re-learn which line is revenue.
+
+Two properties of the dark ramp that are decisions rather than results: it
+carries **no greyscale floor** (that floor exists for the office laser printer an
+enterprise PDF comes out of, and nothing prints a dark dashboard — a
+normal-vision ΔE floor of 15 replaces it), and the brand red stays put on both
+grounds, which is why it is the accent in both.
+
+**The new check also found debt in the light ramp, unfixed on purpose.** Amber
+2.04:1, grey 1.61:1 and azure 2.58:1 on white are below the 3:1 line for a
+non-text mark and have been since `T-R3`. Raising them re-renders the palette
+every delivered PDF was made with, so it is a **warning on every run rather than
+a gate** — visible instead of remembered. Full record:
+[`report-charts.md`](report-charts.md) §"The dark ramp".
+
 ## What `T-R2` inherits
 
 - `theme.MarotoConfig()` — A4, 18 mm margins, Space Grotesk as the default face,

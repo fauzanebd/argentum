@@ -9,11 +9,13 @@ Argentum is a multi-tenant, agentic business-intelligence assistant. A company
 signs up, registers one or more analytical databases (Postgres, MySQL, or SQL
 Server) with an encrypted DSN, and then asks questions in natural language from
 whichever surface they already live in: the web dashboard, WhatsApp, Discord, or
-Lark. An LLM agent introspects the schema, writes dialect-correct read-only SQL,
-executes it inside a read-only transaction, and answers in the user's language —
-Indonesian or English, with correct rupiah magnitude formatting. It can also
-build Metabase cards and dashboards, produce downloadable PDF/XLSX/CSV
-documents, and schedule any of that on a cron.
+Lark, Slack, or an embedded widget on the company's own site. An LLM agent
+introspects the schema, writes dialect-correct read-only SQL, executes it inside
+a read-only transaction, and answers in the user's language — Indonesian or
+English, with correct rupiah magnitude formatting. It can also build **live
+dashboards this product runs itself** (native since 2026-08-17; the Metabase
+card is gone), produce downloadable PDF / PPTX / XLSX / CSV / MP4 documents, and
+schedule any of that on a cron.
 
 ## 2. Who it is for
 
@@ -69,20 +71,35 @@ to decide continue-vs-fork. A rolling summary refreshes every
 
 ### 3.3 Agent tools
 
-Seven tools, registered in `cmd/worker/main.go`:
+**Ten tools as of 2026-08-17**, built by `internal/tools.Registry()`. This
+section was written against the seven that existed on 2026-07-26 and is updated
+here rather than left as a snapshot, because it is where a human is sent to read
+what the product does.
 
 | Tool                  | Purpose                                                                |
 | --------------------- | ---------------------------------------------------------------------- |
 | `list_sources`        | Enumerate the company's registered databases                            |
 | `get_schema`          | Tables, columns, relationships — optionally filtered to named tables     |
+| `list_metrics`        | The metric registry: what is defined, with its grain and window (`T-06`) |
+| `query_metric`        | One defined metric's value — an authoritative number rather than a re-derived one |
 | `run_sql`             | Read-only SELECT against one source                                     |
-| `create_visualization`| Metabase card from a SQL query, returns `dashboard_cards`               |
-| `create_dashboard`    | Combine cards into one dashboard with a shareable URL                   |
-| `generate_document`   | PDF / XLSX / CSV to S3-compatible storage, returns a presigned URL      |
+| `create_dashboard`    | A live dashboard: every panel in one call, stored as a spec this product executes, returned as a URL (`T-D11`) |
+| `generate_document`   | PDF / PPTX / XLSX / CSV / MP4 to S3-compatible storage, returns a presigned URL |
 | `schedule_task`       | Create a cron-scheduled agent task from within the conversation          |
+| `ask_clarification`   | Ask rather than guess, as a tool — because the alternative to asking is always another tool call (`T-Q4`) |
+| `propose_action`      | The only tool that changes something outside Argentum, and the only one the agent may propose but not perform (`T-10`) |
+
+Plus the tenant's own MCP server tools, namespaced and discovered at runtime
+(`T-M1`→`T-M4`).
+
+`create_visualization` was **deleted on 2026-08-17** with the Metabase card it
+created; a dashboard is native now, and the pair cost four tool calls for a
+three-panel answer.
 
 `generate_document` registers itself only when `MINIO_ENDPOINT` is set — the
-rest of the agent runs unchanged without object storage.
+rest of the agent runs unchanged without object storage. Every other tool
+registers unconditionally, so its name reaches the allowlist UI even where its
+dependency is absent.
 
 ### 3.4 Retrieval and context engineering
 

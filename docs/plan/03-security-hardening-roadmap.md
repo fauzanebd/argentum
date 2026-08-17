@@ -61,6 +61,27 @@ the `T-S…` scope tickets or the `S-n` finding codes in the research docs.
 > eighteen that were the standard library; the scanners are green at the commit
 > that adds them, which is the only state in which a blocking gate is honest.
 
+> **Revised 2026-08-17: `T-H4` step 1 is built** — `metric.ValidateTemplate`
+> moved to `internal/sqlguard.ValidateStatement(sql, declared, required…)`, so
+> one implementation now serves the metric registry, a dashboard panel at save,
+> and the same panel again at resolve. It shipped inside the native dashboards
+> build (`105ad5b`) rather than under this roadmap, and it closed a gap the
+> registry's live gate had found: an undeclared `{{token}}` was checked for
+> presence and never for absence, so it passed save and failed at render — a 500
+> where the admin should have had a 400 naming the token. **Steps 2 and 3 of
+> `T-H4` remain unbuilt**, and so do `T-H6`, `T-H8`, `T-H9`, `T-H11`, `T-H12`
+> and `T-H14`.
+>
+> **And `T-H13`'s gate ran on 2026-08-16 — it blocked, on its first real
+> push.** `GO-2026-6222`: excessive memory allocation decoding VP8L in
+> `golang.org/x/image@v0.43.0`, with a reachable trace through
+> `internal/branding/service.go:197` → `NormalizeLogo` → `image.Decode`, whose
+> input is a tenant's uploaded logo. Bumped to `v0.45.0`. Nothing in the tree
+> changed to cause it; the advisory database moved under a hand-run check
+> recorded green two days earlier, which is the entire argument for the job
+> existing. `dependency-review` is still unrun — it is gated on `pull_request`
+> and nothing has opened one.
+
 > **Nothing in Tracks B, C or D is code-complete.** This roadmap was written
 > from a read of the shipped code, not from a test run, and one item in Track A
 > was a live authentication bypass rather than a hardening idea. That one is

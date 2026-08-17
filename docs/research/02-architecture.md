@@ -132,7 +132,15 @@ threads.
 
 ## 5. Control-plane schema evolution
 
-20 forward migrations tell the product's history precisely:
+**56 forward migrations as of 2026-08-17, all 56 with a `.down.sql`.** The table
+below is the first twenty, kept as written because it is the history this
+document was built to explain; `021`→`056` are the Sprint 1–3 tracks —
+report branding, RBAC, the audit log, metrics and watchers, actions, API keys,
+the agent roster, business context, embed keys and widget config, message
+feedback, the query cookbook, and `056_dashboards`. Read
+`migrations/control/` for the current list rather than this table.
+
+The first twenty tell the product's early history precisely:
 
 | #   | Migration                          | What it unlocked                      |
 | --- | ---------------------------------- | ------------------------------------- |
@@ -157,13 +165,19 @@ threads.
 | 019 | allowed_lark_users                 | Lark allowlist                        |
 | 020 | thread_lark                        | Lark thread keying                    |
 
-**Only 015–020 have `.down.sql` files.** 001–014 are irreversible. See gap
-analysis.
+**Corrected 2026-08-17: every migration has a `.down.sql`, all 56 of them.**
+This section said *"only 015–020 have down files; 001–014 are irreversible"*,
+and the delivery log's own patterns list carried "no down migrations after 014"
+as a standing weakness. Both were true when written and neither is now —
+`001_init.down.sql` through `014` exist on disk. The `add-migration` playbook's
+"both files, always" rule is the one that closed it. See gap analysis for the
+finding's original form.
 
 ## 6. Configuration surface
 
-`internal/config/config.go` — 494 lines, ~75 environment variables, all read
-through `getEnv`/`getEnvAsInt` with defaults, validated in `Validate()`.
+`internal/config/config.go` — **970 lines and ~120 `getEnv*` reads as of
+2026-08-17** (was 494 lines / ~75 variables on 2026-07-26), all with defaults,
+validated in `Validate()`.
 
 Required (hard failure on boot): `LLM_API_KEY`, `ARGENTUM_JWT_SECRET`,
 `ARGENTUM_DSN_KEY`, `DB_PASSWORD`, and provider-conditional WhatsApp credentials.

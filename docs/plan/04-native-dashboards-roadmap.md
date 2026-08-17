@@ -16,7 +16,25 @@ tickets in `02-agent-quality-roadmap.md`, or the `S-n` finding codes.
 > All of it is in [Correction log](#correction-log) at the end; everything above
 > that section is already corrected.
 >
-> **What moved since `cc06dc7`:** nothing in the code.
+> **Status, 2026-08-17 — most of this roadmap is now built.** Eight commits
+> (`105ad5b`→`12ba63e`) landed `T-H4` step 1, `T-D3`→`T-D7`, `T-D10` and
+> `T-D11`, plus three surfaces of Track F: the chart primitive and its dark ramp
+> (`T-D17`/`T-D18`), the `/dashboards` routes and page (`T-D19`), the data
+> plumbing and generated types (`T-D20`), and one surface this roadmap never
+> carried — a dashboard drawn inside the chat transcript. Gated live the same
+> day: migration `056` up/down/up against the real control database, one
+> authored dashboard from a real turn, and the first panel ever opened in a
+> browser. **Three defects, all fixed in the sitting**
+> ([`../coverage/native-dashboards.md`](../coverage/native-dashboards.md),
+> [`../coverage/delivery-log.md`](../coverage/delivery-log.md) Phase 2t).
+>
+> **What is left:** `T-D8` (panel cache) and `T-D9` (query log) in Track C — so
+> every open runs every panel against the tenant warehouse; `T-D13` (sharing) and
+> `T-D21` (the share page), which is why *public* embedding is still a Metabase
+> sentence; and Track E's decommission, `T-D15`/`T-D16`. `T-D14` does not exist
+> and never did — the numbering skips it.
+>
+> **What moved between `cc06dc7` and that build:** nothing in the code.
 > `git diff --stat cc06dc7 HEAD` is two files, both of them roadmaps in this
 > folder. Sprint 3's `T-U1`→`T-U11` UI work landed at `c5f979b` and earlier,
 > which is an *ancestor* of `cc06dc7` — so it was already inside the previous

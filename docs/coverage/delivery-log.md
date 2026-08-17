@@ -3094,6 +3094,96 @@ the ticket exists — and it took eleven days from the ticket landing to the job
 ever executing. `dependency-review` is still unrun: it is gated on
 `github.event_name == 'pull_request'`, and nothing has opened one.
 
+## Phase 2t — The dashboard stops being Metabase's (2026-08-17)
+
+Eight commits, `105ad5b`→`12ba63e`: `T-H4` step 1, `T-D3`→`T-D7`, `T-D10`,
+`T-D11`, plus three surfaces the roadmap did not carry — the chart drawn inside
+the chat transcript, the dashboards page and its nav entry, and a dark ramp for
+the chart palette. Track F's `T-D17`/`T-D18`/`T-D19`/`T-D20` are substantially
+covered by those three; `T-D8` (panel cache), `T-D9` (query log) and Tracks
+D-sharing/E-decommission are not built.
+
+**The shape of it.** A dashboard is now a stored *spec* this product executes —
+panels bind filter values as query parameters and never interpolate them, a
+`date_range` named `period` binds `{{period_from}}`/`{{period_to}}`, a stored
+default is a preset *name* (`last_30d`, `qtd`, …) rather than two timestamps,
+and resolve caps 2000/500/2 rows by viz across four concurrent panels under a
+15s deadline each. `create_visualization` and `thread_cards.go` are deleted with
+the pair they belonged to. That deletion also removed a standing violation of
+`workspace-context.md` §2: `create_dashboard` used to resolve "the cards made
+earlier in this conversation" out of a package-level map, which does not survive
+a worker restart and is wrong the moment there are two workers.
+
+**1. The gate paid for the sixth time in six, and both defects were the
+model's-eye view.** Stack up, `moonshotai/kimi-k2.6`, one real turn.
+
+- `create_dashboard` **refused a call that omitted `source_id`** on a
+  one-source company, because it was the only data tool not going through
+  `ResolveSource` — the choke point that fills the source in and enforces the
+  roster's allowlist. The turn spent an iteration learning a rule the product
+  does not have.
+- **An empty dashboard, described in confident prose.** The agent queried
+  2020→2025, found six months of data, then gave the dashboard the default
+  `last_30d` window. The demo warehouse holds July–December 2024; in 2026 that
+  window matches nothing, so every panel drew zero rows while the reply quoted
+  *"$12.73B"* from its own `run_sql` calls. Validate-on-save warned on a panel
+  *error*, and "matched no rows" is not an error — it is the correct result of
+  the window it was given. This is the metric registry's `Rp 0` finding from the
+  other side, and the fix is the same one: the tool has to say which of the two
+  it is. `dryRun` now warns on a zero-row panel with the window in the message,
+  and `spec.Project` sets the note on every viz rather than only on a KPI.
+
+Re-run, same question: one `create_dashboard` call, and the model passed the
+warning to the user in its own words — *"The demo dataset contains sales from
+July 2024 to December 2024… adjust the Period filter"*. Migration `056` was
+gated the same sitting: up, down against a populated table, up again, against
+the real control database, with `ON DELETE RESTRICT` proven by Postgres refusing
+to delete a connection a dashboard reads
+([`native-dashboards.md`](native-dashboards.md)).
+
+**2. Eight chart colours had never been measured against the surface they are
+now drawn on.** The ladder was gated against greyscale, deuteranopia and
+protanopia — for paper. When the transcript started drawing panels, series 2
+(navy) was **1.35:1** and series 7 (brown) **1.80:1** against the dark card.
+`tokens.json` gains `chart.paletteDark`, emitted under `.dark`, and **four of
+the eight did not move**: the method was measure-first and lift only the
+failures, so switching theme does not make a reader re-learn which line is
+revenue. Dark ramp measured by `make palette`: normal-vision ΔE 19.6,
+deuteranopia 14.2, protanopia 13.0, weakest contrast 3.52:1. The dark ramp
+carries **no greyscale floor** — that floor exists for the office laser printer
+an enterprise PDF comes out of, and nothing prints a dark dashboard.
+
+**And the new check found debt in the light ramp that this phase did not
+fix.** Amber 2.04:1, grey 1.61:1 and azure 2.58:1 on white are below the 3:1
+line for a non-text mark, and have been since `T-R3`. Raising them re-renders
+the palette every delivered PDF was made with. It is a warning on every run
+rather than a gate, so the debt is visible instead of remembered.
+
+**3. The first screenshot found the third defect, which is the argument for
+screenshots.** Monthly revenue on the demo warehouse is in the billions;
+`3,240,929,900` does not fit a 48px axis gutter, so three different ticks
+rendered as the same clipped `100,000`. **A chart whose axis contradicts its own
+bars is worse than one with no axis** — nothing tells the reader the number is
+wrong. Axis ticks now have their own compact formatter (`3.2B`) in the viewer's
+locale and 56px of gutter; the tooltip keeps full precision. Two formatters
+rather than one with a flag: an axis says how big, a tooltip says how much.
+
+**What this phase owes.** `T-D8` and `T-D9` are unbuilt, so every open of a
+dashboard runs every panel against the tenant warehouse — the caps hold, but
+nothing collapses two viewers opening the same dashboard at once. The browser
+half is now *partly* run (the panel grid and the axis fix were seen; the
+`/dashboards` list page, the chat embed and the dark ramp on a real dark card
+were not). And the eval set's chart cases were rewritten to assert
+`create_dashboard` rather than the deleted pair, with nothing scored since.
+
+**One process note, and it is the reason this entry exists.** These eight
+commits sat on `main` for a day with no entry here and no coverage row moved —
+`feature-coverage.md` still advertised Metabase card creation as a capability
+and the MCP row still named a tool that had been deleted. The docs were brought
+back to the tree on 2026-08-17; what made them drift was that the work landed in
+one long sitting and the record was written for the *ticket* (`native-dashboards.md`)
+rather than for the *product*.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**
@@ -3110,15 +3200,22 @@ ever executing. `dependency-review` is still unrun: it is gated on
   `IncludeIntermediateMessages` is set, which false positive each regex narrowing
   fixed). This is what makes the codebase agent-friendly.
 
-**Patterns worth changing:**
+**Patterns worth changing** — written 2026-07-26 against the pre-Sprint-1 tree.
+**Re-measured 2026-08-17, and three of the four have closed:**
 
-- **Zero tests accompany any feature commit.** All three existing test files
-  predate or are incidental to the feature work.
-- **Prompt and model changes ship blind.** Six commits changed agent behaviour
-  with no regression signal, including one reversal.
-- **No down migrations after 014.** Only the Discord/Lark batch has them.
-- **`internal/app` grows unchecked** — ~2,900 lines across 18 files, the highest
-  churn and highest risk in the repo, entirely untested.
+- ~~**Zero tests accompany any feature commit.**~~ **Closed.** 52 of 76 Go
+  packages have tests, and the native dashboards build shipped seven new test
+  files with the code they test.
+- ~~**Prompt and model changes ship blind.**~~ **Closed by `T-Q1`→`T-Q9` and the
+  eval set**, with the caveat that the instrument now has a known ±2-case noise
+  band and one owed re-score (Phase 2s, §4).
+- ~~**No down migrations after 014.**~~ **Closed.** All 56 migrations have a
+  `.down.sql`; `056` was proven down-then-up against a populated table.
+- **`internal/app` grows unchecked** — **still true, and much larger**: ~29,600
+  lines across 96 files, up from ~2,900 across 18. What changed is that it is no
+  longer *untested* — 49 of those files are tests. The highest-churn package in
+  the repo is now the one with the most test files, which is the right
+  direction and not the same thing as being safe to edit.
 
 ## Feature velocity, measured
 

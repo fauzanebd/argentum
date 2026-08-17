@@ -3,6 +3,20 @@
 First measured agent-quality signal this project has had. Every prompt or model
 change from here is compared against this number.
 
+> **Where the current numbers are, 2026-08-17.** The set is **56 cases**
+> (`apps/backend/testdata/eval/golden.yaml`), not the 40 or 55 the entries below
+> reason about, and the scores that matter now live in
+> [`eval-q1.md`](eval-q1.md) and [`delivery-log.md`](delivery-log.md) Phases
+> 2o / 2p / 2s — including the finding that this set has a **±2-case
+> run-to-run noise band**, so a one-case delta is not a result. Two structural
+> changes since: every `indonesian` case now carries `must_not_call` (a
+> restraint rule written in English had only ever been tested in English), and
+> **the chart cases assert `create_dashboard`** — `create_visualization` was
+> deleted with the Metabase card on 2026-08-17, so the three `chart_dashboard`
+> cases and every `no_chart_wanted` negative were rewritten against the single
+> tool. **Nothing has been scored since that rewrite**, which is the one rule-1
+> re-run this file is owed.
+
 > **2026-08-13 — a 87.5% (35/40) that this file does not accept as a
 > measurement of current `main`.** It was run at commit `4caf1fa`, 45 commits
 > behind, on the 40-case set — so it scores the agent *before* `T-Q1`→`T-Q9` and

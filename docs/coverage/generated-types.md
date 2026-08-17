@@ -223,6 +223,23 @@ usable.
 
 ---
 
+## Modules added since (2026-08-17)
+
+`T-D11`'s frontend half added two packages to `tygo.yaml`, both unbarrelled for
+the reason `videoplan` is: `internal/dashboard/spec` → `src/dashboardspec.ts`
+and `internal/dashboard` → `src/dashboard.ts`. `Dashboard`, `Panel`, `Filter`
+and `Series` are names a shared namespace should not be handed, so they are
+imported explicitly by the two components that draw them.
+
+One generator limit surfaced doing it: **tygo renders `15 * time.Second` as
+`15 * any`**, which does not compile. `Result` moved to its own file
+(`internal/dashboard/result.go`) to keep the constant out of the emitted set —
+worth knowing before adding a package whose types sit beside a duration
+constant.
+
+The current emitted set is `domain.ts`, `api.ts`, `events.ts`, `dashboard.ts`,
+`dashboardspec.ts`, `videoplan.ts` and `webhooks.ts`.
+
 ## Limits
 
 - **`/api` envelopes are still untyped.** Forty responses are `gin.H`

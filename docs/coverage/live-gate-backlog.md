@@ -56,6 +56,15 @@ workspace, a real handset, a Kubernetes cluster, a second browser, or an
 operator.** Nothing is blocked on writing code, and nothing is blocked on the
 stack.
 
+**Revised 2026-08-17 — §1e, and the bucket has now paid seven times out of
+seven.** The native dashboards build owed three gates and none of them needed
+money: migration `056` against the real control database, one authored dashboard
+from a live turn, and **a browser**. Three defects, all fixed in the sitting.
+The third one is why this revision matters more than the count: every gate in
+this file until now was driven through HTTP, `psql` or JSON-RPC, so the class of
+defect where the data is right and the *rendering* misstates it had no way to be
+caught. It took a minute to find one.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of three things: the stack up, money spent, or a message sent to a real
 person's phone.
@@ -289,6 +298,29 @@ same registry instance rather than reimplementing it: a `read:data` key and
 three JSON-RPC posts run the exact code path a turn runs, with the arguments
 chosen by the gate. What it cannot show is a *model-generated* statement
 carrying the literals, which is the half no stack can supply anyway.
+
+## 1e. ~~Owed by the native dashboards build~~ — run 2026-08-17, and a browser finally opened
+
+The seventh sitting, and the seventh to find something. `T-D3`→`T-D7`, `T-D10`
+and `T-D11` landed in one day with three gates owed: the migration against a real
+Postgres, a dashboard authored by a real turn, and — for the first time in this
+file — **a screen looked at**.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-D5` | Migration `056` up, down against a populated table, and up again, against the real control database | **Pass, 2026-08-17.** 12 columns, 3 indexes, all four FK rules as designed, and `ON DELETE RESTRICT` proven rather than read — Postgres refused to delete a connection a stored dashboard reads. DSN key-health read `total 21, undecryptable 2`, the expected number §1d predicted |
+| `T-D11` | One real turn on a live model authoring a dashboard end to end | **Two defects, both fixed and re-proven in the sitting.** `create_dashboard` refused a call with no `source_id` on a one-source company — the only data tool not going through `ResolveSource`; and a dashboard whose default window matched nothing was saved clean and described in confident prose beside `$12.73B` from the turn's own `run_sql`. `dryRun` now warns on a zero-row panel with the window in the message ([`native-dashboards.md`](native-dashboards.md) §1) |
+| `T-D11` frontend | Open a panel in a browser | **One defect, and it is the cheapest one in this file.** Monthly revenue in the billions clipped three different axis ticks to the same `100,000` in a 48px gutter — an axis contradicting its own bars. Compact axis formatter and 56px; the tooltip keeps full precision ([`native-dashboards.md`](native-dashboards.md) §1a) |
+
+**The lesson this sitting adds to the six before it: a screenshot is a gate, and
+this file had no bucket for one.** Every prior entry was driven through HTTP,
+`psql` or a JSON-RPC post, so a whole class of defect — the kind where the data
+is right and the rendering lies about it — had no way to be found. It cost about
+a minute.
+
+**Still owed on this build, and it needs no money either:** the `/dashboards`
+list page, the chat embed inside a real transcript, and the dark ramp on a real
+dark card. `T-D8` and `T-D9` are unbuilt rather than ungated.
 
 ## 2. Needs the stack **and** real LLM spend
 

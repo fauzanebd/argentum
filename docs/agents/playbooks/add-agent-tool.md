@@ -1,8 +1,10 @@
 # Playbook: Add an Agent Tool
 
-The most common extension in this codebase. Seven tools exist; follow their shape
-exactly. Reference implementation: `internal/tools/run_sql.go` (simple) and
-`internal/tools/schedule_task.go` (calls into a service).
+The most common extension in this codebase. **Ten tools exist** (2026-08-17);
+follow their shape exactly. Reference implementation:
+`internal/tools/run_sql.go` (simple), `internal/tools/schedule_task.go` (calls
+into a service), and `internal/tools/create_dashboard.go` (a service call whose
+result the model has to act on).
 
 **Time:** 0.5–1.5d depending on whether it needs new persistence.
 **Paths** are relative to `apps/backend/`.
@@ -120,6 +122,21 @@ func (t *MyThingTool) Execute(ctx context.Context, args string) (string, error) 
 5. **Meter it** if it costs money.
 6. **Use `ResolveSource`** (`internal/tools/source_resolve.go`) for source
    resolution. Do not reimplement the 0/1/many logic.
+7. **A caller mistake is a *result*, not a Go error.** Measured twice: a
+   `query_metric` window carrying one bound returned an error, and deepseek
+   answered it by re-sending the identical call **seven times** in one turn
+   before the budget stopped it — narrating the correction it never made. Return
+   a normal JSON result that says what is wrong and what would be right
+   (`unknownKey` and `halfWindow` are the pattern), with `row_count: 0` so the
+   fabrication check cannot ground a figure on it. Reserve `error` for things
+   the model cannot fix by calling differently.
+8. **Return `row_count`.** `guardrails.CheckFabrication` grounds the reply on
+   `TurnEvidence.DataRows`; a data tool that omits it gets every answer built on
+   it suppressed.
+9. **Say when a correct result is empty.** "Matched no rows" is not an error and
+   is not a zero — both `query_metric` and `create_dashboard` shipped answering
+   one as the other, and both times the model reported a confident number beside
+   nothing. Put the covered window in the note.
 
 ## Step 3 — Extend `UsageRecorder` if the tool costs money
 
@@ -143,42 +160,74 @@ Do both.**
 
 ## Step 4 — Register it
 
-`cmd/worker/main.go`, in the `agentTools` slice (~line 156):
+**`internal/tools/registry.go`, in `Registry()`** — one construction site, not
+`cmd/worker/main.go` (which is where this playbook pointed until 2026-08-17).
+Add the dependency to `RegistryDeps` and the constructor to the `ts` slice:
 
 ```go
-agentTools := []interfaces.Tool{
-    tools.NewListSourcesTool(connRepo),
-    getSchemaTool,
+ts := []interfaces.Tool{
+    NewListSourcesTool(d.Connections),
+    schema,
     // ...
-    tools.NewMyThingTool(myThingRepo, usageSvc),
+    NewMyThingTool(d.MyThing, d.Usage),
 }
 ```
 
-Conditional registration when the tool needs optional infrastructure — copy the
-`generate_document` pattern:
+**Register unconditionally, and make a nil dependency legal.** `Metrics`,
+`Actions` and `Dashboards` all do this: the tool registers with a nil service and
+reports *"not configured"* if executed. The reason is that the API builds this
+same registry **name-only** to serve the agent allowlist checkboxes and the
+template vocabulary — a tool that registers only when its service is wired is a
+capability no admin can ever tick.
 
-```go
-if storageSvc != nil {
-    agentTools = append(agentTools, tools.NewGenerateDocumentTool(...))
-}
-```
+The one real exception is `generate_document` with `Docs == nil`: object storage
+absent means the tool would be registered and broken, so it is left out.
+`Renders` shows the third case — a dependency that changes a tool's *vocabulary*
+(the `mp4` enum value) rather than its behaviour, which must not be offered when
+nothing can produce it.
 
-Once T-05 lands, wrap with the audit decorator.
+The worker wraps what comes back in the budget guard and the audit recorder
+(`T-16`, `T-05`); `cmd/mcp` wraps the same instance. **Do not wrap inside the
+tool** — a second decorator chain is a second place for the audit rule to be
+wrong.
+
+**If the tool reads tenant data, go through `ResolveSource`.** That is the choke
+point that fills in `source_id` on a one-source company and enforces the agent's
+source allowlist (`T-S2`). `create_dashboard` skipped it, and the 2026-08-17
+live gate found it refusing a call that omitted a field the product does not
+require.
 
 ## Step 5 — Tell the agent it exists
 
-`buildSystemPrompt()` in `cmd/worker/main.go`. Add to the tool list:
+**`internal/bootstrap/system_prompt.go`** — `SystemPromptForTurn()` composes the
+catalog **per turn** from the tools that turn actually holds. There is no
+constant listing every tool: one existed, it named all nine while `filterTools`
+handed the model a subset, and a Sales agent was told it could write PDFs it had
+no tool for.
+
+Add the tool's line to the catalog source, and a numbered guideline if there are
+ordering or preference rules — e.g. "prefer `query_metric` over `run_sql` when a
+metric covers the question". Both are composed from the tool list, so a
+guideline that mentions a tool the turn does not hold must not appear.
 
 ```
 - my_thing: Do the thing for one source. Pass source_id when more than one
   source is registered. Returns id and status.
 ```
 
-Add a numbered guideline if there are ordering or preference rules — e.g. "prefer
-`query_metric` over `run_sql` when a metric covers the question".
-
 **A tool the prompt does not mention gets called rarely and badly.** This step is
 not optional.
+
+## Step 5b — Give existing agents access
+
+A new tool reaches **no existing agent**: `agents.allowed_tools` is an explicit
+list, written when the agent was created. Two edits, both required:
+
+- `config/agent_templates.yaml` — add it to `suggested_tools` on the cards where
+  it belongs, so new agents get it pre-ticked. A name no registry knows fails
+  the golden test at build time, which is the point.
+- A backfill migration for the agents that already exist — copy `043`/`044`,
+  and narrow it the way those do rather than granting to everything.
 
 ## Step 6 — Test
 

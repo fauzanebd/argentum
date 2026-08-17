@@ -110,13 +110,32 @@ blank chart against a table of billions.
 
 ---
 
+## 1a. The browser, opened — and the third defect (2026-08-17, later)
+
+The sentence below used to read *"nothing here has been opened in a browser"*.
+It was true for about an hour. The first screenshot of a real panel found a
+defect the API gate could not have: **an axis that misstated its own scale.**
+
+Monthly revenue on the demo warehouse is in the billions. `3,240,929,900` does
+not fit a 48px axis gutter, so three different ticks rendered as the same
+clipped `100,000` — a chart whose axis contradicts its own bars, with nothing to
+tell the reader which one is lying. Axis ticks now carry their own compact
+formatter (`3.2B`) in the viewer's locale, with 56px of gutter; the tooltip
+keeps full precision, because that is where somebody goes to read a number
+rather than a shape. Two formatters rather than one with a flag: an axis says
+how big, a tooltip says how much. Re-read in the browser as 0 / 1B / 2B / 3B /
+4B (`apps/dashboard/src/features/dashboards/panel.tsx`).
+
+The dark ramp landed in the same sitting for the same reason — the eight chart
+colours had been gated against paper and never against a dark card, where series
+2 sat at 1.35:1. That record is in
+[`report-charts.md`](report-charts.md) §"The dark ramp".
+
 ## 2. What is still owed
 
-**The browser.** Nothing here has been opened in one: the panels, the chat
-embed, the dark ramp on a real dark card, and the `/dashboards` page are all
-unverified visually. The API half is proven end to end; what a screenshot would
-add is that the chart renders where the link is and reads correctly in both
-themes.
+**The rest of the browser.** One panel grid has now been seen. The
+`/dashboards` list page, the chat embed in a real transcript, and the dark ramp
+on a real dark card have not.
 
 **`T-D8` and `T-D9`** — the panel cache and the query log — are not built, so
 today every open of a dashboard runs every panel against the tenant warehouse.
