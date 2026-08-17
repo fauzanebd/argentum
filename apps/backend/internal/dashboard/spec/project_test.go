@@ -150,6 +150,56 @@ func TestProjectTablePassesTheResultThrough(t *testing.T) {
 	}
 }
 
+// A table declaring `fmt: currency` printed `20727672550.00` in the browser
+// (2026-08-17) while the chart beside it wrote the same figure grouped. The
+// browser's formatter only applies a Fmt to a number, and a Postgres `numeric`
+// arrives as a string — so the coercion every other viz does through cell() has
+// to happen here too.
+func TestProjectTableGivesTheBrowserNumbersItCanFormat(t *testing.T) {
+	p := &Panel{ID: "t", Viz: VizTable, Fmt: FmtCurrency}
+	res := result([]string{"revenue", "share", "n"},
+		map[string]any{"revenue": "20727672550.00", "share": []byte("-0.5"), "n": int64(3)},
+	)
+	got, err := Project(p, res)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	if v, ok := got.Rows[0]["revenue"].(float64); !ok || v != 20727672550 {
+		t.Errorf("revenue = %#v, want the number 20727672550", got.Rows[0]["revenue"])
+	}
+	if v, ok := got.Rows[0]["share"].(float64); !ok || v != -0.5 {
+		t.Errorf("share = %#v, want the number -0.5", got.Rows[0]["share"])
+	}
+	if got.Rows[0]["n"] != int64(3) {
+		t.Errorf("an int64 must travel as it arrived, got %#v", got.Rows[0]["n"])
+	}
+}
+
+// The narrowing that keeps the fix from being worse than the defect: a table is
+// the one panel that draws columns nobody mapped, and half of them are codes.
+func TestProjectTableLeavesIdentifiersAlone(t *testing.T) {
+	p := &Panel{ID: "t", Viz: VizTable}
+	res := result([]string{"phone", "sku", "intl", "sci", "when", "note"},
+		map[string]any{
+			"phone": "081234567890", // a leading zero is a code, not a quantity
+			"sku":   "00123",        // padded, and the padding is the meaning
+			"intl":  "+6281234567",  // a sign in the middle of a phone number
+			"sci":   "1e6",          // not how a driver writes a numeric
+			"when":  "2024-11-01",   // a date is not an arithmetic expression
+			"note":  " 42 ",         // whitespace means somebody typed it
+		},
+	)
+	got, err := Project(p, res)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	for _, col := range res.Columns {
+		if _, coerced := got.Rows[0][col].(float64); coerced {
+			t.Errorf("%s was turned into a number: %#v", col, got.Rows[0][col])
+		}
+	}
+}
+
 // Drivers return numbers as whatever their protocol carried; a chart must not
 // care which.
 func TestProjectCoercesTheShapesDriversReturn(t *testing.T) {

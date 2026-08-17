@@ -120,7 +120,9 @@ func restatesAFigure(s string) bool {
 // Off is the default for a runner nobody configures, which is every test and the
 // eval harness: the pass changes what a turn costs and how long it takes, so a
 // caller that has not said yes gets the turn it had before this ticket, byte for
-// byte. bootstrap says yes unless NEXT_STEPS_ENABLED=false.
+// byte. bootstrap says yes only on NEXT_STEPS_ENABLED=true, which since
+// 2026-08-17 is a deployment opting in rather than opting out — the pass measured
+// 12,962 ms in front of the `final` event on the light tier that gated it.
 func (r *ChatRunner) WithNextSteps(enabled bool, budget BudgetChecker) *ChatRunner {
 	r.nextSteps = enabled
 	r.nextStepsBudget = budget

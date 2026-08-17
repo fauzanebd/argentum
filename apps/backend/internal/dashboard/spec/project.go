@@ -2,6 +2,7 @@ package spec
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -87,8 +88,10 @@ func Project(p *Panel, res *db.QueryResult) (*Resolved, error) {
 
 	switch p.Viz {
 	case VizTable:
-		// A table draws what the query returned, in the order it returned it.
-		out.Columns, out.Rows = res.Columns, res.Rows
+		// A table draws what the query returned, in the order it returned it —
+		// with the numbers arriving as numbers, which is not the same thing as
+		// arriving untouched.
+		out.Columns, out.Rows = res.Columns, tableRows(res.Rows)
 		return out, nil
 	case VizKPI:
 		return projectKPI(p, res, out)
@@ -258,6 +261,64 @@ func projectLong(p *Panel, res *db.QueryResult, out *Resolved) (*Resolved, error
 		out.Series = append(out.Series, Series{Name: name, Points: pts})
 	}
 	return out, nil
+}
+
+// tableRows copies a result's rows with driver-stringified numbers turned back
+// into numbers.
+//
+// **Found in the browser, 2026-08-17.** A table panel declaring `fmt: currency`
+// printed `20727672550.00` beside charts that wrote `20,727,672,550` from the
+// same query. The panel's Fmt travels to the browser precisely so one place
+// decides how a number is written, and the browser's formatter can only apply it
+// to a number: `typeof v !== "number"` falls through to String(v). A Postgres
+// `numeric` — which is what SUM over money returns — is scanned as a string, so
+// every other viz coerced it through cell() and the table alone did not.
+//
+// The coercion is deliberately narrow, because a table is the one panel that
+// draws columns nobody mapped: only a *canonical* decimal literal is a number.
+// A leading zero is a code, not a quantity — an Indonesian phone number
+// (`081234567890`), a padded SKU, a bank account — and formatting one with
+// thousands separators is a worse defect than the one this fixes. So is a `+62`
+// prefix, an exponent, or anything with a space in it. Everything unrecognised
+// travels exactly as it did before.
+func tableRows(in []map[string]any) []map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(in))
+	for _, row := range in {
+		cp := make(map[string]any, len(row))
+		for k, v := range row {
+			cp[k] = tableValue(v)
+		}
+		out = append(out, cp)
+	}
+	return out
+}
+
+// canonicalNumber matches the way a driver writes a number and not the way a
+// person writes an identifier: an optional sign, no leading zero unless the
+// value is below one, an optional fractional part, and nothing else.
+var canonicalNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?$`)
+
+func tableValue(v any) any {
+	var s string
+	switch t := v.(type) {
+	case string:
+		s = t
+	case []byte:
+		s = string(t)
+	default:
+		return v
+	}
+	if !canonicalNumber.MatchString(s) {
+		return v
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return v
+	}
+	return f
 }
 
 // requireColumns refuses a mapping that names a column the result does not have,

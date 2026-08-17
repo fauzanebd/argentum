@@ -437,7 +437,7 @@ transcripts: [`native-dashboards.md`](native-dashboards.md) §1b and
 
 | Owed by | The gate | Outcome |
 | ------- | -------- | ------- |
-| `T-D11` | The `/dashboards` list page, the chat embed inside a real transcript, and the dark chart ramp on a real dark card | **Three passes and two defects.** List page and embed both draw. All eight dark tokens survive on a real dark card. The defects are *(a)* a table panel printing `20727672550.00` while declaring `fmt: currency`, because `project.go:90` hands the driver's own values to the table and a Postgres `numeric` is a **string** — every other viz coerces through `cell()`; and *(b)* the embed mounting a `<section>` inside a `<p>`, which React inserts happily and an HTML parser would split. **(b) is fixed and re-read** — the paragraph holding a dashboard link is now a `div`, `p section` matches nothing, and the message's other four paragraphs are untouched. (a) is left as a decision |
+| `T-D11` | The `/dashboards` list page, the chat embed inside a real transcript, and the dark chart ramp on a real dark card | **Three passes and two defects.** List page and embed both draw. All eight dark tokens survive on a real dark card. The defects are *(a)* a table panel printing `20727672550.00` while declaring `fmt: currency`, because `project.go:90` hands the driver's own values to the table and a Postgres `numeric` is a **string** — every other viz coerces through `cell()`; and *(b)* the embed mounting a `<section>` inside a `<p>`, which React inserts happily and an HTML parser would split. **(b) is fixed and re-read** — the paragraph holding a dashboard link is now a `div`, `p section` matches nothing, and the message's other four paragraphs are untouched. ~~(a) is left as a decision~~ **(a) fixed 2026-08-17**: only a canonical decimal literal is coerced, so a padded order id, an Indonesian phone number and a date are all still strings ([`native-dashboards.md`](native-dashboards.md) defect 3) |
 | `T-U13` | The chip row in both modes; the recommended chip visually distinct and its reason reachable without a mouse; a click filling the composer and starting **no** turn; the `suggestion_picks` row afterwards; and an older message in the same thread with no chips under it | **Pass on all six.** The absence held in its strongest form: two *older* messages carrying `next_steps` in `metadata` draw nothing. The pick wrote `idx=1, recommended=t` for a chip that renders first, which is the display-order / stored-index split working |
 | `T-D23` | The header action, the prefilled composer, and the panel grid before and after one edit turn | **Two of three pass; the third needs money and stays owed** (§2). The action is present and labelled, and it lands in `/chat` holding `Change [H2 2024 Performance](/dashboards/<uuid>):\n` with no turn started. **The defect: nothing focused the composer** — `activeElement` was `BODY` — so the ticket's own "the cursor lands after the link" did not happen, here or on a chip click. **Fixed and re-proven**: `TEXTAREA` with the caret at 80 of 80 after the action and 25 of 25 after a chip, with no turn started by either |
 
@@ -455,9 +455,20 @@ A gate that needs an eye does not need that particular extension.
 
 ## 3b. Found by a gate, owned by nobody — a fabricated figure in a persisted answer
 
-Added 2026-08-17 by §1f's sitting. **It is not a gate that is owed; it is a
-defect that needs a ticket**, and it is filed here because this is the file
-somebody reads before deciding what to run next.
+Added 2026-08-17 by §1f's sitting. ~~**It is not a gate that is owed; it is a
+defect that needs a ticket**~~ — **it has one, written the same day:
+[`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md)
+`T-Q11`, P0, 1.5d.** It stays in this file because the *gate* it owes is here:
+re-asking the two transactions questions and reading the persisted answer back is
+model spend, and it belongs in §2 the day the fix lands. The write-up below is
+the reproduction the ticket was written from.
+
+**The ticket found one thing this entry did not.** `guardrails.CheckGrounding`
+already asks the right question — *is THIS figure one a tool returned?* — and
+`chat_runner.go:1358` runs it on every reply. 1,667 against a result holding 300
+is exactly what it reports. It writes one `Warn` line and returns, nothing counts
+it, and no gate in this file has ever read it. The product held both the evidence
+and the detector while it stored the wrong answer.
 
 Asked *"How many transactions were there in November 2024?"*, the answer of
 record reads:

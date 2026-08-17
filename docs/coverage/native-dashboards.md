@@ -160,10 +160,28 @@ The browser then declines to format it, because `useFormatter` returns
 holds product names.
 
 So the declared format is honoured by every panel type except the one made of
-the numbers somebody reads digit by digit. **Not fixed in the sitting**, because
-the fix is a choice rather than an edit: coercing numeric-looking strings in the
-browser turns an order id of `0012` into `12`, and coercing server-side needs the
-driver's column types carried onto the payload, which no panel currently has.
+the numbers somebody reads digit by digit. ~~**Not fixed in the sitting**,
+because the fix is a choice rather than an edit: coercing numeric-looking strings
+in the browser turns an order id of `0012` into `12`, and coercing server-side
+needs the driver's column types carried onto the payload, which no panel
+currently has.~~
+
+**Fixed 2026-08-17, server-side, and the objection above is what shaped it.**
+`tableRows`/`tableValue` (`spec/project.go`) coerce a table cell only when the
+string is a **canonical decimal literal**: an optional minus, no leading zero
+unless the value is below one, an optional fractional part, nothing else. That is
+how a driver writes a number and not how anybody writes an identifier, so
+`20727672550.00` becomes a number and `081234567890`, `00123`, `+6281234567`,
+`1e6`, `2024-11-01` and `" 42 "` all travel exactly as they did before — the
+padded-order-id case the paragraph above refuses to break, pinned by
+`TestProjectTableLeavesIdentifiersAlone`. No column types were needed on the
+payload: the shape of the value answers the question the type would have.
+
+**What it does not fix, stated so it is not read as closed.** A table's `fmt` is
+one setting for the whole panel and `TableBody` applies it to every numeric
+column, so a year column in a currency table reads `2,024`. That is true today
+for any column a driver returns as an integer and is not made worse here — it is
+a per-column format, which is a spec change and a different ticket.
 
 ### Defect 4 — the embed is a block element inside a paragraph — **fixed**
 

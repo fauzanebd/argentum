@@ -11,6 +11,13 @@ a dashboard the agent built could only be created or deleted.
 > and worse than anything this build touched. §6 is the record; the paragraph
 > below is what it replaced, kept because the prediction was right.
 >
+> **And one decision, taken 2026-08-17 after the gate: `NEXT_STEPS_ENABLED`
+> defaults to false.** The pass measured 12,962 ms in front of the `final` event
+> against a ticket rule of "revisit above 1s", so on by default it was buying
+> every deployment the timeout's worth of latency and no chips. The feature is
+> intact and one variable away; §4 and §6.4 carry the argument. The older defect
+> is ticketed as `T-Q11` ([`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md)).
+>
 > ~~Nothing here has been run against a live stack or a real model. That is the
 > half this repo's own delivery log says finds the defects — six of the nine on
 > the quality roadmap were found by running it rather than by writing it — so
@@ -139,6 +146,17 @@ exceeds 1s**.
 above is settled against itself and the decision is the owner's. The timeout is
 `NEXT_STEPS_TIMEOUT_SECS`, default 8s — at which this deployment's light model
 never finishes, which is stated in a `Warn` line rather than left as an absence.
+
+**Decided 2026-08-17: the pass is off unless a deployment turns it on.**
+`NEXT_STEPS_ENABLED` now defaults to **false** (`config.go`, `.env.example`,
+`bootstrap/stack.go`). Left on, the shipped default put 8 seconds in front of
+every answer and returned no chips on the only light tier this has been measured
+against — switched on, billing, doing nothing, which is the C-2 shape the feature
+was already caught in once. Nothing else changed: the pass, the chips, the pick
+table and the kill switch are exactly as gated, and a deployment whose light
+model answers in about a second sets the variable and gets the feature. The
+second-event design (`final` first, then a suggestion event and a message
+`UPDATE`) stays unbuilt and stays the option if chips are wanted on a slow tier.
 
 The pass is skipped entirely when the turn called `ask_clarification`, when a
 guardrail replaced the reply, on a report turn, on a schedule or watcher fire, on
@@ -364,12 +382,14 @@ metadata keys: ['latency_ms', 'next_steps']
 So the pass is **cheap and slow**, which is the opposite of what the ticket
 assumed, and it is the latency that decides its future rather than the cost.
 The output-token count says why: 1,478 output tokens for three short
-suggestions is `gpt-5-nano` reasoning. **This is now the owner's call**, and the
-options are the ones the ticket already wrote down: accept ~13s in front of
-every answer (it should not), point the light tier at a non-reasoning model, or
-take the design `T-Q10` rejected — publish `final`, run the pass, then a second
-event and a message `UPDATE`. The measurement is what makes that a decision
-rather than a preference.
+suggestions is `gpt-5-nano` reasoning. ~~**This is now the owner's call**~~ —
+**called 2026-08-17: default off.** The options were the ones the ticket wrote
+down — accept ~13s in front of every answer, point the light tier at a
+non-reasoning model, or take the design `T-Q10` rejected — and the first is what
+shipping it on by default actually chose, without anybody choosing it. Off is the
+only one of the three that costs nothing and forecloses nothing: a deployment
+with a fast light model turns it on, and the second-event redesign is still there
+to be built if chips are wanted on a slow one. §4 has the wording.
 
 **The kill switch is a kill switch.** With `NEXT_STEPS_ENABLED=false`:
 
@@ -419,6 +439,16 @@ also drop legitimate narration, and making the fabrication check evidence every
 figure rather than any figure is a change to the guardrail that has blocked
 correct answers before. It is filed as a finding with a reproduction, which is
 what this sitting owes it.
+
+**Ticketed 2026-08-17 as `T-Q11`**
+([`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md)),
+P0, and writing it sharpened the finding in one place: `guardrails.CheckGrounding`
+already asks *"is this figure one a tool returned?"* and `chat_runner.go:1358`
+runs it on every reply — it writes a `Warn` line and nothing counts it. So the
+decision the paragraph above describes is narrower than it looked. The ticket
+keeps prose iteration-scoped (the mechanism) and makes the report countable, and
+deliberately does **not** turn the check into a gate, which stays the separate
+decision it always was.
 
 ### 6.6 What is still owed
 

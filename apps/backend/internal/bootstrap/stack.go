@@ -866,6 +866,12 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 	// it is switchable — NEXT_STEPS_ENABLED=false restores the previous turn
 	// exactly — and it defers to the credit check, because an answer must never
 	// be delayed by a suggestion when the tenant is nearly out of balance.
+	//
+	// **Off unless the deployment says otherwise, since 2026-08-17.** The pass
+	// measured 12,962 ms on the light tier it was gated against, and it sits in
+	// front of the `final` event; on by default that is the timeout's worth of
+	// latency on every answer in exchange for nothing. NEXT_STEPS_ENABLED=true is
+	// the deployment saying its light model is fast enough for it.
 	if s.Cfg.NextStepsEnabled {
 		runner = runner.WithNextSteps(true, s.UsageSvc).
 			WithNextStepsTimeout(time.Duration(s.Cfg.NextStepsTimeoutSecs) * time.Second)

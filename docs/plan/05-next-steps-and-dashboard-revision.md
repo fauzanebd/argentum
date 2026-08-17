@@ -29,8 +29,12 @@ stop.
 > The pass costs 607 µUSD (≈3% of the turn beside it) and takes **12,962 ms**.
 > The ticket's own rule is to revisit above 1s, and its 5s timeout could never
 > have been met by this deployment's light model — so as specified, the feature
-> was on, billed nothing and did nothing. Whether the pass moves behind `final`
-> is the owner's call; the numbers are what make it a decision.
+> was on, billed nothing and did nothing. ~~Whether the pass moves behind `final`
+> is the owner's call~~ — **decided 2026-08-17: `NEXT_STEPS_ENABLED` defaults to
+> false.** The pass, the chips and the pick table are unchanged and one variable
+> away; a deployment whose light model answers in about a second turns it on. The
+> second-event design this ticket rejected stays the option for a slow tier, and
+> stays unbuilt.
 >
 > ~~None has been run against a live stack or a real model.~~ `make vet` / `make test` /
 > `make lint-go` (0 issues) / `make types-check` / `tsc -b` / `pnpm build` are

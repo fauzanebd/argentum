@@ -445,3 +445,127 @@ cookbook. Both are admin-only JSON routes today. The tuning list wants to be a
 page, and what that page should show depends on what the first week of real
 verdicts looks like — which is an argument for building it after the gates
 above, not before.
+
+---
+
+# Added 2026-08-17 — `T-Q11`, from a gate rather than from a plan
+
+The 2026-08-17 live gate found a persisted answer stating a figure no tool ever
+returned, **in front of the true one**, on a turn deliberately run with that
+sitting's new feature switched off. It is older than the build that exposed it,
+it is the worst thing in
+[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md), and §3b
+of that file files it as *"not a gate that is owed; a defect that needs a
+ticket"*. This is the ticket.
+
+It belongs on this roadmap because it is the **wrong-but-nonempty** class this
+page assigns to `T-Q9` — arriving one door further out than `T-Q9` looked.
+
+## `T-Q11` A reply carries one iteration's figures, and an ungrounded one is counted — 1.5d
+**Repo:** BE · **Deps:** none · **Priority:** P0 · **Migration:** none
+
+### Why
+
+Asked *"How many transactions were there in November 2024?"*, the answer of
+record reads:
+
+> There were **1,667 transactions** in November 2024. There were **1,667
+> transactions** in November 2024. There were **300 transactions** in November
+> 2024.
+
+`300` is correct and is what the turn's own `run_sql` returned. `1,667` is in no
+table — `fact_sales` holds 1,348 rows altogether. The December turn has the same
+shape in front of its true 310. Reproduction and the event-stream evidence:
+[`../coverage/next-steps-and-revision.md`](../coverage/next-steps-and-revision.md)
+§6.5.
+
+**Two independent failures produced one answer, and each is worth fixing on its
+own.**
+
+**1. The reply is every iteration's prose concatenated.** `runStream` appends
+each `AgentEventContent` to one builder (`internal/app/chat_runner.go:1218`), and
+the turn carried `iteration: 2`. The model guessed a figure, called the tool, and
+wrote the true figure once the result came back — and all three sentences were
+stored as the answer. The same loop **already reads the iteration number** off
+the event metadata two lines above (`:1205`, for the `iteration` progress event),
+so the information needed to fix this is in the function and is thrown away.
+
+**2. The detector exists and only whispers.** `checkGrounding`
+(`chat_runner.go:1358`) runs `guardrails.CheckGrounding` on exactly this
+question — *"is THIS number one of the numbers a tool returned?"* — and 1,667
+against a result set holding 300 is precisely what it reports. It writes one
+`Warn` line and returns. Nothing counts it, nothing surfaces it, and no gate in
+this repository has ever read it. So the product had both the evidence and the
+detector, and still stored the wrong answer.
+
+`T-Q9` chose to report rather than block for a good reason that still holds — an
+analyst's reply legitimately contains numbers no query returned. This ticket does
+not overturn that. It fixes the *mechanism* that put an unevidenced figure in the
+reply, and turns the report into something that can be read without grepping a
+worker log.
+
+### Do
+
+- **Keep prose per iteration in `runStream`.** One builder per iteration key
+  rather than one for the turn, using the `iterationOf(evt.Metadata)` the loop
+  already computes. The answer is the **last** iteration that produced content.
+  Earlier iterations' prose is a working note, not an answer: the model that
+  wrote it had not yet seen the tool result it went on to call for.
+- **Fall back to the concatenation when the iteration number is absent.** Not
+  every provider stamps it, and a turn whose events carry no iteration must
+  behave exactly as it does today — this ticket must not empty a reply on a
+  provider it was not measured against.
+- **Do not drop prose from an iteration that called no tool.** A model that
+  writes two paragraphs in one iteration, or narrates across a turn that never
+  called anything, is not the failure; the failure is prose written *before* a
+  tool result and kept *beside* it.
+- **Count the grounding report.** A counter — `ungrounded_figures_total`, beside
+  the existing turn/tool counters in `internal/metrics` — plus the count on the
+  turn's span. One `Warn` line per occurrence is what made this invisible for a
+  week.
+- **Say it in the log line the answer already carries**, not in a second one: the
+  number of ungrounded figures belongs on the turn's completion fields so a turn
+  can be found by it.
+
+### Notes for the implementer
+
+**The contradiction shape is the one to test.** A reply containing both an
+ungrounded figure *and* a grounded one for the same quantity is not an analyst
+being loose with a derived number — it is a reply that disagrees with itself. It
+is also exactly what iteration-scoped prose removes, so the test for the fix is
+the transcript above: the same event sequence must store the last sentence only.
+
+**Do not make `CheckGrounding` a gate in this ticket.** The overreach cycle this
+repo has lived through is documented in
+[`../coverage/guardrail-overreach.md`](../coverage/guardrail-overreach.md), and a
+check that replaces answers needs the counter above to exist for a week first.
+Blocking is a separate decision with a number behind it.
+
+**`rescueEmptyReply` sits after this.** A turn whose last content-bearing
+iteration is empty must reach the rescue exactly as it does today, not with an
+earlier iteration's guess.
+
+### Acceptance
+
+- [ ] A turn whose first iteration writes prose, calls a tool, and writes prose again stores **only** the post-tool prose
+- [ ] A turn with a single iteration is byte-identical to today, on every provider
+- [ ] A turn whose events carry no iteration metadata is byte-identical to today
+- [ ] The streamed `delta` events are unchanged — the reader watches the model think; the *record* is what this ticket narrows
+- [ ] An ungrounded figure increments a counter and lands on the span, in addition to the existing `Warn`
+- [ ] The November transaction transcript, replayed as a fixture, stores `300` and not `1,667`
+
+### Gate
+
+`make vet` / `make test`, then the stack: re-ask the two questions from the
+2026-08-17 transcript (November and December 2024 transaction counts) on
+`moonshotai/kimi-k2.6` and read the persisted `messages.content` — one sentence,
+one figure, and it is the tool's. Then `curl` `/metrics` and show the counter
+moved on a turn engineered to state a derived figure. Rule 1 applies: this
+changes what reaches the user on every turn, so re-run the 56-case set and post
+the number with the model and the date.
+
+### Out of scope
+
+Making the grounding check block or rewrite a reply. Per-figure attribution in
+the UI. The eval category for it (`T-Q1`'s set already has `wrong_grain`; whether
+this needs its own case is a question for after the counter has run for a week).

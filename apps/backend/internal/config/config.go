@@ -152,10 +152,19 @@ type Config struct {
 	// write, which is the setting for measuring whether it helps.
 	PriorWorkTurns int
 	// NextStepsEnabled runs the suggestion pass after every answered turn
-	// (T-Q10). Default true. It is a kill switch rather than a feature flag: the
-	// pass adds one light-model call and its latency in front of the `final`
-	// event, so the deployment that decides that is not worth it needs a way to
-	// say so that is not a redeploy of different code.
+	// (T-Q10). It is a kill switch rather than a feature flag: the pass adds one
+	// light-model call and its latency in front of the `final` event, so the
+	// deployment that decides that is not worth it needs a way to say so that is
+	// not a redeploy of different code.
+	//
+	// **Default false since 2026-08-17, and the default is the decision the
+	// measurement forced.** The pass costs 607 µUSD (≈3% of the turn beside it)
+	// and takes 12,962 ms on the light tier that measured it, against a ticket
+	// rule of "revisit above 1s". On by default, that is eight seconds of
+	// NextStepsTimeoutSecs in front of every answer buying nothing, which is the
+	// C-2 shape: switched on, billing, doing nothing. A deployment whose light
+	// model returns three short suggestions in under a second sets this true and
+	// gets the feature; nobody else pays for it silently.
 	NextStepsEnabled bool
 	// NextStepsTimeoutSecs bounds that pass. It sits in front of the `final`
 	// event, so it is latency the browser waits through.
@@ -492,7 +501,7 @@ func Load() (*Config, error) {
 		ContextMaxTurns:      getEnvAsInt("CONTEXT_MAX_TURNS", 3),
 		HistoryHydrateLimit:  getEnvAsInt("HISTORY_HYDRATE_LIMIT", 20),
 		PriorWorkTurns:       getEnvAsInt("PRIOR_WORK_TURNS", 3),
-		NextStepsEnabled:     getEnv("NEXT_STEPS_ENABLED", "true") == "true",
+		NextStepsEnabled:     getEnv("NEXT_STEPS_ENABLED", "false") == "true",
 		NextStepsTimeoutSecs: getEnvAsInt("NEXT_STEPS_TIMEOUT_SECS", 8),
 		CookbookTopK:         getEnvAsInt("COOKBOOK_TOP_K", 3),
 		CookbookHarvestCron:  getEnv("COOKBOOK_HARVEST_CRON", "17 * * * *"),
