@@ -99,6 +99,39 @@ function useFormatter(fmt?: string) {
   }, [fmt]);
 }
 
+/**
+ * Formats a value for an *axis tick*, which is a different job from formatting
+ * it for a tooltip.
+ *
+ * Found by the first screenshot of a real dashboard (2026-08-17): the demo
+ * warehouse's monthly revenue is in the billions, `3,240,929,900` does not fit
+ * an axis gutter, and the three ticks came out clipped to the same `100,000`.
+ * A chart whose axis misstates its own scale is worse than one with no axis —
+ * the reader has no way to see that the number is wrong.
+ *
+ * Compact notation, then: `3.2B`, in the viewer's locale. The tooltip keeps the
+ * exact figure, because that is where somebody goes to read the number rather
+ * than the shape.
+ */
+function useAxisFormatter(fmt?: string) {
+  return useMemo(() => {
+    const compact = new Intl.NumberFormat(undefined, {
+      notation: "compact",
+      maximumFractionDigits: 1,
+    });
+    const pct = new Intl.NumberFormat(undefined, {
+      style: "percent",
+      maximumFractionDigits: 0,
+    });
+    return (v: unknown) => {
+      if (v === null || v === undefined || v === "") return "";
+      if (typeof v !== "number") return String(v);
+      if (fmt === "percent") return pct.format(v / 100);
+      return compact.format(v);
+    };
+  }, [fmt]);
+}
+
 export function DashboardPanel({
   panel,
   className,
@@ -147,6 +180,7 @@ export function DashboardPanel({
 function PanelBody({ panel, height }: { panel: Resolved; height: number }) {
   const palette = useChartPalette();
   const format = useFormatter(panel.fmt);
+  const axisFormat = useAxisFormatter(panel.fmt);
 
   if (panel.error) return null;
   if (panel.viz === "kpi") return <KPI panel={panel} format={format} />;
@@ -164,7 +198,7 @@ function PanelBody({ panel, height }: { panel: Resolved; height: number }) {
   return (
     <div style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        {chartFor(panel, rows, series, palette, format, legend)}
+        {chartFor(panel, rows, series, palette, format, axisFormat, legend)}
       </ResponsiveContainer>
     </div>
   );
@@ -176,6 +210,7 @@ function chartFor(
   series: Series[],
   palette: string[],
   format: (v: unknown) => string,
+  axisFormat: (v: unknown) => string,
   legend: boolean,
 ) {
   const colour = (i: number) => palette[i % (palette.length || 1)];
@@ -191,8 +226,11 @@ function chartFor(
         tickLine={false}
         axisLine={false}
         tick={axisTick}
-        width={48}
-        tickFormatter={(v: number) => format(v)}
+        // Wide enough for a compact tick plus its suffix ("3.2B", "-12.5M").
+        // The gutter used to be 48px against a full-precision number, which is
+        // how three different ticks rendered as the same clipped string.
+        width={56}
+        tickFormatter={(v: number) => axisFormat(v)}
       />
       <Tooltip
         cursor={{ fill: "hsl(var(--muted))" }}
