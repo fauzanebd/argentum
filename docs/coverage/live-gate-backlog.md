@@ -65,13 +65,21 @@ this file until now was driven through HTTP, `psql` or JSON-RPC, so the class of
 defect where the data is right and the *rendering* misstates it had no way to be
 caught. It took a minute to find one.
 
-**Revised 2026-08-17 again — §1f is added and NOT run.** The four tickets of the
-loop-after-the-answer build (`T-Q10`, `T-U13`, `T-D22`, `T-D23`) landed
-code-complete in one sitting, and this file's whole record says that is the state
-in which something is hiding: seven sittings, seven times something was found.
-Three of its gates need the stack and nothing else. **They are filed in §1f
-rather than in §2, deliberately** — the mistake this file recorded on 2026-08-08
-was a stack-only gate sitting under a heading that named a cost it did not have.
+**Revised 2026-08-17 again — §1f is added and run the same hour, and the bucket
+has paid eight times out of eight.** The four tickets of the loop-after-the-answer
+build (`T-Q10`, `T-U13`, `T-D22`, `T-D23`) landed code-complete in one sitting,
+and this file's whole record says that is the state in which something is hiding.
+It was. **Two defects**, and the second is the largest thing this file has
+recorded: a persisted answer stating a figure no tool ever returned, in front of
+the true one — found on a turn deliberately run with the new feature *off*, so it
+is older than the build that exposed it. §1f has the table;
+[`next-steps-and-revision.md`](next-steps-and-revision.md) §6.5 has the
+reproduction.
+
+**The cheap bucket paid for itself twice over in one sitting.** Filing these
+three in §1f rather than in §2 is why they ran at all — and once the stack was
+up, two of §2's own items (the pass's cost and its p95) cost $0.12 to close
+rather than the afternoon they had been sitting behind.
 
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of four things: the stack up, money spent, a browser opened, or a
@@ -330,18 +338,33 @@ a minute.
 list page, the chat embed inside a real transcript, and the dark ramp on a real
 dark card. `T-D8` and `T-D9` are unbuilt rather than ungated.
 
-## 1f. Owed by the loop-after-the-answer build — stack only, **not yet run**
+## 1f. ~~Owed by the loop-after-the-answer build~~ — run 2026-08-17, and the bucket has paid eight times out of eight
 
-Added 2026-08-17. `T-Q10`, `T-U13`, `T-D22` and `T-D23` landed code-complete in
-one sitting ([`next-steps-and-revision.md`](next-steps-and-revision.md)), and by
-this file's own record that is the state in which seven builds out of seven were
-hiding something. These three need the compose stack and no money.
+Added and run 2026-08-17. `T-Q10`, `T-U13`, `T-D22` and `T-D23` landed
+code-complete in one sitting, and by this file's own record that is the state in
+which seven builds out of seven were hiding something. **It was eight out of
+eight**: all three stack-only gates passed, and running them cost about $0.12
+because two of §2's items came along for free once the stack was up.
 
-| Owed by | The gate | What it would prove |
-| ------- | -------- | ------------------- |
-| `T-D22` | Migration `057` up, down and up against the real control database, with a scoped agent, an unrestricted agent (`allowed_tools = '{}'`) and an agent holding neither dashboard tool | That the backfill adds `update_dashboard` to exactly the agents holding `create_dashboard` — and, the item that would be catastrophic to get wrong, that it leaves the **unrestricted** agent alone. `allowed_tools <> '{}'` is the clause standing between this migration and narrowing an every-tool agent to one tool |
-| `T-U13` | Migration `058` up, down against a populated table, and up; then `POST /api/messages/:id/suggestion-picked` for another tenant's message (404), for an index the message does not have (400), and for a real chip | That the stored row carries the label and the `recommended` flag **read off the message** rather than off the request body, which is the property the whole table's value rests on. Plus `GET /api/suggestions/summary` answering 403 to a member and 200 to an admin |
-| `T-Q10` | Boot with `NEXT_STEPS_ENABLED=false`, run one turn, and diff the persisted message and the `final` event against a turn on the default | That the kill switch is a kill switch. The acceptance line is byte-identical, and this is the one item here a unit test genuinely cannot reach — it is about what reaches the database and the socket, not about what the function returns |
+**Two defects, and the second is the one that matters.** The first is this
+build's: `T-Q10`'s 5s pass timeout is three times too small for this
+deployment's light model, so the feature was switched on, billed nothing and did
+nothing — the C-2 shape. The second is **older than this build and worse**: a
+persisted answer containing a figure no tool ever returned, in front of the true
+one, on a turn that ran with the new feature switched *off*. Full write-up:
+[`next-steps-and-revision.md`](next-steps-and-revision.md) §6.
+
+**And it opened with this file's own lesson, again.** `docker ps` answered
+*"client version 1.43 is too old"*, which reads as "Docker is not running". The
+daemon was up; the client first on `PATH` was too old for it. Docker Desktop's
+own client at `/Applications/Docker.app/Contents/Resources/bin/docker` works.
+Second time. Written where somebody will be standing.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-D22` | Migration `057` up, down and up against the real control database, across all three agent shapes | **Pass, on 45 real agent rows rather than seeded ones.** The 39 unrestricted rows are byte-identical before and after — `md5` of `(id, allowed_tools)` is `f96223b0…` through a full `56 → 58 → 56 → 58` round trip — so no every-tool agent was narrowed. Exactly the 4 holding `create_dashboard` gained the tool; re-running reports `UPDATE 0` with no duplicate array entries |
+| `T-U13` | Migration `058` up, down against a populated table, and up; then the pick endpoint's 404 / 400 / 200 and the summary's role split | **Pass on every item.** Two picks on one message both persisted (the no-unique-key design, proven rather than read). A client posting an invented `label` and `recommended` got a row carrying the message's own values — the property the table rests on, tested adversarially. Member picks 200, member summary 403, admin summary 200 |
+| `T-Q10` | Boot with `NEXT_STEPS_ENABLED=false`, run one turn, and diff the persisted message and the `final` event against a turn on the default | **Pass.** `final` metadata goes from `[latency_ms, next_steps]` to `[latency_ms]`, the persisted `metadata` from three steps to `NULL`, no `next_steps` usage event is written and the worker logs nothing about suggestions. It also proved the pass works when given room: 3 steps in 12,962 ms, on the `final` event and on the row |
 
 ## 2. Needs the stack **and** real LLM spend
 
@@ -362,8 +385,9 @@ hiding something. These three need the compose stack and no money.
 | `T-Q6` | ~~A two-turn conversation at `PRIOR_WORK_TURNS=3` and again at `=0`~~ → **re-specified 2026-08-14**: `follow-up-breakdown-no-reschema` at `=3` and at `=0` on one model (two cases of spend), or a follow-up on a thread where turn 1 has fallen out of `CONTEXT_MAX_TURNS` ([`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md) §T-Q6) | **Run 2026-08-14 — the mechanism passes and the acceptance line does not measure it.** `role='tool'` rows exist now (the column had none), and injection fires at `=3` and never at `=0` while the rows are written at both. But six turns across the two arms produced **identical tool sequences**: inside `CONTEXT_MAX_TURNS` the assistant's own prior message already quotes the SQL, so the digest tells the model what it can read. T-Q6 is load-bearing only once the tool turn falls out of the window, which a two-turn conversation cannot reach ([`agent-quality.md`](agent-quality.md) §11) |
 | ~~`T-Q7`~~ | ~~The rolling-summary block appearing in a turn on a thread past 20 messages~~ | **Pass, 2026-08-14** on the 58-message thread: `summary_chars=202 message_count=60 history_window=20`, and the answer reconstructs the opening alert the window no longer covers. The line proving it **did not exist** — four silent exits, no success log, and nothing else records the composed user message, so injected and skipped logged identically. One of those exits (`messageCount` failing) disables T-Q7 on every thread and looks like a short conversation ([`agent-quality.md`](agent-quality.md) §12) |
 | `T-Q8` | A harvest that writes an example, and a turn that retrieves one | Embedding calls only, one per example. Every gate above `client.Embed` is proven ([`agent-quality.md`](agent-quality.md) §3) |
-| `T-D22` | Build the 08-17 two-panel dashboard, then in the same thread ask for the window change, a panel swapped to a line chart, and a third panel added — three turns, `update_dashboard` each time, the same id throughout. Then a fresh thread asking to change "the revenue dashboard" with no id | Four turns. The one that matters most is the last: the no-id path returns a **result** listing recent dashboards rather than a Go error, and this repo has already measured what an error does to deepseek — the identical call, seven times, until the budget ends the turn ([`next-steps-and-revision.md`](next-steps-and-revision.md) §5) |
-| `T-Q10` | Three turns — a plain aggregate, one that builds a dashboard, one that asks for clarification — with the `next_steps` metadata pasted for each; then the dashboard one again on an agent scoped to `get_schema` + `run_sql` | Four turns plus four suggestion passes. **It is also the only way to get the two numbers that decide the feature's future**: what the pass costs per turn, and its p95 — the pass sits in front of the `final` event, and above 1s the design moves to a second event and a message `UPDATE` |
+| `T-D22` | Build the 08-17 two-panel dashboard, then in the same thread ask for the window change, a panel swapped to a line chart, and a third panel added — three turns, `update_dashboard` each time, the same id throughout. Then a fresh thread asking to change "the revenue dashboard" with no id | **Still owed.** Four turns. The one that matters most is the last: the no-id path returns a **result** listing recent dashboards rather than a Go error, and this repo has already measured what an error does to deepseek — the identical call, seven times, until the budget ends the turn |
+| ~~`T-Q10`~~ | ~~Turns producing `next_steps`, and the two numbers that decide the feature's future~~ | **Run 2026-08-17 — and the numbers settle the design against the ticket. 607 µUSD per pass (≈3% of the turn) and 12,962 ms.** Cheap and slow, where `T-Q10` assumed the opposite; its own rule says revisit above 1s. The 5s timeout it specified could never be met here (12.5–16.6s measured), so the feature was on and inert — now `NEXT_STEPS_TIMEOUT_SECS`, and exhausting it logs at `Warn` ([`next-steps-and-revision.md`](next-steps-and-revision.md) §6.4) |
+| `T-Q10` | One turn on an agent scoped to `get_schema` + `run_sql`, showing the chart suggestion narrowed away | **The one arm that did not run.** It is the only live cover for `needsMissingTool`, which is otherwise proven by unit test alone — and it is the inverse of the failure `feature-coverage.md` records, an agent recommending work it cannot do |
 | `T-Q10` | The `next_steps` eval category — parse, cap, allowlist, no-figures, and the clarification negative — with the pass on and off | One set per arm. Rule 1 applies: the pass changes what reaches the user on every turn. The set carries a ±2-case noise band, so a one-case delta is not a result |
 | ~~`T-17`~~ | ~~`curl` the exposition; one trace waterfall for a tool-calling turn~~ | **Both run 2026-08-08 — ticket closed.** Exposition: 401 / 401 / 200 with the right token, queue gauges reading a queue discovered from Redis. Waterfall: one `agent.turn` of 7,750 ms with 18 ms inside `query_metric`, which is the LLM/SQL split the ticket asked for. It cost one case of model spend, and it found the defect §9 records — `memory.hydrate` was landing in its own trace ([`observability.md`](observability.md) §8–§9) |
 
@@ -400,6 +424,43 @@ no way to be found. It took a minute to find one.
 | `T-D11` | The `/dashboards` list page, the chat embed inside a real transcript, and the dark chart ramp on a real dark card | Carried over from §1e. The dark ramp in particular: eight hexes were re-picked against a dark background and nothing but an eye confirms that |
 | `T-U13` | The chip row in both modes; the recommended chip visually distinct and its reason reachable without a mouse; a click filling the composer and starting **no** turn; the `suggestion_picks` row afterwards; and an older message in the same thread with no chips under it | The last one is the acceptance item most likely to be quietly wrong, because it is an absence. The "starts no turn" half is the rule this feature shares with the starter questions, and the reason is money |
 | `T-D23` | The header action, the prefilled composer, and the panel grid before and after one edit turn | The invalidation fires on a `tool_call` event naming `update_dashboard`; whether the grid actually redraws without a reload is a thing somebody watches happen |
+
+## 3b. Found by a gate, owned by nobody — a fabricated figure in a persisted answer
+
+Added 2026-08-17 by §1f's sitting. **It is not a gate that is owed; it is a
+defect that needs a ticket**, and it is filed here because this is the file
+somebody reads before deciding what to run next.
+
+Asked *"How many transactions were there in November 2024?"*, the answer of
+record reads:
+
+> There were **1,667 transactions** in November 2024.  There were **1,667
+> transactions** in November 2024. There were **300 transactions** in November
+> 2024.
+
+`300` is correct and is what the agent's own `run_sql` returned. `1,667` is in
+no table — `fact_sales` holds 1,348 rows altogether. The December turn has the
+same shape in front of its true 310.
+
+**The mechanism, from the event stream rather than from a guess:** the turn
+carried `iteration: 2`, and the concatenation of its 44 `delta` events *is* the
+stored content. The model wrote a sentence with an invented figure before
+calling the tool, wrote it again, then wrote the true one once the result came
+back — and `runStream` accumulates every iteration's prose into one reply.
+
+**Why the guardrail passed it.** `CheckFabrication` grounds a reply on
+`TurnEvidence.DataRows > 0`. A data tool did return a row, so the check is
+satisfied while a figure no tool produced sits in the same paragraph. It asks
+*"is there evidence?"*; this needs *"is every figure evidenced?"*. That is the
+wrong-but-nonempty class `../plan/02-agent-quality-roadmap.md` assigns to
+`T-Q9`, one door further out than that ticket looked.
+
+**Not this build's**, and the control is in the transcript: the turn ran with
+`NEXT_STEPS_ENABLED=false`. Neither fix is an edit — dropping pre-tool prose
+also drops legitimate narration, and making the fabrication check evidence every
+figure is a change to a guardrail that has blocked correct answers before. Both
+are somebody's decision. Reproduction:
+[`next-steps-and-revision.md`](next-steps-and-revision.md) §6.5.
 
 ## 4. Needs an operator's decision, not a gate
 

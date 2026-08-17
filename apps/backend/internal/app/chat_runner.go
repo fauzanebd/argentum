@@ -303,6 +303,10 @@ type ChatRunner struct {
 	// before this ticket.
 	nextSteps       bool
 	nextStepsBudget BudgetChecker
+	// How long the pass may take. Zero means nextStepsTimeout's default. It is a
+	// field rather than a constant because the ticket's 5s was a guess and the
+	// first live turn measured the light tier three times slower than that.
+	nextStepsTimeout time.Duration
 }
 
 // NewChatRunner wires the worker's dependencies. scheduled is optional;

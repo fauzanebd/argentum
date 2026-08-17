@@ -3205,14 +3205,45 @@ through `DashboardService.Update` so the validation and the zero-row warning
 Phase 2t added stay one code path. And an "Ask for a change" action on the
 dashboard itself, which prefills chat with the dashboard's own markdown link.
 
-**What it is honest to say about it: nothing here has been run.** Unit-gated
-only — `make vet` / `make test` / `make lint-go` at 0 issues / `make types-check`
-/ `tsc -b` / `pnpm build`, and two unapplied migrations. By this log's own
-record that is the state in which seven sittings out of seven found something,
-and §1f of [`live-gate-backlog.md`](live-gate-backlog.md) is where the three
-stack-only gates are filed — in the cheap bucket, deliberately, because the
-mistake this project keeps making is filing a stack-only gate behind a cost it
-does not have.
+**And then it was run, the same day.** The entry above was written saying
+nothing had been; §1f was filed in the cheap bucket, ran an hour later for about
+**$0.12**, and the bucket has now paid **eight times out of eight**. Migrations
+`057`/`058` up, down and up against the real control database — the 39
+unrestricted agent rows byte-identical through the whole round trip, which is the
+outcome that would have been catastrophic and silent to get wrong. The pick
+endpoint's 404/400/200 and its role split over HTTP, including a client posting
+an invented label and getting the message's own back. The suggestion pass on live
+turns, on the `final` event, and switched off.
+
+**Two defects, and they belong to different owners.**
+
+**One is this build's, and it is the C-2 shape.** `T-Q10` specifies a 5s timeout
+for the suggestion pass; this deployment's light model takes **12.5–16.6s**, so
+the feature shipped switched on, billing nothing and doing nothing, and saying so
+only at `Info`. The budget is now `NEXT_STEPS_TIMEOUT_SECS`, exhausting it logs
+at `Warn`, and the pass is timed — because the ticket's entire design rests on a
+latency budget and there was no way to read the latency. With room it works: 3
+steps in 12,962 ms, no figure restated in front of a `$12,729,714,500.00` answer,
+and *"Compare December 2024 to December 2023"* surviving the figure rule, which
+is the year-versus-figure correction confirmed live rather than only in a test.
+
+**The other is older than this build and larger than it.** A persisted answer
+reading *"There were **1,667 transactions** in November 2024. … There were
+**300 transactions** in November 2024."* — 300 is what the tool returned, and
+1,667 is in no table. The turn carried `iteration: 2` and the concatenation of
+its delta events **is** the stored content: the model wrote a sentence with an
+invented figure before calling the tool, and `runStream` keeps every iteration's
+prose. `CheckFabrication` passed it because it grounds on `DataRows > 0` — it
+asks *"is there evidence?"* where this needs *"is every figure evidenced?"*. **The
+turn that exposed it ran with the new feature switched off**, so the control is
+in the transcript. Not fixed here: both plausible fixes are decisions, and it is
+filed as §3b of [`live-gate-backlog.md`](live-gate-backlog.md) with a
+reproduction.
+
+**The sitting also lost time to a message this log has already recorded once.**
+`docker ps` answering *"client version 1.43 is too old"* reads as "Docker is not
+running"; the daemon was up and the client first on `PATH` was too old for it.
+Second occurrence, now written where somebody will be standing.
 
 **One defect the build found in its own ticket, and it is the entry worth
 keeping.** `T-Q10` specifies dropping any suggestion containing a run of four or
@@ -3226,12 +3257,16 @@ correction rather than the original line. Three smaller departures — the meter
 event, where the held tools are read from, and the migration numbers — are in
 [`next-steps-and-revision.md`](next-steps-and-revision.md) §2.
 
-**What this phase owes.** The two numbers that decide whether the suggestion pass
-keeps its place in front of the `final` event: what it costs per turn, and its
-p95. Both need model spend, neither exists, and the design has a stated fallback
-if the second exceeds 1s. Plus a browser for the chips, and `T-D13` — an edit
-silently changes what a share link serves, which is a `TODO` at the merge point
-today.
+**What this phase owes, revised after the gate.** The two numbers exist now and
+they settle the question against the ticket: **607 µUSD per pass — about 3% of
+the turn beside it — and 12,962 ms.** Cheap and slow, where `T-Q10` assumed the
+opposite, and its own rule is to revisit above 1s. So the open item is not a
+measurement any more, it is a decision: accept ~13s in front of every answer,
+point the light tier at a non-reasoning model, or take the design `T-Q10`
+rejected and move the pass behind `final` with a second event and a message
+`UPDATE`. Still owed besides that: `T-D22`'s four-turn edit gate, the scoped-agent
+arm of `T-Q10` (the only live cover for the tool-allowlist narrowing), a browser
+for the chips, and `T-D13`.
 
 ## What the history says about how this project is built
 

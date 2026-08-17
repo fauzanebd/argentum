@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"slices"
 	"strings"
@@ -50,10 +51,19 @@ const (
 	nextStepsMax = 3
 	// nextStepsLabelMax is the chip's text budget.
 	nextStepsLabelMax = 48
-	// nextStepsTimeout bounds the pass. It sits in front of the `final` event,
-	// so this is latency the browser waits through — see the trade in
-	// suggestNextSteps' comment.
-	nextStepsTimeout = 5 * time.Second
+	// nextStepsTimeout is the default bound on the pass. It sits in front of the
+	// `final` event, so this is latency the browser waits through — see the trade
+	// in suggestNextSteps' comment.
+	//
+	// **T-Q10 specified 5s and the first live turn measured the light tier at
+	// 12–17s** (2026-08-17, `openai/gpt-5-nano` through OpenRouter), so 5s meant
+	// the pass timed out on every turn and the feature was on, billed nothing and
+	// did nothing. 8s is a compromise and not an answer: it fails fast enough to
+	// be worth paying on a quick light model, and on a deployment like the one
+	// that measured this it still will not fire — which is why the timeout is now
+	// configurable and why exhausting it logs at Warn rather than Info. A feature
+	// that is switched on and silently inert is the shape of C-2.
+	nextStepsTimeout = 8 * time.Second
 )
 
 // numericToken matches a run of digits with the separators a figure is written
@@ -117,6 +127,20 @@ func (r *ChatRunner) WithNextSteps(enabled bool, budget BudgetChecker) *ChatRunn
 	return r
 }
 
+// WithNextStepsTimeout overrides how long the pass may take. Zero or negative
+// keeps the default.
+//
+// It is configurable because the ticket's 5s was a guess and the first live turn
+// disagreed with it by a factor of three. What the right number is depends
+// entirely on the deployment's light model, which is exactly the kind of thing
+// that should not be a constant in this file.
+func (r *ChatRunner) WithNextStepsTimeout(d time.Duration) *ChatRunner {
+	if d > 0 {
+		r.nextStepsTimeout = d
+	}
+	return r
+}
+
 // suggestNextSteps asks the model what is worth asking next.
 //
 // **Where it runs, and the latency trade, stated so nobody re-litigates it
@@ -163,7 +187,11 @@ func (r *ChatRunner) suggestNextSteps(
 
 	// Labelled before the call, so the LLM event MeteredLLM records carries it.
 	ctx = WithUsageFeature(ctx, UsageFeatureNextSteps)
-	ctx, cancel := context.WithTimeout(ctx, nextStepsTimeout)
+	budget := r.nextStepsTimeout
+	if budget <= 0 {
+		budget = nextStepsTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 
 	llm, _, err := r.llmCache.For(ctx, p.CompanyID, domain.LLMTierLight)
@@ -172,25 +200,43 @@ func (r *ChatRunner) suggestNextSteps(
 		return nil
 	}
 
+	// Measured, because T-Q10's own trade is stated as a latency budget — "revisit
+	// if the measured p95 of the pass exceeds 1s" — and until this line existed
+	// there was no p95 to read. The pass sits in front of the `final` event, so
+	// this number is the answer to "why did the reply take so long".
+	started := time.Now()
 	raw, err := llm.Generate(ctx, nextStepsPrompt(p.Message, answer, held, tools),
 		interfaces.WithSystemMessage(nextStepsSystem),
 		interfaces.WithTemperature(0.3),
 	)
+	elapsed := time.Since(started)
 	if err != nil {
-		logrus.WithError(err).WithField("thread_id", p.ThreadID).
-			Info("next-steps pass failed; the answer is unchanged")
+		// A timeout is logged louder than any other failure, and deliberately.
+		// Every other error here is an incident; a timeout is a *configuration*
+		// that makes this feature bill nothing and do nothing on every turn, which
+		// is indistinguishable from working unless somebody says so. That is the
+		// shape of C-2, and it is what the first live turn of this feature hit.
+		f := logrus.WithError(err).WithFields(logrus.Fields{
+			"thread_id":  p.ThreadID,
+			"company_id": p.CompanyID,
+			"elapsed_ms": elapsed.Milliseconds(),
+			"budget_ms":  budget.Milliseconds(),
+		})
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			f.Warn("next-steps pass ran out of time; this deployment's light model is slower than NEXT_STEPS_TIMEOUT_SECS, so no answer will ever carry suggestions")
+		} else {
+			f.Info("next-steps pass failed; the answer is unchanged")
+		}
 		return nil
 	}
 
 	steps := narrowSteps(parseNextSteps(raw), held)
-	if len(steps) == 0 {
-		return nil
-	}
 	logrus.WithFields(logrus.Fields{
 		"company_id": p.CompanyID,
 		"thread_id":  p.ThreadID,
 		"steps":      len(steps),
-	}).Debug("next-step suggestions attached to the answer")
+		"elapsed_ms": elapsed.Milliseconds(),
+	}).Info("next-step suggestion pass finished")
 	return steps
 }
 

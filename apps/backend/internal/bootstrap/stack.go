@@ -867,7 +867,8 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 	// exactly — and it defers to the credit check, because an answer must never
 	// be delayed by a suggestion when the tenant is nearly out of balance.
 	if s.Cfg.NextStepsEnabled {
-		runner = runner.WithNextSteps(true, s.UsageSvc)
+		runner = runner.WithNextSteps(true, s.UsageSvc).
+			WithNextStepsTimeout(time.Duration(s.Cfg.NextStepsTimeoutSecs) * time.Second)
 	}
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)

@@ -157,6 +157,18 @@ type Config struct {
 	// event, so the deployment that decides that is not worth it needs a way to
 	// say so that is not a redeploy of different code.
 	NextStepsEnabled bool
+	// NextStepsTimeoutSecs bounds that pass. It sits in front of the `final`
+	// event, so it is latency the browser waits through.
+	//
+	// **8 is a compromise, not a measurement.** T-Q10 specified 5s; the first live
+	// turn (2026-08-17) measured this deployment's light model — gpt-5-nano
+	// through OpenRouter — at 12–17s for the pass, so the feature was switched on
+	// and timed out on every turn, billing nothing and doing nothing. Raising the
+	// default to cover that would put 15s in front of every answer, which the
+	// ticket's own rule ("revisit above 1s") forbids. So the number is a knob: a
+	// deployment with a fast light model raises it and gets the feature, and one
+	// without sees the Warn line saying the pass never completes.
+	NextStepsTimeoutSecs int
 	// CookbookTopK is how many worked examples a turn is shown (T-Q8). Zero
 	// switches retrieval off without stopping the harvest, which is how the
 	// feature is measured: the same deployment, the same examples accumulating,
@@ -476,13 +488,14 @@ func Load() (*Config, error) {
 		WorkerQueues:      getEnv("WORKER_QUEUES", "default:10"),
 
 		// Application Settings
-		MaxQueriesPerMinute: getEnvAsInt("MAX_QUERIES_PER_MINUTE", 10),
-		ContextMaxTurns:     getEnvAsInt("CONTEXT_MAX_TURNS", 3),
-		HistoryHydrateLimit: getEnvAsInt("HISTORY_HYDRATE_LIMIT", 20),
-		PriorWorkTurns:      getEnvAsInt("PRIOR_WORK_TURNS", 3),
-		NextStepsEnabled:    getEnv("NEXT_STEPS_ENABLED", "true") == "true",
-		CookbookTopK:        getEnvAsInt("COOKBOOK_TOP_K", 3),
-		CookbookHarvestCron: getEnv("COOKBOOK_HARVEST_CRON", "17 * * * *"),
+		MaxQueriesPerMinute:  getEnvAsInt("MAX_QUERIES_PER_MINUTE", 10),
+		ContextMaxTurns:      getEnvAsInt("CONTEXT_MAX_TURNS", 3),
+		HistoryHydrateLimit:  getEnvAsInt("HISTORY_HYDRATE_LIMIT", 20),
+		PriorWorkTurns:       getEnvAsInt("PRIOR_WORK_TURNS", 3),
+		NextStepsEnabled:     getEnv("NEXT_STEPS_ENABLED", "true") == "true",
+		NextStepsTimeoutSecs: getEnvAsInt("NEXT_STEPS_TIMEOUT_SECS", 8),
+		CookbookTopK:         getEnvAsInt("COOKBOOK_TOP_K", 3),
+		CookbookHarvestCron:  getEnv("COOKBOOK_HARVEST_CRON", "17 * * * *"),
 
 		MetricZeroCoverageProbe: getEnv("METRIC_ZERO_COVERAGE_PROBE", "true") == "true",
 

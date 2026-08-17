@@ -16,11 +16,25 @@ created and deleted.
 Both are the same missing loop — the product currently ends every turn at a full
 stop.
 
-> **Status, 2026-08-17: all four are code-complete and unit-gated. None has been
-> run against a live stack or a real model.** `make vet` / `make test` /
+> **Status, 2026-08-17: all four are code-complete, and the stack-only half of
+> the gate has run.** Migrations `057`/`058` are applied, reversed and
+> re-applied against the real control database; the pick endpoint and its role
+> split are proven over HTTP; the suggestion pass, the `final` event and the
+> kill switch are proven on live turns. **Two defects came out of it**, one of
+> them a correction to `T-Q10` below and one older and more serious than
+> anything these tickets touch —
+> [`../coverage/next-steps-and-revision.md`](../coverage/next-steps-and-revision.md) §6.
+>
+> **The measurement `T-Q10` asks for exists now, and it contradicts `T-Q10`.**
+> The pass costs 607 µUSD (≈3% of the turn beside it) and takes **12,962 ms**.
+> The ticket's own rule is to revisit above 1s, and its 5s timeout could never
+> have been met by this deployment's light model — so as specified, the feature
+> was on, billed nothing and did nothing. Whether the pass moves behind `final`
+> is the owner's call; the numbers are what make it a decision.
+>
+> ~~None has been run against a live stack or a real model.~~ `make vet` / `make test` /
 > `make lint-go` (0 issues) / `make types-check` / `tsc -b` / `pnpm build` are
-> clean, and migrations `057_agent_tools_update_dashboard` and
-> `058_suggestion_picks` are written and unapplied. The record, the four
+> clean. The record, the four
 > departures from these tickets and the full list of what is owed are in
 > [`../coverage/next-steps-and-revision.md`](../coverage/next-steps-and-revision.md).
 >
