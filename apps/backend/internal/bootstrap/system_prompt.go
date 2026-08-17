@@ -18,19 +18,18 @@ import (
 // **It is generated rather than constant, because the tool list is not.** The
 // prompt used to be one string naming all nine tools while `filterTools`
 // handed the model whatever an agent's allowlist left — and the two have no
-// reason to agree. An agent created from the Sales template gets `get_schema`,
-// `run_sql` and `create_visualization`; the constant told it that it could also
-// generate documents, wrap cards in a dashboard and read defined metrics. What
-// a model does with a capability it has been promised and not given is
-// whatever it invents: the live case that opened this was a "sales overview
-// report in PDF" answered with a wall of markdown and an instruction to press
-// Ctrl+P, because `generate_document` was described in the prompt and absent
-// from the tool array.
+// reason to agree. An agent created from the Sales template gets `get_schema`
+// and `run_sql`; the constant told it that it could also generate documents,
+// build dashboards and read defined metrics. What a model does with a
+// capability it has been promised and not given is whatever it invents: the
+// live case that opened this was a "sales overview report in PDF" answered with
+// a wall of markdown and an instruction to press Ctrl+P, because
+// `generate_document` was described in the prompt and absent from the tool
+// array.
 //
 // So the catalog is filtered by name, and a guideline that depends on a tool
-// travels with it — guideline 7 tells the agent to wrap cards in a dashboard,
-// and an agent with `create_visualization` and no `create_dashboard` cannot
-// obey it and must not be told to.
+// travels with it — the chart rules render only for an agent that holds
+// `create_dashboard`, and an agent without it is not told when to draw.
 //
 // The guidelines are numbered at render time, so a filtered prompt has no gaps
 // in its numbering. Nothing may refer to another guideline *by number* for that
@@ -57,8 +56,7 @@ var promptTools = []promptTool{
 	{"list_metrics", "list_metrics: List the organization's DEFINED metrics — authoritative, pre-validated numbers with a key, label, description, unit and grain."},
 	{"query_metric", "query_metric: Return a defined metric's value over a date window (metric_key, from, to as YYYY-MM-DD), optionally with a comparison (compare_to = previous_period | same_period_last_year) that also gives the delta. PREFER this over run_sql whenever a metric covers the question."},
 	{"run_sql", "run_sql: Execute a read-only SELECT against ONE source. Pass source_id when more than one source is registered. Use for questions NO defined metric covers."},
-	{"create_visualization", "create_visualization: Create a Metabase card from a SQL query against ONE source. Pass source_id when more than one source is registered. Returns card_id and chart_type."},
-	{"create_dashboard", "create_dashboard: Combine multiple card_ids into a single Metabase dashboard with a shareable URL."},
+	{"create_dashboard", "create_dashboard: Build a live dashboard from one or more panels in a SINGLE call, and return a URL. Each panel carries a metric_key or its own SQL, a chart type (line, bar, grouped_bar, stacked_bar, pie, donut, kpi, table) and a 'map' naming which columns to plot. Declare a 'filters' entry — a date range above all — and reference it in panel SQL as {{period_from}} / {{period_to}}, which bind as query parameters. The dashboard re-runs its queries every time somebody opens it."},
 	{"schedule_task", "schedule_task: Create a recurring scheduled task. Each run executes a saved prompt through this agent and writes the result to a dedicated thread. Parameters: name, prompt (the instruction to run), cron_expression (5-field cron, e.g. \"0 7 * * 1\" = Mondays 07:00), timezone (IANA, default UTC). When the user's request is ambiguous about WHAT to run, WHEN, or in WHICH timezone, ASK the user to clarify before calling schedule_task. After it returns, tell the user the task was scheduled and quote the task_id; do not invent a URL — the dashboard renders the task by id."},
 	{"ask_clarification", "ask_clarification: Ask the user ONE question and end the turn, for a request ambiguous enough that guessing would produce a confidently wrong answer. Prefer this over picking a reading and running with it. Not for anything you could look up yourself, and not for a question you can already answer."},
 	{"propose_action", "propose_action: Propose a write-capable action — one that changes something outside Argentum, such as sending a message. It does NOT perform the action: it records a proposal a human approves from the dashboard. The kinds this workspace has enabled, and the parameters each takes, are listed under \"Actions this workspace has enabled\" in the turn's system context. If the user asks for something no enabled kind covers, say so plainly rather than doing it another way."},
@@ -68,11 +66,10 @@ var promptTools = []promptTool{
 // guideline is one numbered rule, and what it depends on.
 //
 // needs lists tools that must ALL be present for the rule to render; absent
-// lists tools that must all be missing. The second exists for the pairs: the
-// dashboard rules apply when the agent can build a dashboard, and a different
-// rule applies when it can make cards and cannot wrap them — a card_id is not
-// something a user can open, so an agent in that position must answer with the
-// data rather than offer a card as the deliverable.
+// lists tools that must all be missing. The second exists for rules that only
+// make sense in the gap where a capability is missing — the run_sql guidance
+// differs depending on whether the agent can also call get_schema or
+// ask_clarification, and a rule the agent cannot obey must not be given to it.
 type guideline struct {
 	needs  []string
 	absent []string
@@ -82,16 +79,15 @@ type guideline struct {
 	//
 	// The chart rules and the report directive contradict each other in so many
 	// words. The shared prompt says *"when the user wants charts, call
-	// create_visualization"*; the directive appended after it says *"do not call
-	// create_visualization — a chart in this report is a chart section"*. On
-	// "Total sales by month, with a bar chart" both rules match, and the eval
-	// run of 2026-08-08 measured what happens: haiku built a Metabase card and
-	// never produced the file, deepseek produced the file and called
-	// create_visualization three times anyway. Both fail the case; only one of
-	// them fails visibly.
+	// create_dashboard"*; the directive appended after it says *"do not — a chart
+	// in this report is a chart section in the document spec"*. On "Total sales
+	// by month, with a bar chart" both rules match, and the eval run of
+	// 2026-08-08 measured what happens: haiku built a chart and never produced
+	// the file, deepseek produced the file and called the chart tool three times
+	// anyway. Both fail the case; only one of them fails visibly.
 	//
 	// A stronger directive would be a guess. Removing the rule it argues with
-	// is not: on a turn that must end in a file, the Metabase path is not an
+	// is not: on a turn that must end in a file, a dashboard is not an
 	// alternative the model should be weighing.
 	notOnFileTurn bool
 }
@@ -138,41 +134,29 @@ var guidelines = []guideline{
 	},
 	{
 		needs: []string{"run_sql"},
-		text: `SQL DIALECT: Every get_schema / run_sql / create_visualization response includes a "db_type" field (postgres, mysql, or sqlserver). Generate SQL in that exact dialect; different sources may use different dialects.
+		text: `SQL DIALECT: Every get_schema / run_sql response includes a "db_type" field (postgres, mysql, or sqlserver). Generate SQL in that exact dialect; different sources may use different dialects.
    - postgres: DATE_TRUNC, STRING_AGG, NOW(), LIMIT n.
    - mysql: DATE_FORMAT, GROUP_CONCAT, NOW(), DATE_ADD/DATE_SUB, LIMIT n.
    - sqlserver: DATEADD/DATEDIFF/DATEPART (no DATE_TRUNC), STRING_AGG, SYSDATETIME()/GETDATE(), TOP n (or OFFSET … FETCH NEXT … with ORDER BY); identifiers in [brackets]; tables live in dbo.`,
 	},
 	{
-		needs:         []string{"create_visualization"},
+		needs:         []string{"create_dashboard"},
 		notOnFileTurn: true,
 		text: `A CHART IS SOMETHING THE USER ASKS FOR. Do not create one otherwise.
-   - Ask yourself before every create_visualization call: did the user's message say chart, graph, plot, dashboard, visual, trend, "show me", or name a picture in some other way? If it did not, answer with the numbers and stop. There is no such thing as a helpful unrequested chart here — it is a round trip to Metabase, a billed event the tenant did not ask for, and one of the few tool calls this turn is allowed.
+   - Ask yourself before every create_dashboard call: did the user's message say chart, graph, plot, dashboard, visual, trend, "show me", or name a picture in some other way? If it did not, answer with the numbers and stop. There is no such thing as a helpful unrequested chart here — it is one of the few tool calls this turn is allowed, spent on something nobody asked for.
    - "What were our total sales last month?" wants a number. "Which channel is biggest?" wants a name and a number. "How has revenue moved this year?" wants the figures and a sentence about the direction — a request to interpret a trend is not a request to draw it.
    - This costs real answers, not just money. The recorded case: a turn that built two charts and a dashboard nobody requested, then ran out of budget on the third call and could not finish the question it was asked. Spending the turn's last iteration on a picture is how a question goes unanswered.
    - If a chart genuinely would help and was not requested, say so in one clause at the end and let the user ask. Do not build it first.`,
 	},
 	{
-		needs:         []string{"create_visualization", "create_dashboard"},
+		needs:         []string{"create_dashboard"},
 		notOnFileTurn: true,
-		text: `When the user DOES want charts/graphs/dashboards: call create_visualization for each card (with the appropriate source_id), then create_dashboard ONCE.
-   - Create ONLY the cards the user asked for. Every extra chart is a Metabase round trip nobody requested, and it can exhaust the turn before the question is answered. If the user asked for a number, answer with the number — a chart is not a substitute for it.
-   - After create_visualization returns, copy the exact "dashboard_cards" array into create_dashboard's "cards" parameter.
-   - Alternatively, pass just "card_ids": [123, 456] to create_dashboard.
-   - When returning the dashboard URL to the user, format it as a markdown link with descriptive text, e.g. [Sales Performance Dashboard](url). Never show the raw URL.
-   - Time-series charts (line/bar/combo where an axis is date, datetime, month, week, quarter, year, or similar): put earliest periods first and latest last. In SQL, ORDER BY the true time dimension ascending (use the underlying date/timestamp for grouping labels if needed). Never rely on unspecified row order and do not use DESC for the time axis unless the user explicitly asks for newest-first.`,
-	},
-	{
-		needs:         []string{"create_visualization", "create_dashboard"},
-		notOnFileTurn: true,
-		text:          `NEVER return individual card IDs to the user — always wrap with a dashboard.`,
-	},
-	{
-		needs:         []string{"create_visualization"},
-		absent:        []string{"create_dashboard"},
-		notOnFileTurn: true,
-		text: `CHARTS WITHOUT A DASHBOARD: you can create cards but not wrap them, and a card_id is not something the user can open. Answer the question in the reply — the numbers, the trend, the comparison — and never present a card_id or an invented dashboard URL as the deliverable.
-   - Time-series charts: put earliest periods first and latest last. ORDER BY the true time dimension ascending, and do not use DESC for the time axis unless the user explicitly asks for newest-first.`,
+		text: `When the user DOES want charts/graphs/dashboards: call create_dashboard ONCE, with every panel in the same call. There is no separate step for individual charts.
+   - Build ONLY the panels the user asked for. If the user asked for a number, answer with the number — a chart is not a substitute for it.
+   - Each panel carries either a metric_key (preferred when the registry already defines that number — call list_metrics first) or its own SQL, plus 'viz' and a 'map' naming which columns to plot. Run an SQL panel's query with run_sql first and map only column names that result actually returned; a name the query does not produce is the most common way this call fails.
+   - Give the dashboard a date-range filter unless the question is genuinely fixed in time, and write the window into each panel's SQL as {{period_from}} / {{period_to}}. Those bind as query parameters: write them bare, never quoted, never concatenated. A dashboard whose dates are baked into the SQL is a screenshot that ages silently.
+   - When returning the dashboard URL to the user, format it as a markdown link with descriptive text, e.g. [Sales Performance Dashboard](url). Never show the raw URL. The chart renders inside the chat where the link appears, so the sentence around it should read as a caption rather than as instructions to click.
+   - Time-series panels (line/bar where an axis is date, datetime, month, week, quarter, year, or similar): put earliest periods first and latest last. ORDER BY the true time dimension ascending (use the underlying date/timestamp for grouping labels if needed). Never rely on unspecified row order and do not use DESC for the time axis unless the user explicitly asks for newest-first.`,
 	},
 	{
 		needs: []string{"generate_document"},

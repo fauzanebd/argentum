@@ -11,7 +11,7 @@ import (
 //
 // The problem it solves is a retry loop, not an ergonomic wrinkle. On a tenant
 // with two sources the agent calls get_schema, reads a schema, then calls
-// create_visualization without source_id; ResolveSource refuses with a message
+// a second data tool without source_id; ResolveSource refuses with a message
 // naming both ids; the agent calls it again unchanged, three to five times,
 // until the iteration budget ends the turn before create_dashboard is reached.
 // Recorded as reproducible defect 2 in coverage/eval-sprint1.md §4 — two of

@@ -14,7 +14,7 @@ import (
 
 // ListSourcesTool returns the catalog of analytical databases registered for
 // the current tenant. The agent uses it to discover which source_id to pass
-// to get_schema, run_sql, and create_visualization.
+// to get_schema and run_sql.
 type ListSourcesTool struct {
 	repo domain.ConnectionRepository
 }
@@ -28,7 +28,7 @@ func (t *ListSourcesTool) Name() string { return "list_sources" }
 func (t *ListSourcesTool) Description() string {
 	return "List the data sources (analytical databases) registered for this organization. " +
 		"Returns each source's id, label, db_type, description, and is_default flag. " +
-		"Use this when you need to choose a source_id for run_sql, get_schema, or create_visualization."
+		"Use this when you need to choose a source_id for run_sql, get_schema, or create_dashboard."
 }
 
 func (t *ListSourcesTool) Parameters() map[string]interfaces.ParameterSpec {

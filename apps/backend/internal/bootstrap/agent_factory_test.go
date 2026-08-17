@@ -134,10 +134,10 @@ func TestTheTurnDirectiveLandsInTheSystemPrompt(t *testing.T) {
 	}
 
 	prompt := agent.GetSystemPrompt()
-	if !strings.HasPrefix(prompt, registryPrompt()) {
+	if !strings.HasPrefix(prompt, fileTurnPrompt()) {
 		t.Error("the shared system prompt is no longer the prefix; on Anthropic that is every turn's cache key")
 	}
-	for _, clause := range []string{"generate_document", "Do not call create_visualization"} {
+	for _, clause := range []string{"generate_document", "Do not call create_dashboard"} {
 		if !strings.Contains(prompt, clause) {
 			t.Errorf("the system prompt does not carry %q", clause)
 		}

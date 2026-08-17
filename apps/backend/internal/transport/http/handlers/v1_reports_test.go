@@ -131,7 +131,7 @@ func TestReportPromptIsEnqueuedWithoutTheDirective(t *testing.T) {
 	for _, clause := range []string{
 		"generate_document",
 		"spec_version=2",
-		"Do not call create_visualization",
+		"Do not call create_dashboard",
 	} {
 		if !strings.Contains(f.enq.in.Directive, clause) {
 			t.Errorf("directive does not mention %q:\n%s", clause, f.enq.in.Directive)

@@ -33,7 +33,7 @@ import (
 // touched no source still gets the menu.
 //
 // This is the choke point every data tool goes through — get_schema, run_sql
-// and create_visualization all call it — which is why the roster's source
+// and create_dashboard all call it — which is why the roster's source
 // allowlist is enforced here rather than in a persona (T-S2). The scope is
 // applied to the catalog *before* any other branch, so an agent scoped to one
 // source sees a one-source world: the "specify source_id" menu lists only what

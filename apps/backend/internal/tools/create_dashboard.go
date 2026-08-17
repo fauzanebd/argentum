@@ -4,67 +4,112 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
-	"github.com/fauzanebd/argentum/internal/domain"
-	"github.com/fauzanebd/argentum/internal/metabase"
-	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/sirupsen/logrus"
+
+	"github.com/fauzanebd/argentum/internal/dashboard"
+	"github.com/fauzanebd/argentum/internal/dashboard/spec"
+	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
-// DashboardSaver persists a created dashboard to the control DB.
-type DashboardSaver interface {
-	Save(ctx context.Context, d *domain.SavedDashboard) error
+// DashboardCreator is the half of app.DashboardService this tool needs.
+// Declared here rather than in internal/app to avoid an import cycle:
+// internal/app already depends on internal/tools.
+type DashboardCreator interface {
+	Create(ctx context.Context, companyID, createdBy string, in dashboard.Input) (*dashboard.SaveResult, error)
 }
 
-// CreateDashboardTool assembles multiple Metabase cards into a single dashboard.
+// CreateDashboardTool builds a live dashboard from panels the agent describes
+// in one call (T-D11).
+//
+// It replaces a pair — create_visualization then create_dashboard — that existed
+// only because a Metabase card is a first-class object and a dashboard is a
+// container for cards. Nothing native needs that round trip, and the pair had
+// two costs beyond the extra calls. The first is the four-tool-calls-per-chart
+// budget it spent. The second was a correctness bug the shape made necessary:
+// create_dashboard could resolve "the cards made earlier in this conversation"
+// out of a package-level map, which does not survive a worker restart and is
+// wrong the moment there are two workers.
 type CreateDashboardTool struct {
-	metabaseClient *metabase.Client
-	recorder       UsageRecorder
-	dbSaver        DashboardSaver
+	svc      DashboardCreator
+	recorder UsageRecorder
 }
 
-func NewCreateDashboardTool(metabaseClient *metabase.Client, recorder UsageRecorder, dbSaver DashboardSaver) *CreateDashboardTool {
+func NewCreateDashboardTool(svc DashboardCreator, recorder UsageRecorder) *CreateDashboardTool {
 	if recorder == nil {
 		recorder = nopRecorder{}
 	}
-	return &CreateDashboardTool{metabaseClient: metabaseClient, recorder: recorder, dbSaver: dbSaver}
+	return &CreateDashboardTool{svc: svc, recorder: recorder}
 }
 
 func (t *CreateDashboardTool) Name() string { return "create_dashboard" }
+
 func (t *CreateDashboardTool) Description() string {
-	return "Create a Metabase dashboard from one or more card IDs (returned by create_visualization) and return a single shareable public URL. Always call this after creating cards to give the user one unified dashboard link. Pass cards either as 'cards' (array of objects with card_id and chart_type) or as 'card_ids' (simple array of integers). If you omit both, cards created earlier in this conversation are used automatically."
+	return "Create a live dashboard from one or more panels and return a URL the user can open. " +
+		"Each panel carries either a metric_key from the metric registry (preferred for single numbers — call list_metrics first) " +
+		"or its own SQL, plus a chart type and which columns to plot. " +
+		"The dashboard re-runs those queries every time somebody opens it, so it stays current without being rebuilt. " +
+		"Call this ONCE with every panel the user asked for; there is no separate step for individual charts. " +
+		"For an SQL panel, run its SQL with run_sql first and look at the column names it actually returns — 'map' must name " +
+		"columns from that result, and a name the query does not produce is the most common way this call fails. " +
+		"If an axis is time (date, month, week, quarter), the SQL MUST ORDER BY that column ascending so the chart reads left to right; " +
+		"never rely on unspecified row order. " +
+		"Add a 'filters' entry for anything the user should be able to change — a date range above all — and reference it in each " +
+		"panel's SQL as {{period_from}} / {{period_to}} for a date_range named 'period', or {{your_filter_name}} for the others. " +
+		"Those are bound as query parameters, so write them bare: WHERE created_at >= {{period_from}}, never quoted and never concatenated. " +
+		"Returns dashboard_id, url, and per-panel warnings. Give the user the url as a markdown link with descriptive text, never the raw URL."
 }
 
 func (t *CreateDashboardTool) Parameters() map[string]interfaces.ParameterSpec {
 	return map[string]interfaces.ParameterSpec{
-		"name": {
+		"title": {
 			Type:        "string",
-			Description: "Name for the dashboard",
+			Description: "Title for the dashboard, in the user's own language",
 			Required:    true,
 		},
 		"description": {
 			Type:        "string",
-			Description: "Description of the dashboard",
+			Description: "One sentence on what the dashboard answers",
 			Required:    false,
 		},
-		"cards": {
-			Type:        "array",
-			Description: "Array of card objects. Fields: card_id (int), chart_type (string: 'scalar','bar','line','pie','table'). Optional layout: col, row, size_x, size_y. Prefer this when you know the chart types.",
+		"source_id": {
+			Type:        "string",
+			Description: "Which data source the panels read. Omit when the company has one source.",
 			Required:    false,
+		},
+		"panels": {
+			Type: "array",
+			Description: "The panels, in reading order. Each: {title, viz, sql OR metric_key, map, fmt}. " +
+				"viz is one of line, bar, grouped_bar, stacked_bar, pie, donut, kpi, table. " +
+				"map names the columns: {label: 'month', series: ['revenue','cost']} for a wide result, " +
+				"{label: 'month', series_by: 'channel', value: 'revenue'} for a long one, " +
+				"{value: 'total', delta_value: 'previous'} for a kpi, and nothing at all for a table. " +
+				"fmt is one of text, number, currency, percent, date. Layout is optional and flows automatically.",
+			Required: true,
 			Items: &interfaces.ParameterSpec{
 				Type:        "object",
-				Description: "Card entry with card_id, chart_type, and optional layout (col, row, size_x, size_y)",
+				Description: "One panel",
 			},
 		},
-		"card_ids": {
-			Type:        "array",
-			Description: "Simple array of card IDs (integers). Use this when you only have the card IDs from create_visualization. Example: [123, 456].",
-			Required:    false,
+		"filters": {
+			Type: "array",
+			Description: "Controls the viewer can change. Each: {name, kind, label, options, default}. " +
+				"kind is one of date_range, date, enum, number, bool. " +
+				"A date_range named 'period' binds {{period_from}} and {{period_to}} in panel SQL, and its default is a " +
+				"preset NAME — last_7d, last_30d, mtd, qtd, ytd or last_month — never a stored date, or the dashboard is " +
+				"a snapshot that silently ages.",
+			Required: false,
 			Items: &interfaces.ParameterSpec{
-				Type:        "integer",
-				Description: "A card ID returned by create_visualization",
+				Type:        "object",
+				Description: "One filter",
 			},
+		},
+		"timezone": {
+			Type:        "string",
+			Description: "IANA zone the windows resolve in, e.g. Asia/Jakarta. Defaults to UTC.",
+			Required:    false,
 		},
 	}
 }
@@ -74,145 +119,300 @@ func (t *CreateDashboardTool) Run(ctx context.Context, input string) (string, er
 }
 
 func (t *CreateDashboardTool) Execute(ctx context.Context, args string) (string, error) {
+	if t.svc == nil {
+		return "", fmt.Errorf("dashboards are not configured on this deployment")
+	}
 	logrus.Debugf("create_dashboard raw args: %s", args)
 
-	// Parse into a flexible map first to handle varied LLM output formats
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(args), &raw); err != nil {
-		return "", fmt.Errorf("failed to parse parameters: %w", err)
-	}
-
-	// Extract name. A model that sends `{"name": {"text": "Sales"}}` used to
-	// land here as an empty string and get told the parameter was missing,
-	// which is advice it cannot act on — it did supply one, in the wrong
-	// shape. Say what was wrong instead.
-	var name string
-	if v, ok := raw["name"]; ok {
-		if err := json.Unmarshal(v, &name); err != nil {
-			return "", fmt.Errorf("name must be a string, got %s", v)
-		}
-	}
-	if name == "" {
-		return "", fmt.Errorf("name parameter is required")
-	}
-
-	// Extract description (optional)
-	var description string
-	if v, ok := raw["description"]; ok {
-		if err := json.Unmarshal(v, &description); err != nil {
-			return "", fmt.Errorf("description must be a string, got %s", v)
-		}
-	}
-
-	// Extract cards — support multiple formats the LLM might use
-	entries, err := parseCardEntries(raw)
+	in, err := parseDashboardArgs(args)
 	if err != nil {
 		return "", err
 	}
-
-	// Fallback: auto-resolve cards created earlier in this thread
-	if len(entries) == 0 {
-		threadID := tenantctx.ThreadID(ctx)
-		entries = GetThreadCards(threadID)
-		if len(entries) == 0 {
-			return "", fmt.Errorf("cards parameter is required and must not be empty. Provide cards as: [{\"card_id\": 1, \"chart_type\": \"bar\"}, ...] or card_ids as: [1, 2, 3]")
-		}
-		logrus.WithField("thread_id", threadID).WithField("card_count", len(entries)).Debug("create_dashboard auto-resolved cards from thread state")
+	companyID := tenantctx.CompanyID(ctx)
+	if threadID := tenantctx.ThreadID(ctx); threadID != "" {
+		in.ThreadID = &threadID
 	}
 
-	dashboard, err := t.metabaseClient.CreateDashboard(ctx, name, description)
+	res, err := t.svc.Create(ctx, companyID, "", *in)
 	if err != nil {
-		return "", fmt.Errorf("failed to create dashboard: %w", err)
+		return "", err
 	}
+	t.recorder.RecordMetabaseDashboard(ctx, companyID, tenantctx.ThreadID(ctx))
 
-	if err := t.metabaseClient.AddCardsToDashboard(ctx, dashboard.ID, entries); err != nil {
-		return "", fmt.Errorf("failed to add cards to dashboard: %w", err)
+	out := map[string]any{
+		"dashboard_id": res.Dashboard.ID,
+		"url":          "/dashboards/" + res.Dashboard.ID,
+		"panel_count":  len(res.Dashboard.Spec.Panels),
+		// row_count grounds the reply. guardrails.CheckFabrication reads
+		// TurnEvidence.DataRows, and the metric registry's gate recorded what
+		// happens when a data tool omits it: every answer built on that tool was
+		// suppressed as a fabrication.
+		"row_count": res.RowCount,
 	}
-
-	publicURL, err := t.metabaseClient.GetPublicDashboardURL(ctx, dashboard.ID)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate public URL: %w", err)
+	if len(res.Warnings) > 0 {
+		out["warnings"] = res.Warnings
 	}
-
-	t.recorder.RecordMetabaseDashboard(ctx, tenantctx.CompanyID(ctx), tenantctx.ThreadID(ctx))
-	ClearThreadCards(tenantctx.ThreadID(ctx))
-
-	// Persist to control DB so the user can revisit later.
-	if t.dbSaver != nil {
-		_ = t.dbSaver.Save(ctx, &domain.SavedDashboard{
-			CompanyID:           tenantctx.CompanyID(ctx),
-			ThreadID:            tenantctx.ThreadID(ctx),
-			MetabaseDashboardID: dashboard.ID,
-			Name:                name,
-			PublicURL:           publicURL,
-		})
-	}
-
 	logrus.WithFields(logrus.Fields{
-		"dashboard_id": dashboard.ID,
-		"card_count":   len(entries),
-	}).Info("Created Metabase dashboard with multiple cards")
+		"dashboard_id": res.Dashboard.ID,
+		"panels":       len(res.Dashboard.Spec.Panels),
+		"warnings":     len(res.Warnings),
+	}).Info("created native dashboard")
 
-	out, _ := json.Marshal(map[string]interface{}{
-		"dashboard_id": dashboard.ID,
-		"public_url":   publicURL,
-		"card_count":   len(entries),
-	})
-	return string(out), nil
+	blob, _ := json.Marshal(out)
+	return string(blob), nil
 }
 
-// parseCardEntries extracts card entries from the raw JSON, supporting multiple formats:
-//   - "cards": [{"card_id": 1, "chart_type": "bar"}, ...]           (preferred)
-//   - "card_ids": [{"card_id": 1, "chart_type": "bar"}, ...]        (alternate key)
-//   - "cards": [1, 2, 3]  or  "card_ids": [1, 2, 3]                (flat int array)
-func parseCardEntries(raw map[string]json.RawMessage) ([]metabase.DashCardEntry, error) {
-	// Try both key names
-	var cardsRaw json.RawMessage
-	if v, ok := raw["cards"]; ok {
-		cardsRaw = v
-	} else if v, ok := raw["card_ids"]; ok {
-		cardsRaw = v
-	}
-	if cardsRaw == nil {
-		return nil, nil
+// parseDashboardArgs reads what a model actually sends rather than what the
+// schema asks for.
+//
+// The tolerances are not politeness. Every one of them is a shape the previous
+// pair was hit with in production or in the eval set: `cards` for `panels`,
+// `name` for `title`, a bare string where an array belongs, a viz written with a
+// space or a hyphen. Rejecting those costs a turn's iteration budget to teach
+// the model something the parser can simply accept.
+func parseDashboardArgs(args string) (*dashboard.Input, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(args), &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse parameters: %w", err)
 	}
 
-	// Try structured format: [{card_id, chart_type, ...}]
-	var structured []struct {
-		CardID    int    `json:"card_id"`
-		ChartType string `json:"chart_type"`
-		Col       int    `json:"col"`
-		Row       int    `json:"row"`
-		SizeX     int    `json:"size_x"`
-		SizeY     int    `json:"size_y"`
+	title := firstString(raw, "title", "name", "dashboard_title")
+	if title == "" {
+		return nil, fmt.Errorf("title parameter is required")
 	}
-	if err := json.Unmarshal(cardsRaw, &structured); err == nil && len(structured) > 0 && structured[0].CardID != 0 {
-		entries := make([]metabase.DashCardEntry, len(structured))
-		for i, c := range structured {
-			entries[i] = metabase.DashCardEntry{
-				CardID:    c.CardID,
-				ChartType: c.ChartType,
-				Col:       c.Col,
-				Row:       c.Row,
-				SizeX:     c.SizeX,
-				SizeY:     c.SizeY,
+	description := firstString(raw, "description", "subtitle")
+
+	panelsRaw, ok := firstRaw(raw, "panels", "cards", "charts")
+	if !ok {
+		return nil, fmt.Errorf("panels parameter is required: an array of {title, viz, sql or metric_key, map}")
+	}
+	panels, err := parsePanels(panelsRaw)
+	if err != nil {
+		return nil, err
+	}
+	if len(panels) == 0 {
+		return nil, fmt.Errorf("panels must not be empty")
+	}
+
+	var filters []spec.Filter
+	if filtersRaw, ok := firstRaw(raw, "filters", "parameters"); ok {
+		if filters, err = parseFilters(filtersRaw); err != nil {
+			return nil, err
+		}
+	}
+
+	sp := spec.Dashboard{
+		SpecVersion: spec.Version,
+		Title:       title,
+		SourceID:    firstString(raw, "source_id", "sourceId", "source"),
+		TimeZone:    firstString(raw, "timezone", "time_zone", "tz"),
+		Filters:     filters,
+		Panels:      panels,
+	}
+	return &dashboard.Input{Title: title, Description: description, Spec: sp}, nil
+}
+
+func parsePanels(raw json.RawMessage) ([]spec.Panel, error) {
+	var entries []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil, fmt.Errorf("panels must be an array of objects: %w", err)
+	}
+	panels := make([]spec.Panel, 0, len(entries))
+	// Flow the layout across a 12-column grid when the model does not state one.
+	// A model asked for grid coordinates produces overlapping ones, and two
+	// panels stacked on the same cell is a dashboard that looks broken for a
+	// reason nobody can see in the JSON.
+	col, row := 0, 0
+	for i, e := range entries {
+		p := spec.Panel{
+			ID:        firstString(e, "id", "panel_id", "key"),
+			Title:     firstString(e, "title", "name", "label"),
+			Viz:       normaliseViz(firstString(e, "viz", "chart_type", "type", "visualization")),
+			MetricKey: firstString(e, "metric_key", "metricKey", "metric"),
+			SQL:       firstString(e, "sql", "query", "sql_query"),
+			Fmt:       spec.Format(strings.ToLower(strings.TrimSpace(firstString(e, "fmt", "format")))),
+		}
+		if p.ID == "" {
+			p.ID = fmt.Sprintf("panel-%d", i+1)
+		}
+		if p.Viz == "" {
+			// A panel with SQL and no chart type is a table: it is the one viz
+			// that needs no mapping, so it draws whatever the query returned
+			// instead of failing on a guess about which column is the measure.
+			p.Viz = spec.VizTable
+			if p.MetricKey != "" {
+				p.Viz = spec.VizKPI
 			}
 		}
-		return entries, nil
-	}
-
-	// Try flat int array: [1, 2, 3]
-	var ids []int
-	if err := json.Unmarshal(cardsRaw, &ids); err == nil && len(ids) > 0 {
-		entries := make([]metabase.DashCardEntry, len(ids))
-		for i, id := range ids {
-			entries[i] = metabase.DashCardEntry{
-				CardID:    id,
-				ChartType: "table", // safe default when type is unknown
+		if mapRaw, ok := firstRaw(e, "map", "mapping", "columns"); ok {
+			m, err := parseMapping(mapRaw)
+			if err != nil {
+				return nil, fmt.Errorf("panel %q: %w", p.ID, err)
+			}
+			p.Map = m
+		}
+		if layoutRaw, ok := firstRaw(e, "layout", "position"); ok {
+			if err := json.Unmarshal(layoutRaw, &p.Layout); err != nil {
+				return nil, fmt.Errorf("panel %q: layout must be {x, y, w, h}", p.ID)
 			}
 		}
-		return entries, nil
+		if p.Layout.W <= 0 || p.Layout.H <= 0 {
+			p.Layout = flowLayout(p.Viz, &col, &row)
+		}
+		panels = append(panels, p)
 	}
+	return panels, nil
+}
 
-	return nil, nil
+// flowLayout places the next panel left to right, wrapping at the grid's width.
+// A KPI is a quarter wide and short because it holds one number; everything else
+// is half a row, which is two charts side by side on a desktop and one per row
+// once the grid collapses.
+func flowLayout(viz spec.Viz, col, row *int) spec.Layout {
+	w, h := 6, 4
+	if viz == spec.VizKPI {
+		w, h = 3, 2
+	}
+	if *col+w > spec.GridColumns {
+		*col = 0
+		*row += h
+	}
+	l := spec.Layout{X: *col, Y: *row, W: w, H: h}
+	*col += w
+	return l
+}
+
+func parseMapping(raw json.RawMessage) (spec.Mapping, error) {
+	var e map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return spec.Mapping{}, fmt.Errorf("map must be an object naming columns")
+	}
+	m := spec.Mapping{
+		Label:      firstString(e, "label", "x", "category", "dimension"),
+		SeriesBy:   firstString(e, "series_by", "seriesBy", "group_by", "split_by"),
+		Value:      firstString(e, "value", "y", "measure"),
+		DeltaValue: firstString(e, "delta_value", "deltaValue", "comparison", "previous"),
+	}
+	if seriesRaw, ok := firstRaw(e, "series", "y_columns", "values"); ok {
+		// A bare string is what a model sends for a one-series chart, and it
+		// means the same thing as a one-element array.
+		var one string
+		if err := json.Unmarshal(seriesRaw, &one); err == nil {
+			if one != "" {
+				m.Series = []string{one}
+			}
+		} else if err := json.Unmarshal(seriesRaw, &m.Series); err != nil {
+			return spec.Mapping{}, fmt.Errorf("map.series must be a column name or an array of them")
+		}
+	}
+	return m, nil
+}
+
+func parseFilters(raw json.RawMessage) ([]spec.Filter, error) {
+	var entries []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil, fmt.Errorf("filters must be an array of objects")
+	}
+	filters := make([]spec.Filter, 0, len(entries))
+	for _, e := range entries {
+		f := spec.Filter{
+			Name:  firstString(e, "name", "key", "id"),
+			Label: firstString(e, "label", "title"),
+			Kind:  spec.Kind(normaliseToken(firstString(e, "kind", "type"))),
+		}
+		if f.Kind == "" {
+			f.Kind = spec.KindDateRange
+		}
+		if optsRaw, ok := firstRaw(e, "options", "choices", "values"); ok {
+			_ = json.Unmarshal(optsRaw, &f.Options) // an unreadable option list is a UX hint, not a failure
+		}
+		if defRaw, ok := firstRaw(e, "default", "default_value", "value"); ok {
+			var v any
+			if err := json.Unmarshal(defRaw, &v); err == nil {
+				f.Default = v
+			}
+		}
+		if f.Kind == spec.KindDateRange && f.Default == nil {
+			// A range with no default cannot resolve, and refusing the call
+			// teaches the model less than picking the window a business
+			// question means nine times out of ten.
+			f.Default = string(spec.PresetLast30d)
+		}
+		filters = append(filters, f)
+	}
+	return filters, nil
+}
+
+// normaliseViz accepts what models write — "grouped bar", "Stacked-Bar",
+// "scalar" — and returns what the spec calls it.
+func normaliseViz(v string) spec.Viz {
+	switch normaliseToken(v) {
+	case "":
+		return ""
+	case "scalar", "number", "metric", "kpi", "stat", "single_value":
+		return spec.VizKPI
+	case "line", "area", "timeseries", "time_series":
+		return spec.VizLine
+	case "bar", "column", "histogram":
+		return spec.VizBar
+	case "grouped_bar", "clustered_bar", "multi_bar":
+		return spec.VizGroupedBar
+	case "stacked_bar", "stacked_column":
+		return spec.VizStackedBar
+	case "pie":
+		return spec.VizPie
+	case "donut", "doughnut":
+		return spec.VizDonut
+	case "table", "grid", "list":
+		return spec.VizTable
+	default:
+		// Unknown types fall through unchanged so spec.Validate names the
+		// offender and lists what this release draws, rather than this function
+		// silently choosing a chart the user did not ask for.
+		return spec.Viz(normaliseToken(v))
+	}
+}
+
+func normaliseToken(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	v = strings.ReplaceAll(v, "-", "_")
+	return strings.ReplaceAll(v, " ", "_")
+}
+
+// firstString returns the first key present that holds a string, tolerating a
+// model that wraps a value in an object ({"text": "Sales"}) — a shape the
+// previous tool met often enough to have a comment about it.
+func firstString(raw map[string]json.RawMessage, keys ...string) string {
+	for _, k := range keys {
+		v, ok := raw[k]
+		if !ok {
+			continue
+		}
+		var s string
+		if err := json.Unmarshal(v, &s); err == nil {
+			return strings.TrimSpace(s)
+		}
+		var wrapped struct {
+			Text  string `json:"text"`
+			Value string `json:"value"`
+		}
+		if err := json.Unmarshal(v, &wrapped); err == nil {
+			if wrapped.Text != "" {
+				return strings.TrimSpace(wrapped.Text)
+			}
+			if wrapped.Value != "" {
+				return strings.TrimSpace(wrapped.Value)
+			}
+		}
+	}
+	return ""
+}
+
+func firstRaw(raw map[string]json.RawMessage, keys ...string) (json.RawMessage, bool) {
+	for _, k := range keys {
+		if v, ok := raw[k]; ok && len(v) > 0 && string(v) != "null" {
+			return v, true
+		}
+	}
+	return nil, false
 }

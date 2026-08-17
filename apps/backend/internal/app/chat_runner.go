@@ -586,7 +586,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// One turn, one source memory. After the scope, because what it may recall
 	// is bounded by what the scope allows, and installed here so that every
 	// tool call the turn makes shares it — a source resolved by get_schema is
-	// what the create_visualization two calls later is missing
+	// what the tool call two calls later is missing
 	// (coverage/eval-sprint1.md §4).
 	ctx = tools.WithTurnSource(ctx)
 
@@ -2020,7 +2020,7 @@ func (r *ChatRunner) withCookbookContext(ctx context.Context, msg string, questi
 // withSourcesContext prepends the catalog of available data sources so the
 // agent can pick a source_id per tool call without spending a list_sources /
 // get_schema round-trip. Per-source dialect hints are returned in each
-// run_sql / get_schema / create_visualization result (db_type field) so we
+// run_sql / get_schema result (db_type field) so we
 // don't repeat them here.
 func withSourcesContext(msg string, sources []*domain.DBConnection) string {
 	if len(sources) == 0 {
@@ -2043,7 +2043,7 @@ func withSourcesContext(msg string, sources []*domain.DBConnection) string {
 		}
 		fmt.Fprintf(&b, " - %s | %s (%s%s) — %s\n", s.ID, label, s.DBType, marker, desc)
 	}
-	b.WriteString("Pick the appropriate source_id when calling get_schema, run_sql, or create_visualization. ")
+	b.WriteString("Pick the appropriate source_id when calling get_schema, run_sql, or create_dashboard. ")
 	if len(sources) > 1 {
 		b.WriteString("If unsure which source the user means, ASK before querying.")
 	} else {

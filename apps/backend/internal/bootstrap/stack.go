@@ -44,6 +44,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
+	"github.com/fauzanebd/argentum/internal/dashboard"
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/guardrails"
@@ -95,7 +96,7 @@ type Stack struct {
 	// MetabaseSync registers a tenant DSN as a Metabase database. Exposed
 	// because a source created outside the HTTP API — the eval harness seeds
 	// its own — is invisible to Metabase until this runs, and every
-	// create_visualization call against it fails.
+	// query against it fails.
 	MetabaseSync *app.MetabaseWarehouseSync
 
 	Tools        []interfaces.Tool
@@ -323,7 +324,6 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword,
 	)
 	s.MetabaseSync = app.NewMetabaseWarehouseSync(metabaseClient)
-	savedDashboardRepo := pgctl.NewSavedDashboardRepo(controlDB)
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
 	s.Documents = documentRepo
 
@@ -457,10 +457,16 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		Schema:      schemaTool,
 		Usage:       s.UsageSvc,
 		// The tenant's redaction policy, for the empty-result probe (T-H10).
-		Companies:           s.Companies,
-		Metabase:            metabaseClient,
-		MetabaseSource:      s.Connections,
-		Dashboards:          app.NewMetabaseDashboardService(savedDashboardRepo, metabaseClient),
+		Companies: s.Companies,
+		// Native dashboards (T-D11). The worker builds the whole service rather
+		// than a saver, because create_dashboard now validates a spec and runs
+		// every panel before it stores one — the same code path the API resolves
+		// through, so a dashboard that saves is a dashboard that opens.
+		Dashboards: app.NewDashboardService(
+			pgctl.NewDashboardRepo(controlDB), s.Connections,
+			dashboard.NewResolver(s.Connections, s.TenantPool, s.Metrics).
+				WithPanelTimeout(time.Duration(cfg.DashboardPanelTimeoutSecs)*time.Second),
+		),
 		Scheduled:           s.ScheduledSvc,
 		Docs:                s.Docs,
 		Metrics:             s.Metrics,
@@ -615,9 +621,9 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 		// bill its tool definitions were already generating.
 		// The turn's own shape, not only its tools (T-A2b, measured 2026-08-08):
 		// a turn that must end in a file does not get the guidelines telling it
-		// to answer a chart request with a Metabase card, because the directive
-		// it carries forbids exactly that and the model was deciding between
-		// them rather than obeying either.
+		// to answer a chart request by building a dashboard, because the
+		// directive it carries forbids exactly that and the model was deciding
+		// between them rather than obeying either.
 		turnPrompt := d.systemPrompt(turnToolNames, PromptTurn{
 			FileDeliverable: spec.SystemAddendum != "",
 		})

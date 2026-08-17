@@ -29,14 +29,13 @@ func TestAFileTurnIsNotToldToBuildAMetabaseCard(t *testing.T) {
 
 	// The directive's half. If this ever stops being true the test below is
 	// asserting nothing, so it is checked rather than assumed.
-	if !strings.Contains(reportDirective(), "Do not call create_visualization") {
-		t.Fatal("the report directive no longer forbids create_visualization; this test is vacuous")
+	if !strings.Contains(reportDirective(), "Do not call create_dashboard") {
+		t.Fatal("the report directive no longer forbids create_dashboard; this test is vacuous")
 	}
 
 	for _, forbidden := range []string{
-		"call create_visualization for each card",
-		"NEVER return individual card IDs",
-		"CHARTS WITHOUT A DASHBOARD",
+		"call create_dashboard ONCE",
+		"A CHART IS SOMETHING THE USER ASKS FOR",
 	} {
 		if strings.Contains(whole, forbidden) {
 			t.Errorf("a file turn is told %q while its directive forbids exactly that;\n"+
@@ -50,11 +49,11 @@ func TestAFileTurnIsNotToldToBuildAMetabaseCard(t *testing.T) {
 func TestAnOrdinaryTurnKeepsTheChartRules(t *testing.T) {
 	prompt := SystemPromptForTurn(PromptToolNames(), PromptTurn{})
 	for _, want := range []string{
-		"call create_visualization for each card",
-		"NEVER return individual card IDs",
+		"call create_dashboard ONCE",
+		"A CHART IS SOMETHING THE USER ASKS FOR",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Errorf("an ordinary turn lost %q; charts in chat are still Metabase cards", want)
+			t.Errorf("an ordinary turn lost %q; a chart request still produces a dashboard", want)
 		}
 	}
 }
@@ -74,12 +73,12 @@ func TestAFileTurnKeepsEverythingElse(t *testing.T) {
 			t.Errorf("a file turn lost %q", want)
 		}
 	}
-	// The catalog is unchanged: create_visualization is still a tool the turn
-	// holds, and the directive is what says not to reach for it. Removing the
-	// tool would be a different decision — and the wrong one, since a report
-	// turn that legitimately needs a card has no way back.
-	if !strings.Contains(prompt, "create_visualization: Create a Metabase card") {
-		t.Error("the tool catalog lost create_visualization; the guidelines were the target, not the tool")
+	// The catalog is unchanged: create_dashboard is still a tool the turn holds,
+	// and the directive is what says not to reach for it. Removing the tool
+	// would be a different decision — and the wrong one, since a report turn
+	// that legitimately needs a dashboard has no way back.
+	if !strings.Contains(prompt, "create_dashboard: Build a live dashboard") {
+		t.Error("the tool catalog lost create_dashboard; the guidelines were the target, not the tool")
 	}
 }
 

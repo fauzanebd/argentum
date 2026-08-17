@@ -48,7 +48,9 @@ func TestTheCompanyBlockPrecedesThePersona(t *testing.T) {
 	}
 
 	prompt := agent.GetSystemPrompt()
-	if !strings.HasPrefix(prompt, registryPrompt()) {
+	// The file-turn variant, because this agent carries a report directive: the
+	// chart guidelines are dropped for exactly that reason (T-A2b).
+	if !strings.HasPrefix(prompt, fileTurnPrompt()) {
 		t.Error("the shared system prompt is no longer the prefix")
 	}
 	companyAt := strings.Index(prompt, companyBlock)

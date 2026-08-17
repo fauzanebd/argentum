@@ -35,12 +35,11 @@ type ReportDirectiveInput struct {
 // must not get a PDF because a sibling endpoint wanted one.
 //
 // **The negative half is the half that works.** T-A2's live gate answered a
-// prompt containing the words "bar chart" by calling `create_visualization`
-// twice and finishing without a document — obeying the system prompt, which
-// teaches that a chart is a Metabase card, over a directive that only said
-// what to do at the end. A chart *inside* a report is a `chart` section in the
-// spec, and the agent has to be told that the other tool is not what this turn
-// wants.
+// prompt containing the words "bar chart" by calling the chart tool twice and
+// finishing without a document — obeying the system prompt, which teaches how
+// to draw one, over a directive that only said what to do at the end. A chart
+// *inside* a report is a `chart` section in the spec, and the agent has to be
+// told that the other tool is not what this turn wants.
 func ReportDirective(in ReportDirectiveInput) string {
 	var b strings.Builder
 
@@ -55,7 +54,7 @@ func ReportDirective(in ReportDirectiveInput) string {
 	// Named failure modes, because each of these is something a model did on a
 	// real run of this endpoint rather than something imagined here.
 	b.WriteString("Invoke the tool. Do not print its arguments as JSON in your reply — a code block is not a document and the caller receives no file.\n")
-	b.WriteString("Do not call create_visualization or create_dashboard: a chart in this report is a \"chart\" section inside the generate_document spec, not a Metabase card.\n")
+	b.WriteString("Do not call create_dashboard: a chart in this report is a \"chart\" section inside the generate_document spec, not a dashboard panel.\n")
 	b.WriteString("Query only what you need first; the document is the last thing you do.\n")
 	// The third named failure mode, and the one that produces a document nobody
 	// complains about and nobody reads: a spec that is a cover, a KPI row, a

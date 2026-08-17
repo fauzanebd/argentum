@@ -32,9 +32,6 @@ analytics_agent:
       name: "run_sql"
       enabled: true
     - type: "custom"
-      name: "create_visualization"
-      enabled: true
-    - type: "custom"
       name: "create_dashboard"
       enabled: true
 

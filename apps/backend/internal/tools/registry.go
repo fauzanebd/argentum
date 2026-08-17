@@ -7,7 +7,6 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/domain"
-	"github.com/fauzanebd/argentum/internal/metabase"
 )
 
 // The tool registry, in one place (T-S1).
@@ -50,13 +49,12 @@ type RegistryDeps struct {
 	// neither contact nor identity columns, which is the strict reading and the
 	// right default for a build that has no company repository to hand.
 	Companies PIIPolicyLookup
-	Metabase  *metabase.Client
-	// MetabaseSource resolves a tenant source id to a Metabase database id. It
-	// is the connection repository in both processes, named separately because
-	// create_visualization asks it a different question than the others do.
-	MetabaseSource MetabaseSourceDB
-	Dashboards     DashboardSaver
-	Scheduled      ScheduledTaskCreator
+	// Dashboards backs create_dashboard (T-D11). Nil is legal and is what the
+	// API's name-only build and cmd/mcp pass: the tool still registers, so it
+	// appears in the agent allowlist and the template vocabulary, and reports
+	// "not configured" if ever executed without a service.
+	Dashboards DashboardCreator
+	Scheduled  ScheduledTaskCreator
 	// Docs nil means this deployment has no object storage, and
 	// generate_document is left out rather than registered and broken.
 	Docs *docgen.Service
@@ -108,8 +106,11 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		NewRunSQLTool(d.Pool, d.Connections, d.Usage, d.MaxQueryRows, d.MaxQueryResultBytes).
 			WithSchema(schema).
 			WithPIIPolicy(d.Companies),
-		NewCreateVisualizationTool(d.Pool, d.Connections, d.Metabase, d.MetabaseSource, d.Usage),
-		NewCreateDashboardTool(d.Metabase, d.Usage, d.Dashboards),
+		// One call, every panel (T-D11). The pair it replaces —
+		// create_visualization then create_dashboard — spent four tool calls on a
+		// three-panel answer and carried a thread-scoped in-memory map to make
+		// the second call optional.
+		NewCreateDashboardTool(d.Dashboards, d.Usage),
 		NewScheduleTaskTool(d.Scheduled),
 		// Asking, as an action (T-Q4). It has no dependencies at all, which is
 		// the point: the alternative to asking is always a tool call, and a

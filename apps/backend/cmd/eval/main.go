@@ -52,7 +52,7 @@ func main() {
 		// Metabase runs inside compose and cannot resolve the host-side
 		// address this process uses, so the DSN it is registered with needs a
 		// different host:port. Without this the registration is rejected and
-		// every create_visualization call fails — which is what the three
+		// every dashboard panel fails to execute — which is what the three
 		// chart_dashboard cases had been quietly measuring. Set empty to
 		// register the DSN unchanged.
 		metabaseHost = flag.String("metabase-db-host", "postgres_demo:5432",

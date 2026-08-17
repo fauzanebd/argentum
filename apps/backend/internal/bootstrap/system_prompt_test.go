@@ -15,7 +15,7 @@ import (
 // The prompt and the tool array have to agree.
 //
 // The live case: an agent created from the Sales template holds get_schema,
-// run_sql and create_visualization, because that is what the template's
+// run_sql and create_dashboard, because that is what the template's
 // suggested_tools said and the dashboard copies them into allowed_tools
 // verbatim. The prompt was a constant naming all nine tools, so the model was
 // told it could generate documents. Asked for "a report in PDF" it produced a
@@ -43,14 +43,14 @@ func promptFor(t *testing.T, names ...string) string {
 // The regression, at the layer that produced it: the prompt an agent gets is
 // composed from the tools that agent was handed.
 func TestThePromptDescribesOnlyTheToolsTheTurnGot(t *testing.T) {
-	prompt := promptFor(t, "get_schema", "run_sql", "create_visualization")
+	prompt := promptFor(t, "get_schema", "run_sql", "create_dashboard")
 
-	for _, absent := range []string{"generate_document", "create_dashboard", "query_metric", "schedule_task", "propose_action"} {
+	for _, absent := range []string{"generate_document", "query_metric", "schedule_task", "propose_action"} {
 		if strings.Contains(prompt, absent) {
 			t.Errorf("the prompt describes %q, which this agent was not given", absent)
 		}
 	}
-	for _, present := range []string{"get_schema", "run_sql", "create_visualization"} {
+	for _, present := range []string{"get_schema", "run_sql", "create_dashboard"} {
 		if !strings.Contains(prompt, present) {
 			t.Errorf("the prompt does not describe %q, which this agent holds", present)
 		}
@@ -79,23 +79,24 @@ func TestAnAgentWithoutTheDocumentToolIsNotPromisedFiles(t *testing.T) {
 	}
 }
 
-// A guideline that depends on a tool travels with it. The pair this exists for
-// is charts: guideline 7 says to wrap cards in a dashboard and guideline 8 says
-// never to return a card id — and an agent holding create_visualization without
-// create_dashboard cannot satisfy both, because a card id is not something a
-// user can open.
+// A guideline that depends on a tool travels with it. Charts are the case this
+// exists for: the how-to-build-one rule is meaningless — and actively confusing
+// — for an agent whose allowlist has no chart tool in it.
 func TestTheDashboardRulesFollowTheDashboardTool(t *testing.T) {
-	paired := promptFor(t, "run_sql", "create_visualization", "create_dashboard")
-	if !strings.Contains(paired, "then create_dashboard ONCE") {
-		t.Error("an agent that can build a dashboard was not told to")
+	with := promptFor(t, "run_sql", "create_dashboard")
+	if !strings.Contains(with, "call create_dashboard ONCE") {
+		t.Error("an agent that can build a dashboard was not told how")
+	}
+	// The one-call rule is the whole point of T-D11: the pair it replaced spent
+	// four tool calls on a three-panel answer.
+	if !strings.Contains(with, "there is no separate step for individual charts") &&
+		!strings.Contains(with, "There is no separate step for individual charts") {
+		t.Error("the prompt does not say a dashboard is one call")
 	}
 
-	lone := promptFor(t, "run_sql", "create_visualization")
-	if strings.Contains(lone, "always wrap with a dashboard") {
-		t.Error("an agent without create_dashboard was told to wrap its cards in one")
-	}
-	if !strings.Contains(lone, "CHARTS WITHOUT A DASHBOARD") {
-		t.Error("an agent that can make cards it cannot wrap was left without a rule for that")
+	without := promptFor(t, "run_sql", "get_schema")
+	if strings.Contains(without, "call create_dashboard ONCE") {
+		t.Error("an agent with no chart tool was told how to use one")
 	}
 }
 
@@ -106,7 +107,7 @@ func TestTheGuidelinesAreNumberedWithoutGaps(t *testing.T) {
 	for _, prompt := range []string{
 		SystemPrompt(),
 		promptFor(t, "run_sql"),
-		promptFor(t, "get_schema", "run_sql", "create_visualization"),
+		promptFor(t, "get_schema", "run_sql", "create_dashboard"),
 	} {
 		n := 0
 		for line := range strings.SplitSeq(prompt, "\n") {
@@ -190,11 +191,11 @@ func TestTenantToolsAreAcknowledgedWithoutBeingDescribed(t *testing.T) {
 // for a number, and the C-1 reply spent its last iteration on an unrequested
 // third chart — which is why its dashboard never landed.
 //
-// It travels with create_visualization rather than with the dashboard pair,
-// because an agent that can make a card it cannot wrap can waste a turn just
-// as thoroughly.
+// It travels with create_dashboard, which since T-D11 is the only way to draw
+// anything: the pair it replaced could waste a turn on cards that were never
+// wrapped, and one call can waste it on panels nobody asked for.
 func TestChartRestraintTravelsWithTheChartTool(t *testing.T) {
-	with := promptFor(t, "run_sql", "create_visualization")
+	with := promptFor(t, "run_sql", "create_dashboard")
 	if !strings.Contains(with, "A CHART IS SOMETHING THE USER ASKS FOR") {
 		t.Error("an agent that can draw charts was not told when not to")
 	}
@@ -214,14 +215,14 @@ func TestChartRestraintTravelsWithTheChartTool(t *testing.T) {
 // tone: one applies when a chart was asked for and the other when it was not,
 // and the second must say so in its first line.
 func TestChartRestraintAndDashboardRuleAreConditionedNotContradictory(t *testing.T) {
-	prompt := promptFor(t, "run_sql", "create_visualization", "create_dashboard")
+	prompt := promptFor(t, "run_sql", "create_dashboard")
 	if !strings.Contains(prompt, "When the user DOES want charts") {
 		t.Error("the dashboard rule does not state the condition under which it applies")
 	}
 	// And neither survives a turn whose deliverable is a file, which is what
 	// T-A2b's directive already forbids.
 	file := SystemPromptForTurn(
-		[]string{"run_sql", "create_visualization", "create_dashboard", "generate_document"},
+		[]string{"run_sql", "create_dashboard", "generate_document"},
 		PromptTurn{FileDeliverable: true},
 	)
 	if strings.Contains(file, "A CHART IS SOMETHING THE USER ASKS FOR") {

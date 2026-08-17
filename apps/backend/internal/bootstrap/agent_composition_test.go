@@ -53,6 +53,15 @@ func compositionFactory() app.AgentFactory {
 // and it is still the prefix every addendum is appended to.
 func registryPrompt() string { return SystemPromptFor(toolNames(registry())) }
 
+// fileTurnPrompt is the same prefix for a turn carrying a directive. The two
+// differ by the chart guidelines, which a file turn drops on purpose — so a
+// test asserting "the shared prompt is still the prefix" for an agent that
+// holds create_dashboard has to compare against this one, or it is asserting
+// that T-A2b's fix does not happen.
+func fileTurnPrompt() string {
+	return SystemPromptForTurn(toolNames(registry()), PromptTurn{FileDeliverable: true})
+}
+
 const persona = "You serve the finance team. Prefer margin over revenue."
 
 // Locked decision 3: the persona is an addendum. The shared prompt stays the

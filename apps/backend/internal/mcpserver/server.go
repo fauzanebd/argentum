@@ -43,24 +43,29 @@ const (
 // system, or produces an artifact somebody has to be told about. An MCP client
 // is an agent we did not write, reasoning without our system prompt and without
 // the guardrails a turn runs under — so what it gets is the read surface plus
-// the two Metabase writes, and everything that changes the world stays behind a
-// turn or behind `/v1`.
+// dashboard creation, and everything that changes the world stays behind a turn
+// or behind `/v1`.
 //
 // A tool named here that this deployment does not run is simply absent, which
-// is how `create_visualization` behaves where Metabase is unconfigured. That
+// is how `generate_document` behaves without object storage. That
 // leniency is also how `list_watchers` sat here for a week naming a tool the
 // registry has never held: absent-because-unconfigured and
 // absent-because-imaginary look identical from in here. `Missing` is the
 // difference, and `cmd/mcp` logs it at startup — see the 2026-08-04 gate in
 // docs/coverage/mcp-server.md.
+//
+// `write:visualizations` is kept and re-pointed rather than retired when
+// create_visualization disappeared (T-D11). A scope is a permission name, not a
+// tool name: retiring it would cost every integrator holding a key a rotation,
+// to buy nothing — the capability it grants is unchanged, and it is still
+// exactly one tool wide.
 var exposed = map[string]domain.Scope{
-	"list_sources":         domain.ScopeReadData,
-	"get_schema":           domain.ScopeReadData,
-	"run_sql":              domain.ScopeReadData,
-	"list_metrics":         domain.ScopeReadMetrics,
-	"query_metric":         domain.ScopeReadMetrics,
-	"create_visualization": domain.ScopeWriteVisualizations,
-	"create_dashboard":     domain.ScopeWriteVisualizations,
+	"list_sources":     domain.ScopeReadData,
+	"get_schema":       domain.ScopeReadData,
+	"run_sql":          domain.ScopeReadData,
+	"list_metrics":     domain.ScopeReadMetrics,
+	"query_metric":     domain.ScopeReadMetrics,
+	"create_dashboard": domain.ScopeWriteVisualizations,
 }
 
 // ScopeFor returns the scope a tool needs, and whether it is exposed at all.

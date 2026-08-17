@@ -33,28 +33,14 @@ func NewDashboardService(repo domain.DashboardRepository, conns domain.Connectio
 	return &DashboardService{repo: repo, conns: conns, resolver: resolver, now: time.Now}
 }
 
-// DashboardInput is one submitted dashboard.
-type DashboardInput struct {
-	ThreadID    *string        `json:"thread_id,omitempty"`
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
-	Spec        spec.Dashboard `json:"spec"`
-}
-
-// SaveResult carries the stored dashboard and any panel that saved with a
-// warning, so the caller — an agent finishing a turn, or an admin in the UI —
-// can say which tiles need a second look without having to re-read the row.
-type SaveResult struct {
-	Dashboard *domain.Dashboard `json:"dashboard"`
-	Warnings  []PanelWarning    `json:"warnings,omitempty"`
-}
-
-// PanelWarning is a panel that is structurally sound and did not answer when it
-// was saved.
-type PanelWarning struct {
-	PanelID string `json:"panel_id"`
-	Message string `json:"message"`
-}
+// The submitted shape and the save result live in internal/dashboard, because
+// internal/app depends on internal/tools and the create_dashboard tool has to
+// name them without importing this package.
+type (
+	DashboardInput = dashboard.Input
+	SaveResult     = dashboard.SaveResult
+	PanelWarning   = dashboard.PanelWarning
+)
 
 // List returns the company's dashboards.
 func (s *DashboardService) List(ctx context.Context, companyID string) ([]*domain.Dashboard, error) {
@@ -82,14 +68,14 @@ func (s *DashboardService) Create(ctx context.Context, companyID, createdBy stri
 	if createdBy != "" {
 		d.CreatedBy = &createdBy
 	}
-	warnings, err := s.dryRun(ctx, companyID, d)
+	warnings, rows, err := s.dryRun(ctx, companyID, d)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.repo.Create(ctx, d); err != nil {
 		return nil, err
 	}
-	return &SaveResult{Dashboard: d, Warnings: warnings}, nil
+	return &SaveResult{Dashboard: d, Warnings: warnings, RowCount: rows}, nil
 }
 
 // Update rewrites a dashboard the company owns.
@@ -103,14 +89,14 @@ func (s *DashboardService) Update(ctx context.Context, companyID, id string, in 
 		return nil, err
 	}
 	d.ID, d.CreatedBy, d.CreatedAt = current.ID, current.CreatedBy, current.CreatedAt
-	warnings, err := s.dryRun(ctx, companyID, d)
+	warnings, rows, err := s.dryRun(ctx, companyID, d)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.repo.Update(ctx, d); err != nil {
 		return nil, err
 	}
-	return &SaveResult{Dashboard: d, Warnings: warnings}, nil
+	return &SaveResult{Dashboard: d, Warnings: warnings, RowCount: rows}, nil
 }
 
 // Delete removes a dashboard the company owns.
@@ -180,17 +166,22 @@ func (s *DashboardService) validated(ctx context.Context, companyID string, in D
 // failure of the resolve itself — a bad filter set, an unreachable source — is
 // an error, because that one is not per-panel and would fail identically for
 // every viewer.
-func (s *DashboardService) dryRun(ctx context.Context, companyID string, d *domain.Dashboard) ([]PanelWarning, error) {
+func (s *DashboardService) dryRun(ctx context.Context, companyID string, d *domain.Dashboard) ([]PanelWarning, int, error) {
 	if s.resolver == nil {
-		return nil, nil
+		return nil, 0, nil
 	}
 	res, err := s.resolver.Resolve(ctx, companyID, d, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var warnings []PanelWarning
+	rows := 0
 	for _, p := range res.Panels {
-		if p == nil || p.Error == "" {
+		if p == nil {
+			continue
+		}
+		rows += p.RowCount
+		if p.Error == "" {
 			continue
 		}
 		msg := p.Error
@@ -202,7 +193,7 @@ func (s *DashboardService) dryRun(ctx context.Context, companyID string, d *doma
 		}
 		warnings = append(warnings, PanelWarning{PanelID: p.PanelID, Message: msg})
 	}
-	return warnings, nil
+	return warnings, rows, nil
 }
 
 func windowPhrase(res *dashboard.Result) string {

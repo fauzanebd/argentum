@@ -59,16 +59,15 @@ func (h *AgentsHandler) Register(rg *gin.RouterGroup) {
 // worse-looking and still correct. What must never happen is a tool being
 // absent from the form because a frontend array was not updated.
 var agentToolLabels = map[string]string{
-	"list_sources":         "List the workspace's databases",
-	"get_schema":           "Read table and column names",
-	"list_metrics":         "List the workspace's defined metrics",
-	"query_metric":         "Read a defined metric over a date range",
-	"run_sql":              "Run read-only SQL queries",
-	"create_visualization": "Build a chart from a query",
-	"create_dashboard":     "Assemble charts into a dashboard",
-	"schedule_task":        "Schedule a recurring question",
-	"propose_action":       "Propose an action for a human to approve",
-	"generate_document":    "Generate a PDF or slide deck",
+	"list_sources":      "List the workspace's databases",
+	"get_schema":        "Read table and column names",
+	"list_metrics":      "List the workspace's defined metrics",
+	"query_metric":      "Read a defined metric over a date range",
+	"run_sql":           "Run read-only SQL queries",
+	"create_dashboard":  "Build a live dashboard of charts",
+	"schedule_task":     "Schedule a recurring question",
+	"propose_action":    "Propose an action for a human to approve",
+	"generate_document": "Generate a PDF or slide deck",
 }
 
 // templateInfo projects the loaded gallery onto the wire (T-B3). The service
