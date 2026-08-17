@@ -121,9 +121,37 @@ Event types: see [`StreamEvent`](#streamevent).
 
 ### Dashboards
 
+Native dashboards (T-D10). A dashboard stores a question and a column mapping,
+never values, so `/data` re-runs the panels' queries against the tenant's
+warehouse on every open. Reads are open to members; deleting is admin-only.
+
 | Method | Path | Description |
 |--------|------|-------------|
-| ANY | `/metabase/*` | Transparent reverse proxy to the embedded analytics dashboard. Forward the request as-is. |
+| GET | `/api/dashboards` | The company's dashboards, newest first. |
+| GET | `/api/dashboards/:id` | One dashboard's stored definition, without running it. |
+| GET | `/api/dashboards/:id/data` | Resolve it: bind the filters and run every panel. |
+| DELETE | `/api/dashboards/:id` | Delete one. Admin only. |
+
+Filter values go in the query string, by filter name. A `date_range` filter
+named `period` accepts either `?period=last_30d` (a preset: `last_7d`,
+`last_30d`, `mtd`, `qtd`, `ytd`, `last_month`) or an explicit
+`?period_from=2024-01-01&period_to=2024-01-31`, where both bounds are inclusive
+days. Anything the dashboard did not declare is ignored rather than merged.
+`?refresh=1` is accepted and does nothing until the panel cache lands (T-D8).
+
+Every panel answers for itself: one that fails carries its own `error` and the
+response is still `200`, so a single timed-out query does not blank the others.
+A `400` means the request's filters were wrong and names which one; the body
+`{"error": "..."}` is safe to show.
+
+There is no create or update route. A dashboard is authored by the agent through
+`create_dashboard`, which is the one path its validation rules live on.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/saved-dashboards` | **Deprecated.** Metabase-backed dashboards (moved off `/api/dashboards` in T-D10, removed in T-D15). |
+| DELETE | `/api/saved-dashboards/:id` | **Deprecated.** Deletes the Metabase dashboard and the local row. |
+| ANY | `/metabase/*` | **Deprecated.** Transparent reverse proxy to the embedded analytics dashboard. Forward the request as-is. |
 
 ---
 

@@ -354,6 +354,12 @@ type Config struct {
 	MinIOBucket            string
 	MinIOUseSSL            bool
 	DocumentPresignTTLSecs int
+
+	// DashboardPanelTimeoutSecs bounds one native dashboard panel's query
+	// (T-D7). It is per panel rather than per dashboard because the panels run
+	// concurrently, so this is what decides the worst case a viewer waits
+	// through — and a panel that gives up leaves the other eleven rendered.
+	DashboardPanelTimeoutSecs int
 }
 
 // Load loads configuration from environment variables
@@ -529,6 +535,10 @@ func Load() (*Config, error) {
 		MinIOBucket:            getEnv("MINIO_BUCKET", "argentum-documents"),
 		MinIOUseSSL:            getEnv("MINIO_USE_SSL", "false") == "true",
 		DocumentPresignTTLSecs: getEnvAsInt("DOCUMENT_PRESIGN_TTL_SECS", 3600),
+		// 15s, matching dashboard.DefaultPanelTimeout. Long enough for a real
+		// aggregate over a warehouse, short enough that a viewer waiting on a
+		// dozen panels has a bounded worst case.
+		DashboardPanelTimeoutSecs: getEnvAsInt("DASHBOARD_PANEL_TIMEOUT", 15),
 	}
 
 	// Validate required configuration

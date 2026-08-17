@@ -95,6 +95,10 @@ func newRouter(d *apiDeps) *gin.Engine {
 	if d.metabaseDashboardSvc != nil {
 		handlers.NewDashboardHandler(d.metabaseDashboardSvc).Register(authed)
 	}
+	// Native dashboards (T-D10). Registered unconditionally: the handler answers
+	// a typed 503 when the service is absent, which tells a client why, where a
+	// missing route reads as a wrong path.
+	handlers.NewNativeDashboardsHandler(d.dashboardSvc).Register(authed)
 	if d.scheduledSvc != nil {
 		handlers.NewScheduledTasksHandler(d.scheduledSvc).Register(authed)
 	}

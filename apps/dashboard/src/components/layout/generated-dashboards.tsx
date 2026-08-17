@@ -13,12 +13,16 @@ import {
 import { api } from "@/lib/api";
 import type { SavedDashboard } from "@argentum/api-types";
 
+// The Metabase-backed dashboards the agent used to create. `/api/dashboards` is
+// the native surface as of T-D10, so these read from `/saved-dashboards` — the
+// name of the table they have always lived in. Both this component and that
+// route are deleted in T-D15.
 export function GeneratedDashboards() {
   const qc = useQueryClient();
   const { data } = useQuery({
-    queryKey: ["dashboards"],
+    queryKey: ["saved-dashboards"],
     queryFn: async () =>
-      (await api.get<{ dashboards: SavedDashboard[] }>("/dashboards")).data.dashboards,
+      (await api.get<{ dashboards: SavedDashboard[] }>("/saved-dashboards")).data.dashboards,
   });
   const dashboards = data ?? [];
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -27,8 +31,8 @@ export function GeneratedDashboards() {
     if (!confirm("Delete this dashboard? It will be removed from Metabase as well.")) return;
     setDeletingId(id);
     try {
-      await api.delete(`/dashboards/${id}`);
-      qc.invalidateQueries({ queryKey: ["dashboards"] });
+      await api.delete(`/saved-dashboards/${id}`);
+      qc.invalidateQueries({ queryKey: ["saved-dashboards"] });
     } catch {
       // silently fail; user can retry
     } finally {

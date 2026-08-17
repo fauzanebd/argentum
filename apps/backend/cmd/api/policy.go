@@ -228,9 +228,24 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/feedback":               domain.RoleAdmin,
 	"GET /api/feedback/summary":       domain.RoleAdmin,
 
-	// Saved dashboards and usage reporting.
-	"GET /api/dashboards":               domain.RoleMember,
-	"DELETE /api/dashboards/:id":        domain.RoleMember,
+	// Native dashboards (T-D10). Reads are member: opening a dashboard is what a
+	// member is here to do, and the numbers are the company's own — the same
+	// read=member split the metric registry makes. Deleting is admin, which the
+	// Metabase rows below do not require, and the difference is deliberate: a
+	// native dashboard is a definition this product executes on a schedule
+	// somebody's Monday depends on, where a saved_dashboards row is a link to an
+	// object that still exists in Metabase after the row is gone.
+	"GET /api/dashboards":          domain.RoleMember,
+	"GET /api/dashboards/:id":      domain.RoleMember,
+	"GET /api/dashboards/:id/data": domain.RoleMember,
+	"DELETE /api/dashboards/:id":   domain.RoleAdmin,
+
+	// The Metabase-backed dashboards (006), moved off /api/dashboards in T-D10
+	// and deleted with the rest of the Metabase surface in T-D15.
+	"GET /api/saved-dashboards":        domain.RoleMember,
+	"DELETE /api/saved-dashboards/:id": domain.RoleMember,
+
+	// Usage reporting.
 	"GET /api/usage/summary":            domain.RoleMember,
 	"GET /api/usage/credits":            domain.RoleMember,
 	"GET /api/usage/threads":            domain.RoleMember,

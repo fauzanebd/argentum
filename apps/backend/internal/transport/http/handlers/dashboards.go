@@ -9,7 +9,12 @@ import (
 )
 
 // DashboardHandler exposes the Metabase-backed saved dashboard endpoints (006).
-// The native dashboards (056) get their own routes under T-D10.
+//
+// It moved off `/api/dashboards` in T-D10, which the native dashboards now own.
+// The rename is the honest one — these rows are `saved_dashboards`, pointers at
+// objects in another system — and it keeps the two surfaces from arguing over
+// one path during the deprecation window. Both this handler and its routes go in
+// T-D15.
 type DashboardHandler struct{ svc *app.MetabaseDashboardService }
 
 func NewDashboardHandler(svc *app.MetabaseDashboardService) *DashboardHandler {
@@ -18,8 +23,8 @@ func NewDashboardHandler(svc *app.MetabaseDashboardService) *DashboardHandler {
 
 // Register installs the routes. Caller wraps with Auth middleware.
 func (h *DashboardHandler) Register(rg *gin.RouterGroup) {
-	rg.GET("/dashboards", h.list)
-	rg.DELETE("/dashboards/:id", h.delete)
+	rg.GET("/saved-dashboards", h.list)
+	rg.DELETE("/saved-dashboards/:id", h.delete)
 }
 
 func (h *DashboardHandler) list(c *gin.Context) {

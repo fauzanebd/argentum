@@ -20,6 +20,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
+	"github.com/fauzanebd/argentum/internal/dashboard"
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/idempotency"
 	"github.com/fauzanebd/argentum/internal/lark"
@@ -421,6 +422,17 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// query_metric run the same SQL the same way.
 	deps.metricSvc = app.NewMetricService(pgctl.NewMetricRepo(controlDB), connRepo, deps.tenant).
 		WithZeroCoverageProbe(cfg.MetricZeroCoverageProbe)
+
+	// Native dashboards (T-D5→T-D10). The resolver reads through the same tenant
+	// pool every other warehouse read goes through, and takes the metric service
+	// so a KPI panel is the number query_metric would give the same question in a
+	// chat thread rather than a second derivation of it. Built after metricSvc
+	// for that reason.
+	deps.dashboardSvc = app.NewDashboardService(
+		pgctl.NewDashboardRepo(controlDB), connRepo,
+		dashboard.NewResolver(connRepo, deps.tenant, deps.metricSvc).
+			WithPanelTimeout(time.Duration(cfg.DashboardPanelTimeoutSecs)*time.Second),
+	)
 
 	// Answer feedback (T-Q2). It takes the concrete message repo rather than
 	// the shared interface: the tenant-scoped single-message read lives on

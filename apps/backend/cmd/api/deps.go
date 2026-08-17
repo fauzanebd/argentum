@@ -71,12 +71,15 @@ type apiDeps struct {
 	// native ones (056) are a separate service so the decommission is a deletion
 	// rather than an edit.
 	metabaseDashboardSvc *app.MetabaseDashboardService
-	scheduledSvc         *app.ScheduledTaskService
-	discordSvc           *app.DiscordService
-	larkSvc              *app.LarkService
-	slackSvc             *app.SlackService
-	brandingSvc          *branding.Service
-	apiKeySvc            *app.APIKeyService
+	// Native dashboards (T-D6/T-D7): the stored spec, and the resolver that runs
+	// it against the tenant warehouse through this process's own pool.
+	dashboardSvc *app.DashboardService
+	scheduledSvc *app.ScheduledTaskService
+	discordSvc   *app.DiscordService
+	larkSvc      *app.LarkService
+	slackSvc     *app.SlackService
+	brandingSvc  *branding.Service
+	apiKeySvc    *app.APIKeyService
 	// The browser-visible credential (T-19). It mints the short-lived sessions
 	// `/api/embed` runs on; the dashboard routes beside it are how an admin
 	// creates one and states which sites may use it. Separate service from
