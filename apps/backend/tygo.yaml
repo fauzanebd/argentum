@@ -29,9 +29,59 @@ packages:
   - path: "github.com/fauzanebd/argentum/internal/domain"
     output_path: "../../packages/api-types/src/domain.ts"
     enum_style: "union"
+    # domain.Dashboard carries the stored spec, which lives in its own package.
+    # Aliased on import because both types are called `Dashboard` in Go and the
+    # names would collide here: one is the row, the other is what is in its
+    # JSONB column.
+    type_mappings:
+      spec.Dashboard: "DashboardSpec"
     frontmatter: |
       /* eslint-disable */
       // Entities, from apps/backend/internal/domain.
+      import type { Dashboard as DashboardSpec } from "./dashboardspec.js";
+
+  # The dashboard spec (T-D4) and the resolved panels a browser draws.
+  #
+  # Not barrelled, for the reason videoplan is not: `Dashboard`, `Panel`,
+  # `Filter`, `Layout` and `Series` are names a shared namespace should not be
+  # handed. Import them from "@argentum/api-types/dashboard-spec".
+  - path: "github.com/fauzanebd/argentum/internal/dashboard/spec"
+    include_files:
+      - "spec.go"
+      - "project.go"
+      - "window.go"
+    output_path: "../../packages/api-types/src/dashboardspec.ts"
+    enum_style: "union"
+    frontmatter: |
+      /* eslint-disable */
+      // The stored dashboard spec and one resolved panel, from
+      // apps/backend/internal/dashboard/spec. A panel stores a question and a
+      // column mapping — never values — so everything here describes what to
+      // ask, and `Resolved` is what came back.
+
+  # One resolve: every panel's answer plus what the filters resolved to.
+  # Import from "@argentum/api-types/dashboard".
+  - path: "github.com/fauzanebd/argentum/internal/dashboard"
+    include_files:
+      - "result.go"
+      - "input.go"
+    output_path: "../../packages/api-types/src/dashboard.ts"
+    enum_style: "union"
+    type_mappings:
+      spec.Resolved: "Resolved"
+      spec.Window: "Window"
+      spec.Dashboard: "DashboardSpec"
+      domain.Dashboard: "Dashboard"
+    frontmatter: |
+      /* eslint-disable */
+      // What `GET /api/dashboards/:id/data` answers, from
+      // apps/backend/internal/dashboard.
+      import type {
+        Dashboard as DashboardSpec,
+        Resolved,
+        Window,
+      } from "./dashboardspec.js";
+      import type { Dashboard } from "./domain.js";
 
   # The streaming half of the contract, and the one with the most drift risk:
   # nothing about a WebSocket frame is documented anywhere else.

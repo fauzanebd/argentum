@@ -46,7 +46,7 @@ const backend = resolve(pkgRoot, "../../apps/backend");
 const check = process.argv.includes("--check");
 
 /** The files tygo writes, in the order the barrel re-exports them. */
-const GENERATED = ["domain.ts", "events.ts", "api.ts", "videoplan.ts", "webhooks.ts"];
+const GENERATED = ["domain.ts", "events.ts", "api.ts", "dashboardspec.ts", "dashboard.ts", "videoplan.ts", "webhooks.ts"];
 
 /** Everything but the webhook envelopes and the video plan — see tygo.yaml. */
 const BARRELLED = ["domain.ts", "events.ts", "api.ts"];

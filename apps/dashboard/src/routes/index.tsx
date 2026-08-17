@@ -18,6 +18,10 @@ import { ScheduledTasksPage } from "@/features/scheduled-tasks/scheduled-tasks-p
 import { WatchersPage } from "@/features/watchers/watchers-page";
 import { SharePage } from "@/features/share/share-page";
 import { DocumentsPage } from "@/features/documents/documents-page";
+import {
+  DashboardDetailPage,
+  DashboardsPage,
+} from "@/features/dashboards/dashboards-page";
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -136,6 +140,21 @@ const documentsRoute = createRoute({
   component: DocumentsPage,
 });
 
+// Native dashboards (T-D10). The detail route is what the link in a chat reply
+// points at, so it has to exist even though the chat renders the panels inline:
+// somebody opening the dashboard a week later has no transcript to read it in.
+const dashboardsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/dashboards",
+  component: DashboardsPage,
+});
+
+const dashboardDetailRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/dashboards/$id",
+  component: DashboardDetailPage,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -151,5 +170,7 @@ export const routeTree = rootRoute.addChildren([
       scheduledTasksRoute,
       watchersRoute,
       documentsRoute,
+      dashboardsRoute,
+      dashboardDetailRoute,
     ]),
 ]);

@@ -7,7 +7,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./webhooks": "./src/webhooks.ts",
-    "./videoplan": "./src/videoplan.ts"
+    "./videoplan": "./src/videoplan.ts",
+    "./dashboard-spec": "./src/dashboardspec.ts",
+    "./dashboard": "./src/dashboard.ts"
   },
   "files": [
     "src"

@@ -1,10 +1,38 @@
+import { lazy, Suspense } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ExternalLink } from "lucide-react";
 import { CodeBlock } from "@/components/ui/code-block";
 
+// recharts is ~390 kB and most turns never draw a chart, so the panel renderer
+// arrives with the first dashboard link rather than with the app.
+const DashboardView = lazy(() =>
+  import("@/features/dashboards/dashboard-view").then((m) => ({
+    default: m.DashboardView,
+  })),
+);
+
 interface MarkdownRendererProps {
   content: string;
+}
+
+/**
+ * A link to a native dashboard, or null.
+ *
+ * The agent is told to return the URL as a markdown link with descriptive text,
+ * so the link is where the chart belongs: the sentence around it is the caption
+ * somebody wrote for it, and swapping the anchor for the panels puts the answer
+ * where the reader is already looking.
+ *
+ * Matched by shape rather than by a marker in the message, because the message
+ * is the model's own prose and a marker is one more thing for it to get wrong.
+ */
+const DASHBOARD_HREF =
+  /^(?:https?:\/\/[^/]+)?\/dashboards\/([0-9a-fA-F-]{36})\/?$/;
+
+function dashboardIdFrom(href: unknown): string | null {
+  if (typeof href !== "string") return null;
+  return DASHBOARD_HREF.exec(href)?.[1] ?? null;
 }
 
 export function MarkdownRenderer({ content }: MarkdownRendererProps) {
@@ -14,6 +42,23 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href, children }) => {
+            // A native dashboard renders where the link is, live: the panels
+            // re-query on open, so what the reader sees is the warehouse now
+            // rather than what it said when the turn ran.
+            const embedded = dashboardIdFrom(href);
+            if (embedded) {
+              return (
+                <Suspense
+                  fallback={
+                    <div className="my-2 rounded-xl border border-border bg-card/40 p-4 text-xs text-muted-foreground">
+                      Loading dashboard…
+                    </div>
+                  }
+                >
+                  <DashboardView id={embedded} compact />
+                </Suspense>
+              );
+            }
             const isDashboard =
               typeof href === "string" &&
               (href.includes("/metabase/public/dashboard/") ||

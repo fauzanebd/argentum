@@ -93,18 +93,6 @@ func (r *Resolver) WithClock(now func() time.Time) *Resolver {
 	return r
 }
 
-// Result is one resolve: every panel's answer, plus what the filters actually
-// resolved to, so the page can say which window it is showing rather than
-// leaving the reader to assume it is the one they picked last week.
-type Result struct {
-	DashboardID string                 `json:"dashboard_id"`
-	Title       string                 `json:"title"`
-	Applied     map[string]string      `json:"applied_filters,omitempty"`
-	Windows     map[string]spec.Window `json:"windows,omitempty"`
-	Panels      []*spec.Resolved       `json:"panels"`
-	ResolvedAt  time.Time              `json:"resolved_at"`
-}
-
 // Resolve binds the request's filters and runs every panel.
 //
 // A panel that fails fills its own Error and the resolve still succeeds. One
