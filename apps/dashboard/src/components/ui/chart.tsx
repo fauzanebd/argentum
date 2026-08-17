@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -8,6 +7,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useChartPalette } from "@/lib/chart-palette";
 import { cn } from "@/lib/utils";
 
 /**
@@ -24,21 +24,10 @@ import { cn } from "@/lib/utils";
  *
  * `--chart-1` … `--chart-8` are that ladder, in source order. Reading them from
  * CSS rather than importing hexes keeps the single source of truth in
- * `tokens.json` where CI diffs it.
+ * `tokens.json` where CI diffs it — through useChartPalette, which is shared
+ * with the dashboard panels and follows the theme, because the dark ramp is a
+ * different set of values rather than the light one lightened.
  */
-
-const SERIES_COUNT = 8;
-
-/** The palette, read once from the custom properties the token pipeline emits. */
-function useChartPalette(): string[] {
-  return useMemo(() => {
-    if (typeof window === "undefined") return [];
-    const cs = getComputedStyle(document.documentElement);
-    return Array.from({ length: SERIES_COUNT }, (_, i) =>
-      cs.getPropertyValue(`--chart-${i + 1}`).trim(),
-    ).filter(Boolean);
-  }, []);
-}
 
 export type BreakdownDatum = {
   /** The category, as the axis label. */

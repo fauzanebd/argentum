@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import type { Resolved, Series } from "@argentum/api-types/dashboard-spec";
 
+import { useChartPalette } from "@/lib/chart-palette";
 import { cn } from "@/lib/utils";
 
 /**
@@ -40,23 +41,13 @@ import { cn } from "@/lib/utils";
  * the single source of truth in `tokens.json`, and a hex typed here would be
  * the drift that check exists to catch.
  *
- * **Known limit, inherited:** the ramp has no dark-mode variant. Series 2
- * (navy) and 7 (brown) sit at L* 24 and 32, which is dark on a dark surface —
- * documented in `docs/coverage/report-charts.md` and not something a component
- * may fix by picking lighter hexes of its own.
+ * The ramp has a dark variant as of the T-D11 follow-up: four series are the
+ * same colour in both themes and four are lifted, because the two that failed
+ * hardest — navy at L* 24 and brown at L* 32 — were dark marks on a dark card.
+ * useChartPalette reads whichever ramp the theme has installed.
  */
 
 const SERIES_COUNT = 8;
-
-function useChartPalette(): string[] {
-  return useMemo(() => {
-    if (typeof window === "undefined") return [];
-    const cs = getComputedStyle(document.documentElement);
-    return Array.from({ length: SERIES_COUNT }, (_, i) =>
-      cs.getPropertyValue(`--chart-${i + 1}`).trim(),
-    ).filter(Boolean);
-  }, []);
-}
 
 /** Recharts wants one object per x position; the payload is column-major. */
 function toRows(panel: Resolved): Record<string, number | string | null>[] {

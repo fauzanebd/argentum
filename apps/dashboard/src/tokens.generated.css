@@ -74,3 +74,22 @@
   --font-display: 'Space Grotesk', sans-serif;
   --font-body: 'Space Grotesk', sans-serif;
 }
+
+/* The chart series on a dark ground. This is the one part of the dark
+ * palette that is generated rather than hand-written in index.css: the
+ * series are verified against colour-vision deficiency and against the dark
+ * card by `make palette`, and a hand-written copy would be the drift that
+ * check exists to catch.
+ *
+ * Same specificity as :root and later in source, so it wins when <html> has
+ * the class — the rule index.css states for the rest of the dark palette. */
+.dark {
+  --chart-1: #F25C5C; /* series 1 — brand red, unchanged */
+  --chart-2: #4981CB; /* series 2 — navy, lifted from #1C3A62 */
+  --chart-3: #EAAA3E; /* series 3 — amber, unchanged */
+  --chart-4: #318578; /* series 4 — teal, lifted from #2E7E71 */
+  --chart-5: #9C7AB4; /* series 5 — purple, lifted from #774C96 */
+  --chart-6: #CACCD1; /* series 6 — grey, unchanged */
+  --chart-7: #B9672E; /* series 7 — brown, lifted from #713F1C */
+  --chart-8: #5CA8E0; /* series 8 — azure, unchanged */
+}

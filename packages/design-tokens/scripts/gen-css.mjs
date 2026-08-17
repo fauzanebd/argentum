@@ -17,6 +17,19 @@ function chartPalette(tokens) {
   return groupVisible(tokens, 'chart', 'web') ? tokens.chart.palette : [];
 }
 
+/**
+ * The same series on a dark ground, or none.
+ *
+ * Emitted under `.dark` rather than composed from the light ramp: four of the
+ * eight are the same colour in both themes and four are lifted, because a
+ * blanket lightening would have moved series that were already legible and
+ * broken the identity a reader relies on when they switch.
+ */
+function chartPaletteDark(tokens) {
+  if (!groupVisible(tokens, 'chart', 'web')) return [];
+  return tokens.chart.paletteDark ?? [];
+}
+
 export const CSS_OUT = join(REPO_ROOT, 'apps/dashboard/src/tokens.generated.css');
 
 // shadcn custom property → colour token name. Several names may share a token.
@@ -135,6 +148,25 @@ export function renderCSS(tokens) {
   }
 
   lines.push('}');
+
+  const dark = chartPaletteDark(tokens);
+  if (dark.length > 0) {
+    lines.push('');
+    lines.push('/* The chart series on a dark ground. This is the one part of the dark');
+    lines.push(' * palette that is generated rather than hand-written in index.css: the');
+    lines.push(' * series are verified against colour-vision deficiency and against the dark');
+    lines.push(' * card by `make palette`, and a hand-written copy would be the drift that');
+    lines.push(' * check exists to catch.');
+    lines.push(' *');
+    lines.push(' * Same specificity as :root and later in source, so it wins when <html> has');
+    lines.push(' * the class — the rule index.css states for the rest of the dark palette. */');
+    lines.push('.dark {');
+    for (const [i, tok] of dark.entries()) {
+      lines.push(`  --chart-${i + 1}: ${tok.hex}; /* ${tok.doc} */`);
+    }
+    lines.push('}');
+  }
+
   lines.push('');
   return lines.join('\n');
 }

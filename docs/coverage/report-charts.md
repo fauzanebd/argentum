@@ -244,6 +244,55 @@ while saying nothing about whether the chart is right; what these catch is the
 failure that actually happens — an empty frame, because a series was dropped, an
 axis collapsed, or a symbol was never drawn.
 
+## The dark ramp (2026-08-17)
+
+The ladder above was verified against paper and against two colour-vision
+deficiencies, and **never against the surface it is drawn on** — because when it
+was written the dashboard had no charts and a document has one background,
+white. The moment the chat transcript started drawing panels (T-D11), series 2
+(navy, L\* 24.2) and series 7 (brown, L\* 32.1) were dark marks on a dark card:
+1.35:1 and 1.80:1 against `#232427`.
+
+`tokens.json` now carries `chart.paletteDark`, emitted under `.dark` in
+`tokens.generated.css`. Four of the eight series did not move — the whole method
+was to measure first and lift only what fails, so a reader who switches themes
+does not have to re-learn which line is revenue:
+
+| # | Light | Dark | Why |
+| --- | --- | --- | --- |
+| 1 | `#F25C5C` | `#F25C5C` | 4.77:1 — the brand red survives the move unchanged, which is why it stays the accent in both themes |
+| 2 | `#1C3A62` | `#4981CB` | 1.35:1 → 3.91:1 |
+| 3 | `#EAAA3E` | `#EAAA3E` | 7.63:1 |
+| 4 | `#2E7E71` | `#318578` | 3.21:1 → 3.52:1, lifted to clear the working floor |
+| 5 | `#774C96` | `#9C7AB4` | 2.41:1 → 4.33:1 |
+| 6 | `#CACCD1` | `#CACCD1` | 9.66:1 |
+| 7 | `#713F1C` | `#B9672E` | 1.80:1 → 3.73:1 |
+| 8 | `#5CA8E0` | `#5CA8E0` | 6.01:1 |
+
+**The dark ramp carries no greyscale floor, and that is the argument rather than
+an oversight.** ΔL\* in greyscale exists for the office laser printer; nothing
+prints a dark dashboard. Applying it anyway is what the first two attempts at
+this table did, and it pushed three series into near-whites — the band above the
+contrast floor is only wide enough for about nine rungs, and spending them on a
+reader who does not exist is how a palette becomes illegible in order to satisfy
+a check. What replaces it on screen is a normal-vision ΔE\*ab floor of 15.
+
+Measured, both ramps, by `make palette`: dark normal-vision tightest pair 19.6,
+deuteranopia 14.2, protanopia 13.0, weakest contrast 3.52:1.
+
+### What the same check found in the light ramp, and did not fix
+
+Adding contrast to the verifier immediately failed three *light* series against
+a white card: amber 2.04:1, grey 1.61:1, azure 2.58:1, all below the 3:1 line
+for a non-text mark. They have been that way since `T-R3`, because contrast
+against a surface was never one of the checks that chose them.
+
+It is reported as a warning and does not fail the build. Raising them changes
+the palette every delivered PDF was rendered with, and re-tunes a ladder built
+against greyscale and two deficiencies — a deliberate ticket, not something a
+dark-mode change should smuggle in. The numbers print on every run so the debt
+is visible rather than remembered.
+
 ## Known limits
 
 **Determinism is asserted within a build, not across toolchains.** Same input,
