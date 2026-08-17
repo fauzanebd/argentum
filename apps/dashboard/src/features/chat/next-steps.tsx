@@ -12,15 +12,23 @@ import { DecisionCard } from "@/components/ui/decision-card";
  *
  * Three rules, and each is a decision rather than styling:
  *
- *   - **A click fills the composer. It does not send.** The same rule and the
- *     same reason as the starter questions: a turn that runs before the reader
- *     has read it teaches them nothing and spends a credit.
+ *   - **A tap sends.** Reversed on 2026-08-18 from T-U13's original rule, which
+ *     was the starter questions' rule applied to a second surface. They are not
+ *     the same gesture: a starter question is the first thing somebody sees,
+ *     with nothing above it to judge it against, while a next step sits under an
+ *     answer the reader has just read, in the agent's words, with its reasoning
+ *     beside it. By then the decision has been made, and putting the sentence
+ *     back in the composer asks for it twice.
  *   - **The newest assistant message only.** Options under every historical
  *     bubble turn a transcript into a wall of buttons, and a suggestion about a
- *     question from twenty minutes ago is not a next step.
- *   - **A pick is recorded.** A suggestion nobody clicks is worse than no
+ *     question from twenty minutes ago is not a next step. This is also what
+ *     keeps the rule above from being expensive: one card, under the newest
+ *     answer, never while a turn is in flight.
+ *   - **A pick is recorded.** A suggestion nobody taps is worse than no
  *     suggestion, and the pick rate is the only evidence this feature works.
- *     Fire-and-forget: a failed write must never cost the reader their click.
+ *     Fire-and-forget, and written before the send rather than after: the turn
+ *     navigates and unmounts this component, and a request started in a dead
+ *     tree is one nobody can be sure went out.
  *
  * **Drawn as a decision card since 2026-08-18, where it used to be a chip row.**
  * The chips could not carry `why`: it was a `title` attribute — unreachable
@@ -66,10 +74,15 @@ export function NextStepChips({
   /** Whose lean it is. Absent on a thread whose agent has since been deleted,
    *  which the card renders as "Agent's lean" rather than as nobody's. */
   agentName,
+  /** A turn is already going out. The options stop taking taps for the moment
+   *  between the tap and the stream starting — after that the card unmounts,
+   *  because a turn in flight is not the newest answered message. */
+  sending,
   onPick,
 }: {
   message: Message;
   agentName?: string;
+  sending?: boolean;
   onPick: (prompt: string) => void;
 }) {
   const messageId = message.id;
@@ -79,13 +92,15 @@ export function NextStepChips({
   if (steps.length === 0 || !messageId) return null;
 
   function pick(step: NextStep, index: number) {
-    onPick(step.prompt);
-    // Fire and forget. The reader has already got what they clicked for — the
-    // prompt is in the composer — and a telemetry write is not worth a spinner,
-    // an error state or a click that does nothing while it is in flight.
+    // Recorded first, sent second. The send navigates and unmounts this
+    // component, and a fetch fired from a tree that is going away is one
+    // nobody can be sure left. Still fire-and-forget: a telemetry write is not
+    // worth a spinner, an error state, or a tap that does nothing while it is
+    // in flight.
     void api
       .post(`/messages/${messageId}/suggestion-picked`, { index })
       .catch(() => {});
+    onPick(step.prompt);
   }
 
   // The recommended one leads. It is the agent's own answer to "what would you
@@ -109,9 +124,10 @@ export function NextStepChips({
         id: `step-${i}`,
         label: step.label,
         description: step.why,
+        disabled: sending,
         onSelect: () => pick(step, steps.indexOf(step)),
       }))}
-      footer="Picking one writes it into the composer. Nothing is sent until you send it."
+      footer="Tap one to ask it."
     />
   );
 }

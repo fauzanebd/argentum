@@ -3505,6 +3505,20 @@ footer that says who decided and when: `decided_by` is a user id with no
 directory behind it, so it reads *"you"* or *"a teammate"* rather than inventing
 a name for an audited decision.
 
+**And a rule reversed, also the owner's call: a tapped next step now runs.**
+T-U13 made it fill the composer, on the starter questions' reasoning — *a turn
+that runs before the reader has read it teaches nothing and spends a credit*.
+That reasoning holds for a starter question, which is the first thing somebody
+sees with no answer above it to judge against, and does not transfer: a next
+step sits under an answer the reader has just read, in the agent's own words,
+with its reasoning beside it, so the decision has been made by the time it is
+tapped and the composer asks for it twice. The credit half of the argument
+survives as the constraint that already existed — one card, under the newest
+answer, never while a turn is in flight — and the pick is now recorded *before*
+the send, because the send navigates and unmounts the component that would have
+written it. The starter questions and the dashboard's "Ask for a change" still
+fill and never send.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

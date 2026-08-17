@@ -147,12 +147,15 @@ export function ChatPage() {
 
   /**
    * Text put in the composer by something other than typing — a starter
-   * question, a next-step chip, "Ask for a change" on a dashboard.
+   * question, "Ask for a change" on a dashboard.
    *
-   * All three fill and never send, and the browser gate of 2026-08-17 found
-   * that all three also left `document.activeElement` on `<body>`: the sentence
-   * arrived in the box and the cursor did not, so the reader's next keystroke
-   * went nowhere and T-D23's own "the cursor lands after the link" was untrue.
+   * Both fill and never send, and the browser gate of 2026-08-17 found that
+   * they also left `document.activeElement` on `<body>`: the sentence arrived
+   * in the box and the cursor did not, so the reader's next keystroke went
+   * nowhere and T-D23's own "the cursor lands after the link" was untrue.
+   *
+   * The next-step options are the exception as of 2026-08-18 — see
+   * `sendNextStep` below.
    *
    * The counter is the signal rather than the text, because filling the
    * composer with the same string twice is a real gesture — clicking one chip,
@@ -424,8 +427,16 @@ export function ChatPage() {
     }
   });
 
-  async function send() {
-    const text = input.trim();
+  /**
+   * Send, either what is in the composer or a sentence handed straight in.
+   *
+   * The argument exists for the next-step options, which send on tap (see
+   * `sendNextStep`). It is passed rather than routed through `setInput` because
+   * state written in an event handler is not readable in the same tick — the
+   * send would go out with whatever the composer held *before* the tap.
+   */
+  async function send(override?: string) {
+    const text = (override ?? input).trim();
     if (!text || sending) return;
     setError(null);
     setSending(true);
@@ -476,6 +487,29 @@ export function ChatPage() {
       setSending(false);
     }
   }
+
+  /**
+   * A tapped next-step suggestion runs (2026-08-18, owner's call).
+   *
+   * It reverses T-U13's original rule — fill the composer, never send — which
+   * was the starter questions' rule applied to a second surface. The two are
+   * not the same gesture: a starter question is the *first* thing somebody
+   * sees, with no answer above it to judge it against, while a next step is
+   * offered under an answer the reader has just read, in the agent's own words,
+   * with its reasoning beside it. By the time it is tapped the decision has
+   * been made, and sending it back to the composer asks for it a second time.
+   *
+   * The credit argument T-U13 made survives as the reason the options are not
+   * on every bubble and never while a turn is in flight: what stops an
+   * accidental turn is that there is one card, under the newest answer only.
+   */
+  // Not memoised, deliberately: `send` is redeclared every render and closes
+  // over the thread, the composer and the in-flight flag, so a cached callback
+  // is a cached copy of all four. Nothing downstream is memoised on its
+  // identity — the card is drawn from the message, not from this.
+  const sendNextStep = (prompt: string) => {
+    void send(prompt);
+  };
 
   const displayedMessages = useMemo(() => {
     const threadOptimistic = optimisticMessages.filter(
@@ -600,9 +634,10 @@ export function ChatPage() {
                   // that would queue a second question behind the first.
                   onPickNextStep={
                     i === displayedMessages.length - 1 && !liveAssistant
-                      ? fillComposer
+                      ? sendNextStep
                       : undefined
                   }
+                  sending={sending}
                 />
               ))}
               {liveAssistant && (
@@ -786,6 +821,8 @@ function ChatHeader({
 function MessageBubble({
   message,
   agentName,
+  /** A turn is already going out; the next-step options stop taking taps. */
+  sending,
   /** Suggestions render under the NEWEST assistant message only (T-U13).
    *
    *  Options on every historical bubble turn a transcript into a wall of
@@ -796,6 +833,7 @@ function MessageBubble({
 }: {
   message: Message;
   agentName?: string;
+  sending?: boolean;
   onPickNextStep?: (prompt: string) => void;
 }) {
   const isUser = message.role === "user";
@@ -895,6 +933,7 @@ function MessageBubble({
           <NextStepChips
             message={message}
             agentName={agentName}
+            sending={sending}
             onPick={onPickNextStep}
           />
         )}
