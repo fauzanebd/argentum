@@ -131,11 +131,84 @@ colours had been gated against paper and never against a dark card, where series
 2 sat at 1.35:1. That record is in
 [`report-charts.md`](report-charts.md) §"The dark ramp".
 
+## 1b. The rest of the browser, run 2026-08-17 (later still)
+
+The three items §2 listed as owed were run in one sitting, on the same tenant
+and with no model spend: every panel below was drawn from a dashboard an earlier
+gate had already authored. **Three passes and two defects**, and the first is
+the same shape as the axis above — the data is right and the rendering is not.
+
+| Item | Outcome |
+| ---- | ------- |
+| The `/dashboards` list page | **Pass.** Three dashboards, each with its title and a truncated description, each link resolving to its own page |
+| The chat embed in a real transcript | **Pass on what it draws.** The `/dashboards/<uuid>` link in the authoring thread is swapped for the live panels, header actions and all — and a defect in *how* it is mounted, below |
+| The dark ramp on a real dark card | **Pass.** All eight tokens drawn on `--card` in dark: `#F25C5C`, `#4981CB`, `#EAAA3E`, `#318578`, `#9C7AB4`, `#CACCD1`, `#B9672E`, `#5CA8E0`. Nothing disappears. `#318578` is the dimmest and `#4981CB`/`#5CA8E0` the closest pair, which is worth knowing before a ninth series is ever added |
+
+### Defect 3 — a table panel ignores its own `fmt`
+
+`Top 5 Products by Revenue` renders `20727672550.00`. The panel declares
+`"fmt": "currency"`, and the same figure inside the bar chart beside it reads
+`3.2B` on the axis and groups in the tooltip.
+
+The mechanism is one line, and it is deliberate as far as it goes —
+`spec/project.go:90`, *"A table draws what the query returned, in the order it
+returned it"*: `out.Columns, out.Rows = res.Columns, res.Rows`. Every other viz
+runs each value through `cell()` and gets a `float64`; the table alone passes the
+driver's own values through, and a Postgres `numeric` decodes to a **string**.
+The browser then declines to format it, because `useFormatter` returns
+`String(v)` for anything that is not a number — correctly, since a table also
+holds product names.
+
+So the declared format is honoured by every panel type except the one made of
+the numbers somebody reads digit by digit. **Not fixed in the sitting**, because
+the fix is a choice rather than an edit: coercing numeric-looking strings in the
+browser turns an order id of `0012` into `12`, and coercing server-side needs the
+driver's column types carried onto the payload, which no panel currently has.
+
+### Defect 4 — the embed is a block element inside a paragraph — **fixed**
+
+`document.querySelector('section.not-prose').parentElement` is **`P`**. The
+markdown renderer swaps an anchor for `<DashboardView>`, and an anchor lives
+inside the paragraph react-markdown built for the prose around it, so the whole
+dashboard — a `<section>` with a grid and three panels — is mounted as a child of
+a `<p>`.
+
+It renders here because React inserts into the DOM directly and the browser
+never re-parses it. The cost is latent rather than visible: any path that parses
+this markup instead of constructing it splits the `<p>` at the block element, so
+a server-rendered transcript would hydrate against a tree that does not match.
+The paragraph's own prose spacing also applies to a chart container.
+
+**Fixed and re-read in the same sitting.** A paragraph that is going to contain
+a dashboard link renders as a `<div>` carrying the same spacing; every other
+paragraph in every other message is still a `<p>`. Re-read in the browser:
+`parentElement` is `DIV.my-1.5`, `document.querySelector('p section')` is null,
+the three panels still draw, and the four ordinary paragraphs of that same
+message are still paragraphs.
+
+**The first version of the fix changed nothing, and why is worth keeping.** It
+asked the rendered children whether one of them was the embed —
+`child.type === DashboardEmbed`. react-markdown hands `p` the *component* it
+will call for the anchor, not what that component returns, so the check saw the
+`a` override and never the embed, and the re-read came back `P` exactly as
+before. The question has to be asked of the hast node, which carries the href
+before anybody decides what to draw for it. **A fix re-proven in the browser is
+the only reason this was caught** — it type-checked, linted and looked right.
+
+### And what the panel grid does with a stored layout
+
+Nothing. The spec carries `layout: {x, y, w, h}` per panel — in the dashboard
+gated here, panels 1 and 2 are both `y: 0` at `x: 0` and `x: 6`, which is *side
+by side* — and `dashboard-view.tsx` draws every non-KPI panel as `col-span-2` in
+a three-column grid, so they stack and the third column is permanently empty.
+Track F owns the grid and this is not a regression; what is worth writing down is
+that the agent is authoring a layout nothing in the product reads.
+
 ## 2. What is still owed
 
-**The rest of the browser.** One panel grid has now been seen. The
+~~**The rest of the browser.** One panel grid has now been seen. The
 `/dashboards` list page, the chat embed in a real transcript, and the dark ramp
-on a real dark card have not.
+on a real dark card have not.~~ **Run 2026-08-17 — §1b above.**
 
 **`T-D8` and `T-D9`** — the panel cache and the query log — are not built, so
 today every open of a dashboard runs every panel against the tenant warehouse.

@@ -146,6 +146,26 @@ export function ChatPage() {
   const [sending, setSending] = useState(false);
 
   /**
+   * Text put in the composer by something other than typing — a starter
+   * question, a next-step chip, "Ask for a change" on a dashboard.
+   *
+   * All three fill and never send, and the browser gate of 2026-08-17 found
+   * that all three also left `document.activeElement` on `<body>`: the sentence
+   * arrived in the box and the cursor did not, so the reader's next keystroke
+   * went nowhere and T-D23's own "the cursor lands after the link" was untrue.
+   *
+   * The counter is the signal rather than the text, because filling the
+   * composer with the same string twice is a real gesture — clicking one chip,
+   * editing it, clicking it again — and an effect keyed on the value would sit
+   * out the second click.
+   */
+  const [focusSignal, setFocusSignal] = useState(0);
+  const fillComposer = useCallback((text: string) => {
+    setInput(text);
+    setFocusSignal((n) => n + 1);
+  }, []);
+
+  /**
    * Which agent the next new conversation opens on (T-S3).
    *
    * Only meaningful on the new-chat screen: once the thread exists its agent
@@ -263,8 +283,8 @@ export function ChatPage() {
   const takePrefill = useComposerStore((s) => s.take);
   useEffect(() => {
     const pending = takePrefill();
-    if (pending) setInput(pending);
-  }, [takePrefill]);
+    if (pending) fillComposer(pending);
+  }, [takePrefill, fillComposer]);
 
   /** Leaving a thread closes the WS (useThreadStream cleanup → ws.close), but
    *  liveAssistant would keep showing the previous thread’s stream without this.
@@ -525,6 +545,7 @@ export function ChatPage() {
               onChange={setInput}
               onSend={send}
               disabled={sending}
+              focusSignal={focusSignal}
               context={
                 <AgentPicker
                   agents={agents.selectable}
@@ -539,7 +560,7 @@ export function ChatPage() {
                    is the one they should have read first. */
                 <StarterQuestions
                   questions={agents.starterQuestionsFor(newChatAgent)}
-                  onPick={setInput}
+                  onPick={fillComposer}
                 />
               }
             />
@@ -572,7 +593,7 @@ export function ChatPage() {
                   // that would queue a second question behind the first.
                   onPickNextStep={
                     i === displayedMessages.length - 1 && !liveAssistant
-                      ? setInput
+                      ? fillComposer
                       : undefined
                   }
                 />
@@ -609,6 +630,7 @@ export function ChatPage() {
             onChange={setInput}
             onSend={send}
             disabled={sending}
+            focusSignal={focusSignal}
             className="shrink-0 bg-background/95 backdrop-blur-md z-20"
           />
         </>
@@ -1027,6 +1049,7 @@ function ChatComposer({
   disabled,
   context,
   suggestions,
+  focusSignal = 0,
   className,
 }: {
   value: string;
@@ -1035,18 +1058,42 @@ function ChatComposer({
   disabled: boolean;
   context?: React.ReactNode;
   suggestions?: React.ReactNode;
+  /** Bumped when something else filled the composer; see `fillComposer`. */
+  focusSignal?: number;
   className?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { data: models } = useModels();
 
+  const resize = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
+    if (textareaRef.current) resize(textareaRef.current);
   };
+
+  /**
+   * Somebody else filled the box: put the cursor in it, at the end.
+   *
+   * The end rather than the start because every filler is a *beginning* of a
+   * sentence the reader finishes — T-D23 prefills `Change [dashboard](…):\n`
+   * precisely so the next character typed is the complaint.
+   *
+   * The resize is here for the same reason the focus is: `handleChange` grows
+   * the box as somebody types, and a prefill is never typed, so a two-line
+   * prefill used to arrive in a one-line box.
+   */
+  useEffect(() => {
+    if (!focusSignal) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    resize(el);
+  }, [focusSignal]);
 
   // Unchanged from before T-U8, deliberately. Enter/Shift+Enter is muscle
   // memory and every rewrite of this pair reintroduces the same newline bug.

@@ -81,6 +81,14 @@ three in §1f rather than in §2 is why they ran at all — and once the stack w
 up, two of §2's own items (the pass's cost and its p95) cost $0.12 to close
 rather than the afternoon they had been sitting behind.
 
+**Revised 2026-08-17, third time — §3a is run and the bucket has paid nine
+times out of nine.** The browser bucket added that morning was emptied the same
+day: twelve acceptance items across `T-D11`, `T-U13` and `T-D23`, **$0.00 of
+model spend**, three defects. The cheapest sitting this file records, because
+every panel and every chip it looked at had been written by a turn an earlier
+gate already paid for. What is left of §3a is one item that genuinely needs a
+model (`T-D23`'s edit turn), and it has moved to §2 where it belongs.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of four things: the stack up, money spent, a browser opened, or a
 message sent to a real person's phone.
@@ -385,6 +393,7 @@ Second time. Written where somebody will be standing.
 | `T-Q6` | ~~A two-turn conversation at `PRIOR_WORK_TURNS=3` and again at `=0`~~ → **re-specified 2026-08-14**: `follow-up-breakdown-no-reschema` at `=3` and at `=0` on one model (two cases of spend), or a follow-up on a thread where turn 1 has fallen out of `CONTEXT_MAX_TURNS` ([`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md) §T-Q6) | **Run 2026-08-14 — the mechanism passes and the acceptance line does not measure it.** `role='tool'` rows exist now (the column had none), and injection fires at `=3` and never at `=0` while the rows are written at both. But six turns across the two arms produced **identical tool sequences**: inside `CONTEXT_MAX_TURNS` the assistant's own prior message already quotes the SQL, so the digest tells the model what it can read. T-Q6 is load-bearing only once the tool turn falls out of the window, which a two-turn conversation cannot reach ([`agent-quality.md`](agent-quality.md) §11) |
 | ~~`T-Q7`~~ | ~~The rolling-summary block appearing in a turn on a thread past 20 messages~~ | **Pass, 2026-08-14** on the 58-message thread: `summary_chars=202 message_count=60 history_window=20`, and the answer reconstructs the opening alert the window no longer covers. The line proving it **did not exist** — four silent exits, no success log, and nothing else records the composed user message, so injected and skipped logged identically. One of those exits (`messageCount` failing) disables T-Q7 on every thread and looks like a short conversation ([`agent-quality.md`](agent-quality.md) §12) |
 | `T-Q8` | A harvest that writes an example, and a turn that retrieves one | Embedding calls only, one per example. Every gate above `client.Embed` is proven ([`agent-quality.md`](agent-quality.md) §3) |
+| `T-D23` | The panel grid before and after one edit turn, watched | **Moved here from §3a on 2026-08-17.** The other two thirds of that row passed in the browser with no spend; this third needs a turn, because the invalidation fires on a `tool_call` event naming `update_dashboard` and there is no way to produce one without a model. Whether the grid redraws without a reload is a thing somebody watches happen |
 | `T-D22` | Build the 08-17 two-panel dashboard, then in the same thread ask for the window change, a panel swapped to a line chart, and a third panel added — three turns, `update_dashboard` each time, the same id throughout. Then a fresh thread asking to change "the revenue dashboard" with no id | **Still owed.** Four turns. The one that matters most is the last: the no-id path returns a **result** listing recent dashboards rather than a Go error, and this repo has already measured what an error does to deepseek — the identical call, seven times, until the budget ends the turn |
 | ~~`T-Q10`~~ | ~~Turns producing `next_steps`, and the two numbers that decide the feature's future~~ | **Run 2026-08-17 — and the numbers settle the design against the ticket. 607 µUSD per pass (≈3% of the turn) and 12,962 ms.** Cheap and slow, where `T-Q10` assumed the opposite; its own rule says revisit above 1s. The 5s timeout it specified could never be met here (12.5–16.6s measured), so the feature was on and inert — now `NEXT_STEPS_TIMEOUT_SECS`, and exhausting it logs at `Warn` ([`next-steps-and-revision.md`](next-steps-and-revision.md) §6.4) |
 | `T-Q10` | One turn on an agent scoped to `get_schema` + `run_sql`, showing the chart suggestion narrowed away | **The one arm that did not run.** It is the only live cover for `needsMissingTool`, which is otherwise proven by unit test alone — and it is the inverse of the failure `feature-coverage.md` records, an agent recommending work it cannot do |
@@ -412,18 +421,37 @@ did not have. A gate in the wrong bucket is a gate nobody runs.
 | `send_message`'s document link (T-V3) | A real WhatsApp message carrying a presigned link, opened on a handset | Same deferral as the row below and the same reason: it goes to a real phone. What a test cannot show is that the link survives WhatsApp's own URL handling and that the markdown-link flattening the chat path already does reaches this body too ([`report-video.md`](report-video.md) §8) |
 | `T-12a` | The message arrives | `.env` holds live Twilio credentials and the worker delivers, so closing this sends a real WhatsApp message to a real handset. **Deferred by the repo owner**, not by an implementer. Both halves of the ticket's gate are owed, because the un-allowlisted-target refusal is only reachable by approving a proposal ([`delivery-log.md`](delivery-log.md) Phase 2c) |
 
-## 3a. Needs a browser
+## 3a. ~~Needs a browser~~ — run 2026-08-17, and the bucket has paid nine times out of nine
 
 Added 2026-08-17, and it is the bucket §1e argued into existence — every gate in
 this file before that sitting was driven through HTTP, `psql` or JSON-RPC, so
 the class of defect where the data is right and the rendering lies about it had
 no way to be found. It took a minute to find one.
 
-| Owed by | The gate | Why a test cannot do it |
-| ------- | -------- | ----------------------- |
-| `T-D11` | The `/dashboards` list page, the chat embed inside a real transcript, and the dark chart ramp on a real dark card | Carried over from §1e. The dark ramp in particular: eight hexes were re-picked against a dark background and nothing but an eye confirms that |
-| `T-U13` | The chip row in both modes; the recommended chip visually distinct and its reason reachable without a mouse; a click filling the composer and starting **no** turn; the `suggestion_picks` row afterwards; and an older message in the same thread with no chips under it | The last one is the acceptance item most likely to be quietly wrong, because it is an absence. The "starts no turn" half is the rule this feature shares with the starter questions, and the reason is money |
-| `T-D23` | The header action, the prefilled composer, and the panel grid before and after one edit turn | The invalidation fires on a `tool_call` event naming `update_dashboard`; whether the grid actually redraws without a reload is a thing somebody watches happen |
+**Emptied the same day, and it found three more.** Twelve acceptance items
+across three tickets, **$0.00 of model spend** — every suggestion, panel and
+transcript read here was written by a turn an earlier gate had already paid for,
+which is the property that made this the cheapest sitting in the file. Full
+transcripts: [`native-dashboards.md`](native-dashboards.md) §1b and
+[`next-steps-and-revision.md`](next-steps-and-revision.md) §7.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-D11` | The `/dashboards` list page, the chat embed inside a real transcript, and the dark chart ramp on a real dark card | **Three passes and two defects.** List page and embed both draw. All eight dark tokens survive on a real dark card. The defects are *(a)* a table panel printing `20727672550.00` while declaring `fmt: currency`, because `project.go:90` hands the driver's own values to the table and a Postgres `numeric` is a **string** — every other viz coerces through `cell()`; and *(b)* the embed mounting a `<section>` inside a `<p>`, which React inserts happily and an HTML parser would split. **(b) is fixed and re-read** — the paragraph holding a dashboard link is now a `div`, `p section` matches nothing, and the message's other four paragraphs are untouched. (a) is left as a decision |
+| `T-U13` | The chip row in both modes; the recommended chip visually distinct and its reason reachable without a mouse; a click filling the composer and starting **no** turn; the `suggestion_picks` row afterwards; and an older message in the same thread with no chips under it | **Pass on all six.** The absence held in its strongest form: two *older* messages carrying `next_steps` in `metadata` draw nothing. The pick wrote `idx=1, recommended=t` for a chip that renders first, which is the display-order / stored-index split working |
+| `T-D23` | The header action, the prefilled composer, and the panel grid before and after one edit turn | **Two of three pass; the third needs money and stays owed** (§2). The action is present and labelled, and it lands in `/chat` holding `Change [H2 2024 Performance](/dashboards/<uuid>):\n` with no turn started. **The defect: nothing focused the composer** — `activeElement` was `BODY` — so the ticket's own "the cursor lands after the link" did not happen, here or on a chip click. **Fixed and re-proven**: `TEXTAREA` with the caret at 80 of 80 after the action and 25 of 25 after a chip, with no turn started by either |
+
+**What this sitting adds to the eight before it: the cheapest gate in the file
+was the one that needed no model at all.** Three earlier sittings had already
+paid for the turns; looking at what they left behind cost an hour and found
+three defects. A gate that reads *stored* output has no marginal cost and this
+file had no bucket for that either.
+
+**One thing it needed that no document names**, and it is the same species as
+the Docker line above: the Claude Chrome extension was not connected, which
+reads as "no browser is available". Headful Chrome with
+`--remote-debugging-port` and a twenty-line CDP client drove the same rendering.
+A gate that needs an eye does not need that particular extension.
 
 ## 3b. Found by a gate, owned by nobody — a fabricated figure in a persisted answer
 

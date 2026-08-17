@@ -423,6 +423,57 @@ what this sitting owes it.
 ### 6.6 What is still owed
 
 `T-D22`'s four-turn edit gate and `T-Q10`'s eval category still need model
-spend and did not run today. The browser bucket (§3a of
+spend and did not run today. ~~The browser bucket (§3a of
 [`live-gate-backlog.md`](live-gate-backlog.md)) is untouched — no chip has been
-looked at, only read out of Postgres and off the Redis bus.
+looked at, only read out of Postgres and off the Redis bus.~~ **Run the same
+day — §7.**
+
+---
+
+## 7. A chip, looked at — the browser gate, 2026-08-17
+
+Run on the tenants two earlier gates left behind, with **no model spend**: every
+suggestion drawn below was written by a turn that had already been paid for. The
+Claude Chrome extension is not connected on this machine, so the screen was
+driven through headful Chrome over the DevTools protocol instead — same browser,
+same rendering, a script instead of a hand.
+
+| Acceptance item | Outcome |
+| --------------- | ------- |
+| The chip row in both modes | **Pass.** Two chips under the newest answer in dark and again in light, the row unchanged but for its palette |
+| The recommended chip visually distinct | **Pass.** It leads the row, carries `border-primary/60` and a 6px dot; the plain chip has neither. Both halves survive greyscale, because one of them is a shape |
+| Its reason reachable without a mouse | **Pass, twice over.** *"— the total hides the direction"* is visible text beside the row, and the chip's `aria-label` reads *"Recommended: Compare with last year — the total hides the direction"*. `title` alone would have been the failure |
+| A click fills the composer and starts **no** turn | **Pass.** The composer holds *"How does that compare with last year?"* — the step's `prompt`, not its `label` — and `messages` for the thread is 1 before the click and 1 after it |
+| The `suggestion_picks` row afterwards | **Pass.** `idx=1, label="Compare with last year", recommended=t`. The chip renders *first* and records index **1**, which is the sort-for-display / store-the-real-index split working: the row describes the message, not the screen |
+| An older message with no chips under it | **Pass, in its strongest form.** In thread `57012567` the two *older* assistant messages both carry `next_steps` in `metadata` and draw nothing; only the newest is offered chips, and that one ran with the feature off, so it has none either |
+
+**The defect this half found is not in the chips — and it is fixed.** Nothing
+focused the composer. `document.activeElement` was `BODY` after T-D23's "Ask for
+a change" and the clicked `BUTTON` after a chip, so the text arrived where the
+cursor was not and the reader's next keystroke went nowhere — while T-D23's own
+note says *"the trailing newline is where the cursor lands: the reader types
+what is wrong, they do not edit around a link"*.
+
+All three fillers now go through one `fillComposer`: the prefill, a next-step
+chip, and the starter questions, which had the same defect and no gate item.
+The signal is a counter rather than the text, because filling the box with the
+same string twice is a real gesture and an effect keyed on the value would sit
+out the second click. Re-proven live:
+
+| | before | after |
+| --- | --- | --- |
+| Chip click | `activeElement=BUTTON` | `TEXTAREA`, caret **25 of 25** |
+| "Ask for a change" | `activeElement=BODY` | `TEXTAREA`, caret **80 of 80** — after the trailing newline |
+| Turn started by either | none | none (thread still at 1 message) |
+| Pick still recorded | yes | yes — `idx=0, recommended=f` for the plain chip, on the second click of the sitting |
+
+It also closes something no gate item names: `handleChange` grows the textarea
+as somebody types and a prefill is never typed, so a two-line prefill used to
+arrive in a one-line box. The same effect resizes.
+
+**And the fabricated figure of §6.5 is now a thing that has been seen rather
+than queried.** Thread `57012567` renders it in the transcript, three sentences
+in one bubble: *"There were 1,667 transactions in November 2024. There were
+1,667 transactions in November 2024. There were 300 transactions in November
+2024."* Nothing about the rendering hides it and nothing about it looks like an
+error — it reads as an answer that repeated itself.

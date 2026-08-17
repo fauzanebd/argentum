@@ -3,7 +3,18 @@
 What Argentum actually does. Written 2026-07-26 (`argentum` @ `3891579`) and
 kept current since; the rows below carry the ticket that last moved them.
 
-**Last revised 2026-08-17 (second pass)** for the loop-after-the-answer build
+**Last revised 2026-08-17 (third pass)** after the browser gate emptied §3a of
+[`live-gate-backlog.md`](live-gate-backlog.md) for $0.00. No row changes status:
+*The turn suggests its own next step* stays 🟡 because its chips passed every
+visual item and the 13-second pass is still the open question, and *Native
+dashboard revision* stays 🟡 because the one item that needs a model — the grid
+redrawing after an edit turn — is the one that did not run. What the sitting
+adds is three defects filed against rows that already read ✅: a table panel
+that ignores its own `fmt`, a dashboard embed mounted inside a `<p>`, and a
+composer nothing focuses ([`native-dashboards.md`](native-dashboards.md) §1b,
+[`next-steps-and-revision.md`](next-steps-and-revision.md) §7).
+
+**Revised 2026-08-17 (second pass)** for the loop-after-the-answer build
 (`T-Q10`, `T-U13`, `T-D22`, `T-D23`). Two rows added — *Native dashboard
 revision* and *The turn suggests its own next step* — and **both stay 🟡 after
 their live gate**, for two different reasons. The dashboard row's migration and

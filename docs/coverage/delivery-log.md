@@ -3268,6 +3268,63 @@ rejected and move the pass behind `final` with a second event and a message
 arm of `T-Q10` (the only live cover for the tool-allowlist narrowing), a browser
 for the chips, and `T-D13`.
 
+## Phase 2v — The browser bucket, emptied for nothing (2026-08-17)
+
+The third sitting of one day, and the only one in this log that **spent no
+money at all**. §3a of [`live-gate-backlog.md`](live-gate-backlog.md) had been
+open for eight hours: twelve acceptance items across `T-D11`, `T-U13` and
+`T-D23`, every one of them a thing somebody has to *look at*. All twelve were
+run against what the two earlier sittings left in the database — their panels,
+their dashboards, their suggestions — so the marginal cost of the gate was an
+hour and $0.00.
+
+**Nine sittings, nine that found something. Three defects here**, and none of
+them could have arrived through HTTP:
+
+- **A table panel ignores its own `fmt`.** `Top 5 Products by Revenue` prints
+  `20727672550.00` while the panel declares `currency` and the bar chart beside
+  it reads `3.2B`. One line explains it — `spec/project.go:90` hands the table
+  `res.Rows` untouched while every other viz coerces through `cell()`, and a
+  Postgres `numeric` arrives as a **string**, which the browser's formatter
+  correctly declines to format because a table also holds product names. Left
+  unfixed deliberately: coercing in the browser turns an order id of `0012` into
+  `12`, and coercing server-side needs column types the payload does not carry.
+- **The chat embed is a `<section>` inside a `<p>`.** React inserts it happily;
+  an HTML parser would split the paragraph at it, so the cost is a hydration
+  mismatch on any path that ever parses this markup instead of building it.
+  **Fixed**: a paragraph that will hold a dashboard link renders as a `div` with
+  the same spacing, and nothing else changes.
+- **Nothing focuses the composer.** `activeElement` was `BODY` after T-D23's
+  "Ask for a change" and the clicked `BUTTON` after a next-step chip. Both
+  features put a sentence in the box and left the cursor outside it, which made
+  the ticket's own *"the cursor lands after the link"* untrue. **Fixed** for
+  those two and for the starter questions, which shared the defect and had no
+  gate item; re-proven at caret 80 of 80 and 25 of 25, with no turn started.
+
+**Both fixes were re-read in the browser, and the first attempt at the second
+one is the entry worth keeping.** It asked the *rendered children* whether one
+of them was the embed, which cannot work: react-markdown passes `p` the
+component it will call for the anchor, never what that component returns. It
+type-checked, it linted, it read correctly, and the re-read came back `P`
+exactly as before. The question belongs to the markdown node, which knows the
+href before anything decides what to draw for it.
+
+**What passed is the larger half.** The `/dashboards` list page, the embed's
+panels inside a real transcript, all eight dark chart tokens on a real dark card,
+the chip row in both themes with its recommended chip leading and its reason as
+visible text, a click that filled the composer and started **no** turn, the
+`suggestion_picks` row that followed it (`idx=1` for a chip rendered first —
+display order and stored index kept apart, as designed), and the absence that
+was most likely to be quietly wrong: two *older* messages carrying `next_steps`
+in `metadata` and drawing nothing.
+
+**And the sitting's own lesson, which is this log's oldest one.** The Claude
+Chrome extension was not connected, and that reads as "no browser available" —
+the same misreading as `docker ps` answering *"client version 1.43 is too old"*,
+now recorded three times in this repository. Headful Chrome with
+`--remote-debugging-port` and a twenty-line CDP client is the same rendering
+engine looking at the same page.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**
