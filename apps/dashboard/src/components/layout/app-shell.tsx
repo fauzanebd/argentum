@@ -14,6 +14,7 @@ import { ScheduledTasksNav } from "@/components/layout/scheduled-tasks-nav";
 import { WatchersNav } from "@/components/layout/watchers-nav";
 import { DocumentsNav } from "@/components/layout/documents-nav";
 import { ApprovalsNav } from "@/components/layout/approvals-nav";
+import { DashboardsNav } from "@/components/layout/dashboards-nav";
 import { GeneratedDashboards } from "@/components/layout/generated-dashboards";
 import { NavUser } from "@/components/layout/nav-user";
 import { CommandPalette } from "@/features/search/command-palette";
@@ -93,6 +94,7 @@ function AppSidebar() {
         {/* Top region: Scheduled Tasks + New Conversation + Recent Chats — grows and scrolls */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-2 py-2">
           <ScheduledTasksNav />
+          <DashboardsNav />
           <WatchersNav />
           <DocumentsNav />
           <ApprovalsNav />
