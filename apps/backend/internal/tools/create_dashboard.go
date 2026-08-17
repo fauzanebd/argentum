@@ -11,6 +11,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/dashboard"
 	"github.com/fauzanebd/argentum/internal/dashboard/spec"
+	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
@@ -34,14 +35,15 @@ type DashboardCreator interface {
 // wrong the moment there are two workers.
 type CreateDashboardTool struct {
 	svc      DashboardCreator
+	repo     domain.ConnectionRepository
 	recorder UsageRecorder
 }
 
-func NewCreateDashboardTool(svc DashboardCreator, recorder UsageRecorder) *CreateDashboardTool {
+func NewCreateDashboardTool(svc DashboardCreator, repo domain.ConnectionRepository, recorder UsageRecorder) *CreateDashboardTool {
 	if recorder == nil {
 		recorder = nopRecorder{}
 	}
-	return &CreateDashboardTool{svc: svc, recorder: recorder}
+	return &CreateDashboardTool{svc: svc, repo: repo, recorder: recorder}
 }
 
 func (t *CreateDashboardTool) Name() string { return "create_dashboard" }
@@ -131,6 +133,20 @@ func (t *CreateDashboardTool) Execute(ctx context.Context, args string) (string,
 	companyID := tenantctx.CompanyID(ctx)
 	if threadID := tenantctx.ThreadID(ctx); threadID != "" {
 		in.ThreadID = &threadID
+	}
+
+	// The same choke point every other data tool goes through. Without it this
+	// tool refused a call that omitted source_id — which is what a model sends
+	// on a one-source company, because run_sql accepted exactly that two calls
+	// earlier — and the turn spent an iteration learning a rule the product does
+	// not have. ResolveSource also carries the turn's already-resolved source
+	// forward, and applies the agent's source allowlist (T-S2).
+	if t.repo != nil {
+		source, err := ResolveSource(ctx, t.repo, companyID, in.Spec.SourceID)
+		if err != nil {
+			return "", err
+		}
+		in.Spec.SourceID = source.ID
 	}
 
 	res, err := t.svc.Create(ctx, companyID, "", *in)

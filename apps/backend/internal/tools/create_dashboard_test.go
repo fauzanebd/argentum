@@ -33,7 +33,7 @@ func (f *fakeCreator) Create(_ context.Context, _, _ string, in dashboard.Input)
 
 func runTool(t *testing.T, creator *fakeCreator, args string) map[string]any {
 	t.Helper()
-	out, err := NewCreateDashboardTool(creator, nil).Execute(context.Background(), args)
+	out, err := NewCreateDashboardTool(creator, nil, nil).Execute(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestCreateDashboardDefaultsADateRangeToAPreset(t *testing.T) {
 }
 
 func TestCreateDashboardRefusesWhatItCannotGuess(t *testing.T) {
-	tool := NewCreateDashboardTool(&fakeCreator{}, nil)
+	tool := NewCreateDashboardTool(&fakeCreator{}, nil, nil)
 	for name, args := range map[string]string{
 		"no title":  `{"panels": [{"viz": "table", "sql": "SELECT 1"}]}`,
 		"no panels": `{"title": "Ops"}`,
@@ -197,7 +197,7 @@ func TestCreateDashboardReportsPanelWarnings(t *testing.T) {
 		Dashboard: &domain.Dashboard{ID: "dash-9"},
 		Warnings:  []dashboard.PanelWarning{{PanelID: "p2", Message: "no rows"}},
 	}}
-	out, err := NewCreateDashboardTool(creator, nil).
+	out, err := NewCreateDashboardTool(creator, nil, nil).
 		Execute(context.Background(), `{"title":"X","panels":[{"viz":"table","sql":"SELECT 1"}]}`)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -210,7 +210,7 @@ func TestCreateDashboardReportsPanelWarnings(t *testing.T) {
 // A deployment with no dashboard service says so rather than panicking — the
 // same shape every other optional dependency in this package takes.
 func TestCreateDashboardWithoutAServiceSaysSo(t *testing.T) {
-	_, err := NewCreateDashboardTool(nil, nil).Execute(context.Background(), `{"title":"X","panels":[]}`)
+	_, err := NewCreateDashboardTool(nil, nil, nil).Execute(context.Background(), `{"title":"X","panels":[]}`)
 	if err == nil || !strings.Contains(err.Error(), "not configured") {
 		t.Errorf("err = %v, want a 'not configured' refusal", err)
 	}

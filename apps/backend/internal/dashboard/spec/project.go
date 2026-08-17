@@ -76,6 +76,15 @@ func Project(p *Panel, res *db.QueryResult) (*Resolved, error) {
 		Truncated: res.Truncated,
 	}
 
+	// "The query ran and matched nothing" is a fact worth carrying, and it is not
+	// the same fact as an error. Only the KPI path used to say it, so a chart
+	// over an empty window came back as an empty series with no explanation —
+	// which reads, to anything that is not the browser, as a dashboard that
+	// worked.
+	if res.Count == 0 {
+		out.Note = "no rows matched this panel's filters"
+	}
+
 	switch p.Viz {
 	case VizTable:
 		// A table draws what the query returned, in the order it returned it.

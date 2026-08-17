@@ -181,10 +181,22 @@ func (s *DashboardService) dryRun(ctx context.Context, companyID string, d *doma
 			continue
 		}
 		rows += p.RowCount
-		if p.Error == "" {
+		// Two things are worth warning about, and only one of them is an error.
+		//
+		// The second was found by the live gate on 2026-08-17: the agent queried
+		// 2020–2025, found six months of data, then gave the dashboard a
+		// last_30d window — which in 2026 matches nothing. Every panel saved
+		// clean, the tool reported success, and the reply quoted figures from
+		// the run_sql calls beside a dashboard that draws nothing. A panel that
+		// returns no rows at save time is the one moment where saying so costs
+		// nothing and changes what the model tells the user.
+		if p.Error == "" && p.RowCount > 0 {
 			continue
 		}
 		msg := p.Error
+		if msg == "" {
+			msg = "this panel returned no rows"
+		}
 		// Name the window it ran over. A panel that fails on a preset the author
 		// never thought about reads as broken; the same message with the dates in
 		// it reads as "there is no data there yet", which is usually what it is.

@@ -110,7 +110,7 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// create_visualization then create_dashboard — spent four tool calls on a
 		// three-panel answer and carried a thread-scoped in-memory map to make
 		// the second call optional.
-		NewCreateDashboardTool(d.Dashboards, d.Usage),
+		NewCreateDashboardTool(d.Dashboards, d.Connections, d.Usage),
 		NewScheduleTaskTool(d.Scheduled),
 		// Asking, as an action (T-Q4). It has no dependencies at all, which is
 		// the point: the alternative to asking is always a tool call, and a

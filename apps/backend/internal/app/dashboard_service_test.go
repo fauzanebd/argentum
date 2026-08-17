@@ -265,3 +265,37 @@ func TestGetAndUpdateAreCompanyScoped(t *testing.T) {
 		t.Errorf("the owner must still read it: %v", err)
 	}
 }
+
+// The live gate of 2026-08-17, as a test.
+//
+// The agent queried 2020–2025, found six months of data, then gave the
+// dashboard a last_30d window — which in 2026 matches nothing. Every panel
+// saved clean, the tool reported success, and the reply quoted figures from its
+// own run_sql calls beside a dashboard that drew nothing. A panel that returns
+// no rows at save is the one moment where saying so is free.
+func TestCreateWarnsWhenAPanelReturnsNoRows(t *testing.T) {
+	svc, repo := dashService(t, func(string) (*db.QueryResult, error) {
+		return &db.QueryResult{Columns: []string{"month", "revenue"}, Count: 0}, nil
+	})
+	res, err := svc.Create(context.Background(), "co-1", "", input(okPanel("p1")))
+	if err != nil {
+		t.Fatalf("Create must still save: %v", err)
+	}
+	if repo.creates != 1 {
+		t.Fatal("an empty panel is a warning, not a refusal")
+	}
+	if len(res.Warnings) != 1 {
+		t.Fatalf("warnings = %+v, want one for the empty panel", res.Warnings)
+	}
+	if !strings.Contains(res.Warnings[0].Message, "no rows") {
+		t.Errorf("the warning does not say what happened: %q", res.Warnings[0].Message)
+	}
+	// And the window is in it, because "no rows" without a window sends somebody
+	// looking at the SQL when the answer is the dates.
+	if !strings.Contains(res.Warnings[0].Message, "2024-02-01") {
+		t.Errorf("the warning should name the window: %q", res.Warnings[0].Message)
+	}
+	if res.RowCount != 0 {
+		t.Errorf("row_count = %d, want 0 so the guardrail cannot ground a figure on it", res.RowCount)
+	}
+}
