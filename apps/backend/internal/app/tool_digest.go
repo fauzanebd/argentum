@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/fauzanebd/argentum/internal/agentbudget"
 )
 
 // ToolDigest is what one tool call did, small enough to carry into the next
@@ -43,11 +45,52 @@ type ToolDigest struct {
 	Columns []string `json:"columns,omitempty"`
 	// Rows is the row count the result carried, -1 when it carried none.
 	Rows int `json:"rows"`
-	// Err is set when the call failed. Carried forward deliberately: a
-	// follow-up that repeats a query which already failed is the second most
-	// expensive thing this agent does.
+	// Err is set when the call did not do its work — the error a failed call
+	// returned, or the reason a refused one was never allowed to run. Carried
+	// forward deliberately: a follow-up that repeats a query which already
+	// failed is the second most expensive thing this agent does.
 	Err string `json:"error,omitempty"`
+	// Status is what the executor actually returned, and it exists because Err
+	// being empty used to mean two different things — "the call ran" and "we
+	// could not tell" (T-Q12). The second one is what let a turn believe an
+	// edit had happened: a call refused by agentbudget comes back as a result
+	// with no `error` key, so the digest recorded it exactly as it records a
+	// success, and the next turn read "update_dashboard already ran".
+	//
+	// Empty on a successful call and on every row written before this field
+	// existed, so a stored digest is byte-identical to what it was; read it
+	// through Outcome rather than directly.
+	Status string `json:"status,omitempty"`
 }
+
+// The three outcomes a call can have. "ok" is never written to the wire — see
+// ToolDigest.Status — but it is what Outcome answers, because a caller asking
+// "what happened?" should not have to know that one of the three is spelled as
+// an absence.
+const (
+	DigestStatusOK      = "ok"
+	DigestStatusFailed  = "failed"
+	DigestStatusRefused = "refused"
+)
+
+// Outcome is the three-state answer: ok, failed, or refused.
+//
+// A digest written before Status existed carries only Err, so an error there
+// still reads as failed — the one direction that never had the ambiguity.
+func (d ToolDigest) Outcome() string {
+	switch d.Status {
+	case DigestStatusRefused, DigestStatusFailed:
+		return d.Status
+	}
+	if d.Err != "" {
+		return DigestStatusFailed
+	}
+	return DigestStatusOK
+}
+
+// Ran reports whether the call reached the tool at all. A refused call did
+// not, which is the distinction the whole field exists for.
+func (d ToolDigest) Ran() bool { return d.Outcome() != DigestStatusRefused }
 
 // digestMaxQueryChars bounds the SQL carried into the next turn. Long enough
 // for a real analytical query with a couple of joins; short enough that ten of
@@ -61,10 +104,18 @@ const digestMaxQueryChars = 600
 const maxDigestsPerTurn = 12
 
 // BuildToolDigest reads one tool call's arguments and result into a digest.
-// Both are the JSON the stream carried; either being unparseable yields a
-// digest with the tool name and nothing else, which is still worth keeping —
-// "you already called get_schema" is most of the value.
-func BuildToolDigest(name string, args, result map[string]interface{}) ToolDigest {
+//
+// args and result are the JSON the stream carried; either being unparseable
+// yields a digest with the tool name and nothing else, which is still worth
+// keeping — "you already called get_schema" is most of the value.
+//
+// rawResult is what the stream carried *before* it was parsed, and it is the
+// only place a Go error survives (T-Q12): agent-sdk-go renders one as the
+// plain string "Error executing tool: …" (`pkg/llm/openai/streaming.go`,
+// `Error: …` on the Anthropic path), which is not a JSON object, so the parsed
+// map is empty and the call would otherwise be indistinguishable from one that
+// ran and said nothing. Pass "" when there is no raw form to hand.
+func BuildToolDigest(name string, args, result map[string]interface{}, rawResult string) ToolDigest {
 	d := ToolDigest{Tool: name, Rows: -1}
 
 	d.SourceID = digestString(args, "source_id")
@@ -76,11 +127,23 @@ func BuildToolDigest(name string, args, result map[string]interface{}) ToolDiges
 		d.Tables = t
 	}
 
-	if result == nil {
+	if len(result) == 0 {
+		d.applyRawFailure(rawResult)
+		return d
+	}
+	// A refused call first, before any of the shapes below: agentbudget's
+	// refusal is a well-formed result carrying no `error` key at all, so every
+	// other branch here reads it as an ordinary call. That is the whole of
+	// T-Q12 — a call that never ran, remembered as one that did, and a turn
+	// telling the user an edit was done because of it.
+	if agentbudget.IsRefusalPayload(result) {
+		d.Status = DigestStatusRefused
+		d.Err = firstNonEmpty(agentbudget.RefusalReason(result), "the turn's budget was spent")
 		return d
 	}
 	if e := firstNonEmpty(digestString(result, "error"), digestString(result, "err")); e != "" {
-		d.Err = e
+		d.Err = truncateDigestErr(e)
+		d.Status = DigestStatusFailed
 	}
 	// Row count: the tools do not agree on a name for it, and the audit path
 	// has the same problem (tools.resultRows). Both spellings are read rather
@@ -126,7 +189,14 @@ func RenderPriorWork(digests []ToolDigest) string {
 	b.WriteString("Reuse it — do not re-read a schema you have read or re-derive a query you have run. ")
 	b.WriteString("To extend a previous answer, build on the query below rather than starting again. ")
 	b.WriteString("These results are from earlier turns: if the user asks for the same figure again, ")
-	b.WriteString("re-run the query rather than quoting a number from here as if it were fresh.\n")
+	b.WriteString("re-run the query rather than quoting a number from here as if it were fresh. ")
+	// The sentence T-Q12 was written for. A list of calls with no outcome
+	// beside them is an invitation to assume they worked, and two consecutive
+	// turns told a user their dashboard had been edited on exactly that
+	// assumption. A refused call is unfinished work: it is here so the turn
+	// does not repeat the discovery that led to it, not so it can be counted.
+	b.WriteString("A line marked REFUSED or FAILED did NOT take effect — if that work is still ")
+	b.WriteString("wanted, DO IT NOW in this turn by calling the tool again; never report it as done.\n")
 
 	for _, d := range digests {
 		b.WriteString(" - ")
@@ -138,6 +208,8 @@ func RenderPriorWork(digests []ToolDigest) string {
 			fmt.Fprintf(&b, " (%s)", d.MetricKey)
 		}
 		switch {
+		case d.Outcome() == DigestStatusRefused:
+			fmt.Fprintf(&b, " — REFUSED, it did NOT run: %s", oneLineDigest(d.Err))
 		case d.Err != "":
 			fmt.Fprintf(&b, " — FAILED: %s", oneLineDigest(d.Err))
 		case d.Rows >= 0:
@@ -165,12 +237,17 @@ func RenderPriorWork(digests []ToolDigest) string {
 // and carrying both into the next turn would spend the context saying one
 // thing twice. Keyed on everything that makes a call distinguishable — two
 // different SELECTs against one source are two facts, not one.
+//
+// The outcome is part of the key (T-Q12). A call that was refused and then
+// made properly is two facts as well, and collapsing them keeps whichever came
+// first — which would have been the refusal, so the successful retry would
+// disappear and the turn after it would read the work as never done.
 func DedupeDigests(in []ToolDigest) []ToolDigest {
 	seen := make(map[string]bool, len(in))
 	out := make([]ToolDigest, 0, len(in))
 	for _, d := range in {
 		key := strings.Join([]string{d.Tool, d.SourceID, d.MetricKey, d.Query,
-			strings.Join(d.Tables, "|")}, "\x00")
+			strings.Join(d.Tables, "|"), d.Outcome()}, "\x00")
 		if seen[key] {
 			continue
 		}
@@ -204,6 +281,42 @@ func DecodeDigests(raw string) []ToolDigest {
 		return nil
 	}
 	return out
+}
+
+// sdkToolErrorPrefixes are how agent-sdk-go renders a tool that returned a Go
+// error, per provider. Matched rather than "anything that is not JSON",
+// because a tool is allowed to answer in prose and calling that a failure
+// would tell the next turn its work is undone when it is not.
+var sdkToolErrorPrefixes = []string{"Error executing tool:", "Error:"}
+
+// applyRawFailure reads a result the stream carried as a plain string. Only
+// the SDK's own error rendering counts; anything else leaves the digest as it
+// was, which is what a call with an unreadable result has always looked like.
+func (d *ToolDigest) applyRawFailure(raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return
+	}
+	for _, p := range sdkToolErrorPrefixes {
+		if strings.HasPrefix(raw, p) {
+			d.Err = truncateDigestErr(strings.TrimSpace(strings.TrimPrefix(raw, p)))
+			d.Status = DigestStatusFailed
+			return
+		}
+	}
+}
+
+// digestMaxErrChars bounds the failure text. A driver error carrying a whole
+// query plan is a paragraph, and a paragraph per failed call would make the
+// memory block longer than the answer it explains.
+const digestMaxErrChars = 300
+
+func truncateDigestErr(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= digestMaxErrChars {
+		return s
+	}
+	return s[:digestMaxErrChars] + " …"
 }
 
 func digestString(m map[string]interface{}, key string) string {

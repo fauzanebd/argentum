@@ -1,6 +1,6 @@
 import type { Message, NextStep } from "@argentum/api-types";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { DecisionCard } from "@/components/ui/decision-card";
 
 /**
  * What to ask next (T-U13).
@@ -15,12 +15,20 @@ import { cn } from "@/lib/utils";
  *   - **A click fills the composer. It does not send.** The same rule and the
  *     same reason as the starter questions: a turn that runs before the reader
  *     has read it teaches them nothing and spends a credit.
- *   - **The newest assistant message only.** Chips under every historical bubble
- *     turn a transcript into a wall of buttons, and a suggestion about a
+ *   - **The newest assistant message only.** Options under every historical
+ *     bubble turn a transcript into a wall of buttons, and a suggestion about a
  *     question from twenty minutes ago is not a next step.
  *   - **A pick is recorded.** A suggestion nobody clicks is worse than no
  *     suggestion, and the pick rate is the only evidence this feature works.
  *     Fire-and-forget: a failed write must never cost the reader their click.
+ *
+ * **Drawn as a decision card since 2026-08-18, where it used to be a chip row.**
+ * The chips could not carry `why`: it was a `title` attribute — unreachable
+ * without a mouse — plus one trailing sentence for whichever suggestion led, so
+ * the agent's reasoning about the other two was written, stored, and never
+ * shown. A row that can hold its own sentence shows all of them, and the lean
+ * becomes an attribution the reader can weigh (*"Sales Analyst's lean"*) rather
+ * than a dot they have to interpret.
  */
 
 /**
@@ -55,9 +63,13 @@ function nextStepsOf(message: Message): NextStep[] {
 
 export function NextStepChips({
   message,
+  /** Whose lean it is. Absent on a thread whose agent has since been deleted,
+   *  which the card renders as "Agent's lean" rather than as nobody's. */
+  agentName,
   onPick,
 }: {
   message: Message;
+  agentName?: string;
   onPick: (prompt: string) => void;
 }) {
   const messageId = message.id;
@@ -77,60 +89,29 @@ export function NextStepChips({
   }
 
   // The recommended one leads. It is the agent's own answer to "what would you
-  // do next", and burying it third makes the marking decorative.
+  // do next", and burying it third makes the marking decorative. The index sent
+  // to the API is the stored one, never the display one — the two differ by
+  // exactly this sort, and a pick table keyed on display order would record a
+  // suggestion nobody clicked.
   const ordered = [...steps].sort(
     (a, b) => Number(b.recommended) - Number(a.recommended),
   );
+  const leadingIsLean = ordered[0]?.recommended === true;
 
   return (
-    <div
-      className="mt-1.5 flex flex-wrap items-center gap-1.5"
-      role="group"
+    <DecisionCard
+      className="mt-2"
       aria-label="Suggested next steps"
-    >
-      {ordered.map((step, i) => (
-        <button
-          key={`${step.label}-${i}`}
-          type="button"
-          onClick={() => pick(step, steps.indexOf(step))}
-          title={step.recommended ? step.why || undefined : undefined}
-          aria-label={
-            step.recommended
-              ? `Recommended: ${step.label}${step.why ? ` — ${step.why}` : ""}`
-              : step.label
-          }
-          className={cn(
-            // Same chip as StarterQuestions rather than a second chip look: they
-            // are the same gesture in two places, and two treatments would read
-            // as two features.
-            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] shadow-hairline transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            step.recommended
-              ? // Border and dot rather than a fill: the chip sits under an
-                // answer, and a filled button there competes with the answer for
-                // the eye. Both halves of the distinction survive a colour-blind
-                // reader and a greyscale screenshot, because the dot is a shape.
-                "border-primary/60 bg-card text-foreground hover:border-primary"
-              : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground",
-          )}
-        >
-          {step.recommended && (
-            <span
-              aria-hidden
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-            />
-          )}
-          {step.label}
-        </button>
-      ))}
-      {/* The reason, once, beside the row rather than inside the chip. A chip
-          long enough to hold its own justification is not a chip, and `title`
-          alone is unreachable without a mouse. */}
-      {ordered[0]?.recommended && ordered[0].why && (
-        <span className="text-[11px] text-muted-foreground">
-          — {ordered[0].why}
-        </span>
-      )}
-    </div>
+      question="What next?"
+      leanId={leadingIsLean ? "step-0" : undefined}
+      leanBy={agentName}
+      options={ordered.map((step, i) => ({
+        id: `step-${i}`,
+        label: step.label,
+        description: step.why,
+        onSelect: () => pick(step, steps.indexOf(step)),
+      }))}
+      footer="Picking one writes it into the composer. Nothing is sent until you send it."
+    />
   );
 }

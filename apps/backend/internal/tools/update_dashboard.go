@@ -124,8 +124,9 @@ func (t *UpdateDashboardTool) Parameters() map[string]interfaces.ParameterSpec {
 			Description: "Filter edits, applied in order. Each: {op, name, kind, label, options, default}. " +
 				"op is add, replace or remove; 'name' names the filter. " +
 				"Changing a date_range's default is how you change the window the dashboard opens on — the default is a " +
-				"preset NAME (last_7d, last_30d, mtd, qtd, ytd, last_month) or, for a fixed historical window the user " +
-				"asked for by date, {from: 'YYYY-MM-DD', to: 'YYYY-MM-DD'}. " +
+				"preset NAME (last_7d, last_30d, mtd, qtd, ytd, last_month) for a window that keeps up with today, or " +
+				"{from: 'YYYY-MM-DD', to: 'YYYY-MM-DD'} for a period that has ENDED, which opens on those days every " +
+				"time. A preset never approximates a closed period: qtd means the CURRENT quarter. " +
 				"Removing or renaming a filter a panel's SQL still references is refused, so remove the {{token}} from " +
 				"the SQL in the same call.",
 			Required: false,

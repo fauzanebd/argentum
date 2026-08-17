@@ -99,9 +99,12 @@ func (t *CreateDashboardTool) Parameters() map[string]interfaces.ParameterSpec {
 			Type: "array",
 			Description: "Controls the viewer can change. Each: {name, kind, label, options, default}. " +
 				"kind is one of date_range, date, enum, number, bool. " +
-				"A date_range named 'period' binds {{period_from}} and {{period_to}} in panel SQL, and its default is a " +
-				"preset NAME — last_7d, last_30d, mtd, qtd, ytd or last_month — never a stored date, or the dashboard is " +
-				"a snapshot that silently ages.",
+				"A date_range named 'period' binds {{period_from}} and {{period_to}} in panel SQL. Its default is " +
+				"either a preset NAME — last_7d, last_30d, mtd, qtd, ytd, last_month — for a dashboard that should " +
+				"keep up with today, or, when the user asked for a period that has ENDED (a named quarter, a past " +
+				"month, a past year), {from: 'YYYY-MM-DD', to: 'YYYY-MM-DD'} so it opens on that period every time. " +
+				"Never use a preset to approximate a closed period: qtd means the CURRENT quarter and would show " +
+				"nothing.",
 			Required: false,
 			Items: &interfaces.ParameterSpec{
 				Type:        "object",
@@ -342,7 +345,15 @@ func parseFilters(raw json.RawMessage) ([]spec.Filter, error) {
 		if optsRaw, ok := firstRaw(e, "options", "choices", "values"); ok {
 			_ = json.Unmarshal(optsRaw, &f.Options) // an unreadable option list is a UX hint, not a failure
 		}
-		if defRaw, ok := firstRaw(e, "default", "default_value", "value"); ok {
+		// A closed window arrives either as {from, to} on the filter itself or
+		// as a {from, to} object under `default`, depending on the model
+		// (T-D24). Both are the same request and both are accepted — the same
+		// tolerance update_dashboard's filter parser already has, and the
+		// reason it is here too is that a model that learned the shape from one
+		// tool writes it to the other.
+		if from := firstString(e, "from", "start", "date_from"); from != "" && f.Kind == spec.KindDateRange {
+			f.Default = map[string]any{"from": from, "to": firstString(e, "to", "end", "date_to")}
+		} else if defRaw, ok := firstRaw(e, "default", "default_value", "value"); ok {
 			var v any
 			if err := json.Unmarshal(defRaw, &v); err == nil {
 				f.Default = v

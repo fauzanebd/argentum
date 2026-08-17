@@ -588,8 +588,15 @@ export function ChatPage() {
                 <MessageBubble
                   key={m.id}
                   message={m}
+                  // Whose lean the next-step card attributes. The same name the
+                  // header shows, resolved once here rather than looked up per
+                  // bubble.
+                  agentName={agentNameFor(
+                    threads.find((t) => t.id === activeThreadId),
+                    agents,
+                  )}
                   // The newest assistant message only, and not while a turn is
-                  // in flight: chips beside a streaming answer invite a click
+                  // in flight: options beside a streaming answer invite a click
                   // that would queue a second question behind the first.
                   onPickNextStep={
                     i === displayedMessages.length - 1 && !liveAssistant
@@ -778,14 +785,17 @@ function ChatHeader({
 /* ── Message Bubble ──────────────────────────────────────────────────── */
 function MessageBubble({
   message,
+  agentName,
   /** Suggestions render under the NEWEST assistant message only (T-U13).
    *
-   *  Chips on every historical bubble turn a transcript into a wall of buttons,
-   *  and a suggestion about a question from twenty minutes ago is not a next
-   *  step. The list decides which bubble is last; the bubble does not guess. */
+   *  Options on every historical bubble turn a transcript into a wall of
+   *  buttons, and a suggestion about a question from twenty minutes ago is not
+   *  a next step. The list decides which bubble is last; the bubble does not
+   *  guess. */
   onPickNextStep,
 }: {
   message: Message;
+  agentName?: string;
   onPickNextStep?: (prompt: string) => void;
 }) {
   const isUser = message.role === "user";
@@ -882,7 +892,11 @@ function MessageBubble({
             1.5 gap: "rate this answer" is about the answer above, and the chips
             are about the turn after it, so they read in that order. */}
         {!isUser && onPickNextStep && (
-          <NextStepChips message={message} onPick={onPickNextStep} />
+          <NextStepChips
+            message={message}
+            agentName={agentName}
+            onPick={onPickNextStep}
+          />
         )}
       </div>
     </div>

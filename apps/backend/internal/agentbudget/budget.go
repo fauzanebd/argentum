@@ -445,6 +445,34 @@ func IsRefusal(result string) bool {
 	return payload.BudgetExhausted
 }
 
+// IsRefusalPayload is IsRefusal for a caller that has already parsed the
+// result, and RefusalReason is the sentence beside it.
+//
+// Two entry points rather than one because the two callers hold different
+// things: the audit decorator has the raw string the tool returned, and the
+// tool digest (T-Q12) has the map the stream event was unmarshalled into.
+// Re-marshalling one to reach the other would make a memory row depend on a
+// round trip that can fail. Both read the same key, so neither can drift.
+func IsRefusalPayload(result map[string]interface{}) bool {
+	if result == nil {
+		return false
+	}
+	b, _ := result["budget_exhausted"].(bool)
+	return b
+}
+
+// RefusalReason is why the call was refused ("iteration budget spent (8 of
+// 8)"), or "" when the payload is not a refusal or carries no reason. It is
+// the half a later turn needs: "refused" tells it the call did not run,
+// and the reason tells it whether trying again is worth an iteration.
+func RefusalReason(result map[string]interface{}) string {
+	if !IsRefusalPayload(result) {
+		return ""
+	}
+	s, _ := result["reason"].(string)
+	return strings.TrimSpace(s)
+}
+
 // retrievedLocked summarises the turn's evidence in one line so the model can
 // quote it back accurately rather than guessing at what it has.
 func (t *Tracker) retrievedLocked() string {

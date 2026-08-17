@@ -9,7 +9,9 @@ import {
 } from "lucide-react";
 import type { ActionInvocation } from "@argentum/api-types";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { DecisionCard } from "@/components/ui/decision-card";
+import { useAuthStore } from "@/store/auth";
+import { useComposerStore } from "@/store/composer";
 import { useDecideAction, usePendingActions } from "./use-actions";
 
 /** describe is the sentence the approver reads. It comes from the backend, which
@@ -28,10 +30,21 @@ function describe(inv: ActionInvocation): string {
 }
 
 /** ApprovalCard is the inline propose→approve→reject control the agent's
- *  proposal renders as in the chat stream (T-11). It mirrors ToolCallCard's
- *  styling so a proposal reads as part of the same conversation, not a modal
- *  bolted on beside it. Approve executes the action exactly once (the backend's
- *  state machine, T-10); reject is terminal. */
+ *  proposal renders as in the chat stream (T-11). Approve executes the action
+ *  exactly once (the backend's state machine, T-10); reject is terminal.
+ *
+ *  **Drawn as a decision card since 2026-08-18**, where it used to be a
+ *  sentence over an Approve/Reject button pair. Two verbs state what the buttons
+ *  are called and leave what they *do* to be inferred — on an outbound action
+ *  that cannot be undone, the reader either already knew or found out by
+ *  clicking. Each choice now carries its own line.
+ *
+ *  **And there is deliberately no lean on this card.** The agent proposing an
+ *  action is not the same as it recommending you authorise one, and tinting
+ *  "Go ahead" green before a human has decided is a nudge toward the
+ *  irreversible half of the choice. The mark appears after the decision, on
+ *  whichever option was taken. The next-step list, where the agent's lean is
+ *  real data it produced, is where that marking belongs. */
 /** The sentence a viewer who may not decide reads instead of a 403. Which roles
  *  may decide is per company per kind (company_actions.allowed_roles), so this
  *  says who to ask rather than naming a role the reader is not. */
@@ -39,6 +52,8 @@ const NOT_YOURS = "Someone with permission for this action has to approve it.";
 
 export function ApprovalCard({ invocation }: { invocation: ActionInvocation }) {
   const decide = useDecideAction();
+  const prefill = useComposerStore((s) => s.prefill);
+  const me = useAuthStore((s) => s.user);
   const [error, setError] = useState<string | null>(null);
   const settled = invocation.status !== "proposed";
   // can_decide comes from the backend, which computes it from the same
@@ -65,14 +80,11 @@ export function ApprovalCard({ invocation }: { invocation: ActionInvocation }) {
   const tone = TONES[invocation.status] ?? TONES.proposed;
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border px-3 py-2.5 text-xs",
-        tone.border,
-        tone.bg,
-      )}
-    >
-      <div className={cn("mb-1 flex items-center gap-1.5 font-medium", tone.ink)}>
+    <div className="space-y-2">
+      {/* The state line, kept above the card and in its own tone (T-U1). It is
+          the one thing a reader scanning a thread needs before they read
+          anything else: is this waiting on me, or is it history? */}
+      <div className={cn("flex items-center gap-1.5 text-xs font-medium", tone.ink)}>
         <tone.Icon
           className={cn(
             "h-3.5 w-3.5",
@@ -83,53 +95,111 @@ export function ApprovalCard({ invocation }: { invocation: ActionInvocation }) {
         />
         {tone.title}
       </div>
-      <p className="text-foreground">{describe(invocation)}</p>
 
-      {settled ? (
-        <p className={cn("mt-1.5 font-medium", tone.ink)}>
-          {invocation.status === "executed" && "Approved and sent."}
-          {invocation.status === "rejected" && "Rejected — nothing was done."}
-          {invocation.status === "failed" &&
-            `Failed: ${invocation.error_text ?? "the action could not be carried out"}.`}
-          {invocation.status === "approved" && "Approved — running…"}
-          {invocation.status === "expired" && "This proposal expired before it was decided."}
-        </p>
-      ) : (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            className="h-7 px-2"
-            disabled={decide.isPending || !canDecide}
-            title={canDecide ? undefined : NOT_YOURS}
-            onClick={() => run("approve")}
-          >
-            {decide.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Check className="h-3.5 w-3.5" />
-            )}
-            Approve
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 px-2"
-            disabled={decide.isPending || !canDecide}
-            title={canDecide ? undefined : NOT_YOURS}
-            onClick={() => run("reject")}
-          >
-            <X className="h-3.5 w-3.5" />
-            Reject
-          </Button>
-          {!canDecide && <span className="text-muted-foreground">{NOT_YOURS}</span>}
-        </div>
-      )}
+      <DecisionCard
+        aria-label="Action approval"
+        question={describe(invocation)}
+        note={settled ? outcomeOf(invocation) : undefined}
+        // "" rather than undefined for an expired proposal: the card goes
+        // static — nobody may decide it now — with no option marked, because
+        // running out of time is not a choice anybody made.
+        chosenId={settled ? chosenIdOf(invocation.status) : undefined}
+        options={[
+          {
+            id: "approve",
+            label: "Go ahead",
+            description:
+              "Runs this once, exactly as described. It cannot be taken back.",
+            busy: decide.isPending,
+            disabled: !canDecide,
+            onSelect: () => run("approve"),
+          },
+          {
+            id: "adjust",
+            label: "Adjust",
+            description:
+              "Puts it back in the composer to say what should change. Nothing runs, and the proposal stays open.",
+            onSelect: () =>
+              prefill(`About the proposed action — ${describe(invocation)}\n\nChange: `),
+          },
+          {
+            id: "reject",
+            label: "Drop it",
+            description: "Rejects the proposal. Nothing runs, and it cannot be reopened.",
+            disabled: !canDecide,
+            onSelect: () => run("reject"),
+          },
+        ]}
+        footer={
+          settled ? (
+            decidedLine(invocation, me?.id)
+          ) : canDecide ? (
+            <StateTrail status={invocation.status} />
+          ) : (
+            NOT_YOURS
+          )
+        }
+      />
 
-      <StateTrail status={invocation.status} />
-
-      {error && <p className="mt-1.5 text-destructive-ink">{error}</p>}
+      {error && <p className="text-xs text-destructive-ink">{error}</p>}
     </div>
   );
+}
+
+/** Which option the decision landed on, for the card's static state. An
+ *  expired proposal marks none: it is the one terminal status nobody chose. */
+function chosenIdOf(status: string): string {
+  if (status === "rejected") return "reject";
+  if (status === "expired") return "";
+  return "approve";
+}
+
+/** What happened, in the words the old card used. */
+function outcomeOf(inv: ActionInvocation): string {
+  switch (inv.status) {
+    case "executed":
+      return "Approved and sent.";
+    case "rejected":
+      return "Rejected — nothing was done.";
+    case "failed":
+      return `Failed: ${inv.error_text ?? "the action could not be carried out"}.`;
+    case "approved":
+      return "Approved — running…";
+    case "expired":
+      return "This proposal expired before it was decided.";
+    default:
+      return "";
+  }
+}
+
+/**
+ * Who decided, and when.
+ *
+ * `decided_by` is a user id, and this card has no directory to resolve it
+ * against — so it says "you" when the id is the reader's own and "a teammate"
+ * otherwise. Neither is a name, and inventing one from an id would be the
+ * product asserting something it does not know about an audited decision.
+ */
+function decidedLine(inv: ActionInvocation, myId?: string): string {
+  if (!inv.decided_at) return "";
+  const who = inv.decided_by
+    ? inv.decided_by === myId
+      ? "you"
+      : "a teammate"
+    : "this deployment's policy";
+  return `Decided by ${who} · ${whenWord(inv.decided_at)}`;
+}
+
+/** A weekday inside the last six days, a date before that. "Thursday" is what
+ *  somebody remembers about a decision they made this week; "12 August" is
+ *  what they need about one from last month. */
+function whenWord(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  const days = (Date.now() - at.getTime()) / 86_400_000;
+  if (days < 1) return "today";
+  if (days < 6) return at.toLocaleDateString(undefined, { weekday: "long" });
+  return at.toLocaleDateString(undefined, { day: "numeric", month: "long" });
 }
 
 /**
@@ -198,17 +268,20 @@ const TONES: Record<
  * The outcome stop is the only one that varies, so it takes its label from the
  * terminal status rather than from a fourth branch of markup.
  *
- * Rendered for settled proposals only. On one still awaiting a decision the
- * buttons above already say where it is, and a progress rail under them would
- * be decoration competing with the control.
+ * Rendered as the card's footer while a proposal is open, where it says how far
+ * the machinery has got. Once a decision lands the footer says who made it and
+ * when, which is the more useful sentence and the one an audit asks for.
  */
 function StateTrail({ status }: { status: string }) {
-  if (status === "proposed") return null;
-
-  const decided = status !== "expired";
+  const open = status === "proposed";
+  const decided = !open && status !== "expired";
   const ran = status === "executed" || status === "failed";
-  const outcome =
-    status === "executed"
+  // The third stop is where the status varies. On an open proposal it is what
+  // has *not* happened yet, which is the honest label for a rail whose whole
+  // job is saying where this got to.
+  const outcome = open
+    ? "Not run"
+    : status === "executed"
       ? "Executed"
       : status === "failed"
         ? "Failed"
@@ -223,16 +296,16 @@ function StateTrail({ status }: { status: string }) {
   ];
 
   return (
-    <ol className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-subtle">
+    <span className="inline-flex items-center gap-1.5 text-[10px] text-muted-subtle">
       {stops.map((stop, i) => (
-        <li key={stop.label} className="flex items-center gap-1.5">
+        <span key={stop.label} className="inline-flex items-center gap-1.5">
           {i > 0 && <span aria-hidden className="h-px w-3 bg-border-strong" />}
           <span className={cn(stop.done && "text-muted-foreground")}>
             {stop.label}
           </span>
-        </li>
+        </span>
       ))}
-    </ol>
+    </span>
   );
 }
 

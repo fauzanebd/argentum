@@ -52,6 +52,30 @@ func TestExpositionCarriesTheDomainCounters(t *testing.T) {
 	}
 }
 
+// The wrong-but-nonempty instrument (T-Q11). Two numbers, because one reply
+// carrying five invented figures and five replies carrying one each are the
+// same figure count and different problems.
+func TestExpositionCarriesTheGroundingCounters(t *testing.T) {
+	c := NewCollector()
+	// A clean reply must not touch either counter, or the rate is meaningless.
+	c.RecordUngroundedFigures(0)
+	c.RecordUngroundedFigures(2)
+	c.RecordUngroundedFigures(1)
+
+	out := renderSnapshot(t, c)
+	for _, want := range []string{
+		"argentum_ungrounded_replies_total 2",
+		"argentum_ungrounded_figures_total 3",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("exposition is missing:\n  %s\n\ngot:\n%s", want, out)
+		}
+	}
+	if snap := c.GetSnapshot(); snap.Grounding.UngroundedReplies != 2 {
+		t.Errorf("snapshot counted %d replies, want 2", snap.Grounding.UngroundedReplies)
+	}
+}
+
 // Every series of one metric name must appear together — a scraper reading a
 // second block under a name it has already closed is entitled to reject it.
 func TestEachMetricNamesSeriesAreContiguous(t *testing.T) {

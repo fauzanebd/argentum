@@ -464,6 +464,24 @@ page assigns to `T-Q9` — arriving one door further out than `T-Q9` looked.
 ## `T-Q11` A reply carries one iteration's figures, and an ungrounded one is counted — 1.5d
 **Repo:** BE · **Deps:** none · **Priority:** P0 · **Migration:** none
 
+> **Built 2026-08-18** — `internal/app/turn_answer.go` (new), `chat_runner.go`,
+> `internal/metrics/{collector,prometheus}.go`, `internal/tracing/tracing.go`.
+> The record is now the last iteration that produced prose, and an ungrounded
+> figure increments a counter, lands on the turn's span and appears on the
+> turn's completion line. **The live half is owed** — the two November/December
+> questions re-asked, and the 56-case re-run rule 1 demands
+> ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §2).
+>
+> **One thing the build found that this ticket did not predict.** The SDK can
+> withhold intermediate content and replay it *after* the last iteration
+> (`filterIntermediateContent`), and its final synthesis call is tagged
+> `final_call` with no iteration number at all. Choosing "the last prose that
+> arrived" would therefore have stored the narration on one path and nothing on
+> the other, so the choice is made on the iteration number with the synthesis
+> call winning outright. This deployment sets `IncludeIntermediateMessages:
+> true` (`bootstrap/stack.go:680`) and so takes neither path today — which is
+> exactly why it had to be handled: the setting is one line from changing.
+
 ### Why
 
 Asked *"How many transactions were there in November 2024?"*, the answer of
@@ -547,12 +565,12 @@ earlier iteration's guess.
 
 ### Acceptance
 
-- [ ] A turn whose first iteration writes prose, calls a tool, and writes prose again stores **only** the post-tool prose
-- [ ] A turn with a single iteration is byte-identical to today, on every provider
-- [ ] A turn whose events carry no iteration metadata is byte-identical to today
-- [ ] The streamed `delta` events are unchanged — the reader watches the model think; the *record* is what this ticket narrows
-- [ ] An ungrounded figure increments a counter and lands on the span, in addition to the existing `Warn`
-- [ ] The November transaction transcript, replayed as a fixture, stores `300` and not `1,667`
+- [x] A turn whose first iteration writes prose, calls a tool, and writes prose again stores **only** the post-tool prose
+- [x] A turn with a single iteration is byte-identical to today, on every provider
+- [x] A turn whose events carry no iteration metadata is byte-identical to today — the fallback is keyed on whether *any* content event was tagged, so a provider that stamps nothing gets one bucket and the concatenation this replaced
+- [x] The streamed `delta` events are unchanged — the reader watches the model think; the *record* is what this ticket narrows
+- [x] An ungrounded figure increments a counter and lands on the span, in addition to the existing `Warn` — `ungrounded_figures_total` and `ungrounded_replies_total`, `argentum.ungrounded_figures` on `agent.turn`, and `ungrounded` on the new `turn completed` line
+- [x] The November transaction transcript, replayed as a fixture, stores `300` and not `1,667` (`TestAnswerKeepsOnlyThePostToolIteration`)
 
 ### Gate
 
@@ -569,3 +587,202 @@ the number with the model and the date.
 Making the grounding check block or rewrite a reply. Per-figure attribution in
 the UI. The eval category for it (`T-Q1`'s set already has `wrong_grain`; whether
 this needs its own case is a question for after the counter has run for a week).
+
+---
+
+# Added 2026-08-18 — `T-Q12`, from `T-D22`'s edit gate
+
+The `T-D22` gate ran on 2026-08-18 and the tool passed every mechanical
+property it was written to prove. What failed was the turn around it: **two
+consecutive turns told the user an edit was done, having called no tool at
+all**, on a dashboard that never changed. Transcript, control and the timestamps
+are in [`../coverage/native-dashboards.md`](../coverage/native-dashboards.md)
+§4.2.
+
+It belongs on this roadmap and next to `T-Q11` because it is the same class —
+an unevidenced claim reaching the user of record — arriving through a mechanism
+`T-Q11` does not touch. `T-Q11` is about a figure inside one turn's prose. This
+is about what one turn tells the *next* turn it did.
+
+## `T-Q12` A refused tool call is remembered as a call that ran — 1.0d
+**Repo:** BE · **Deps:** none (shares a fixture with `T-Q11`) · **Priority:** P0 · **Migration:** none
+
+> **Built 2026-08-18** — `internal/app/tool_digest.go`, `chat_runner.go`,
+> `internal/agentbudget/budget.go`. A refused call carries
+> `status: refused` and its reason, and renders as *"REFUSED, it did NOT run"*
+> above a block that now says in words that refused work must be done rather
+> than reported. **The live half is owed**: repeat the 2026-08-18 sequence and
+> read `agent_actions` for the second turn — a tool call must appear.
+>
+> **Two things the build settled that the ticket left open.** The Go-error path
+> *does* emit `AgentEventToolResult`, so no second construction site is needed —
+> but the result is the plain string `"Error executing tool: …"` (`Error: …` on
+> the Anthropic path), which is not JSON, so it had to be read from the raw
+> event rather than from the parsed map. And `DedupeDigests` needed the outcome
+> in its key: without it, a call that was refused and then made properly
+> collapsed to the refusal, and the successful retry disappeared — the same
+> defect wearing the opposite sign.
+
+### Why
+
+Turn 1 spent its iteration budget, so its last `update_dashboard` was refused by
+`agentbudget` — correctly, and as a **result** rather than a Go error, which is
+the design that stops a model looping on a refusal:
+
+```json
+{"budget_exhausted": true, "reason": "iteration budget spent (8 of 8)", "instruction": "…"}
+```
+
+`BuildToolDigest` (`internal/app/tool_digest.go:82`) decides a call failed by
+looking for `result["error"]` or `result["err"]`. **That payload has neither.**
+So the digest persisted as the thread's `role: tool` row read:
+
+```json
+{"tool":"update_dashboard","rows":-1}
+```
+
+which is byte-for-byte what a *successful* call with no row count looks like.
+The next turn hydrates that as prior work, reads "update_dashboard already ran,
+no error", and answers *"Done. The dashboard has been updated"* in one iteration
+with zero tool calls. Then **its own confirmation becomes the next turn's
+evidence**, and turn 3 repeats it.
+
+`agentbudget.IsRefusal(result)` already exists for precisely this distinction —
+`internal/agentbudget/budget.go:438`, whose comment says the audit log needs it
+because *"both come back as a string with a nil error, because that is how the
+model has to receive them"*. The audit table calls it and records
+`result_status = blocked`. The memory the agent reads does not call it.
+
+**The control is what makes this a diagnosis.** Same model, same tenant, the
+same sentence (*"rename that dashboard to X"*), on a thread whose history holds
+a genuine success: the tool was called and the rename landed. Two histories, two
+behaviours, one differentiator.
+
+**Three things are true at once and only one of them is the model's fault.** The
+refusal is well designed. The audit row is correct. The digest is lossy in the
+one direction that matters — it can only ever cause a turn to believe *more* was
+accomplished than was.
+
+### Do
+
+- **Set `ToolDigest.Err` from the refusal payload.** `BuildToolDigest` calls
+  `agentbudget.IsRefusal` (or reads `budget_exhausted` directly, if the import
+  direction is wrong) and records the reason. A refused call must never render
+  as a plain one.
+- **Give the digest an explicit outcome rather than an inferred one.** `Err`
+  being empty currently means "fine" *and* "we could not tell". Those are
+  different, and the second one is what produced this. A three-state
+  `status: ok | failed | refused` read from what the executor actually returned
+  is the honest shape; `RenderPriorWork` renders it in one word.
+- **Render a refused call as unfinished work, in words.** *"update_dashboard was
+  refused (iteration budget spent) — it did NOT run"* is the sentence the next
+  turn needs. `RenderPriorWork` today lists what was called, which is an
+  invitation to assume it worked.
+- **Do not drop refused calls from the digest.** The instinct is to omit them;
+  it is wrong for the reason the digest exists — a turn that cannot see the
+  refusal re-runs the expensive discovery that preceded it. Carry them, marked.
+- **Check the Go-error path too.** The errored `create_dashboard` in the same
+  turn left **no digest at all**, so the same "what happened is invisible"
+  problem exists one door over, from the opposite cause. Confirm whether a tool
+  that returns a Go error emits `AgentEventToolResult`; if it does not, the
+  digest has to be built where the error is known.
+
+### Notes for the implementer
+
+**This is not fixable in the prompt.** A sentence telling the model to verify
+before claiming competes with a context block asserting the call happened, and
+the context block is evidence. Fix the evidence.
+
+**The self-confirming half deserves a thought and probably not code.** Once a
+turn has said *"Done"*, that sentence is ordinary transcript. Nothing here
+proposes marking assistant prose as unverified — but the fix above is what stops
+the first one, and no second one occurs without it.
+
+**Consider whether a claimed mutation should be checkable at all.** Out of scope
+here, and worth writing down: the write-shaped tools (`create_dashboard`,
+`update_dashboard`, `schedule_task`, `propose_action`) are the ones where a
+false *"Done"* is invisible, and a turn that names one in the reply without
+having called it in that turn is a detectable shape. That is a `T-Q13`-sized
+idea and it needs the counter from `T-Q11` to exist first.
+
+### Acceptance
+
+- [x] A digest built from a budget-refusal payload carries the refusal and its reason
+- [x] `RenderPriorWork` renders that call as not having run, in a sentence a model cannot read as success
+- [x] A digest for a call that errored carries the error (and one is produced at all) — read off the raw result, because a Go error never reaches the parsed map
+- [x] A successful call's digest is byte-identical to today — `status` is omitted for `ok`, so a stored row is unchanged and `Outcome()` reads the absence
+- [x] Unit test: the exact turn-1 payload above, asserted to produce a non-empty failure marker (`TestBuildToolDigestMarksABudgetRefusal`)
+- [x] Regression fixture: a two-turn thread where turn 1's last call is refused, asserting turn 2's prior-work block says so (`TestARefusedCallReachesTheNextTurnAsUnfinishedWork`)
+
+### Gate
+
+`make vet` / `make test`, then the stack, and it costs about four turns: repeat
+the 2026-08-18 sequence — a create turn engineered to exhaust the budget
+(`AGENT_MAX_ITERATIONS=8` and a request needing schema discovery does it), then
+an edit turn — and read `agent_actions` for the second turn. **A tool call must
+appear.** The control arm is the same edit on a thread with a clean history,
+which already passes today and must keep passing.
+
+### Out of scope
+
+Verifying that a claimed action occurred (the `T-Q13` idea above). Changing the
+refusal payload's shape — it is read by the model and by `IsRefusal`, and both
+work. Anything about the iteration budget itself: 8 was not too small for the
+work, it was spent on two validator retries, and that is `T-D24`'s subject.
+
+---
+
+# Delivery record — 2026-08-18 — both P0s from the gates are built
+
+`T-Q11` and `T-Q12` landed in one sitting, unit-gated, with `make vet`,
+`go test ./...`, `make lint-go` (0 issues) and `make types-check` clean. They
+were written from two different gates a day apart and they share one sentence:
+**something reached the user of record that no evidence supports.** `T-Q11` is a
+figure inside a turn; `T-Q12` is what one turn tells the next it did.
+
+| Ticket | Landed | Where |
+| ------ | ------ | ----- |
+| `T-Q11` | Prose kept per tool-calling iteration; the record is the last iteration that produced any. The synthesis call wins outright; a turn no provider tagged concatenates exactly as before | `internal/app/turn_answer.go` (new, + tests), `chat_runner.go` `runStream` |
+| `T-Q11` | `ungrounded_replies_total` / `ungrounded_figures_total`, `argentum.ungrounded_figures` on the turn span, and a `turn completed` log line carrying the count beside latency and tool calls | `internal/metrics/{collector,prometheus}.go`, `internal/tracing/tracing.go`, `chat_runner.go` |
+| `T-Q12` | A three-state digest outcome — `ok` / `failed` / `refused` — read from what the executor returned rather than inferred from an absent `error` key | `internal/app/tool_digest.go`, `internal/agentbudget/budget.go` (`IsRefusalPayload`, `RefusalReason`) |
+| `T-Q12` | The prior-work block says a refused call did not run, and tells the turn to do the work rather than report it | `internal/app/tool_digest.go` `RenderPriorWork` |
+
+## Four things the build learned that the tickets did not know
+
+**1. The Go-error path emits a tool-result event, but not a JSON one.**
+`T-Q12` asked whether one is emitted at all. It is — and the payload is the
+plain string `"Error executing tool: …"` (`Error: …` on the Anthropic path),
+which unmarshals to an empty map. So the raw result now travels beside the
+parsed one, and only the SDK's own two prefixes count as failure: a tool that
+answers in prose is not a failed tool, and calling it one would tell the next
+turn its work is undone.
+
+**2. Dedupe had the same defect wearing the opposite sign.** `DedupeDigests`
+keyed on tool, source, metric and query — so a call refused by the budget and
+then made properly in the next turn collapsed to *the refusal*, and the
+successful one vanished. Marking refusals without fixing the key would have
+turned "it thinks it ran" into "it thinks it never ran".
+
+**3. The SDK can replay withheld prose after the answer.**
+`filterIntermediateContent` captures intermediate content and replays it once
+the loop ends, so arrival order is not iteration order; the final synthesis call
+is tagged `final_call` and carries no iteration number at all. This deployment
+sets `IncludeIntermediateMessages: true` and meets neither path — and both are
+one config line away, which is why the selection is made on the iteration number
+rather than on what arrived last.
+
+**4. The counter is written where nothing scrapes it.** A turn runs in
+`cmd/worker`, which has no HTTP surface, so `/metrics` on `cmd/api` will not show
+these move. That is T-17's debt rather than this ticket's, and until it is paid
+the number is read from the `turn completed` line and the span. Written down
+here because a gate that curls `/metrics` and sees zero would otherwise read as
+a failed fix.
+
+## What is owed
+
+Both live halves, and both are model spend — filed in
+[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §2 the day
+they were written rather than after, which is the mistake that file exists to
+record. `T-Q11` additionally triggers rule 1: it changes what reaches the user on
+every turn, so the 56-case set is owed on both models with the number and the
+date posted.

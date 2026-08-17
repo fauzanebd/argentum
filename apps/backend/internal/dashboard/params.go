@@ -12,6 +12,11 @@ import (
 // DateLayout is how a filter value states a day. One layout, no alternatives:
 // a dashboard is read in a browser and shared by URL, and 03/04/2024 means two
 // different days depending on who opens it.
+//
+// The spec package parses a stored fixed-window default with the same layout
+// (T-D24); a validator that read days differently from this binder would
+// accept a default that then failed to bind. TestBindResolvesAClosedWindow-
+// Default is where the two are held together.
 const DateLayout = "2006-01-02"
 
 // Params is one request's filter state: the values panels bind, plus what the
@@ -119,6 +124,22 @@ func bindDateRange(p *Params, f spec.Filter, req map[string]string, now time.Tim
 	default:
 		name, ok := trimmed(req, f.Name)
 		if !ok {
+			// A default naming a closed period resolves to exactly those days,
+			// in every month, with no drift (T-D24). Checked before the preset
+			// branch because it is the shape a preset name cannot be: a viewer
+			// who wants a different window still passes one on the request, so
+			// the dashboard stays adjustable — it just opens on the period it
+			// is about.
+			if w, isFixed, err := spec.ParseFixedDefault(f.Default); isFixed {
+				if err != nil {
+					return fmt.Errorf("filter %q: %w", f.Name, err)
+				}
+				win, err := w.Resolve(loc)
+				if err != nil {
+					return fmt.Errorf("filter %q: %w", f.Name, err)
+				}
+				return applyWindow(p, f, win, w.String())
+			}
 			def, isString := f.Default.(string)
 			if !isString || def == "" {
 				return fmt.Errorf("filter %q needs a window and the dashboard declares no default preset", f.Name)

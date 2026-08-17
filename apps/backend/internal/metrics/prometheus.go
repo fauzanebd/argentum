@@ -66,6 +66,18 @@ func (s MetricsSnapshot) WriteProm(w io.Writer) error {
 	p.gauge("conversations_active", "Threads currently mid-turn.", nil, float64(s.Conversations.Active))
 	p.counter("context_resets_total", "Threads whose context was reset.", nil, float64(s.Conversations.ContextResets))
 
+	// --- grounding (T-Q11) ---
+	//
+	// The wrong-but-nonempty rate. CheckGrounding reports rather than blocks,
+	// so these are the only place the rate is visible; a figure no tool
+	// returned passes every gate the product has.
+	p.counter("ungrounded_replies_total",
+		"Replies stating at least one figure no tool result contained.",
+		nil, float64(s.Grounding.UngroundedReplies))
+	p.counter("ungrounded_figures_total",
+		"Figures stated in a reply that no tool result contained.",
+		nil, float64(s.Grounding.UngroundedFigures))
+
 	// --- queue depth (T-17), sampled from Redis rather than counted here ---
 	//
 	// Absent entirely on a process with no poller: a queue gauge is read as

@@ -41,6 +41,57 @@ func TestBindFallsBackToTheStoredPreset(t *testing.T) {
 	}
 }
 
+// A dashboard about a quarter that has ended opens on that quarter, in every
+// later month, with no drift (T-D24). Before this, the only vocabulary was a
+// preset, so "Q4 2024" was saved as `qtd` and every panel returned nothing.
+func TestBindResolvesAClosedWindowDefault(t *testing.T) {
+	d := filtered(spec.Filter{
+		Name: "period", Kind: spec.KindDateRange,
+		Default: map[string]any{"from": "2024-10-01", "to": "2024-12-31"},
+	})
+	// Two clocks, eighteen months apart. The window must not move.
+	for _, clock := range []time.Time{now, now.AddDate(2, 5, 0)} {
+		p, err := Bind(d, nil, clock)
+		if err != nil {
+			t.Fatalf("Bind at %s: %v", clock.Format(DateLayout), err)
+		}
+		if got := day(t, p.Values["period_from"]); got != "2024-10-01" {
+			t.Errorf("period_from = %s at %s", got, clock.Format(DateLayout))
+		}
+		// The stated end day is inclusive, so the half-open bound is the next
+		// midnight — otherwise 31 December is silently outside the quarter.
+		if got := day(t, p.Values["period_to"]); got != "2025-01-01" {
+			t.Errorf("period_to = %s at %s", got, clock.Format(DateLayout))
+		}
+		if p.Applied["period"] != "2024-10-01…2024-12-31" {
+			t.Errorf("Applied = %q; it must show the days, not a preset name nobody can find", p.Applied["period"])
+		}
+	}
+
+	// The dashboard is still adjustable: a viewer asking for another window
+	// gets it, which is what keeps this a default rather than a lock.
+	p, err := Bind(d, map[string]string{"period": "mtd"}, now)
+	if err != nil {
+		t.Fatalf("Bind with an override: %v", err)
+	}
+	if p.Applied["period"] != "mtd" {
+		t.Errorf("a request preset did not override the fixed default: %q", p.Applied["period"])
+	}
+}
+
+// A stored window that does not state one is refused at bind as well as at
+// save, because a row can reach the binder from a database written by an
+// earlier release.
+func TestBindRefusesAMalformedClosedWindow(t *testing.T) {
+	d := filtered(spec.Filter{
+		Name: "period", Kind: spec.KindDateRange,
+		Default: map[string]any{"from": "2024-10-01", "to": ""},
+	})
+	if _, err := Bind(d, nil, now); err == nil {
+		t.Error("a window missing a bound was bound anyway")
+	}
+}
+
 func TestBindPrefersAnExplicitRangeAndMakesItHalfOpen(t *testing.T) {
 	d := filtered(spec.Filter{Name: "period", Kind: spec.KindDateRange, Default: string(spec.PresetMTD)})
 	p, err := Bind(d, map[string]string{"period_from": "2024-01-01", "period_to": "2024-01-31"}, now)

@@ -135,6 +135,18 @@ func Outcome(span trace.Span, outcome string) {
 	span.SetAttributes(attribute.String("argentum.outcome", outcome))
 }
 
+// Count labels the span already on ctx with a number the turn produced —
+// today, how many figures in the reply no tool returned (T-Q11).
+//
+// It takes a context rather than a span because the caller is a step inside a
+// turn and the turn's span is already there; asking every such call site to
+// thread a span through would be the thing that stops it being added. A ctx
+// carrying no span is a no-op, which is every process with no exporter
+// installed.
+func Count(ctx context.Context, key string, n int) {
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("argentum."+key, n))
+}
+
 // Inject captures the current trace context as a carrier a queue payload can
 // hold (T-17b).
 //

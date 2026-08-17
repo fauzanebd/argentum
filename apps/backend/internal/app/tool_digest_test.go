@@ -22,7 +22,7 @@ func argsOf(t *testing.T, raw string) map[string]interface{} {
 func TestBuildToolDigestCarriesTheQueryAndItsShape(t *testing.T) {
 	d := BuildToolDigest("run_sql",
 		argsOf(t, `{"source_id":"src-1","query":"SELECT channel, SUM(sales_amount) FROM fact_sales GROUP BY 1"}`),
-		argsOf(t, `{"row_count":3,"columns":["channel","sum"]}`),
+		argsOf(t, `{"row_count":3,"columns":["channel","sum"]}`), "",
 	)
 	if d.Tool != "run_sql" || d.SourceID != "src-1" {
 		t.Errorf("tool/source lost: %+v", d)
@@ -43,17 +43,17 @@ func TestBuildToolDigestCarriesTheQueryAndItsShape(t *testing.T) {
 // shape to suit a digest.
 func TestBuildToolDigestReadsEitherRowCountSpelling(t *testing.T) {
 	for _, body := range []string{`{"row_count":7}`, `{"rows_returned":7}`, `{"count":7}`} {
-		if d := BuildToolDigest("run_sql", nil, argsOf(t, body)); d.Rows != 7 {
+		if d := BuildToolDigest("run_sql", nil, argsOf(t, body), ""); d.Rows != 7 {
 			t.Errorf("%s: rows = %d, want 7", body, d.Rows)
 		}
 	}
 	// A result carrying the rows themselves rather than a count.
-	if d := BuildToolDigest("run_sql", nil, argsOf(t, `{"rows":[{"a":1},{"a":2}]}`)); d.Rows != 2 {
+	if d := BuildToolDigest("run_sql", nil, argsOf(t, `{"rows":[{"a":1},{"a":2}]}`), ""); d.Rows != 2 {
 		t.Errorf("counted %d rows from the array, want 2", d.Rows)
 	}
 	// No count anywhere stays -1, which RenderPriorWork reads as "do not claim
 	// a number" — distinct from a genuine zero.
-	if d := BuildToolDigest("get_schema", nil, argsOf(t, `{}`)); d.Rows != -1 {
+	if d := BuildToolDigest("get_schema", nil, argsOf(t, `{}`), ""); d.Rows != -1 {
 		t.Errorf("absent row count = %d, want -1", d.Rows)
 	}
 }
@@ -63,7 +63,7 @@ func TestBuildToolDigestReadsEitherRowCountSpelling(t *testing.T) {
 func TestBuildToolDigestCarriesFailures(t *testing.T) {
 	d := BuildToolDigest("run_sql",
 		argsOf(t, `{"query":"SELECT * FROM sales"}`),
-		argsOf(t, `{"error":"relation \"sales\" does not exist"}`),
+		argsOf(t, `{"error":"relation \"sales\" does not exist"}`), "",
 	)
 	if d.Err == "" {
 		t.Fatal("the error was dropped")
@@ -73,12 +73,118 @@ func TestBuildToolDigestCarriesFailures(t *testing.T) {
 	}
 }
 
+// The payload from the 2026-08-18 gate, verbatim (T-Q12). It carries no
+// `error` key, because a refusal has to reach the model as a result it can act
+// on rather than as a Go error it never sees — so every branch that reads
+// failure off `error` recorded this as an ordinary call, and the next turn
+// answered "Done. The dashboard has been updated" without calling anything.
+func TestBuildToolDigestMarksABudgetRefusal(t *testing.T) {
+	d := BuildToolDigest("update_dashboard",
+		argsOf(t, `{"dashboard_id":"57f822e9"}`),
+		argsOf(t, `{"budget_exhausted":true,"reason":"iteration budget spent (8 of 8)",`+
+			`"retrieved_so_far":"9 tool call(s)","document_call_remaining":false,`+
+			`"instruction":"Write your final reply now"}`), "")
+
+	if d.Outcome() != DigestStatusRefused {
+		t.Fatalf("outcome = %q, want %q — this is the whole of T-Q12", d.Outcome(), DigestStatusRefused)
+	}
+	if d.Ran() {
+		t.Error("a refused call reports itself as having run")
+	}
+	if !strings.Contains(d.Err, "iteration budget spent") {
+		t.Errorf("reason lost: %q", d.Err)
+	}
+	// The shape it used to have. Left as an assertion rather than a comment
+	// because it is what the next turn read as success.
+	if d.Rows != -1 {
+		t.Errorf("rows = %d; a refused call retrieved nothing", d.Rows)
+	}
+}
+
+// The sentence a model cannot read as success. A list of calls with no outcome
+// beside them is an invitation to assume they worked.
+func TestRenderPriorWorkSaysARefusedCallDidNotRun(t *testing.T) {
+	got := RenderPriorWork([]ToolDigest{{
+		Tool:   "update_dashboard",
+		Status: DigestStatusRefused,
+		Err:    "iteration budget spent (8 of 8)",
+		Rows:   -1,
+	}})
+	if !strings.Contains(got, "REFUSED") || !strings.Contains(got, "did NOT run") {
+		t.Errorf("a refused call does not read as refused:\n%s", got)
+	}
+	if !strings.Contains(got, "iteration budget spent") {
+		t.Error("the reason is not in the block, so the turn cannot tell whether to retry")
+	}
+	if !strings.Contains(got, "never report it as done") {
+		t.Error("the block does not forbid reporting refused work as done")
+	}
+}
+
+// A tool that returns a Go error has no JSON result at all: agent-sdk-go
+// renders it as a plain string, which parses to an empty map. Before T-Q12
+// that produced a digest indistinguishable from a call that ran and said
+// nothing — the same failure one door over, from the opposite cause.
+func TestBuildToolDigestReadsAGoErrorFromTheRawResult(t *testing.T) {
+	raw := "Error executing tool: dashboards are not configured on this deployment"
+	d := BuildToolDigest("create_dashboard", argsOf(t, `{"title":"Q4"}`), nil, raw)
+	if d.Outcome() != DigestStatusFailed {
+		t.Fatalf("outcome = %q, want %q", d.Outcome(), DigestStatusFailed)
+	}
+	if !strings.Contains(d.Err, "dashboards are not configured") {
+		t.Errorf("error text lost: %q", d.Err)
+	}
+	// The Anthropic path spells it differently and must be read too.
+	if got := BuildToolDigest("run_sql", nil, nil, "Error: connection refused"); got.Outcome() != DigestStatusFailed {
+		t.Errorf("anthropic-shaped error read as %q", got.Outcome())
+	}
+	// A tool answering in prose is not a failure. Calling it one would tell the
+	// next turn its work is undone when it is not.
+	if got := BuildToolDigest("ask_clarification", nil, nil, "Which region did you mean?"); got.Outcome() != DigestStatusOK {
+		t.Errorf("a prose result read as %q", got.Outcome())
+	}
+}
+
+// A successful call's stored digest is byte-identical to what it was before
+// this field existed, so a thread written yesterday reads the same today.
+func TestSuccessfulDigestCarriesNoStatusOnTheWire(t *testing.T) {
+	d := BuildToolDigest("run_sql", argsOf(t, `{"query":"SELECT 1"}`), argsOf(t, `{"row_count":1}`), "")
+	if d.Outcome() != DigestStatusOK {
+		t.Fatalf("outcome = %q", d.Outcome())
+	}
+	if got := EncodeDigests([]ToolDigest{d}); strings.Contains(got, "status") {
+		t.Errorf("a successful digest grew a field: %s", got)
+	}
+	// And a row written before Status existed still reads as failed on its Err
+	// alone — the one direction that was never ambiguous.
+	old := DecodeDigests(`[{"tool":"run_sql","rows":-1,"error":"syntax error"}]`)
+	if len(old) != 1 || old[0].Outcome() != DigestStatusFailed {
+		t.Errorf("a pre-T-Q12 failure reads as %+v", old)
+	}
+}
+
+// A refusal and the retry that succeeded are two facts. Collapsing them keeps
+// the first — the refusal — and the successful call would vanish.
+func TestDedupeKeepsARefusalApartFromItsRetry(t *testing.T) {
+	in := []ToolDigest{
+		{Tool: "update_dashboard", Status: DigestStatusRefused, Err: "iteration budget spent", Rows: -1},
+		{Tool: "update_dashboard", Rows: 0},
+	}
+	got := DedupeDigests(in)
+	if len(got) != 2 {
+		t.Fatalf("deduped to %d, want 2: %+v", len(got), got)
+	}
+	if got[1].Outcome() != DigestStatusOK {
+		t.Errorf("the successful retry was collapsed away: %+v", got)
+	}
+}
+
 // get_schema answers with objects, not strings. A digest that only understood
 // strings would record that the schema was read and not what it found, which
 // is the half that saves the next turn a round trip.
 func TestBuildToolDigestReadsTableObjects(t *testing.T) {
 	d := BuildToolDigest("get_schema", nil,
-		argsOf(t, `{"tables":[{"name":"fact_sales"},{"name":"dim_date"},"dim_products"]}`))
+		argsOf(t, `{"tables":[{"name":"fact_sales"},{"name":"dim_date"},"dim_products"]}`), "")
 	got := strings.Join(d.Tables, ",")
 	for _, want := range []string{"fact_sales", "dim_date", "dim_products"} {
 		if !strings.Contains(got, want) {
@@ -91,8 +197,8 @@ func TestBuildToolDigestReadsTableObjects(t *testing.T) {
 // digests differing only by map iteration order would read as a change.
 func TestDigestNamesAreStable(t *testing.T) {
 	body := `{"tables":["z_table","a_table","m_table"]}`
-	first := BuildToolDigest("get_schema", nil, argsOf(t, body))
-	second := BuildToolDigest("get_schema", nil, argsOf(t, body))
+	first := BuildToolDigest("get_schema", nil, argsOf(t, body), "")
+	second := BuildToolDigest("get_schema", nil, argsOf(t, body), "")
 	if strings.Join(first.Tables, ",") != strings.Join(second.Tables, ",") {
 		t.Error("two digests of the same result disagree")
 	}
@@ -103,7 +209,7 @@ func TestDigestNamesAreStable(t *testing.T) {
 
 func TestDigestQueryIsCapped(t *testing.T) {
 	long := "SELECT " + strings.Repeat("column_name, ", 200) + "1"
-	d := BuildToolDigest("run_sql", map[string]interface{}{"query": long}, nil)
+	d := BuildToolDigest("run_sql", map[string]interface{}{"query": long}, nil, "")
 	if !strings.HasPrefix(d.Query, "SELECT column_name") {
 		t.Errorf("the head of the query was not kept: %q", d.Query)
 	}

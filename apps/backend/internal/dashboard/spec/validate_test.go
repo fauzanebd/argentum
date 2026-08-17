@@ -114,18 +114,39 @@ func TestValidateRefusesCollidingFilterTokens(t *testing.T) {
 	}
 }
 
-// The rule the whole ticket turns on: a stored default is a preset name, never
-// two timestamps. Timestamps are correct on the day they are saved and wrong
-// every day after, and nothing looks broken while it happens.
-func TestValidateRefusesAStoredDateRangeDefault(t *testing.T) {
+// The rule the whole ticket turns on: a stored default is a preset name, or —
+// since T-D24 — a window that has already closed. What it is never is a loose
+// timestamp: those are correct on the day they are saved and wrong every day
+// after, and nothing looks broken while it happens.
+func TestValidateRefusesADateRangeDefaultThatIsNeither(t *testing.T) {
 	d := dash(barPanel())
-	d.Filters[0].Default = map[string]any{"from": "2024-01-01", "to": "2024-01-31"}
-	err := Validate(d)
-	if err == nil {
-		t.Fatal("a date_range default must be a preset name")
+
+	// A closed period, stated as one. The dashboard is about Q4 2024 and
+	// opening it in 2026 must still show Q4 2024.
+	d.Filters[0].Default = map[string]any{"from": "2024-10-01", "to": "2024-12-31"}
+	if err := Validate(d); err != nil {
+		t.Fatalf("a closed window must be accepted: %v", err)
 	}
-	if !strings.Contains(err.Error(), "preset") {
-		t.Errorf("the error should say what a default must be, got %q", err)
+
+	// Everything a fixed window can be wrong about, refused by name.
+	for _, bad := range []any{
+		map[string]any{"from": "2024-10-01"},                    // one bound
+		map[string]any{"from": "2024-10-01", "to": "yesterday"}, // not a date
+		map[string]any{"from": "2024-12-31", "to": "2024-10-01"},
+		42.0,
+	} {
+		d.Filters[0].Default = bad
+		if err := Validate(d); err == nil {
+			t.Errorf("default %#v was accepted", bad)
+		}
+	}
+
+	// And the error names both shapes, because a model that read only half of
+	// it retries with the half it read.
+	d.Filters[0].Default = 42.0
+	err := Validate(d)
+	if err == nil || !strings.Contains(err.Error(), "preset") || !strings.Contains(err.Error(), "from") {
+		t.Errorf("the error should name both a preset and a closed window, got %q", err)
 	}
 
 	d.Filters[0].Default = "last_fortnight"

@@ -754,7 +754,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// After the fabrication gate and before the redaction: this measures the
 	// text the agent actually produced, and a reply the gate has already
 	// replaced is not one whose figures say anything about the agent (T-Q9).
-	r.checkGrounding(p, response, returnedNumbers)
+	ungrounded := r.checkGrounding(ctx, p, response, returnedNumbers)
 	// After the fabrication check, never before it: that check reads the figures
 	// in the reply and compares them against the turn's evidence, and a redaction
 	// that has already blanked part of the text would have it judging a sentence
@@ -768,10 +768,26 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// Last in the post-turn chain and before completeWith, so the suggestions are
 	// written against the text the user will actually read — the redacted one, the
 	// rescued one — rather than against what the agent first produced (T-Q10).
+	snap := tracker.Snapshot()
 	steps := r.suggestNextSteps(ctx, p, response,
-		heldToolNames(agent.GetTools()), tracker.Snapshot().Tools,
+		heldToolNames(agent.GetTools()), snap.Tools,
 		response != agentWrote)
 	r.completeWith(ctx, p, response, 0, 0, latency, steps)
+	// One line per turn, carrying what the turn cost and what it may have got
+	// wrong (T-Q11). `ungrounded` is here rather than only in checkGrounding's
+	// own Warn because a turn is found by its completion line: a rate nobody
+	// can filter for is a rate nobody reads.
+	logrus.WithFields(logrus.Fields{
+		"company_id": p.CompanyID,
+		"thread_id":  p.ThreadID,
+		"message_id": p.UserMsgID,
+		"channel":    p.Channel,
+		"latency_ms": latency.Milliseconds(),
+		"tool_calls": snap.ToolCalls,
+		"data_rows":  snap.DataRows,
+		"ungrounded": ungrounded,
+		"next_steps": len(steps),
+	}).Info("turn completed")
 	return nil
 }
 
@@ -1194,7 +1210,11 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 	var returnedNumbers []float64
 	defer func() { *groundTruth = returnedNumbers }()
 
-	var fullResponse strings.Builder
+	// The reply, kept per iteration rather than concatenated (T-Q11). What the
+	// reader watches is unchanged — every delta is published below — but what
+	// this function returns, and therefore what is persisted, is the last
+	// iteration that produced prose.
+	fullResponse := newAnswerBuffer()
 	maxIterations := agentbudget.FromContext(ctx).Budget().MaxIterations
 	lastIteration := 0
 
@@ -1215,7 +1235,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 
 		switch evt.Type {
 		case interfaces.AgentEventContent:
-			fullResponse.WriteString(evt.Content)
+			fullResponse.Write(evt.Metadata, evt.Content)
 			_ = r.bus.Publish(p.ThreadID, ChatEvent{
 				JobID:     p.UserMsgID,
 				ThreadID:  p.ThreadID,
@@ -1263,7 +1283,12 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 				if evt.ToolCall.Arguments != "" {
 					_ = json.Unmarshal([]byte(evt.ToolCall.Arguments), &callArgs)
 				}
-				digests = append(digests, BuildToolDigest(evt.ToolCall.Name, callArgs, res))
+				// The raw result travels with the parsed one because a tool that
+				// returned a Go error has no parsed one: the SDK renders it as a
+				// plain string, which unmarshals into an empty map and used to
+				// leave a digest saying nothing happened wrong (T-Q12).
+				digests = append(digests,
+					BuildToolDigest(evt.ToolCall.Name, callArgs, res, evt.ToolCall.Result))
 
 				// Every number this turn's data tools actually returned (T-Q9),
 				// for the grounding check after the answer is written. Only the
@@ -1307,8 +1332,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 				const guardrailsPrefix = "guardrails error: "
 				if strings.HasPrefix(errMsg, guardrailsPrefix) {
 					userMsg := strings.TrimPrefix(errMsg, guardrailsPrefix)
-					fullResponse.Reset()
-					fullResponse.WriteString(userMsg)
+					fullResponse.Replace(userMsg)
 					r.recordBlockedTurn(ctx, p, "guardrail", userMsg)
 					_ = r.bus.Publish(p.ThreadID, ChatEvent{
 						JobID:     p.UserMsgID,
@@ -1333,6 +1357,19 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 		}
 	}
 
+	// A turn whose earlier iterations narrated before calling a tool is the
+	// shape that produced a stored answer stating a figure no tool returned
+	// (T-Q11). Logged rather than counted: what is worth knowing is that this
+	// turn's record is narrower than its stream, and which turn it was.
+	if dropped := fullResponse.Dropped(); dropped > 0 {
+		logrus.WithFields(logrus.Fields{
+			"company_id":    p.CompanyID,
+			"thread_id":     p.ThreadID,
+			"message_id":    p.UserMsgID,
+			"dropped_chars": dropped,
+			"iterations":    lastIteration,
+		}).Info("pre-tool prose dropped from the stored reply; the record is the last iteration's answer")
+	}
 	return fullResponse.String(), nil
 }
 
@@ -1355,11 +1392,19 @@ const maxGroundingNumbers = 200
 //
 // So it is an instrument. The wrong-but-nonempty rate is currently not merely
 // unenforced but unmeasured, and nothing can be tightened before it is counted.
-func (r *ChatRunner) checkGrounding(p queue.ChatRunPayload, response string, returned []float64) {
+//
+// **It is counted now (T-Q11).** One Warn line per occurrence was what made a
+// persisted answer stating 1,667 against a true 300 invisible for a week: a log
+// line nothing reads is not a measurement. The count lands on the process
+// counters and on the turn's own span, so a turn can be found by it.
+func (r *ChatRunner) checkGrounding(ctx context.Context, p queue.ChatRunPayload, response string, returned []float64) int {
 	rep := guardrails.CheckGrounding(response, returned)
 	if rep.Clean() {
-		return
+		return 0
 	}
+	n := len(rep.Ungrounded)
+	metrics.Default().RecordUngroundedFigures(n)
+	tracing.Count(ctx, "ungrounded_figures", n)
 	logrus.WithFields(logrus.Fields{
 		"company_id":       p.CompanyID,
 		"thread_id":        p.ThreadID,
@@ -1368,6 +1413,7 @@ func (r *ChatRunner) checkGrounding(p queue.ChatRunPayload, response string, ret
 		"ungrounded":       fmt.Sprint(rep.Ungrounded),
 		"returned_numbers": len(returned),
 	}).Warn("reply states a figure no tool result contains; not blocked, recorded for review")
+	return n
 }
 
 // rememberToolWork records what this turn did, as one `role: tool` message

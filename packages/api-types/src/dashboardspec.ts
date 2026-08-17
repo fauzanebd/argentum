@@ -196,7 +196,11 @@ export interface Filter {
   label?: string;
   kind: Kind;
   options?: string[]; // enum affordance only
-  default?: unknown; // a date_range default is a PRESET NAME
+  /**
+   * Default is a preset NAME for a date_range that keeps up with today, or a
+   * FixedWindow for one whose subject is a period that has ended (T-D24).
+   */
+  default?: unknown;
 }
 
 //////////
@@ -216,6 +220,9 @@ export interface Window {
  * rule is the whole difference between a live dashboard and a snapshot: two
  * stored timestamps are correct on the day they were saved and wrong every day
  * after, and nothing about the dashboard looks broken while it happens.
+ * The one thing that rule was wrong about is a dashboard whose subject is a
+ * period that has already ended, which cannot age into being wrong — see
+ * FixedWindow below (T-D24).
  */
 export const PresetLast7d = "last_7d";
 export const PresetLast30d = "last_30d";
@@ -224,3 +231,25 @@ export const PresetQTD = "qtd";
 export const PresetYTD = "ytd";
 export const PresetLastMonth = "last_month";
 export type Preset = typeof PresetLast7d | typeof PresetLast30d | typeof PresetMTD | typeof PresetQTD | typeof PresetYTD | typeof PresetLastMonth;
+/**
+ * FixedWindow is a date_range default that names a period which has ended,
+ * instead of a preset that moves (T-D24).
+ * **Why this exists beside Preset, which the comment above says is the whole
+ * point.** That comment is right about a *live* dashboard and says nothing
+ * about one whose subject is a closed quarter — and "sales in Q4 2024" is an
+ * ordinary thing to build a dashboard about. Before this, the only vocabulary
+ * was a preset, so the 2026-08-18 gate's own request saved `qtd`, which in
+ * August 2026 is Q3 2026, where every panel returned nothing: the product
+ * stored something that draws an empty grid forever and told the user to fix
+ * the filter by hand on every open. `update_dashboard`'s tool description had
+ * been promising `{from, to}` since the day it shipped, and its parser built
+ * exactly this shape; the validator refused it, so the promise was dead on
+ * arrival.
+ * A fixed window does not age, because there is nothing left for it to age
+ * into. What it costs is that a dashboard saved with one is a report rather
+ * than a monitor, which is what the person who asked for Q4 2024 meant.
+ */
+export interface FixedWindow {
+  from: string;
+  to: string;
+}

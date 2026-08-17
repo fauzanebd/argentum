@@ -28,6 +28,18 @@ tickets in `02-agent-quality-roadmap.md`, or the `S-n` finding codes.
 > ([`../coverage/native-dashboards.md`](../coverage/native-dashboards.md),
 > [`../coverage/delivery-log.md`](../coverage/delivery-log.md) Phase 2t).
 >
+> **Revised 2026-08-18 — `T-D22`'s edit gate ran, and `update_dashboard` is
+> sound.** Six turns, $0.119: a patch leaves unnamed panels byte-identical, the
+> id and URL hold, a wrong panel title and an invalidated mapping are both
+> refused with errors the model corrected from, `dryRun` caught a mapping naming
+> a column the SQL never returned, and the no-id path listed the candidates and
+> asked instead of looping. **The sitting's P0 is not in this roadmap's code:**
+> two turns claimed edits they never made, because a budget-refused call is
+> remembered as one that ran (`T-Q12`, on the quality roadmap). What *is* this
+> roadmap's is `T-D24` below — a dashboard cannot default to the closed period
+> it is about, so the gate's own request saved a dashboard that draws nothing on
+> open. Record: [`../coverage/native-dashboards.md`](../coverage/native-dashboards.md) §4.
+>
 > **What is left:** `T-D8` (panel cache) and `T-D9` (query log) in Track C — so
 > every open runs every panel against the tenant warehouse; `T-D13` (sharing) and
 > `T-D21` (the share page), which is why *public* embedding is still a Metabase
@@ -1294,3 +1306,118 @@ correction below is drift** — all eleven are re-reads of the same tree.
 `usage.go:14-15`; `004_metabase_tenant_connections.up.sql:3,6-8`;
 `audit.go:31,46`; the absence of `internal/dashboard/`; and the 105-file count
 under `apps/dashboard/src/`.
+
+---
+
+# Added 2026-08-18 — `T-D24`, from `T-D22`'s edit gate
+
+`T-D22`'s gate ran on 2026-08-18 ([`../coverage/native-dashboards.md`](../coverage/native-dashboards.md)
+§4). The tool passed every property it was written to prove. This is the one
+thing the sitting found that is a **product decision** rather than a defect, and
+it was found by asking for something entirely ordinary.
+
+## `T-D24` A dashboard cannot default to the period it is about — 0.5d–1d
+**Repo:** BE (+ FE if the filter UI gains a form) · **Deps:** none · **Priority:** P1 · **Migration:** none
+
+> **Decided and built 2026-08-18 — option 1.** A `date_range` default may now be
+> `{"from": "2024-10-01", "to": "2024-12-31"}`, every preset behaves exactly as
+> before, and a stored default that is neither is refused by name.
+> `internal/dashboard/spec/{window,validate,spec}.go`,
+> `internal/dashboard/params.go`, both tool descriptions and
+> `create_dashboard`'s filter parser.
+>
+> **The decision was less open than this ticket knew.** `update_dashboard`'s
+> tool description has been promising `{from, to}` since it shipped, its parser
+> already built that exact shape, and `TestUpdateResolvesTheThreadsOwnDashboard`
+> — the test written from the sentence *"just make it 2024"* — asserts it. All
+> of it ran against a fake service, so `spec.Validate` never saw the value it
+> would have refused. Option 2 or 3 would have meant deleting a capability the
+> product had already told the model it had.
+>
+> **The FE bullet needed no code, and why is worth recording.** There is no
+> filter control anywhere in the dashboard — `dashboard-view.tsx:89` prints
+> `applied_filters` as text and nothing else — so a fixed window renders as
+> `period: 2024-10-01…2024-12-31` and reads correctly. It also means the gate's
+> transcript, where the model told the user to *"change the Period filter when
+> you open the dashboard"*, was advice about a control that does not exist. That
+> is a separate gap and it belongs with `T-D8`/`T-D9` rather than here.
+
+### Why
+
+The gate's first turn asked for a dashboard *"with the period defaulted to the
+fourth quarter of 2024"* — a closed quarter, which is what most dashboards
+anybody builds on purpose are about. `create_dashboard` refused it:
+
+```
+invalid input: filter "period": a date_range default must be a preset name
+(one of last_7d, last_30d, mtd, qtd, ytd, last_month), not a stored date
+```
+
+The rule is deliberate and `validate.go:135` calls it *"the rule this whole
+ticket turns on"*: a dashboard with dates baked in is a screenshot that ages
+silently. That reasoning is right about a *live* dashboard and says nothing
+about a dashboard whose subject is a period that has ended.
+
+**What the product does instead is worse than refusing.** The model saved with
+`qtd`, which in August 2026 is Q3 2026, where every panel returns nothing. Both
+panels warned at save (`dryRun` working exactly as `T-D11`'s defect 2 intended),
+and the model relayed it to the user honestly:
+
+> The dashboard opens with a default date filter of "Current Quarter" because
+> the system requires preset defaults. To see the Q4 2024 data, simply change
+> the **Period** filter to **Oct 1, 2024 – Dec 31, 2024** when you open the
+> dashboard.
+
+So the stored artefact draws nothing on open, forever, and the instructions for
+making it useful live in a chat message that scrolls away. **It also cost the
+turn its budget**: two of the eight iterations went on the refusal and the
+retry, which is what left no room for the edit the same turn went on to attempt
+— the first half of the `T-Q12` chain.
+
+### The decision
+
+Three options, and the recommendation is the first:
+
+1. **Let a `date_range` default carry an absolute window** — `{"from":
+   "2024-10-01", "to": "2024-12-31"}` — while keeping every preset. The
+   validator already parses both shapes; it refuses one of them on purpose.
+   The ageing argument is answered by the fact that a fixed window is *the
+   point* of a closed-period dashboard, and by the filter still being editable
+   on the page.
+2. **Refuse the request at the tool, with a sentence the model can act on.**
+   Cheaper, and honest: *"a dashboard's default window must be relative; ask
+   the user whether they want a live dashboard or a report for a fixed
+   period"*. Leaves the user without the thing they asked for.
+3. **Leave it, and make `dryRun`'s zero-row warning fatal for a brand-new
+   dashboard.** Saving something that draws nothing is the actual harm; this
+   removes it without adding vocabulary. Also leaves the user without the thing
+   they asked for, and turns a working warning into a refusal.
+
+Option 1 is what a user means. Options 2 and 3 are both defensible and both
+change a warning into a refusal somewhere.
+
+### Do (if option 1)
+
+- Accept an object default on `KindDateRange` in `spec.Validate`, requiring both
+  bounds, `from <= to`, and the same parse the filter's runtime path uses.
+- `resolveWindow` (or whatever `params.go` calls it) returns it unchanged rather
+  than computing from `now()`.
+- `create_dashboard`'s and `update_dashboard`'s tool descriptions gain one
+  clause naming the absolute form, because a capability the model cannot see is
+  a capability the product does not have.
+- The filter UI must render an absolute default as the dates, not as a preset
+  name it will not find in its list.
+
+### Acceptance
+
+- [x] A dashboard saved with an absolute default resolves to exactly that window on open, in a later month, with no drift — `TestBindResolvesAClosedWindowDefault` binds the same spec under two clocks eighteen months apart
+- [x] Every existing preset behaves identically — the six names, and a spec written before this change, byte-identical
+- [x] The gate's own request (*"default the period to Q4 2024"*) produces a dashboard whose panels return rows on first open — proven at the unit level in both tools and the binder; **the turn itself is owed** ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §2)
+- [x] A malformed absolute default (`to` before `from`, one bound missing, a non-date string) is refused by name, at save **and** at bind — a row can reach the binder from a database an earlier release wrote
+
+### Gate
+
+One turn. Ask for the closed-quarter dashboard the 2026-08-18 gate asked for,
+open it without touching the filter, and read the panels: rows, not an empty
+grid. Then re-open a dashboard created before the change and confirm its preset
+still computes from today.

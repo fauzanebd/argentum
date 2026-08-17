@@ -166,7 +166,9 @@ type Filter struct {
 	Label   string   `json:"label,omitempty"`
 	Kind    Kind     `json:"kind"`
 	Options []string `json:"options,omitempty"` // enum affordance only
-	Default any      `json:"default,omitempty"` // a date_range default is a PRESET NAME
+	// Default is a preset NAME for a date_range that keeps up with today, or a
+	// FixedWindow for one whose subject is a period that has ended (T-D24).
+	Default any `json:"default,omitempty"`
 }
 
 // Tokens returns the {{tokens}} this filter binds.

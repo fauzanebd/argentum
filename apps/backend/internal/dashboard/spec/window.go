@@ -20,6 +20,10 @@ type Window struct {
 // rule is the whole difference between a live dashboard and a snapshot: two
 // stored timestamps are correct on the day they were saved and wrong every day
 // after, and nothing about the dashboard looks broken while it happens.
+//
+// The one thing that rule was wrong about is a dashboard whose subject is a
+// period that has already ended, which cannot age into being wrong — see
+// FixedWindow below (T-D24).
 type Preset string
 
 const (
@@ -77,6 +81,106 @@ func (p Preset) Resolve(now time.Time, loc *time.Location) (Window, error) {
 		return Window{}, fmt.Errorf("unknown window preset %q — the presets are %s", p, presetList())
 	}
 }
+
+// dateLayout is how a stored window states a day, and it is the layout the
+// parent package binds request values with (dashboard.DateLayout). One layout,
+// no alternatives: a dashboard is read in a browser and shared by URL, and
+// 03/04/2024 means two different days depending on who opens it.
+//
+// Unexported because this file is read by tygo: a Go time layout is not a wire
+// type, and "2006-01-02" in a TypeScript module is a date nobody has.
+const dateLayout = "2006-01-02"
+
+// FixedWindow is a date_range default that names a period which has ended,
+// instead of a preset that moves (T-D24).
+//
+// **Why this exists beside Preset, which the comment above says is the whole
+// point.** That comment is right about a *live* dashboard and says nothing
+// about one whose subject is a closed quarter — and "sales in Q4 2024" is an
+// ordinary thing to build a dashboard about. Before this, the only vocabulary
+// was a preset, so the 2026-08-18 gate's own request saved `qtd`, which in
+// August 2026 is Q3 2026, where every panel returned nothing: the product
+// stored something that draws an empty grid forever and told the user to fix
+// the filter by hand on every open. `update_dashboard`'s tool description had
+// been promising `{from, to}` since the day it shipped, and its parser built
+// exactly this shape; the validator refused it, so the promise was dead on
+// arrival.
+//
+// A fixed window does not age, because there is nothing left for it to age
+// into. What it costs is that a dashboard saved with one is a report rather
+// than a monitor, which is what the person who asked for Q4 2024 meant.
+type FixedWindow struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// ParseFixedDefault reads a stored default as a fixed window.
+//
+// Three answers, and the middle one matters: (_, false, nil) means "this is
+// not an object, so it is a preset name and not this function's business",
+// while (_, true, err) means "it is an object and it does not state a window",
+// which is a validation failure rather than a fall-through.
+func ParseFixedDefault(def any) (FixedWindow, bool, error) {
+	var raw map[string]any
+	switch v := def.(type) {
+	case FixedWindow:
+		return v, true, v.validate()
+	case map[string]any:
+		raw = v
+	case map[string]string:
+		w := FixedWindow{From: strings.TrimSpace(v["from"]), To: strings.TrimSpace(v["to"])}
+		return w, true, w.validate()
+	default:
+		return FixedWindow{}, false, nil
+	}
+	from, _ := raw["from"].(string)
+	to, _ := raw["to"].(string)
+	w := FixedWindow{From: strings.TrimSpace(from), To: strings.TrimSpace(to)}
+	return w, true, w.validate()
+}
+
+// validate is what a stored fixed window must satisfy: both bounds, both
+// readable as days, and in the order a reader wrote them.
+func (w FixedWindow) validate() error {
+	if w.From == "" || w.To == "" {
+		return fmt.Errorf(`a fixed window needs both bounds, as {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}`)
+	}
+	from, err := time.Parse(dateLayout, w.From)
+	if err != nil {
+		return fmt.Errorf("from %q is not a date as YYYY-MM-DD", w.From)
+	}
+	to, err := time.Parse(dateLayout, w.To)
+	if err != nil {
+		return fmt.Errorf("to %q is not a date as YYYY-MM-DD", w.To)
+	}
+	if to.Before(from) {
+		return fmt.Errorf("to %s is before from %s", w.To, w.From)
+	}
+	return nil
+}
+
+// Resolve turns the two stated days into the half-open window a panel is
+// measured over, in the dashboard's own zone.
+//
+// `to` is the day the reader named and is inclusive, so the window runs to the
+// following midnight — the same convention Bind applies to an explicit
+// from/to pair, and the reason "1–31 January" does not silently drop the 31st
+// and report the month short by a day.
+func (w FixedWindow) Resolve(loc *time.Location) (Window, error) {
+	if err := w.validate(); err != nil {
+		return Window{}, err
+	}
+	if loc == nil {
+		loc = time.UTC
+	}
+	from, _ := time.ParseInLocation(dateLayout, w.From, loc)
+	to, _ := time.ParseInLocation(dateLayout, w.To, loc)
+	return Window{From: from, To: to.AddDate(0, 0, 1)}, nil
+}
+
+// String is what `applied_filters` shows for a fixed window: the two days,
+// rather than a preset name the reader would go looking for in a list.
+func (w FixedWindow) String() string { return w.From + "…" + w.To }
 
 func presetList() string {
 	names := make([]string, len(Presets))

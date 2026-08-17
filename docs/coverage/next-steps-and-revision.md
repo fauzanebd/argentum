@@ -450,6 +450,21 @@ keeps prose iteration-scoped (the mechanism) and makes the report countable, and
 deliberately does **not** turn the check into a gate, which stays the separate
 decision it always was.
 
+**Built 2026-08-18** ([`delivery-log.md`](delivery-log.md) Phase 2x). The stored
+answer is now the last iteration that produced prose — the stream is untouched,
+so a reader still watches the model think and only the *record* is narrowed —
+and the grounding report increments `ungrounded_replies_total` /
+`ungrounded_figures_total`, lands on the turn's span, and appears on a new
+one-line-per-turn `turn completed` record. The build found the reason the obvious
+version of this fix would have been wrong: agent-sdk-go can withhold intermediate
+prose and **replay it after** the final iteration, and its synthesis call carries
+`final_call` and no iteration number, so "keep the last prose that arrived" would
+have stored the narration on one path and nothing on the other. This deployment
+takes neither path (`IncludeIntermediateMessages: true`) and both are one config
+line away. **The re-ask is owed** and is priced in
+[`live-gate-backlog.md`](live-gate-backlog.md) §2 at about $0.03, plus the rule-1
+re-score at about $0.8.
+
 ### 6.6 What is still owed
 
 `T-D22`'s four-turn edit gate and `T-Q10`'s eval category still need model

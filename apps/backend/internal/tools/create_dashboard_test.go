@@ -176,6 +176,33 @@ func TestCreateDashboardDefaultsADateRangeToAPreset(t *testing.T) {
 	}
 }
 
+// The request the 2026-08-18 gate opened with: a dashboard about a quarter
+// that has ended (T-D24). Both shapes a model writes it in reach the same
+// stored window, and neither becomes a preset — `qtd` in a later year is the
+// current quarter, where every panel returns nothing.
+func TestCreateDashboardStoresAClosedWindowDefault(t *testing.T) {
+	for name, filter := range map[string]string{
+		"under default": `{"name": "period", "kind": "date_range", "default": {"from": "2024-10-01", "to": "2024-12-31"}}`,
+		"on the filter": `{"name": "period", "kind": "date_range", "from": "2024-10-01", "to": "2024-12-31"}`,
+	} {
+		creator := &fakeCreator{}
+		runTool(t, creator, `{
+		  "title": "Q4 2024 Sales",
+		  "filters": [`+filter+`],
+		  "panels": [{"viz": "table", "sql": "SELECT a FROM v WHERE d >= {{period_from}} AND d < {{period_to}}"}]
+		}`)
+
+		def, ok := creator.got.Spec.Filters[0].Default.(map[string]any)
+		if !ok {
+			t.Errorf("%s: default = %#v, want the closed window", name, creator.got.Spec.Filters[0].Default)
+			continue
+		}
+		if def["from"] != "2024-10-01" || def["to"] != "2024-12-31" {
+			t.Errorf("%s: default = %#v", name, def)
+		}
+	}
+}
+
 func TestCreateDashboardRefusesWhatItCannotGuess(t *testing.T) {
 	tool := NewCreateDashboardTool(&fakeCreator{}, nil, nil)
 	for name, args := range map[string]string{

@@ -3325,6 +3325,186 @@ now recorded three times in this repository. Headful Chrome with
 `--remote-debugging-port` and a twenty-line CDP client is the same rendering
 engine looking at the same page.
 
+## Phase 2w — The edit gate, and an agent that said "Done" twice without doing anything (2026-08-18)
+
+No commits. This phase is a **gate**, not a build: `T-D22`'s four-turn edit
+sequence had been sitting in
+[`live-gate-backlog.md`](live-gate-backlog.md) §2 behind a cost since the day
+the ticket landed. It cost **$0.119** across six turns on `kimi-k2.6`, and it is
+the tenth sitting in a row to find something.
+
+**What it was meant to prove, and did.** `update_dashboard` is sound. A patch
+left the unnamed panel byte-identical under `jq -S`; the id and URL held across
+an edit and a rename; a panel addressed by a title that does not exist came back
+with the real titles listed; a `viz` change that invalidated the mapping was
+refused by name and the model fixed it on the next call; a mapping naming a
+column the SQL never returned was caught by `dryRun`'s warning path — its first
+live exercise — and self-corrected. And the item the ticket cared most about
+passed cleanly: **no id, no thread dashboard → a result, not a Go error.** One
+call, `rows_returned=0`, 4 ms, a reply naming both candidates and asking which.
+The 2026-08-14 measurement of what a Go error does to deepseek (the identical
+call, seven times, until the budget ends the turn) is what that design exists to
+prevent, and it holds.
+
+**What it actually found is a P0 in a different subsystem.** Two consecutive
+turns told the user an edit was done, having called **no tool at all**. The
+dashboard never changed — same `updated_at`, same `viz`, same title — and
+`agent_actions` has no row for either turn. The worker log: `iteration=1`,
+`Skipping final synthesis call - already got complete response`, twelve seconds.
+
+The mechanism is one missing key. Turn 1 exhausted its iteration budget, so its
+last `update_dashboard` was refused by `agentbudget` — correctly, and as a
+*result* rather than a Go error, which is the design that stops a model looping.
+That payload is `{"budget_exhausted": true, "reason": …}`. `BuildToolDigest`
+decides a call failed by looking for `result["error"]` or `result["err"]`, and
+finds neither, so T-Q6's persisted memory recorded
+`{"tool":"update_dashboard","rows":-1}` — what a *successful* call looks like.
+The next turn read that as work already done. Then its own "Done" became the
+third turn's evidence.
+
+**`agentbudget.IsRefusal` exists for exactly this distinction and the digest
+does not call it.** Its comment says the audit log needs it because *"both come
+back as a string with a nil error, because that is how the model has to receive
+them"*. The audit table got it right (`result_status = blocked`). The memory the
+agent reads did not. Ticketed the same night as **`T-Q12`** (P0, 1.0d,
+[`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md)),
+beside `T-Q11` because both are an unevidenced claim reaching the user of
+record — `T-Q11` about a figure inside a turn, `T-Q12` about what one turn tells
+the next it did.
+
+**The control is the part worth copying.** The same sentence — *"rename that
+dashboard to X"* — on a thread whose history held a genuine success: the tool
+was called and the rename landed. Two histories, two behaviours, one
+differentiator. That turned "the model was lazy" into a diagnosis with a line
+number, for the price of one extra turn.
+
+**A second finding, and it is a decision.** The gate's first request —
+*"default the period to the fourth quarter of 2024"* — cannot be expressed. A
+`date_range` default must be a preset name, so the model saved `qtd`, which in
+August 2026 matches nothing; both panels warned at save and the model told the
+user to change the filter by hand on every open. Filed as `T-D24`. It also cost
+that turn two of its eight iterations, which is what left no room for the edit
+it then attempted — the first half of the chain above.
+
+**And `T-Q11`'s mechanism showed up on a benign turn**: *"…to build this
+correctlyYour **Q4 2024 Sales** dashboard is ready"* — pre-tool narration glued
+to the post-tool answer, no fabricated figure attached. The cheapest
+reproduction of that ticket yet.
+
+**The lesson this phase adds to the nine before it.** This log has been building
+a case that the cheap bucket — stack-only, browser-only, read-what-an-earlier-turn-wrote
+— is where the defects are, because nine sittings of it paid nine times. That is
+still true and it is now also a bias: **a P0 sat in the expensive bucket for a
+day**, and it cost twelve cents to find. The rule that comes out of it is not
+"spend more", it is that a gate deferred for cost should carry the cost estimate
+next to it, because $0.12 and $12 are not the same decision and the file did not
+distinguish them.
+
+## Phase 2x — Three tickets from two gates: what a turn claims, and what it cannot say (2026-08-18)
+
+The two gates of 08-17 and 08-18 left three tickets and no code. This phase is
+the code: **`T-Q11`, `T-Q12` and `T-D24`**, unit-gated in one sitting —
+`go build ./...`, `go test ./...`, `go vet ./...`, `make lint-go` (0 issues),
+`make types-check`, `make lint-web` (0 errors). No live turn was run, which is
+the state this log has recorded seven builds hiding something in, and the gates
+are filed in [`live-gate-backlog.md`](live-gate-backlog.md) §2 **with their
+prices**, which is the rule Phase 2w asked for.
+
+**Two of the three are the same sentence.** Something reached the user of record
+that no evidence supports: `T-Q11` a figure inside one turn, `T-Q12` what one
+turn tells the next it did. Neither was fixable in the prompt, because in both
+cases the product was handing the model false evidence.
+
+**`T-Q12` — a refused call is no longer remembered as one that ran.** The digest
+carries an outcome (`ok` / `failed` / `refused`) read from what the executor
+returned rather than inferred from an absent `error` key, and the prior-work
+block now says *"REFUSED, it did NOT run"* above an instruction that refused work
+must be **done** in this turn, never reported as done. Two things the ticket did
+not predict came out of building it. The Go-error path *does* emit a tool-result
+event — but as the plain string `Error executing tool: …`, which unmarshals to an
+empty map, so the raw result now travels beside the parsed one. And
+`DedupeDigests` had the same defect wearing the opposite sign: keyed without the
+outcome, a call that was refused and then made properly collapsed to the
+refusal, so marking refusals alone would have turned *"it thinks it ran"* into
+*"it thinks it never ran"*.
+
+**`T-Q11` — the record is the last iteration that produced prose.** The stream is
+untouched: every delta still reaches the reader, because watching the model think
+is the feature. What narrowed is what `completeWith` persists. The build found
+the reason a naive fix would have failed: agent-sdk-go can withhold intermediate
+content and **replay it after** the final iteration, and its synthesis call is
+tagged `final_call` with no iteration number at all — so "keep the last prose
+that arrived" would store the narration on one path and nothing on the other.
+The selection is made on the iteration number, with the synthesis call winning
+outright, and a turn no provider tagged concatenates exactly as before. This
+deployment meets neither path today (`IncludeIntermediateMessages: true`), which
+is precisely why both had to be handled: that is one line in `stack.go`.
+
+**And the detector is now an instrument.** `CheckGrounding` has been asking the
+right question and writing one `Warn` line nobody read.
+`ungrounded_replies_total` and `ungrounded_figures_total` count it, the count
+lands on the turn's span, and a new one-line-per-turn `turn completed` record
+carries it beside latency and tool calls. **The honest caveat is written into the
+code:** a turn runs in `cmd/worker`, which has no HTTP surface, so `/metrics` on
+`cmd/api` will not show these move. That is T-17's debt; until it is paid the
+number is read from the log line and the span, and a gate that curls `/metrics`
+and sees zero has found nothing.
+
+**`T-D24` — a dashboard can finally default to the period it is about.** Option 1
+of the three the ticket offered, and the decision turned out to be less open than
+it looked: `update_dashboard`'s description has promised
+`{from: 'YYYY-MM-DD', to: 'YYYY-MM-DD'}` since the day it shipped, its parser
+already built that shape, and the test written from *"just make it 2024"*
+asserts it — all against a fake service, so `spec.Validate` never saw the value
+it would have refused. **A capability the product had already told the model it
+had, which the validator killed on arrival.** Options 2 and 3 would have meant
+deleting it. Presets are untouched, a malformed window is refused by name at save
+*and* at bind, and the inclusive-`to` convention matches the one an explicit
+request range already uses — the reason "1–31 January" does not silently drop the
+31st.
+
+**One thing the frontend did not need, and it is a finding.** T-D24's FE bullet
+asked the filter UI to render an absolute default as dates. There is no filter
+UI: `dashboard-view.tsx:89` prints `applied_filters` as text and nothing else.
+So a fixed window reads correctly for free — and the gate transcript in which the
+model told the user to *"change the Period filter when you open the dashboard"*
+was advice about a control that does not exist. A dashboard whose window can only
+be changed by asking the agent is a product decision nobody has made yet.
+
+## Phase 2y — Two verbs become three choices with sentences (2026-08-18)
+
+Owner's call, same day, no ticket: the decision surfaces were restyled onto one
+component — `components/ui/decision-card.tsx` — and both callers moved to it.
+`tsc -b` and eslint clean (0 errors), and both themes were looked at in a
+browser rather than assumed.
+
+**What changed and why it is not only styling.** The approval card was a
+sentence over an Approve/Reject pair, and the next-step row was chips. Both
+stated verbs and left the consequences to be inferred. A stacked option carries
+its own line — *"Runs this once, exactly as described. It cannot be taken
+back."* — which is the difference between authorising something and agreeing to
+something. The chips could not carry `why` at all: it was a `title` attribute,
+unreachable without a mouse, plus one trailing sentence for whichever suggestion
+led, so the agent's reasoning about the other two was written, stored and never
+shown.
+
+**One decision inside it worth defending.** The reference design marks the
+recommended option with a tinted row, a check and a *"…'s lean"* chip. That is
+applied to the next-step card, where the lean is data the agent produced
+(`recommended` + `why`), and **deliberately not** to the approval card: an agent
+proposing an action is not the same as it recommending you authorise one, and
+tinting *"Go ahead"* green before a human decides is a nudge toward the
+irreversible half of a choice this product exists to put in front of a person.
+On an approval the mark appears **after** the decision, on whichever option was
+taken.
+
+**Two smaller things it added.** A third option — *"Adjust"* — that prefills the
+composer, decides nothing and leaves the proposal open, which is the reply a
+reader wanted a way to give and previously had to construct by hand. And a
+footer that says who decided and when: `decided_by` is a user id with no
+directory behind it, so it reads *"you"* or *"a teammate"* rather than inventing
+a name for an audited decision.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

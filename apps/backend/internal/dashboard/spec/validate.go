@@ -136,9 +136,25 @@ func validateDefault(f Filter) error {
 	// Two stored timestamps are correct on the day they were saved and wrong
 	// every day after, and nothing about the dashboard looks broken while that
 	// happens.
+	//
+	// **With one exception, added by T-D24: a window that has already closed.**
+	// The rule above is about a dashboard that ages into being wrong, and a
+	// quarter that ended cannot. Stated as an object rather than as a bare
+	// string so the two shapes can never be confused — a preset is a name, a
+	// fixed window is a pair of bounds — and refused by name when the object is
+	// there and the window is not.
+	if w, isFixed, err := ParseFixedDefault(f.Default); isFixed {
+		if err != nil {
+			return fmt.Errorf("filter %q: %w", f.Name, err)
+		}
+		_ = w
+		return nil
+	}
 	name, ok := f.Default.(string)
 	if !ok {
-		return fmt.Errorf("filter %q: a date_range default must be a preset name (one of %s), not a stored date", f.Name, presetList())
+		return fmt.Errorf("filter %q: a date_range default must be a preset name (one of %s) "+
+			`or a closed window as {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}, not a stored timestamp`,
+			f.Name, presetList())
 	}
 	if !Preset(name).Valid() {
 		return fmt.Errorf("filter %q: unknown preset %q — the presets are %s", f.Name, name, presetList())

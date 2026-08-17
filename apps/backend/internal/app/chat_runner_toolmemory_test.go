@@ -188,6 +188,38 @@ func TestPriorWorkDedupesAcrossTurns(t *testing.T) {
 	}
 }
 
+// The 2026-08-18 chain, as a fixture (T-Q12): turn 1 spends its iteration
+// budget, so its last update_dashboard is refused; turn 2 reads that memory.
+// What turn 2 must not be able to read is "update_dashboard ran and reported
+// nothing", which is what the digest used to say — and what made two
+// consecutive turns tell the user an edit was done with no tool call at all.
+func TestARefusedCallReachesTheNextTurnAsUnfinishedWork(t *testing.T) {
+	mem := &fakeToolMemory{}
+	r := runnerWithToolMemory(t, mem, 3)
+
+	// Turn 1: discovery ran, then the write was refused.
+	r.rememberToolWork(context.Background(), payloadFor("th-1"), []ToolDigest{
+		BuildToolDigest("get_schema", nil, argsOf(t, `{"tables":["fact_sales"]}`), ""),
+		BuildToolDigest("update_dashboard", argsOf(t, `{"dashboard_id":"d-1"}`),
+			argsOf(t, `{"budget_exhausted":true,"reason":"iteration budget spent (8 of 8)"}`), ""),
+	})
+
+	block := RenderPriorWork(r.priorWork(context.Background(), "th-1"))
+	if !strings.Contains(block, "REFUSED") || !strings.Contains(block, "did NOT run") {
+		t.Fatalf("turn 2 reads the refused edit as an ordinary call:\n%s", block)
+	}
+	// The refusal is carried, not dropped: a turn that cannot see it re-runs
+	// the discovery that preceded it.
+	if !strings.Contains(block, "fact_sales") {
+		t.Errorf("the discovery that preceded the refusal was lost:\n%s", block)
+	}
+	// And the shape that produced the defect must be absent — a bare row count
+	// beside update_dashboard is what a successful call looks like.
+	if strings.Contains(block, "update_dashboard — 0 row(s)") {
+		t.Errorf("the refused call still renders as a completed one:\n%s", block)
+	}
+}
+
 // payloadFor is the minimum a rememberToolWork call needs. Declared here
 // rather than reusing a directive-test fixture because what this file cares
 // about is the thread id and nothing else.

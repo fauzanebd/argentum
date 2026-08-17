@@ -54,6 +54,13 @@ type Collector struct {
 	conversationsActive int64
 	contextResets       int64
 
+	// Grounding (T-Q11). A reply whose figures are not the figures the tools
+	// returned is the wrong-but-nonempty class: the fabrication gate passes it,
+	// because rows did come back, while a number nothing produced sits in the
+	// paragraph. Counted here so the rate is a series rather than a grep.
+	ungroundedReplies int64
+	ungroundedFigures int64
+
 	// Domain counters (T-17). Bounded label sets, all of them: a tool name comes
 	// from the registry, an action kind from the action registry, a channel from
 	// the Channel enum. Nothing here is labelled by anything a tenant types, for
@@ -344,6 +351,28 @@ func (c *Collector) RecordToolCall(tool string, d time.Duration, failed bool) {
 	}
 }
 
+// RecordUngroundedFigures counts one reply that stated figures no tool result
+// contained, and how many of them (T-Q11).
+//
+// Two numbers rather than one because they answer different questions: how
+// often the product does this, and how badly. A reply carrying five invented
+// figures and five replies carrying one each are the same figure count and
+// very different problems.
+//
+// It counts and does not block. guardrails.CheckGrounding reports rather than
+// rewrites — an analyst's reply legitimately contains numbers no query
+// returned — and the rate has to be measured before anything can be tightened
+// against it. Before this existed the check wrote one Warn line per occurrence
+// and nothing read it, which is how a persisted answer stating 1,667 against a
+// true 300 went unnoticed for a week.
+func (c *Collector) RecordUngroundedFigures(figures int) {
+	if c == nil || figures <= 0 {
+		return
+	}
+	atomic.AddInt64(&c.ungroundedReplies, 1)
+	atomic.AddInt64(&c.ungroundedFigures, int64(figures))
+}
+
 // RecordTurn counts one completed agent turn and its wall clock.
 func (c *Collector) RecordTurn(d time.Duration) {
 	if c == nil {
@@ -471,6 +500,11 @@ func (c *Collector) GetSnapshot() MetricsSnapshot {
 		Conversations: ConversationMetrics{
 			Active:        atomic.LoadInt64(&c.conversationsActive),
 			ContextResets: atomic.LoadInt64(&c.contextResets),
+		},
+
+		Grounding: GroundingMetrics{
+			UngroundedReplies: atomic.LoadInt64(&c.ungroundedReplies),
+			UngroundedFigures: atomic.LoadInt64(&c.ungroundedFigures),
 		},
 
 		APIV1:  c.apiSnapshot(),
@@ -612,6 +646,8 @@ func (c *Collector) Reset() {
 	atomic.StoreInt64(&c.jobsCompleted, 0)
 	atomic.StoreInt64(&c.jobsFailed, 0)
 	atomic.StoreInt64(&c.contextResets, 0)
+	atomic.StoreInt64(&c.ungroundedReplies, 0)
+	atomic.StoreInt64(&c.ungroundedFigures, 0)
 
 	c.mu.Lock()
 	c.apiRoutes = map[string]*routeAgg{}
@@ -629,7 +665,9 @@ type MetricsSnapshot struct {
 	Cache         CacheMetrics        `json:"cache"`
 	Jobs          JobMetrics          `json:"jobs"`
 	Conversations ConversationMetrics `json:"conversations"`
-	APIV1         APIV1Metrics        `json:"api_v1"`
+	// Grounding is how often a reply stated a figure no tool returned (T-Q11).
+	Grounding GroundingMetrics `json:"grounding"`
+	APIV1     APIV1Metrics     `json:"api_v1"`
 	// Domain is what the product did rather than what the process did (T-17):
 	// turns, tool calls, watcher fires, action executions, LLM latency by model.
 	Domain DomainMetrics `json:"domain"`
@@ -652,6 +690,21 @@ type DomainMetrics struct {
 	Turns            DurationMetrics        `json:"turns"`
 	// LLMLatency is keyed by model id.
 	LLMLatency map[string]DurationMetrics `json:"llm_latency,omitempty"`
+}
+
+// GroundingMetrics is the wrong-but-nonempty instrument (T-Q11). Both numbers
+// are lifetime totals of this process, and both are zero on a deployment whose
+// replies quote only what its tools returned.
+//
+// It is written by the worker, which is where a turn runs, and the worker has
+// no exposition endpoint yet — so on today's deployment these are read from
+// the turn's log line and its span rather than from a scrape. That gap belongs
+// to T-17 and is not this ticket's to close.
+type GroundingMetrics struct {
+	// UngroundedReplies is replies carrying at least one such figure.
+	UngroundedReplies int64 `json:"ungrounded_replies"`
+	// UngroundedFigures is how many figures those replies carried in total.
+	UngroundedFigures int64 `json:"ungrounded_figures"`
 }
 
 // ToolMetrics is one tool's traffic, recorded where the audit row is written.
