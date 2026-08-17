@@ -59,6 +59,12 @@ const (
 // tool name: retiring it would cost every integrator holding a key a rotation,
 // to buy nothing — the capability it grants is unchanged, and it is still
 // exactly one tool wide.
+// `update_dashboard` (T-D22) is deliberately NOT here, and it is the one
+// omission that needs saying out loud because `create_dashboard` is. Creating a
+// dashboard adds something nobody was depending on yet; editing one changes what
+// a stored URL already serves — somebody's Monday, and after T-D13 a stranger's
+// share link. That is the same side of the line `propose_action` is on, and an
+// MCP client is an agent we did not write.
 var exposed = map[string]domain.Scope{
 	"list_sources":     domain.ScopeReadData,
 	"get_schema":       domain.ScopeReadData,

@@ -114,7 +114,8 @@ type apiDeps struct {
 	// Answer feedback (T-Q2): whether the people reading the answers thought
 	// they were right. The first quality signal in this product that does not
 	// come from the golden set.
-	feedbackSvc *app.FeedbackService
+	feedbackSvc   *app.FeedbackService
+	suggestionSvc *app.SuggestionService
 	// The query cookbook (T-Q8): what the agent has learned about answering
 	// this tenant's questions against this tenant's warehouse.
 	cookbookSvc *app.CookbookService

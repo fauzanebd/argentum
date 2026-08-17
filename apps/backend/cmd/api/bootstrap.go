@@ -439,6 +439,12 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	feedbackRepo := pgctl.NewMessageFeedbackRepo(controlDB)
 	deps.feedbackSvc = app.NewFeedbackService(feedbackRepo, deps.msgRepo)
 
+	// Which next-step chips get pressed (T-U13). Same message repo and the same
+	// reason: the pick is validated against the suggestions on the stored
+	// message, so the service needs the tenant-scoped single-message read.
+	deps.suggestionSvc = app.NewSuggestionService(
+		pgctl.NewSuggestionPickRepo(controlDB), deps.msgRepo)
+
 	// The query cookbook (T-Q8). The API owns the admin surface — status,
 	// harvest, forget — while the turn-time retrieval lives in the worker's
 	// stack. Both read the same table; only the harvester writes it.

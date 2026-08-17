@@ -1,0 +1,17 @@
+-- Deliberately not reversed, for the reason 043's down migration gives.
+--
+-- The up migration adds a tool name to agents that lacked it, and nothing
+-- records which rows it touched. Stripping `update_dashboard` from every scoped
+-- agent on the way down would also strip it from an agent an administrator
+-- ticked by hand — taking away a capability somebody chose in order to undo one
+-- they were never offered.
+--
+-- A down migration that loses tenant intent is worse than one that does nothing.
+-- Removing the capability from a single agent is a checkbox in Settings → Agents.
+--
+-- Rolling back the BINARY is safe without this: `filterTools` matches by name, so
+-- an older release simply does not find `update_dashboard` in the array and hands
+-- the model what it did before. The stored name reaches nothing, and
+-- AgentService.Update tolerates a stored name it cannot register (normalizeTools)
+-- so an admin editing such an agent sees no error about a tool they never chose.
+SELECT 1;

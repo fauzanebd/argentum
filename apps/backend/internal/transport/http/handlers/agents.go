@@ -65,6 +65,7 @@ var agentToolLabels = map[string]string{
 	"query_metric":      "Read a defined metric over a date range",
 	"run_sql":           "Run read-only SQL queries",
 	"create_dashboard":  "Build a live dashboard of charts",
+	"update_dashboard":  "Change a dashboard it already built",
 	"schedule_task":     "Schedule a recurring question",
 	"propose_action":    "Propose an action for a human to approve",
 	"generate_document": "Generate a PDF or slide deck",

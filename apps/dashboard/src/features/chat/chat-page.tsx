@@ -17,6 +17,7 @@ import { ThinkingTrace } from "./thinking-trace";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
+import { useComposerStore } from "@/store/composer";
 import { microToUsd } from "@/features/usage/labels";
 import type {
   BudgetState,
@@ -31,6 +32,7 @@ import { AgentBadge, AgentPicker } from "./agent-picker";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
 import { MessageFeedback } from "./message-feedback";
+import { NextStepChips } from "./next-steps";
 import { PendingApprovals } from "@/features/actions/approval-card";
 import { PENDING_ACTIONS_KEY } from "@/features/actions/use-actions";
 import { MarkdownRenderer } from "./markdown-renderer";
@@ -238,10 +240,31 @@ export function ChatPage() {
   );
 
   const prevThreadIdRef = useRef<string | null | undefined>(undefined);
+  /** Whether this turn called update_dashboard (T-D23). A ref rather than state:
+   *  nothing renders from it, and re-rendering the transcript mid-stream to
+   *  record a fact only `final` reads would be a wasted pass over every bubble. */
+  const dashboardEditedRef = useRef(false);
 
   useEffect(() => {
     return () => stopPolling();
   }, [stopPolling]);
+
+  /**
+   * A message another surface asked us to open with (T-D23).
+   *
+   * "Ask for a change" on a dashboard lands here with the dashboard's markdown
+   * link already in the composer and the cursor after it. Prefilled, never
+   * sent — T-U13's rule and the starter questions': a dashboard edit that fires
+   * from a button press is an action nobody approved.
+   *
+   * Read-and-clear, so switching threads afterwards does not re-seed over
+   * whatever the reader has started typing.
+   */
+  const takePrefill = useComposerStore((s) => s.take);
+  useEffect(() => {
+    const pending = takePrefill();
+    if (pending) setInput(pending);
+  }, [takePrefill]);
 
   /** Leaving a thread closes the WS (useThreadStream cleanup → ws.close), but
    *  liveAssistant would keep showing the previous thread’s stream without this.
@@ -327,6 +350,15 @@ export function ChatPage() {
         );
       }
     } else if (evt.type === "tool_call" || evt.type === "tool_result") {
+      // A dashboard on screen has just been edited (T-D23). Noted here and acted
+      // on at `final`, so the panels redraw without a manual reload — and only
+      // then: a blanket invalidation on every turn would re-run every embedded
+      // dashboard's queries against the tenant's warehouse for turns that
+      // touched nothing, which is the load pattern DashboardView's own
+      // refetchOnWindowFocus:false exists to avoid.
+      if (evt.tool_call?.name === "update_dashboard") {
+        dashboardEditedRef.current = true;
+      }
       setLiveAssistant((prev) => {
         if (!prev) return blankTurn(evt.job_id);
         const calls = prev.toolCalls ? [...prev.toolCalls] : [];
@@ -350,6 +382,13 @@ export function ChatPage() {
       );
       qc.invalidateQueries({ queryKey: ["messages", evt.thread_id] });
       qc.invalidateQueries({ queryKey: ["threads"] });
+      if (dashboardEditedRef.current) {
+        dashboardEditedRef.current = false;
+        // Both the list and every resolved dashboard: a title change shows in
+        // one and a panel change in the other, and the turn may have done either.
+        qc.invalidateQueries({ queryKey: ["dashboard-data"] });
+        qc.invalidateQueries({ queryKey: ["dashboards"] });
+      }
       stopPolling();
     } else if (evt.type === "action_proposed") {
       // The agent proposed a write-capable action (T-11). Refresh the pending
@@ -524,8 +563,19 @@ export function ChatPage() {
                   No messages yet — start the conversation below.
                 </div>
               )}
-              {displayedMessages.map((m) => (
-                <MessageBubble key={m.id} message={m} />
+              {displayedMessages.map((m, i) => (
+                <MessageBubble
+                  key={m.id}
+                  message={m}
+                  // The newest assistant message only, and not while a turn is
+                  // in flight: chips beside a streaming answer invite a click
+                  // that would queue a second question behind the first.
+                  onPickNextStep={
+                    i === displayedMessages.length - 1 && !liveAssistant
+                      ? setInput
+                      : undefined
+                  }
+                />
               ))}
               {liveAssistant && (
                 <PendingBubble
@@ -704,7 +754,18 @@ function ChatHeader({
 }
 
 /* ── Message Bubble ──────────────────────────────────────────────────── */
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({
+  message,
+  /** Suggestions render under the NEWEST assistant message only (T-U13).
+   *
+   *  Chips on every historical bubble turn a transcript into a wall of buttons,
+   *  and a suggestion about a question from twenty minutes ago is not a next
+   *  step. The list decides which bubble is last; the bubble does not guess. */
+  onPickNextStep,
+}: {
+  message: Message;
+  onPickNextStep?: (prompt: string) => void;
+}) {
   const isUser = message.role === "user";
   const user = useAuthStore((s) => s.user);
   const userInitials = user?.name
@@ -794,6 +855,12 @@ function MessageBubble({ message }: { message: Message }) {
               leading={<CopyAnswer content={message.content} />}
             />
           </div>
+        )}
+        {/* What to ask next (T-U13). Below the feedback row and on the same
+            1.5 gap: "rate this answer" is about the answer above, and the chips
+            are about the turn after it, so they read in that order. */}
+        {!isUser && onPickNextStep && (
+          <NextStepChips message={message} onPick={onPickNextStep} />
         )}
       </div>
     </div>

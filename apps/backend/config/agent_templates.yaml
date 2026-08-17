@@ -37,6 +37,11 @@
 #     it replaced needed both halves ticked, because a card_id is not something a
 #     user can open, and an agent that could make cards and not wrap them had
 #     half a feature.
+#   - `update_dashboard` travels with it (T-D22), for the same reason in a new
+#     place. An agent that can build a dashboard and not fix one answers "make it
+#     2024" by building a second dashboard — so the tenant accumulates
+#     near-duplicates, the link already sent keeps serving the wrong window, and
+#     the one the user is looking at never changes.
 #   - `generate_document` is on every card. Any of these jobs can be asked for a
 #     report, and the answer to that request is a file.
 #
@@ -68,7 +73,7 @@ templates:
       counts as revenue, when a cost is recognised, which date a transaction
       belongs to — state the definition you applied rather than choosing one
       silently.
-    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, generate_document]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, update_dashboard, generate_document]
     source_hints: [invoice, payment, ledger, revenue, transaction, billing, finance, accounting, budget]
     starter_questions:
       - "What was our revenue last month compared with the month before?"
@@ -89,7 +94,7 @@ templates:
       today and one taken last week will disagree. When that matters to the
       answer, say when the data was read rather than presenting a moving number
       as settled.
-    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, generate_document]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, update_dashboard, generate_document]
     source_hints: [sales, order, opportunity, lead, pipeline, deal, quote, crm, customer, account]
     starter_questions:
       - "How many deals did we close last month, and what were they worth?"
@@ -110,7 +115,7 @@ templates:
       When something looks like an exception — a stock-out, a stalled batch, a
       site far off its own norm — name it rather than averaging it away. The
       exception is usually the question behind the question.
-    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, generate_document]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, update_dashboard, generate_document]
     source_hints: [inventory, stock, warehouse, shipment, delivery, fulfil, logistics, production, supply, store, branch]
     starter_questions:
       - "Which items were out of stock most often last month?"
@@ -131,7 +136,7 @@ templates:
       the data usually only supports one of them. Say which one the numbers you
       used actually represent, and do not present a correlation between spend
       and revenue as a causal claim.
-    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, generate_document]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, update_dashboard, generate_document]
     source_hints: [campaign, marketing, ad, advert, channel, attribution, traffic, utm, subscriber, engagement]
     starter_questions:
       - "Which channels brought the most customers last month, and at what cost?"
@@ -153,7 +158,7 @@ templates:
       when a group is small enough that an aggregate identifies the people in it,
       say so instead of returning it. If a question needs an individual's record
       to answer, say that it does rather than approximating one.
-    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, generate_document]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, update_dashboard, generate_document]
     source_hints: [employee, staff, hr, payroll, headcount, attendance, recruit, applicant, people]
     starter_questions:
       - "What is our headcount by department, and how has it changed this year?"
@@ -175,7 +180,7 @@ templates:
       Volume by category is usually the more useful half of a support question:
       the reason a queue is growing is a product fact, not a staffing one. Point
       at it when the data supports it.
-    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, generate_document]
+    suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, update_dashboard, generate_document]
     source_hints: [ticket, support, helpdesk, case, complaint, sla, csat, conversation, inbox]
     starter_questions:
       - "How many tickets did we receive last week, and how many are still open?"

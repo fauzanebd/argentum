@@ -65,6 +65,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.metabaseDashboardSvc).Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
 	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)
+	handlers.NewSuggestionsHandler(d.suggestionSvc).Register(authed)
 	handlers.NewCookbookHandler(d.cookbookSvc).Register(authed)
 	handlers.NewConfigHandler(cfg).Register(authed)
 	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).Register(authed.Group("/users"))

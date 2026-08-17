@@ -23,6 +23,14 @@ import (
 // and builds nothing else. A tool added below appears in both without a second
 // edit.
 
+// DashboardStore is the whole of app.DashboardService the dashboard tools need
+// between them — building one and revising one. The two halves stay separate
+// interfaces beside their tools, so each tool names only what it calls.
+type DashboardStore interface {
+	DashboardCreator
+	DashboardReviser
+}
+
 // RegistryDeps is everything the registry is built from. A nil Docs is the one
 // meaningful variation: `generate_document` needs object storage, so the
 // correct tool list is per-deployment rather than per-release.
@@ -49,11 +57,17 @@ type RegistryDeps struct {
 	// neither contact nor identity columns, which is the strict reading and the
 	// right default for a build that has no company repository to hand.
 	Companies PIIPolicyLookup
-	// Dashboards backs create_dashboard (T-D11). Nil is legal and is what the
-	// API's name-only build and cmd/mcp pass: the tool still registers, so it
-	// appears in the agent allowlist and the template vocabulary, and reports
-	// "not configured" if ever executed without a service.
-	Dashboards DashboardCreator
+	// Dashboards backs create_dashboard (T-D11) and update_dashboard (T-D22).
+	// Nil is legal and is what the API's name-only build and cmd/mcp pass: both
+	// tools still register, so they appear in the agent allowlist and the
+	// template vocabulary, and report "not configured" if ever executed without a
+	// service.
+	//
+	// One field for both, rather than one per tool: they are two halves of the
+	// same service and a deployment that can build a dashboard and not edit one
+	// is not a configuration anybody wants — it is the state T-D22 was written to
+	// end.
+	Dashboards DashboardStore
 	Scheduled  ScheduledTaskCreator
 	// Docs nil means this deployment has no object storage, and
 	// generate_document is left out rather than registered and broken.
@@ -111,6 +125,11 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// three-panel answer and carried a thread-scoped in-memory map to make
 		// the second call optional.
 		NewCreateDashboardTool(d.Dashboards, d.Connections, d.Usage),
+		// Revise rather than rebuild (T-D22). It sits directly after the tool it
+		// pairs with, because the prompt's argument is a comparison between the
+		// two: a second dashboard leaves the wrong one in the list and breaks a
+		// link already sent, and the model reads them in this order.
+		NewUpdateDashboardTool(d.Dashboards, d.Connections, d.Usage),
 		NewScheduleTaskTool(d.Scheduled),
 		// Asking, as an action (T-Q4). It has no dependencies at all, which is
 		// the point: the alternative to asking is always a tool call, and a

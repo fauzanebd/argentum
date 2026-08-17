@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { ExternalLink, MessageSquarePlus, RefreshCw } from "lucide-react";
 import type { Result } from "@argentum/api-types/dashboard";
 
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useComposerStore } from "@/store/composer";
 import { DashboardPanel } from "./panel";
 
 /**
@@ -33,6 +35,8 @@ export function DashboardView({
   className?: string;
 }) {
   const [nonce, setNonce] = useState(0);
+  const navigate = useNavigate();
+  const prefill = useComposerStore((s) => s.prefill);
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ["dashboard-data", id, nonce],
     queryFn: async () =>
@@ -43,6 +47,24 @@ export function DashboardView({
     refetchOnWindowFocus: false,
     staleTime: 60_000,
   });
+
+  /**
+   * Open chat with a reference the agent already understands (T-D23).
+   *
+   * The dashboard's own markdown link is the payload, because
+   * `markdown-renderer.tsx` already parses that shape back to a uuid — so this
+   * needs no new backend plumbing and no `?dashboard=` state for anyone to keep
+   * in sync. The trailing newline is where the cursor lands: the reader types
+   * what is wrong, they do not edit around a link.
+   *
+   * Prefill, never send. A dashboard edit that fires from a button press is an
+   * action nobody approved.
+   */
+  function askForAChange() {
+    const title = data?.title || "this dashboard";
+    prefill(`Change [${title}](/dashboards/${id}):\n`);
+    void navigate({ to: "/chat" });
+  }
 
   if (isLoading) {
     return (
@@ -85,6 +107,20 @@ export function DashboardView({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {/* See the dashboard, say what is wrong with it, watch it change
+              (T-D23). update_dashboard made the edit possible for somebody who
+              is still in the thread that built it; the person looking at a wrong
+              chart is here, and their only route back was to find the
+              conversation. */}
+          <button
+            type="button"
+            onClick={askForAChange}
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Ask for a change"
+            title="Ask the agent to change this dashboard"
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5" />
+          </button>
           <button
             type="button"
             onClick={() => setNonce((n) => n + 1)}

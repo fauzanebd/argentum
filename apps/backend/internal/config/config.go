@@ -151,6 +151,12 @@ type Config struct {
 	// what a follow-up is following up on. Zero disables the read but not the
 	// write, which is the setting for measuring whether it helps.
 	PriorWorkTurns int
+	// NextStepsEnabled runs the suggestion pass after every answered turn
+	// (T-Q10). Default true. It is a kill switch rather than a feature flag: the
+	// pass adds one light-model call and its latency in front of the `final`
+	// event, so the deployment that decides that is not worth it needs a way to
+	// say so that is not a redeploy of different code.
+	NextStepsEnabled bool
 	// CookbookTopK is how many worked examples a turn is shown (T-Q8). Zero
 	// switches retrieval off without stopping the harvest, which is how the
 	// feature is measured: the same deployment, the same examples accumulating,
@@ -474,6 +480,7 @@ func Load() (*Config, error) {
 		ContextMaxTurns:     getEnvAsInt("CONTEXT_MAX_TURNS", 3),
 		HistoryHydrateLimit: getEnvAsInt("HISTORY_HYDRATE_LIMIT", 20),
 		PriorWorkTurns:      getEnvAsInt("PRIOR_WORK_TURNS", 3),
+		NextStepsEnabled:    getEnv("NEXT_STEPS_ENABLED", "true") == "true",
 		CookbookTopK:        getEnvAsInt("COOKBOOK_TOP_K", 3),
 		CookbookHarvestCron: getEnv("COOKBOOK_HARVEST_CRON", "17 * * * *"),
 

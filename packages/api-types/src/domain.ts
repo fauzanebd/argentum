@@ -1262,6 +1262,45 @@ export interface Message {
   created_at: string;
 }
 /**
+ * NextStep is one thing worth asking next, written by the agent that just
+ * answered (T-Q10).
+ * It travels on the assistant message's Metadata under `next_steps` rather than
+ * in a column or a table of its own. Two reasons, and the second is the load
+ * bearing one. `messages.metadata` already exists and is already marshalled at
+ * both ends, so this needs no migration. And a suggestion has no life outside
+ * the answer it belongs to: it is not a queue, it does not expire, and nothing
+ * ever reads one without the message around it.
+ * **`models.AgentResponse.FollowUpQuestions` is deliberately not this type.**
+ * That field is the legacy WhatsApp shape, its own comment says new callers
+ * should use the chat pipeline, and nothing has ever populated it. Writing to it
+ * as well would make two vocabularies for one idea.
+ */
+export interface NextStep {
+  /**
+   * Label is the chip's text, ≤ 48 characters. Truncated server-side rather
+   * than trusted, because the model treats a length rule as advice.
+   */
+  label: string;
+  /**
+   * Prompt is what a click puts in the composer. It is never sent
+   * automatically — see the frontend rule in T-U13, which is the same rule and
+   * the same reason as the starter questions: a turn that runs before the
+   * reader has read it teaches nothing and spends a credit.
+   */
+  prompt: string;
+  /**
+   * Recommended marks the one step the agent would take. At most one is true,
+   * enforced after the parse: a model asked for "at most one" returns two often
+   * enough that the rule has to be applied rather than requested.
+   */
+  recommended: boolean;
+  /**
+   * Why is one clause, shown on the recommended step only. It is the difference
+   * between a row of buttons and a suggestion.
+   */
+  why?: string;
+}
+/**
  * MessageFilter is the keyset page a `/v1` transcript read asks for (T-A3).
  * There is no channel or role filter: a transcript with the tool turns removed
  * is a transcript that does not explain itself, and a caller that wants only
@@ -1753,6 +1792,78 @@ export const DraftIndustryMax = 120;
  * have each contributed.
  */
 export type Draft = typeof DraftMaxEntities | typeof DraftIndustryMax;
+
+//////////
+// source: suggestion_pick.go
+
+/**
+ * SuggestionPick is one reader clicking one next-step chip (T-U13).
+ * It is an event, not a verdict. message_feedback replaces a row when the same
+ * actor rates the same answer again, because a person has one opinion of an
+ * answer at a time; a reader who clicks two of the three chips has told us both
+ * were worth clicking, and there is no version of that which should overwrite
+ * the other.
+ * This is the only evidence the next-step feature works. It costs one
+ * light-model call per answered turn and a row of buttons under every answer,
+ * and the pick rate is what says whether either is earning its place — the
+ * ticket's own rule is that under about 5% after a real week, the feature should
+ * be cut rather than tuned.
+ */
+export interface SuggestionPick {
+  id: string;
+  company_id: string;
+  message_id: string;
+  /**
+   * Index is the chip's 0-based position as it was rendered.
+   */
+  idx: number /* int */;
+  /**
+   * Recommended records whether the chosen chip was the one the agent marked.
+   * The comparison the whole table exists to make.
+   */
+  recommended: boolean;
+  /**
+   * Label is the chip's text at the moment it was pressed, copied rather than
+   * referenced — the suggestion lives in the message's metadata and a spec
+   * migration could change it.
+   */
+  label?: string;
+  created_at: string;
+}
+/**
+ * SuggestionLabelMaxChars caps the stored label. It matches the 48 characters a
+ * chip is truncated to server-side, plus room for the ellipsis, so a stored
+ * label is what was on the button rather than a longer string a client invented.
+ */
+export const SuggestionLabelMaxChars = 64;
+/**
+ * SuggestionPickSummary is the roll-up: how many answers offered suggestions,
+ * and how many were acted on.
+ */
+export interface SuggestionPickSummary {
+  /**
+   * Offered is the number of assistant messages in the window that carried at
+   * least one suggestion.
+   */
+  offered: number /* int */;
+  /**
+   * Picked is the number of those messages that had at least one chip clicked.
+   * Not the number of picks: two clicks on one answer is one answer acted on,
+   * and a rate whose numerator counts clicks can exceed 1.
+   */
+  picked: number /* int */;
+  /**
+   * Picks is the raw event count, which is the number that says whether people
+   * take more than one suggestion per answer.
+   */
+  picks: number /* int */;
+  /**
+   * RecommendedPicks is how many of those chose the marked chip. Against Picks
+   * it answers the one design question the `recommended` flag poses: does
+   * marking one change what people click?
+   */
+  recommended_picks: number /* int */;
+}
 
 //////////
 // source: thread.go

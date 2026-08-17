@@ -296,6 +296,13 @@ type ChatRunner struct {
 	// embedding credentials silently gets today's prompt.
 	cookbook     domain.QueryExampleRepository
 	cookbookTopK int
+
+	// What is worth asking next (T-Q10). Off unless a caller says otherwise —
+	// see WithNextSteps — because the pass adds an LLM call and its latency to
+	// every turn, and a runner nobody configured must behave exactly as it did
+	// before this ticket.
+	nextSteps       bool
+	nextStepsBudget BudgetChecker
 }
 
 // NewChatRunner wires the worker's dependencies. scheduled is optional;
@@ -553,7 +560,10 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		_ = r.bus.Publish(p.ThreadID, ChatEvent{
 			JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "started", Timestamp: now,
 		})
-		r.completeWith(ctx, p, reply, 0, 0, 0)
+		// No suggestions on a greeting. The small-talk path never called the model
+		// or a tool, so the agent has discovered nothing to suggest from — and
+		// three chips under "hello" is the product talking to itself.
+		r.completeWith(ctx, p, reply, 0, 0, 0, nil)
 		return nil
 	}
 
@@ -732,6 +742,10 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 
 	latency := time.Since(start)
 	metrics.Default().RecordTurn(latency)
+	// Kept so the post-turn chain can tell an agent's own answer from one a gate
+	// wrote in its place. Suggesting what to ask next on top of "I could not
+	// complete that" is the product being cheerful about its own failure (T-Q10).
+	agentWrote := response
 	response = r.rejectFabrication(ctx, p, response, tracker)
 	// After the fabrication gate and before the redaction: this measures the
 	// text the agent actually produced, and a reply the gate has already
@@ -747,7 +761,13 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// to see what completeWith is about to persist rather than what the agent
 	// produced.
 	response = r.rescueEmptyReply(ctx, p, response, tracker, streaming)
-	r.completeWith(ctx, p, response, 0, 0, latency)
+	// Last in the post-turn chain and before completeWith, so the suggestions are
+	// written against the text the user will actually read — the redacted one, the
+	// rescued one — rather than against what the agent first produced (T-Q10).
+	steps := r.suggestNextSteps(ctx, p, response,
+		heldToolNames(agent.GetTools()), tracker.Snapshot().Tools,
+		response != agentWrote)
+	r.completeWith(ctx, p, response, 0, 0, latency, steps)
 	return nil
 }
 
@@ -1541,7 +1561,10 @@ func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload,
 	if strings.HasPrefix(userMsg, guardrailsPrefix) {
 		userMsg = strings.TrimPrefix(userMsg, guardrailsPrefix)
 		r.recordBlockedTurn(ctx, p, "guardrail", userMsg)
-		r.completeWith(ctx, p, userMsg, 0, 0, 0)
+		// A refusal is a guardrail's message, not an answer, so it carries no
+		// suggestions — the same rule the post-turn chain applies to a reply the
+		// fabrication gate replaced.
+		r.completeWith(ctx, p, userMsg, 0, 0, 0, nil)
 		return nil
 	}
 	_ = r.bus.Publish(p.ThreadID, ChatEvent{
@@ -1560,11 +1583,15 @@ func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload,
 // and (for WA channels) sends the reply through the WhatsApp provider.
 func (r *ChatRunner) completeWith(
 	ctx context.Context, p queue.ChatRunPayload, response string,
-	tokensIn, tokensOut int, latency time.Duration,
+	tokensIn, tokensOut int, latency time.Duration, steps []domain.NextStep,
 ) {
 	now := time.Now()
+	// The suggestions ride the message's metadata column, which already exists
+	// and is already marshalled at both ends (T-Q10). Nil steps produce a nil map
+	// and the row is written exactly as it was before this ticket.
+	meta := nextStepsMetadata(steps)
 	assistantMsg, err := r.threads.AppendAssistantMessage(
-		ctx, p.ThreadID, response, tokensIn, tokensOut, latency.Milliseconds(),
+		ctx, p.ThreadID, response, tokensIn, tokensOut, latency.Milliseconds(), meta,
 	)
 	if err != nil {
 		logrus.WithError(err).Warn("append assistant message")
@@ -1596,10 +1623,18 @@ func (r *ChatRunner) completeWith(
 		}
 		r.watchers.CompleteFire(ctx, p.WatcherEventID, msgID, response)
 	}
+	// The same slice on the `final` event, beside latency_ms. No new event type,
+	// so every consumer that already reads `final` — the dashboard, the widget,
+	// `/v1` — gets the suggestions for free and none of them has to learn
+	// anything to keep working (T-Q10).
+	finalMeta := map[string]interface{}{"latency_ms": latency.Milliseconds()}
+	if len(steps) > 0 {
+		finalMeta["next_steps"] = steps
+	}
 	if err := r.bus.Publish(p.ThreadID, ChatEvent{
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "final",
 		Content:   response,
-		Metadata:  map[string]interface{}{"latency_ms": latency.Milliseconds()},
+		Metadata:  finalMeta,
 		Timestamp: now,
 	}); err != nil {
 		logrus.WithError(err).Warn("publish final event")

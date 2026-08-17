@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  PencilLine,
   Plug,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -20,6 +21,7 @@ const TOOL_META: Record<string, { icon: LucideIcon; label: string }> = {
   get_schema: { icon: FileText, label: "Schema lookup" },
   create_visualization: { icon: BarChart3, label: "Chart" },
   create_dashboard: { icon: ExternalLink, label: "Dashboard" },
+  update_dashboard: { icon: PencilLine, label: "Dashboard edit" },
   schedule_task: { icon: CalendarClock, label: "Schedule task" },
 };
 

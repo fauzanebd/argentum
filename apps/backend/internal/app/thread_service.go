@@ -590,9 +590,14 @@ func (s *ThreadService) AppendUserMessage(ctx context.Context, threadID, content
 
 // AppendAssistantMessage records the agent's turn, bumps last_message_at,
 // and may trigger a summary refresh.
+//
+// metadata is whatever the turn produced beside its text — today the next-step
+// suggestions (T-Q10) — and nil is the common case. The column and both marshal
+// sites already existed; only this parameter was missing, which is why the
+// suggestions needed no migration.
 func (s *ThreadService) AppendAssistantMessage(
 	ctx context.Context, threadID, content string,
-	tokensIn, tokensOut int, latencyMs int64,
+	tokensIn, tokensOut int, latencyMs int64, metadata map[string]any,
 ) (*domain.Message, error) {
 	now := time.Now()
 	m := &domain.Message{
@@ -602,6 +607,7 @@ func (s *ThreadService) AppendAssistantMessage(
 		TokensIn:  tokensIn,
 		TokensOut: tokensOut,
 		LatencyMs: latencyMs,
+		Metadata:  metadata,
 		CreatedAt: now,
 	}
 	if err := s.messages.Append(ctx, m); err != nil {

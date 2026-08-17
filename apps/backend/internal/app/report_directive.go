@@ -54,7 +54,7 @@ func ReportDirective(in ReportDirectiveInput) string {
 	// Named failure modes, because each of these is something a model did on a
 	// real run of this endpoint rather than something imagined here.
 	b.WriteString("Invoke the tool. Do not print its arguments as JSON in your reply — a code block is not a document and the caller receives no file.\n")
-	b.WriteString("Do not call create_dashboard: a chart in this report is a \"chart\" section inside the generate_document spec, not a dashboard panel.\n")
+	b.WriteString("Do not call create_dashboard or update_dashboard: a chart in this report is a \"chart\" section inside the generate_document spec, not a dashboard panel.\n")
 	b.WriteString("Query only what you need first; the document is the last thing you do.\n")
 	// The third named failure mode, and the one that produces a document nobody
 	// complains about and nobody reads: a spec that is a cover, a KPI row, a

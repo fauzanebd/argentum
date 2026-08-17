@@ -228,6 +228,14 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/feedback":               domain.RoleAdmin,
 	"GET /api/feedback/summary":       domain.RoleAdmin,
 
+	// Next-step chips (T-U13), split on the same line and for the same reasons.
+	// The pick is member because the person clicking is the person reading, and
+	// the row it writes says which of three buttons they pressed. The rate is
+	// admin because it is a company-wide number about whether a feature is worth
+	// its cost, which is a question for whoever pays the bill.
+	"POST /api/messages/:id/suggestion-picked": domain.RoleMember,
+	"GET /api/suggestions/summary":             domain.RoleAdmin,
+
 	// Native dashboards (T-D10). Reads are member: opening a dashboard is what a
 	// member is here to do, and the numbers are the company's own — the same
 	// read=member split the metric registry makes. Deleting is admin, which the

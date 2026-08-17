@@ -862,6 +862,13 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 	if s.QueryExamples != nil && s.EmbedCache != nil && s.Cfg.CookbookTopK > 0 {
 		runner = runner.WithCookbook(s.QueryExamples, s.Cfg.CookbookTopK)
 	}
+	// What is worth asking next (T-Q10). One more LLM call per answered turn, so
+	// it is switchable — NEXT_STEPS_ENABLED=false restores the previous turn
+	// exactly — and it defers to the credit check, because an answer must never
+	// be delayed by a suggestion when the tenant is nearly out of balance.
+	if s.Cfg.NextStepsEnabled {
+		runner = runner.WithNextSteps(true, s.UsageSvc)
+	}
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)
 		logrus.WithFields(logrus.Fields{

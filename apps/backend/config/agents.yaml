@@ -34,6 +34,9 @@ analytics_agent:
     - type: "custom"
       name: "create_dashboard"
       enabled: true
+    - type: "custom"
+      name: "update_dashboard"
+      enabled: true
 
   memory:
     type: "redis"

@@ -107,6 +107,21 @@ func TestCardsAndDashboardsTravelTogether(t *testing.T) {
 	}
 }
 
+// Building and revising travel together too (T-D22), and the failure without the
+// second is worse than a missing capability: an agent that can only build
+// answers "make it 2024" with a *second* dashboard. The tenant collects
+// near-duplicates, the link already sent keeps serving the wrong window, and the
+// dashboard the user is looking at never changes.
+func TestBuildingAndRevisingTravelTogether(t *testing.T) {
+	for _, tpl := range loadShipped(t).All() {
+		if slices.Contains(tpl.SuggestedTools, "create_dashboard") &&
+			!slices.Contains(tpl.SuggestedTools, "update_dashboard") {
+			t.Errorf("%s: suggests create_dashboard without update_dashboard — this agent "+
+				"answers a correction by building a second dashboard", tpl.Key)
+		}
+	}
+}
+
 // The two that act rather than answer stay off every card. schedule_task books
 // recurring spend on the tenant's credits and propose_action reaches outside
 // Argentum — an admin ticks those deliberately or not at all, and inheriting one
