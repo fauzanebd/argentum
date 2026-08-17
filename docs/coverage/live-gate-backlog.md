@@ -65,9 +65,17 @@ this file until now was driven through HTTP, `psql` or JSON-RPC, so the class of
 defect where the data is right and the *rendering* misstates it had no way to be
 caught. It took a minute to find one.
 
+**Revised 2026-08-17 again — §1f is added and NOT run.** The four tickets of the
+loop-after-the-answer build (`T-Q10`, `T-U13`, `T-D22`, `T-D23`) landed
+code-complete in one sitting, and this file's whole record says that is the state
+in which something is hiding: seven sittings, seven times something was found.
+Three of its gates need the stack and nothing else. **They are filed in §1f
+rather than in §2, deliberately** — the mistake this file recorded on 2026-08-08
+was a stack-only gate sitting under a heading that named a cost it did not have.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
-needs one of three things: the stack up, money spent, or a message sent to a real
-person's phone.
+needs one of four things: the stack up, money spent, a browser opened, or a
+message sent to a real person's phone.
 
 ---
 
@@ -322,6 +330,19 @@ a minute.
 list page, the chat embed inside a real transcript, and the dark ramp on a real
 dark card. `T-D8` and `T-D9` are unbuilt rather than ungated.
 
+## 1f. Owed by the loop-after-the-answer build — stack only, **not yet run**
+
+Added 2026-08-17. `T-Q10`, `T-U13`, `T-D22` and `T-D23` landed code-complete in
+one sitting ([`next-steps-and-revision.md`](next-steps-and-revision.md)), and by
+this file's own record that is the state in which seven builds out of seven were
+hiding something. These three need the compose stack and no money.
+
+| Owed by | The gate | What it would prove |
+| ------- | -------- | ------------------- |
+| `T-D22` | Migration `057` up, down and up against the real control database, with a scoped agent, an unrestricted agent (`allowed_tools = '{}'`) and an agent holding neither dashboard tool | That the backfill adds `update_dashboard` to exactly the agents holding `create_dashboard` — and, the item that would be catastrophic to get wrong, that it leaves the **unrestricted** agent alone. `allowed_tools <> '{}'` is the clause standing between this migration and narrowing an every-tool agent to one tool |
+| `T-U13` | Migration `058` up, down against a populated table, and up; then `POST /api/messages/:id/suggestion-picked` for another tenant's message (404), for an index the message does not have (400), and for a real chip | That the stored row carries the label and the `recommended` flag **read off the message** rather than off the request body, which is the property the whole table's value rests on. Plus `GET /api/suggestions/summary` answering 403 to a member and 200 to an admin |
+| `T-Q10` | Boot with `NEXT_STEPS_ENABLED=false`, run one turn, and diff the persisted message and the `final` event against a turn on the default | That the kill switch is a kill switch. The acceptance line is byte-identical, and this is the one item here a unit test genuinely cannot reach — it is about what reaches the database and the socket, not about what the function returns |
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |
@@ -341,6 +362,9 @@ dark card. `T-D8` and `T-D9` are unbuilt rather than ungated.
 | `T-Q6` | ~~A two-turn conversation at `PRIOR_WORK_TURNS=3` and again at `=0`~~ → **re-specified 2026-08-14**: `follow-up-breakdown-no-reschema` at `=3` and at `=0` on one model (two cases of spend), or a follow-up on a thread where turn 1 has fallen out of `CONTEXT_MAX_TURNS` ([`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md) §T-Q6) | **Run 2026-08-14 — the mechanism passes and the acceptance line does not measure it.** `role='tool'` rows exist now (the column had none), and injection fires at `=3` and never at `=0` while the rows are written at both. But six turns across the two arms produced **identical tool sequences**: inside `CONTEXT_MAX_TURNS` the assistant's own prior message already quotes the SQL, so the digest tells the model what it can read. T-Q6 is load-bearing only once the tool turn falls out of the window, which a two-turn conversation cannot reach ([`agent-quality.md`](agent-quality.md) §11) |
 | ~~`T-Q7`~~ | ~~The rolling-summary block appearing in a turn on a thread past 20 messages~~ | **Pass, 2026-08-14** on the 58-message thread: `summary_chars=202 message_count=60 history_window=20`, and the answer reconstructs the opening alert the window no longer covers. The line proving it **did not exist** — four silent exits, no success log, and nothing else records the composed user message, so injected and skipped logged identically. One of those exits (`messageCount` failing) disables T-Q7 on every thread and looks like a short conversation ([`agent-quality.md`](agent-quality.md) §12) |
 | `T-Q8` | A harvest that writes an example, and a turn that retrieves one | Embedding calls only, one per example. Every gate above `client.Embed` is proven ([`agent-quality.md`](agent-quality.md) §3) |
+| `T-D22` | Build the 08-17 two-panel dashboard, then in the same thread ask for the window change, a panel swapped to a line chart, and a third panel added — three turns, `update_dashboard` each time, the same id throughout. Then a fresh thread asking to change "the revenue dashboard" with no id | Four turns. The one that matters most is the last: the no-id path returns a **result** listing recent dashboards rather than a Go error, and this repo has already measured what an error does to deepseek — the identical call, seven times, until the budget ends the turn ([`next-steps-and-revision.md`](next-steps-and-revision.md) §5) |
+| `T-Q10` | Three turns — a plain aggregate, one that builds a dashboard, one that asks for clarification — with the `next_steps` metadata pasted for each; then the dashboard one again on an agent scoped to `get_schema` + `run_sql` | Four turns plus four suggestion passes. **It is also the only way to get the two numbers that decide the feature's future**: what the pass costs per turn, and its p95 — the pass sits in front of the `final` event, and above 1s the design moves to a second event and a message `UPDATE` |
+| `T-Q10` | The `next_steps` eval category — parse, cap, allowlist, no-figures, and the clarification negative — with the pass on and off | One set per arm. Rule 1 applies: the pass changes what reaches the user on every turn. The set carries a ±2-case noise band, so a one-case delta is not a result |
 | ~~`T-17`~~ | ~~`curl` the exposition; one trace waterfall for a tool-calling turn~~ | **Both run 2026-08-08 — ticket closed.** Exposition: 401 / 401 / 200 with the right token, queue gauges reading a queue discovered from Redis. Waterfall: one `agent.turn` of 7,750 ms with 18 ms inside `query_metric`, which is the LLM/SQL split the ticket asked for. It cost one case of model spend, and it found the defect §9 records — `memory.hydrate` was landing in its own trace ([`observability.md`](observability.md) §8–§9) |
 
 ~~`T-17`'s exposition half needs no spend and was not run on 2026-08-04~~ —
@@ -363,6 +387,19 @@ did not have. A gate in the wrong bucket is a gate nobody runs.
 | ------- | -------- | ------------------ |
 | `send_message`'s document link (T-V3) | A real WhatsApp message carrying a presigned link, opened on a handset | Same deferral as the row below and the same reason: it goes to a real phone. What a test cannot show is that the link survives WhatsApp's own URL handling and that the markdown-link flattening the chat path already does reaches this body too ([`report-video.md`](report-video.md) §8) |
 | `T-12a` | The message arrives | `.env` holds live Twilio credentials and the worker delivers, so closing this sends a real WhatsApp message to a real handset. **Deferred by the repo owner**, not by an implementer. Both halves of the ticket's gate are owed, because the un-allowlisted-target refusal is only reachable by approving a proposal ([`delivery-log.md`](delivery-log.md) Phase 2c) |
+
+## 3a. Needs a browser
+
+Added 2026-08-17, and it is the bucket §1e argued into existence — every gate in
+this file before that sitting was driven through HTTP, `psql` or JSON-RPC, so
+the class of defect where the data is right and the rendering lies about it had
+no way to be found. It took a minute to find one.
+
+| Owed by | The gate | Why a test cannot do it |
+| ------- | -------- | ----------------------- |
+| `T-D11` | The `/dashboards` list page, the chat embed inside a real transcript, and the dark chart ramp on a real dark card | Carried over from §1e. The dark ramp in particular: eight hexes were re-picked against a dark background and nothing but an eye confirms that |
+| `T-U13` | The chip row in both modes; the recommended chip visually distinct and its reason reachable without a mouse; a click filling the composer and starting **no** turn; the `suggestion_picks` row afterwards; and an older message in the same thread with no chips under it | The last one is the acceptance item most likely to be quietly wrong, because it is an absence. The "starts no turn" half is the rule this feature shares with the starter questions, and the reason is money |
+| `T-D23` | The header action, the prefilled composer, and the panel grid before and after one edit turn | The invalidation fires on a `tool_call` event naming `update_dashboard`; whether the grid actually redraws without a reload is a thing somebody watches happen |
 
 ## 4. Needs an operator's decision, not a gate
 

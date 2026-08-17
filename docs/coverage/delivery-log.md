@@ -3184,6 +3184,55 @@ back to the tree on 2026-08-17; what made them drift was that the work landed in
 one long sitting and the record was written for the *ticket* (`native-dashboards.md`)
 rather than for the *product*.
 
+## Phase 2u — The loop after the answer (2026-08-17)
+
+`T-Q10`, `T-U13`, `T-D22`, `T-D23` — the four tickets in
+[`../plan/05-next-steps-and-dashboard-revision.md`](../plan/05-next-steps-and-dashboard-revision.md),
+built in one sitting. Two asks with one shape: the product ended every turn at a
+full stop, and a dashboard the agent built could be created or deleted and
+nothing else.
+
+**The shape of it.** After an answer, one light-model pass asks what is worth
+asking next; at most three suggestions, at most one marked recommended, narrowed
+server-side against the tools the turn actually held, persisted on
+`messages.metadata` and published on the `final` event. The dashboard draws them
+as chips under the newest answer, a click fills the composer and sends nothing,
+and the pick writes a row — because a suggestion nobody clicks is worse than no
+suggestion, and the pick rate is the only thing that can say which this is.
+Beside that, `update_dashboard`: a **patch** against a stored dashboard,
+resolved to this thread's when no id is given, refusing a source change, merged
+through `DashboardService.Update` so the validation and the zero-row warning
+Phase 2t added stay one code path. And an "Ask for a change" action on the
+dashboard itself, which prefills chat with the dashboard's own markdown link.
+
+**What it is honest to say about it: nothing here has been run.** Unit-gated
+only — `make vet` / `make test` / `make lint-go` at 0 issues / `make types-check`
+/ `tsc -b` / `pnpm build`, and two unapplied migrations. By this log's own
+record that is the state in which seven sittings out of seven found something,
+and §1f of [`live-gate-backlog.md`](live-gate-backlog.md) is where the three
+stack-only gates are filed — in the cheap bucket, deliberately, because the
+mistake this project keeps making is filing a stack-only gate behind a cost it
+does not have.
+
+**One defect the build found in its own ticket, and it is the entry worth
+keeping.** `T-Q10` specifies dropping any suggestion containing a run of four or
+more digits, so that a chip cannot restate a figure. A year is four digits. The
+rule as written deletes *"compare with 2024"* — one of the most useful things
+this feature can suggest and among the likeliest to be clicked. A test caught it
+before the first live turn ever could have: the shipped rule separates a figure
+from a period (grouped or decimal numbers and runs of five or more are figures;
+four digits inside 1900–2099 is a year), and the ticket now carries the
+correction rather than the original line. Three smaller departures — the metering
+event, where the held tools are read from, and the migration numbers — are in
+[`next-steps-and-revision.md`](next-steps-and-revision.md) §2.
+
+**What this phase owes.** The two numbers that decide whether the suggestion pass
+keeps its place in front of the `final` event: what it costs per turn, and its
+p95. Both need model spend, neither exists, and the design has a stated fallback
+if the second exceeds 1s. Plus a browser for the chips, and `T-D13` — an edit
+silently changes what a share link serves, which is a `TODO` at the merge point
+today.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

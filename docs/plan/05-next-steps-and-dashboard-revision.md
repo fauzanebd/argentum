@@ -16,6 +16,30 @@ created and deleted.
 Both are the same missing loop — the product currently ends every turn at a full
 stop.
 
+> **Status, 2026-08-17: all four are code-complete and unit-gated. None has been
+> run against a live stack or a real model.** `make vet` / `make test` /
+> `make lint-go` (0 issues) / `make types-check` / `tsc -b` / `pnpm build` are
+> clean, and migrations `057_agent_tools_update_dashboard` and
+> `058_suggestion_picks` are written and unapplied. The record, the four
+> departures from these tickets and the full list of what is owed are in
+> [`../coverage/next-steps-and-revision.md`](../coverage/next-steps-and-revision.md).
+>
+> **One of those departures is a correction to this document rather than a
+> deviation from it.** `T-Q10` below says to drop any suggestion containing a
+> digit run of 4 or more. A year is a digit run of four, so that rule deletes
+> "compare with 2024" — one of the most useful suggestions this feature can make.
+> A test caught it. The shipped rule distinguishes a figure from a period:
+> grouped or decimal numbers and runs of five or more are figures, four digits
+> inside 1900–2099 is a year. The line below is left as written, because what it
+> was reaching for is right and only its cheap enforcement was wrong.
+>
+> The other three: the `next_steps` usage event is `metadata.feature` on the
+> `llm_call` the pass already bills (a second event would double-count, or record
+> a free-looking LLM call, which is the C-2 shape); held tools are read off
+> `agent.GetTools()` rather than `agentscope`, which carries sources and not tool
+> names; and the two migration numbers came out `057`/`058` rather than the
+> ticket's guesses, which is what `make migration-next` is for.
+
 ---
 
 ## What is true on `main` today
