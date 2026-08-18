@@ -188,6 +188,8 @@ services:
       LIGHT_LLM_API_KEY: ${LIGHT_LLM_API_KEY}
       LIGHT_LLM_MODEL: ${LIGHT_LLM_MODEL:-gpt-5-mini}
       LIGHT_LLM_BASE_URL: ${LIGHT_LLM_BASE_URL:-}
+      # OpenRouter zero-data-retention routing; see .env.example before enabling.
+      LLM_ZDR: ${LLM_ZDR:-false}
 
       # Metabase
       METABASE_URL: http://metabase:3000
@@ -306,6 +308,8 @@ services:
       LIGHT_LLM_API_KEY: ${LIGHT_LLM_API_KEY}
       LIGHT_LLM_MODEL: ${LIGHT_LLM_MODEL:-gpt-5-mini}
       LIGHT_LLM_BASE_URL: ${LIGHT_LLM_BASE_URL:-}
+      # OpenRouter zero-data-retention routing; see .env.example before enabling.
+      LLM_ZDR: ${LLM_ZDR:-false}
 
       METABASE_URL: http://metabase:3000
       METABASE_PUBLIC_URL: ${METABASE_PUBLIC_URL:-http://localhost:3000}

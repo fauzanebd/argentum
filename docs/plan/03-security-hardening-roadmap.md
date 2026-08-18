@@ -544,6 +544,18 @@ matrix run (`T-Q5`) rather than as a single number.
   routing. Whatever that endpoint is, it is a subprocessor with its own retention
   policy, and it belongs in the customer brief and in every questionnaire answer
   we give.
+  - Half of that answer is now a switch: `LLM_ZDR=true` sends OpenRouter's
+    `provider.zdr` on every inference request (`internal/llmzdr`), which confines
+    routing to endpoints that retain nothing and may not train on the payload.
+    It ships off, because turning it on is a model decision as much as a privacy
+    one — a model with no ZDR endpoint 404s instead of falling back, and the
+    model every published quality number here was measured on,
+    `deepseek/deepseek-v3.2`, is exactly the kind that may not have one. Check
+    `https://openrouter.ai/api/v1/endpoints/zdr` against the deployed
+    `LLM_MODEL` and `LIGHT_LLM_MODEL`, then decide. The flag covers inference
+    only: OpenRouter's own docs exclude plugins and tool calls such as web
+    search, so a questionnaire answer that says "zero retention" without that
+    caveat is wrong.
 - **Establish whether any live tenant is on SQL Server.** If so, verify their
   login is `db_datareader`-only *before* the customer brief's boundaries section
   reaches them, because that section tells them to check. The `T-H3` finding

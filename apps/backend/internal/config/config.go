@@ -53,6 +53,19 @@ type Config struct {
 	LightLLMModel     string
 	LightLLMBaseURL   string
 
+	// LLMZDR sends OpenRouter's `provider.zdr` preference on every inference
+	// request, restricting routing to endpoints that retain nothing and may
+	// not train on the payload. Applies to both LLM tiers, since the light
+	// model sees the same customer prompts as the primary one.
+	//
+	// Default off, and deliberately: ZDR narrows the endpoint pool, and a
+	// model with no ZDR endpoint (OpenRouter lists the current set at
+	// /api/v1/endpoints/zdr) answers every request with a 404 instead. That is
+	// an outage, so switching it on is an operator's decision about their own
+	// model choice — not a default this repo can make for them. Set
+	// LLM_ZDR=true after confirming the configured models have ZDR endpoints.
+	LLMZDR bool
+
 	// Embedding-based table picker. Opt-in per-source via the
 	// db_connections.enable_table_embedding flag; this group sets the
 	// provider + model + dimensions for the embeddings themselves.
@@ -426,6 +439,8 @@ func Load() (*Config, error) {
 		LightLLMAPIKey:    getEnv("LIGHT_LLM_API_KEY", ""),
 		LightLLMModel:     getEnv("LIGHT_LLM_MODEL", "gpt-5-mini"),
 		LightLLMBaseURL:   getEnv("LIGHT_LLM_BASE_URL", ""),
+
+		LLMZDR: getEnv("LLM_ZDR", "false") == "true",
 
 		// Embedding-based table picker
 		EmbeddingEnabled:   getEnv("EMBEDDING_ENABLED", "true") == "true",

@@ -26,11 +26,18 @@ type EffectiveProfile struct {
 	BaseURL   string
 	APIKey    string
 
+	// ZDR mirrors cfg.LLMZDR onto the LLM tiers. It is env-only — a tenant
+	// row cannot loosen a privacy guarantee the deployment made — so it never
+	// varies between profiles of the same process and is deliberately absent
+	// from Version. Unset for the embedding tier: OpenRouter serves no
+	// embeddings endpoint, so there is nothing there to route.
+	ZDR bool
+
 	Dim       int // embedding only
 	BatchSize int // embedding only
 
-	// Version fingerprints the profile. Changes whenever any field above
-	// would change, so the client cache busts on rotation.
+	// Version fingerprints the profile. Changes whenever any tenant-settable
+	// field above would change, so the client cache busts on rotation.
 	Version string
 }
 
@@ -87,6 +94,7 @@ func (r *Resolver) envProfile(tier domain.LLMTier) *EffectiveProfile {
 			Model:     r.cfg.LLMModel,
 			BaseURL:   r.cfg.LLMBaseURL,
 			APIKey:    r.cfg.LLMAPIKey,
+			ZDR:       r.cfg.LLMZDR,
 			Version:   "env:primary",
 		}
 	case domain.LLMTierLight:
@@ -102,6 +110,7 @@ func (r *Resolver) envProfile(tier domain.LLMTier) *EffectiveProfile {
 			Model:     r.cfg.LightLLMModel,
 			BaseURL:   r.cfg.LightLLMBaseURL,
 			APIKey:    r.cfg.LightLLMAPIKey,
+			ZDR:       r.cfg.LLMZDR,
 			Version:   "env:light",
 		}
 	case domain.LLMTierEmbedding:

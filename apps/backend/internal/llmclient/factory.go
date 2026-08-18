@@ -14,10 +14,12 @@ import (
 	"github.com/Ingenimax/agent-sdk-go/pkg/llm/openai"
 	oaisdk "github.com/openai/openai-go/v2"
 	"github.com/openai/openai-go/v2/option"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/genai"
 
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/llmusage"
+	"github.com/fauzanebd/argentum/internal/llmzdr"
 )
 
 // Spec is the minimum input Build needs to construct an LLM client. Used by
@@ -28,11 +30,12 @@ type Spec struct {
 	APIKey    string
 	Model     string
 	BaseURL   string
+	ZDR       bool // LLM_ZDR: pin routing to OpenRouter zero-data-retention endpoints
 }
 
 // Build constructs an LLM client from a fully-resolved spec.
 func Build(spec Spec) (interfaces.LLM, error) {
-	return build(context.Background(), spec.Interface, spec.APIKey, spec.Model, spec.BaseURL)
+	return build(context.Background(), spec)
 }
 
 // BuildPrimary constructs the main agent LLM per LLM_INTERFACE / LLM_PROVIDER.
@@ -42,6 +45,7 @@ func BuildPrimary(cfg *config.Config) (interfaces.LLM, error) {
 		APIKey:    cfg.LLMAPIKey,
 		Model:     cfg.LLMModel,
 		BaseURL:   cfg.LLMBaseURL,
+		ZDR:       cfg.LLMZDR,
 	})
 }
 
@@ -56,6 +60,7 @@ func BuildLight(cfg *config.Config) (interfaces.LLM, error) {
 		APIKey:    cfg.LightLLMAPIKey,
 		Model:     cfg.LightLLMModel,
 		BaseURL:   cfg.LightLLMBaseURL,
+		ZDR:       cfg.LLMZDR,
 	})
 }
 
@@ -76,10 +81,20 @@ func BuildClassifier(cfg *config.Config) (interfaces.LLM, error) {
 		iface = cfg.EffectiveLLMInterface()
 		baseURL = cfg.LLMBaseURL
 	}
-	return Build(Spec{Interface: iface, APIKey: apiKey, Model: model, BaseURL: baseURL})
+	return Build(Spec{Interface: iface, APIKey: apiKey, Model: model, BaseURL: baseURL, ZDR: cfg.LLMZDR})
 }
 
-func build(ctx context.Context, iface, apiKey, model, baseURL string) (interfaces.LLM, error) {
+func build(ctx context.Context, spec Spec) (interfaces.LLM, error) {
+	iface, apiKey, model, baseURL := spec.Interface, spec.APIKey, spec.Model, spec.BaseURL
+	if spec.ZDR && !zdrEnforceable(iface, baseURL) {
+		// A privacy switch that silently does nothing is worse than no switch:
+		// the operator believes the prompts are protected. Logged per client
+		// build, which is rare — llmtenant caches them.
+		logrus.WithFields(logrus.Fields{
+			"interface": iface,
+			"base_url":  baseURL,
+		}).Warn("LLM_ZDR is set but this endpoint cannot enforce it; requests will route with no zero-data-retention guarantee")
+	}
 	switch iface {
 	case config.LLMInterfaceAnthropic:
 		opts := []anthropic.Option{}
@@ -124,9 +139,21 @@ func build(ctx context.Context, iface, apiKey, model, baseURL string) (interface
 			opts = append(opts, openai.WithBaseURL(baseURL))
 		}
 		client := openai.NewClient(apiKey, opts...)
-		installUsageTap(client, apiKey, baseURL)
+		installUsageTap(client, apiKey, baseURL, spec.ZDR)
 		return client, nil
 	}
+}
+
+// zdrEnforceable reports whether a spec can actually carry provider.zdr onto
+// the wire. OpenRouter speaks only the OpenAI wire format, so the Anthropic
+// and Gemini clients — which POST to /v1/messages and the genai endpoints —
+// have nowhere to put the preference even when pointed at an OpenRouter host.
+func zdrEnforceable(iface, baseURL string) bool {
+	switch iface {
+	case config.LLMInterfaceAnthropic, config.LLMInterfaceGemini:
+		return false
+	}
+	return llmzdr.TargetsOpenRouter(baseURL)
 }
 
 // defaultOpenAIBaseURL mirrors agent-sdk-go's own default; installUsageTap has
@@ -148,7 +175,7 @@ const defaultOpenAIBaseURL = "https://api.openai.com/v1"
 // The tap only acts when app.MeteredLLM has put a collector in the request
 // context and the response is text/event-stream, so non-streaming calls keep
 // being metered from the SDK's own LLMResponse.Usage with no double counting.
-func installUsageTap(c *openai.OpenAIClient, apiKey, baseURL string) {
+func installUsageTap(c *openai.OpenAIClient, apiKey, baseURL string, zdr bool) {
 	if c == nil {
 		return
 	}
@@ -156,7 +183,14 @@ func installUsageTap(c *openai.OpenAIClient, apiKey, baseURL string) {
 	if url == "" {
 		url = defaultOpenAIBaseURL
 	}
-	httpClient := llmusage.NewClient(nil)
+	// The ZDR rewriter sits underneath the usage tap: it edits the request on
+	// the way out, the tap reads the response on the way back, and neither
+	// needs to know about the other.
+	var base http.RoundTripper
+	if zdr {
+		base = llmzdr.New(nil)
+	}
+	httpClient := llmusage.NewClient(base)
 	reqOpts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithBaseURL(url),

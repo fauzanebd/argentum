@@ -84,6 +84,7 @@ func (c *ClientCache) For(ctx context.Context, companyID string, tier domain.LLM
 		APIKey:    profile.APIKey,
 		Model:     profile.Model,
 		BaseURL:   profile.BaseURL,
+		ZDR:       profile.ZDR,
 	})
 	if err != nil {
 		return nil, nil, err
