@@ -283,26 +283,18 @@ func DecodeDigests(raw string) []ToolDigest {
 	return out
 }
 
-// sdkToolErrorPrefixes are how agent-sdk-go renders a tool that returned a Go
-// error, per provider. Matched rather than "anything that is not JSON",
-// because a tool is allowed to answer in prose and calling that a failure
-// would tell the next turn its work is undone when it is not.
-var sdkToolErrorPrefixes = []string{"Error executing tool:", "Error:"}
-
 // applyRawFailure reads a result the stream carried as a plain string. Only
 // the SDK's own error rendering counts; anything else leaves the digest as it
 // was, which is what a call with an unreadable result has always looked like.
+//
+// The prefix table itself moved to agentbudget under T-Q13, where the turn's
+// success tracking needs the same answer. Two copies of "what does a failed
+// tool call look like" would be two answers, and the one that drifts is
+// whichever sits on the less-exercised path.
 func (d *ToolDigest) applyRawFailure(raw string) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return
-	}
-	for _, p := range sdkToolErrorPrefixes {
-		if strings.HasPrefix(raw, p) {
-			d.Err = truncateDigestErr(strings.TrimSpace(strings.TrimPrefix(raw, p)))
-			d.Status = DigestStatusFailed
-			return
-		}
+	if msg, failed := agentbudget.ToolErrorText(raw); failed {
+		d.Err = truncateDigestErr(msg)
+		d.Status = DigestStatusFailed
 	}
 }
 

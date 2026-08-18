@@ -58,8 +58,9 @@ type Collector struct {
 	// returned is the wrong-but-nonempty class: the fabrication gate passes it,
 	// because rows did come back, while a number nothing produced sits in the
 	// paragraph. Counted here so the rate is a series rather than a grep.
-	ungroundedReplies int64
-	ungroundedFigures int64
+	ungroundedReplies  int64
+	ungroundedFigures  int64
+	unevidencedActions int64
 
 	// Domain counters (T-17). Bounded label sets, all of them: a tool name comes
 	// from the registry, an action kind from the action registry, a channel from
@@ -373,6 +374,24 @@ func (c *Collector) RecordUngroundedFigures(figures int) {
 	atomic.AddInt64(&c.ungroundedFigures, int64(figures))
 }
 
+// RecordUnevidencedAction counts one reply claiming a completed change on a
+// turn that made no successful mutating tool call (T-Q13).
+//
+// **It counts and does not block, and the order matters.** The reply this was
+// written from — "Done — your dashboard is now called…" on a turn with zero
+// tool calls — was produced by one attempt in three, non-deterministically, on
+// a thread where the other two attempts behaved. A guardrail that rewrote the
+// reply would therefore be rewriting correct replies at some unknown rate, and
+// this repo has narrowed a guardrail regex after it blocked something
+// legitimate six times in the last twenty pre-sprint commits. The rate is
+// measured first; tightening is a decision somebody makes against a number.
+func (c *Collector) RecordUnevidencedAction() {
+	if c == nil {
+		return
+	}
+	atomic.AddInt64(&c.unevidencedActions, 1)
+}
+
 // RecordTurn counts one completed agent turn and its wall clock.
 func (c *Collector) RecordTurn(d time.Duration) {
 	if c == nil {
@@ -503,8 +522,9 @@ func (c *Collector) GetSnapshot() MetricsSnapshot {
 		},
 
 		Grounding: GroundingMetrics{
-			UngroundedReplies: atomic.LoadInt64(&c.ungroundedReplies),
-			UngroundedFigures: atomic.LoadInt64(&c.ungroundedFigures),
+			UngroundedReplies:  atomic.LoadInt64(&c.ungroundedReplies),
+			UngroundedFigures:  atomic.LoadInt64(&c.ungroundedFigures),
+			UnevidencedActions: atomic.LoadInt64(&c.unevidencedActions),
 		},
 
 		APIV1:  c.apiSnapshot(),
@@ -648,6 +668,7 @@ func (c *Collector) Reset() {
 	atomic.StoreInt64(&c.contextResets, 0)
 	atomic.StoreInt64(&c.ungroundedReplies, 0)
 	atomic.StoreInt64(&c.ungroundedFigures, 0)
+	atomic.StoreInt64(&c.unevidencedActions, 0)
 
 	c.mu.Lock()
 	c.apiRoutes = map[string]*routeAgg{}
@@ -705,6 +726,12 @@ type GroundingMetrics struct {
 	UngroundedReplies int64 `json:"ungrounded_replies"`
 	// UngroundedFigures is how many figures those replies carried in total.
 	UngroundedFigures int64 `json:"ungrounded_figures"`
+	// UnevidencedActions is replies claiming a completed change on a turn that
+	// made no successful mutating tool call (T-Q13). The same family as the two
+	// above and a different question: those ask whether a *figure* came from a
+	// tool, this asks whether an *action* happened at all. A reply saying "Done"
+	// carries no figure, so the two counters above stay at zero for it.
+	UnevidencedActions int64 `json:"unevidenced_actions"`
 }
 
 // ToolMetrics is one tool's traffic, recorded where the audit row is written.

@@ -60,6 +60,65 @@ func TestSimpleDerivationsAreGrounded(t *testing.T) {
 	}
 }
 
+// T-Q14, and this is the exact reply the 2026-08-18 gate produced. run_sql
+// returned 3,863,405,700.00 and the table printed 3,860,405,700.00 — three
+// million out, 0.078%, inside the one-percent tolerance, reported clean. A
+// figure written to the cent is quoted, not rendered, and a reader will quote
+// it onward exactly as written.
+func TestAMisquotedFullPrecisionFigureIsUngrounded(t *testing.T) {
+	returned := []float64{3863405700}
+	rep := CheckGrounding("December revenue was $3,860,405,700.00.", returned)
+
+	if !rep.Checked {
+		t.Fatal("the comparison did not run")
+	}
+	if rep.Clean() {
+		t.Error("a 0.078% misquote of a full-precision figure was accepted")
+	}
+}
+
+// The other half of the same change: the tolerance stays where it was for a
+// figure that is deliberately approximate, because the system prompt requires
+// that rendering. Tightening both is the fix that would have made the
+// instrument useless on Indonesian traffic.
+func TestARenderedFigureKeepsTheLooseTolerance(t *testing.T) {
+	returned := []float64{3863405700}
+	for _, reply := range []string{
+		"Total penjualan Rp 3,86 Miliar.",
+		"Revenue was 3,863.4 million.",
+		"Revenue was about 3.86bn.",
+	} {
+		if rep := CheckGrounding(reply, returned); !rep.Clean() {
+			t.Errorf("%q reported ungrounded figures %+v", reply, rep.Ungrounded)
+		}
+	}
+}
+
+func TestTheCorrectFullPrecisionFigureIsGrounded(t *testing.T) {
+	returned := []float64{3863405700}
+	for _, reply := range []string{
+		"December revenue was $3,863,405,700.00.",
+		"December revenue was Rp 3.863.405.700.",
+		"December revenue was 3863405700.",
+	} {
+		if rep := CheckGrounding(reply, returned); !rep.Clean() {
+			t.Errorf("%q reported ungrounded figures %+v", reply, rep.Ungrounded)
+		}
+	}
+}
+
+// A derived total keeps the loose tolerance whatever it looks like. The model
+// did the arithmetic over numbers a driver may have rounded on the way out, so
+// holding a quarter total written to the cent to 1e-9 would flag every correct
+// one.
+func TestADerivedTotalWrittenToTheCentStaysGrounded(t *testing.T) {
+	returned := []float64{3863405700.004, 3708552300.004}
+	rep := CheckGrounding("The two months together came to $7,571,958,000.00.", returned)
+	if !rep.Clean() {
+		t.Errorf("a derived total was flagged for rounding: %+v", rep.Ungrounded)
+	}
+}
+
 // Years, quarters, list positions and "the top 10" are the overwhelming
 // majority of false positives, and none of them is a figure anyone fabricates.
 func TestSmallIntegersAreNotTreatedAsFigures(t *testing.T) {

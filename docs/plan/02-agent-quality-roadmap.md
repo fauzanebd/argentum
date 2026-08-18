@@ -797,7 +797,7 @@ All three tickets passed what they were written to prove. The two tickets below
 are what the sitting found *beside* them, and both are the same family as
 `T-Q11`/`T-Q12`: something reached the user of record that no evidence supports.
 
-## `T-Q13` A claimed action nobody performed, with no refusal behind it — 1.5d
+## `T-Q13` A claimed action nobody performed, with no refusal behind it — 1.5d · **built 2026-08-18, unit-gated; live half owed**
 **Repo:** BE · **Deps:** none (extends `T-Q12`'s ground) · **Priority:** P0 · **Migration:** none
 
 ### Why
@@ -890,7 +890,7 @@ until one turn claims an unperformed edit (one in three at
 turn and not on the control. **~$0.10, about six turns.** Rule 1 does not apply
 while it only counts; it does the day it rewrites a reply.
 
-## `T-Q14` A misquoted figure is inside the grounding tolerance — 0.5d
+## `T-Q14` A misquoted figure is inside the grounding tolerance — 0.5d · **built and gated 2026-08-18**
 **Repo:** BE · **Deps:** none · **Priority:** P1 · **Migration:** none
 
 ### Why

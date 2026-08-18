@@ -769,6 +769,11 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// written against the text the user will actually read — the redacted one, the
 	// rescued one — rather than against what the agent first produced (T-Q10).
 	snap := tracker.Snapshot()
+	// After the rescue and the redaction, on the text the user will actually
+	// read: a claim the guardrails have already replaced is not this turn's
+	// claim, and one the redaction blanked is not one anybody will act on
+	// (T-Q13).
+	unevidenced := r.checkActionEvidence(ctx, p, response, snap)
 	steps := r.suggestNextSteps(ctx, p, response,
 		heldToolNames(agent.GetTools()), snap.Tools,
 		response != agentWrote)
@@ -786,7 +791,11 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		"tool_calls": snap.ToolCalls,
 		"data_rows":  snap.DataRows,
 		"ungrounded": ungrounded,
-		"next_steps": len(steps),
+		// Beside `ungrounded` and for its reason (T-Q13): a turn is found by its
+		// completion line, and a rate nobody can filter for is a rate nobody
+		// reads. Zero on every honest turn, which is what makes a 1 findable.
+		"unevidenced": unevidenced,
+		"next_steps":  len(steps),
 	}).Info("turn completed")
 	return nil
 }
@@ -1415,6 +1424,72 @@ func (r *ChatRunner) checkGrounding(ctx context.Context, p queue.ChatRunPayload,
 	}).Warn("reply states a figure no tool result contains; not blocked, recorded for review")
 	return n
 }
+
+// checkActionEvidence measures whether a reply claiming a completed change had
+// a successful mutating tool call behind it (T-Q13).
+//
+// **What it is not.** It is not checkGrounding with different words.
+// CheckGrounding asks whether every *figure* came from a tool, and the reply
+// this was written from — *"Done — your dashboard is now called…"*, on a turn
+// with zero tool calls, no `agent_actions` row and the title unchanged —
+// contains no figure at all. Nor is it T-Q12's fix: that one closed the case
+// where a *refused* call was remembered as one that ran, and this turn's
+// history held no refusal anywhere. The claim is an action, and nothing in this
+// product checked those.
+//
+// **It reads this turn's snapshot, never the prior-work digest.** The digest is
+// T-Q12's ground and is already correct; what this asks about is what happened
+// in *this* turn, which `tracker.Snapshot()` already carries.
+//
+// **It counts and does not rewrite**, for the reason RecordUnevidencedAction
+// gives: the failure is one attempt in three, so a gate would be replacing
+// correct replies at an unmeasured rate. Rewriting is the next ticket's
+// decision, made against this number.
+func (r *ChatRunner) checkActionEvidence(
+	ctx context.Context, p queue.ChatRunPayload, response string, snap agentbudget.Snapshot,
+) int {
+	claim, claimed := guardrails.ClaimsCompletedAction(response)
+	if !claimed {
+		return 0
+	}
+	// Succeeded, not Tools: a call the model made and the tool refused is not
+	// evidence that anything changed. That is T-Q12's sequence seen from the
+	// other end, and the ticket asks for it to be counted.
+	for _, name := range snap.Succeeded {
+		if mutatingTools[name] {
+			return 0
+		}
+	}
+	metrics.Default().RecordUnevidencedAction()
+	tracing.Count(ctx, "unevidenced_actions", 1)
+	logrus.WithFields(logrus.Fields{
+		"company_id": p.CompanyID,
+		"thread_id":  p.ThreadID,
+		"message_id": p.UserMsgID,
+		// The pattern that matched, never the sentence: a matched sentence
+		// carries the tenant's own dashboard titles, and an instrument is not a
+		// reason to put those in a log line.
+		"claim":      claim,
+		"tool_calls": snap.ToolCalls,
+		"succeeded":  strings.Join(snap.Succeeded, ","),
+	}).Warn("reply claims a completed change with no successful mutating tool call; not blocked, recorded for review")
+	return 1
+}
+
+// mutatingTools is the release's write-capable tool names, resolved once.
+//
+// Package-level because tools.MutatingNames walks the whole registry and the
+// answer cannot change at run time — it is a property of the build, not of the
+// deployment or the tenant. The set lives on the tools themselves
+// (`internal/tools/mutating.go`), so a tool added next year is included without
+// anybody remembering this line.
+var mutatingTools = func() map[string]bool {
+	out := map[string]bool{}
+	for _, n := range tools.MutatingNames() {
+		out[n] = true
+	}
+	return out
+}()
 
 // rememberToolWork records what this turn did, as one `role: tool` message
 // (T-Q6).

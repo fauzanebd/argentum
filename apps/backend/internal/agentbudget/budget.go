@@ -175,6 +175,15 @@ type Tracker struct {
 	exhausted        bool
 	reason           string
 	tools            []string
+	// succeeded is the subset of tools whose call actually worked (T-Q13).
+	//
+	// Separate from `tools` because the two answer different questions and the
+	// difference is the whole of T-Q13: `tools` is what the model attempted,
+	// `succeeded` is what happened. A turn that called update_dashboard and got
+	// an error back has the tool in the first list and not the second, and a
+	// reply saying "Done" on such a turn is making the same unevidenced claim as
+	// one that called nothing at all.
+	succeeded []string
 }
 
 // New returns a tracker for one turn. The wall clock starts now: a turn that
@@ -214,7 +223,11 @@ type Snapshot struct {
 	Exhausted        bool
 	Reason           string
 	Tools            []string
-	Elapsed          time.Duration
+	// Succeeded is the tools whose call returned a result rather than a failure
+	// (T-Q13). A refused call never appears — the guard returns the refusal
+	// without executing — and neither does one that errored.
+	Succeeded []string
+	Elapsed   time.Duration
 }
 
 // Snapshot returns the current state of the turn.
@@ -226,6 +239,8 @@ func (t *Tracker) Snapshot() Snapshot {
 	defer t.mu.Unlock()
 	tools := make([]string, len(t.tools))
 	copy(tools, t.tools)
+	succeeded := make([]string, len(t.succeeded))
+	copy(succeeded, t.succeeded)
 	return Snapshot{
 		ToolCalls:        t.toolCalls,
 		DataCalls:        t.dataCalls,
@@ -236,6 +251,7 @@ func (t *Tracker) Snapshot() Snapshot {
 		Exhausted:        t.exhausted,
 		Reason:           t.reason,
 		Tools:            tools,
+		Succeeded:        succeeded,
 		Elapsed:          time.Since(t.start),
 	}
 }
@@ -337,6 +353,12 @@ func (t *Tracker) Observe(tool, result string, err error) {
 	if err != nil {
 		t.toolErrors++
 		return
+	}
+	// Recorded before the data-tool filter below, because T-Q13 asks about
+	// *mutating* tools and none of them is a data tool: filtering first would
+	// leave `succeeded` empty for exactly the calls the check exists to find.
+	if _, failed := ToolErrorText(result); !failed && !resultCarriesError(result) {
+		t.succeeded = append(t.succeeded, tool)
 	}
 	if !dataTools[tool] {
 		return
@@ -459,6 +481,62 @@ func IsRefusalPayload(result map[string]interface{}) bool {
 	}
 	b, _ := result["budget_exhausted"].(bool)
 	return b
+}
+
+// ToolErrorText reports whether a raw tool result is agent-sdk-go's rendering
+// of a Go error, and what the error said.
+//
+// Matched on the SDK's own two prefixes rather than on "anything that is not
+// JSON", because a tool is allowed to answer in prose and calling that a
+// failure would tell the next turn its work is undone when it is not — the
+// distinction T-Q12 was built on.
+//
+// It lives here rather than in the digest that first needed it because a second
+// caller arrived (T-Q13's success tracking, above) and two copies of "what does
+// a failed tool call look like" is two answers that drift. Same promotion, and
+// the same reason, as metric.ValidateTemplate becoming sqlguard.
+func ToolErrorText(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	for _, p := range sdkToolErrorPrefixes {
+		if strings.HasPrefix(raw, p) {
+			return strings.TrimSpace(strings.TrimPrefix(raw, p)), true
+		}
+	}
+	return "", false
+}
+
+// sdkToolErrorPrefixes are how agent-sdk-go renders a tool that returned a Go
+// error, per provider: OpenAI's streaming path writes the first, the Anthropic
+// path the second.
+var sdkToolErrorPrefixes = []string{"Error executing tool:", "Error:"}
+
+// resultCarriesError reports whether a JSON tool result is one of our own
+// tools' structured failures — `{"error": "…"}` — as opposed to a result.
+//
+// Our write-capable tools answer this way rather than with a Go error, so that
+// the model reads the reason and can correct itself. That makes it a failure
+// the model saw, and a mutation that did not happen.
+func resultCarriesError(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if !strings.HasPrefix(raw, "{") {
+		return false
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return false
+	}
+	if s, ok := m["error"].(string); ok && strings.TrimSpace(s) != "" {
+		return true
+	}
+	// A refusal payload is the budget guard's, not a tool's, and it never
+	// reaches Observe today — the guard returns before executing. Checked anyway
+	// because "the call did not run" is the one thing this must never read as
+	// success, and a future caller that observes a refusal would otherwise flip
+	// it silently.
+	return IsRefusalPayload(m)
 }
 
 // RefusalReason is why the call was refused ("iteration budget spent (8 of

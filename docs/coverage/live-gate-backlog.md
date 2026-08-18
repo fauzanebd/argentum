@@ -543,6 +543,16 @@ and any sitting here starts with `ps ax | grep -E 'exe/worker|bin/worker'` and a
 check that the running sidecar is the one that was just built. A parse that looks
 wrong is otherwise indistinguishable from a parse served by yesterday's parser.
 
+## 1i. Owed by `T-Q13` and `T-Q14` (2026-08-18) — one half run, one half priced
+
+`T-Q14`'s live half is **run and passing, for $0.00**, exactly as the ticket
+predicted: the reply is already persisted, so the check runs on stored text.
+
+| Owed by | The gate | Bucket | Outcome |
+| ------- | -------- | ------ | ------- |
+| ~~`T-Q14`~~ | ~~One stored reply that prints a full-precision table, re-checked~~ | ~~§1 stack~~ | **Run 2026-08-18 — pass.** `messages.d0ef1f33`, the Q4 monthly table from §1g, re-checked against its own `run_sql` re-executed on the demo warehouse today (`3,377,718,500` / `3,708,552,300` / `3,863,405,700`). The build now reports **`ungrounded=[3,860,405,700, 10,946,676,500]`** where 08-18 reported only the second. The misquote is **0.0777%** off — grounded under the one-percent rule, flagged under the exact one — and the derived total is 3,000,000 low because it is the sum of the misquote. October and November match to the cent and are untouched, which is the arm that says the tightening did not simply flag everything |
+| `T-Q13` | Repeat §1g's sequence — a create turn engineered to spend its iteration budget, then the rename on the same thread — until one turn claims an unperformed edit (one in three at `AGENT_MAX_ITERATIONS=2` on `kimi-k2.6`), and show `unevidenced=1` on that turn's `turn completed` line and `unevidenced=0` on the control that called the tool | §2 money | **~$0.10**, about six turns. Rule 1 does not apply while it only counts; it does the day it rewrites a reply |
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |

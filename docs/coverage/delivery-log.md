@@ -3750,6 +3750,71 @@ is missing was more work than the arm was worth, so that branch of the
 classifier is covered by unit tests and by no file — written down here rather
 than counted as passing.
 
+## Phase 3c — What a turn says it did, and what a figure says it is (2026-08-18)
+
+`T-Q13` and `T-Q14`, the two findings the 08-18 sitting left beside its own
+tickets, built in one sitting. They are the same family as `T-Q11` and `T-Q12`
+and they close the last two doors in it: something reached the user of record
+that no evidence supports.
+
+**`T-Q14` is small and its live half is already run, for $0.00.** The tolerance
+was doing two jobs. `Rp 3,86 Miliar` is the *correct* rendering of 3,863,405,700
+under this product's own system prompt, so the one-percent band has to exist —
+and one percent of a billion is ten million, which is why
+`$3,860,405,700.00` read as clean. The two jobs are now separate: a figure
+written in magnitude units keeps the band, and a figure written out in full is
+matched at 1e-9. Re-checking the persisted 08-18 reply against its own `run_sql`
+re-executed on the demo warehouse, this build reports
+`ungrounded=[3,860,405,700, 10,946,676,500]` where that day reported only the
+second. The misquote is **0.0777%** off. October and November match to the cent
+and are not flagged, which is the arm that matters: the tightening did not
+simply flag everything.
+
+**`T-Q13` is the P0, and it is an instrument rather than a gate.** The reply it
+was written from — *"Done — your dashboard is now called…"* on a turn with zero
+tool calls, no `agent_actions` row and the title unchanged — contains **no
+figure at all**, so `CheckGrounding` had nothing to check and `CheckFabrication`
+was satisfied by evidence existing. The claim is an *action*, and nothing here
+checked those.
+
+Three pieces, and the middle one is the part worth keeping:
+
+- **`guardrails.ClaimsCompletedAction`** reads completion language, not past
+  tense: "Done —", "I've updated", "has been renamed", "is now called", and the
+  Indonesian *sudah/telah/berhasil* forms **in the first version rather than
+  after a gate finds the instrument English-only**, which is `T-Q3`'s lesson.
+  A sentence carrying a prior-turn marker (*earlier*, *previously*,
+  *sebelumnya*) is not this turn's claim.
+- **The mutating set is a property of the tools** (`internal/tools/mutating.go`),
+  not a list beside the check. A constant somewhere else would be right the day
+  it was written and wrong the first time a tool was added — the `T-14` lesson.
+  `IsMutating` walks *through* the budget guard and the audit recorder, because
+  both embed `interfaces.Tool` and hide methods it does not declare; a check
+  that asked the wrapper would find nothing mutating and would therefore never
+  count, which is the worst failure available to an instrument: silent, and
+  shaped like good news.
+- **The tracker now separates attempted from succeeded.** `Snapshot.Tools` is
+  what the model called; `Snapshot.Succeeded` is what worked. A refused call
+  never reaches the second, which is how *"I've updated the dashboard"* on a
+  budget-refused turn is counted — `T-Q12`'s sequence seen from the other end.
+
+It counts and does not rewrite. The failure is one attempt in three, so a gate
+would be replacing correct replies at an unmeasured rate, and this repo has
+narrowed a guardrail regex after it blocked something legitimate six times in
+twenty pre-sprint commits. `unevidenced_actions_total` lands on the process
+counters, on the turn span, and on the `turn completed` line beside
+`ungrounded` — the `T-Q11` shape, and for `T-Q11`'s reason: a rate nobody can
+filter for is a rate nobody reads.
+
+**One promotion fell out of it.** "What does a failed tool call look like" now
+has one answer — `agentbudget.ToolErrorText` — where it had two: the digest's
+prefix table (T-Q12) and the success tracking this ticket needed. Same move, and
+the same argument, as `metric.ValidateTemplate` becoming `sqlguard`.
+
+**What is owed:** `T-Q13`'s live half, §1i, **~$0.10** and about six turns —
+repeat the create-then-rename sequence until one turn claims an unperformed
+edit, and show `unevidenced=1` on it and `0` on the control.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

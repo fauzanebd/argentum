@@ -32,14 +32,36 @@ import (
 // asks of it: today the wrong-but-nonempty rate is not merely unenforced, it
 // is *unmeasured*, and nothing can be tightened before it is counted.
 
-// ungroundedTolerance is how close a stated figure has to be to a returned one
-// to count as the same number.
+// ungroundedTolerance is how close a *rendered* figure has to be to a returned
+// one to count as the same number.
 //
 // One percent, matching the eval harness's default numeric tolerance and for
 // the same reason: the agent is instructed to write readable numbers, so
 // "Rp 3,86 Miliar" is the correct rendering of 3,863,405,700 and must not read
 // as a different figure.
 const ungroundedTolerance = 0.01
+
+// exactTolerance is what a figure written at full precision is held to (T-Q14).
+//
+// **The gap this closes was found by a gate, not by a test.** A turn printed
+// December revenue as `$3,860,405,700.00` where its own run_sql returned
+// `3,863,405,700.00`. The misquote is 0.078% — inside one percent — so the
+// reply reported clean, while the same turn's *derived* quarter total was
+// flagged. One percent of a billion is ten million.
+//
+// **Lowering ungroundedTolerance was the wrong fix and this is why.** That
+// tolerance exists because the system prompt *requires* magnitude rendering, so
+// "Rp 3,86 Miliar" is the correct way to write 3,863,405,700 — tighten it and
+// every correctly formatted Indonesian answer reports as ungrounded, which is
+// the instrument becoming noise on half the traffic.
+//
+// So the two jobs are separated instead. A figure written to the cent, or with
+// its thousands grouped, is making an *exact* claim and is matched exactly. A
+// figure written in magnitude units is making an *approximate* one and keeps
+// the tolerance it needs. Near-zero rather than zero because both sides went
+// through a float parse: 1e-9 relative is the width of that parse, not a
+// judgement about accuracy.
+const exactTolerance = 1e-9
 
 // GroundingReport is what one reply's figures were checked against.
 type GroundingReport struct {
@@ -76,23 +98,48 @@ func CheckGrounding(reply string, returned []float64) GroundingReport {
 		return rep
 	}
 	rep.Checked = true
-	rep.Stated = extractProseFigures(reply)
+	stated := extractStatedFigures(reply)
 
-	for _, want := range rep.Stated {
-		if !grounded(want, returned) {
-			rep.Ungrounded = append(rep.Ungrounded, want)
+	rep.Stated = make([]float64, 0, len(stated))
+	for _, f := range stated {
+		rep.Stated = append(rep.Stated, f.value)
+		if !grounded(f, returned) {
+			rep.Ungrounded = append(rep.Ungrounded, f.value)
 		}
 	}
 	return rep
 }
 
-// extractProseFigures pulls the numbers out of a reply's prose, skipping the
-// ones that are never claims about the business.
-func extractProseFigures(reply string) []float64 {
+// statedFigure is one number a reply asserts, and how precisely it was written.
+type statedFigure struct {
+	value float64
+	// exact says the reply wrote this number at full precision — grouped
+	// thousands, or digits to the cent, with no magnitude word beside it. Such a
+	// figure is quoted rather than rendered, and a reader will quote it onward,
+	// so it is held to exactTolerance. See T-Q14.
+	exact bool
+}
+
+// magnitudeWord matches the units a rendered figure is written in, in both
+// languages this product answers in. `bn`/`m`/`k` are here because a model
+// asked for English sometimes writes "Rp 3.86bn" — and the abbreviations are
+// anchored to a word boundary so the `m` in "3,000 meters" is not one.
+var magnitudeWord = regexp.MustCompile(
+	`(?i)^\s*(thousand|million|billion|trillion|ribu|juta|miliar|milyar|triliun|bn|tn|k|m)\b`)
+
+// extractStatedFigures pulls the numbers out of a reply's prose along with how
+// precisely each was written.
+//
+// It walks match *positions* rather than match strings, because the classifying
+// question — is a magnitude word sitting immediately after this number? — is
+// about the text around the token and is unanswerable once the token has been
+// cut out of it.
+func extractStatedFigures(reply string) []statedFigure {
 	prose := stripNonProse(reply)
 	seen := map[float64]bool{}
-	var out []float64
-	for _, raw := range figureInProse.FindAllString(prose, -1) {
+	var out []statedFigure
+	for _, loc := range figureInProse.FindAllStringIndex(prose, -1) {
+		raw := prose[loc[0]:loc[1]]
 		// figureInProse ends at `[\d.,]*`, so a figure that closes a sentence
 		// arrives with the full stop attached — "…31 December 2024." matches as
 		// `2024.`. parseLoose trims that before parsing; isBareYear below reads
@@ -126,9 +173,23 @@ func extractProseFigures(reply string) []float64 {
 			continue
 		}
 		seen[v] = true
-		out = append(out, v)
+		out = append(out, statedFigure{value: v, exact: writtenExactly(prose[loc[1]:])})
 	}
 	return out
+}
+
+// writtenExactly reports whether this figure is quoted rather than rendered.
+//
+// One question decides it: is a magnitude word sitting immediately after the
+// digits? "Rp 3,86 Miliar" is the correct way to write 3,863,405,700 under this
+// product's own system prompt, so it is an approximation on purpose and keeps
+// the one-percent tolerance.
+//
+// Everything else is the writer stating the number in full — grouped thousands,
+// digits to the cent, or a bare run of digits — and a reader will quote it
+// onward exactly as written.
+func writtenExactly(after string) bool {
+	return !magnitudeWord.MatchString(after)
 }
 
 // isBareYear reports whether a token is a four-digit calendar year written
@@ -149,22 +210,37 @@ func isBareYear(raw string, v float64) bool {
 // values, and a difference between two. Anything more elaborate — a weighted
 // average, a compound rate — is left unrecognised, which is why this reports
 // rather than blocks.
-func grounded(want float64, returned []float64) bool {
+func grounded(want statedFigure, returned []float64) bool {
+	// The direct comparison is where the two tolerances differ (T-Q14): a figure
+	// the reply wrote out in full has to *be* one of the returned numbers, while
+	// a rendered one only has to round to it.
+	tol := ungroundedTolerance
+	if want.exact {
+		tol = exactTolerance
+	}
 	for _, got := range returned {
-		if closeEnough(want, got) || sameMagnitudeRendering(want, got) {
+		if within(want.value, got, tol) {
+			return true
+		}
+		// Magnitude rendering is only ever a question about a rendered figure —
+		// an exact one is not claiming to be 3.86 of anything.
+		if !want.exact && sameMagnitudeRendering(want.value, got) {
 			return true
 		}
 	}
-	// A sum or a difference of two returned values. Quadratic, and bounded by
-	// the cap the caller applies to `returned` — a turn's tool results are tens
-	// of numbers, not thousands.
+	// A sum or a difference of two returned values, at the loose tolerance
+	// **whatever the figure looks like**. A derived total is arithmetic the model
+	// did, over numbers a driver may have rounded on the way out, and holding it
+	// to the exact tolerance would flag every correct quarter total written to
+	// the cent. Quadratic, and bounded by the cap the caller applies to
+	// `returned` — a turn's tool results are tens of numbers, not thousands.
 	for i := range returned {
 		for j := range returned {
 			if i == j {
 				continue
 			}
-			if closeEnough(want, returned[i]+returned[j]) ||
-				closeEnough(want, returned[i]-returned[j]) {
+			if closeEnough(want.value, returned[i]+returned[j]) ||
+				closeEnough(want.value, returned[i]-returned[j]) {
 				return true
 			}
 		}
@@ -172,14 +248,17 @@ func grounded(want float64, returned []float64) bool {
 	return false
 }
 
-func closeEnough(a, b float64) bool {
+// closeEnough is the loose comparison: a rendered figure, or a derived one.
+func closeEnough(a, b float64) bool { return within(a, b, ungroundedTolerance) }
+
+func within(a, b, tol float64) bool {
 	if a == b {
 		return true
 	}
 	if b == 0 {
 		return math.Abs(a) < 1e-9
 	}
-	return math.Abs(a-b)/math.Abs(b) <= ungroundedTolerance
+	return math.Abs(a-b)/math.Abs(b) <= tol
 }
 
 // sameMagnitudeRendering matches a figure written in magnitude units against

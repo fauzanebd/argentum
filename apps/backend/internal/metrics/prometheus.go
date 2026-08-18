@@ -77,6 +77,12 @@ func (s MetricsSnapshot) WriteProm(w io.Writer) error {
 	p.counter("ungrounded_figures_total",
 		"Figures stated in a reply that no tool result contained.",
 		nil, float64(s.Grounding.UngroundedFigures))
+	// The same family, asking about an action rather than a figure (T-Q13). A
+	// reply claiming a completed change carries no figure, so the two counters
+	// above stay at zero for exactly the turn this one catches.
+	p.counter("unevidenced_actions_total",
+		"Replies claiming a completed change on a turn that made no successful mutating tool call.",
+		nil, float64(s.Grounding.UnevidencedActions))
 
 	// --- queue depth (T-17), sampled from Redis rather than counted here ---
 	//
