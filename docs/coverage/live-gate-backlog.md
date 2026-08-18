@@ -494,7 +494,12 @@ as a passing run.
 
 ## 1h. Filed before the build — the PDF roadmap's gates (2026-08-18)
 
-**Nothing in this section can be run yet, and that is the point of filing it.**
+**`T-P1`'s row was struck the same day it was filed** — the ticket was built and
+its gate run in one sitting, ten arms for $0.00, one defect found and fixed
+([`delivery-log.md`](delivery-log.md) Phase 3a). Twelve rows below it are still
+waiting on code.
+
+**Nothing else in this section can be run yet, and that is the point of filing it.**
 `T-P1` → `T-P13` ([`../plan/06-pdf-knowledge-roadmap.md`](../plan/06-pdf-knowledge-roadmap.md))
 are written and unbuilt. Every previous section of this file was written *after*
 code landed, and §1g's own lesson is that the rule which finally worked was
@@ -513,7 +518,7 @@ decoration: the mistake recorded on 2026-08-08 was a free gate filed under
 
 | Owed by | The gate | Bucket | Cost |
 | ------- | -------- | ------ | ---- |
-| `T-P1` | Upload a real PDF, read the row and the object; upload the same bytes again and show one row and one enqueue; delete and show the object gone | §1 stack | $0.00 |
+| ~~`T-P1`~~ | ~~Upload a real PDF, read the row and the object; upload the same bytes again and show one row and one enqueue; delete and show the object gone~~ | ~~§1 stack~~ | **Run 2026-08-18 — pass on ten arms, and it found one defect.** Migration `059` applied by the API's migrator, reversed with the CLI, re-applied identical. A 14,612-byte PDF → 202, one row, one object at `source-documents/<company>/<sha>.pdf`, one asynq task; the same bytes again → 200 `deduplicated=true`, still one row and one task; a zip renamed `.pdf` → 400 on content; cross-tenant GET and DELETE → 404 with nothing removed; DELETE → 204 with the row, the object and the prefix gone; no object storage → 503 while the rest of the API answers 200; `DOCPARSE_ENABLED` unset → `queued=false` and the document resting at `uploaded`. **The defect: an over-cap upload answered 400, not 413** — `MaxBytesReader` cuts the body mid-part and `mime/multipart` flattens the typed `*http.MaxBytesError` into a plain `errors.New`, so the handler read it as a malformed request. Fixed and pinned by a table test whose string arm is the one that fires in production. $0.00, [`delivery-log.md`](delivery-log.md) Phase 3a |
 | `T-P2` | Three PDFs — a digital sales report, a scan, and one with a broken font map — showing the per-page route decision, the table candidates on the first, and **pages per second**, which is the number `T-P3`'s routing argument is measured against | §1 stack | $0.00 |
 | `T-P3` | One five-page scan with `DOC_OCR_ENABLED=true`: the extracted text beside the page, the metered usage rows, the counter; then the same document with it off, spending nothing | §2 money | ~$0.02 |
 | `T-P4` | The three documents from `T-P2` again, showing typed columns, the header multiplier applied and recorded, a three-page table joined into one, and the `TOTAL` row flagged out of the data | §1 stack | $0.00 |

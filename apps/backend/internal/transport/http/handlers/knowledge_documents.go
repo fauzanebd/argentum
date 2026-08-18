@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -69,13 +70,22 @@ func (h *KnowledgeDocumentsHandler) upload(c *gin.Context) {
 
 	file, err := c.FormFile("file")
 	if err != nil {
+		// An oversized upload arrives here rather than at the size check below,
+		// and it arrives looking like a malformed request: MaxBytesReader cuts
+		// the body mid-part, so the multipart reader reports a parse failure and
+		// never gets far enough to tell anyone how large the file was. Answering
+		// 400 for it — which is what this handler did until the T-P1 gate ran —
+		// tells a client its request was wrong when the request was fine and the
+		// file was simply too big.
+		if isBodyTooLarge(err) {
+			h.tooLarge(c)
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "expected a PDF in the \"file\" field"})
 		return
 	}
 	if file.Size > h.maxUploadBytes {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-			"error": "the document must be " + strconv.FormatInt(h.maxUploadBytes>>20, 10) + " MB or smaller",
-		})
+		h.tooLarge(c)
 		return
 	}
 	f, err := file.Open()
@@ -143,6 +153,31 @@ func (h *KnowledgeDocumentsHandler) remove(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// tooLarge is the one sentence both size refusals answer with, so a client
+// cannot tell "the body was cut" from "the part was measured" — which is right,
+// because the caller's remedy is the same either way.
+func (h *KnowledgeDocumentsHandler) tooLarge(c *gin.Context) {
+	c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+		"error": "the document must be " + strconv.FormatInt(h.maxUploadBytes>>20, 10) + " MB or smaller",
+	})
+}
+
+// isBodyTooLarge reports whether this is MaxBytesReader's refusal.
+//
+// The typed error is checked first and the string second, and the string arm is
+// not belt-and-braces: `mime/multipart` reads through its own buffered reader
+// and returns the underlying failure as a plain `errors.New`, so on that path
+// there is no *http.MaxBytesError left to match. Dropping the string check would
+// make this work on the small-upload path and fail on exactly the large one it
+// exists for.
+func isBodyTooLarge(err error) bool {
+	var maxErr *http.MaxBytesError
+	if errors.As(err, &maxErr) {
+		return true
+	}
+	return strings.Contains(err.Error(), "request body too large")
 }
 
 func (h *KnowledgeDocumentsHandler) unavailable(c *gin.Context) {

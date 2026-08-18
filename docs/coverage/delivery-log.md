@@ -3628,6 +3628,70 @@ cookie this tenant never issued to that browser. Every reply in the session
 appeared only after a reload. A gate that watches a live turn needs a real login,
 and no amount of model spend substitutes for it.
 
+## Phase 3a — A PDF this product will hold before it will read (2026-08-18)
+
+The letters ran out at 2z; this is the same day's second sitting and the first
+of a new roadmap, [`../plan/06-pdf-knowledge-roadmap.md`](../plan/06-pdf-knowledge-roadmap.md)
+— thirteen tickets, `T-P1`→`T-P13`, for turning an uploaded PDF into something
+the agent can query.
+
+**The research decided the architecture rather than decorating it.** The obvious
+build is parse-to-markdown, chunk, embed, inject the top chunks into the prompt.
+That walks past every instrument the last three sittings paid for: a figure
+arriving as prose is not in `CheckGrounding`'s `returned`
+(`internal/guardrails/grounding.go:73`) and `CheckFabrication` is satisfied by
+any tool having run at all, so PDF-as-context is the `T-Q11` mechanism with an
+upload button in front of it. So extracted **tables become rows in a database
+this product owns**, registered as a `db_connections` row, and every figure
+reaches the model through `run_sql`; prose is second and arrives through a tool
+call, where the instruments can see it. Six locked decisions and the sourced,
+dated numbers behind them are in the roadmap.
+
+**`T-P1` built and gated the same day.** Migration `059`, the entity and its
+repository, the ingest service, four routes at `/api/knowledge/documents`, and
+the `document:parse` task nothing consumes yet. **$0.00** — the whole gate is
+the stack, which is where this file's record says the defects have been.
+
+Ten arms, on a fresh tenant (`Gate P1 0818 #1`, and a second company that exists
+only to be refused):
+
+- Migration `059` applied by the API's own migrator, **reversed with the CLI,
+  and re-applied** — table, both indexes, the status CHECK and both foreign keys
+  identical after the round trip.
+- A real 14,612-byte PDF uploaded → **202**, `status=uploaded`, `page_count=0`,
+  one row, one object at `source-documents/<company>/<sha>.pdf`, one asynq task.
+- The same bytes under a different filename → **200**, `deduplicated=true`, the
+  first document returned, **still one row and still one task**. The dedupe is
+  the property that keeps a monthly report sent twice from being parsed twice.
+- A zip renamed `.pdf` → **400** on content, not on the extension.
+- Cross-tenant `GET` and `DELETE` → **404** both, and nothing removed.
+- `DELETE` → **204**, the row gone, the object gone, the prefix gone with it.
+- With no object storage the upload and list routes answer **503** with a
+  sentence, and `GET /api/agents` beside them still answers 200.
+- With `DOCPARSE_ENABLED` at its default the upload works, `queued=false`, and
+  the document rests at `uploaded` — the honest state for a file nothing has
+  read, and the state every deployment is in until `T-P2`.
+
+**One defect, found by the gate and fixed in the sitting.** An upload over the
+cap answered **400 "expected a PDF in the file field"**. `MaxBytesReader` cuts
+the body mid-part, so `mime/multipart` reports a parse failure and the handler
+never reaches the size check that would have said 413 — the client is told its
+request was malformed when the request was fine and the file was too big. What
+makes it worth recording is the shape of the fix: the typed `*http.MaxBytesError`
+is **not** what arrives, because multipart flattens it into a plain
+`errors.New`, so a fix that checked only the typed error would have passed a
+unit test and failed on every real oversized upload. Both arms are now pinned by
+a table test, and the re-run answers **413** with nothing written to storage or
+to the database.
+
+**State left behind.** Two companies (`Gate P1 0818 #1` and `#2`) with one admin
+each and no connections; no documents — the last one was removed by the down
+migration and its orphaned object cleaned by hand, which is exactly what
+`059_source_documents.down.sql` says a deployment must do. The compose stack was
+already up and was left up; the API binary was stopped. **No stale process
+served any arm** — §1g's lesson, checked before the sitting rather than
+discovered during it.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

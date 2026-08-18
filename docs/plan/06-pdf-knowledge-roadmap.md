@@ -285,7 +285,7 @@ with anything outside it.
 
 ## Track A — Get the bytes in, and know what each page is (4.0d)
 
-### `T-P1` · Upload a document, store it, queue it — **built 2026-08-18, unit-gated only**
+### `T-P1` · Upload a document, store it, queue it — **built and gated live 2026-08-18**
 **Repo:** BE · **Size:** 1.5d · **Deps:** none · **Priority:** P0
 **Migration:** `059_source_documents`
 
@@ -308,9 +308,24 @@ with anything outside it.
 > reads the file; `T-P2` is where it becomes a refusal. Both are stated here
 > rather than left for the next reader to discover as a gap.
 >
-> **What is not proven:** the migration has not been applied to a real control
-> database, and no PDF has been uploaded through a running API. That is §1h's
-> `T-P1` row, and it costs nothing but the stack.
+> **Gated the same day, $0.00, ten arms — and the gate found a defect the unit
+> tests could not.** Migration `059` applied by the API's own migrator, reversed
+> with the CLI and re-applied identical; a real 14,612-byte PDF stored, its
+> object at `source-documents/<company>/<sha>.pdf`, one asynq task; the same
+> bytes again returning the first document with `deduplicated=true` and no
+> second task; a zip renamed `.pdf` refused on content; cross-tenant reads and
+> deletes answered 404 with nothing removed; delete taking the row, the object
+> and the prefix; 503 with no object storage while the rest of the API answers
+> 200; and `queued=false` with the parser off.
+>
+> **The defect: an over-cap upload answered 400, not 413.** `MaxBytesReader`
+> cuts the body mid-part, so `mime/multipart` fails to parse before the handler
+> reaches the size check — and it flattens the typed `*http.MaxBytesError` into a
+> plain `errors.New`, so the obvious fix (check the typed error) would have
+> passed a unit test and failed on every real oversized upload. Both arms are
+> now a table test. Record:
+> [`../coverage/delivery-log.md`](../coverage/delivery-log.md) Phase 3a,
+> [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1h.
 
 #### Why
 
