@@ -275,6 +275,18 @@ var apiPolicy = middleware.RolePolicy{
 	"POST /api/cookbook/harvest": domain.RoleAdmin,
 	"DELETE /api/cookbook":       domain.RoleAdmin,
 
+	// Uploaded documents (T-P1). Reading the list is a member's — seeing what
+	// the workspace has ingested is not a privilege — while uploading and
+	// deleting are an admin's, because an applied document becomes data every
+	// member can query and a deleted one takes its extracted tables with it.
+	// The roadmap records this as an owner's decision rather than a settled
+	// one (`docs/plan/06-pdf-knowledge-roadmap.md`, open question 2); it is
+	// two lines here.
+	"POST /api/knowledge/documents":       domain.RoleAdmin,
+	"GET /api/knowledge/documents":        domain.RoleMember,
+	"GET /api/knowledge/documents/:id":    domain.RoleMember,
+	"DELETE /api/knowledge/documents/:id": domain.RoleAdmin,
+
 	// Agent action audit log (T-05). Admin rather than member for the same
 	// reason the DSN routes are: every row carries the full SQL the agent ran,
 	// so the log reads the shape of the tenant's warehouse to anyone who can

@@ -395,6 +395,22 @@ type Config struct {
 	MinIOUseSSL            bool
 	DocumentPresignTTLSecs int
 
+	// Uploaded source documents (T-P1) — the PDFs a tenant hands us, as opposed
+	// to the documents this product generates above.
+	//
+	// DocMaxUploadMB bounds one file and DocMaxPages bounds what will be read out
+	// of it. Two limits rather than one because they guard different things: the
+	// first is the request and the bucket, the second is the parse, and a
+	// 3 MB PDF can hold eight hundred scanned pages.
+	DocMaxUploadMB int
+	DocMaxPages    int
+	// DocParseEnabled decides whether an upload is queued for reading at all.
+	// **Default false**, and the resting state it produces is deliberate: the
+	// bytes are stored, the document says 'uploaded', and nothing pretends to
+	// have understood it. A deployment turns this on when it has a parser
+	// (T-P2) to point at.
+	DocParseEnabled bool
+
 	// DashboardPanelTimeoutSecs bounds one native dashboard panel's query
 	// (T-D7). It is per panel rather than per dashboard because the panels run
 	// concurrently, so this is what decides the worst case a viewer waits
@@ -579,6 +595,11 @@ func Load() (*Config, error) {
 		MinIOBucket:            getEnv("MINIO_BUCKET", "argentum-documents"),
 		MinIOUseSSL:            getEnv("MINIO_USE_SSL", "false") == "true",
 		DocumentPresignTTLSecs: getEnvAsInt("DOCUMENT_PRESIGN_TTL_SECS", 3600),
+
+		// Uploaded source documents (T-P1)
+		DocMaxUploadMB:  getEnvAsInt("DOC_MAX_UPLOAD_MB", 25),
+		DocMaxPages:     getEnvAsInt("DOC_MAX_PAGES", 200),
+		DocParseEnabled: getEnv("DOCPARSE_ENABLED", "false") == "true",
 		// 15s, matching dashboard.DefaultPanelTimeout. Long enough for a real
 		// aggregate over a warehouse, short enough that a viewer waiting on a
 		// dozen panels has a bounded worst case.

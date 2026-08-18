@@ -169,6 +169,27 @@ func (s *StorageService) PresignKey(ctx context.Context, key string, expiry time
 	return signed.String(), nil
 }
 
+// RemoveKey deletes an object.
+//
+// The first caller is the uploaded-document path (T-P1), which needs it twice:
+// once when the row it was going to point at could not be written, and once
+// when a tenant deletes the document. A tenant who deletes a PDF has not
+// consented to its bytes surviving in a bucket, and a row that was never
+// created leaves an object nothing will ever reference again.
+//
+// A missing object is not an error. Both callers are cleaning up, and "it is
+// already gone" is the outcome they wanted.
+func (s *StorageService) RemoveKey(ctx context.Context, key string) error {
+	err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	if err != nil && minio.ToErrorResponse(err).Code == "NoSuchKey" {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("storage: remove %q: %w", key, err)
+	}
+	return nil
+}
+
 func (s *StorageService) Bucket() string { return s.bucket }
 
 func (s *StorageService) directURL(key string) string {

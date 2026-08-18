@@ -168,6 +168,38 @@ func (e *Enqueuer) EnqueueBusinessInference(ctx context.Context, companyID, conn
 	return nil
 }
 
+// EnqueueDocumentParse queues one uploaded PDF for reading (T-P1).
+//
+// Unique over an hour, which is longer than any other job in this file and is
+// about cost rather than tidiness: a parse can spend money on the OCR path
+// (T-P3), and the two ways this gets queued twice — a retried upload request and
+// a re-parse pressed by somebody watching a slow document — are both the same
+// work. MaxRetry(2) because the failures that are worth retrying here are
+// transient (the sidecar restarting); a PDF this parser cannot read will not
+// become readable on the third attempt.
+//
+// A rejected duplicate is not an error the caller should surface, for
+// EnqueueBusinessInference's reason: the work it asked for is already queued.
+func (e *Enqueuer) EnqueueDocumentParse(ctx context.Context, documentID string) error {
+	body, err := json.Marshal(DocumentParsePayload{DocumentID: documentID})
+	if err != nil {
+		return fmt.Errorf("marshal document parse payload: %w", err)
+	}
+	_, err = e.client.EnqueueContext(ctx, asynq.NewTask(TypeDocumentParse, body),
+		asynq.MaxRetry(2),
+		asynq.Timeout(15*time.Minute),
+		asynq.Retention(24*time.Hour),
+		asynq.Unique(time.Hour),
+	)
+	if errors.Is(err, asynq.ErrDuplicateTask) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("enqueue document:parse: %w", err)
+	}
+	return nil
+}
+
 // ParseChatRun unmarshals the asynq task payload back into ChatRunPayload.
 // Lives here so worker handlers don't have to touch JSON directly.
 func ParseChatRun(data []byte) (ChatRunPayload, error) {

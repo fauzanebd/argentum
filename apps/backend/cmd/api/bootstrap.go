@@ -327,6 +327,18 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		deps.shareSvc = app.NewReportShareService(
 			pgctl.NewReportShareRepo(controlDB), deps.documentRepo, deps.docGen, deps.actionRepo,
 		)
+
+		// Uploaded documents (T-P1). Also inside the storage branch, and for a
+		// blunter reason than the share links above: there is nowhere to put the
+		// bytes. The parse queue is attached only when a parser is configured —
+		// without one the upload still works and the document rests at
+		// 'uploaded', which is the honest state for a file nothing has read.
+		deps.documentIngestSvc = app.NewDocumentIngestService(
+			pgctl.NewSourceDocumentRepo(controlDB), deps.storageSvc, cfg.DocMaxUploadMB,
+		)
+		if cfg.DocParseEnabled {
+			deps.documentIngestSvc = deps.documentIngestSvc.WithParseQueue(deps.enqueuer)
+		}
 	}
 
 	// The agent roster (T-S1). The tool checkboxes an admin scopes an agent

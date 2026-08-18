@@ -132,6 +132,10 @@ type apiDeps struct {
 	storageSvc   *storage.StorageService
 	reportRepo   *pgctl.APIReportRepo
 	documentRepo *pgctl.DocumentRepo
+	// documentIngestSvc takes the PDFs a tenant uploads (T-P1) — the input side
+	// of documentRepo's output. Nil without object storage, and the routes then
+	// answer 503 rather than accepting a file this deployment cannot store.
+	documentIngestSvc *app.DocumentIngestService
 	// shareSvc mints and resolves report player links (T-V4). Nil when there
 	// is no object storage: without it no plan was ever written, so there is
 	// nothing a link could play.

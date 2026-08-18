@@ -1716,6 +1716,77 @@ export interface CompanySlackCredential {
 }
 
 //////////
+// source: source_document.go
+
+/**
+ * SourceDocument is one PDF a tenant uploaded, and how far through the parse
+ * pipeline it has got (T-P1).
+ * **It is not [Document].** That is what the agent generated — a file this
+ * product wrote, addressed by thread. This is what a tenant supplied, and the
+ * difference matters beyond bookkeeping: a generated document is finished when
+ * it is written, while an uploaded one is raw material that later tickets read
+ * repeatedly and with improving accuracy.
+ * Nothing here reaches a turn. A document becomes answerable only when a table
+ * extracted from it is published as a source (T-P6) or its prose is retrieved
+ * by a tool (T-P9), and both of those are separate tickets with a human in the
+ * first one. The roadmap's Decision 1 is the reason: a figure that arrives in
+ * the prompt as text is a figure `CheckGrounding` cannot check, which is the
+ * failure the last three sittings of this project were spent instrumenting.
+ */
+export interface SourceDocument {
+  id: string;
+  company_id: string;
+  /**
+   * Filename as the tenant named it. The only human handle on a row whose
+   * other identifier is a hash.
+   */
+  filename: string;
+  /**
+   * ContentSHA256 is the hex digest of the bytes, and the dedupe key. Uploading
+   * the same file twice returns the first document rather than parsing it
+   * again.
+   */
+  content_sha256: string;
+  byte_size: number /* int64 */;
+  /**
+   * PageCount is 0 until something has read the file. Written by the parse,
+   * never by the upload.
+   */
+  page_count: number /* int */;
+  status: SourceDocumentStatus;
+  /**
+   * StatusDetail is why, in a sentence somebody can act on. Empty on the happy
+   * path.
+   */
+  status_detail?: string;
+  uploaded_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+/**
+ * SourceDocumentStatus is how far the pipeline has got with one document.
+ * The handler writes exactly one of these — StatusUploaded — and the worker
+ * writes the rest. One writer per state is what makes a stuck row a question
+ * about the worker rather than a question about which process last touched it.
+ */
+export type SourceDocumentStatus = string;
+/**
+ * SourceDocumentUploaded means the bytes are stored and nothing has read
+ * them. It is also the resting state on a deployment with no parser: the
+ * document is safe, and it is not pretending to be understood.
+ */
+export const SourceDocumentUploaded: SourceDocumentStatus = "uploaded";
+export const SourceDocumentParsing: SourceDocumentStatus = "parsing";
+export const SourceDocumentParsed: SourceDocumentStatus = "parsed";
+export const SourceDocumentFailed: SourceDocumentStatus = "failed";
+/**
+ * SourceDocumentFilenameMaxChars caps the stored filename. Long enough for a
+ * descriptive export name, short enough that a list stays readable and a
+ * pathological name cannot be used to bloat a row.
+ */
+export const SourceDocumentFilenameMaxChars = 200;
+
+//////////
 // source: source_profile.go
 
 /**

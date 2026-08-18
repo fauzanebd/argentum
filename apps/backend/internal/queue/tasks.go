@@ -43,6 +43,11 @@ const (
 	// keeps working as companies are added and one that has to be told about
 	// each of them.
 	TypeCookbookHarvest = "cookbook:harvest"
+	// TypeDocumentParse reads an uploaded PDF into pages, tables and text
+	// (T-P1 enqueues it; T-P2 handles it). Enqueued only where a parser is
+	// configured — a deployment with none leaves its documents 'uploaded',
+	// which is a resting state rather than a failure.
+	TypeDocumentParse = "document:parse"
 )
 
 // WatcherEvalPayload is the body of a `watcher:eval` task (T-08). Only the id,
@@ -64,6 +69,15 @@ type BusinessInferPayload struct {
 	// must not be told nothing changed because our copy of their schema is
 	// stale. The automatic triggers leave it false and read the cache.
 	Force bool `json:"force,omitempty"`
+}
+
+// DocumentParsePayload names one uploaded PDF to read (T-P1). Only the id, like
+// WatcherEvalPayload above and for the same reason: the worker reloads the row,
+// so a retry after a redeploy parses the document as it is now rather than as it
+// was when somebody pressed upload — and the bytes it needs are in object
+// storage, where a queue payload has no business carrying a copy of them.
+type DocumentParsePayload struct {
+	DocumentID string `json:"document_id"`
 }
 
 // ReportRenderPayload carries a spec whose synchronous render ran long

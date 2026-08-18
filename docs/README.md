@@ -115,6 +115,7 @@ docs/
 │   ├── 04-native-dashboards-roadmap.md  T-D1→T-D21 replacing Metabase
 │   ├── 05-next-steps-and-dashboard-revision.md
 │   │                             T-Q10/T-U13 suggested next steps; T-D22/T-D23 revising a dashboard
+│   ├── 06-pdf-knowledge-roadmap.md        T-P1→T-P13 a PDF the agent can query, not quote
 │   └── backlog.md                Deferred work with rationale
 └── agents/
     ├── workspace-context.md      Repo map, invariants, danger zones

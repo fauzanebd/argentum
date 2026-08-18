@@ -71,6 +71,11 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).Register(authed.Group("/users"))
 	handlers.NewReportsHandler(d.brandingSvc, d.companyRepo).Register(authed)
 	handlers.NewDocumentsHandler(d.documentRepo, d.docGen).Register(authed)
+	// Uploaded documents (T-P1) — the input side, against the generated
+	// documents above. Registered unconditionally: a nil service answers 503,
+	// which tells a deployment without object storage why, where an absent route
+	// reads as a wrong path.
+	handlers.NewKnowledgeDocumentsHandler(d.documentIngestSvc, cfg.DocMaxUploadMB).Register(authed)
 	handlers.NewReportShareHandler(d.shareSvc).Register(authed)
 	handlers.NewAuditHandler(d.actionRepo).Register(authed)
 	handlers.NewAPIKeysHandler(d.apiKeySvc).

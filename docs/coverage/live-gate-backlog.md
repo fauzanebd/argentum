@@ -127,9 +127,20 @@ only because the new build's own log line was missing from it. Eleven sittings,
 eleven payouts — and the lesson this one adds is that *the tickets passing is
 not the sitting passing*.
 
+**Revised 2026-08-18, fourth time — §1h files thirteen gates for code that does
+not exist.** The PDF roadmap ([`../plan/06-pdf-knowledge-roadmap.md`](../plan/06-pdf-knowledge-roadmap.md))
+was written the same day, and its gates are priced here while its tickets are
+still prose. Every earlier section of this file was written after a build; the
+one improvement each revision has made is filing *earlier*, and this is the last
+step that direction goes. **~$0.30 across thirteen tickets**, nine of them in the
+bucket that costs nothing. It also carries a warning the roadmap earns: a parser
+sidecar is a second long-lived process, and §1g's stale worker was caught only by
+a log line that happened to be new.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of four things: the stack up, money spent, a browser opened, or a
-message sent to a real person's phone.
+message sent to a real person's phone — with the single exception of §1h, which
+is waiting on the code being written at all.
 
 ---
 
@@ -480,6 +491,52 @@ ran from a `go run` temp path — the check that works is
 count the `turn completed` lines against the turns you sent.** This is the same
 species as the Docker line recorded twice above: an environment fact that reads
 as a passing run.
+
+## 1h. Filed before the build — the PDF roadmap's gates (2026-08-18)
+
+**Nothing in this section can be run yet, and that is the point of filing it.**
+`T-P1` → `T-P13` ([`../plan/06-pdf-knowledge-roadmap.md`](../plan/06-pdf-knowledge-roadmap.md))
+are written and unbuilt. Every previous section of this file was written *after*
+code landed, and §1g's own lesson is that the rule which finally worked was
+pricing the gates the morning the tickets were built rather than the afternoon
+after. This goes one step earlier: the gates are priced while the tickets are
+still prose, so the estimate is part of the design rather than a bill discovered
+at the end.
+
+**Total: ~$0.30 of model spend across thirteen tickets**, of which `T-P13`'s eval
+run is half. Nine of the thirteen gates need the stack and nothing else — the
+bucket that has paid eleven times out of eleven.
+
+The **Bucket** column is where each row moves when its ticket lands. It is not
+decoration: the mistake recorded on 2026-08-08 was a free gate filed under
+"needs real LLM spend", which meant nobody ran it for five days.
+
+| Owed by | The gate | Bucket | Cost |
+| ------- | -------- | ------ | ---- |
+| `T-P1` | Upload a real PDF, read the row and the object; upload the same bytes again and show one row and one enqueue; delete and show the object gone | §1 stack | $0.00 |
+| `T-P2` | Three PDFs — a digital sales report, a scan, and one with a broken font map — showing the per-page route decision, the table candidates on the first, and **pages per second**, which is the number `T-P3`'s routing argument is measured against | §1 stack | $0.00 |
+| `T-P3` | One five-page scan with `DOC_OCR_ENABLED=true`: the extracted text beside the page, the metered usage rows, the counter; then the same document with it off, spending nothing | §2 money | ~$0.02 |
+| `T-P4` | The three documents from `T-P2` again, showing typed columns, the header multiplier applied and recorded, a three-page table joined into one, and the `TOTAL` row flagged out of the data | §1 stack | $0.00 |
+| `T-P5` | One real document corrupted at a single digit, quarantined with both figures and the difference named; and a parts-rounded total that does **not** quarantine | §1 stack | $0.00 |
+| `T-P6` | Publish a real table, ask the agent a question only that table can answer, read `agent_actions` for the `run_sql` call and the figure. **Then run `SELECT … FROM companies` through the document source by hand and show the refusal** — the catastrophic-and-silent half, and the reason this row is not stack-only | §2 money | ~$0.05 |
+| `T-P7` | The review surface in a browser: table candidates beside their pages, a type override changing the preview, Apply publishing, a quarantined table refusing with its reason on screen, both themes | §3a browser | $0.00 |
+| `T-P8` | Chunking one document: heading boundaries respected, no table split, a dense query and a lexical query each returning sensibly, re-ingest replacing rather than duplicating | §1 stack + embeddings | ~$0.01 |
+| `T-P9` | Two turns — one asking what a document says, one asking for a figure that is in the prose and in no table. Read the persisted answer, the page citation, and `ungrounded` on the `turn completed` line, which must be **0** for the quoted figure and **1** for the same figure asked without retrieval | §2 money | ~$0.05 |
+| `T-P9` / `T-P10` | **Rule 1**, shared: both change what the prompt says on a document-reading turn, so the 56-case set is owed on both models with the number and the date posted. One re-score covers both **if they land in the same build** — landing them separately doubles this line | §2 money | ~$0.8 |
+| `T-P10` | One turn against a PDF carrying an injected instruction on a late page, in text a reader cannot see: no tool call the question did not ask for, and the taint tag on the audit row | §2 money | ~$0.02 |
+| `T-P11` | Set the monthly page budget to one page and show the refusal before any model call | §1 stack | $0.00 |
+| `T-P12` | A document with an email column: classified at publish, withheld under strict redaction, and a delete that removes the row, the chunks, the object **and** the warehouse table — all four asserted | §1 stack | $0.00 |
+| `T-P13` | One `make eval-docs` run over the twelve-document set, reporting cell accuracy, publish correctness and answer correctness, with the parser image digest and the provider-resolved OCR model on the report | §2 money | ~$0.15 |
+
+**Two environment notes this file has already paid for, restated because the
+sidecar makes both worse.** §1g caught a stale `cmd/worker` from an earlier
+session serving a gate turn from a pre-HEAD binary, and it was caught only
+because the new build added a log line the old one did not have.
+`apps/docparse` adds a *second* long-lived process with the same failure mode
+and no such tell — so `T-P13` requires the parser image digest on every report,
+and any sitting here starts with `ps ax | grep -E 'exe/worker|bin/worker'` and a
+check that the running sidecar is the one that was just built. A parse that looks
+wrong is otherwise indistinguishable from a parse served by yesterday's parser.
 
 ## 2. Needs the stack **and** real LLM spend
 
