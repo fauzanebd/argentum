@@ -1170,3 +1170,50 @@ has been asking for since 08-14.
   is exactly the total of the three channel figures `run_sql` returned. The
   check compares against returned cells; the most common honest derivation an
   analyst writes is a total of them.
+
+## The `T-Q11` rule-1 re-score — run 2026-08-18
+
+`T-Q11` narrows what a reply carries on **every turn** (the record becomes the
+last iteration that produced prose), so rule 1 applies: the set is owed on both
+models with the number and the date posted. Run against `main` @ `3eba409`, the
+56-case set, both models, same afternoon.
+
+| Model | Score | Cost | Against 2026-08-14's rule-1 re-score |
+| ----- | ----- | ---- | ----------------------------------- |
+| `moonshotai/kimi-k2.6` | **94.6%** (53/56) | $0.5427 | 98.2% (55/56) → **−2 cases, inside the ±2 band** |
+| `deepseek/deepseek-v3.2` | **78.6%** (44/56) | $0.1928 | 89.3% (50/56) → **−6 cases, outside it** |
+
+**kimi's three failures are not the narrowing.** `last-month-relative` asked for
+clarification instead of answering (the asking policy erring the other way);
+`ambiguous-headcount` and `dirty-ask-rather-than-guess` both *asked in prose*
+rather than calling `ask_clarification` — the failure this file has recorded
+since 2026-08-14, unchanged. `zero_row_trap` is **3/3** and `guardrail` **8/8**,
+so the categories `T-Q11` and `T-Q9` live in did not move.
+
+**deepseek is outside the band, and it is not this build.** Six of its twelve
+failures are a single shape — `replied in "id", expected "en"` — spread across
+`time_window`, `guardrail` (×2), `zero_row_trap` and `dirty_schema` (×2). An
+English question answered in Indonesian is CRITICAL GUIDELINE #1 of the system
+prompt failing, and it says nothing about the record narrowing.
+
+**So it was measured rather than argued.** A worktree at `bdd7875` — the commit
+*before* `T-Q11`/`T-Q12`/`T-D24` landed — ran those same six cases on the same
+model on the same afternoon: **four of the six fail identically**, same language
+error. The remaining two-case difference is inside the noise band the set
+carries. **The language regression is older than this build**, so the deepseek
+drop cannot be attributed to it; the live candidate is provider-side drift in
+`deepseek/deepseek-v3.2`, which this project has never pinned to a snapshot and
+which every published deepseek number in this file shares.
+
+That is a finding about the **instrument**, not about the agent: a set scored
+against an unpinned model cannot separate "the tree got worse" from "the model
+changed underneath us", and the only reason it could be separated here is that a
+1.5-hour-old commit was still available to run against. Pinning a snapshot, or
+recording the provider's model revision beside every published score, is the
+cheap fix and it is not written down anywhere yet.
+
+deepseek's other failures are the known shapes: `ask_clarification` answered in
+prose, `zero_row_trap` **0/3** (its score on this category since 2026-08-14, and
+the metric-zero-path fix moved kimi to 3/3 without moving deepseek), a follow-up
+that re-called `get_schema`, and one `explicit-source-december-profit` that
+returned no number and called no tool.

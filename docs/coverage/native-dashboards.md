@@ -445,3 +445,78 @@ it belongs with `T-D15`/`T-D16`.
 | `update_dashboard` calls | 6 — 1 blocked (budget), 2 errored (both informative, both self-corrected), 3 ok |
 | Turns that claimed an edit with no tool call | **2** |
 | Defects found | 2 (one P0, one design decision), plus 2 smaller findings |
+
+## 5. `T-D24` and `T-D23`, run 2026-08-18 — a dashboard that opens on its own quarter
+
+The follow-up sitting to §4, the same afternoon `T-D24` was built. Backlog row:
+[`live-gate-backlog.md`](live-gate-backlog.md) §1g.
+
+### 5.1 The request §4 could not express
+
+§4.3 ended on a dashboard whose default was `qtd` — Q3 2026 in August 2026,
+where every panel returns nothing — and a reply telling the user to change the
+Period filter by hand on every open. The same request, after `T-D24`:
+
+> Build me a dashboard called 'Q4 2024 Sales' showing monthly revenue as a bar
+> chart and revenue by sales channel as a pie chart. Default the period to the
+> fourth quarter of 2024.
+
+One turn, no refusal, and the stored filter reads:
+
+```json
+{"kind": "date_range", "name": "period", "label": "Period",
+ "default": {"from": "2024-10-01", "to": "2024-12-31"}}
+```
+
+The reply's last sentence is the one the product could not say the day before:
+
+> The period filter is set to Oct 1 – Dec 31, 2024 by default, so anyone opening
+> the dashboard will land directly on Q4 2024 results.
+
+**Opened untouched**, `GET /api/dashboards/:id/data` answers
+`applied_filters: {"period":"2024-10-01…2024-12-31"}` with **3 rows in each
+panel**, and the browser draws three bars and a three-slice pie. The half no test
+could supply is that the model *used* the vocabulary unprompted, on the first
+attempt, from a tool description that had promised it since the day it shipped.
+
+### 5.2 The preset path, on a real pre-change row
+
+The other half of the gate needed a dashboard built *before* the change, and
+§4's own tenant had one: `57f822e9`, created 2026-08-17 with `default: "qtd"`.
+Resolved today it answers `applied_filters: {"period":"qtd"}` and **0 rows** —
+computed from today, exactly as before, drawing the empty grid that made the case
+for `T-D24` in the first place. Presets are untouched; the vocabulary grew.
+
+### 5.3 `T-D23`, from the dashboard page
+
+The header action lands in `/chat` with the composer holding
+`Change [Q4 2024 Sales Review](/dashboards/b410d600…):` and the caret at
+**81 of 81**, `activeElement` = `TEXTAREA`, and **no turn started** — the 08-17
+focus defect staying fixed.
+
+Typing *"change the Monthly Revenue panel to a line chart"* into that prefill and
+sending it edited the right dashboard from a **thread that had never seen it**:
+`panels[0].viz` went `bar → line`, `updated_at` moved, the id and URL did not,
+and the pie panel came back untouched. That is `T-D22`'s "the id travels in the
+message text" working from the door `T-D23` built, which no earlier gate had
+exercised — every prior edit ran in the thread that authored the dashboard.
+
+**What did not run, and it is the rig rather than the money.** Whether the open
+page redraws *without a manual reload* could not be watched: the browser was
+authenticated by writing the access token into `localStorage`, which gives
+working REST and no event stream — the stream needs a refresh cookie this tenant
+never issued to that browser. Every reply in the session appeared only after a
+reload, on every thread, so nothing about the invalidation could be judged. The
+row stays open in §2 with a note that it needs a real login, not spend.
+
+### 5.4 What this sitting found that is not about dashboards
+
+The rename turn used to set §5.3 up produced the P0 in §1g: *"Done — your
+dashboard is now called…"* with **zero tool calls**, no `agent_actions` row and
+the stored title unchanged, on a thread holding no refusal at all. §4.2 predicted
+exactly this — *"nothing in the product checks that a claimed mutation
+happened"* — and left it unticketed. It is `T-Q13` now, P0
+([`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md)),
+and it is the reason *Native dashboard revision* stays 🟡 in
+[`feature-coverage.md`](feature-coverage.md) with a tool that passes every test
+written for it.

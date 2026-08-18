@@ -662,3 +662,106 @@ growing. Nothing in asynq identifies which worker took a task, and nothing in th
 product notices that two workers disagree about the key — the same blind spot
 [`live-gate-backlog.md`](live-gate-backlog.md) §1b records for undecryptable
 rows, one layer up.
+
+## 14. `T-Q11` and `T-Q12`, live — run 2026-08-18
+
+Both fixes landed 2026-08-18 unit-gated ([`delivery-log.md`](delivery-log.md)
+Phase 2x) and were run the same afternoon. Backlog row:
+[`live-gate-backlog.md`](live-gate-backlog.md) §1g. Tenant `Gate 0818` against
+the demo warehouse, `moonshotai/kimi-k2.6`.
+
+**Ground truth first**, because both tickets turn on it: `fact_sales` holds
+**1,348 rows**, November 2024 has **300** and December **310** — the numbers the
+08-17 turn was measured against.
+
+### 13.1 `T-Q11` — the record is one iteration's prose
+
+The two questions that produced the defect, re-asked. The persisted
+`messages.content` in full:
+
+> There were **300 transactions** in November 2024.
+
+49 characters. December's is the same shape around 310. Against the row of
+record on 08-17, which said 1,667 twice before saying 300 once, all three
+sentences concatenated from one turn's iterations.
+
+**The counter, which is the other half of the ticket.** Three honest turns wrote
+`ungrounded=0` on their `turn completed` lines. A fourth, engineered to state a
+figure no tool returned —
+
+> Total sales revenue in December 2024 was **$3,863,405,700.00**. If revenue
+> grows by exactly 15% in January 2025, the projected January 2025 revenue would
+> be **$4,442,916,555.00**.
+
+— wrote `ungrounded=1`, and the Warn line names it:
+`ungrounded: [4.442916555e+09]`, `stated=2`, `returned_numbers=2`. **The
+projection flagged, December's true figure left alone.** Read from the worker's
+log line and not from `/metrics`, because `cmd/worker` has no exposition
+endpoint — T-17's debt, written into the code precisely so a gate that curls
+`/metrics` and sees zero does not read as a failed fix.
+
+**One thing the ticket did not say, found here.** The instrument ignores figures
+under 1,000 by design (`grounding.go:111`), so a first attempt at this arm —
+*"3.33% growth, 10.00 transactions per day"*, both derived, both wrong to state
+— reported clean. That is the documented trade and it is the right one; it is
+also why an engineered arm has to reach above the cutoff to prove anything.
+
+### 13.2 `T-Q12` — a refused call is remembered as refused
+
+Engineered with `AGENT_MAX_ITERATIONS`, which is the honest way to reach the
+condition: the 08-18 turn got there by spending eight iterations on real work.
+
+**At `AGENT_MAX_ITERATIONS=3`**, the digest the *next* turn reads:
+
+```json
+[{"tool":"get_schema", …,"rows":-1},
+ {"tool":"run_sql","query":"SELECT DATE_TRUNC('month', created_at) …","rows":-1,
+  "error":"iteration budget spent (3 of 3)","status":"refused"},
+ {"tool":"run_sql", …,"error":"iteration budget spent (3 of 3)","status":"refused"}]
+```
+
+`agent_actions` reads `get_schema | ok`, `run_sql | blocked`, `run_sql |
+blocked`. **The audit table and the agent's memory agree for the first time** —
+on 08-18 the same shape persisted as `{"tool":"update_dashboard","rows":-1}`,
+byte-identical to a success.
+
+**A second refusal type came for free.** The follow-up turn ran at the default
+budget and exhausted the **wall clock** instead:
+`"error":"time budget spent (3m0s of 2m30s)","status":"refused"` on all three of
+its calls, including a `create_dashboard` and an `update_dashboard`. The fix is
+keyed to the executor's outcome rather than to the reason, which is what the
+build claimed and what this proves.
+
+**And the replies are honest.** *"Unfortunately, my exploration budget for this
+turn has been exhausted… I was not able to run the actual data queries or create
+the dashboard."* A later turn, declining a rename under the same tight budget,
+went further and named the true current state: *"The dashboard is still titled
+'Q4 2024 Sales Review' from the earlier rename."*
+
+**The control arm passed with it**: the same rename sentence at the default
+budget called `update_dashboard`, `tool_calls=1`, and moved both the title and
+`updated_at`.
+
+### 13.3 What the sitting found beside them
+
+**`T-Q13` (P0).** Between those two arms, one turn answered *"Done — your
+dashboard is now called Q4 2024 Sales Review. The URL stays the same…"* with
+`tool_calls=0`, **no `agent_actions` row**, and the stored title unchanged — on a
+thread whose history holds a clean successful `create_dashboard` and **no
+refusal at all**. Re-run on the same thread it called the tool and landed the
+rename; a third attempt declined honestly. One in three, non-deterministic, and
+invisible to every guardrail because the claim is an **action** and the product
+checks **figures**. `T-Q12` closed a cause; this is the class.
+
+**`T-Q14` (P1).** A turn printed `$3,860,405,700.00` where its own `run_sql`
+returned `3,863,405,700.00` — 0.078% off, inside the one-percent
+`ungroundedTolerance`, reported grounded, while the same reply's derived quarter
+total was flagged.
+
+**And the environment fact that matters most for the next sitting.** A
+`cmd/worker` from a previous session was still consuming the same asynq queue
+from a pre-HEAD binary and served one of these turns. It was caught only because
+`turn completed` is a line this build added and one turn had none.
+`pgrep -f 'bin/worker'` does not find a `go run` worker; `ps ax | grep -E
+'exe/worker|bin/worker'` does. **Kill every worker before a gate, and count the
+`turn completed` lines against the turns you sent.**

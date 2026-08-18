@@ -786,3 +786,206 @@ they were written rather than after, which is the mistake that file exists to
 record. `T-Q11` additionally triggers rule 1: it changes what reaches the user on
 every turn, so the 56-case set is owed on both models with the number and the
 date posted.
+
+---
+
+# Added 2026-08-18 — from the gate that closed `T-Q11`, `T-Q12` and `T-D24`
+
+The live halves of the 2026-08-18 build were run the same day
+([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1g).
+All three tickets passed what they were written to prove. The two tickets below
+are what the sitting found *beside* them, and both are the same family as
+`T-Q11`/`T-Q12`: something reached the user of record that no evidence supports.
+
+## `T-Q13` A claimed action nobody performed, with no refusal behind it — 1.5d
+**Repo:** BE · **Deps:** none (extends `T-Q12`'s ground) · **Priority:** P0 · **Migration:** none
+
+### Why
+
+`T-Q12` closed the *cause* it was written for — a refused call remembered as one
+that ran — and the fix is proven live (§1g). **The failure it was written
+against is still reachable, and this time nothing was refused at all.**
+
+On a thread whose history holds one clean, successful `create_dashboard`, the
+sentence *"Rename that dashboard to 'Q4 2024 Sales Review'."* produced:
+
+> Done — your dashboard is now called **[Q4 2024 Sales Review](/dashboards/b410d600…)**.
+> The URL stays the same, so any existing links will continue to work.
+
+`agent_actions` holds **no row for that turn**. The stored `title` was still
+`Q4 2024 Sales`. The worker line reads `tool_calls=0`, and the SDK's own log says
+`iteration=1 … Skipping final synthesis call - already got complete response`.
+No budget refusal fired — the turn simply never called a tool and reported the
+work as done anyway.
+
+**The control, run immediately after on the same thread with the same sentence**,
+called `update_dashboard`, moved `updated_at`, and landed the title. A third
+attempt under the same tight budget as the first was *honest* — it reported the
+refusal and correctly named the current title. So this is **non-deterministic,
+not systematic**, which is what makes it a detection problem rather than a prompt
+problem: one turn in three claimed work it had not done, and the product shipped
+that claim to the user of record with no signal attached.
+
+**Why no guardrail sees it.** `CheckFabrication` asks whether the turn has
+evidence. `CheckGrounding` asks whether every *figure* came from a tool — and
+these replies contain no figure. The claim is an **action**, and nothing in this
+product checks that a claimed mutation happened. `native-dashboards.md` §4.2 said
+exactly this on 2026-08-18 and assigned no ticket to it; this is that ticket.
+
+It is arguably worse than a wrong number: a wrong figure is visible to somebody
+who knows the business, while *"Done"* about an edit that did not occur is
+invisible until the dashboard is opened — possibly by somebody else, possibly
+next quarter.
+
+### Do
+
+- A post-turn check in the same chain as `rejectFabrication` and `checkGrounding`
+  (`chat_runner.go:753-757`), reading the turn's own snapshot rather than the
+  reply's text: if the reply **claims a completed mutation** and the turn made
+  **no successful mutating tool call**, the claim is not evidenced.
+- The mutating set is a property of the registry, not a list in a guard: mark
+  the tools that change stored state (`create_dashboard`, `update_dashboard`,
+  `schedule_task`, `propose_action`'s execute path, `generate_document`) with a
+  `Mutating() bool` on the tool interface, so a tool added later cannot be
+  forgotten by a constant somewhere else. That is the `T-14`/`list_watchers`
+  lesson: a promise kept in a second place drifts from the first.
+- Detect the claim cheaply and conservatively. Past-tense completion language
+  about a named artifact — *"Done"*, *"has been updated/renamed/created"*,
+  *"is now"* — in the presence of zero successful mutating calls. Indonesian too
+  (*"sudah"*, *"telah diubah"*, *"berhasil"*), which is the `T-Q3` lesson: the
+  instrument was English-only and the violation landed in Indonesian.
+- **Count first, block later.** `unevidenced_actions_total`, on the span and on
+  the `turn completed` line beside `ungrounded`, exactly as `T-Q11` did it. This
+  ships as an instrument — the wrong-but-nonempty rate cannot be tightened
+  before it is counted, and a guardrail that replaces a correct reply is the
+  failure this repo has lived through six times.
+- Only once it is counted and the false-positive rate is known: the reply is
+  rewritten to say what the turn actually did, the way `rejectFabrication`
+  already replaces a reply rather than editing it.
+
+### Notes for the implementer
+
+**Do not read this off the prior-work digest.** That is `T-Q12`'s ground and it
+is already correct; this turn's failure is in *this* turn's snapshot, which
+`tracker.Snapshot()` already carries (`snap.Tools`, `snap.ToolCalls`).
+
+**A turn that legitimately reports a *past* action must not trip it.** *"The
+dashboard I built earlier is still called X"* is not a claim about this turn.
+Scope the detection to completion language, not to any past tense — and when in
+doubt, count and do not act, which is what shipping it as an instrument buys.
+
+### Acceptance
+
+- [ ] A turn claiming a completed edit with zero mutating calls is counted, and the count appears on the `turn completed` line and the span
+- [ ] The control — the same sentence on a turn that *did* call `update_dashboard` — is not counted
+- [ ] A reply reporting an action from an earlier turn is not counted
+- [ ] The Indonesian completion phrasings are covered by the same table test as the English ones
+- [ ] A turn whose mutating call was **refused** is counted (it claims work that was refused, which is `T-Q12`'s sequence seen from the other end)
+
+### Gate
+
+Repeat §1g's sequence — the create turn, then the rename on the same thread —
+until one turn claims an unperformed edit (one in three at
+`AGENT_MAX_ITERATIONS=2` on `kimi-k2.6`), and show the counter moving on that
+turn and not on the control. **~$0.10, about six turns.** Rule 1 does not apply
+while it only counts; it does the day it rewrites a reply.
+
+## `T-Q14` A misquoted figure is inside the grounding tolerance — 0.5d
+**Repo:** BE · **Deps:** none · **Priority:** P1 · **Migration:** none
+
+### Why
+
+Asked for Q4 2024 monthly revenue, a turn printed December as
+**$3,860,405,700.00**. Its own `run_sql` returned **3,863,405,700.00**. The
+figure is wrong by three million rupiah-scale units, it is wrong in a table the
+reader would quote from, and **`CheckGrounding` reported the reply clean.**
+
+The reason is `ungroundedTolerance = 0.01` (`internal/guardrails/grounding.go:42`).
+The misquote is 0.078% off, so `closeEnough` matches it against the true value.
+The same turn's *derived* quarter total was flagged, so the instrument was awake
+— it simply cannot see a transcription error smaller than one percent, and one
+percent of a billion is ten million.
+
+**The tolerance is right for the reason it was added** and must not simply be
+lowered: the system prompt *requires* magnitude rendering, so "Rp 3,86 Miliar" is
+the correct way to write 3,863,405,700 and must keep reading as grounded. That is
+what `sameMagnitudeRendering` is for.
+
+**The fix is to stop asking one number to do both jobs.** A figure written at
+full precision — grouped digits, decimals to the cent — is making an exact claim
+and should be matched exactly. A figure written in magnitude units or visibly
+rounded is making an approximate claim and keeps the tolerance it needs.
+
+### Do
+
+- Classify each stated figure at extraction time as *exact* or *rendered*:
+  decimals present, or a full grouped integer with no magnitude word beside it,
+  is exact; a magnitude suffix (Miliar/Juta/Triliun/bn/m) or an obviously
+  rounded short form is rendered.
+- Exact figures match with a tolerance near zero (float equality within 1e-9,
+  which is what the parse can guarantee). Rendered figures keep `0.01` and
+  `sameMagnitudeRendering` unchanged.
+- The sum/difference pass in `grounded()` keeps the loose tolerance regardless:
+  a derived total is arithmetic the model did, and rounding there is expected.
+
+### Acceptance
+
+- [ ] `$3,860,405,700.00` against a returned `3863405700` reports ungrounded
+- [ ] `Rp 3,86 Miliar` against the same returned value still reports grounded
+- [ ] `$3,863,405,700.00` against the same value reports grounded
+- [ ] A derived total that is the sum of two returned values stays grounded at the loose tolerance
+- [ ] The 56-case set does not move (this changes a log line, not a reply)
+
+### Gate
+
+A table test is most of it. The live half is one turn that prints a full-precision
+table, which §1g already produced and stored — **$0.00**, because the reply is
+already persisted and the check runs on stored text.
+
+## `T-Q15` Every published score names a model nobody pinned — 0.5d
+**Repo:** BE (eval harness) · **Deps:** none · **Priority:** P1 · **Migration:** none
+
+### Why
+
+The 2026-08-18 rule-1 re-score put `deepseek/deepseek-v3.2` six cases below its
+2026-08-14 number, outside the ±2 band the set carries — and **half those
+failures were an English question answered in Indonesian**, which no ticket in
+this repo touches. It was resolved only by building a worktree at the commit from
+ninety minutes earlier and re-running six cases: four failed identically, so the
+regression predates the build and the live candidate is the provider changing
+`deepseek-v3.2` underneath us.
+
+**That resolution was luck.** It worked because the previous commit was hours
+old. Every published number in [`../coverage/eval-q1.md`](../coverage/eval-q1.md)
+— the 83.6%, the 87.5%, the 98.2%, the 89.3% — names a model string and no
+revision, so none of them can be re-run as the same measurement, and a future
+drop has no baseline that means anything. The set exists to tell whether *the
+tree* got better or worse; against an unpinned model it cannot answer that at all.
+
+### Do
+
+- Record what the provider actually served beside every score: OpenRouter returns
+  the resolved model in the response body, and the harness already reads that
+  response. Put it in the JSON report, in the printed summary, and in the row
+  anyone pastes into a coverage doc.
+- Where the provider supports a dated or revision-pinned alias, use it in
+  `golden.yaml`'s model list and say in the file why the alias is pinned.
+- When a re-score moves more than the noise band, the harness should say what it
+  can: print the previous report's resolved model beside this one's when `-out`
+  points at a directory that already holds one.
+- Backfill nothing. The published numbers stay as they are, with one sentence in
+  `eval-q1.md` saying they name no revision — rewriting history to look pinned
+  would be worse than the gap.
+
+### Acceptance
+
+- [ ] A run's JSON report and printed summary both carry the provider-resolved model identifier
+- [ ] Two runs against different resolved revisions are visibly different in the report
+- [ ] `golden.yaml` pins a revision where the provider offers one, with the reason in a comment
+- [ ] The published-score sentence in `eval-q1.md` names the gap for every number older than this ticket
+
+### Gate
+
+One re-run of any three cases, showing the resolved identifier in the report.
+**~$0.02.** No rule-1 implication: this changes what a report records, not what
+reaches a user.

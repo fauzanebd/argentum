@@ -3533,6 +3533,101 @@ protecting the wrong thing. The decline is not posted to
 *offered* a suggestion, and a decline is exactly the case that denominator is
 meant to count against.
 
+## Phase 2z — The first sitting where every ticket passed, and it still found three things (2026-08-18)
+
+The live halves of Phase 2x (`T-Q11`, `T-Q12`, `T-D24`) were run the same day
+they were priced, together with two arms that had been owed longer — `T-Q10`'s
+narrowed-agent case and `T-D23`'s edit turn — and the browser half of Phase 2y.
+About **$0.35 across roughly eighteen turns** on `moonshotai/kimi-k2.6` with
+`openai/gpt-5-nano` as the light tier. Full table:
+[`live-gate-backlog.md`](live-gate-backlog.md) §1g.
+
+**All three tickets passed what they were written to prove**, which has not
+happened before in this file's record. `T-Q11`'s persisted answer is 49
+characters — *"There were **300 transactions** in November 2024."* — against the
+08-17 row that stated 1,667 twice in front of the true 300. `T-Q12`'s digest
+carries `status: refused` with the reason, proven on **two** refusal types
+(iteration budget and wall clock), so the fix is not keyed to the one the ticket
+was written from. `T-D24`'s dashboard stores an absolute Q4 window, opens on it
+with three rows a panel, and the model said so in the reply instead of telling
+the user to fix the filter by hand — while a `qtd` dashboard created on 08-17
+still resolves from today and still draws nothing, which is the clearest picture
+of the gap the ticket closed.
+
+**And the sitting found three things anyway. That is the lesson it adds:
+the tickets passing is not the sitting passing.**
+
+**A P0 that is `T-Q12`'s failure without `T-Q12`'s cause.** On a thread whose
+history holds one clean, successful `create_dashboard` — no refusal anywhere in
+it — the sentence *"Rename that dashboard to 'Q4 2024 Sales Review'."* answered
+*"Done — your dashboard is now called…"* with `tool_calls=0`, no `agent_actions`
+row, and the stored title unchanged. Run again on the same thread it called the
+tool and landed the rename; a third attempt declined honestly. **One turn in
+three claimed work it had not done**, non-deterministically, and nothing in the
+product noticed — `CheckGrounding` asks whether every *figure* came from a tool
+and the claim here is an *action*. `native-dashboards.md` §4.2 named this hole on
+08-18 and left it unticketed; it is `T-Q13` now, P0.
+
+**A figure the instrument cannot see.** A turn printed December revenue as
+`$3,860,405,700.00` where its own `run_sql` returned `3,863,405,700.00`.
+`ungroundedTolerance` is one percent, the misquote is 0.078%, so it read as
+grounded — while the same turn's *derived* quarter total was flagged, so the
+detector was awake and looking. One percent of a billion is ten million. The fix
+is not to lower the tolerance, which exists because the prompt *requires*
+"Rp 3,86 Miliar" as the rendering of 3,863,405,700: it is to match a
+full-precision figure exactly and keep the tolerance for a rendered one
+(`T-Q14`).
+
+**And an environment fact that had already invalidated a turn.** A `cmd/worker`
+from a previous session was still consuming the same asynq queue, from a binary
+built before the tickets under test, and it served one of the gate's turns.
+Nothing in the product records which binary answered a turn — it was caught only
+because `turn completed` is a line this build added, and one turn had none.
+`pgrep -f 'bin/worker'` missed it because the stale process ran from a `go run`
+temp path. This is the same species as the Docker client skew recorded twice
+already: an environment fact that reads exactly like a passing run.
+
+**What the browser added, at $0.00 of extra model spend.** Phase 2y's decision
+card was looked at in both themes for the first time: the recommended row carries
+its reason as rendered text rather than a `title` attribute, so it is reachable
+without a mouse; the card sits under the newest answer only; a tap sends the turn
+and writes the pick row *before* the send unmounts the component; and the
+*"Nothing right now"* row hides the card, leaves the composer empty and untouched,
+and writes **no** `suggestion_picks` row — the decline staying out of
+`pick_rate`'s denominator, which is the one property that made the fourth row
+worth building. `T-D23`'s header action prefills
+`Change [Q4 2024 Sales Review](/dashboards/…)` with the caret at 81 of 81 in the
+textarea and starts no turn.
+
+**The rule-1 re-score, and the finding it turned into.** `T-Q11` changes what
+reaches the user on every turn, so the 56-case set was owed on both models:
+**kimi 94.6% (53/56) / $0.5427, deepseek 78.6% (44/56) / $0.1928.** kimi is two
+cases down on 08-14's 55/56, inside the ±2 band, with `zero_row_trap` at 3/3 and
+`guardrail` at 8/8 — the categories the narrowing lives in did not move. deepseek
+is **six** cases down, outside the band, and **six of its twelve failures are one
+shape**: `replied in "id", expected "en"`, an English question answered in
+Indonesian, which is CRITICAL GUIDELINE #1 failing and says nothing about the
+record narrowing.
+
+**That was measured instead of argued.** A worktree at `bdd7875` — the commit
+before these three tickets — ran the same six cases on the same model the same
+afternoon and **four failed identically**. The language regression is older than
+this build; the live candidate is provider-side drift in an unpinned
+`deepseek/deepseek-v3.2`. **The finding is about the instrument**: a set scored
+against an unpinned model cannot separate "the tree got worse" from "the model
+changed underneath us", and the only reason it could be separated here is that a
+commit from ninety minutes earlier was still there to run against. Nothing in
+this repo records the provider's model revision beside a published score, and
+every deepseek number this project has published shares that gap.
+
+**The one item that did not run, and the reason is worth writing where somebody
+will be standing.** `T-D23`'s redraw-without-reload could not be watched: the
+browser was authenticated by writing the access token into `localStorage`, which
+gives working REST and **no event stream**, because the stream needs a refresh
+cookie this tenant never issued to that browser. Every reply in the session
+appeared only after a reload. A gate that watches a live turn needs a real login,
+and no amount of model spend substitutes for it.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

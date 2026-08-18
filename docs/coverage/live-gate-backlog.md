@@ -113,6 +113,20 @@ paragraphs ago. Two of the three are about **$0.15** of model spend; the third,
 `T-Q11`'s rule-1 re-score, is **~$0.8** for both models on the 56-case set. None
 of the three is blocked on anything but a decision to spend it.
 
+**Revised 2026-08-18, third time — §1g is run, and for the first time every
+ticket under test passed.** `T-Q11`, `T-Q12` and `T-D24` were priced in §2 the
+morning they were built and run the same afternoon, which is the rule the
+`T-D22` revision asked for and the first time this file has followed it. All
+three held. **The sitting still produced two defects and an environment fact**,
+and all three sit *beside* the tickets rather than inside them: a turn that
+claimed an edit it never made with no refusal behind it (`T-Q13`, P0), a
+misquoted figure 0.078% off that the one-percent grounding tolerance reads as
+correct (`T-Q14`), and **a stale worker from a previous session consuming the
+same queue**, which served one gate turn from a pre-HEAD binary and was caught
+only because the new build's own log line was missing from it. Eleven sittings,
+eleven payouts — and the lesson this one adds is that *the tickets passing is
+not the sitting passing*.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of four things: the stack up, money spent, a browser opened, or a
 message sent to a real person's phone.
@@ -398,6 +412,75 @@ Second time. Written where somebody will be standing.
 | `T-U13` | Migration `058` up, down against a populated table, and up; then the pick endpoint's 404 / 400 / 200 and the summary's role split | **Pass on every item.** Two picks on one message both persisted (the no-unique-key design, proven rather than read). A client posting an invented `label` and `recommended` got a row carrying the message's own values — the property the table rests on, tested adversarially. Member picks 200, member summary 403, admin summary 200 |
 | `T-Q10` | Boot with `NEXT_STEPS_ENABLED=false`, run one turn, and diff the persisted message and the `final` event against a turn on the default | **Pass.** `final` metadata goes from `[latency_ms, next_steps]` to `[latency_ms]`, the persisted `metadata` from three steps to `NULL`, no `next_steps` usage event is written and the worker logs nothing about suggestions. It also proved the pass works when given room: 3 steps in 12,962 ms, on the `final` event and on the row |
 
+## 1g. ~~Owed by the 2026-08-18 build~~ — run 2026-08-18, and the bucket has paid eleven times out of eleven
+
+`T-Q11`, `T-Q12` and `T-D24` landed code-complete and unit-gated that morning,
+priced in §2 the same day rather than after — the rule the `T-D22` revision
+asked for, followed for the first time. **All three passed what they were
+written to prove**, which is the first sitting in this file where the tickets
+under test all held. It still found two defects and an environment fact, because
+that is what a sitting is for: the findings are beside the tickets, not in them.
+
+**Total spend: $1.11.** About $0.35 across roughly eighteen gate turns (priced
+at ~$0.17 — the overrun is the control arms, run twice to tell a defect from a
+coincidence), plus **$0.74 of eval**: the rule-1 re-score on both models
+($0.5427 + $0.1928) and $0.029 for the six-case A/B against the previous commit
+that told provider drift from a regression. Every estimate in §2 was low, and all
+of the difference bought a distinction the number alone would not have carried.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-Q11` | Re-ask the November and December 2024 transaction questions and read the persisted `messages.content`: one sentence, one figure, and it is the tool's | **Pass, and the record is 49 characters.** *"There were **300 transactions** in November 2024."* and the same shape for December's 310 — both the warehouse's true counts, against the 1,667 that the 08-17 turn stated twice in front of the true 300. The persisted row is one sentence; the pre-tool guess is no longer stored beside the answer |
+| `T-Q11` | A turn engineered to state a derived figure, to show the counter move — read from the worker's `turn completed` line and the span, not from `/metrics` | **Pass, and the counter names the figure.** A projection turn (*"if revenue grows by exactly 15%…"*) put **$4,442,916,555.00** in front of December's true $3,863,405,700.00. The `turn completed` line reads `ungrounded=1` where the three honest turns beside it read `ungrounded=0`, and the Warn line carries `ungrounded: [4.442916555e+09]` — the derived figure flagged, the tool's own figure left alone. Read from the worker log exactly as the ticket says, because `cmd/worker` still has no exposition endpoint (T-17's debt) |
+| `T-Q12` | Repeat the 2026-08-18 sequence: a create turn engineered to spend its iteration budget, then an edit turn on the same thread. Read `agent_actions` for the second turn — a tool call must appear — and the reply must not say "Done" | **Pass on the mechanism, on two different refusal types.** At `AGENT_MAX_ITERATIONS=3` the digest the next turn reads carries `{"tool":"run_sql", … "error":"iteration budget spent (3 of 3)","status":"refused"}` — where 08-18 recorded `{"tool":"update_dashboard","rows":-1}`, indistinguishable from a success. A second turn hit the **wall clock** instead and recorded `"time budget spent (3m0s of 2m30s)","status":"refused"` on all three calls, so the fix is not keyed to one refusal reason. Both turns then reported honestly — *"my exploration budget for this turn has been exhausted… I was not able to"* — and a third named the true current title while declining. The audit table and the agent's memory now agree |
+| `T-Q12` control | The edit on a clean thread, which passed on 2026-08-18 and must keep passing | **Pass.** `update_dashboard \| ok`, `tool_calls=1`, the title moved to `Q4 2024 Sales Review` and `updated_at` with it |
+| `T-D24` | One turn asking for the closed-quarter dashboard; open it without touching anything and read the panels: **rows, not an empty grid** | **Pass, and the reply is the sentence the 08-18 gate could not produce.** The model stored `default: {from: 2024-10-01, to: 2024-12-31}` and said *"The period filter is set to Oct 1 – Dec 31, 2024 by default, so anyone opening the dashboard will land directly on Q4 2024 results"* — against 08-18's *"simply change the Period filter … when you open the dashboard"*. `GET /api/dashboards/:id/data` untouched returns `applied_filters: {"period":"2024-10-01…2024-12-31"}` with **3 rows in each panel**, and the browser draws both |
+| `T-D24` | Re-open a dashboard created before the change and confirm its preset still computes from today | **Pass, on a real pre-change row.** `57f822e9` (created 2026-08-17, `default: "qtd"`) resolves to `applied_filters: {"period":"qtd"}` and **0 rows** — Q3 2026, where the demo data ends in December 2024. Presets are untouched, and the empty grid it draws is the clearest available picture of why `T-D24` existed |
+| `T-Q10` | One turn on an agent scoped to `get_schema` + `run_sql`, showing the chart suggestion narrowed away | **Pass — the only live cover `needsMissingTool` has, and it discriminates.** Same question, same light model, two agents. Unrestricted: three steps, the third *"Create a dashboard showing quarterly revenue by region and product category"*. Scoped to two tools: three steps, **not one of them naming a chart or a dashboard** — all `run_sql`-shaped breakdowns. At most one `recommended` on both |
+| `T-D23` | The panel grid before and after one edit turn, watched | **Two thirds pass; the redraw itself is still owed and the reason is the rig.** The header action lands in `/chat` with `Change [Q4 2024 Sales Review](/dashboards/b410d600…):` and the caret at **81 of 81 in the TEXTAREA**, no turn started — the 08-17 focus fix holding. The edit turn, sent from a **fresh thread** carrying only that link, changed the right dashboard (`panels[0].viz: bar → line`, `updated_at` moved) — which is `T-D22`'s text-reference path proven from the door `T-D23` built. **What did not run is the one item that needed watching**: no streamed reply rendered live in the session at all, because the browser was authenticated by writing the access token into `localStorage` and holds no refresh cookie for this tenant. REST worked throughout; the event stream never connected. A gate that watches a live turn needs a real login, and that is a note for the next sitting rather than a defect |
+
+**State left behind.** Tenant `Gate 0818`
+(`25c68cc0-5bf7-47ac-aacd-789062d97d6f`), one connection to the demo warehouse,
+two agents (`Analyst` unrestricted, `Narrow Analyst` scoped to `get_schema` +
+`run_sql`), six threads, one dashboard (`b410d600`, Q4 2024 absolute window,
+`panels[0].viz = line` after the edit turn), and `http_action` enabled with
+`requires_approval: true`. The DSN key-health count moves to **2 of 24** from
+here, on the same rule §1d recorded: a gate tenant registers a working
+connection and is left in the database. `cmd/api`, `cmd/worker` and the dev
+server were stopped; the compose containers were already up and were left up.
+
+**Two defects, and neither belongs to the tickets under test.**
+
+**The first is `T-Q12`'s failure without `T-Q12`'s cause.** On a thread whose
+history holds one clean successful `create_dashboard` — no refusal anywhere in
+it — *"Rename that dashboard to 'Q4 2024 Sales Review'."* answered *"Done — your
+dashboard is now called…"* with `tool_calls=0`, **no `agent_actions` row at
+all**, and the stored title unchanged. The control immediately after, same
+sentence, same thread, called the tool and landed the rename; a third attempt
+declined honestly. **One turn in three claimed work it had not done**, and
+nothing in the product noticed: `CheckGrounding` counts figures and the claim is
+an *action*. Ticketed `T-Q13`, P0
+([`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md)).
+
+**The second is a figure the grounding check cannot see.** A turn printed
+December revenue as `$3,860,405,700.00` where its own `run_sql` returned
+`3,863,405,700.00`. `ungroundedTolerance` is one percent and the misquote is
+0.078%, so it read as grounded — while the same turn's derived quarter total was
+flagged, so the instrument was awake. One percent of a billion is ten million.
+Ticketed `T-Q14`, P1.
+
+**And an environment fact that invalidated a turn before anyone noticed.** A
+**stale `cmd/worker` from a previous session was still consuming the same asynq
+queue** — a binary built before the tickets under test. It served one of the
+gate's turns. Nothing in the product says which binary answered a turn; it was
+caught only because `turn completed` is a HEAD-only log line and one turn had
+none. `pgrep -f 'bin/worker'` matched the new worker only, because the old one
+ran from a `go run` temp path — the check that works is
+`ps ax | grep -E 'exe/worker|bin/worker'`. **Kill every worker before a gate, and
+count the `turn completed` lines against the turns you sent.** This is the same
+species as the Docker line recorded twice above: an environment fact that reads
+as a passing run.
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |
@@ -417,15 +500,15 @@ Second time. Written where somebody will be standing.
 | `T-Q6` | ~~A two-turn conversation at `PRIOR_WORK_TURNS=3` and again at `=0`~~ → **re-specified 2026-08-14**: `follow-up-breakdown-no-reschema` at `=3` and at `=0` on one model (two cases of spend), or a follow-up on a thread where turn 1 has fallen out of `CONTEXT_MAX_TURNS` ([`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md) §T-Q6) | **Run 2026-08-14 — the mechanism passes and the acceptance line does not measure it.** `role='tool'` rows exist now (the column had none), and injection fires at `=3` and never at `=0` while the rows are written at both. But six turns across the two arms produced **identical tool sequences**: inside `CONTEXT_MAX_TURNS` the assistant's own prior message already quotes the SQL, so the digest tells the model what it can read. T-Q6 is load-bearing only once the tool turn falls out of the window, which a two-turn conversation cannot reach ([`agent-quality.md`](agent-quality.md) §11) |
 | ~~`T-Q7`~~ | ~~The rolling-summary block appearing in a turn on a thread past 20 messages~~ | **Pass, 2026-08-14** on the 58-message thread: `summary_chars=202 message_count=60 history_window=20`, and the answer reconstructs the opening alert the window no longer covers. The line proving it **did not exist** — four silent exits, no success log, and nothing else records the composed user message, so injected and skipped logged identically. One of those exits (`messageCount` failing) disables T-Q7 on every thread and looks like a short conversation ([`agent-quality.md`](agent-quality.md) §12) |
 | `T-Q8` | A harvest that writes an example, and a turn that retrieves one | Embedding calls only, one per example. Every gate above `client.Embed` is proven ([`agent-quality.md`](agent-quality.md) §3) |
-| `T-D23` | The panel grid before and after one edit turn, watched | **Moved here from §3a on 2026-08-17.** The other two thirds of that row passed in the browser with no spend; this third needs a turn, because the invalidation fires on a `tool_call` event naming `update_dashboard` and there is no way to produce one without a model. Whether the grid redraws without a reload is a thing somebody watches happen |
+| `T-D23` | The panel grid before and after one edit turn, watched | **Still owed after 2026-08-18, and now for a rig reason rather than a cost one** — the edit turn ran and landed (`bar → line` from a fresh thread carrying only the dashboard link), but no streamed reply rendered in a browser authenticated by writing the token into `localStorage`, which holds no refresh cookie. Needs a real login, not money. **Moved here from §3a on 2026-08-17.** The other two thirds of that row passed in the browser with no spend; this third needs a turn, because the invalidation fires on a `tool_call` event naming `update_dashboard` and there is no way to produce one without a model. Whether the grid redraws without a reload is a thing somebody watches happen |
 | ~~`T-D22`~~ | ~~Build the 08-17 two-panel dashboard, then three edit turns in the same thread; then a fresh thread asking to change "the revenue dashboard" with no id~~ | **Run 2026-08-18 — $0.119, six turns, and it found a P0 the ticket did not predict.** Every mechanical property passed *when it was reached*: unnamed panels byte-identical through a patch, the id and URL fixed, a wrong panel title refused by name, a bad column mapping caught by `dryRun` and self-corrected — and the row that mattered most, the **no-id path, passed exactly as designed**: one call, `result_status=ok`, `rows_returned=0`, 4 ms, a reply naming both candidate dashboards and asking which. No retry loop. **What failed is the turn around the tool: two consecutive turns reported edits they never made**, with zero tool calls, because a budget-refused call from the previous turn was remembered as an ordinary one. Ticketed `T-Q12`; write-up in [`native-dashboards.md`](native-dashboards.md) §4 |
 | ~~`T-Q10`~~ | ~~Turns producing `next_steps`, and the two numbers that decide the feature's future~~ | **Run 2026-08-17 — and the numbers settle the design against the ticket. 607 µUSD per pass (≈3% of the turn) and 12,962 ms.** Cheap and slow, where `T-Q10` assumed the opposite; its own rule says revisit above 1s. The 5s timeout it specified could never be met here (12.5–16.6s measured), so the feature was on and inert — now `NEXT_STEPS_TIMEOUT_SECS`, and exhausting it logs at `Warn` ([`next-steps-and-revision.md`](next-steps-and-revision.md) §6.4) |
-| `T-Q10` | One turn on an agent scoped to `get_schema` + `run_sql`, showing the chart suggestion narrowed away | **The one arm that did not run.** It is the only live cover for `needsMissingTool`, which is otherwise proven by unit test alone — and it is the inverse of the failure `feature-coverage.md` records, an agent recommending work it cannot do |
+| ~~`T-Q10`~~ | ~~One turn on an agent scoped to `get_schema` + `run_sql`, showing the chart suggestion narrowed away~~ | **Run 2026-08-18 — pass, and it discriminates.** The unrestricted agent suggests *"Create a dashboard…"* on the same question the two-tool agent answers with three breakdowns and no chart. `needsMissingTool`'s only live cover — §1g |
 | `T-Q10` | The `next_steps` eval category — parse, cap, allowlist, no-figures, and the clarification negative — with the pass on and off | One set per arm. Rule 1 applies: the pass changes what reaches the user on every turn. The set carries a ±2-case noise band, so a one-case delta is not a result |
-| `T-Q12` | Repeat the 2026-08-18 sequence: a create turn engineered to spend its iteration budget, then an edit turn on the same thread. Read `agent_actions` for the second turn — **a tool call must appear** — and the reply must not say "Done" | **~$0.12, about four turns**, the same shape the gate that found it cost. The control arm is the edit on a clean thread, which passed on 2026-08-18 and must keep passing. Built 2026-08-18 ([`delivery-log.md`](delivery-log.md) Phase 2x) |
-| `T-Q11` | Re-ask the November and December 2024 transaction questions on `kimi-k2.6` and read the persisted `messages.content`: one sentence, one figure, and it is the tool's | **~$0.03, two turns.** The turn that produced the defect is in [`next-steps-and-revision.md`](next-steps-and-revision.md) §6.5, so this is a re-ask rather than a hunt. Then a turn engineered to state a derived figure, to show the counter move — read from the worker's `turn completed` line and the span, **not** from `/metrics`: the worker has no exposition endpoint, which is T-17's debt and is written into the code |
-| `T-Q11` | Rule 1: the 56-case set on both models, with the number and the date posted | **~$0.8** (kimi ≈$0.63 + deepseek ≈$0.14 at the 2026-08-16 prices). It changes what reaches the user on every turn — the record is narrowed to one iteration — and the set carries a ±2-case noise band, so a one-case delta is not a result |
-| `T-D24` | One turn asking for the closed-quarter dashboard the 2026-08-18 gate asked for; open it without touching anything and read the panels: **rows, not an empty grid**. Then re-open a dashboard created before the change and confirm its preset still computes from today | **~$0.02, one turn.** The unit half is proven under two clocks eighteen months apart; what a turn adds is whether the model *uses* the vocabulary now that both tool descriptions name it — which is the half no test can supply |
+| ~~`T-Q12`~~ | ~~Repeat the 2026-08-18 sequence: a create turn engineered to spend its iteration budget, then an edit turn on the same thread. Read `agent_actions` for the second turn — **a tool call must appear** — and the reply must not say "Done"~~ | **Run 2026-08-18 — pass on two refusal types**, and the control arm passed with it. The digest now carries `status: refused` with the reason, and the next turn reports honestly instead of claiming the work. §1g has the transcript. It also found the failure *without* the refusal — ticketed `T-Q13` |
+| ~~`T-Q11`~~ | ~~Re-ask the November and December 2024 transaction questions on `kimi-k2.6` and read the persisted `messages.content`: one sentence, one figure, and it is the tool's~~ | **Run 2026-08-18 — pass.** The persisted answer is 49 characters — *"There were **300 transactions** in November 2024."* — against the 08-17 row that said 1,667 twice before saying 300 once. December is the same shape around its true 310. The counter reads `ungrounded=0` on three honest turns and **1** on a turn engineered to project a figure, naming `[4.442916555e+09]` while leaving the tool's own figure alone — read from the worker's `turn completed` line and its Warn, because `cmd/worker` still has no exposition endpoint. §1g |
+| ~~`T-Q11`~~ | ~~Rule 1: the 56-case set on both models, with the number and the date posted~~ | **Run 2026-08-18 — kimi 94.6% (53/56) / $0.5427, deepseek 78.6% (44/56) / $0.1928.** kimi is −2 against 08-14's 55/56, inside the ±2 band, and `zero_row_trap` (3/3) and `guardrail` (8/8) — the categories the narrowing lives in — did not move. **deepseek is −6, outside the band, and it is not this build**: six of its twelve failures are one shape, `replied in "id", expected "en"`, and a worktree at `bdd7875` (the commit *before* these tickets) fails four of those same six identically on the same model the same afternoon. The live candidate is provider drift in an unpinned model — a finding about the instrument, not the agent ([`eval-q1.md`](eval-q1.md) *The `T-Q11` rule-1 re-score*) |
+| ~~`T-D24`~~ | ~~One turn asking for the closed-quarter dashboard the 2026-08-18 gate asked for; open it without touching anything and read the panels: **rows, not an empty grid**. Then re-open a dashboard created before the change and confirm its preset still computes from today~~ | **Run 2026-08-18 — pass on both arms.** The model used the vocabulary unprompted and said so in the reply; the dashboard opens on Q4 2024 with 3 rows a panel, and a pre-change `qtd` dashboard still computes from today — §1g |
 | ~~`T-17`~~ | ~~`curl` the exposition; one trace waterfall for a tool-calling turn~~ | **Both run 2026-08-08 — ticket closed.** Exposition: 401 / 401 / 200 with the right token, queue gauges reading a queue discovered from Redis. Waterfall: one `agent.turn` of 7,750 ms with 18 ms inside `query_metric`, which is the LLM/SQL split the ticket asked for. It cost one case of model spend, and it found the defect §9 records — `memory.hydrate` was landing in its own trace ([`observability.md`](observability.md) §8–§9) |
 
 ~~`T-17`'s exposition half needs no spend and was not run on 2026-08-04~~ —

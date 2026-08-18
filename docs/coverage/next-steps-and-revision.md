@@ -522,3 +522,80 @@ in one bubble: *"There were 1,667 transactions in November 2024. There were
 1,667 transactions in November 2024. There were 300 transactions in November
 2024."* Nothing about the rendering hides it and nothing about it looks like an
 error — it reads as an answer that repeated itself.
+
+## 8. The narrowing, proven — and the decision card looked at (2026-08-18)
+
+Two things that had never been watched: `T-Q10`'s tool-allowlist narrowing on a
+real turn, and the Phase 2y decision card in a browser. Backlog row:
+[`live-gate-backlog.md`](live-gate-backlog.md) §1g.
+
+### 8.1 `needsMissingTool` discriminates
+
+The arm `T-Q10` left unrun was its only live cover — every other proof of the
+narrowing is a unit test. Run with `NEXT_STEPS_ENABLED=true` and
+`NEXT_STEPS_TIMEOUT_SECS=30` (the 5s the ticket specified still cannot be met by
+`gpt-5-nano`), on one question — *"What was monthly revenue in the fourth quarter
+of 2024?"* — against two agents on the same tenant.
+
+| Agent | `allowed_tools` | Suggestions returned |
+| ----- | --------------- | -------------------- |
+| Analyst | unrestricted | Break down by region · Break down by product category · **Create a dashboard for quarterly revenue by reg…** |
+| Narrow Analyst | `get_schema`, `run_sql` | Break down by region · Break down by product category · **Break down by sales channel** |
+
+Same question, same light model, three steps each, exactly one `recommended` on
+both. The unrestricted agent proposes the dashboard; the two-tool agent proposes
+a third breakdown and **names no chart and no dashboard anywhere**. That is the
+inverse of the failure `feature-coverage.md` records — an agent that was told it
+held nine tools recommending work it could not do — and it is now measured rather
+than asserted.
+
+The 48-character label cap is visible in the same row: *"Create a dashboard for
+quarterly revenue by reg…"* is the truncation, and the full request survives in
+`prompt`, which is what the composer receives.
+
+### 8.2 The decision card, both themes
+
+Phase 2y shipped on the owner's call with no ticket and therefore no gate row.
+Filed and run here, at **$0.00** of extra model spend — every card read was
+written by a turn an earlier arm had already paid for.
+
+- **The recommended row carries its reason as rendered text**, not a `title`
+  attribute: *"to see which regions drive Q4 revenue and growth"* sits under the
+  label, beside a ✓ and an *"Analyst's lean"* chip, on a tinted row. Reachable
+  without a mouse, which is the thing the chips could not do.
+- **Newest answer only.** After a second turn the older answer's card is gone
+  and the new one sits under the newest reply.
+- **A tap sends the turn** — Phase 2y's reversal — and the pick row is written
+  **before** the send: `idx=0, recommended=t, label='Break down by region'`
+  landed while the component that wrote it was being unmounted by the
+  navigation, which is the ordering the phase note claims.
+- **The decline is a real answer and costs nothing.** *"Nothing right now"*
+  hides the card, leaves the composer empty and unfocused, and writes **no**
+  `suggestion_picks` row — the count was 7 before and 7 after. A decline staying
+  out of `pick_rate`'s denominator is the property the fourth row exists for.
+- Both themes render the tint, the check and the chip; light mode is the absence
+  of `dark` on `<html>`, and the card reads correctly in it.
+
+**What is still owed on Phase 2y:** the approval card's half — the *"Adjust"*
+third option and the `decided_by` footer. `http_action` was enabled on the gate
+tenant with `requires_approval: true` and a turn asked for a proposal; the agent
+**correctly refused to invent a destination** — *"I can only call HTTP endpoints
+that have been pre-registered by an admin … I cannot set the destination URL
+myself"* — so reaching an approval card needs a registered endpoint as well as an
+enabled kind. Configuration, not money, and the refusal is itself the right
+behaviour to have seen.
+
+### 8.3 A figure the grounding check called clean
+
+The narrowed-agent turn above printed December revenue as **$3,860,405,700.00**
+in its table. Its own `run_sql` returned **3,863,405,700.00**. The reply was
+reported grounded, because `ungroundedTolerance` is one percent
+(`internal/guardrails/grounding.go:42`) and the misquote is 0.078% — while the
+same turn's *derived* quarter total **was** flagged, so the detector was awake
+and looking at the same table.
+
+The tolerance is not a mistake: the system prompt requires magnitude rendering,
+so "Rp 3,86 Miliar" must keep reading as 3,863,405,700. What is wrong is asking
+one number to cover both cases. A figure written to the cent is making an exact
+claim. Ticketed `T-Q14`
+([`../plan/02-agent-quality-roadmap.md`](../plan/02-agent-quality-roadmap.md)).
