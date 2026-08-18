@@ -75,6 +75,20 @@ func (r *SourceDocumentRepo) GetForCompany(ctx context.Context, companyID, id st
 	return d, nil
 }
 
+// GetByID is the worker's read: a queue hands it an id and no tenant. See the
+// interface's own note on why this is the only unscoped one.
+func (r *SourceDocumentRepo) GetByID(ctx context.Context, id string) (*domain.SourceDocument, error) {
+	q := `SELECT ` + sourceDocumentColumns + ` FROM source_documents WHERE id = $1`
+	d, err := scanSourceDocument(r.db.QueryRowContext(ctx, q, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read source document by id: %w", err)
+	}
+	return d, nil
+}
+
 func (r *SourceDocumentRepo) GetBySHA(ctx context.Context, companyID, sha256 string) (*domain.SourceDocument, error) {
 	q := `SELECT ` + sourceDocumentColumns + `
 		FROM source_documents WHERE company_id = $1 AND content_sha256 = $2`

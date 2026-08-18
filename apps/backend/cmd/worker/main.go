@@ -168,6 +168,7 @@ func main() {
 	mux.HandleFunc(queue.TypeBusinessInfer, makeBusinessInferHandler(stack.Inference))
 	mux.HandleFunc(queue.TypeWatcherEval, makeWatcherEvalHandler(stack.Watchers))
 	mux.HandleFunc(queue.TypeCookbookHarvest, makeCookbookHarvestHandler(stack.Cookbook))
+	mux.HandleFunc(queue.TypeDocumentParse, makeDocumentParseHandler(stack.DocumentParse))
 
 	// --- Periodic task manager ---
 	// Polls scheduled_tasks every SyncInterval and registers/refreshes one
@@ -416,6 +417,45 @@ func makeWatcherEvalHandler(svc *app.WatcherService) asynq.HandlerFunc {
 // the agent can do — the cookbook is an improvement on today's prompt, never a
 // prerequisite for it — and letting asynq retry a deployment-wide scan on a
 // backoff would put the whole fleet's embedding spend behind one bad tenant.
+// makeDocumentParseHandler reads one uploaded PDF into per-page artifacts
+// (T-P2).
+//
+// Three of the four exits are SkipRetry, and that is the whole judgement in
+// this handler: a document with more pages than this deployment reads will have
+// the same page count on every attempt, a deleted document will stay deleted,
+// and a process with no parser will not grow one. Only "the service returned an
+// error it called retryable" is worth the queue's backoff — which is what the
+// parse service returns for an unreachable sidecar and nothing else.
+func makeDocumentParseHandler(svc *app.DocumentParseService) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var p queue.DocumentParsePayload
+		if err := json.Unmarshal(t.Payload(), &p); err != nil {
+			return asynq.SkipRetry
+		}
+		if p.DocumentID == "" || svc == nil {
+			// A queued parse on a process with no parser is not an error to
+			// shout about: the API queues on DOCPARSE_ENABLED and the worker
+			// builds the service on that plus a URL, so this is the gap between
+			// the two — logged at Debug because the document is intact and says
+			// so itself.
+			logrus.WithField("document_id", p.DocumentID).
+				Debug("document:parse skipped; no parse service on this worker")
+			return asynq.SkipRetry
+		}
+		err := svc.Parse(ctx, p.DocumentID)
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, domain.ErrNotFound), errors.Is(err, app.ErrParseNotConfigured):
+			return asynq.SkipRetry
+		default:
+			logrus.WithError(err).WithField("document_id", p.DocumentID).
+				Warn("document parse failed; the document is left readable-but-unread and the task will retry")
+			return err
+		}
+	}
+}
+
 func makeCookbookHarvestHandler(svc *app.CookbookService) asynq.HandlerFunc {
 	return func(ctx context.Context, _ *asynq.Task) error {
 		if svc == nil {

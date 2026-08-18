@@ -34,6 +34,18 @@ func (f *fakeSourceDocs) Create(_ context.Context, d *domain.SourceDocument) err
 	return nil
 }
 
+// GetByID is the worker's unscoped read. The fake keeps it beside the scoped
+// one so a test that reaches for the wrong one fails on the tenant assertions
+// rather than compiling into a false pass.
+func (f *fakeSourceDocs) GetByID(_ context.Context, id string) (*domain.SourceDocument, error) {
+	for _, r := range f.rows {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
 func (f *fakeSourceDocs) GetForCompany(_ context.Context, companyID, id string) (*domain.SourceDocument, error) {
 	for _, r := range f.rows {
 		if r.CompanyID == companyID && r.ID == id {

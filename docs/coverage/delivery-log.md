@@ -3692,6 +3692,64 @@ already up and was left up; the API binary was stopped. **No stale process
 served any arm** — §1g's lesson, checked before the sitting rather than
 discovered during it.
 
+## Phase 3b — A parser that knows what it cannot read (2026-08-18)
+
+`T-P2` built and gated in the same sitting as `T-P1`, $0.00 again. It adds the
+second non-Go service in this repository — `apps/docparse`, FastAPI and
+pdfplumber — and the Go half that treats it as what it is: another container
+that fails in three ways which mean different things.
+
+**Three deviations from the ticket, all deliberate and all cheaper than what it
+asked for.** The parser is **pdfplumber, not Docling**: this ticket is the text
+layer and the ruling lines, which needs no model, no GPU and a three-package
+image; the ML rung waits for a measured failure in `T-P4` and arrives inside the
+sidecar without the Go side noticing. The page cap is enforced **inside** the
+sidecar rather than before calling it, because a page count does not exist until
+the file is opened — the refusal still lands before any page is read. And
+artifacts sit under `source-documents/<company>/<sha>/`, matching `T-P1`'s
+prefix rather than the ticket's `documents/`.
+
+**The fourth change is the one that matters, and the first fixture forced it.**
+A ruled table is the easy case. ERP exports, bank statements and anything laid
+out with tabs draw no lines at all — and a column-aligned Indonesian sales
+report produced **zero** table candidates until a text-strategy fallback was
+added. A parser that finds only ruled tables reports "no tables" on a page that
+is nothing but a table. The fallback is guarded by a shape check (most rows
+filled to the same width), because the text strategy will otherwise call two
+consecutive prose lines a two-by-two grid.
+
+**Ten arms, all passing.** The sidecar's health check names its build — the
+answer to the stale-process finding §1g recorded, since a sidecar serving from a
+previous image looks exactly like a passing run. The shared secret is enforced.
+The fixture table came back 7×4 with every data row correct. A scan classified
+`needs_ocr` at `image_area_ratio` 1.0 with **empty markdown**, which is the
+point: a page whose text layer failed the test returns nothing rather than
+half-decoded glyphs that look like content. End to end, an upload reached
+`parsed` in **125 ms** with one page artifact and one manifest in MinIO carrying
+`pdfplumber 0.11.4`; the scan reached `parsed` carrying *"1 of 1 pages hold no
+readable text and were not read"* on the row itself, not only in a log; a
+five-page document against a three-page cap reached `failed` with the parser's
+own sentence and **zero retries**, which is the whole point of separating a
+refusal from an outage.
+
+**And the outage arm proved the other half.** With the sidecar stopped, an
+upload rested at `uploaded` saying the parser could not be reached — not
+`parsing`, which would describe a process that is not running, and not `failed`,
+which would describe a file that is fine. The task sat in the retry set, and
+when the sidecar came back the retry **parsed the document and cleared the
+warning** with nothing else touched.
+
+**One finding, and it belongs to the next ticket.** The text strategy swallowed
+the report's title into the grid and split it across two cells — `LAPORAN
+PENJUA` / `LAN Q4 2024`. The data rows were untouched, so it is not a wrong
+number; it is a junk row, and `T-P4`'s header detection is where it dies. Its
+acceptance list now names this case.
+
+**Not run:** the broken-font-map page. Synthesising a PDF whose ToUnicode table
+is missing was more work than the arm was worth, so that branch of the
+classifier is covered by unit tests and by no file — written down here rather
+than counted as passing.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

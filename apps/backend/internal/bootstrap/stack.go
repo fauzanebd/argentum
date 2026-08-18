@@ -46,6 +46,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/dashboard"
 	"github.com/fauzanebd/argentum/internal/docgen"
+	"github.com/fauzanebd/argentum/internal/docparse"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/llmclient"
@@ -166,6 +167,13 @@ type Stack struct {
 	// checks it for exactly that reason.
 	Docs      *docgen.Service
 	Documents domain.DocumentRepository
+
+	// DocumentParse reads an uploaded PDF into per-page artifacts (T-P2). Nil
+	// on a deployment with no object storage or no parser configured, and the
+	// worker's document:parse handler answers that by leaving the document at
+	// 'uploaded' rather than by failing it — a file nobody has read is not a
+	// broken file.
+	DocumentParse *app.DocumentParseService
 
 	// Guardrails is the loaded policy set. The agent factory binds a per-tenant
 	// copy of it for the input rules; the runner keeps this one for the output
@@ -344,6 +352,33 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// off, which is the only difference between the two.
 		s.Docs = docgen.New(storageSvc, documentRepo, s.Companies, brandingSvc, s.UsageSvc, presignTTL).
 			WithVideo(cfg.VideoClient(), cfg.VideoLimits())
+		// The parse pipeline (T-P2). Inside the storage branch because both
+		// halves of it are objects: the PDF it reads and the per-page artifacts
+		// it writes. A parser configured without storage would have nothing to
+		// read, which is why this is not its own condition.
+		if cfg.DocParseEnabled {
+			parser := docparse.New(docparse.Options{
+				BaseURL: cfg.DocParseURL,
+				Secret:  cfg.DocParseSharedSecret,
+				Timeout: time.Duration(cfg.DocParseTimeoutSecs) * time.Second,
+			})
+			if parser == nil {
+				// Enabled with no URL. Said out loud rather than left as a silent
+				// nil: the symptom — documents resting at 'uploaded' — is identical
+				// to the feature being off, and an operator who set DOCPARSE_ENABLED
+				// believes it is on.
+				logrus.Warn("DOCPARSE_ENABLED is set but DOCPARSE_URL is empty; uploaded documents will not be read")
+			} else {
+				s.DocumentParse = app.NewDocumentParseService(
+					pgctl.NewSourceDocumentRepo(controlDB), storageSvc, parser, cfg.DocMaxPages,
+				)
+				logrus.WithFields(logrus.Fields{
+					"url":       cfg.DocParseURL,
+					"max_pages": cfg.DocMaxPages,
+				}).Info("document parsing enabled")
+			}
+		}
+
 		logrus.WithFields(logrus.Fields{
 			"bucket":   cfg.MinIOBucket,
 			"endpoint": cfg.MinIOEndpoint,

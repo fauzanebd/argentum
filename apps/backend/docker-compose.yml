@@ -232,6 +232,15 @@ services:
       RENDER_BASE_URL: ${RENDER_BASE_URL:-http://render:8090}
       RENDER_SHARED_SECRET: ${RENDER_SHARED_SECRET:-}
 
+      # Uploaded documents (T-P1/T-P2). The API only needs to know whether to
+      # queue a parse; the parse itself happens on the worker, which is why no
+      # DOCPARSE_URL is set here. Off by default: with it unset an upload is
+      # stored and rests at 'uploaded', which is the honest state for a file
+      # nothing has read.
+      DOCPARSE_ENABLED: ${DOCPARSE_ENABLED:-false}
+      DOC_MAX_UPLOAD_MB: ${DOC_MAX_UPLOAD_MB:-25}
+      DOC_MAX_PAGES: ${DOC_MAX_PAGES:-200}
+
       # Frontend origin allowlist
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
@@ -277,6 +286,39 @@ services:
       timeout: 10s
       retries: 20
       start_period: 60s
+    restart: unless-stopped
+    networks: [ argentum_network ]
+
+  # The parser sidecar (T-P2). Python, because the mature PDF layout tools are;
+  # a separate service, because it holds no credentials and no database handle
+  # and every tenancy decision stays in Go where the tenancy tests are.
+  #
+  # It needs no egress at all — everything it reads arrives in a request body —
+  # and that stays true until T-P3, which adds a model call behind a flag that
+  # is off by default.
+  docparse:
+    build:
+      # The repo root, matching the render service: the Dockerfile copies from
+      # apps/docparse and a context of `.` would put it out of reach.
+      context: ../..
+      dockerfile: apps/docparse/Dockerfile
+    container_name: argentum_docparse
+    environment:
+      DOCPARSE_PORT: 8091
+      DOCPARSE_SHARED_SECRET: ${DOCPARSE_SHARED_SECRET:-}
+      DOCPARSE_MAX_BODY_MB: ${DOCPARSE_MAX_BODY_MB:-50}
+    ports:
+      - "8091:8091"
+    healthcheck:
+      # The check reports the parser build, which is the value T-P13 records
+      # beside every score: a sidecar answering from a previous image looks
+      # exactly like a passing run, and this repo has already lost a gate turn
+      # to that failure once.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8091/healthz').status==200 else 1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
     restart: unless-stopped
     networks: [ argentum_network ]
 
@@ -348,6 +390,17 @@ services:
       # process can finish rather than advertising a file it cannot produce.
       RENDER_BASE_URL: ${RENDER_BASE_URL:-http://render:8090}
       RENDER_SHARED_SECRET: ${RENDER_SHARED_SECRET:-}
+
+      # And this is the process that actually reads an uploaded PDF (T-P2). Both
+      # halves are needed here and only the flag is needed on the API: a worker
+      # with DOCPARSE_ENABLED and no URL logs a warning and leaves documents at
+      # 'uploaded' rather than failing them, because a file nobody has read is
+      # not a broken file.
+      DOCPARSE_ENABLED: ${DOCPARSE_ENABLED:-false}
+      DOCPARSE_URL: ${DOCPARSE_URL:-http://docparse:8091}
+      DOCPARSE_SHARED_SECRET: ${DOCPARSE_SHARED_SECRET:-}
+      DOCPARSE_TIMEOUT_SECS: ${DOCPARSE_TIMEOUT_SECS:-120}
+      DOC_MAX_PAGES: ${DOC_MAX_PAGES:-200}
 
       # The turn span starts here, so a waterfall with no worker export is the
       # half of the trace nobody wants.

@@ -410,6 +410,20 @@ type Config struct {
 	// have understood it. A deployment turns this on when it has a parser
 	// (T-P2) to point at.
 	DocParseEnabled bool
+	// DocParseURL is where apps/docparse listens. Empty leaves the worker with
+	// no parser even when DocParseEnabled is true, and the document rests at
+	// 'uploaded' — the same resting state, reached by a different mistake, and
+	// the log says which.
+	DocParseURL string
+	// DocParseSharedSecret is sent as `x-docparse-secret`, matching the render
+	// service's `x-render-secret`. Not the security boundary — the sidecar is
+	// not meant to be reachable from outside the deployment — but what stops
+	// something else on the network calling it by accident.
+	DocParseSharedSecret string
+	// DocParseTimeoutSecs bounds one whole parse. Two minutes by default, which
+	// sits above a 200-page text-layer read and well below anything a queue
+	// would call hung.
+	DocParseTimeoutSecs int
 
 	// DashboardPanelTimeoutSecs bounds one native dashboard panel's query
 	// (T-D7). It is per panel rather than per dashboard because the panels run
@@ -597,9 +611,12 @@ func Load() (*Config, error) {
 		DocumentPresignTTLSecs: getEnvAsInt("DOCUMENT_PRESIGN_TTL_SECS", 3600),
 
 		// Uploaded source documents (T-P1)
-		DocMaxUploadMB:  getEnvAsInt("DOC_MAX_UPLOAD_MB", 25),
-		DocMaxPages:     getEnvAsInt("DOC_MAX_PAGES", 200),
-		DocParseEnabled: getEnv("DOCPARSE_ENABLED", "false") == "true",
+		DocMaxUploadMB:       getEnvAsInt("DOC_MAX_UPLOAD_MB", 25),
+		DocMaxPages:          getEnvAsInt("DOC_MAX_PAGES", 200),
+		DocParseEnabled:      getEnv("DOCPARSE_ENABLED", "false") == "true",
+		DocParseURL:          getEnv("DOCPARSE_URL", "http://localhost:8091"),
+		DocParseSharedSecret: getEnv("DOCPARSE_SHARED_SECRET", ""),
+		DocParseTimeoutSecs:  getEnvAsInt("DOCPARSE_TIMEOUT_SECS", 120),
 		// 15s, matching dashboard.DefaultPanelTimeout. Long enough for a real
 		// aggregate over a warehouse, short enough that a viewer waiting on a
 		// dozen panels has a bounded worst case.

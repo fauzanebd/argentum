@@ -418,9 +418,53 @@ Any parsing. Any UI. Non-PDF formats — see *Not yet*.
 
 ---
 
-### `T-P2` · The parser sidecar, and the text-layer path
+### `T-P2` · The parser sidecar, and the text-layer path — **built and gated live 2026-08-18**
 **Repo:** BE + new service · **Size:** 1.5d · **Deps:** `T-P1` · **Priority:** P0
 **Migration:** none (artifacts are objects, pages are rows in `060`)
+
+> **Landed.** `apps/docparse/` (FastAPI, `parse.py`, `Dockerfile`, pinned
+> requirements, 13 unit tests), `internal/docparse/` (the `Parser` interface,
+> the HTTP client and its three sentinels, 8 tests),
+> `internal/app/document_parse_service.go` (+ 10 tests),
+> `queue.TypeDocumentParse`'s handler in `cmd/worker/main.go`, the wiring in
+> `internal/bootstrap/stack.go`, `DOCPARSE_URL` /
+> `DOCPARSE_SHARED_SECRET` / `DOCPARSE_TIMEOUT_SECS`, and a `docparse` service
+> in compose.
+>
+> **Three deviations from the ticket, all deliberate.** The parser is
+> **pdfplumber, not Docling**: `T-P2` is the text layer and the ruling lines,
+> which pdfplumber does with no model, no GPU and a 3-package image — the ML
+> rung belongs to a measured failure in `T-P4`, and it arrives inside the
+> sidecar without the Go side noticing. The page cap is enforced **inside the
+> sidecar** rather than before it is called, because the page count does not
+> exist until the file is opened; the refusal still happens before any page is
+> read, and it comes back as a terminal `ErrRefused` carrying both numbers.
+> Artifacts live under `source-documents/<company>/<sha>/…` rather than
+> `documents/…`, matching `T-P1`'s prefix.
+>
+> **A fourth thing the ticket did not anticipate, and it is now the parser's
+> most useful behaviour.** A ruled table is the easy case; ERP exports,
+> statements and anything laid out with tabs draw no lines at all, and the
+> first fixture — a column-aligned Indonesian sales report — produced *no*
+> candidates until a text-strategy fallback was added. It is guarded by a shape
+> check (most rows filled to the same width), because the text strategy will
+> otherwise call two consecutive prose lines a two-by-two grid.
+>
+> **Gated live the same day, $0.00, ten arms, all passing.** The fixture table
+> came back as a 7×4 candidate with every data row correct; a scan classified
+> `needs_ocr` with `image_area_ratio` 1.0 and **no invented text**; a five-page
+> document against a three-page cap ended `failed` saying *"the document has 5
+> pages and this deployment reads at most 3"* with **zero retries**; and with
+> the sidecar stopped a document stayed `uploaded` saying the parser could not
+> be reached, then **parsed itself when the retry fired** after the sidecar came
+> back. Record: [`../coverage/delivery-log.md`](../coverage/delivery-log.md)
+> Phase 3b.
+>
+> **One finding, and it belongs to `T-P4`.** The text strategy swallowed the
+> report's title line into the grid and split it across two cells
+> (`LAPORAN PENJUA` / `LAN Q4 2024`). The data rows were untouched, so this is
+> not a wrong number — it is a junk row that `T-P4`'s header detection has to
+> drop, and its acceptance list now says so.
 
 #### Why
 
@@ -604,6 +648,7 @@ aggregate on it.
 - [ ] A column whose header carries *"dalam jutaan"* yields values multiplied by 10⁶, and the multiplier is recorded on the column
 - [ ] A three-page table with a repeated header becomes one table with the pages' rows in order
 - [ ] A `TOTAL` row is flagged and excluded from the data rows
+- [ ] A title line above the table does not become a data row — `T-P2`'s gate produced exactly this, `LAPORAN PENJUA` / `LAN Q4 2024` split across two cells of a text-strategy grid
 - [ ] A column with one unparseable cell types as text rather than dropping the cell
 - [ ] Exactly one number-parsing implementation exists after this ticket, and `guardrails` uses it
 

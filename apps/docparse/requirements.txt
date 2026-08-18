@@ -1,0 +1,12 @@
+# Pinned, not floating. A parser whose output changes when somebody rebuilds the
+# image is a parser whose scores cannot be compared across runs — which is the
+# gap T-Q15 records for the eval models and the reason T-P13 records this
+# service's build beside every number.
+#
+# There is no layout model and no torch here, deliberately. pdfplumber reads the
+# text layer and the ruling lines, which is the whole of T-P2; the ML rung of
+# the ladder (Docling, MIT) arrives when a measured failure asks for it, and it
+# arrives inside this service without changing the Go side at all.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pdfplumber==0.11.4

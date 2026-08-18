@@ -125,6 +125,13 @@ func LooksLikePDF(head []byte) bool {
 type SourceDocumentRepository interface {
 	Create(ctx context.Context, d *SourceDocument) error
 	GetForCompany(ctx context.Context, companyID, id string) (*SourceDocument, error)
+	// GetByID is the one unscoped read, and it exists for exactly one caller:
+	// the parse worker (T-P2), which is handed a document id by a queue and has
+	// no tenant to scope it to. It is not a hole in the boundary above — the
+	// company is on the row it returns, and everything the worker writes is
+	// keyed by that id — but it is the method to look at first if one ever
+	// appears on an HTTP path.
+	GetByID(ctx context.Context, id string) (*SourceDocument, error)
 	// GetBySHA is the dedupe lookup. ErrNotFound means "new file", which is the
 	// common case and not a failure.
 	GetBySHA(ctx context.Context, companyID, sha256 string) (*SourceDocument, error)
