@@ -3519,6 +3519,20 @@ the send, because the send navigates and unmounts the component that would have
 written it. The starter questions and the dashboard's "Ask for a change" still
 fill and never send.
 
+**The card that reversal produced needed a way out, and got one the same day.**
+Once every row spends a credit on touch, "none of these" stops being a thing the
+reader can *do* and becomes only a thing they can avoid — the card sits under the
+newest answer with three options and no fourth. So a last row, the same size and
+shape as the others: *"Nothing right now"*, which hides the card and touches
+neither the composer nor the API. It is the one row `sending` does not grey — the
+others are disabled during the gap between a tap and the stream because a second
+tap there queues a second turn, and declining sends nothing, so making somebody
+wait out a turn before they may say they are done is the disabled state
+protecting the wrong thing. The decline is not posted to
+`/messages/:id/suggestion-picked`: `pick_rate`'s denominator is answers that
+*offered* a suggestion, and a decline is exactly the case that denominator is
+meant to count against.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

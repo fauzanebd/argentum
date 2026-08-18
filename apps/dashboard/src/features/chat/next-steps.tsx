@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Message, NextStep } from "@argentum/api-types";
 import { api } from "@/lib/api";
 import { DecisionCard } from "@/components/ui/decision-card";
@@ -29,6 +30,13 @@ import { DecisionCard } from "@/components/ui/decision-card";
  *     Fire-and-forget, and written before the send rather than after: the turn
  *     navigates and unmounts this component, and a request started in a dead
  *     tree is one nobody can be sure went out.
+ *   - **The last row declines.** Every option on this card spends a credit the
+ *     moment it is touched, and until 2026-08-18 the only way to say no to all
+ *     three was to not press anything — a decision the card gave the reader no
+ *     way to *make*, only to avoid. "Nothing right now" is the same size and
+ *     shape as the others because declining is a real answer to "what next?",
+ *     and it costs nothing: it hides this card and touches neither the composer
+ *     nor the API.
  *
  * **Drawn as a decision card since 2026-08-18, where it used to be a chip row.**
  * The chips could not carry `why`: it was a `title` attribute — unreachable
@@ -85,11 +93,16 @@ export function NextStepChips({
   sending?: boolean;
   onPick: (prompt: string) => void;
 }) {
+  // Declined, for this answer. Component state rather than anything persisted:
+  // the card is keyed to one message and dies with it, and a decline that
+  // outlived the answer it was about would be a preference nobody set.
+  const [declined, setDeclined] = useState(false);
+
   const messageId = message.id;
   const steps = nextStepsOf(message);
   // Absent, empty or malformed metadata renders exactly the screen as it is
   // today — the same every-branch-returns-null shape StarterQuestions uses.
-  if (steps.length === 0 || !messageId) return null;
+  if (steps.length === 0 || !messageId || declined) return null;
 
   function pick(step: NextStep, index: number) {
     // Recorded first, sent second. The send navigates and unmounts this
@@ -120,14 +133,28 @@ export function NextStepChips({
       question="What next?"
       leanId={leadingIsLean ? "step-0" : undefined}
       leanBy={agentName}
-      options={ordered.map((step, i) => ({
-        id: `step-${i}`,
-        label: step.label,
-        description: step.why,
-        disabled: sending,
-        onSelect: () => pick(step, steps.indexOf(step)),
-      }))}
-      footer="Tap one to ask it."
+      options={[
+        ...ordered.map((step, i) => ({
+          id: `step-${i}`,
+          label: step.label,
+          description: step.why,
+          disabled: sending,
+          onSelect: () => pick(step, steps.indexOf(step)),
+        })),
+        {
+          // The way out, and never disabled: `sending` greys the other rows
+          // because tapping one during the gap between a tap and the stream
+          // would queue a second turn, and this one sends nothing. A reader who
+          // has already decided they are done should not have to wait for a
+          // turn they did not start to finish before they can say so.
+          id: "step-none",
+          label: "Nothing right now",
+          description:
+            "Hides these. The box below still takes anything you want to ask.",
+          onSelect: () => setDeclined(true),
+        },
+      ]}
+      footer="Tap one to ask it, or close the card."
     />
   );
 }
