@@ -3,8 +3,9 @@ package guardrails
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
+
+	"github.com/fauzanebd/argentum/internal/numparse"
 )
 
 // The scale check: a figure and its own restatement, in one reply, must agree.
@@ -27,23 +28,11 @@ import (
 // no evidence at all, because the reply contradicts *itself* — and a reply that
 // contradicts itself is never correct, whatever the tools returned.
 
-// magnitudeWords maps every magnitude word the system prompt teaches the agent
-// to use — English and Indonesian — to its multiplier.
-var magnitudeWords = map[string]float64{
-	"thousand": 1e3, "ribu": 1e3,
-	"million": 1e6, "juta": 1e6,
-	"billion": 1e9, "miliar": 1e9, "milyar": 1e9,
-	"trillion": 1e12, "triliun": 1e12,
-}
-
-// canonicalWord is the spelling a correction writes back, per language. A reply
-// that said "miliar" gets "miliar" rather than "billion".
-var canonicalWord = map[float64][2]string{
-	1e3:  {"thousand", "ribu"},
-	1e6:  {"million", "juta"},
-	1e9:  {"billion", "miliar"},
-	1e12: {"trillion", "triliun"},
-}
+// The magnitude words and their canonical spellings live in `internal/numparse`
+// (T-P4). They were here first, and they moved for the reason the promotion
+// exists: the typing layer needs the same table to read "dalam jutaan" out of a
+// PDF's header, and a second copy of it would be right on the day it was
+// written and wrong the first time a word was added to one of them.
 
 // restatement matches "<number> (approximately <number> <magnitude word>)" and
 // the variants that appear in practice: "≈", "~", "about", "roughly", "sekitar",
@@ -99,16 +88,16 @@ func CheckScale(reply string) (string, []ScaleCorrection) {
 		if len(groups) != 4 {
 			return match
 		}
-		stated, ok := parseFigure(groups[1])
+		stated, ok := numparse.Parse(groups[1])
 		if !ok || stated == 0 {
 			return match
 		}
-		restated, ok := parseFigure(groups[2])
+		restated, ok := numparse.Parse(groups[2])
 		if !ok || restated == 0 {
 			return match
 		}
 		word := strings.ToLower(groups[3])
-		mult, ok := magnitudeWords[word]
+		mult, ok := numparse.Magnitude(word)
 		if !ok {
 			return match
 		}
@@ -117,7 +106,7 @@ func CheckScale(reply string) (string, []ScaleCorrection) {
 		}
 		// The restatement is wrong. Is it wrong only in its unit?
 		want, found := 0.0, false
-		for m := range canonicalWord {
+		for _, m := range numparse.Multipliers() {
 			if agrees(stated, restated*m) {
 				want, found = m, true
 				break
@@ -126,9 +115,13 @@ func CheckScale(reply string) (string, []ScaleCorrection) {
 		if !found {
 			return match
 		}
-		replacement := canonicalWord[want][0]
+		english, indonesian, ok := numparse.CanonicalMagnitude(want)
+		if !ok {
+			return match
+		}
+		replacement := english
 		if isIndonesianWord(word) {
-			replacement = canonicalWord[want][1]
+			replacement = indonesian
 		}
 		fixes = append(fixes, ScaleCorrection{
 			Stated: stated, Restated: restated, Was: word, Now: replacement,
@@ -183,59 +176,4 @@ func matchCase(original, replacement string) string {
 		return strings.ToUpper(replacement[:1]) + replacement[1:]
 	}
 	return replacement
-}
-
-// parseFigure reads a number written in either locale's conventions.
-//
-// The ambiguity is real and unavoidable: "3.863" is three thousand eight
-// hundred and sixty-three in Indonesian and three point eight six three in
-// English. It is resolved structurally rather than by locale, because a reply
-// mixes both — an Indonesian answer with a USD figure in it is ordinary here.
-// A separator followed by exactly three digits, appearing more than once or
-// alongside the other separator, is a group separator; anything else is a
-// decimal point.
-func parseFigure(s string) (float64, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, false
-	}
-	dots := strings.Count(s, ".")
-	commas := strings.Count(s, ",")
-
-	switch {
-	case dots > 0 && commas > 0:
-		// Both present: the rightmost is the decimal separator.
-		if strings.LastIndex(s, ".") > strings.LastIndex(s, ",") {
-			s = strings.ReplaceAll(s, ",", "")
-		} else {
-			s = strings.ReplaceAll(s, ".", "")
-			s = strings.Replace(s, ",", ".", 1)
-		}
-	case dots > 1:
-		s = strings.ReplaceAll(s, ".", "")
-	case commas > 1:
-		s = strings.ReplaceAll(s, ",", "")
-	case dots == 1:
-		if isGroup(s, ".") {
-			s = strings.ReplaceAll(s, ".", "")
-		}
-	case commas == 1:
-		if isGroup(s, ",") {
-			s = strings.ReplaceAll(s, ",", "")
-		} else {
-			s = strings.Replace(s, ",", ".", 1)
-		}
-	}
-	v, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0, false
-	}
-	return v, true
-}
-
-// isGroup reports whether a single separator is a thousands separator: exactly
-// three digits follow it and something precedes it.
-func isGroup(s, sep string) bool {
-	i := strings.Index(s, sep)
-	return i > 0 && len(s)-i-1 == 3
 }

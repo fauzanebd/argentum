@@ -3,6 +3,8 @@ package guardrails
 import (
 	"math"
 	"testing"
+
+	"github.com/fauzanebd/argentum/internal/numparse"
 )
 
 // The exact gap this check exists for. CheckFabrication passes this reply
@@ -180,13 +182,13 @@ func TestAnIndonesianDecimalIsNotAFourDigitInteger(t *testing.T) {
 		{"1234.000", 1234}, // a driver rendering DECIMAL(…,3), not 1.234m
 		{"3863405700.00", 3863405700},
 	} {
-		got, ok := parseLoose(tc.raw)
+		got, ok := numparse.Parse(tc.raw)
 		if !ok {
-			t.Errorf("parseLoose(%q) refused a number it should read", tc.raw)
+			t.Errorf("numparse.Parse(%q) refused a number it should read", tc.raw)
 			continue
 		}
 		if math.Abs(got-tc.want) > 0.001 {
-			t.Errorf("parseLoose(%q) = %v, want %v", tc.raw, got, tc.want)
+			t.Errorf("numparse.Parse(%q) = %v, want %v", tc.raw, got, tc.want)
 		}
 	}
 

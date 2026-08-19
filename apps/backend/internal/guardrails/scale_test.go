@@ -3,6 +3,8 @@ package guardrails
 import (
 	"strings"
 	"testing"
+
+	"github.com/fauzanebd/argentum/internal/numparse"
 )
 
 // The two observed defects, verbatim. Both passed T-16's check — the figure is
@@ -114,13 +116,13 @@ func TestParseFigure(t *testing.T) {
 		{"abc", 0, false},
 	}
 	for _, tt := range cases {
-		got, ok := parseFigure(tt.in)
+		got, ok := numparse.Parse(tt.in)
 		if ok != tt.ok {
-			t.Errorf("parseFigure(%q) ok = %v, want %v", tt.in, ok, tt.ok)
+			t.Errorf("numparse.Parse(%q) ok = %v, want %v", tt.in, ok, tt.ok)
 			continue
 		}
 		if ok && got != tt.want {
-			t.Errorf("parseFigure(%q) = %v, want %v", tt.in, got, tt.want)
+			t.Errorf("numparse.Parse(%q) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }
