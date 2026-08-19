@@ -15,6 +15,32 @@
 > run lands inside it on a different model is a coincidence worth noticing and
 > not evidence about either.
 
+> ## ⚠ And every number in this file names a model, not a revision (T-Q15)
+>
+> **Written 2026-08-19, and it applies to every figure below and above it** —
+> the 83.6%, the 87.5%, the 98.2%, the 89.3%, the 94.6%, the 78.6%. Each names
+> a model string that the provider was free to change underneath us, so **none
+> of them can be re-run as the same measurement**, and arithmetic between two of
+> them cannot separate a change in the tree from a change in the model.
+>
+> This is not hypothetical here. The 2026-08-18 re-score put deepseek six cases
+> below its 2026-08-14 number, outside this set's ±2 band, and resolving that to
+> provider drift rather than to a regression took a worktree at the previous
+> commit and six more cases of spend. **It worked because that commit was ninety
+> minutes old.** Against a baseline a week older there would have been no way to
+> tell.
+>
+> **Nothing below is backfilled** — rewriting these numbers to look pinned would
+> be worse than the gap. What changed is forward-facing: from `T-Q15` every run
+> records what the gateway said it served, and its upstream provider, in the
+> printed summary and in the JSON report. Runs from here can be compared;
+> the ones above this line can only be read.
+>
+> The set's own model list is declared in `testdata/eval/golden.yaml`, with the
+> reason **neither entry is pinned to a revision: OpenRouter offers no dated
+> alias for `moonshotai/kimi-k2.6` or `deepseek/deepseek-v3.2`** (checked
+> 2026-08-19 — it does offer them for other models, e.g. `moonshotai/kimi-k2-0905`).
+
 ## The number
 
 **83.6% — 46 of 55.** The set discriminates. That is the result `T-Q1` was

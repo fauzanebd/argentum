@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/bootstrap"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/eval"
+	"github.com/fauzanebd/argentum/internal/llmusage"
 	"github.com/fauzanebd/argentum/internal/tracing"
 )
 
@@ -168,6 +170,7 @@ func main() {
 			timeout:      *timeout,
 			dryRun:       *dryRun,
 			showModel:    len(modelList) > 1,
+			declared:     set.Models,
 		})
 		if !ok {
 			return // dry run: the tenant and set were validated, nothing was spent.
@@ -185,18 +188,26 @@ func main() {
 	}
 
 	if *outPath != "" {
-		var payload any = reports[0]
-		if matrix != nil {
-			payload = matrix
+		if isDir(*outPath) {
+			// A directory is a history rather than a file, which is what makes
+			// the comparison below possible at all (T-Q15).
+			for _, rep := range reports {
+				writeIntoHistory(*outPath, rep)
+			}
+		} else {
+			var payload any = reports[0]
+			if matrix != nil {
+				payload = matrix
+			}
+			raw, err := json.MarshalIndent(payload, "", "  ")
+			if err != nil {
+				fatalf("marshal report: %v", err)
+			}
+			if err := os.WriteFile(*outPath, raw, 0o644); err != nil {
+				fatalf("write report: %v", err)
+			}
+			fmt.Printf("report written to %s\n", *outPath)
 		}
-		raw, err := json.MarshalIndent(payload, "", "  ")
-		if err != nil {
-			fatalf("marshal report: %v", err)
-		}
-		if err := os.WriteFile(*outPath, raw, 0o644); err != nil {
-			fatalf("write report: %v", err)
-		}
-		fmt.Printf("report written to %s\n", *outPath)
 	}
 
 	// Non-zero exit when anything failed on any model, so CI can gate on it
@@ -220,6 +231,9 @@ type runOpts struct {
 	// showModel prefixes each case line with the model, which is noise on a
 	// single-model run and the only way to read the output on a matrix one.
 	showModel bool
+	// declared is the set's own model list (T-Q15), carried onto the report so
+	// a run against a model the set does not name says so.
+	declared []string
 }
 
 // runOneModel scores the whole set against one model and returns its report.
@@ -258,6 +272,14 @@ func runOneModel(
 
 	fmt.Printf("--- %s ---\ntenant: %s (%s)\n", model, tenant.CompanyName, tenant.CompanyID)
 
+	// T-Q15: one sink for the whole model run, so "what answered this score"
+	// is a property of the report rather than of whoever was watching the
+	// logs. Scoped here rather than per case on purpose — a gateway that
+	// re-routes between case 12 and case 13 is what this is for, and a
+	// per-case sink would report it as fifty-six separate facts.
+	sink := &llmusage.ServingSink{}
+	ctx = llmusage.WithServingSink(ctx, sink)
+
 	runner := eval.NewRunner(stack, tenant, opts.timeout)
 	started := time.Now()
 	results := make([]eval.Result, 0, len(cases))
@@ -276,7 +298,138 @@ func runOneModel(
 			fmt.Printf("FAIL  (%.1fs)  %s\n", float64(res.DurationMS)/1000, firstFailure(res))
 		}
 	}
-	return eval.Summarize(set.Name, model, started, results), true
+	rep := eval.Summarize(set.Name, model, started, results)
+	rep.Served = eval.ServedFrom(sink.Observed())
+	rep.Declared = opts.declared
+	return rep, true
+}
+
+// noiseBandCases is the set's measured noise: a one- or two-case delta between
+// two runs of the same tree is an event and not a result (delivery-log Phase 2s
+// §4, and the T-Q3 before/after that found 54/56 both ways from two different
+// pairs of failures). It is the threshold above which the harness is obliged to
+// say what else changed.
+const noiseBandCases = 2
+
+// isDir reports whether path exists and is a directory.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// writeIntoHistory compares this report against the newest earlier one for the
+// same set and model in dir, then stores it beside them.
+//
+// The comparison is the ticket's point: a score that moved more than the noise
+// band has two candidate explanations — the tree, or the model underneath it —
+// and until now the harness could only ever name the first. It prints what it
+// can prove and stops there; deciding which explanation holds is a person's job
+// and needs the previous run's identity in front of them.
+func writeIntoHistory(dir string, rep eval.Report) {
+	if prev, name, ok := latestReport(dir, rep.Set, rep.Model); ok {
+		delta := rep.Passed - prev.Passed
+		fmt.Printf("\n--- against %s ---\n", name)
+		fmt.Printf("  previous:  %.1f%% (%d/%d)  served: %s\n",
+			prev.PassRat*100, prev.Passed, prev.Total, describeServed(prev.Served))
+		fmt.Printf("  this run:  %.1f%% (%d/%d)  served: %s\n",
+			rep.PassRat*100, rep.Passed, rep.Total, describeServed(rep.Served))
+
+		switch {
+		case abs(delta) <= noiseBandCases:
+			fmt.Printf("  %+d case(s) — inside the ±%d band this set carries, so not a result.\n",
+				delta, noiseBandCases)
+		case eval.SameServing(prev.Served, rep.Served):
+			fmt.Printf("  %+d case(s) — outside the ±%d band, and the SAME model identity answered\n"+
+				"  both runs. The tree is the remaining candidate.\n", delta, noiseBandCases)
+		default:
+			fmt.Printf("  %+d case(s) — outside the ±%d band, and a DIFFERENT model identity answered\n"+
+				"  the two runs. The tree is not the only thing that changed; compare the\n"+
+				"  served lines above before reading this as a regression.\n", delta, noiseBandCases)
+		}
+	}
+
+	path := filepath.Join(dir, reportFilename(rep))
+	raw, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		fatalf("marshal report: %v", err)
+	}
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		fatalf("write report: %v", err)
+	}
+	fmt.Printf("report written to %s\n", path)
+}
+
+// reportFilename names a run so the directory sorts chronologically per model
+// and two runs in the same minute do not overwrite each other.
+func reportFilename(rep eval.Report) string {
+	return fmt.Sprintf("%s-%s-%s.json",
+		slug(rep.Set), slug(rep.Model), rep.StartedAt.UTC().Format("20060102T150405Z"))
+}
+
+// latestReport returns the most recent stored report for the same set and
+// model, by StartedAt rather than by filename: a file copied in from another
+// machine keeps its own timestamp and should compare as what it is.
+func latestReport(dir, set, model string) (eval.Report, string, bool) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return eval.Report{}, "", false
+	}
+	var best eval.Report
+	var bestName string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var prev eval.Report
+		// A matrix file unmarshals into a Report with no results, and a
+		// zero-total report cannot be compared against — skipped by the Total
+		// check rather than by sniffing the shape.
+		if err := json.Unmarshal(raw, &prev); err != nil || prev.Total == 0 {
+			continue
+		}
+		if prev.Set != set || !strings.EqualFold(prev.Model, model) {
+			continue
+		}
+		if bestName == "" || prev.StartedAt.After(best.StartedAt) {
+			best, bestName = prev, e.Name()
+		}
+	}
+	return best, bestName, bestName != ""
+}
+
+func describeServed(served []eval.ServedModel) string {
+	if len(served) == 0 {
+		return "not reported"
+	}
+	parts := make([]string, 0, len(served))
+	for _, s := range served {
+		parts = append(parts, s.String())
+	}
+	return strings.Join(parts, "; ")
+}
+
+func slug(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // splitModels parses the -models list, dropping blanks and duplicates. A

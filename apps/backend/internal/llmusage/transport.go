@@ -19,6 +19,12 @@ const maxSSELineBytes = 1 << 20
 // request context. Requests without a collector, and non-SSE responses, pass
 // through untouched — non-streaming calls are already metered from the SDK's
 // LLMResponse.Usage, and double-counting is worse than the bug being fixed.
+//
+// It also reports what the provider says it served to a ServingSink, when the
+// context carries one (T-Q15). That is off unless a caller installs a sink,
+// and only streaming responses are read: the non-streaming light-model calls
+// carry no collector either, so a run's *scored* model is exactly the set this
+// sees.
 type Transport struct {
 	Base http.RoundTripper
 }
@@ -40,26 +46,35 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return resp, err
 	}
 	col := CollectorFrom(req.Context())
-	if col == nil || resp.Body == nil {
+	sink := ServingSinkFrom(req.Context())
+	if (col == nil && sink == nil) || resp.Body == nil {
 		return resp, nil
 	}
 	if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
 		return resp, nil
 	}
-	resp.Body = &tapReader{rc: resp.Body, col: col}
+	resp.Body = &tapReader{rc: resp.Body, col: col, sink: sink}
 	return resp, nil
 }
 
 // tapReader forwards the response body byte-for-byte while scanning it for SSE
 // `data:` frames carrying a usage object. It never buffers the whole body.
 type tapReader struct {
-	rc  io.ReadCloser
-	col *Collector
+	rc   io.ReadCloser
+	col  *Collector
+	sink *ServingSink
 
 	partial []byte // bytes after the last newline seen
 	last    Usage  // last usage payload observed in this response
 	found   bool
 	flushed bool
+
+	// serving is the identity this response reported. One response is one
+	// model on one provider, so it is recorded once at flush rather than per
+	// frame — a hundred-chunk answer is one routing decision, and counting it
+	// a hundred times would make "how many responses did this model serve"
+	// unreadable.
+	serving Serving
 }
 
 func (t *tapReader) Read(p []byte) (int, error) {
@@ -84,11 +99,17 @@ func (t *tapReader) Close() error {
 // cumulative usage object on every chunk would otherwise be multiplied. Across
 // separate HTTP requests (tool-calling iterations) the collector still sums.
 func (t *tapReader) flush() {
-	if t.flushed || !t.found {
-		t.flushed = true
+	if t.flushed {
 		return
 	}
 	t.flushed = true
+	// The serving is published even when no usage arrived: a response that
+	// named its model and reported no tokens is a billing hole with a known
+	// culprit, and dropping the identity would hide which route produced it.
+	t.sink.Observe(t.serving)
+	if !t.found {
+		return
+	}
 	t.col.Add(t.last)
 }
 
@@ -119,8 +140,23 @@ func (t *tapReader) consumeLine(line []byte) {
 	}
 	var frame struct {
 		Usage *rawUsage `json:"usage"`
+		// What answered. OpenAI-compatible gateways repeat the model on every
+		// chunk; OpenRouter adds the upstream it routed to. Both are read from
+		// the first frame that names them and not overwritten, so a gateway
+		// that omits the field on later chunks does not erase the identity.
+		Model    string `json:"model"`
+		Provider string `json:"provider"`
 	}
-	if err := json.Unmarshal(payload, &frame); err != nil || frame.Usage == nil {
+	if err := json.Unmarshal(payload, &frame); err != nil {
+		return
+	}
+	if t.serving.Model == "" {
+		t.serving.Model = strings.TrimSpace(frame.Model)
+	}
+	if t.serving.Provider == "" {
+		t.serving.Provider = strings.TrimSpace(frame.Provider)
+	}
+	if frame.Usage == nil {
 		return
 	}
 	u, ok := frame.Usage.normalize()

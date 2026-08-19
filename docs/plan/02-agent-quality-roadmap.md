@@ -942,8 +942,25 @@ A table test is most of it. The live half is one turn that prints a full-precisi
 table, which §1g already produced and stored — **$0.00**, because the reply is
 already persisted and the check runs on stored text.
 
-## `T-Q15` Every published score names a model nobody pinned — 0.5d
+## `T-Q15` Every published score names a model nobody pinned — 0.5d · **built and gated live 2026-08-19**
 **Repo:** BE (eval harness) · **Deps:** none · **Priority:** P1 · **Migration:** none
+
+> **Status, 2026-08-19: built, unit-gated (16 new tests) and gated live for
+> $0.0500.** Three cases re-run twice on `kimi-k2.6` plus one on
+> `deepseek/deepseek-v3.2`, and the first run answered the ticket's own question
+> in one line: **`served: moonshotai/kimi-k2.6 via Baidu`**, against
+> **`deepseek/deepseek-v3.2 via AtlasCloud`**. Neither upstream is named in a
+> single number this repo has published, and the upstream is the variable that
+> moved on 2026-08-18.
+>
+> **One acceptance line is met differently than written.** *"`golden.yaml` pins
+> a revision where the provider offers one"* — it offers none. OpenRouter's
+> catalogue does carry dated aliases (`moonshotai/kimi-k2-0905`), and it has one
+> for neither `moonshotai/kimi-k2.6` nor `deepseek/deepseek-v3.2`. The set now
+> declares both ids with that check written beside them, and the revision the
+> alias cannot carry is recorded on the *report* instead.
+>
+> Record: [`../coverage/delivery-log.md`](../coverage/delivery-log.md) Phase 3i.
 
 ### Why
 

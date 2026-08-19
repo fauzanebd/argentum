@@ -16,6 +16,32 @@ name: demo-retail-v1
 # instructed to write readable numbers ("Rp 3,86 Miliar"), and rejecting a
 # correctly-rounded answer would train the set to reward the wrong thing.
 
+# The models this set's published numbers refer to (T-Q15).
+#
+# Declarative only — it does not choose what a run scores. `make eval` still
+# runs LLM_MODEL and -model/-models still override. What it buys is that a run
+# against a model this set does not name says so in its own report, which is
+# the check every number in ../../../../docs/coverage/eval-q1.md was published
+# without.
+#
+# NEITHER ENTRY IS PINNED TO A REVISION, AND THE REASON IS THE PROVIDER'S.
+# Checked against OpenRouter's own catalogue on 2026-08-19: it does offer dated
+# aliases as a convention — `moonshotai/kimi-k2-0905` is one — but there is no
+# dated or revision-pinned alias for either id below. `moonshotai/kimi-k2.6`
+# and `deepseek/deepseek-v3.2` are the only forms served, so a score against
+# them names a moving target no matter how it is written down. That is exactly
+# what the 2026-08-18 re-score met: deepseek fell six cases, outside this set's
+# ±2 band, and the cause was the provider rather than the tree.
+#
+# Since the alias cannot carry the revision, the *report* does: every run now
+# records what the gateway said it served, including which upstream it routed
+# to, so two runs against different revisions are visibly different afterwards
+# even though the request was byte-identical. Pin these the day OpenRouter
+# publishes a dated form.
+models:
+  - moonshotai/kimi-k2.6
+  - deepseek/deepseek-v3.2
+
 cases:
   # ── simple aggregates ──────────────────────────────────────────────────
   - id: total-sales-all-time

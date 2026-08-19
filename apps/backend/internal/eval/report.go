@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/fauzanebd/argentum/internal/llmusage"
 )
 
 // Result is one scored case.
@@ -55,10 +57,15 @@ type TurnResult struct {
 
 // Report is a whole run.
 type Report struct {
-	Set       string    `json:"set"`
-	Model     string    `json:"model"`
-	StartedAt time.Time `json:"started_at"`
-	Duration  string    `json:"duration"`
+	Set string `json:"set"`
+	// Model is what was asked for. Served is what answered — see T-Q15 and
+	// llmusage.Serving: the two are the same string on a good day and the
+	// difference between a regression and provider drift on a bad one.
+	Model     string        `json:"model"`
+	Served    []ServedModel `json:"served,omitempty"`
+	Declared  []string      `json:"declared_models,omitempty"`
+	StartedAt time.Time     `json:"started_at"`
+	Duration  string        `json:"duration"`
 
 	Total   int     `json:"total"`
 	Passed  int     `json:"passed"`
@@ -74,6 +81,69 @@ type Report struct {
 
 	ByCategory map[string]CategoryScore `json:"by_category"`
 	Results    []Result                 `json:"results"`
+}
+
+// ServedModel is one identity the provider reported while this run was scored,
+// and how many responses it answered.
+//
+// A run normally has exactly one. Two rows mean the gateway re-routed
+// mid-set, which is the thing T-Q15 exists to make visible: it is not
+// detectable from a pass rate, and it is the leading explanation for a score
+// that moves with no commit behind it.
+type ServedModel struct {
+	Model     string `json:"model"`
+	Provider  string `json:"provider,omitempty"`
+	Responses int    `json:"responses"`
+}
+
+// String renders the row a coverage doc pastes.
+func (s ServedModel) String() string {
+	out := s.Model
+	if out == "" {
+		out = "(unnamed)"
+	}
+	if s.Provider != "" {
+		out += " via " + s.Provider
+	}
+	return fmt.Sprintf("%s (%d responses)", out, s.Responses)
+}
+
+// ServedFrom converts what the HTTP tap observed into the report's own shape.
+// Nil when the provider named nothing, which prints as an explicit "not
+// reported" rather than as a blank line — an absent identity is a fact about
+// the gateway and should read like one.
+func ServedFrom(observed []llmusage.ObservedServing) []ServedModel {
+	if len(observed) == 0 {
+		return nil
+	}
+	out := make([]ServedModel, 0, len(observed))
+	for _, o := range observed {
+		out = append(out, ServedModel{Model: o.Model, Provider: o.Provider, Responses: o.Responses})
+	}
+	return out
+}
+
+// SameServing reports whether two runs were answered by the same set of model
+// identities. It is the question a re-score asks when the number moved: if
+// this is false, the tree is not the only thing that changed.
+func SameServing(a, b []ServedModel) bool {
+	key := func(list []ServedModel) map[string]bool {
+		out := map[string]bool{}
+		for _, s := range list {
+			out[s.Model+"|"+s.Provider] = true
+		}
+		return out
+	}
+	ka, kb := key(a), key(b)
+	if len(ka) != len(kb) {
+		return false
+	}
+	for k := range ka {
+		if !kb[k] {
+			return false
+		}
+	}
+	return true
 }
 
 // CategoryScore is the per-category roll-up. Aggregate pass rate hides the
@@ -149,6 +219,7 @@ func (r Report) Text() string {
 
 	fmt.Fprintf(&b, "\n=== Argentum eval — %s ===\n", r.Set)
 	fmt.Fprintf(&b, "model:      %s\n", r.Model)
+	b.WriteString(r.servedLines())
 	fmt.Fprintf(&b, "started:    %s\n", r.StartedAt.Format(time.RFC3339))
 	fmt.Fprintf(&b, "duration:   %s\n\n", r.Duration)
 
@@ -209,6 +280,40 @@ func (r Report) Text() string {
 		}
 	}
 	b.WriteString("\n")
+	return b.String()
+}
+
+// servedLines renders the identity block that follows the model line. Every
+// branch prints something: the number this report carries is only re-runnable
+// if a reader can tell which of the three cases they are in.
+func (r Report) servedLines() string {
+	var b strings.Builder
+	switch len(r.Served) {
+	case 0:
+		b.WriteString("served:     not reported by the provider — this number names no revision\n")
+	case 1:
+		fmt.Fprintf(&b, "served:     %s\n", r.Served[0])
+	default:
+		b.WriteString("served:     ! more than one identity answered this run\n")
+		for _, s := range r.Served {
+			fmt.Fprintf(&b, "              %s\n", s)
+		}
+		b.WriteString("            The gateway re-routed mid-set. A score computed across two\n" +
+			"            routes is two measurements added together — re-run before reading it.\n")
+	}
+	if len(r.Declared) > 0 {
+		declared := false
+		for _, m := range r.Declared {
+			if strings.EqualFold(strings.TrimSpace(m), strings.TrimSpace(r.Model)) {
+				declared = true
+				break
+			}
+		}
+		if !declared {
+			fmt.Fprintf(&b, "            ! %s is not one of the models this set declares (%s)\n",
+				r.Model, strings.Join(r.Declared, ", "))
+		}
+	}
 	return b.String()
 }
 
@@ -303,6 +408,22 @@ func (m Matrix) Text() string {
 		fmt.Fprintf(&b, "%-34s %7.1f%% %9.0fms %10.6f %12.6f\n",
 			truncate(m.Models[i], 34), rep.PassRat*100,
 			rep.MeanLatencyMS, rep.MeanCostUSD, rep.TotalCostUSD)
+	}
+
+	// What actually answered each column. A matrix compares models, so a
+	// column whose identity is unknown compares nothing (T-Q15).
+	b.WriteString("\n--- served by ---\n")
+	for i, rep := range m.Reports {
+		switch len(rep.Served) {
+		case 0:
+			fmt.Fprintf(&b, "  %-32s not reported by the provider\n", truncate(m.Models[i], 32))
+		default:
+			parts := make([]string, 0, len(rep.Served))
+			for _, s := range rep.Served {
+				parts = append(parts, s.String())
+			}
+			fmt.Fprintf(&b, "  %-32s %s\n", truncate(m.Models[i], 32), strings.Join(parts, "; "))
+		}
 	}
 
 	// Per category, side by side. An aggregate that moves two points can hide

@@ -42,6 +42,10 @@ apps/backend/encrypt_secret
 # docs/coverage/eval-baseline.md
 apps/backend/eval-report*.json
 apps/backend/eval-docs-report*.json
+# `-out <dir>` (T-Q15) keeps a run history so a re-score can name what served
+# the previous one. Local history, same reason as the line above: the numbers
+# that survive a run go into a coverage doc, not into the tree.
+apps/backend/eval-reports/
 
 # The document corpus (T-P13) is *generated* from
 # apps/backend/internal/evaldocs/fixtures.go — `make eval-docs-fixtures`.

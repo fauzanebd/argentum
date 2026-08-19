@@ -183,8 +183,34 @@ type Expect struct {
 
 // Set is a loaded golden file.
 type Set struct {
-	Name  string `yaml:"name"`
-	Cases []Case `yaml:"cases"`
+	Name string `yaml:"name"`
+	// Models are the identifiers this set's published numbers refer to, pinned
+	// to a revision wherever the provider offers one (T-Q15).
+	//
+	// Declarative on purpose: it does NOT choose what a run scores. `make eval`
+	// still runs LLM_MODEL and `-model`/`-models` still override, because a
+	// file that silently doubles a run's spend the day it gains a second entry
+	// is a worse instrument than the gap it closes. What the list buys is that
+	// a run against a model the set does not name says so in its own report,
+	// where every prior number in eval-q1.md had no way to.
+	Models []string `yaml:"models,omitempty"`
+	Cases  []Case   `yaml:"cases"`
+}
+
+// Declares reports whether model is one the set names. A set that declares
+// nothing declares everything — the forty-case file predates this field and
+// must not start warning about itself.
+func (s *Set) Declares(model string) bool {
+	if s == nil || len(s.Models) == 0 {
+		return true
+	}
+	model = strings.TrimSpace(model)
+	for _, m := range s.Models {
+		if strings.EqualFold(strings.TrimSpace(m), model) {
+			return true
+		}
+	}
+	return false
 }
 
 // LoadSet reads and validates a golden YAML file.
