@@ -1021,6 +1021,24 @@ the third time.
 `schedule_task` is not gated, so a tainted turn can schedule a future turn that
 is not itself tainted. Filed with `T-H8`.
 
+**State left behind.** Tenant `Gate H4 0819`
+(`1ad854f2-5679-4c3e-82e9-7fadb1142070`) with two sources, two uploaded
+documents, `http_action` enabled at `requires_approval: false` and one registered
+endpoint. The control database is at **migration 64**, `dirty = f`, with
+**28 connections, 2 undecryptable** — the same pair since 10 August. Every
+long-lived process was stopped and the throwaway MySQL container removed, which
+leaves **one dangling row worth knowing about**: the gate tenant's `Gate MySQL`
+source now points at a container that no longer exists. It decrypts fine and
+will fail at dial time, which is a different failure from the two undecryptable
+rows and should not be counted with them.
+
+**And a small thing this sitting needed that no document names.** `:8081` — the
+port `cmd/mcp` defaults to — was already taken on this machine by an unrelated
+project's adminer container. The failure is a clean `bind: address already in
+use` and cost a minute, but it is the third environment fact in this file's
+history to look like a broken build, so: `MCP_SERVER_ADDR=:8099` was used
+instead, and checking what holds a port beats assuming the process is broken.
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |
