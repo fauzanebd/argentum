@@ -50,6 +50,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/dococr"
 	"github.com/fauzanebd/argentum/internal/docparse"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/embedding"
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
@@ -296,6 +297,10 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.EmbedCache = llmtenant.NewEmbeddingCache(llmResolver, 100, 30*time.Minute)
 	s.EmbedCache.Start(ctx)
 	s.onClose(s.EmbedCache.CloseAll)
+	// What the cache above will actually resolve, said out loud. Same shape and
+	// same reason as LogDSNKeyCoverage: a credential that silently resolves to
+	// nothing is indistinguishable, in a log, from a feature that is working.
+	embedding.LogEnvCoverage(cfg)
 
 	// The cookbook (T-Q8). Built here rather than beside the other repositories
 	// because it needs the embedding cache above: the harvester embeds each
@@ -313,9 +318,20 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// is a complete answer on its own.
 	s.DocumentChunks = app.NewDocumentChunkService(
 		pgctl.NewDocumentChunkRepo(controlDB), s.EmbedCache,
-		docchunk.Options{MaxTokens: cfg.DocChunkTokens, Overlap: cfg.DocChunkOverlap},
+		docchunk.Options{
+			MaxTokens:      cfg.DocChunkTokens,
+			Overlap:        cfg.DocChunkOverlap,
+			DetectHeadings: cfg.DocChunkDetectHeadings,
+		},
 		cfg.DocSearchTopK,
 	)
+	// The context prefix (T-P8). `DOC_CHUNK_SYNOPSIS` has defaulted to true
+	// since the ticket landed and reached nothing: `WithSynopsis` had no caller
+	// on any path, so the published contextual-retrieval half of T-P8 had never
+	// executed on any deployment. Found by its own live gate, 2026-08-19.
+	if cfg.DocChunkSynopsis {
+		s.DocumentChunks = s.DocumentChunks.WithSynopsis(lightLLMClient, cfg.EffectiveLightLLMModel())
+	}
 
 	asynqOpt, err := queue.BuildRedisOpt(cfg.ResolvedAsynqRedisURL(), cfg.RedisPassword)
 	if err != nil {
@@ -966,10 +982,20 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 	}
 	if s.tableEmbeddings != nil {
 		runner = runner.WithTablePicker(s.tableEmbeddings, s.EmbedCache, s.Cfg.EmbeddingTopK)
+		// "Wired", not "enabled", and the distinction is a defect this line used
+		// to carry: it printed off `EMBEDDING_ENABLED` alone, which decides
+		// whether the picker is attached and says nothing about whether a
+		// credential resolves. With none, every turn asked the cache for a
+		// client, got `(nil, nil)`, and picked no table — under a log line
+		// reading "enabled". `credential: env` is the half that was missing.
+		credential := "tenant-row-only"
+		if embedding.EnvKeyResolves(s.Cfg) {
+			credential = "env"
+		}
 		logrus.WithFields(logrus.Fields{
-			"model": s.Cfg.EmbeddingModel,
-			"topk":  s.Cfg.EmbeddingTopK,
-		}).Info("table-picker embeddings enabled (per-tenant cache)")
+			"model": s.Cfg.EmbeddingModel, "topk": s.Cfg.EmbeddingTopK,
+			"credential": credential,
+		}).Info("table-picker embeddings wired (per-tenant cache)")
 	}
 	return runner
 }

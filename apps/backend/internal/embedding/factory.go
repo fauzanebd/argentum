@@ -37,30 +37,49 @@ func BuildForProfile(spec ProfileSpec) Client {
 	return NewOpenAI(spec.APIKey, spec.BaseURL, spec.Model, spec.Dim, spec.BatchSize)
 }
 
-// Build returns an embedding Client when the feature is enabled and a key
-// is available; otherwise returns nil so callers can branch on that. We
-// don't fatal: per-source toggle still drives the behaviour and a missing
-// embedding client just means the table-picker hint never injects.
-func Build(cfg *config.Config) Client {
+// EnvKeyResolves reports whether this process's environment supplies a usable
+// embedding credential. A tenant row can still supply one per company — this is
+// the deployment-wide default, which is what a boot log can honestly speak
+// about.
+func EnvKeyResolves(cfg *config.Config) bool {
 	if !cfg.EmbeddingEnabled {
-		return nil
+		return false
 	}
-	apiKey := cfg.EffectiveEmbeddingAPIKey()
-	if apiKey == "" {
-		logrus.Warn("embedding: EMBEDDING_API_KEY not set, and the primary LLM key cannot be borrowed — it is either not an OpenAI-interface key or it belongs to a different host than EMBEDDING_BASE_URL. Table picker and cookbook retrieval are disabled; set EMBEDDING_API_KEY to enable them")
-		return nil
+	if strings.TrimSpace(cfg.EffectiveEmbeddingAPIKey()) == "" {
+		return false
 	}
-	if cfg.EmbeddingProvider != "" && cfg.EmbeddingProvider != "openai" {
+	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
+	return provider == "" || provider == "openai"
+}
+
+// LogEnvCoverage says at boot what the embedding credential does and does not
+// buy on this deployment. Called once per process, beside the cache it
+// describes.
+//
+// **This is the line that was missing, and its absence is the finding.** The
+// warning below used to live in a `Build` function that the per-tenant
+// `llmtenant.EmbeddingCache` replaced — and nothing called `Build` afterwards,
+// so the one sentence telling an operator their embeddings were off went with
+// it. `EmbeddingCache.For` returns `(nil, nil)` for a company with no key: no
+// error, no log, three features silently inert, and `EMBEDDING_ENABLED=true`
+// still printing "table-picker embeddings enabled". T-P8's live gate,
+// 2026-08-19, spent a sitting establishing by hand what this line says.
+func LogEnvCoverage(cfg *config.Config) {
+	if !cfg.EmbeddingEnabled {
+		logrus.Info("embedding: EMBEDDING_ENABLED=false — the table picker, cookbook retrieval and the dense half of document search are off; document search answers from the lexical index alone")
+		return
+	}
+	if provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider)); provider != "" && provider != "openai" {
 		logrus.WithField("provider", cfg.EmbeddingProvider).
-			Warn("embedding: only 'openai' provider is supported; table picker disabled")
-		return nil
+			Warn("embedding: only the 'openai' provider is supported — the table picker, cookbook retrieval and the dense half of document search are off for every company without its own credential row")
+		return
 	}
-	return BuildForProfile(ProfileSpec{
-		Provider:  cfg.EmbeddingProvider,
-		APIKey:    apiKey,
-		BaseURL:   cfg.EmbeddingBaseURL,
-		Model:     cfg.EmbeddingModel,
-		Dim:       cfg.EmbeddingDim,
-		BatchSize: cfg.EmbeddingBatchSize,
-	})
+	if strings.TrimSpace(cfg.EffectiveEmbeddingAPIKey()) == "" {
+		logrus.Warn("embedding: EMBEDDING_API_KEY is not set, and the primary LLM key cannot be borrowed — it is either not an OpenAI-interface key or it belongs to a different host than EMBEDDING_BASE_URL. The table picker, cookbook retrieval and the dense half of document search are OFF for every company without its own credential row; set EMBEDDING_API_KEY to enable them")
+		return
+	}
+	logrus.WithFields(logrus.Fields{
+		"model": cfg.EmbeddingModel,
+		"dim":   cfg.EmbeddingDim,
+	}).Info("embedding: an environment credential resolves; the table picker, cookbook retrieval and the dense half of document search are available")
 }

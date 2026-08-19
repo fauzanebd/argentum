@@ -4022,6 +4022,51 @@ because it greps for `exe/worker|bin/worker` and these were named `gate-*`. The
 check is "what long-lived processes exist here", not "is the binary I expect
 running".
 
+## Phase 3g — Three pieces of code that could not run, and the one they hid (2026-08-19)
+
+The two findings §1k filed rather than fixed, plus the log line that said the
+opposite of the truth. **$0.00, no model call, one sitting** — the cheapest
+bucket in this repository paying for the thirteenth time, this time without even
+a stack: the whole sitting is `go test`.
+
+**What was fixed.** `WithSynopsis` is wired from `bootstrap.Stack` under
+`DOC_CHUNK_SYNOPSIS` — a setting that had defaulted to `true` since `T-P8`
+landed and reached no code at all — and gated on a resolved embedding client,
+because the prefix it generates is embedded and read nowhere else.
+`Options.DetectHeadings` gives `internal/docchunk` a heading detector for a
+parse with no markup, **off by default**, so the package's opening claim is
+either true or switchable rather than false. And `embedding.LogEnvCoverage`
+prints at boot in both processes what the credential actually buys.
+
+**The defect underneath them cost money.** `docchunk.Build` accepted only
+`kind == "text"`, and `T-P3` sets `kind = "ocr"` on exactly the pages a
+multimodal model has just been paid to read. A scanned document was therefore
+rasterised, sent to a model, metered — and produced no retrievable prose at all.
+It was invisible from every direction the gates looked: `T-P3` asserted the
+pages were read and billed, `T-P8` chunked a born-digital document, and the
+twelve-document eval corpus is born-digital. Nine lines of test catch it, in a
+package that had no test file, which is also the answer to why a regex nothing
+could match survived a review.
+
+**Three things the tests said that no reader had.** `Options{}` gives no overlap
+at all — 60 is the fallback for an unusable value, not the default for an unset
+one — so the comment claiming the zero value was the shipped behaviour was
+wrong. The top of a page counts as "set apart", which is right for a title and
+is the detector's one known false-positive shape. And the honest warning about a
+missing embedding credential **already existed**: it lived in `embedding.Build`,
+which the per-tenant `EmbeddingCache` replaced without inheriting it, leaving a
+function with no callers anywhere in the repository and the one useful sentence
+inside it. A warning deleted by a refactor and a warning that never fires are
+the same thing at runtime.
+
+**What it left owed, and it is free:** re-ingest a document and read
+`heading_path` and `context_prefix` off the rows; find a scanned document's text
+through `search_documents` end to end; boot each process and read the new
+`embedding:` line. Filed in [`live-gate-backlog.md`](live-gate-backlog.md) §1k.
+
+`go test -race ./...` green on 58 packages, `golangci-lint` 0 issues, 21 new
+tests, two of them proven failing against the old code first.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

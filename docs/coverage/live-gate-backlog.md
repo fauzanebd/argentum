@@ -813,7 +813,17 @@ rows.
   figure and not the other. Cosmetic, and it is the sentence a reviewer reads to
   decide whether to trust the product's arithmetic.
 
-### Two findings filed, not fixed
+### Two findings filed, not fixed — ~~filed~~ **both closed 2026-08-19, and a third came out with them**
+
+**Closed in the sitting after this one**, for $0.00 and no model call, with the
+test file whose absence is finding 6's own explanation. What the work found on
+the way through is the entry below them: **an OCR'd page was never chunked at
+all**, so a scanned document was rendered, sent to a model, billed per page, and
+then held no retrievable prose. `docchunk.Build` accepted `kind == "text"` and
+`T-P3` sets `kind = "ocr"` on exactly the pages it just paid to read. It is the
+same defect species as both findings under it and it cost money rather than
+quality — and the test that catches it is nine lines, in a package that had
+none. See [`pdf-knowledge.md`](pdf-knowledge.md) §4c.
 
 5. **`WithSynopsis` has no caller anywhere in the repository** — not in
    `bootstrap`, not in a test. `T-P8`'s contextual retrieval, the half carrying
@@ -832,6 +842,30 @@ rows.
    comment says it is not. `internal/docchunk` has **no test file at all**, which
    is how a regex nothing can match survived review.
 
+**How each was closed, 2026-08-19.** Finding 5 is a wiring line —
+`DOC_CHUNK_SYNOPSIS` has defaulted to `true` since the ticket landed and reached
+nothing — plus a guard the fix argued into existence: the prefix is read by the
+embedder and by nothing else (`search_documents` returns the heading, the pages
+and the text, never the prefix), so it is generated **only where an embedding
+client resolves**. Wiring it without that guard would have bought a light-model
+call per uploaded document, on every deployment, to fill a column nobody selects
+— which is the same shape as the `T-Q10` pass that was on and inert. Finding 6
+is `Options.DetectHeadings`, **off by default**: heading detection for a parse
+with no markup now exists and is tested, and turning it on moves every chunk
+boundary in every document this sidecar produces, which is a retrieval change
+and therefore `make eval-docs`'s decision rather than a comment's. The markdown
+branch stays for a hosted parser that emits `#`, with its comment corrected to
+say what it actually matches. **21 tests, `-race` green on 58 packages,
+`golangci-lint` 0 issues**, and two of them were proven failing against the old
+code first.
+
+**What this owes back to §1, and it is free.** Three arms nobody has run:
+re-ingest a document and read `heading_path` and `context_prefix` on the rows;
+a scanned document with `DOC_OCR_ENABLED=true` whose text `search_documents`
+can then find (the OCR defect above, end to end); and one boot of each process
+reading the new `embedding:` line instead of the old "enabled". Stack only, no
+model spend except the OCR arm's ~$0.002.
+
 ### The environment fact, and it is the same species as §1b's missing credential
 
 **`EMBEDDING_API_KEY` is empty in this deployment's `.env`**, and the fallback
@@ -841,6 +875,16 @@ dense half of `T-P8`'s hybrid retrieval, the cookbook's retrieval (`T-Q8`) and
 the table picker are all inert. The one line an operator reads says the opposite:
 the worker logs **"table-picker embeddings enabled"** off `cfg.EmbeddingEnabled`,
 a boolean, without ever asking whether a client resolves.
+
+**The log half is fixed, 2026-08-19; the credential is still an operator's.**
+Both processes now print `embedding.LogEnvCoverage` at boot, naming all three
+features and whether an environment credential resolves at all, and the picker's
+own line reads `wired … credential=tenant-row-only` instead of `enabled`. The
+sentence that would have said this **already existed** — in `embedding.Build`,
+which the per-tenant `EmbeddingCache` replaced without inheriting its warning,
+leaving a `Build` function with no callers anywhere and its one useful line
+inside it. A warning that is deleted by a refactor is indistinguishable, at
+runtime, from a warning that never fired.
 
 This is what `T-P13`'s last failing case costs. `doc-prose-citation` asks in
 English about Indonesian prose, and a `tsvector` cannot cross languages; asked in

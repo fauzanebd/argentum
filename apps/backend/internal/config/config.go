@@ -462,6 +462,12 @@ type Config struct {
 	DocChunkOverlap  int
 	DocSearchTopK    int
 	DocChunkSynopsis bool
+	// DocChunkDetectHeadings cuts chunks on lines that look like headings in a
+	// parse carrying no markup. Off by default because turning it on moves
+	// every chunk boundary in every document the current sidecar produces, and
+	// what that does to T-P13's answer score is a measurement nobody has taken
+	// yet. See `internal/docchunk`.
+	DocChunkDetectHeadings bool
 	// DocParseTimeoutSecs bounds one whole parse. Two minutes by default, which
 	// sits above a 200-page text-layer read and well below anything a queue
 	// would call hung.
@@ -653,21 +659,22 @@ func Load() (*Config, error) {
 		DocumentPresignTTLSecs: getEnvAsInt("DOCUMENT_PRESIGN_TTL_SECS", 3600),
 
 		// Uploaded source documents (T-P1)
-		DocMaxUploadMB:       getEnvAsInt("DOC_MAX_UPLOAD_MB", 25),
-		DocMaxPages:          getEnvAsInt("DOC_MAX_PAGES", 200),
-		DocParseEnabled:      getEnv("DOCPARSE_ENABLED", "false") == "true",
-		DocParseURL:          getEnv("DOCPARSE_URL", "http://localhost:8091"),
-		DocParseSharedSecret: getEnv("DOCPARSE_SHARED_SECRET", ""),
-		DocParseTimeoutSecs:  getEnvAsInt("DOCPARSE_TIMEOUT_SECS", 120),
-		DocWarehouseDSN:      getEnv("DOC_WAREHOUSE_DSN", ""),
-		DocOCREnabled:        getEnv("DOC_OCR_ENABLED", "false") == "true",
-		DocOCRModel:          getEnv("DOC_OCR_MODEL", ""),
-		DocOCRMaxPagesDoc:    getEnvAsInt("DOC_OCR_MAX_PAGES_PER_DOC", 20),
-		DocPagesPerMonth:     getEnvAsInt("DOC_PAGES_PER_MONTH", 0),
-		DocChunkTokens:       getEnvAsInt("DOC_CHUNK_TOKENS", 500),
-		DocChunkOverlap:      getEnvAsInt("DOC_CHUNK_OVERLAP", 60),
-		DocSearchTopK:        getEnvAsInt("DOC_SEARCH_TOPK", 5),
-		DocChunkSynopsis:     getEnv("DOC_CHUNK_SYNOPSIS", "true") == "true",
+		DocMaxUploadMB:         getEnvAsInt("DOC_MAX_UPLOAD_MB", 25),
+		DocMaxPages:            getEnvAsInt("DOC_MAX_PAGES", 200),
+		DocParseEnabled:        getEnv("DOCPARSE_ENABLED", "false") == "true",
+		DocParseURL:            getEnv("DOCPARSE_URL", "http://localhost:8091"),
+		DocParseSharedSecret:   getEnv("DOCPARSE_SHARED_SECRET", ""),
+		DocParseTimeoutSecs:    getEnvAsInt("DOCPARSE_TIMEOUT_SECS", 120),
+		DocWarehouseDSN:        getEnv("DOC_WAREHOUSE_DSN", ""),
+		DocOCREnabled:          getEnv("DOC_OCR_ENABLED", "false") == "true",
+		DocOCRModel:            getEnv("DOC_OCR_MODEL", ""),
+		DocOCRMaxPagesDoc:      getEnvAsInt("DOC_OCR_MAX_PAGES_PER_DOC", 20),
+		DocPagesPerMonth:       getEnvAsInt("DOC_PAGES_PER_MONTH", 0),
+		DocChunkTokens:         getEnvAsInt("DOC_CHUNK_TOKENS", 500),
+		DocChunkOverlap:        getEnvAsInt("DOC_CHUNK_OVERLAP", 60),
+		DocSearchTopK:          getEnvAsInt("DOC_SEARCH_TOPK", 5),
+		DocChunkSynopsis:       getEnv("DOC_CHUNK_SYNOPSIS", "true") == "true",
+		DocChunkDetectHeadings: getEnv("DOC_CHUNK_DETECT_HEADINGS", "false") == "true",
 		// 15s, matching dashboard.DefaultPanelTimeout. Long enough for a real
 		// aggregate over a warehouse, short enough that a viewer waiting on a
 		// dozen panels has a bounded worst case.

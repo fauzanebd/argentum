@@ -1,10 +1,20 @@
 // Package docchunk cuts a parsed document into the pieces retrieval works on
 // (T-P8).
 //
-// **Structure first, budget second.** A chunk that begins mid-sentence under
-// somebody else's heading answers questions wrongly and cites confidently, so
-// the cut points are the document's own headings; the token budget only decides
-// where a *long* section is split, never whether a heading is crossed.
+// **Structure first, budget second — where there is structure to find.** A
+// chunk that begins mid-sentence under somebody else's heading answers
+// questions wrongly and cites confidently, so a heading is never crossed and
+// the token budget only decides where a *long* section is split.
+//
+// **What a heading is here, and what it was not.** This package was written
+// against markdown headings and shipped with no test file, and the live gate of
+// 2026-08-19 found the consequence: `apps/docparse` renders a page as its text
+// plus its tables as GFM pipe tables and emits no `#` on any path, so the
+// markdown branch below had never matched a line on any deployment. Every
+// heading_path was empty and every cut was the token budget's. The markdown
+// branch stays — a hosted parser swapped in behind `docparse.Parser` does emit
+// headings — and [Options.DetectHeadings] is the branch for a parse with no
+// markup at all, off until the eval set says what it does to retrieval.
 //
 // **A table is never split.** A half table is a quotation machine for the wrong
 // number: the model sees three of five rows, the totals are in the two it
@@ -21,6 +31,7 @@ package docchunk
 import (
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/fauzanebd/argentum/internal/docparse"
 )
@@ -42,7 +53,10 @@ type Chunk struct {
 	HasTable bool `json:"has_table"`
 }
 
-// Options tunes the cut. The zero value is the shipped behaviour.
+// Options tunes the cut. The zero value is a 500-token budget with **no
+// overlap** — the shipped 60 comes from `DOC_CHUNK_OVERLAP`, and the 60 in
+// [Options.withDefaults] is the fallback for an unusable value, not the default
+// for an unset one.
 type Options struct {
 	// MaxTokens is the budget per chunk, counted the cheap way (see [tokens]).
 	MaxTokens int
@@ -50,6 +64,17 @@ type Options struct {
 	// start of the next one, so a sentence that straddles a cut is retrievable
 	// from either side.
 	Overlap int
+	// DetectHeadings cuts on lines that *look* like headings in a parse that
+	// carries no markup: short, set apart by a blank line, not ending a
+	// sentence, not a figure sitting on its own.
+	//
+	// **Off by default, and the reason is a number nobody has.** Turning it on
+	// moves every chunk boundary in every document with no markdown in it,
+	// which is all of them on the current sidecar — that is a retrieval change,
+	// and this repository's rule is that an unmeasured change is an unshipped
+	// one. `make eval-docs` is what decides it: T-P13's answer-correctness
+	// score with DOC_CHUNK_DETECT_HEADINGS off, then on, on the same corpus.
+	DetectHeadings bool
 }
 
 func (o Options) withDefaults() Options {
@@ -62,9 +87,11 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// headingLine matches a markdown heading, which is what the parser emits for a
-// line it read as one, and a line that is short, unpunctuated and set apart —
-// which is what a heading looks like in a PDF that has no markup at all.
+// headingLine matches a markdown heading. **Only a markdown heading** — the
+// sentence this comment used to carry, that it also matched a line which is
+// short, unpunctuated and set apart, described [looksLikeHeading], which did
+// not exist. `apps/docparse` emits no `#`, so this pattern matches nothing this
+// deployment parses; it is here for a parser that does.
 var headingLine = regexp.MustCompile(`^(#{1,6})\s+(.*\S)\s*$`)
 
 // tableLine matches a markdown table row. Used to keep a table together, not to
@@ -92,20 +119,46 @@ func Build(pages []docparse.Page, opts Options) []Chunk {
 	}
 
 	for _, page := range pages {
-		if page.Kind != docparse.KindText || strings.TrimSpace(page.Markdown) == "" {
+		if !readable(page.Kind) || strings.TrimSpace(page.Markdown) == "" {
 			continue
 		}
+		// The top of a page is set apart the way a blank line is: a title on
+		// page one and a heading after a page break look the same to a reader.
+		prevBlank := true
 		for _, line := range strings.Split(page.Markdown, "\n") {
 			if m := headingLine.FindStringSubmatch(line); m != nil {
 				flush()
 				section = newSection(headingTrail(section.trail, len(m[1]), m[2]), page.Number)
+				prevBlank = false
+				continue
+			}
+			if opts.DetectHeadings && prevBlank && looksLikeHeading(line) {
+				flush()
+				// Level 1, always: a parse with no markup carries no depth, and
+				// guessing one from indentation would build a trail that says
+				// something the document does not.
+				section = newSection(headingTrail(nil, 1, line), page.Number)
+				prevBlank = false
 				continue
 			}
 			section.add(line, page.Number)
+			prevBlank = strings.TrimSpace(line) == ""
 		}
 	}
 	flush()
 	return out
+}
+
+// readable says whether a page kind carries text worth chunking.
+//
+// `ocr` belongs here and was missing until 2026-08-19: T-P3 sets the kind to
+// `ocr` and the markdown to what the model read, so excluding it meant a
+// scanned document was rendered, sent to a model, paid for per page — and then
+// held no retrievable prose at all, `search_documents` answering "nothing
+// matched" about a document whose every page had been read. `needs_ocr` and
+// `failed` stay out: those pages hold no text to cut.
+func readable(kind string) bool {
+	return kind == docparse.KindText || kind == docparse.KindOCR
 }
 
 // section accumulates the lines under one heading.
@@ -235,6 +288,63 @@ func blocksOf(lines []string) []string {
 	}
 	flush()
 	return out
+}
+
+// Bounds on what a heading can look like with no markup to prove it. Both are
+// generous: the cost of missing a heading is the behaviour this package had
+// before detection existed, and the cost of inventing one is a chunk boundary
+// in the wrong place — so the guards below all fail towards "not a heading".
+const (
+	headingMaxWords = 8
+	headingMaxRunes = 80
+)
+
+// figureLine matches a number written with thousand separators, or a line
+// opening with a currency word. A total sitting alone under a blank line is set
+// apart exactly like a heading and is the commonest thing in this corpus that
+// is not one — `Rp 3.377.718.500` on its own line, which T-P4 also had to learn
+// to tell apart from a phone number.
+var figureLine = regexp.MustCompile(`\d[.,]\d{3}|^(?:Rp|IDR|USD|EUR|\$|€|£)\b`)
+
+// enumPrefix is the numbering a heading may carry: "3. ", "3.1 ", "4) ". It is
+// stripped before the capitalisation test and nowhere else — the number stays
+// in the heading path, because "3. Ketentuan Pembayaran" is how the document
+// refers to itself.
+var enumPrefix = regexp.MustCompile(`^\d+(?:\.\d+)*[.)]?\s+`)
+
+// looksLikeHeading reports whether a line is a heading in a document that has
+// no markup left to say so. The caller has already established that it is set
+// apart — preceded by a blank line or by the top of a page — which is the half
+// of the judgement this function cannot make.
+//
+// Every rule here is a shape, not a vocabulary: nothing depends on the
+// document's language, because the first corpus this ran against is Indonesian
+// and the second will not be.
+func looksLikeHeading(line string) bool {
+	t := strings.TrimSpace(line)
+	if t == "" || tableLine.MatchString(t) || figureLine.MatchString(t) {
+		return false
+	}
+	runes := []rune(t)
+	if len(runes) > headingMaxRunes || len(strings.Fields(t)) > headingMaxWords {
+		return false
+	}
+	// A heading does not end a sentence. A colon does not disqualify one:
+	// "Ketentuan Pembayaran:" is a heading with a colon after it.
+	switch runes[len(runes)-1] {
+	case '.', ',', ';', '!', '?':
+		return false
+	}
+	body := []rune(enumPrefix.ReplaceAllString(t, ""))
+	if len(body) == 0 {
+		// A bare enumerator, or a page number. Neither is a heading, and both
+		// are set apart by blank lines on almost every page.
+		return false
+	}
+	// Upper case rather than "has a letter", because a lower-case opening is
+	// what a continuation line looks like — the false positive that would cut a
+	// paragraph in half at a page break.
+	return unicode.IsUpper(body[0])
 }
 
 // headingTrail returns the heading path for a new heading at this level:

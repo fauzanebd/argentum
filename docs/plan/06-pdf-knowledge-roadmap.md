@@ -881,7 +881,7 @@ is the bucket, and the parse it reviews was already paid for by `T-P2`'s gate.
 
 ## Track C — What the document says (3.0d)
 
-### `T-P8` · Chunks, context and a hybrid index — **gated live 2026-08-19: five of six lines; two cannot pass on any deployment**
+### `T-P8` · Chunks, context and a hybrid index — **gated live 2026-08-19: five of six lines; the two that could not pass were fixed the same day**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-P2` · **Priority:** P1
 **Migration:** `061_document_chunks`
 
@@ -920,6 +920,29 @@ class of question, and it is the half a tenant means when they say "knowledge".
 #### Gate
 
 Stack, plus embedding calls for one document. **~$0.01.**
+
+#### What the gate found, and what closing it changed
+
+Two acceptance lines above could not pass on any deployment: the context prefix
+(`WithSynopsis` had no caller, while `DOC_CHUNK_SYNOPSIS` defaulted to `true`)
+and heading boundaries (the regex needs markdown headings `apps/docparse` never
+emits). Both were closed on 2026-08-19 for $0.00, and closing them **changed
+what this ticket should have said**:
+
+- The prefix is generated **only where an embedding client resolves**. It is
+  embedded and read nowhere else — `search_documents` returns the heading, the
+  pages and the text — so on a deployment without a credential the ticket as
+  written buys one light-model call per document to fill a column no query
+  selects.
+- Heading-first chunking is a *retrieval change*, so it ships as
+  `DOC_CHUNK_DETECT_HEADINGS`, **off**, and `T-P13`'s answer score decides it.
+  The first line of the acceptance list is therefore met by the detector
+  existing and being tested, not by it being on.
+- `internal/docchunk` had no test file, which is how a regex that could match
+  nothing survived. It has fourteen tests now, and the first of them found
+  something neither line asked about: **an OCR'd page was never chunked at all**
+  (`Build` accepted `kind == "text"`; `T-P3` writes `"ocr"`), so a scan was
+  rendered, read by a model and billed, and then held no retrievable prose.
 
 ---
 

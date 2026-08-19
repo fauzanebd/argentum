@@ -23,6 +23,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/dashboard"
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/docwarehouse"
+	"github.com/fauzanebd/argentum/internal/embedding"
 	"github.com/fauzanebd/argentum/internal/idempotency"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmclient"
@@ -172,6 +173,10 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.llmCache.Start(tenCtx)
 	deps.embedCache = llmtenant.NewEmbeddingCache(llmResolver, 100, 30*time.Minute)
 	deps.embedCache.Start(tenCtx)
+	// Said in this process too: the API is where a document is uploaded and
+	// where a reindex is asked for, so an operator watching it deserves the
+	// same sentence the worker prints.
+	embedding.LogEnvCoverage(cfg)
 	undo = append(undo, func() {
 		deps.embedCache.CloseAll()
 		deps.llmCache.CloseAll()

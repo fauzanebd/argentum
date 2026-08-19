@@ -37,7 +37,8 @@ type DocumentChunkService struct {
 	embed EmbeddingResolver
 	// llm writes the one-sentence synopsis every chunk of a document is
 	// prefixed with. Nil leaves the prefix empty, which costs retrieval quality
-	// and nothing else.
+	// and nothing else. Set by [DocumentChunkService.WithSynopsis], from
+	// `DOC_CHUNK_SYNOPSIS`.
 	llm   LightLLM
 	model string
 	opts  docchunk.Options
@@ -62,6 +63,12 @@ func NewDocumentChunkService(
 
 // WithSynopsis turns on the generated context prefix. Passing a nil client
 // leaves it off.
+//
+// Called from `bootstrap.Stack` under `DOC_CHUNK_SYNOPSIS`. It was called from
+// nowhere at all between T-P8 and 2026-08-19, while that setting defaulted to
+// true — so the prefix this service documents at length was empty on every
+// document any deployment had ingested, and the argument for it had never been
+// tested against anything.
 func (s *DocumentChunkService) WithSynopsis(llm LightLLM, model string) *DocumentChunkService {
 	if llm == nil {
 		return s
@@ -89,7 +96,26 @@ func (s *DocumentChunkService) Ingest(ctx context.Context, doc *domain.SourceDoc
 		return s.chunks.DeleteForDocument(ctx, doc.CompanyID, doc.ID)
 	}
 
-	prefix := s.synopsis(ctx, doc, built)
+	// Resolved before the synopsis rather than after it, because the synopsis is
+	// only ever read by the embedder. `context_prefix` is stored, returned to
+	// `search_documents` in the hit — and dropped there: the tool's passage
+	// carries the heading, the pages and the text, never the prefix. So on a
+	// deployment where no embedding client resolves, generating one is a
+	// light-model call per uploaded document whose entire effect is a column
+	// nobody selects.
+	client, embedErr := s.embedder(ctx, doc.CompanyID)
+	if embedErr != nil {
+		// Degrade rather than fail. The lexical half is a complete answer, and
+		// a document that would not ingest because an embedding provider was
+		// down is a document a tenant has to remember to upload again.
+		logrus.WithError(embedErr).WithField("document_id", doc.ID).
+			Warn("chunks stored without embeddings; document search will use the lexical index only")
+	}
+
+	var prefix string
+	if client != nil {
+		prefix = s.synopsis(ctx, doc, built)
+	}
 	rows := make([]*domain.DocumentChunk, 0, len(built))
 	texts := make([]string, 0, len(built))
 	for _, c := range built {
@@ -107,13 +133,7 @@ func (s *DocumentChunkService) Ingest(ctx context.Context, doc *domain.SourceDoc
 		texts = append(texts, embeddableText(row))
 	}
 
-	if client, err := s.embedder(ctx, doc.CompanyID); err != nil {
-		// Degrade rather than fail. The lexical half is a complete answer, and
-		// a document that would not ingest because an embedding provider was
-		// down is a document a tenant has to remember to upload again.
-		logrus.WithError(err).WithField("document_id", doc.ID).
-			Warn("chunks stored without embeddings; document search will use the lexical index only")
-	} else if client != nil {
+	if client != nil {
 		vectors, err := client.Embed(ctx, texts)
 		if err != nil {
 			logrus.WithError(err).WithField("document_id", doc.ID).
@@ -256,6 +276,11 @@ func fuse(dense, lexical []*domain.DocumentChunkHit, topK int) []*domain.Documen
 // The trade is written down rather than hidden because it is measurable: T-P13's
 // answer-correctness score is where a per-chunk prefix would prove itself, and
 // the day it does, this method is where it goes.
+//
+// **Called only where an embedding client resolved**, because the prefix is
+// embedded and read nowhere else. That guard is what keeps `DOC_CHUNK_SYNOPSIS`
+// from being a per-document model call bought by a deployment that has no dense
+// index to spend it on.
 func (s *DocumentChunkService) synopsis(ctx context.Context, doc *domain.SourceDocument, chunks []docchunk.Chunk) string {
 	if s.llm == nil || len(chunks) == 0 {
 		return ""

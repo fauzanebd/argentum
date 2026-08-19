@@ -26,7 +26,7 @@ can see.
 | The warehouse | `internal/docwarehouse` | Schema per company, login role per company with `USAGE` on that schema and nothing else, `CREATE TABLE` with `source_page`/`source_row`, replace-not-append |
 | Draft and publish | `internal/app/document_table_service.go`, migration `060` | Every read re-derives the rows from the page artifacts; the control database stores the *decision*, never the data |
 | Review surface | `apps/dashboard/src/features/knowledge/` | Tables beside the page they came from, a type and multiplier override with a live preview, the verification badge, and one Apply button that a quarantined table cannot use |
-| Prose | `internal/docchunk`, migration `061`, `internal/app/document_chunk_service.go` | Heading-first chunking that never splits a table, a dense index and a `tsvector` index, merged by reciprocal rank |
+| Prose | `internal/docchunk`, migration `061`, `internal/app/document_chunk_service.go` | Chunking that never splits a table, a dense index and a `tsvector` index, merged by reciprocal rank. **Token-budget-driven on this sidecar** — heading-first needs headings, and the parser emits none, so cutting on detected ones is `DOC_CHUNK_DETECT_HEADINGS` and off until `make eval-docs` prices it (§4c) |
 | Retrieval as a tool | `internal/tools/search_documents.go` | Decision 6. Results land in `returned`, so a figure quoted out of a document is checkable |
 | The fence | `internal/guardrails/fence.go`, `internal/doctaint` | Document content reaches the model inside an explicit untrusted block; the turn that read it is tagged, and the tag is on every subsequent audit row (migration `062`) |
 | Invisible-text hygiene | `apps/docparse/parse.py` | Type below four points, or the colour of the page, is dropped before extraction — and counted, so a page carrying 173 invisible characters says so |
@@ -249,6 +249,43 @@ angka sementara"* with its page citation. The answer score has a ceiling of 7/8
 until a credential exists, and the ceiling is about the environment rather than
 the product.
 
+## 4c. The two pieces that could not run — closed 2026-08-19, and the third they were hiding
+
+Free, no model call, one sitting. What §4b filed as *"two findings filed, not
+fixed"* is now code with tests, and the work found a third defect underneath
+them that neither review nor the eval set could see.
+
+**The third one is the expensive one: an OCR'd page was never chunked.**
+`docchunk.Build` skipped every page whose kind was not `text`; `T-P3` sets
+`kind = "ocr"` on precisely the pages a model has just been paid to read
+(`document_parse_service.go:334`, then `Ingest` at `:235` receives them). So a
+scanned document was rasterised at 300 DPI, sent to a multimodal model, metered
+into the usage ledger — and produced **no retrievable prose at all**, with
+`search_documents` answering "nothing matched" about a document whose every page
+had been read. It cost money and returned nothing, and it is invisible from
+every direction the gates looked: the OCR gate (`T-P3`) asserted pages were read
+and billed, the chunking gate (`T-P8`) ran on a born-digital document, and the
+eval corpus is born-digital. `readable(kind)` now accepts `text` and `ocr`, and
+the test that catches it fails on the old code.
+
+| Finding | What it is now |
+| ------- | -------------- |
+| `WithSynopsis` had no caller | Wired in `bootstrap.Stack` under `DOC_CHUNK_SYNOPSIS`, which had defaulted to `true` since T-P8 and reached nothing — **and gated on a resolved embedding client**, because the prefix is embedded and read nowhere else: `search_documents` returns the heading, the pages and the text, never the prefix. Ungated, it would have bought one light-model call per uploaded document on every deployment to fill a column nobody selects |
+| Heading chunking could never fire | `Options.DetectHeadings`, **off by default** (`DOC_CHUNK_DETECT_HEADINGS`). Detection is by shape, not vocabulary — set apart by a blank line, short, not ending a sentence, not a figure sitting alone — so it does not assume the corpus's language. On moves every chunk boundary in every document this sidecar produces, which is a retrieval change: `make eval-docs` off, then on, decides it |
+| `internal/docchunk` had no test file | 14 tests (21 across the three packages this touched). The first one is the finding itself — a page shaped the way `apps/docparse` actually emits one, asserted to produce exactly one heading-less chunk — so the gap between the fixture the package was written against and the bytes it is given is now a failing test rather than a comment |
+| The log said "enabled" with no credential | `embedding.LogEnvCoverage` at boot in both processes, naming all three inert features; the picker's line reads `wired … credential=tenant-row-only`. **The sentence already existed** in `embedding.Build`, which the per-tenant cache replaced without inheriting its warning — leaving a function with no callers and the one useful line inside it |
+
+**Two things the tests said that no reader had.** `Options{}` gives a 500-token
+budget and **no overlap** — 60 is the fallback for an unusable value, not the
+default for an unset one, so a caller building `Options` by hand gets chunks
+that do not overlap; the comment claiming the zero value was "the shipped
+behaviour" is corrected. And the top of a page counts as set apart, which is
+right for a title on page one and is the detector's one known false-positive
+shape at a page break — written down here rather than discovered later.
+
+`go test -race ./...` green on 58 packages, `golangci-lint` 0 issues. Two of the
+guards were proven failing against the old code before being fixed.
+
 ## 5. What is owed
 
 Everything that needs Postgres, MinIO, a worker, a browser or a model. Filed in
@@ -269,8 +306,12 @@ most:
 - ~~**`T-P13`'s answer score**~~ **Run 2026-08-19 — 87.5% (7/8)** (§4b).
 
 What is left is the dense half of retrieval, which needs an embedding credential
-rather than a decision, and the two pieces of §1 that have never executed
-(`WithSynopsis`, heading-first chunking).
+rather than a decision. ~~and the two pieces of §1 that have never executed
+(`WithSynopsis`, heading-first chunking).~~ **Both closed 2026-08-19** (§4c),
+along with a third defect they were hiding — an OCR'd page was paid for and
+never chunked. What those fixes owe back is a free gate: re-ingest a document
+and read `heading_path` and `context_prefix` off the rows, and let
+`search_documents` find text on a scanned document end to end.
 
 ## 6. The questions still owed to the owner
 
