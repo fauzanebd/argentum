@@ -3871,6 +3871,66 @@ argument for a separate database, chunking with embeddings, a turn that calls
 [`live-gate-backlog.md`](live-gate-backlog.md) §1h with its bucket and its price,
 filed the day the code landed rather than the morning after.
 
+## Phase 3e — The free gates, and two acceptance lines nobody had executed (2026-08-19)
+
+Bucket A of [`live-gate-backlog.md`](live-gate-backlog.md) §1h — the three PDF
+gates that cost nothing — run in one sitting for **$0.00 of model spend**. Two
+tickets passed every line they carry. The third failed two of four, and both
+failures were fixed and re-proven before the sitting ended.
+
+**The rig was established before anything was uploaded**, because §1h asked for
+it in writing after §1g lost a gate turn to a stale binary. The parser sidecar
+was rebuilt and named — `pdfplumber 0.11.4`, image `sha256:cdf735c8fb96` — `ps
+ax` showed no worker or sidecar from an earlier session, the control database
+migrated to **version 63** on boot, and the primary model was pointed at a local
+sink so no turn could spend even by accident.
+
+**`T-P11` passes by a layer.** The acceptance line asks for a refusal before any
+model call; what the sidecar's access log shows is a refusal before the
+*render* — `POST /parse`, and no `POST /render` — so a scan over budget is never
+rasterised, let alone sent. The arm that makes it mean something ran beside it:
+with the budget unset the same document renders both pages, calls the model
+twice and writes two ledger rows carrying the document id.
+
+**`T-P7` passes on every line**, including the member arm — Apply and both
+override selects disabled under a sentence, with `403` behind all four write
+routes — and both themes.
+
+**`T-P12` is the one worth reading.** Its classifier works and is badged in
+review. What did not exist is the enforcement its own prose describes:
+
+- A `strict` tenant's published customer list came back over MCP with **three
+  real email addresses on it**. The ticket said to reuse the code path T-H10
+  established; T-H10's path is the *zero-row probe*, which only ever runs on a
+  result with no rows in it, so a result with rows was never inspected.
+- A delete left **`<sha>/pages/1.json` — the document's own text** — in the
+  bucket. `Delete` removed one key, the `.pdf`; `T-P2` had added artifacts under
+  their own prefix the same day and nothing revisited the delete.
+
+Both are one-file fixes, both are pinned by tests **proven failing first**, and
+both were re-run against a rebuilt stack: the query now answers `[CONTACT
+REDACTED]` with the withheld column named — while the same query under
+`contact_ok` still returns the addresses — and a fresh document's three objects
+go while 22 belonging to other documents stay. `go test -race ./...` green on 58
+packages, `golangci-lint` 0 issues.
+
+**Two scoping decisions were taken narrowly and written down.** The redaction is
+scoped to document sources, because widening it to every source moves what
+reaches the model on ordinary warehouse turns and owes a rule-1 re-score rather
+than a same-sitting patch. And the marker names the class rather than blanking
+the cell, with the payload saying the values exist — an emptied column is the
+zero-row hazard again, and *"the customer emails are not recorded"* would be a
+false statement about the tenant's own document made by an instrument working
+correctly.
+
+**What the sitting adds to the argument for gates.** Eleven of twelve previous
+sittings found something in code whose unit tests passed. This one found two
+defects in a ticket whose unit tests pass *and whose visible half is genuinely
+built* — the gap was between the prose and the assertions, which only executing
+the acceptance line can expose. The delete test that now pins it could not have
+caught the bug before, because the fake store only ever held the object the
+uploader wrote.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

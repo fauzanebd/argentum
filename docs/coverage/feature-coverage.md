@@ -3,6 +3,15 @@
 What Argentum actually does. Written 2026-07-26 (`argentum` @ `3891579`) and
 kept current since; the rows below carry the ticket that last moved them.
 
+**Last revised 2026-08-19 (seventh pass)**, after the free bucket of the PDF
+track's live gate (`T-P11`, `T-P12`, `T-P7`) was run for $0.00. Two rows go to
+✅ and one stays 🟡 after being fixed, which is the distinction this file exists
+to hold: `T-P12`'s two failures are closed and re-proven, and the row is still
+partial because the fix was deliberately scoped to document sources. The sitting
+found four things, two of them in a ticket whose unit tests all passed — the gap
+was between what the ticket's prose promised and what its acceptance tests
+asserted ([`live-gate-backlog.md`](live-gate-backlog.md) §1j).
+
 **Last revised 2026-08-19 (sixth pass)**, for the PDF track (`T-P3` → `T-P13`).
 One section is new — *Uploaded documents* — and most of its rows are 🟡 rather
 than ✅ on purpose: the code is complete and the halves that need a database, a
@@ -140,12 +149,12 @@ retrieved by a tool. The split is the roadmap's Decision 1 and it is what makes
 | Typed columns and their multipliers | ✅ | `T-P4`. Locale numerals, accounting negatives, footnote markers, merged headers, continuation across pages, total rows. **100% cell accuracy** on the twelve-document corpus |
 | The arithmetic self-check | ✅ | `T-P5`. A table whose stated total disagrees with its own rows is quarantined and cannot be published through any path — proven on a corrupted fixture |
 | Publish as a source | 🟡 | `T-P6`. Built: separate database, schema and login role per company, `source_page`/`source_row` on every row, replace-not-append. **The isolation query is unrun** — `SELECT … FROM companies` through a document source must fail, and only a live gate can show it |
-| Review and apply | 🟡 | `T-P7`. Built: tables beside the page they came from, type and multiplier overrides with a live preview, Apply disabled and explained for a quarantined table. **Not yet opened in a browser** |
+| Review and apply | ✅ | `T-P7`, **gated in a browser 2026-08-19** on every acceptance line, $0.00: tables beside the page rectangle they came from, a type or multiplier override moving the preview before anything is applied, Apply publishing and the source appearing in the source list, a quarantined table refusing with both figures and the difference on screen, and a member seeing Apply *and* both override selects disabled under *"Only an admin can publish a table — ask one of yours."* — with `403` on all four write routes behind it. Both themes render; the one finding is that the quarantine sentence sits at 3.98:1 in light against 4.69:1 in dark ([`live-gate-backlog.md`](live-gate-backlog.md) §1j) |
 | Prose retrieval | 🟡 | `T-P8`/`T-P9`. Chunking that never splits a table, dense + lexical indexes merged by reciprocal rank, `search_documents` registered. **Unrun against a live stack**; a figure quoted from a retrieved chunk is grounded by `CollectNumbersInProse` and that arm is owed a turn |
 | Untrusted-content fence and taint tag | 🟡 | `T-P10`. **The hygiene half is proven on a real PDF**: an instruction in white four-point type was dropped as 173 invisible characters. The fence and the tag are built; whether a model obeys the fence is a turn nobody has run. The tag is telemetry until `T-H9` |
 | OCR for scanned pages | 🟡 | `T-P3`. Built and **off by default** — a rendered page leaving the deployment is the decision `LLM_ZDR` exists to let an operator make. Unrun, and the roadmap's open question 1 is still open |
-| Page budget and cost per document | 🟡 | `T-P11`. Monthly page budget checked before any model call, cost written to the usage ledger and onto the document row. Unrun |
-| PII classification at publish | 🟡 | `T-P12`. Columns classified against the guardrails' own `identity`/`contact` classes and shown in review; delete removes the row, the chunks, the object and the warehouse table. The four-way delete is unrun |
+| Page budget and cost per document | ✅ | `T-P11`, **gated live 2026-08-19**, $0.00. A two-page scan against a one-page budget rests at `parsed` naming both numbers — and the refusal lands *before the render*, proven by a sidecar access log holding `POST /parse` and no `POST /render`, so no page was rasterised let alone sent. The discriminating arm ran beside it: budget unset, the same document renders, calls the model twice and books two ledger rows carrying `feature: document_ocr` and the document id. The refusal sentence is on the document row in the UI, not only in the API ([`live-gate-backlog.md`](live-gate-backlog.md) §1j) |
+| PII classification at publish | 🟡 | `T-P12`, **gated live 2026-08-19 — two of four acceptance lines failed, both fixed and re-proven the same sitting.** Classification and log hygiene passed first time: `Email` carries `pii: contact` where the customer-name and value columns do not, it is badged in review, and no cell value appears in any log. The other two did not. **A `strict` tenant's published customer list came back over MCP with three real addresses on it** — `run_sql` consulted the redaction mode only on T-H10's zero-row probe path, so a result *with* rows was never inspected — and **a delete left `<sha>/pages/1.json`, the document's own text, in the object store**, because `Delete` removed one key and `T-P2`'s artifacts have their own prefix. Both fixed (`RedactResultColumns`, `RemovePrefix`), pinned by tests proven failing first, and re-run live. **Still 🟡, for one honest reason**: the redaction is scoped to document sources on purpose, so the same column in a tenant's own warehouse is still returned whole — widening it moves what reaches the model on ordinary turns and owes a rule-1 re-score ([`pdf-knowledge.md`](pdf-knowledge.md) §4a) |
 | A number for any of it | 🟡 | `T-P13`. `make eval-docs`: twelve documents, three scores, parser build on every report. **Cell accuracy and publish correctness are run — 100% / 100%.** Answer correctness needs the corpus applied and a model |
 
 ## Agent capability

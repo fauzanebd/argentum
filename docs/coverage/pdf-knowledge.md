@@ -108,6 +108,62 @@ Written down rather than quietly taken.
   *what the parser read*, which is the thing being reviewed — a rendered page
   would look righter and prove less.
 
+## 4a. Bucket A of the live gate — run 2026-08-19
+
+The three gates that needed no money (`T-P11`, `T-P12`, `T-P7`) were run in one
+sitting. Full transcript and the rig's provenance in
+[`live-gate-backlog.md`](live-gate-backlog.md) §1j. In short:
+
+- **`T-P11` passes by a layer.** A two-page scan against a one-page budget rests
+  at `parsed` naming both numbers, and the sidecar's access log shows `POST
+  /parse` with **no `POST /render`** — the refusal happens before the page is
+  even rasterised, let alone sent. With the budget unset the same shape of
+  document renders, calls the model twice and books two ledger rows carrying
+  `feature: document_ocr` and the document id, which is the arm that makes the
+  first one mean something.
+- **`T-P7` passes on every line**, including the two this file could not claim:
+  the review surface in a browser in both themes, and a member seeing Apply *and*
+  both override selects disabled under *"Only an admin can publish a table — ask
+  one of yours."*, with `403` behind all four write routes.
+- **`T-P12` fails two of its four lines.** They are the section below.
+
+### The two halves of `T-P12` that were assumed rather than built
+
+The classifier works: `Email` carries `pii: contact`, the customer-name and
+value columns do not, and the badge is on the column in review. What does not
+exist is the enforcement the ticket's prose describes.
+
+1. **Nothing withholds a classified value at query time.** `run_sql` consults
+   the company's `PIIRedactionMode` only on the zero-row probe path — the code
+   path `T-H10` established, which is what the ticket asked for by name, and
+   which never inspects a result that has rows in it. Asked over MCP with a
+   `read:data` key against a `strict` tenant, the published table returned three
+   real email addresses verbatim. The chat path still scrubs the *reply*
+   (T-07b), so what Settings promises — *"removed from every answer"* — is true;
+   the ticket's own line about `run_sql` is not, and the model reads the raw
+   values either way.
+2. **Delete removes the PDF and leaves the parse.** `Delete` removes one object
+   key, the `.pdf`. The page artifacts under `<sha>/pages/N.json` — which hold
+   the document's text, which is to say the names, the emails and the figures —
+   survive a delete with nothing left referencing them. The row, the chunks and
+   the warehouse table all go correctly.
+
+Both are one-file fixes and neither is a design question. What they say about
+the track is narrower than it looks: the parsing spine measured at 100% is
+untouched by either, and both live in the layer that decides *who may see what*,
+which is the layer this roadmap's Decision 4 exists to make defensible.
+
+**Both were fixed and re-proven in the same sitting.** `RedactResultColumns`
+went into `internal/tools/probe_pii.go` — T-H10's own file, so there is still
+one classifier — and `run_sql` now calls it on a result *with* rows when the
+source is `OriginDocument`, withholding a whole column at a time and naming what
+it withheld in the payload. `RemovePrefix` went onto the storage adapter, and
+`DocumentArtifactPrefix` is named beside `PageArtifactKey` and `ManifestKey` so a
+third artifact added later is deleted without anybody remembering to. Tests for
+both were proven failing first; `go test -race ./...` is green on 58 packages and
+`golangci-lint` reports 0 issues. The re-proof and the two scoping decisions
+inside it are in [`live-gate-backlog.md`](live-gate-backlog.md) §1j.
+
 ## 5. What is owed
 
 Everything that needs Postgres, MinIO, a worker, a browser or a model. Filed in
@@ -117,8 +173,8 @@ most:
 - **`T-P6`'s isolation query.** `SELECT … FROM companies` through a document
   source must fail. It is the one place in this track where a mistake is
   catastrophic and silent, and no unit test can prove it.
-- **`T-P7` in a browser**, both themes, including the disabled Apply control a
-  member sees.
+- ~~**`T-P7` in a browser**, both themes, including the disabled Apply control a
+  member sees.~~ **Run 2026-08-19 — pass on every line** (§4a).
 - **`T-P9`'s grounding arm**: a figure quoted from a retrieved chunk must read
   `ungrounded=0`, and the same figure asked without retrieval must read `1`.
 - **`T-P3` with `DOC_OCR_ENABLED=true`**, which is also the operator decision the
