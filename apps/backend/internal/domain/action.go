@@ -96,15 +96,26 @@ type ActionInvocation struct {
 	// stored, and never load-bearing: the check that enforces anything is the one
 	// in the decide handler, and this field travels to a browser where a user can
 	// edit it freely.
-	CanDecide      bool             `json:"can_decide"`
-	IdempotencyKey string           `json:"idempotency_key"`
-	Status         InvocationStatus `json:"status"`
-	ProposedAt     time.Time        `json:"proposed_at"`
-	DecidedAt      *time.Time       `json:"decided_at,omitempty"`
-	DecidedBy      string           `json:"decided_by,omitempty"`
-	ExecutedAt     *time.Time       `json:"executed_at,omitempty"`
-	Result         json.RawMessage  `json:"result,omitempty"`
-	ErrorText      string           `json:"error_text,omitempty"`
+	CanDecide bool `json:"can_decide"`
+	// ApprovalForcedReason is why this proposal is waiting for a human on a
+	// kind the workspace auto-approves (T-H9). Empty on every ordinary
+	// proposal, including one whose kind requires approval anyway — the field
+	// answers "why is this in front of me when I switched that off", and a
+	// reason on a proposal that would have needed a decision regardless would
+	// be noise on the card that matters least.
+	//
+	// Stored rather than derived: the taint is a fact about a turn that has
+	// already ended by the time anybody opens the card, and re-deriving it
+	// later would answer with whatever this release believes.
+	ApprovalForcedReason string           `json:"approval_forced_reason,omitempty"`
+	IdempotencyKey       string           `json:"idempotency_key"`
+	Status               InvocationStatus `json:"status"`
+	ProposedAt           time.Time        `json:"proposed_at"`
+	DecidedAt            *time.Time       `json:"decided_at,omitempty"`
+	DecidedBy            string           `json:"decided_by,omitempty"`
+	ExecutedAt           *time.Time       `json:"executed_at,omitempty"`
+	Result               json.RawMessage  `json:"result,omitempty"`
+	ErrorText            string           `json:"error_text,omitempty"`
 }
 
 // ActionRepository is the persistence contract for the action framework (T-10).

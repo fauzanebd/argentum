@@ -94,6 +94,18 @@ export interface ActionInvocation {
    * edit it freely.
    */
   can_decide: boolean;
+  /**
+   * ApprovalForcedReason is why this proposal is waiting for a human on a
+   * kind the workspace auto-approves (T-H9). Empty on every ordinary
+   * proposal, including one whose kind requires approval anyway — the field
+   * answers "why is this in front of me when I switched that off", and a
+   * reason on a proposal that would have needed a decision regardless would
+   * be noise on the card that matters least.
+   * Stored rather than derived: the taint is a fact about a turn that has
+   * already ended by the time anybody opens the card, and re-deriving it
+   * later would answer with whatever this release believes.
+   */
+  approval_forced_reason?: string;
   idempotency_key: string;
   status: InvocationStatus;
   proposed_at: string;

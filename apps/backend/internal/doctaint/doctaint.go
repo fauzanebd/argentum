@@ -117,3 +117,10 @@ func Mark(ctx context.Context, source string) { FromContext(ctx).Mark(source) }
 
 // Tainted reports whether this context's turn has read document content.
 func Tainted(ctx context.Context) bool { return FromContext(ctx).Tainted() }
+
+// Sources lists the documents whose content reached the model on this turn.
+// Empty on an untainted turn, and also on a tainted one whose read had no
+// nameable source — Tainted is the load-bearing answer and this is the detail,
+// which is why T-H9's gate reads them in that order rather than treating an
+// empty list as "nothing was read".
+func Sources(ctx context.Context) []string { return FromContext(ctx).Sources() }

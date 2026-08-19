@@ -106,7 +106,8 @@ func (r *ActionRepo) UpsertCompanyAction(ctx context.Context, a *domain.CompanyA
 
 const invocationColumns = `id, company_id, COALESCE(thread_id::text, ''), COALESCE(message_id::text, ''),
 	action_kind, params_redacted, idempotency_key, status, proposed_at, decided_at,
-	COALESCE(decided_by::text, ''), executed_at, result, COALESCE(error_text, '')`
+	COALESCE(decided_by::text, ''), executed_at, result, COALESCE(error_text, ''),
+	COALESCE(approval_forced_reason, '')`
 
 func scanInvocation(row interface {
 	Scan(dest ...interface{}) error
@@ -118,7 +119,7 @@ func scanInvocation(row interface {
 	if err := row.Scan(
 		&inv.ID, &inv.CompanyID, &inv.ThreadID, &inv.MessageID,
 		&inv.Kind, &inv.ParamsRedacted, &inv.IdempotencyKey, &status, &inv.ProposedAt, &decidedAt,
-		&inv.DecidedBy, &executedAt, &result, &inv.ErrorText,
+		&inv.DecidedBy, &executedAt, &result, &inv.ErrorText, &inv.ApprovalForcedReason,
 	); err != nil {
 		return nil, err
 	}
@@ -153,16 +154,16 @@ func (r *ActionRepo) CreateInvocation(ctx context.Context, inv *domain.ActionInv
 	const q = `
 		INSERT INTO action_invocations (
 			company_id, thread_id, message_id, action_kind, params_redacted, idempotency_key, status,
-			decided_at, decided_by, executed_at, result
+			decided_at, decided_by, executed_at, result, approval_forced_reason
 		) VALUES (
 			$1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, $5::jsonb, $6, $7,
-			$8, NULLIF($9, '')::uuid, $10, $11
+			$8, NULLIF($9, '')::uuid, $10, $11, $12
 		)
 		ON CONFLICT (company_id, idempotency_key) DO NOTHING
 		RETURNING ` + invocationColumns
 	stored, err := scanInvocation(r.db.QueryRowContext(ctx, q,
 		inv.CompanyID, inv.ThreadID, inv.MessageID, inv.Kind, string(params), inv.IdempotencyKey, string(status),
-		inv.DecidedAt, inv.DecidedBy, inv.ExecutedAt, nullableJSON(inv.Result),
+		inv.DecidedAt, inv.DecidedBy, inv.ExecutedAt, nullableJSON(inv.Result), inv.ApprovalForcedReason,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
 		// Conflict: a proposal with this key already exists. Return it as-is.

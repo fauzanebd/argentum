@@ -904,17 +904,49 @@ predicted: the reply is already persisted, so the check runs on stored text.
 | ~~`T-Q14`~~ | ~~One stored reply that prints a full-precision table, re-checked~~ | ~~§1 stack~~ | **Run 2026-08-18 — pass.** `messages.d0ef1f33`, the Q4 monthly table from §1g, re-checked against its own `run_sql` re-executed on the demo warehouse today (`3,377,718,500` / `3,708,552,300` / `3,863,405,700`). The build now reports **`ungrounded=[3,860,405,700, 10,946,676,500]`** where 08-18 reported only the second. The misquote is **0.0777%** off — grounded under the one-percent rule, flagged under the exact one — and the derived total is 3,000,000 low because it is the sum of the misquote. October and November match to the cent and are untouched, which is the arm that says the tightening did not simply flag everything |
 | `T-Q13` | Repeat §1g's sequence — a create turn engineered to spend its iteration budget, then the rename on the same thread — until one turn claims an unperformed edit (one in three at `AGENT_MAX_ITERATIONS=2` on `kimi-k2.6`), and show `unevidenced=1` on that turn's `turn completed` line and `unevidenced=0` on the control that called the tool | §2 money | **~$0.10**, about six turns. Rule 1 does not apply while it only counts; it does the day it rewrites a reply |
 
-## 1l. Owed by `T-H4` step 3 (2026-08-19)
+## 1l. ~~Owed by `T-H4` step 3~~ — the free arms ran 2026-08-19, and the bucket has paid fourteen times out of fourteen
 
 `run_sql` now refuses a statement that is not a single read, before it dials.
 Both arms below exist because the risk here is **not** that the check fails to
 refuse — 16 unit cases cover that — but that it refuses something real.
 
-| Owed by | The gate | Bucket | Cost |
-| ------- | -------- | ------ | ---- |
-| `T-H4` | One turn per driver against a live source, showing an ordinary analytical question still answered: the refusal must not fire on SQL a model legitimately writes. The SQL Server arm is the one that matters, because it is the driver with no read-only transaction behind the check | §1 stack (Postgres, MySQL) / §4 operator (SQL Server — this deployment has no SQL Server source) | $0.00 for the mechanism; a turn if it is driven through the agent |
-| `T-H4` | **Rule 1**: the 56-case set on both models. This changes what reaches the tenant's database on every warehouse turn, and a validator that refuses a case's SQL shows up as a score drop with no other tell | §2 money | ~$0.8 |
-| `T-H4` | A refused statement's `agent_actions` row: `status` must read as a failure and the audit row must exist, because the refusal is returned as an error precisely so `agentbudget.Observe` counts it | §1 stack | $0.00 |
+**Run 2026-08-19: 17 arms, two drivers, $0.00 — and every arm behaved.** This is
+the first sitting in this file where the bucket found nothing in the ticket under
+test, and the reason is worth naming rather than celebrating: the ticket ships a
+*refusal*, and a refusal is the one shape whose false-positive half can be
+enumerated in advance. It was, in the unit set, by its author.
+
+**The rig.** `cmd/api`, `cmd/mcp` and `cmd/worker` built fresh from `ccdaa2a`
+and hashed; `ps ax` showed no process from an earlier session and no model sink.
+Driven through **`cmd/mcp`** with a `read:data` key — §1d's technique, and for
+§1d's reason: `run_sql` is not reachable from `cmd/api`, and MCP adapts the same
+registry instance rather than reimplementing it, so each call runs the exact code
+path a turn runs with the SQL chosen by the gate. A gate tenant, `Gate H4 0819`,
+was created through signup and given two sources.
+
+**The MySQL source is a container this gate created**, not a database belonging
+to another project. Registering it found something small and correct on the way:
+the first attempt was refused with *"x509: certificate is not standards
+compliant"*, because `T-H3` made `require` the default and go-sql-driver's
+`require` verifies the chain — so a mysqld holding its own self-signed
+certificate is refused until an admin says `skip-verify` in as many words. That
+is the hardening working, met from the outside.
+
+| Owed by | The gate | Bucket | Outcome |
+| ------- | -------- | ------ | ------- |
+| `T-H4` | One turn per driver against a live source, showing an ordinary analytical question still answered: the refusal must not fire on SQL a model legitimately writes | §1 stack (Postgres, MySQL) | **Pass, 10 of 10 allowed arms.** Postgres: a multi-line CTE whose comment reads *"we do not delete rows here"*, a literal `'deleted from the ledger'`, a block comment saying *"do not DROP this table"*, a join with HAVING, a trailing semicolon, and a double-quoted identifier. MySQL — the driver no unit case speaks: **backtick identifiers**, `create_date, update_count, call_id`, and `DATE_FORMAT(tanggal, '%Y-%m')`. All ten returned rows |
+| `T-H4` | The refusals themselves | §1 stack | **Pass, 7 of 7**, and each names what it found: INSERT / UPDATE / DELETE by leading keyword, the extra `";"`, `"INTO"`, an unbound `{{from}}` — and **a data-modifying CTE**, `WITH gone AS (DELETE … RETURNING *)`, which passes the prefix check and is caught only by the keyword rule |
+| `T-H4` | A refused statement's `agent_actions` row: `status` must read as a failure and the audit row must exist, because the refusal is returned as an error precisely so `agentbudget.Observe` counts it | §1 stack | **Pass.** 14 `ok` rows and **7 `error` rows**, one per refusal, each carrying the refusal sentence in `error_text` and `rows_returned` NULL. The audit table and the guard agree |
+| `T-H4` | *(beyond the acceptance line)* Does the refusal precede the dial? | §1 stack | **Proven at the database, not read off the code.** With `log_statement = all` on the demo warehouse, a marked allowed statement appears in the server's own log exactly once and **a marked `DELETE` appears zero times** — the T-H10 technique, and the strongest available form of "no connection was opened" |
+| `T-H4` | The SQL Server arm — the driver with no read-only transaction behind the check | §4 operator | **Still owed.** This deployment has no SQL Server source, and standing one up is an operator's decision rather than a gate's |
+| `T-H4` | **Rule 1**: the 56-case set on both models | §2 money | Run 2026-08-19 — see §1m |
+
+**What the free arms cannot show, and where it went instead.** §1d's note applies
+here more sharply than anywhere: driving `cmd/mcp` proves the code path with SQL
+*the gate* wrote, and `T-H4`'s whole risk is SQL *a model* writes. That arm is the
+rule-1 re-score, which puts several hundred model-authored statements through
+`run_sql` — so the re-score was instrumented for the refusal's own Warn line
+rather than only for its score. §1m.
 
 **Priced before the live half rather than after**, which is §1h's rule and the
 one that worked. The middle row is the only one carrying money, and it is the

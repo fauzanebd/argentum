@@ -96,6 +96,23 @@ export function ApprovalCard({ invocation }: { invocation: ActionInvocation }) {
         {tone.title}
       </div>
 
+      {/* Why this card exists at all, on a kind the workspace runs without
+          asking (T-H9). Above the card rather than inside it: an admin who
+          switched this kind to automatic and then finds a proposal waiting has
+          to be able to tell a policy from a bug BEFORE they read the action,
+          and the two readings lead to opposite decisions. Rendered text, not a
+          title attribute — the same rule the next-step chips' reason follows,
+          and for the same reason. */}
+      {invocation.approval_forced_reason && (
+        <p className="flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning-tint px-2 py-1.5 text-xs text-warning-ink">
+          <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>
+            Held for a decision because {invocation.approval_forced_reason}. This
+            workspace normally runs this action without asking.
+          </span>
+        </p>
+      )}
+
       <DecisionCard
         aria-label="Action approval"
         question={describe(invocation)}
