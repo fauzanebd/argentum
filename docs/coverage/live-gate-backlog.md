@@ -955,6 +955,72 @@ the agent sends has been re-scored, and the two that were not — `T-Q3`'s chart
 guideline and `T-Q10`'s pass — were both found later to have been doing nothing
 or something different from what their comment claimed.
 
+## 1m. The rule-1 re-score, and `T-H9`'s gate — run 2026-08-19/20
+
+**Three owed rule-1 re-scores, one run, $1.01.** `T-H4` step 3 owed one because
+it changes what reaches a tenant's database on every warehouse turn;
+`T-P9`/`T-P10` owed one, shared, because they change what the prompt says on a
+document-reading turn. All three were already on `main`, so one 56-case run on
+both models measures the tree that carries all of them — the saving §1h's own
+"one re-score covers both if they land in the same build" rule predicts, taken
+one ticket further.
+
+| Model | This run | 2026-08-18 | Delta | Served |
+| ----- | -------- | ---------- | ----- | ------ |
+| `moonshotai/kimi-k2.6` | **96.4%** (54/56), $0.8158 | 94.6% (53/56) | **+1** | `via Baidu` (135 responses) |
+| `deepseek/deepseek-v3.2` | **76.8%** (43/56), $0.1991 | 78.6% (44/56) | **−1** | `via AtlasCloud` (229) **+ `via Alibaba` (1)** |
+
+Both inside the ±2 band, so neither is a result — and that *is* the result the
+gate needed. A validator refusing SQL a model legitimately writes shows up as a
+score drop with no other tell, and there is no drop.
+
+**The direct measurement is stronger than the score.** The run was instrumented
+for the refusal's own `Warn` line, and across **112 model-driven case runs it
+fired zero times**. Several hundred model-authored statements reached `run_sql`
+and not one was refused. That is `T-H4`'s model half, which §1l could not supply
+because `cmd/mcp` carries SQL the gate wrote rather than SQL a model wrote.
+
+**kimi's two failures are both the asking policy, not this build**: on
+`ambiguous-headcount` and `dirty-ask-rather-than-guess` the agent asked for
+clarification *in prose* instead of calling `ask_clarification`. Both replies are
+the behaviour anybody would want; the assertion wants the tool. That finding is
+`T-Q5`'s, from 2026-08-14, and it is still open.
+
+**And `T-Q15`, built the same morning, paid for itself on its first re-score.**
+deepseek's report reads:
+
+```
+served:     ! more than one identity answered this run
+              deepseek/deepseek-v3.2 via AtlasCloud (229 responses)
+              deepseek/deepseek-v3.2 via Alibaba (1 responses)
+            The gateway re-routed mid-set.
+```
+
+One response in 230 was served by a different upstream under the same model id.
+It cannot on its own explain a one-case delta, and that is not what makes it
+worth recording: **no number this project has published could have shown it at
+all.** The corroboration is in the failure profile — **10 of deepseek's 13
+failures are `replied in "id", expected "en"`**, the same shape and magnitude the
+2026-08-18 sitting spent a worktree and six extra cases attributing to provider
+drift rather than to the tree. Today that attribution costs one line of a report.
+
+### `T-H9`'s own gate, $0.04
+
+Filed and run the same evening the ticket was built — the §1h rule, followed for
+the third time.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-H9` | Migration `064` up, down against a populated table, and up | **Pass.** Applied by `cmd/api`'s own migrator (63 → 64); `migrate down 1` against six live invocations dropped the index and column and kept every row; up again, `dirty = f` |
+| `T-H9` | An action proposed on a turn that read a document must not execute, on a kind the workspace auto-approves | **Pass, and proven by an access log rather than a status field.** `proposed`, with `approval_forced_reason` naming the document — and the local receiver the endpoint points at counted **zero** new requests |
+| `T-H9` control | The same action on an untainted turn must still execute | **Pass.** `executed`, receiver +1, carrying the right body, no forced reason on the row |
+| `T-H9` | The person is told why | **Pass, unprompted and in their own language.** *"memerlukan persetujuan admin terlebih dahulu karena membaca dokumen yang diunggah"* |
+| `T-H9` | Approving by hand still runs it | **Pass.** `executed`, receiver +1, `decided_by` set, the forced reason retained |
+
+**Still owed on `T-H9`, and it is a decision rather than a gate:**
+`schedule_task` is not gated, so a tainted turn can schedule a future turn that
+is not itself tainted. Filed with `T-H8`.
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |

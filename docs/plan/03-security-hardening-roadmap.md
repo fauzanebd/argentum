@@ -357,7 +357,7 @@ The tractable subset here:
 3. Record the tag on the audit row, so "did this turn read untrusted content"
    is answerable after the fact.
 
-### `T-H9` Action gate on tainted turns — 1.0d
+### `T-H9` Action gate on tainted turns — 1.0d · **built and gated live 2026-08-19**
 
 With `T-H8`'s tag available: an `http_action`, `send_message` or `propose_action`
 in a turn that has read untrusted rows requires approval, regardless of the
@@ -368,6 +368,41 @@ The decorator shape is already established: `tools.WithAudit` and
 `agentbudget.Guard` both wrap the whole registry so a tool added next year is
 covered without its author knowing
 (`apps/backend/internal/tools/audit.go:31-46`). Same pattern.
+
+> **Status, 2026-08-19: built, unit-gated (9 new `doctaint` tests + 9 service
+> tests) and gated live on four arms.** Migration `064` stores the *reason* on
+> the invocation.
+>
+> **Three deviations, each because the ticket assumed a shape the tree does not
+> have.**
+>
+> 1. **It is not a decorator over the registry.** The ticket proposes the
+>    `WithAudit` pattern, and the three things it names — `http_action`,
+>    `send_message`, `propose_action` — are not three tools. `propose_action` is
+>    the only *tool*; the other two are action *kinds* that reach the world
+>    through it. So the gate is one branch at the single place that decides
+>    whether a proposal executes (`ActionService.ProposeAction`), which covers
+>    every kind including ones written next year. A decorator would have wrapped
+>    one tool and missed the seam that matters.
+> 2. **The taint it reads is documents, not "untrusted rows".** `T-H8` is still
+>    open, so what exists is `T-P10`'s `doctaint`. The gate reads it through one
+>    function; widening it when `T-H8` lands is a change to what marks the
+>    tracker, not to this control.
+> 3. **The reason is stored, and it is a sentence rather than a flag.** Not in
+>    the ticket, and the gate is the argument for it: an admin who switched a
+>    kind to automatic and then finds a card waiting has to tell a policy from a
+>    bug *before* they read the action, and those two readings lead to opposite
+>    decisions.
+>
+> **`schedule_task` is deliberately not gated**, and it is the one place this
+> ticket leaves a door. A tainted turn can still schedule a future turn, and that
+> future turn is not itself tainted — which is a persistence mechanism for an
+> injection, one step longer than the path this closes. It is a separate
+> decision (a scheduled task is not a write to the outside world, and gating it
+> would put an approval in front of *"remind me on Monday"*), and it belongs with
+> `T-H8` rather than being smuggled in here.
+>
+> Record: [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §17.
 
 ### `T-H10` PII-aware empty-result probe — 0.5d · **built 2026-08-14**
 

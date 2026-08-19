@@ -4157,6 +4157,122 @@ package: it publishes to a fake event bus and never constructs a tool, so it is
 load-sensitive rather than related, and it is written down here because a flake
 nobody records is a flake somebody re-diagnoses.
 
+## Phase 3i — A score that names what answered it, and a tag that grew teeth (2026-08-19)
+
+One sitting, four pieces of work, **$1.11 of model spend** — of which $1.01 is a
+single rule-1 re-score that three separate tickets owed and one run discharged.
+
+**`T-Q15`: every published number named a model and no revision.** The eval
+harness now records what the gateway says it served, and the first run answered
+the ticket's question in one line: **`served: moonshotai/kimi-k2.6 via Baidu`**,
+against **`deepseek/deepseek-v3.2 via AtlasCloud`**. Neither upstream appears in
+any number this repository has published, and the upstream is exactly what moved
+under the 2026-08-18 deepseek drop. The tap that reads it is the one already
+parsing every SSE frame for token usage; what is new is four lines of JSON and an
+optional sink the caller installs, so nothing in production pays for a question
+only a scoring run asks.
+
+**The acceptance line it could not meet as written, and why that is the finding.**
+`T-Q15` says to pin a revision in `golden.yaml` *"where the provider supports a
+dated alias"*. OpenRouter's catalogue was checked rather than assumed: it does
+carry dated aliases — `moonshotai/kimi-k2-0905` is one — and it has none for
+either model this set is scored on. So the alias cannot carry the revision and
+the report does instead. The set declares its models, with that check written
+beside them.
+
+**And the feature found a defect in itself before any ticket did.** Writing the
+three-case gate into the report directory the 56-case re-score was about to use
+would have printed *"+50 case(s) — outside the ±2 band"*: the comparison matched
+on set and model and not on case count. Fixed with the guard and two tests, the
+morning it was written, because a harness that prints arithmetic between two
+different questions is worse than one that prints nothing.
+
+**`T-H4` step 3's live half — 17 arms, two drivers, $0.00, and everything held.**
+The first sitting in this repository's live-gate record where the bucket found
+nothing in the ticket under test, and the reason is worth naming rather than
+celebrating: a refusal is the one shape whose false-positive half can be
+enumerated in advance, and its author enumerated it. What the gate added was the
+half no unit case speaks — **MySQL**, where a model writes backticks — and two
+proofs the acceptance line did not ask for: every refusal writes an
+`agent_actions` row reading `error`, and the refused statement never reaches the
+database, shown in the warehouse's own `log_statement=all` log rather than read
+off the code. Full record: [`security-hardening.md`](security-hardening.md) §17a.
+
+**The three free arms `§1k` left owed, closed for about a tenth of a cent.**
+Heading detection ran on a real document for the first time on any deployment —
+`heading_path = "PELANGGAN UTAMA 2024"`, where every such column in this database
+had been empty — while `context_prefix` stayed empty with no embedder resolved,
+which is the synopsis guard declining to buy a light-model call per document to
+fill a column nobody selects. The OCR chunking fix was proven end to end: a
+scanned invoice went in, came back with one chunk where it used to produce none,
+and a real turn answered *"INV-2024-0001 … Rp 1.850.000"* citing *"halaman 1"*.
+And all three long-lived processes now print the `embedding:` coverage line at
+boot, with the picker reading `credential=tenant-row-only` instead of the old
+`enabled`.
+
+**`T-H9`: the taint tag stopped being telemetry.** `062`'s own migration comment
+promised this — *"until T-H9 lands, count first, gate once the rate is known"* —
+and the ticket turned out to describe a shape this tree does not have. It asks
+for a decorator over three tools; `http_action` and `send_message` are action
+*kinds*, not tools, and only `propose_action` is one. So the gate is a single
+branch at the point that decides whether a proposal executes, which covers every
+kind including ones written next year.
+
+**Its gate is the strongest form this repository has**: not a status field but an
+access log. A control turn proposed an action on an auto-approve kind and the
+local receiver logged the POST; the tainted turn proposed the same action and the
+receiver counted **zero**, with the invocation reading `proposed` and the reason
+naming the document; approving it by hand then ran it, receiver +1. The agent
+relayed the reason unprompted, in Indonesian, to a user who would otherwise have
+read the held card as a malfunction.
+
+**Two findings beside the tickets, both about how a person actually asks for a
+document.** `search_documents` cannot find a document *by its filename* — the
+index holds content only, so *"look up 09-scan-invoice.pdf"* answers *"I couldn't
+find any uploaded document named 09-scan-invoice.pdf"* thirty seconds after the
+upload. And `plainto_tsquery` is conjunctive, so one English word in an otherwise
+good Indonesian query returns nothing, with the dense half inert for want of a
+credential. Both P2, both in §17c.
+
+**The re-score: both models, both inside the band, and the instrument built this
+morning earned itself back on its first real run.**
+
+| | this run | 2026-08-18 | delta |
+| --- | --- | --- | --- |
+| `moonshotai/kimi-k2.6` | **96.4%** (54/56), $0.8158 | 94.6% (53/56) | +1 case |
+| `deepseek/deepseek-v3.2` | **76.8%** (43/56), $0.1991 | 78.6% (44/56) | −1 case |
+
+Both moves are inside the ±2 band this set carries, so neither is a result —
+which is the answer `T-H4` step 3 needed: **a validator that refuses ordinary
+analytical SQL would show up as a score drop with no other tell, and there is no
+drop.** The direct measurement beside it is better still: **zero refusal warnings
+across 112 model-driven case runs.** Several hundred model-authored statements
+went through `run_sql` and the guard did not fire once.
+
+**And `T-Q15` caught what it was built for, on its first re-score.** deepseek's
+report reads:
+
+```
+served:     ! more than one identity answered this run
+              deepseek/deepseek-v3.2 via AtlasCloud (229 responses)
+              deepseek/deepseek-v3.2 via Alibaba (1 responses)
+```
+
+**The gateway re-routed mid-set.** One response of 230 came from a different
+upstream under the same model id — invisible to every previous number this
+project has published, and the exact mechanism the 2026-08-18 sitting spent a
+worktree and six extra cases proving by elimination. It cannot by itself explain
+a one-case delta, and that is not the point: before today nobody could ask. The
+supporting evidence is in the failure profile — **10 of deepseek's 13 failures
+are `replied in "id", expected "en"`**, the same shape and the same magnitude
+08-18 attributed to drift rather than to the tree.
+
+**What the sitting spent, and what it bought.** $0.0500 on `T-Q15`'s gate,
+$0.0004 of OCR, about $0.04 across four `T-H9` turns, and **$1.01 on the re-score
+that discharged three owed rule-1 obligations at once** — `T-H4` step 3,
+`T-P9`/`T-P10`. Running them separately, as each ticket assumed, would have cost
+half as much again and answered the same question three times.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

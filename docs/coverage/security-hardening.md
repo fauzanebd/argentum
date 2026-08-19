@@ -913,3 +913,125 @@ What the lexer cannot see, and a parser would: a mutating statement hidden
 inside a construct it reads as a single SELECT — a CTE with a data-modifying
 `WITH … AS (INSERT …)` is refused today only because `insert` is in the keyword
 list, not because anything understood the tree.
+
+## 17. `T-H4` step 3's live half, and `T-H9` — run 2026-08-19
+
+Two tickets, one sitting, **$0.04 of model spend** — and the cheap half of it
+cost nothing at all. `T-H4` step 3 landed code-complete on 2026-08-19 with the
+live half owed; `T-H9` was built the same evening and gated the same hour, which
+is the rule §1h asked for and the second sitting to follow it.
+
+### 17a. `T-H4` step 3 — 17 arms, two drivers, $0.00
+
+Driven through **`cmd/mcp`** with a `read:data` key, which is §1d's technique and
+the only honest one available: `run_sql` is not reachable from `cmd/api`, and MCP
+adapts the same registry instance rather than reimplementing it, so each call runs
+the exact code path a turn runs with the SQL chosen by the gate.
+
+**The ten allowed arms are the ones that matter**, because a validator that
+refuses ordinary analytical SQL costs more than it saves:
+
+| Driver | What was sent | Result |
+| ------ | ------------- | ------ |
+| Postgres | A multi-line CTE whose comment reads *"we do not delete rows here"*, aggregating Q4 by month | allowed, 3 rows |
+| Postgres | `payment_method <> 'deleted from the ledger'` — a mutating keyword inside a literal | allowed, 1,348 |
+| Postgres | `/* do not DROP this table */` before the statement | allowed |
+| Postgres | join + `HAVING`, a trailing semicolon, and a `"quoted identifier"` | allowed |
+| **MySQL** | **backtick identifiers** — `` SELECT `kanal`, sum(`nilai`) … `` | allowed, 3 rows |
+| **MySQL** | `create_date, update_count, call_id` — three forbidden words as column names | allowed, 6 rows |
+| **MySQL** | `DATE_FORMAT(tanggal, '%Y-%m')` | allowed, 3 rows |
+
+MySQL is the arm the unit set cannot speak: no case in it carries a backtick, and
+backticks are what a model writes against that driver.
+
+**And the seven refusals, each naming what it found** — the step-3 message
+change, visible from outside for the first time:
+
+- `INSERT` / `UPDATE` / `DELETE` → *"it starts with INSERT"*, and so on
+- `SELECT count(*) …; DROP TABLE fact_sales` → *"remove the extra `;`"*
+- `SELECT * INTO copied_sales` → *"contains `INTO`"*
+- **`WITH gone AS (DELETE FROM fact_sales RETURNING *) SELECT count(*)`** →
+  *"contains `DELETE`"*. This is the arm worth keeping: a data-modifying CTE
+  passes the prefix check, and only the keyword rule stands between it and a
+  driver with no read-only transaction
+- `WHERE created_at >= {{from}}` → *"unknown parameter {{from}} — this statement
+  declares no parameters"*
+
+**The audit trail agrees with the guard.** 14 `ok` rows and **7 `error` rows**,
+one per refusal, each carrying the refusal sentence in `error_text` and
+`rows_returned` NULL — which is what makes `agentbudget.Observe` count a refusal
+as a failure rather than as a call that ran (the `T-Q12` lesson, applied here by
+construction rather than by patch).
+
+**The refusal precedes the dial, proven at the database.** With
+`log_statement = all` on the demo warehouse, a marked allowed statement appears
+in the server's own log exactly once and a marked `DELETE` appears **zero**
+times. That is the T-H10 technique and the strongest available form of "no
+connection was opened".
+
+**Still owed: the SQL Server arm**, which is the driver the whole ticket is
+about — go-mssqldb rejects `TxOptions.ReadOnly`, so there the structural check is
+the only barrier. This deployment has no SQL Server source and standing one up is
+an operator's decision.
+
+**One thing the registration found on the way in.** The gate's MySQL source was
+refused at first with *"x509: certificate is not standards compliant"*, because
+`T-H3` made `require` the default and go-sql-driver's `require` verifies the
+chain — so a mysqld holding its own self-signed certificate is refused until an
+admin says `skip-verify` in as many words. That is the 2026-08-11 hardening
+working, met from outside for the first time.
+
+### 17b. `T-H9` — the tag grows teeth
+
+`062`'s own migration comment said it: the taint tag is telemetry *"until T-H9
+lands"*. It has landed, and the gate is one branch at the single point that
+decides whether a proposal executes — not a decorator, because `http_action` and
+`send_message` are action *kinds* rather than tools and only `propose_action` is
+a tool. Details and the two other deviations:
+[`../plan/03-security-hardening-roadmap.md`](../plan/03-security-hardening-roadmap.md).
+
+**Four arms, and the load-bearing one is an access log.** `http_action` was
+enabled for the gate tenant with `requires_approval: false` — the admin opt-out,
+the setting this ticket overrides — pointed at a local receiver whose only job is
+to count requests.
+
+| Arm | Expected | Got |
+| --- | -------- | --- |
+| **Control**: an ordinary turn, no document read, asks for a ticket | executes | `http_action` → `executed`, **receiver +1** with the right body, `approval_forced_reason` empty |
+| **The ticket**: a turn that retrieves the scanned invoice, then proposes the same action | held, and nothing runs | `proposed`, `approval_forced_reason = "this turn read the uploaded document 09-scan-invoice.pdf"`, and **the receiver counted zero new requests** |
+| The reply the user reads | says why | *"memerlukan persetujuan admin terlebih dahulu karena membaca dokumen yang diunggah"* — the model relayed the reason, in the user's own language |
+| Approve it by hand | runs then | `executed`, **receiver +1**, `decided_by` set, the forced reason retained on the row |
+
+The audit rows read `search_documents` then `propose_action`, both
+`document_tainted = t`, so the tag and the gate agree about the same turn.
+
+**The operator gets a `Warn`, not an `Info`** — `T-Q10`'s lesson, that a control
+which reports itself at Info reports itself to nobody:
+
+```
+action proposed on a turn that had read an uploaded document; auto-approval withheld
+  approval_forced="this turn read the uploaded document 09-scan-invoice.pdf"
+```
+
+**Migration `064`**: up (applied by `cmd/api`'s own migrator, 63 → 64), down
+against a **populated** table — six invocations kept, column and index gone — and
+up again. `dirty = f` throughout.
+
+### 17c. Two findings beside the tickets, neither belonging to either
+
+1. **`search_documents` cannot find a document by its filename.** Asked to *"look
+   up the uploaded invoice 09-scan-invoice.pdf"*, the agent searched for that
+   exact string, the lexical index holds **content** and not filenames, and the
+   turn answered *"I couldn't find any uploaded document named
+   09-scan-invoice.pdf … the search returned no matches"*. To the person who
+   uploaded it thirty seconds earlier, that reads as the upload having failed.
+   It is the most natural phrasing a user has, and it is the one that cannot
+   work. **P2**, and it is cheap to fix — the filename is on the row the chunks
+   already join to.
+2. **A mixed-language query silently returns nothing.** `plainto_tsquery` is
+   conjunctive, so *"Kopi Arabika 1kg faktur invoice"* — one English word against
+   Indonesian OCR text — matched zero, and the turn recovered only because the
+   model happened to retry with a shorter query, at the cost of an extra
+   iteration and a second model call. With the dense half of retrieval inert for
+   want of an embedding credential there is no semantic fallback. Same family as
+   `T-P13`'s one remaining failing case, seen from the other side. **P2.**

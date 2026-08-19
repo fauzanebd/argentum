@@ -41,6 +41,36 @@
 > alias for `moonshotai/kimi-k2.6` or `deepseek/deepseek-v3.2`** (checked
 > 2026-08-19 — it does offer them for other models, e.g. `moonshotai/kimi-k2-0905`).
 
+## The 2026-08-19/20 rule-1 re-score — the first numbers that name what served them
+
+**Run at commit `21d906c`, $1.0149, one run discharging three owed rule-1
+obligations** (`T-H4` step 3's SQL validator, and `T-P9`/`T-P10`'s shared prompt
+change).
+
+| Model | Score | Cost | **Served by** |
+| ----- | ----- | ---- | ------------- |
+| `moonshotai/kimi-k2.6` | **96.4%** (54/56) | $0.8158 | `via Baidu` (135 responses) |
+| `deepseek/deepseek-v3.2` | **76.8%** (43/56) | $0.1991 | `via AtlasCloud` (229) **and `via Alibaba` (1)** |
+
+Against 2026-08-18 (kimi 94.6%, deepseek 78.6%): **+1 and −1, both inside the ±2
+band**, so neither is a result — which is what the SQL validator needed, since a
+check that refused ordinary analytical SQL would appear as a score drop with no
+other tell. The direct measurement beside it: **zero refusal warnings across 112
+model-driven case runs.**
+
+**The deepseek row is why `T-Q15` exists, and it caught it on the first try.**
+The gateway re-routed mid-set — 229 responses from one upstream and 1 from
+another, under an identical model id. Every number above this section was
+measured in that condition and none of them could say so. The supporting
+evidence is unchanged from 08-18: **10 of deepseek's 13 failures are `replied in
+"id", expected "en"`**, the shape that sitting attributed to drift by building a
+worktree at the previous commit; today the attribution is one line of the report.
+
+kimi's two failures are both the asking policy (`ambiguous-headcount`,
+`dirty-ask-rather-than-guess`): the agent asks for clarification in prose instead
+of calling `ask_clarification`. Open since `T-Q5`, and both replies are the
+behaviour a user would want.
+
 ## The number
 
 **83.6% — 46 of 55.** The set discriminates. That is the result `T-Q1` was
