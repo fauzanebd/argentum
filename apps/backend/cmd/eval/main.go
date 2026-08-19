@@ -326,7 +326,7 @@ func isDir(path string) bool {
 // can prove and stops there; deciding which explanation holds is a person's job
 // and needs the previous run's identity in front of them.
 func writeIntoHistory(dir string, rep eval.Report) {
-	if prev, name, ok := latestReport(dir, rep.Set, rep.Model); ok {
+	if prev, name, ok := latestReport(dir, rep.Set, rep.Model, rep.Total); ok {
 		delta := rep.Passed - prev.Passed
 		fmt.Printf("\n--- against %s ---\n", name)
 		fmt.Printf("  previous:  %.1f%% (%d/%d)  served: %s\n",
@@ -366,10 +366,16 @@ func reportFilename(rep eval.Report) string {
 		slug(rep.Set), slug(rep.Model), rep.StartedAt.UTC().Format("20060102T150405Z"))
 }
 
-// latestReport returns the most recent stored report for the same set and
-// model, by StartedAt rather than by filename: a file copied in from another
-// machine keeps its own timestamp and should compare as what it is.
-func latestReport(dir, set, model string) (eval.Report, string, bool) {
+// latestReport returns the most recent stored report for the same set, model
+// and case count, by StartedAt rather than by filename: a file copied in from
+// another machine keeps its own timestamp and should compare as what it is.
+//
+// The case count is part of the match because the delta is counted in cases.
+// A three-case spot check and a fifty-six-case re-score are both legitimate
+// runs of this set, and subtracting one from the other produces a number
+// ("+50 cases") that looks like a result and is arithmetic between two
+// different questions.
+func latestReport(dir, set, model string, total int) (eval.Report, string, bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return eval.Report{}, "", false
@@ -391,7 +397,7 @@ func latestReport(dir, set, model string) (eval.Report, string, bool) {
 		if err := json.Unmarshal(raw, &prev); err != nil || prev.Total == 0 {
 			continue
 		}
-		if prev.Set != set || !strings.EqualFold(prev.Model, model) {
+		if prev.Set != set || !strings.EqualFold(prev.Model, model) || prev.Total != total {
 			continue
 		}
 		if bestName == "" || prev.StartedAt.After(best.StartedAt) {

@@ -44,7 +44,7 @@ func TestLatestReportPicksTheNewestForTheSameModel(t *testing.T) {
 	writeReport(t, dir, "a.json", report("deepseek/deepseek-v3.2", old, 50, 56))
 	writeReport(t, dir, "other-model.json", report("moonshotai/kimi-k2.6", recent, 53, 56))
 
-	got, name, ok := latestReport(dir, "demo-retail-v1", "deepseek/deepseek-v3.2")
+	got, name, ok := latestReport(dir, "demo-retail-v1", "deepseek/deepseek-v3.2", 56)
 	if !ok {
 		t.Fatalf("no prior report found")
 	}
@@ -70,11 +70,29 @@ func TestLatestReportIgnoresOtherSetsAndUnreadableFiles(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	if _, name, ok := latestReport(dir, "demo-retail-v1", "m"); ok {
+	if _, name, ok := latestReport(dir, "demo-retail-v1", "m", 10); ok {
 		t.Fatalf("compared against %s, which carries no cases", name)
 	}
-	if _, _, ok := latestReport(filepath.Join(dir, "nope"), "demo-retail-v1", "m"); ok {
+	if _, _, ok := latestReport(filepath.Join(dir, "nope"), "demo-retail-v1", "m", 56); ok {
 		t.Fatalf("a missing directory must not report a prior run")
+	}
+}
+
+// A three-case spot check and a fifty-six-case re-score are both real runs of
+// this set. Comparing them would print "+50 cases", which reads as a result and
+// is arithmetic between two different questions.
+func TestAFullRunIsNotComparedAgainstASpotCheck(t *testing.T) {
+	dir := t.TempDir()
+	when := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
+	writeReport(t, dir, "spot.json", report("moonshotai/kimi-k2.6", when, 3, 3))
+
+	if _, name, ok := latestReport(dir, "demo-retail-v1", "moonshotai/kimi-k2.6", 56); ok {
+		t.Fatalf("a 56-case run was compared against %s, a 3-case run", name)
+	}
+	// The same-size prior must still be found, or the guard has eaten the feature.
+	writeReport(t, dir, "full.json", report("moonshotai/kimi-k2.6", when, 53, 56))
+	if _, _, ok := latestReport(dir, "demo-retail-v1", "moonshotai/kimi-k2.6", 56); !ok {
+		t.Fatalf("the same-size prior run was not found")
 	}
 }
 
