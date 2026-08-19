@@ -41,6 +41,15 @@ apps/backend/encrypt_secret
 # Eval reports are per-run artefacts; the committed baseline lives in
 # docs/coverage/eval-baseline.md
 apps/backend/eval-report*.json
+apps/backend/eval-docs-report*.json
+
+# The document corpus (T-P13) is *generated* from
+# apps/backend/internal/evaldocs/fixtures.go — `make eval-docs-fixtures`.
+# Twelve PDFs in the tree would be twelve files nobody can diff, review or
+# explain, and the first question anybody asks of a score is what is in the
+# fixture. The manifest beside them, which holds the hand-checked ground truth,
+# is tracked.
+apps/backend/testdata/eval/documents/*.pdf
 
 # Local scratch
 *.log

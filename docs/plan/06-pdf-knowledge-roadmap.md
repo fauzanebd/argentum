@@ -13,6 +13,35 @@ its own citations has no business making it of anything else.
 
 ---
 
+> **Status, 2026-08-19: the track is built.** `T-P1` and `T-P2` landed on
+> 2026-08-18 with their gates run; `T-P3` → `T-P13` landed on 2026-08-19. What
+> exists now: the typing layer and its arithmetic check (`internal/doctable`,
+> `internal/numparse`), the document warehouse and the publish path
+> (`internal/docwarehouse`, migrations `060`–`063`), the review surface
+> (`apps/dashboard/src/features/knowledge/`), the prose half (`internal/docchunk`,
+> `search_documents`, hybrid retrieval), the untrusted-content fence and the
+> taint tag, the page budget and the OCR path behind `DOC_OCR_ENABLED`, and the
+> twelve-document eval set behind `make eval-docs`.
+>
+> **What is measured, and what is not.** The corpus was run end to end through
+> the real parser sidecar: **100% cell accuracy, 100% publish correctness**, the
+> injected instruction dropped as invisible text, the corrupted total
+> quarantined. That run found four defects and all four are fixed — the record
+> is in [`../coverage/pdf-knowledge.md`](../coverage/pdf-knowledge.md). What has
+> **not** run is everything needing Postgres, MinIO, a worker, a browser or a
+> model: publishing into the warehouse, the isolation query, chunking with
+> embeddings, a turn that calls `search_documents`, OCR, and the review surface
+> in a browser. Those are filed in
+> [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1h.
+>
+> **Three deviations from these tickets, each argued where it is made:**
+> `T-P8`'s per-chunk context sentence is one per *document* (cost); `T-P10`
+> records its taint tag in a new column, so it carries migration `062` where the
+> ticket says none; and `T-P3`/`T-P11` add migration `063` to meter pages,
+> because a budget that cannot count what it has spent is not a budget.
+
+---
+
 ## The request, and the thing hiding inside it
 
 *"Build a data knowledge or data source from PDF."* That is two features, and
@@ -531,7 +560,7 @@ OCR. Typing. Chunking. Any tool the agent can call.
 
 ---
 
-### `T-P3` · The OCR fallback, off by default and counted when on
+### `T-P3` · The OCR fallback, off by default and counted when on — **built 2026-08-19, unit-gated; live half owed**
 **Repo:** BE · **Size:** 1.0d · **Deps:** `T-P2` · **Priority:** P1
 **Migration:** none
 
@@ -588,7 +617,7 @@ Choosing a permanent OCR model. Handwriting. Figures and charts as images — se
 
 ## Track B — A table becomes a source (6.0d)
 
-### `T-P4` · Cells to columns: the typing layer
+### `T-P4` · Cells to columns: the typing layer — **built and scored 2026-08-19**
 **Repo:** BE · **Size:** 2.0d · **Deps:** `T-P2` · **Priority:** P0
 **Migration:** `060_document_tables` (shared with `T-P6`)
 
@@ -664,7 +693,7 @@ and `T-P7`.
 
 ---
 
-### `T-P5` · The arithmetic self-check
+### `T-P5` · The arithmetic self-check — **built and scored 2026-08-19**
 **Repo:** BE · **Size:** 1.0d · **Deps:** `T-P4` · **Priority:** P0
 **Migration:** none
 
@@ -714,7 +743,7 @@ Table tests, plus one real document deliberately corrupted at one digit. **$0.00
 
 ---
 
-### `T-P6` · Publish: the document warehouse, and a PDF that is a source
+### `T-P6` · Publish: the document warehouse, and a PDF that is a source — **built 2026-08-19, unit-gated; live half owed**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-P5` · **Priority:** P0
 **Migration:** `060_document_tables` + `migrations/docwarehouse/001_bootstrap.sql`
 
@@ -809,7 +838,7 @@ Joining a document source to a tenant warehouse in one query — see *Not yet*.
 
 ---
 
-### `T-P7` · Review and apply
+### `T-P7` · Review and apply — **built 2026-08-19; browser gate owed**
 **Repo:** FE · **Size:** 1.5d · **Deps:** `T-P6` · **Priority:** P0
 **Migration:** none
 
@@ -852,7 +881,7 @@ is the bucket, and the parse it reviews was already paid for by `T-P2`'s gate.
 
 ## Track C — What the document says (3.0d)
 
-### `T-P8` · Chunks, context and a hybrid index
+### `T-P8` · Chunks, context and a hybrid index — **built 2026-08-19, unit-gated; live half owed**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-P2` · **Priority:** P1
 **Migration:** `061_document_chunks`
 
@@ -894,7 +923,7 @@ Stack, plus embedding calls for one document. **~$0.01.**
 
 ---
 
-### `T-P9` · `search_documents`, and a figure that can be checked
+### `T-P9` · `search_documents`, and a figure that can be checked — **built 2026-08-19, unit-gated; live half owed**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-P8` · **Priority:** P1
 **Migration:** none
 
@@ -952,7 +981,7 @@ models with the number and the date posted.
 
 ## Track D — The parts a customer review asks about (2.5d)
 
-### `T-P10` · A document is the most untrusted input this product has read
+### `T-P10` · A document is the most untrusted input this product has read — **built 2026-08-19; the hygiene half is proven on a real PDF**
 **Repo:** BE · **Size:** 1.0d · **Deps:** `T-P9` (or `T-P6`, whichever lands first) · **Priority:** P0
 **Migration:** none
 
@@ -998,7 +1027,7 @@ document.
 
 ---
 
-### `T-P11` · Caps, quotas, and a cost line per document
+### `T-P11` · Caps, quotas, and a cost line per document — **built 2026-08-19, unit-gated; live half owed**
 **Repo:** BE · **Size:** 0.5d · **Deps:** `T-P3` · **Priority:** P1
 **Migration:** none
 
@@ -1030,7 +1059,7 @@ Stack only, `$0.00` — set the budget to one page and show the refusal.
 
 ---
 
-### `T-P12` · PII on the way in, and delete that deletes
+### `T-P12` · PII on the way in, and delete that deletes — **built 2026-08-19, unit-gated; live half owed**
 **Repo:** BE · **Size:** 1.0d · **Deps:** `T-P1` · **Priority:** P1
 **Migration:** none
 
@@ -1068,7 +1097,7 @@ Stack only, `$0.00`.
 
 ## Track E — The number that decides whether any of this works (2.0d)
 
-### `T-P13` · A document eval set
+### `T-P13` · A document eval set — **built and run 2026-08-19: 100% cell accuracy, 100% publish correctness**
 **Repo:** BE (eval harness) · **Size:** 2.0d · **Deps:** `T-P6`, `T-P9` · **Priority:** P0
 **Migration:** none
 

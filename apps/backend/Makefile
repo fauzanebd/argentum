@@ -69,3 +69,17 @@ db-shell:
 db-reset:
 	docker-compose down -v postgres
 	docker-compose up -d postgres
+
+# The document corpus (T-P13). Two targets rather than one: the fixtures are
+# generated from code and change only when somebody edits that code, while the
+# score is run against whatever the parser and the typing layer currently do.
+#
+# `eval-docs` needs the parser sidecar and nothing else — no model, no database,
+# no money. That is the bucket this repository's record says gets run, which is
+# why the two free scores are the default and the answer score is a flag.
+.PHONY: eval-docs eval-docs-fixtures
+eval-docs-fixtures:
+	go run ./cmd/evaldocs -gen
+
+eval-docs:
+	go run ./cmd/evaldocs -out eval-docs-report.json

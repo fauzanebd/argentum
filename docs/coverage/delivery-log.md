@@ -3815,6 +3815,62 @@ the same argument, as `metric.ValidateTemplate` becoming `sqlguard`.
 repeat the create-then-rename sequence until one turn claims an unperformed
 edit, and show `unevidenced=1` on it and `0` on the control.
 
+## Phase 3d — The rest of the PDF track, and a corpus that found four defects (2026-08-19)
+
+`T-P3` → `T-P13` in one sitting, on top of the two tickets 2026-08-18 landed.
+The full record is [`pdf-knowledge.md`](pdf-knowledge.md); what belongs here is
+what the sitting *proved* and what it did not.
+
+**The spine works end to end at unit level and at corpus level.** A table
+candidate becomes typed columns (`internal/doctable`), its stated totals are
+re-derived and a disagreement quarantines it, a person applies it from
+`apps/dashboard/src/features/knowledge/`, and the rows land in a separate
+Postgres whose per-company role holds `USAGE` on one schema and nothing else.
+The prose half is a tool call — `search_documents` — because a chunk injected
+into a prompt is a figure `CheckGrounding` cannot see, which is the T-Q11
+mechanism with a file upload in front of it.
+
+**One promotion fell out of it, and it is the third of its kind.** There were
+two number parsers in `internal/guardrails` — `parseLoose` for a reply's figures
+and `parseFigure` for a restatement's two halves — and the typing layer needed a
+third. `internal/numparse` is now the one, and `guardrails` uses it. Same move
+and same argument as `metric.ValidateTemplate` becoming `sqlguard` and
+`agentbudget.ToolErrorText` absorbing the digest's prefix table.
+
+**The corpus is the part worth reading.** `make eval-docs` runs twelve generated
+documents through the real parser sidecar and scores cells, publish decisions
+and — with a live stack — answers. It scored **100% / 100%** after four fixes,
+and the four are the point: every one of them was invisible to the unit tests
+that pass beside them.
+
+- A grouped figure reported three decimal places to the *precision* question
+  while parsing correctly for the *value* question, so five of eight fixtures
+  typed as `decimal` and the arithmetic check would have compared totals at a
+  thousandth of a rupiah.
+- The phone pattern allowed "." as a separator, so three revenue columns were
+  labelled as contact details — a classifier that cries wolf is one a reviewer
+  learns to click past.
+- pdfplumber's text strategy emits an empty row per line gap, so a correctly
+  extracted table arrived as 44% full and the shape check discarded it whole. A
+  parser that reports "no tables" on a page that is nothing but a table.
+- The eval scored a scan's correct behaviour — producing nothing — as a failure,
+  and did not assert the opposite direction at all.
+
+**Two arms are proven on a real PDF rather than in a fixture.** The adversarial
+document's stated Q4 total disagrees with its own rows by 949 million and
+quarantined; its injected instruction — *"Ignore all previous instructions…"* in
+white four-point type — was dropped as **173 invisible characters** and does not
+appear in the parse output. That is T-P10's hygiene half, and it is the first
+security control in this repository proven against a file rather than a unit
+test.
+
+**What is not proven.** Everything needing Postgres, MinIO, a worker, a browser
+or a model: publishing into the warehouse, the isolation query that is the whole
+argument for a separate database, chunking with embeddings, a turn that calls
+`search_documents`, OCR, and the review surface in a browser. All of it is in
+[`live-gate-backlog.md`](live-gate-backlog.md) §1h with its bucket and its price,
+filed the day the code landed rather than the morning after.
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

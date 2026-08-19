@@ -3,6 +3,14 @@
 What Argentum actually does. Written 2026-07-26 (`argentum` @ `3891579`) and
 kept current since; the rows below carry the ticket that last moved them.
 
+**Last revised 2026-08-19 (sixth pass)**, for the PDF track (`T-P3` → `T-P13`).
+One section is new — *Uploaded documents* — and most of its rows are 🟡 rather
+than ✅ on purpose: the code is complete and the halves that need a database, a
+worker, a browser or a model are unrun. Two arms are proven and say so: the
+arithmetic check quarantined a corrupted total, and an instruction printed in
+white four-point type was dropped as 173 invisible characters before anything
+could read it.
+
 **Last revised 2026-08-17 (fourth pass).** Two of the three defects the third
 pass filed are now closed and one decision was taken: the table panel coerces
 canonical decimal literals so its `fmt` applies (identifiers deliberately
@@ -117,6 +125,28 @@ capability that quietly disappears reads as one nobody built.
 | Schema cache + invalidation   | 🟡     | Redis-cached, invalidated on DSN rotation — **per process**; API and worker caches are independent |
 | BigQuery / Snowflake / ClickHouse | ❌ | Driver registry makes these additive, none written           |
 | Non-SQL sources (Sheets, APIs) | ❌    | Not implemented                                              |
+
+## Uploaded documents (T-P1 → T-P13)
+
+The PDF track, built 2026-08-18/19. Two doors out of one file: a table becomes
+rows in a database and is queried like any other source, and the prose is
+retrieved by a tool. The split is the roadmap's Decision 1 and it is what makes
+`CheckGrounding` work on a PDF answer at all.
+
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Upload, store, dedupe, queue | ✅ | `T-P1`, gated live 2026-08-18. Same bytes twice is one row and one parse; a `.docx` renamed `.pdf` is refused on content |
+| Text-layer parse in a sidecar | ✅ | `T-P2`, gated live 2026-08-18. `apps/docparse`, no database handle and no credentials; per-page routing decision carried on the artifact |
+| Typed columns and their multipliers | ✅ | `T-P4`. Locale numerals, accounting negatives, footnote markers, merged headers, continuation across pages, total rows. **100% cell accuracy** on the twelve-document corpus |
+| The arithmetic self-check | ✅ | `T-P5`. A table whose stated total disagrees with its own rows is quarantined and cannot be published through any path — proven on a corrupted fixture |
+| Publish as a source | 🟡 | `T-P6`. Built: separate database, schema and login role per company, `source_page`/`source_row` on every row, replace-not-append. **The isolation query is unrun** — `SELECT … FROM companies` through a document source must fail, and only a live gate can show it |
+| Review and apply | 🟡 | `T-P7`. Built: tables beside the page they came from, type and multiplier overrides with a live preview, Apply disabled and explained for a quarantined table. **Not yet opened in a browser** |
+| Prose retrieval | 🟡 | `T-P8`/`T-P9`. Chunking that never splits a table, dense + lexical indexes merged by reciprocal rank, `search_documents` registered. **Unrun against a live stack**; a figure quoted from a retrieved chunk is grounded by `CollectNumbersInProse` and that arm is owed a turn |
+| Untrusted-content fence and taint tag | 🟡 | `T-P10`. **The hygiene half is proven on a real PDF**: an instruction in white four-point type was dropped as 173 invisible characters. The fence and the tag are built; whether a model obeys the fence is a turn nobody has run. The tag is telemetry until `T-H9` |
+| OCR for scanned pages | 🟡 | `T-P3`. Built and **off by default** — a rendered page leaving the deployment is the decision `LLM_ZDR` exists to let an operator make. Unrun, and the roadmap's open question 1 is still open |
+| Page budget and cost per document | 🟡 | `T-P11`. Monthly page budget checked before any model call, cost written to the usage ledger and onto the document row. Unrun |
+| PII classification at publish | 🟡 | `T-P12`. Columns classified against the guardrails' own `identity`/`contact` classes and shown in review; delete removes the row, the chunks, the object and the warehouse table. The four-way delete is unrun |
+| A number for any of it | 🟡 | `T-P13`. `make eval-docs`: twelve documents, three scores, parser build on every report. **Cell accuracy and publish correctness are run — 100% / 100%.** Answer correctness needs the corpus applied and a model |
 
 ## Agent capability
 

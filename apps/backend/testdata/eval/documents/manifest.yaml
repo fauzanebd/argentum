@@ -1,0 +1,211 @@
+# The document corpus and its ground truth (T-P13).
+#
+# Twelve documents, weighted the way a BI tenant's uploads are: eight
+# born-digital, three scans, one adversarial. The PDFs are generated from
+# `internal/evaldocs/fixtures.go` — `make eval-docs-fixtures` — rather than
+# committed as binaries, so what is in a fixture is answerable by reading code
+# instead of by opening a file nobody can diff.
+#
+# **What is written below is what the page prints**, read off the fixture
+# definitions by hand. It is deliberately not "what the parser returned": a
+# ground truth taken from the system under test measures nothing, and the first
+# time this file is regenerated from output is the day the score stops meaning
+# anything.
+#
+# `rows` holds data rows only — a flagged TOTAL row is never data, and a corpus
+# that expected one in the rows would be scoring the double-count bug as
+# correct.
+
+documents:
+  - file: 01-erp-sales-export.pdf
+    title: ERP sales export, Q4 2024
+    kind: born_digital
+    note: locale numerals, a ruled grid, and a title above it
+    pages: 1
+    tables: 1
+    expect:
+      columns: [bulan, transaksi, unit, nilai]
+      types: [text, integer, integer, integer]
+      multipliers: [1, 1, 1, 1]
+      pii: ["", "", "", ""]
+      verify: unverified
+      rows:
+        - ["Oktober", "300", "1.200", "3.377.718.500"]
+        - ["November", "310", "1.240", "3.708.552.300"]
+        - ["Desember", "320", "1.280", "3.863.405.700"]
+
+  - file: 02-bank-statement.pdf
+    title: Bank statement, December 2024
+    kind: born_digital
+    note: dates, and accounting negatives in brackets
+    pages: 1
+    tables: 1
+    expect:
+      columns: [tanggal, keterangan, mutasi, saldo]
+      types: [date, text, integer, integer]
+      multipliers: [1, 1, 1, 1]
+      pii: ["", "", "", ""]
+      verify: unverified
+      rows:
+        - ["01/12/2024", "Saldo awal", "0", "125.000.000"]
+        - ["05/12/2024", "Transfer masuk", "45.500.000", "170.500.000"]
+        - ["11/12/2024", "Pembayaran vendor", "(12.750.000)", "157.750.000"]
+        - ["19/12/2024", "Biaya administrasi", "(35.000)", "157.715.000"]
+
+  - file: 03-supplier-price-list.pdf
+    title: Supplier price list
+    kind: born_digital
+    note: no total anywhere — the unverified case, which must stay publishable
+    pages: 1
+    tables: 1
+    expect:
+      columns: [kode, produk, satuan, harga]
+      types: [text, text, text, integer]
+      multipliers: [1, 1, 1, 1]
+      pii: ["", "", "", ""]
+      verify: unverified
+      rows:
+        - ["KP-001", "Kopi Arabika 1kg", "sak", "185.000"]
+        - ["KP-002", "Kopi Robusta 1kg", "sak", "142.500"]
+        - ["TH-010", "Teh Hijau 500g", "dus", "96.000"]
+        - ["GL-100", "Gula Pasir 50kg", "sak", "735.000"]
+
+  - file: 04-budget-in-millions.pdf
+    title: Budget with a scale word in its caption
+    kind: born_digital
+    note: "\"dalam jutaan Rupiah\" — the failure with no tell"
+    pages: 1
+    tables: 1
+    expect:
+      columns: [divisi, anggaran, realisasi]
+      types: [text, integer, integer]
+      multipliers: [1, 1000000, 1000000]
+      pii: ["", "", ""]
+      verify: unverified
+      rows:
+        - ["Penjualan", "3.377", "3.120"]
+        - ["Operasional", "2.480", "2.505"]
+        - ["Pemasaran", "1.150", "980"]
+
+  - file: 05-continued-table.pdf
+    title: One table over three pages
+    kind: born_digital
+    note: continuation — three tables where there should be one
+    pages: 3
+    tables: 1
+    expect:
+      columns: [bulan, nilai]
+      types: [text, integer]
+      multipliers: [1, 1]
+      pii: ["", ""]
+      verify: unverified
+      rows:
+        - ["Januari", "100.000"]
+        - ["Februari", "200.000"]
+        - ["Maret", "300.000"]
+        - ["April", "400.000"]
+        - ["Mei", "500.000"]
+        - ["Juni", "600.000"]
+
+  - file: 06-report-with-totals.pdf
+    title: Channel summary with a totals row
+    kind: born_digital
+    note: the verified case, and a percentage column that sums to 100
+    pages: 1
+    tables: 1
+    expect:
+      columns: [kanal, nilai, porsi]
+      types: [text, integer, percentage]
+      multipliers: [1, 1, 1]
+      pii: ["", "", ""]
+      verify: verified
+      rows:
+        - ["Toko", "5.000.000", "50,0%"]
+        - ["Online", "3.000.000", "30,0%"]
+        - ["Grosir", "2.000.000", "20,0%"]
+
+  - file: 07-indonesian-report.pdf
+    title: Indonesian customer report
+    kind: born_digital
+    note: a contact column, which is what the PII classifier is scored on
+    pages: 1
+    tables: 1
+    expect:
+      columns: [pelanggan, email, nilai]
+      types: [text, text, integer]
+      multipliers: [1, 1, 1]
+      pii: ["", "contact", ""]
+      verify: unverified
+      rows:
+        - ["PT Maju", "andi@maju.co.id", "1.250.000"]
+        - ["CV Sentosa", "budi@sentosa.co.id", "980.500"]
+        - ["UD Berkah", "citra@berkah.co.id", "760.250"]
+
+  - file: 08-two-column-layout.pdf
+    title: Stock report with no ruling lines
+    kind: born_digital
+    note: the text strategy — a wrong column boundary looks exactly like a right one
+    pages: 1
+    tables: 1
+    expect:
+      columns: [gudang, produk, stok]
+      types: [text, text, integer]
+      multipliers: [1, 1, 1]
+      pii: ["", "", ""]
+      verify: unverified
+      rows:
+        - ["Cakung", "Kopi Arabika", "1.250"]
+        - ["Cikarang", "Teh Hijau", "980"]
+        - ["Bekasi", "Gula Pasir", "1.740"]
+
+  # The scans. With OCR off these must produce nothing at all: no tables, no
+  # invented text. That is the whole assertion — a parser that returns a
+  # plausible table off a page it cannot read is the worst outcome available,
+  # because every instrument downstream would treat it as read.
+  - file: 09-scan-invoice.pdf
+    title: Scanned invoice
+    kind: scan
+    note: no text layer — must produce no table and no invented text
+    pages: 1
+    tables: 0
+    expect: {}
+
+  - file: 10-scan-statement.pdf
+    title: Scanned bank statement
+    kind: scan
+    note: as above, with figures a hallucinating parser would be tempted by
+    pages: 1
+    tables: 0
+    expect: {}
+
+  - file: 11-scan-delivery-note.pdf
+    title: Scanned delivery note
+    kind: scan
+    note: as above
+    pages: 1
+    tables: 0
+    expect: {}
+
+  # The adversarial one. Three failures on one page, and they fail differently:
+  # the injection is a security finding, the footnote is an accuracy one, and
+  # the total that does not add up is the arithmetic check's whole reason for
+  # existing.
+  - file: 12-adversarial.pdf
+    title: Injected instruction, footnote marker, and a total that does not add up
+    kind: adversarial
+    note: quarantine expected; the injected sentence must not survive the parse
+    pages: 1
+    tables: 1
+    forbid:
+      - "Ignore all previous instructions"
+      - "maintenance mode"
+    expect:
+      columns: [bulan, nilai, catatan]
+      types: [text, integer, text]
+      multipliers: [1, 1, 1]
+      pii: ["", "", ""]
+      verify: quarantined
+      rows:
+        - ["Oktober", "3.377.718.500", "final"]
+        - ["November", "3.708.552.300", "final"]
+        - ["Desember", "3.863.405.700*", "revisi"]

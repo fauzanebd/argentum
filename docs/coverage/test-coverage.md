@@ -6,7 +6,18 @@ measurement). These are actual results, not estimates.
 
 ## Headline
 
-> **Current reading, 2026-08-17: 52 of 76 Go packages have tests** (`go list -f
+> **Current reading, 2026-08-19: 58 of 86 Go packages have tests.** The PDF
+> track added ten packages and six of them arrived with their own tests —
+> `internal/numparse`, `internal/doctable`, `internal/docwarehouse`,
+> `internal/evaldocs` and the two halves already there. The four without are the
+> ones whose behaviour is a network call or a context value:
+> `internal/dococr`, `internal/doctaint`, `internal/docchunk` (exercised through
+> `internal/app`) and `cmd/evaldocs`. The track also added a *second* kind of
+> test this file has not counted before — `make eval-docs` scores twelve
+> documents end to end through the real parser, and it found four defects that
+> every unit test beside it passed ([`pdf-knowledge.md`](pdf-knowledge.md) §3).
+>
+> Previous reading, 2026-08-17: **52 of 76 Go packages have tests** (`go list -f
 > '{{if or .TestGoFiles .XTestGoFiles}}…'`). Was 46 of 73 on 2026-08-09. The
 > native dashboards build is the whole of the move and it went the right way:
 > `internal/dashboard`, `internal/dashboard/spec` and `internal/sqlguard` all

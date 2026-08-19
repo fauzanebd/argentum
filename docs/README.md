@@ -106,6 +106,7 @@ docs/
 │   ├── gelael-pilot.md           The first integration outside this repo, and what it found
 │   ├── embed-auth.md             T-19 embed keys, HMAC identity, session tokens
 │   ├── widget.md                 T-20→T-23 the widget channel, client, docs and config
+│   ├── pdf-knowledge.md          T-P1→T-P13 a PDF that is a source, and its number
 │   └── live-gate-backlog.md      Every acceptance item owed that code cannot close
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals
