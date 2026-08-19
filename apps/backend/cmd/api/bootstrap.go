@@ -22,6 +22,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/dashboard"
 	"github.com/fauzanebd/argentum/internal/docgen"
+	"github.com/fauzanebd/argentum/internal/docwarehouse"
 	"github.com/fauzanebd/argentum/internal/idempotency"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmclient"
@@ -338,6 +339,36 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		)
 		if cfg.DocParseEnabled {
 			deps.documentIngestSvc = deps.documentIngestSvc.WithParseQueue(deps.enqueuer)
+		}
+
+		// Review and publish (T-P6/T-P7). The tables are re-derived from the
+		// page artifacts on every read, so this needs the same object storage
+		// the parse wrote them to and nothing else — the warehouse below is
+		// what publishing needs, and a deployment without one still reviews.
+		sourceDocs := pgctl.NewSourceDocumentRepo(controlDB)
+		deps.documentPageSvc = app.NewDocumentPageService(sourceDocs, deps.storageSvc)
+		deps.documentTableSvc = app.NewDocumentTableService(
+			sourceDocs, pgctl.NewDocumentTableRepo(controlDB), deps.storageSvc,
+		)
+		warehouse, err := docwarehouse.New(docwarehouse.Options{DSN: cfg.DocWarehouseDSN})
+		switch {
+		case err != nil:
+			// Configured and unreachable. Warned rather than fatal, and the
+			// distinction is the one T-H3's reverted refusals settled: a config
+			// check that stops the process turns a feature nobody is using yet
+			// into an outage on the deploy that carries it.
+			logrus.WithError(err).Warn("document warehouse unreachable; publishing a document table will refuse")
+		case warehouse != nil:
+			deps.docWarehouse = warehouse
+			deps.documentTableSvc = deps.documentTableSvc.WithWarehouse(
+				warehouse, connRepo, dsnCipher, deps.tenant,
+			)
+			// Deleting a document has to take its published rows with it. Wired
+			// here rather than inside the ingest service because it is the same
+			// condition: without a warehouse there is nothing published to
+			// remove.
+			deps.documentIngestSvc = deps.documentIngestSvc.WithTableCleanup(deps.documentTableSvc)
+			logrus.Info("document warehouse enabled; extracted tables can be published as a source")
 		}
 	}
 

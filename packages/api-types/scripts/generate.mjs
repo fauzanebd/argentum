@@ -46,7 +46,7 @@ const backend = resolve(pkgRoot, "../../apps/backend");
 const check = process.argv.includes("--check");
 
 /** The files tygo writes, in the order the barrel re-exports them. */
-const GENERATED = ["domain.ts", "events.ts", "api.ts", "dashboardspec.ts", "dashboard.ts", "videoplan.ts", "webhooks.ts"];
+const GENERATED = ["domain.ts", "events.ts", "api.ts", "dashboardspec.ts", "dashboard.ts", "doctable.ts", "docparse.ts", "videoplan.ts", "webhooks.ts"];
 
 /** Everything but the webhook envelopes and the video plan — see tygo.yaml. */
 const BARRELLED = ["domain.ts", "events.ts", "api.ts"];
@@ -64,6 +64,11 @@ const BARREL = `/* eslint-disable */
 // a sharper one: its \`Brand\`, \`Table\` and \`Metrics\` are names a dashboard
 // namespace should not be handed. Import it from
 // "@argentum/api-types/videoplan".
+//
+// The document extraction types (internal/doctable, internal/docparse) are
+// absent for exactly that reason: \`Table\`, \`Column\`, \`Row\`, \`Cell\` and
+// \`Page\` are the five most collision-prone names in a dashboard. Import them
+// from "@argentum/api-types/doctable" and "@argentum/api-types/docparse".
 
 ${BARRELLED.map((f) => `export * from "./${f.replace(/\.ts$/, ".js")}";`).join("\n")}
 `;

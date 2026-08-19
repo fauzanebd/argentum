@@ -35,10 +35,20 @@ packages:
     # JSONB column.
     type_mappings:
       spec.Dashboard: "DashboardSpec"
+      # A document table's columns are `internal/doctable`'s decision, and the
+      # review surface edits them (T-P7). Without these two the field lands as
+      # `unknown` with the Go name in a comment, which is precisely the
+      # hand-written-type gap T-02b closed.
+      doctable.Column: "DocumentColumn"
+      doctable.VerifyStatus: "DocumentVerifyStatus"
     frontmatter: |
       /* eslint-disable */
       // Entities, from apps/backend/internal/domain.
       import type { Dashboard as DashboardSpec } from "./dashboardspec.js";
+      import type {
+        Column as DocumentColumn,
+        VerifyStatus as DocumentVerifyStatus,
+      } from "./doctable.js";
 
   # The dashboard spec (T-D4) and the resolved panels a browser draws.
   #
@@ -142,6 +152,37 @@ packages:
         MetricGrain,
         MetricUnit,
       } from "./domain.js";
+
+  # What was extracted from an uploaded PDF (T-P4/T-P7): the typed columns, the
+  # rows, the page rectangles and the arithmetic verdict. Generated rather than
+  # hand-written because the review surface renders every field of it, and a
+  # hand-written copy of a Go struct is the defect T-02b deleted four files to
+  # end.
+  - path: "github.com/fauzanebd/argentum/internal/doctable"
+    include_files:
+      - "doctable.go"
+      - "verify.go"
+      - "continuation.go"
+    output_path: "../../packages/api-types/src/doctable.ts"
+    enum_style: "union"
+    frontmatter: |
+      /* eslint-disable */
+      // One table extracted from an uploaded PDF, from
+      // apps/backend/internal/doctable. A draft until a person applies it: the
+      // review surface reads every field here, and `verify` is what decides
+      // whether the Apply control is enabled at all.
+
+  # One page of a parse, as the review surface draws it: the markdown, the word
+  # boxes and the table rectangles. A reviewer who cannot see the page cannot
+  # review the parse, and this is what they see it through.
+  - path: "github.com/fauzanebd/argentum/internal/docparse"
+    include_files:
+      - "client.go"
+    output_path: "../../packages/api-types/src/docparse.ts"
+    enum_style: "union"
+    frontmatter: |
+      /* eslint-disable */
+      // One parsed page, from apps/backend/internal/docparse.
 
   # The video plan (T-V1). Generated because two TypeScript consumers compile
   # against it — apps/render draws it and the dashboard's player replays it —

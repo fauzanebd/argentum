@@ -141,6 +141,12 @@ func (b Budget) Normalize() Budget {
 var dataTools = map[string]bool{
 	"run_sql":      true,
 	"query_metric": true,
+	// search_documents returns passages of a tenant's own document, and a
+	// figure printed in one of them is a figure the document really states
+	// (T-P9). It is evidence — but of a different shape from a row, which is
+	// why the runner collects it with CollectNumbersInProse: the numbers are
+	// inside sentences rather than in fields.
+	"search_documents": true,
 }
 
 // IsDataTool reports whether a tool's result can ground a figure in a reply.

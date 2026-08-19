@@ -287,6 +287,23 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/knowledge/documents/:id":    domain.RoleMember,
 	"DELETE /api/knowledge/documents/:id": domain.RoleAdmin,
 
+	// The review surface (T-P7). Reading what was extracted is a member's, for
+	// the reason the document list is: it is what the workspace holds. Every
+	// write is an admin's, and applying most of all — it is the act that turns
+	// this product's reading of a page into data every member can query, which
+	// is the decision Decision 3 exists to keep in a person's hands.
+	//
+	// A member sees the Apply control disabled with a sentence rather than
+	// hidden, which is the decision recorded in `docs/coverage/watchers-ui.md`:
+	// hiding a control makes a member think the feature is missing, where
+	// disabling it tells them who to ask.
+	"GET /api/knowledge/documents/:id/tables":       domain.RoleMember,
+	"GET /api/knowledge/documents/:id/pages/:page":  domain.RoleMember,
+	"GET /api/knowledge/tables/:tableId":            domain.RoleMember,
+	"PATCH /api/knowledge/tables/:tableId":          domain.RoleAdmin,
+	"POST /api/knowledge/tables/:tableId/apply":     domain.RoleAdmin,
+	"POST /api/knowledge/tables/:tableId/unpublish": domain.RoleAdmin,
+
 	// Agent action audit log (T-05). Admin rather than member for the same
 	// reason the DSN routes are: every row carries the full SQL the agent ran,
 	// so the log reads the shape of the tenant's warehouse to anyone who can

@@ -95,6 +95,14 @@ type RegistryDeps struct {
 	// affects its *vocabulary*, and a format the model is offered but nothing
 	// can produce is a promise to a customer rather than an error to an admin.
 	Renders VideoEnqueuer
+	// Documents backs search_documents (T-P9): the prose of the PDFs a tenant
+	// uploaded. Nil is legal and is what the API's name-only build passes — the
+	// tool still registers, so it appears in the agent allowlist and the
+	// template vocabulary, and reports "not configured" if executed. The same
+	// pattern the metric tools state, and it matters more here: a deployment
+	// that has not indexed anything yet should not have a different tool list
+	// from one that has.
+	Documents DocumentSearch
 }
 
 // Registry returns the tools an agent may call on this deployment, unwrapped.
@@ -142,6 +150,12 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// reports "not configured" if executed. The one write-capable tool the
 		// agent has, and the only one it can propose but not perform (T-10).
 		NewProposeActionTool(d.Actions),
+		// What a document says, as a tool call and never as an injection
+		// (T-P9). It sits after the data tools because that is the order the
+		// prompt argues for: a figure that exists in a published table is
+		// better answered by querying it, and a passage is what you fall back
+		// to when the answer is prose.
+		NewSearchDocumentsTool(d.Documents),
 	}
 	if d.Docs != nil {
 		ts = append(ts, NewGenerateDocumentTool(d.Docs).WithVideoQueue(d.Renders))

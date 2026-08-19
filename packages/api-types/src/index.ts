@@ -11,6 +11,11 @@
 // a sharper one: its `Brand`, `Table` and `Metrics` are names a dashboard
 // namespace should not be handed. Import it from
 // "@argentum/api-types/videoplan".
+//
+// The document extraction types (internal/doctable, internal/docparse) are
+// absent for exactly that reason: `Table`, `Column`, `Row`, `Cell` and
+// `Page` are the five most collision-prone names in a dashboard. Import them
+// from "@argentum/api-types/doctable" and "@argentum/api-types/docparse".
 
 export * from "./domain.js";
 export * from "./events.js";

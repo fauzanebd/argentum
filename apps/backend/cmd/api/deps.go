@@ -15,6 +15,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/docgen"
+	"github.com/fauzanebd/argentum/internal/docwarehouse"
 	"github.com/fauzanebd/argentum/internal/idempotency"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
@@ -136,6 +137,18 @@ type apiDeps struct {
 	// of documentRepo's output. Nil without object storage, and the routes then
 	// answer 503 rather than accepting a file this deployment cannot store.
 	documentIngestSvc *app.DocumentIngestService
+	// documentTableSvc is the review-and-publish half (T-P6/T-P7): what was
+	// extracted from a document, what a reviewer decided, and the one call that
+	// puts it in the document warehouse. Nil without object storage — there are
+	// no artifacts to review — and review-only without DOC_WAREHOUSE_DSN, where
+	// Apply refuses with a sentence rather than falling back to any other
+	// database.
+	documentTableSvc *app.DocumentTableService
+	documentPageSvc  *app.DocumentPageService
+	// docWarehouse is the second Postgres this deployment may hold. Nil is the
+	// supported no-publishing configuration; closing it is the API process's
+	// job because the API process opened it.
+	docWarehouse *docwarehouse.Warehouse
 	// shareSvc mints and resolves report player links (T-V4). Nil when there
 	// is no object storage: without it no plan was ever written, so there is
 	// nothing a link could play.
@@ -188,6 +201,13 @@ func (d *apiDeps) cleanup() {
 	}
 	if d.requestObs != nil {
 		d.requestObs.Close()
+	}
+	if d.docWarehouse != nil {
+		// The second Postgres this process may hold (T-P6). Closed here rather
+		// than left to the runtime because it is a pool with live sessions on
+		// somebody else's database, and a deployment that restarts the API in a
+		// loop would otherwise leak one set of them per restart.
+		_ = d.docWarehouse.Close()
 	}
 	if d.embedCache != nil {
 		d.embedCache.CloseAll()

@@ -14,6 +14,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/agentscope"
+	"github.com/fauzanebd/argentum/internal/doctaint"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
@@ -141,14 +142,20 @@ func (a *audited) record(ctx context.Context, tool, args, out string, execErr er
 		// one turn can call tools on several servers, so the id belongs to the
 		// tool, not the turn — and this decorator wraps the budget guard, which
 		// embeds the interface and hides the tool's own MCPServerID method.
-		MCPServerID:  mcpServerID(a.Tool),
-		ArgsRedacted: redacted,
-		ArgsHash:     hashArgs(args),
-		ResultStatus: status,
-		ErrorText:    errText,
-		RowsReturned: rows,
-		DurationMS:   int(took.Milliseconds()),
-		RequestID:    tenantctx.RequestID(ctx),
+		MCPServerID: mcpServerID(a.Tool),
+		// Whether this turn had already read an uploaded document when this
+		// call was made (T-P10). Off the context like AgentID, and for the
+		// stronger version of the same reason: it is a fact about the turn, and
+		// the question a customer review asks is what the agent *did* after
+		// reading somebody else's file.
+		DocumentTainted: doctaint.Tainted(ctx),
+		ArgsRedacted:    redacted,
+		ArgsHash:        hashArgs(args),
+		ResultStatus:    status,
+		ErrorText:       errText,
+		RowsReturned:    rows,
+		DurationMS:      int(took.Milliseconds()),
+		RequestID:       tenantctx.RequestID(ctx),
 	}
 
 	// Detached from the turn's context on purpose: a turn cancelled by its

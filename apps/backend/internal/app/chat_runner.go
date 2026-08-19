@@ -20,6 +20,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/agentscope"
+	"github.com/fauzanebd/argentum/internal/doctaint"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/lark"
@@ -550,6 +551,12 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	}
 	ctx = multitenancy.WithOrgID(ctx, p.CompanyID)
 	ctx = memory.WithConversationID(ctx, p.ThreadID)
+	// Did this turn read a tenant's uploaded document (T-P10)? The tracker is
+	// attached before any tool runs and written by search_documents, because
+	// the fact is discovered inside a call rather than decided before one — a
+	// context value set in the tool would be dropped when it returned.
+	taint := doctaint.New()
+	ctx = doctaint.With(ctx, taint)
 
 	// Cheap small-talk short-circuit: skip the agent (and the light-LLM
 	// guardrail/classifier pipeline behind it) when the message is a
@@ -796,6 +803,13 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		// reads. Zero on every honest turn, which is what makes a 1 findable.
 		"unevidenced": unevidenced,
 		"next_steps":  len(steps),
+		// Whether this turn read content somebody else wrote (T-P10). Telemetry
+		// until T-H9 turns it into a gate, and on the completion line for the
+		// same reason as the two counters above it: the question a review asks
+		// is "which turns read an uploaded file", and it has to be answerable
+		// by filtering rather than by joining.
+		"document_tainted": taint.Tainted(),
+		"document_sources": strings.Join(taint.Sources(), ","),
 	}).Info("turn completed")
 	return nil
 }
@@ -1305,8 +1319,20 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 				// numbers no reply should be quoting as a business figure, and
 				// counting them as evidence would ground a fabrication.
 				if agentbudget.IsDataTool(evt.ToolCall.Name) && len(returnedNumbers) < maxGroundingNumbers {
-					returnedNumbers = append(returnedNumbers,
-						guardrails.CollectNumbers(res, maxGroundingNumbers-len(returnedNumbers))...)
+					room := maxGroundingNumbers - len(returnedNumbers)
+					if evt.ToolCall.Name == searchDocumentsTool {
+						// A retrieved passage carries its figures inside
+						// sentences, not in fields, so the collection has to
+						// read the prose (T-P9). Scoped to this one tool: doing
+						// it for every result would collect the digits out of
+						// table names and error messages, and each of those is
+						// a number that would ground a fabrication.
+						returnedNumbers = append(returnedNumbers,
+							guardrails.CollectNumbersInProse(res, room)...)
+					} else {
+						returnedNumbers = append(returnedNumbers,
+							guardrails.CollectNumbers(res, room)...)
+					}
 				}
 
 				_ = r.bus.Publish(p.ThreadID, ChatEvent{
@@ -1387,6 +1413,12 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 // result with twenty columns is two thousand numbers. Two hundred covers every
 // aggregate and the head of any result set, which is what a reply quotes.
 const maxGroundingNumbers = 200
+
+// searchDocumentsTool is the one tool whose results are prose (T-P9). Named
+// here rather than compared inline so the two places that care about it — the
+// grounding collection and the untrusted-content fence — cannot drift apart on
+// a rename.
+const searchDocumentsTool = "search_documents"
 
 // checkGrounding measures whether the figures in a finished reply are the
 // figures the tools returned (T-Q9).

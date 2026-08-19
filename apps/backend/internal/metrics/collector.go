@@ -61,6 +61,12 @@ type Collector struct {
 	ungroundedReplies  int64
 	ungroundedFigures  int64
 	unevidencedActions int64
+	// documentPagesOCR is pages of an uploaded document read by a model
+	// (T-P3). The one number that says what the scan tail costs: every other
+	// figure in this collector counts something that happened inside a chat
+	// turn, and ingestion is the first thing in this product that spends
+	// outside one.
+	documentPagesOCR int64
 
 	// Domain counters (T-17). Bounded label sets, all of them: a tool name comes
 	// from the registry, an action kind from the action registry, a channel from
@@ -374,6 +380,20 @@ func (c *Collector) RecordUngroundedFigures(figures int) {
 	atomic.AddInt64(&c.ungroundedFigures, int64(figures))
 }
 
+// RecordDocumentPagesOCR counts pages of an uploaded document that were read by
+// a model (T-P3).
+//
+// Counted rather than only logged, for the reason T-Q11 states about its own
+// counters: a rate nobody can filter for is a rate nobody reads. This is the
+// number an operator watches after turning OCR on, and the number that says
+// whether the monthly budget in T-P11 is set anywhere near reality.
+func (c *Collector) RecordDocumentPagesOCR(pages int) {
+	if c == nil || pages <= 0 {
+		return
+	}
+	atomic.AddInt64(&c.documentPagesOCR, int64(pages))
+}
+
 // RecordUnevidencedAction counts one reply claiming a completed change on a
 // turn that made no successful mutating tool call (T-Q13).
 //
@@ -525,6 +545,7 @@ func (c *Collector) GetSnapshot() MetricsSnapshot {
 			UngroundedReplies:  atomic.LoadInt64(&c.ungroundedReplies),
 			UngroundedFigures:  atomic.LoadInt64(&c.ungroundedFigures),
 			UnevidencedActions: atomic.LoadInt64(&c.unevidencedActions),
+			DocumentPagesOCR:   atomic.LoadInt64(&c.documentPagesOCR),
 		},
 
 		APIV1:  c.apiSnapshot(),
@@ -669,6 +690,7 @@ func (c *Collector) Reset() {
 	atomic.StoreInt64(&c.ungroundedReplies, 0)
 	atomic.StoreInt64(&c.ungroundedFigures, 0)
 	atomic.StoreInt64(&c.unevidencedActions, 0)
+	atomic.StoreInt64(&c.documentPagesOCR, 0)
 
 	c.mu.Lock()
 	c.apiRoutes = map[string]*routeAgg{}
@@ -732,6 +754,11 @@ type GroundingMetrics struct {
 	// tool, this asks whether an *action* happened at all. A reply saying "Done"
 	// carries no figure, so the two counters above stay at zero for it.
 	UnevidencedActions int64 `json:"unevidenced_actions"`
+	// DocumentPagesOCR is pages of uploaded documents read by a model (T-P3).
+	// It sits in this struct rather than beside the queue gauges because it is
+	// recorded the same way the two counters above it are — by the process that
+	// did the work, once, as it happens.
+	DocumentPagesOCR int64 `json:"document_pages_ocr"`
 }
 
 // ToolMetrics is one tool's traffic, recorded where the audit row is written.
@@ -848,4 +875,13 @@ type JobMetrics struct {
 type ConversationMetrics struct {
 	Active        int64 `json:"active"`
 	ContextResets int64 `json:"context_resets"`
+}
+
+// DocumentPagesOCR is the package-level shorthand the parse worker calls. The
+// company id is taken and deliberately not used as a label: this collector's
+// per-tenant series are bounded by design, and pages-by-tenant is a question
+// the usage ledger answers exactly rather than approximately.
+func DocumentPagesOCR(companyID string, pages int) {
+	_ = companyID
+	Default().RecordDocumentPagesOCR(pages)
 }

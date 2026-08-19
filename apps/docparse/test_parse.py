@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import unittest
 
-from parse import alnum_ratio, classify, to_markdown
+from parse import _is_visible, _is_white, alnum_ratio, classify, to_markdown
 
 
 class TestAlnumRatio(unittest.TestCase):
@@ -80,6 +80,54 @@ class TestToMarkdown(unittest.TestCase):
 
     def test_no_tables_is_just_the_text(self):
         self.assertEqual(to_markdown("Halaman satu", []), "Halaman satu")
+
+
+class TestInvisibleText(unittest.TestCase):
+    """T-P10: text a reader cannot see is a payload, not content.
+
+    The attack is one line of white four-point type on a late page of a
+    supplier's invoice, saying something like "ignore previous instructions".
+    The person who uploaded the file cannot see it, and until this filter every
+    part of the pipeline treated it as the document's own words.
+    """
+
+    def test_white_rgb_is_white(self):
+        self.assertTrue(_is_white((1, 1, 1)))
+        self.assertTrue(_is_white((0.98, 0.99, 1)))
+
+    def test_black_and_colour_are_not(self):
+        self.assertFalse(_is_white((0, 0, 0)))
+        self.assertFalse(_is_white((0.9, 0.2, 0.2)))
+
+    def test_greyscale_scalar(self):
+        self.assertTrue(_is_white(1))
+        self.assertFalse(_is_white(0.1))
+
+    # CMYK is bright when its components are near zero, which is the opposite
+    # of every other space here and the easiest thing in this file to get
+    # backwards.
+    def test_cmyk_is_read_the_other_way_round(self):
+        self.assertTrue(_is_white((0, 0, 0, 0)))
+        self.assertFalse(_is_white((0, 0, 0, 1)))
+
+    def test_missing_colour_is_not_assumed_white(self):
+        self.assertFalse(_is_white(None))
+        self.assertFalse(_is_white(()))
+
+    def test_a_four_point_character_is_dropped(self):
+        self.assertFalse(_is_visible({"object_type": "char", "size": 3.0, "non_stroking_color": (0, 0, 0)}))
+
+    def test_a_legal_footnote_survives(self):
+        self.assertTrue(_is_visible({"object_type": "char", "size": 6.0, "non_stroking_color": (0, 0, 0)}))
+
+    def test_white_text_is_dropped_whatever_its_size(self):
+        self.assertFalse(_is_visible({"object_type": "char", "size": 12.0, "non_stroking_color": (1, 1, 1)}))
+
+    # Lines, rectangles and images are not characters and are not the subject of
+    # this filter: dropping them would take the ruling lines with them, and the
+    # ruling lines are how the easy tables are found.
+    def test_non_characters_are_untouched(self):
+        self.assertTrue(_is_visible({"object_type": "line", "non_stroking_color": (1, 1, 1)}))
 
 
 if __name__ == "__main__":

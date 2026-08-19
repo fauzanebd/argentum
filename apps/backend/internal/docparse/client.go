@@ -30,6 +30,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -86,6 +87,12 @@ const (
 	KindNeedsOCR = "needs_ocr"
 	// KindFailed is one page that raised while the rest of the document parsed.
 	KindFailed = "failed"
+	// KindOCR is a page the text layer could not read and a model did (T-P3).
+	// A third state rather than promoting the page to `text`, because the two
+	// are not equally trustworthy and every later reader — the reviewer, the
+	// eval set, whoever is asked why a figure is wrong — needs to know which
+	// one produced a given line.
+	KindOCR = "ocr"
 )
 
 // Page is what the parser found on one page.
@@ -104,7 +111,13 @@ type Page struct {
 	Markdown       string  `json:"markdown"`
 	Words          []Word  `json:"words"`
 	Tables         []Table `json:"tables"`
-	Error          string  `json:"error,omitempty"`
+	// HiddenCharCount is how many characters the sidecar dropped as invisible
+	// — type below the legibility floor, or type the colour of the page
+	// (T-P10). Carried rather than discarded because a page holding two hundred
+	// characters nobody can see is a fact a reviewer should be shown, and a
+	// hygiene step with no counter is one nobody can prove ran.
+	HiddenCharCount int    `json:"hidden_char_count,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 // Word is one word and where it sat, in PDF points from the top-left.
@@ -157,6 +170,29 @@ func (d *Document) NeedsOCRPages() int {
 		}
 	}
 	return n
+}
+
+// RenderedPage is one page as an image, for the OCR path (T-P3).
+type RenderedPage struct {
+	Number int `json:"page_no"`
+	DPI    int `json:"dpi"`
+	// ContentType and Base64 are what a multimodal model needs as a data URI,
+	// and they are kept apart so the caller builds that string rather than this
+	// package assuming which provider will read it.
+	ContentType string `json:"content_type"`
+	Base64      string `json:"base64"`
+	Error       string `json:"error,omitempty"`
+}
+
+// Renderer turns pages nobody could read into images (T-P3).
+//
+// A second interface rather than a second method on Parser, because the two
+// have different costs and a caller should have to ask for the expensive one by
+// name: parsing stays inside the deployment and rendering exists to send a page
+// to a model. Every implementation of Parser here also implements this, and a
+// caller that does not want OCR simply never asks.
+type Renderer interface {
+	Render(ctx context.Context, body io.Reader, pages []int) ([]RenderedPage, error)
 }
 
 // Options configures an HTTPParser.
@@ -294,4 +330,63 @@ func refusalReason(r io.Reader) string {
 	default:
 		return "the parser declined the document"
 	}
+}
+
+// Render asks the sidecar for the named pages as PNGs (T-P3).
+//
+// The whole document is sent again rather than the pages being cached from the
+// parse: the sidecar holds no state by design, and a stateful one would be a
+// second place a tenant's document lives.
+func (p *HTTPParser) Render(ctx context.Context, body io.Reader, pages []int) ([]RenderedPage, error) {
+	if p == nil {
+		return nil, ErrNotConfigured
+	}
+	if len(pages) == 0 {
+		return nil, nil
+	}
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, fmt.Errorf("read document: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
+
+	list := make([]string, 0, len(pages))
+	for _, n := range pages {
+		list = append(list, strconv.Itoa(n))
+	}
+	url := p.base + "/render?pages=" + strings.Join(list, ",")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("build render request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/pdf")
+	if p.secret != "" {
+		req.Header.Set("x-docparse-secret", p.secret)
+	}
+
+	resp, err := p.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnprocessableEntity, http.StatusRequestEntityTooLarge:
+		return nil, fmt.Errorf("%w: %s", ErrRefused, refusalReason(resp.Body))
+	case http.StatusUnauthorized:
+		return nil, fmt.Errorf("%w: the parser rejected our shared secret", ErrNotConfigured)
+	default:
+		return nil, fmt.Errorf("%w: parser answered %d", ErrUnavailable, resp.StatusCode)
+	}
+
+	var out struct {
+		Pages []RenderedPage `json:"pages"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("%w: render answer could not be read: %v", ErrUnavailable, err)
+	}
+	return out.Pages, nil
 }

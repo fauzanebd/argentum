@@ -27,7 +27,10 @@ func (t *ListSourcesTool) Name() string { return "list_sources" }
 
 func (t *ListSourcesTool) Description() string {
 	return "List the data sources (analytical databases) registered for this organization. " +
-		"Returns each source's id, label, db_type, description, and is_default flag. " +
+		"Returns each source's id, label, db_type, description, origin, and is_default flag. " +
+		"origin is 'tenant' for a database this organization connected, or 'document' for tables " +
+		"extracted from PDFs it uploaded and a person reviewed — a document source's rows carry " +
+		"source_page and source_row naming the page each figure was read from. " +
 		"Use this when you need to choose a source_id for run_sql, get_schema, or create_dashboard."
 }
 
@@ -58,7 +61,13 @@ func (t *ListSourcesTool) Execute(ctx context.Context, _ string) (string, error)
 		Label       string `json:"label,omitempty"`
 		DBType      string `json:"db_type"`
 		Description string `json:"description,omitempty"`
-		IsDefault   bool   `json:"is_default"`
+		// Origin says whether this source is a system of record or this
+		// product's reading of a document (T-P6). It reaches the model because
+		// the right thing to do when two sources disagree depends on which of
+		// them is derived — and because a figure that came out of a PDF can be
+		// traced back to its page, which is worth knowing before answering.
+		Origin    string `json:"origin"`
+		IsDefault bool   `json:"is_default"`
 	}
 	rows := make([]sourceRow, 0, len(conns))
 	for _, c := range conns {
@@ -67,6 +76,7 @@ func (t *ListSourcesTool) Execute(ctx context.Context, _ string) (string, error)
 			Label:       c.Label,
 			DBType:      c.DBType,
 			Description: c.Description,
+			Origin:      originOrDefault(c.Origin),
 			IsDefault:   c.IsDefault,
 		})
 	}
@@ -74,4 +84,15 @@ func (t *ListSourcesTool) Execute(ctx context.Context, _ string) (string, error)
 		"sources": rows,
 	})
 	return string(out), nil
+}
+
+// originOrDefault fills in the origin for a row written before migration 060.
+// Every such row is a database somebody connected, which is what 'tenant'
+// means; an empty string reaching the model would be a third value it has to
+// interpret.
+func originOrDefault(origin string) string {
+	if origin == "" {
+		return domain.OriginTenant
+	}
+	return origin
 }

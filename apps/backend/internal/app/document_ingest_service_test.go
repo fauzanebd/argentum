@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fauzanebd/argentum/internal/domain"
 )
@@ -402,4 +403,28 @@ func keysOf(m map[string][]byte) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// The OCR meter (T-P3/T-P11). The fake keeps a running total the way the SQL
+// does — additively — because the budget's whole point is that a re-parse does
+// not forget what the first pass already spent.
+func (f *fakeSourceDocs) RecordOCR(_ context.Context, id string, pages int, costMicroUSD int64) error {
+	for _, r := range f.rows {
+		if r.ID == id {
+			r.OCRPageCount += pages
+			r.OCRCostMicroUSD += costMicroUSD
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
+func (f *fakeSourceDocs) OCRPagesSince(_ context.Context, companyID string, since time.Time) (int, error) {
+	n := 0
+	for _, r := range f.rows {
+		if r.CompanyID == companyID && !r.CreatedAt.Before(since) {
+			n += r.OCRPageCount
+		}
+	}
+	return n, nil
 }

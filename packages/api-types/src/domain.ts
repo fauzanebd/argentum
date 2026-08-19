@@ -2,6 +2,10 @@
 /* eslint-disable */
 // Entities, from apps/backend/internal/domain.
 import type { Dashboard as DashboardSpec } from "./dashboardspec.js";
+import type {
+  Column as DocumentColumn,
+  VerifyStatus as DocumentVerifyStatus,
+} from "./doctable.js";
 
 //////////
 // source: action.go
@@ -272,6 +276,16 @@ export interface AgentAction {
    * watcher, a channel webhook — which is most rows.
    */
   request_id?: string;
+  /**
+   * DocumentTainted says this call ran on a turn that had already read
+   * content out of an uploaded document (T-P10).
+   * It is a property of the *turn*, copied onto every row after the read,
+   * rather than a property of the call — which is what makes the question a
+   * security review actually asks ("what did the agent do after reading that
+   * supplier's PDF?") a WHERE clause instead of a join. Telemetry until T-H9
+   * turns it into an approval gate.
+   */
+  document_tainted?: boolean;
   created_at: string;
 }
 /**
@@ -844,6 +858,18 @@ export interface DBConnection {
    */
   metabase_database_id?: number /* int */;
   /**
+   * Origin says who built this source: OriginTenant for a warehouse somebody
+   * connected, OriginDocument for one this product materialized out of
+   * uploaded PDFs (T-P6).
+   * It reaches the agent through `list_sources`, and that is the reason it
+   * exists rather than being inferrable from a label. An agent choosing
+   * between two sources should know that one of them is *derived* — its
+   * figures are this product's reading of a page, not a system of record —
+   * because the right follow-up when the two disagree depends on which is
+   * which.
+   */
+  origin: string;
+  /**
    * EnableTableEmbedding turns on the embedding-based table picker for
    * this source. When true and embeddings exist, the chat runner injects
    * a top-K relevant-table hint into the user's message so the agent can
@@ -864,6 +890,20 @@ export const DescriptionSourceManual = "manual";
  * Description sources.
  */
 export type DescriptionSource = typeof DescriptionSourceAuto | typeof DescriptionSourceManual;
+/**
+ * OriginTenant is a database somebody connected. The default, and what
+ * every row that existed before migration 060 is.
+ */
+export const OriginTenant = "tenant";
+/**
+ * OriginDocument is the document warehouse: rows this product extracted
+ * from uploaded PDFs and a reviewer applied.
+ */
+export const OriginDocument = "document";
+/**
+ * Connection origins.
+ */
+export type Origin = typeof OriginTenant | typeof OriginDocument;
 
 //////////
 // source: dashboard.go
@@ -1005,6 +1045,146 @@ export interface DocumentFilter {
    */
   Limit: number /* int */;
 }
+
+//////////
+// source: document_chunk.go
+
+/**
+ * DocumentChunk is one retrievable piece of a document's prose (T-P8).
+ * **It reaches a turn through a tool and never through the prompt.** That is
+ * Decision 6 of the PDF roadmap, and the reason is the instrument stack: a
+ * chunk injected into the user's message is not in `returned`, so a figure the
+ * model quotes out of it is invisible to `CheckGrounding` — unfalsifiable
+ * rather than merely unchecked. `search_documents` (T-P9) puts these where the
+ * checks can see them.
+ */
+export interface DocumentChunk {
+  id: number /* int64 */;
+  document_id: string;
+  company_id: string;
+  ordinal: number /* int */;
+  page_from: number /* int */;
+  page_to: number /* int */;
+  heading_path?: string;
+  content: string;
+  /**
+   * ContextPrefix is one generated sentence situating this chunk in its
+   * document, written once at ingest on the light model and stored. It is
+   * embedded with the content and shown to nobody: it exists to make
+   * retrieval find the right chunk, not to be quoted.
+   */
+  context_prefix?: string;
+  model?: string;
+  created_at: string;
+}
+/**
+ * DocumentChunkHit is one retrieved chunk and why it was retrieved.
+ */
+export interface DocumentChunkHit {
+  DocumentChunk: DocumentChunk;
+  /**
+   * Filename and DocumentTitle come from the join, because a citation names
+   * the document a person recognises rather than a uuid.
+   */
+  filename: string;
+  /**
+   * Score is the merged rank, not a distance: the dense and lexical halves
+   * are on incomparable scales, so what is carried is what reciprocal-rank
+   * fusion produced. Higher is better, and the absolute value means nothing
+   * outside one result set.
+   */
+  score: number /* float64 */;
+  /**
+   * Matched says which half found it — "dense", "lexical" or "both". It is
+   * in the tool result because a chunk only the lexical half found is a
+   * literal term match, and that is worth different confidence from a
+   * semantic neighbour.
+   */
+  matched: string;
+}
+
+//////////
+// source: document_table.go
+
+/**
+ * DocumentTable is one table found inside an uploaded PDF, and how far it has
+ * got towards being data (T-P4 → T-P6).
+ * **It is a draft until a person applies it.** The precedent is [SourceProfile]
+ * — *"an inferred profile that silently became the agent's view of the business
+ * would be a fabrication with a UI"* — and a table inferred out of a PDF is the
+ * stronger version of the same hazard, because it does not read as an opinion.
+ * It reads as data. So this row exists in the control database holding what was
+ * extracted and what a reviewer decided about it, and the rows themselves reach
+ * the document warehouse only when [DocumentTableApplied] is written.
+ * **The extracted rows are not stored here, on purpose.** They live in the page
+ * artifacts the parse wrote, and every read re-derives them through
+ * `doctable.Build` — deterministic code over immutable objects. Two things
+ * follow, and both are wanted: a better parser improves every draft nobody has
+ * applied yet, and the control database does not grow a copy of every document
+ * a tenant ever uploaded.
+ */
+export interface DocumentTable {
+  id: string;
+  document_id: string;
+  company_id: string;
+  /**
+   * Title is what the reviewer named it, defaulted from the caption above the
+   * grid. It is what the review surface lists and what `list_sources`
+   * eventually says the source holds.
+   */
+  title: string;
+  /**
+   * TableName is the identifier in the warehouse schema. Slugified, unique
+   * per company, and legible — it reaches a model through `get_schema`.
+   */
+  table_name: string;
+  first_page: number /* int */;
+  last_page: number /* int */;
+  /**
+   * Columns is the typing decision: inferred by `internal/doctable` and then
+   * edited by the reviewer. What is stored is the decision, not the data.
+   */
+  columns: DocumentColumn[];
+  status: DocumentTableStatus;
+  /**
+   * VerifyStatus and VerifyDetail are T-P5's outcome, re-computed on every
+   * read and persisted so a list can show the badge without re-deriving every
+   * table on the page.
+   */
+  verify_status: DocumentVerifyStatus;
+  verify_detail?: string;
+  row_count: number /* int */;
+  /**
+   * CandidateKey is `p<first page>-c<candidate index>`, which is what makes a
+   * re-parse update the draft a reviewer has been editing rather than add a
+   * second one beside it.
+   */
+  candidate_key: string;
+  applied_by?: string;
+  applied_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+/**
+ * DocumentTableStatus is how far this table has got.
+ */
+export type DocumentTableStatus = string;
+/**
+ * DocumentTableDraft is extracted and not published. Every table starts
+ * here and most stay here, which is the design working rather than failing.
+ */
+export const DocumentTableDraft: DocumentTableStatus = "draft";
+/**
+ * DocumentTableApplied means the rows are in the warehouse and the agent
+ * can query them.
+ */
+export const DocumentTableApplied: DocumentTableStatus = "applied";
+/**
+ * DocumentTableQuarantined means the arithmetic check refused it. Kept and
+ * shown, never published — the stated total may be the misparsed value, so
+ * the only correct output is a person looking at the page.
+ */
+export const DocumentTableQuarantined: DocumentTableStatus = "quarantined";
 
 //////////
 // source: embed_key.go
@@ -1753,6 +1933,15 @@ export interface SourceDocument {
    * never by the upload.
    */
   page_count: number /* int */;
+  /**
+   * OCRPageCount is how many of those pages a model read (T-P3), and
+   * OCRCostMicroUSD is what that cost. Zero on every document a deployment
+   * with OCR off ever ingests, which is the default — a rendered page leaving
+   * for a third-party model is the operator's decision that `LLM_ZDR` exists
+   * to let them make.
+   */
+  ocr_page_count: number /* int */;
+  ocr_cost_micro_usd: number /* int64 */;
   status: SourceDocumentStatus;
   /**
    * StatusDetail is why, in a sentence somebody can act on. Empty on the happy

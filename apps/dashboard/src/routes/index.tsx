@@ -22,6 +22,8 @@ import {
   DashboardDetailPage,
   DashboardsPage,
 } from "@/features/dashboards/dashboards-page";
+import { KnowledgePage } from "@/features/knowledge/knowledge-page";
+import { DocumentReviewPage } from "@/features/knowledge/document-review";
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -143,6 +145,22 @@ const documentsRoute = createRoute({
 // Native dashboards (T-D10). The detail route is what the link in a chat reply
 // points at, so it has to exist even though the chat renders the panels inline:
 // somebody opening the dashboard a week later has no transcript to read it in.
+// Uploaded documents and their review (T-P1/T-P7). `/knowledge`, not
+// `/documents`: that path is the documents this product *generates*, and the
+// two are opposites — output addressed by thread against input a tenant
+// supplies.
+const knowledgeRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/knowledge",
+  component: KnowledgePage,
+});
+
+const knowledgeDetailRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/knowledge/$id",
+  component: DocumentReviewPage,
+});
+
 const dashboardsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/dashboards",
@@ -170,6 +188,8 @@ export const routeTree = rootRoute.addChildren([
       scheduledTasksRoute,
       watchersRoute,
       documentsRoute,
+      knowledgeRoute,
+      knowledgeDetailRoute,
       dashboardsRoute,
       dashboardDetailRoute,
     ]),

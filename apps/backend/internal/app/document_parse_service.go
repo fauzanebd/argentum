@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/dococr"
 	"github.com/fauzanebd/argentum/internal/docparse"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/metrics"
 )
 
 // DocumentParseService reads an uploaded PDF into per-page artifacts (T-P2).
@@ -38,6 +41,49 @@ type DocumentParseService struct {
 	// parser's job — so the refusal happens where the number first exists,
 	// before any page is read.
 	maxPages int
+	// chunker indexes the document's prose for retrieval (T-P8). Nil is legal
+	// and is what a deployment without the chunk store gets: the tables half of
+	// this feature works, and `search_documents` says it is not configured.
+	chunker DocumentChunker
+	// ocr reads the pages the text layer could not (T-P3). Nil is the default
+	// and the state every deployment is in until an operator decides that
+	// sending a rendered page to a third-party model is acceptable here.
+	ocr      DocumentOCR
+	renderer docparse.Renderer
+	usage    DocumentUsageRecorder
+	// ocrMaxPages bounds one document and pagesPerMonth bounds one company
+	// (T-P11). Zero means unlimited on the second and "use the default" on the
+	// first, because a per-document cap of zero is a feature that is on and
+	// does nothing — the shape T-Q10 shipped by accident and had to be told
+	// about by a measurement.
+	ocrMaxPages   int
+	pagesPerMonth int
+}
+
+// DocumentOCR is the narrow contract the OCR pass needs: one page in, its text
+// and what it cost out. `dococr.Client` satisfies it.
+type DocumentOCR interface {
+	Configured() bool
+	Model() string
+	ReadPage(ctx context.Context, contentType, base64Image string) (string, dococr.Usage, error)
+}
+
+// DocumentUsageRecorder is the half of UsageService this service spends
+// through. A parse that costs money and does not appear in the ledger is a bill
+// nobody can explain, which is the whole of T-P11's argument.
+type DocumentUsageRecorder interface {
+	RecordDocumentOCR(ctx context.Context, companyID, documentID, model string, tokensIn, tokensOut int) int64
+}
+
+// DocumentChunker is the prose half of the pipeline, called with the pages this
+// service already holds.
+//
+// Handed the parsed pages rather than left to re-read the artifacts, because
+// this is the one moment the whole document is in memory: a second pass over
+// object storage would buy nothing but a window in which the chunks describe a
+// previous parse.
+type DocumentChunker interface {
+	Ingest(ctx context.Context, doc *domain.SourceDocument, pages []docparse.Page) error
 }
 
 // DocumentArtifactStore is the storage this service needs: the uploaded bytes
@@ -66,6 +112,40 @@ func NewDocumentParseService(
 		maxPages = 0
 	}
 	return &DocumentParseService{docs: docs, blobs: blobs, parser: parser, maxPages: maxPages}
+}
+
+// WithOCR turns on reading the pages the text layer could not (T-P3).
+//
+// Four dependencies rather than one, and none of them optional once the first
+// is present: a reader, something to render the page, somewhere to record what
+// it cost, and the two caps. A deployment that had the model and not the ledger
+// would be spending a tenant's money invisibly, which is the state T-P11 exists
+// to make impossible.
+func (s *DocumentParseService) WithOCR(
+	ocr DocumentOCR, renderer docparse.Renderer, usage DocumentUsageRecorder,
+	maxPagesPerDoc, pagesPerMonth int,
+) *DocumentParseService {
+	if ocr == nil || !ocr.Configured() || renderer == nil {
+		return s
+	}
+	if maxPagesPerDoc <= 0 {
+		maxPagesPerDoc = 20
+	}
+	s.ocr = ocr
+	s.renderer = renderer
+	s.usage = usage
+	s.ocrMaxPages = maxPagesPerDoc
+	s.pagesPerMonth = pagesPerMonth
+	return s
+}
+
+// WithChunker turns on prose indexing after a successful parse (T-P8).
+func (s *DocumentParseService) WithChunker(c DocumentChunker) *DocumentParseService {
+	if c == nil {
+		return s
+	}
+	s.chunker = c
+	return s
 }
 
 // Parse reads one document and records what happened to it.
@@ -127,20 +207,37 @@ func (s *DocumentParseService) Parse(ctx context.Context, documentID string) err
 		return err
 	}
 
+	// The scan tail (T-P3), between the parse and the artifacts: what OCR reads
+	// has to be in the page it is stored as, or the review surface and the
+	// chunker would both be working from the empty version.
+	ocrDetail := s.readScannedPages(ctx, doc, data, parsed)
+
 	written, err := s.storePages(ctx, doc, parsed)
 	if err != nil {
 		s.fail(ctx, doc, "the pages could not be stored")
 		return fmt.Errorf("store page artifacts: %w", err)
 	}
 
-	detail := ""
-	if n := parsed.NeedsOCRPages(); n > 0 {
+	detail := ocrDetail
+	if n := parsed.NeedsOCRPages(); n > 0 && detail == "" {
 		// Said on the row rather than only in a log line, because it is the
 		// difference between "your document is ready" and "most of it is a scan
 		// nothing has read". T-P3 is what makes this number go down.
 		detail = strconv.Itoa(n) + " of " + strconv.Itoa(parsed.PageCount) +
 			" pages hold no readable text and were not read"
 	}
+	if s.chunker != nil {
+		// The prose half (T-P8). A failure here does not fail the parse: the
+		// pages are stored, the tables are derivable, and a document whose
+		// retrieval index could not be built is worse than one with no index
+		// only for questions about its prose. Said out loud so a tenant asking
+		// "why does search find nothing?" has an answer in the log.
+		if err := s.chunker.Ingest(ctx, doc, parsed.Pages); err != nil {
+			logrus.WithError(err).WithField("document_id", doc.ID).
+				Warn("document parsed but its text could not be indexed; search_documents will not find it")
+		}
+	}
+
 	if err := s.docs.UpdateStatus(ctx, doc.ID, domain.SourceDocumentParsed, detail, parsed.PageCount); err != nil {
 		return fmt.Errorf("mark parsed: %w", err)
 	}
@@ -156,6 +253,144 @@ func (s *DocumentParseService) Parse(ctx context.Context, documentID string) err
 		"ms":              time.Since(started).Milliseconds(),
 	}).Info("document parsed")
 	return nil
+}
+
+// readScannedPages reads the pages the text layer could not, and returns the
+// sentence that goes on the document row (T-P3/T-P11).
+//
+// **Every refusal happens before a model is called, and every one of them says
+// why.** Off, over the per-document cap, over the company's monthly budget: all
+// three leave the pages exactly as `T-P2` left them — empty, counted, and
+// honest about it — and none of them fails the document, because a scan nobody
+// read is not a broken file.
+func (s *DocumentParseService) readScannedPages(
+	ctx context.Context, doc *domain.SourceDocument, data []byte, parsed *docparse.Document,
+) string {
+	if s.ocr == nil || s.renderer == nil {
+		return ""
+	}
+	var wanted []int
+	for i := range parsed.Pages {
+		if parsed.Pages[i].Kind == docparse.KindNeedsOCR {
+			wanted = append(wanted, parsed.Pages[i].Number)
+		}
+	}
+	if len(wanted) == 0 {
+		return ""
+	}
+
+	capped := false
+	if len(wanted) > s.ocrMaxPages {
+		wanted, capped = wanted[:s.ocrMaxPages], true
+	}
+	if allowed, used, ok := s.budgetRoom(ctx, doc.CompanyID, len(wanted)); !ok {
+		// Refused before any model call, which is T-P11's acceptance line
+		// word for word. The sentence names both numbers because "budget
+		// exceeded" is not something a tenant can act on.
+		return fmt.Sprintf(
+			"this workspace has had %d of %d document pages read by a model this month, "+
+				"so %d scanned page(s) here were left unread",
+			used, allowed, len(wanted))
+	}
+
+	images, err := s.renderer.Render(ctx, bytes.NewReader(data), wanted)
+	if err != nil {
+		logrus.WithError(err).WithField("document_id", doc.ID).
+			Warn("scanned pages could not be rendered; they are left unread")
+		return ""
+	}
+
+	byNumber := map[int]*docparse.Page{}
+	for i := range parsed.Pages {
+		byNumber[parsed.Pages[i].Number] = &parsed.Pages[i]
+	}
+
+	var (
+		read    int
+		cost    int64
+		started = time.Now()
+	)
+	for _, img := range images {
+		if img.Error != "" || img.Base64 == "" {
+			continue
+		}
+		page := byNumber[img.Number]
+		if page == nil {
+			continue
+		}
+		text, usage, err := s.ocr.ReadPage(ctx, img.ContentType, img.Base64)
+		if err != nil {
+			// One page, not the document. A provider that fails on page four of
+			// a forty-page scan should cost page four, and the retry is the next
+			// re-parse rather than a loop here spending on every page again.
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"document_id": doc.ID, "page": img.Number,
+			}).Warn("a scanned page could not be read by the model")
+			continue
+		}
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		page.Kind = docparse.KindOCR
+		page.Markdown = text
+		page.CharCount = len(strings.TrimSpace(text))
+		read++
+		if s.usage != nil {
+			cost += s.usage.RecordDocumentOCR(ctx, doc.CompanyID, doc.ID,
+				s.ocr.Model(), usage.PromptTokens, usage.CompletionTokens)
+		}
+	}
+
+	if read > 0 {
+		if err := s.docs.RecordOCR(ctx, doc.ID, read, cost); err != nil {
+			logrus.WithError(err).WithField("document_id", doc.ID).
+				Warn("pages were read by a model but the meter could not be written")
+		}
+		metrics.DocumentPagesOCR(doc.CompanyID, read)
+	}
+	logrus.WithFields(logrus.Fields{
+		"company_id": doc.CompanyID, "document_id": doc.ID,
+		"pages_ocr": read, "pages_requested": len(wanted),
+		"model": s.ocr.Model(), "cost_micro_usd": cost,
+		"ms": time.Since(started).Milliseconds(),
+	}).Info("scanned pages read by a model")
+
+	switch {
+	case capped:
+		return fmt.Sprintf(
+			"%d scanned page(s) were read by a model; the rest were left unread at this deployment's "+
+				"per-document limit of %d", read, s.ocrMaxPages)
+	case read < len(wanted):
+		return fmt.Sprintf("%d of %d scanned page(s) were read by a model; the others could not be read",
+			read, len(wanted))
+	case read > 0:
+		return ""
+	default:
+		return ""
+	}
+}
+
+// budgetRoom answers whether this company may have `want` more pages read this
+// month (T-P11).
+//
+// A read that fails is fail-open, deliberately and narrowly: the meter is a
+// cost control, not a security boundary, and a control database hiccup that
+// silently stopped every tenant's ingestion would be a worse outage than a
+// month that overshoots its page budget by one document. The failure is logged
+// where the budget is set.
+func (s *DocumentParseService) budgetRoom(ctx context.Context, companyID string, want int) (allowed, used int, ok bool) {
+	if s.pagesPerMonth <= 0 {
+		return 0, 0, true
+	}
+	now := time.Now().UTC()
+	since := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	used, err := s.docs.OCRPagesSince(ctx, companyID, since)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("monthly document page budget could not be read; allowing this parse")
+		return s.pagesPerMonth, 0, true
+	}
+	return s.pagesPerMonth, used, used+want <= s.pagesPerMonth
 }
 
 // storePages writes one artifact per page plus a manifest.

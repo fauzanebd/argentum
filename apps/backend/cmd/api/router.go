@@ -76,6 +76,11 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// which tells a deployment without object storage why, where an absent route
 	// reads as a wrong path.
 	handlers.NewKnowledgeDocumentsHandler(d.documentIngestSvc, cfg.DocMaxUploadMB).Register(authed)
+	// The review surface's API (T-P6/T-P7): the tables inside a document, the
+	// page they were read from, and the one call that publishes one. Same
+	// unconditional registration and same reason — 503 says why, a missing
+	// route says nothing.
+	handlers.NewKnowledgeTablesHandler(d.documentTableSvc, d.documentPageSvc).Register(authed)
 	handlers.NewReportShareHandler(d.shareSvc).Register(authed)
 	handlers.NewAuditHandler(d.actionRepo).Register(authed)
 	handlers.NewAPIKeysHandler(d.apiKeySvc).

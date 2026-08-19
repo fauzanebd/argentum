@@ -45,7 +45,9 @@ import (
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/dashboard"
+	"github.com/fauzanebd/argentum/internal/docchunk"
 	"github.com/fauzanebd/argentum/internal/docgen"
+	"github.com/fauzanebd/argentum/internal/dococr"
 	"github.com/fauzanebd/argentum/internal/docparse"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/guardrails"
@@ -174,6 +176,11 @@ type Stack struct {
 	// 'uploaded' rather than by failing it — a file nobody has read is not a
 	// broken file.
 	DocumentParse *app.DocumentParseService
+	// DocumentChunks is the prose half (T-P8/T-P9): the chunks a parse writes
+	// and the hybrid retrieval `search_documents` runs. Never nil in this
+	// process — a deployment without embeddings still has the lexical index,
+	// and a deployment with no documents simply has no rows.
+	DocumentChunks *app.DocumentChunkService
 
 	// Guardrails is the loaded policy set. The agent factory binds a per-tenant
 	// copy of it for the input rules; the runner keeps this one for the output
@@ -299,6 +306,17 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		s.MessageFeedback, s.EmbedCache,
 	)
 
+	// What an uploaded document says (T-P8/T-P9). Beside the cookbook and for
+	// the same reason: both halves of retrieval need the embedding cache above,
+	// and both degrade to their non-embedding behaviour rather than refusing
+	// where a tenant has no credentials — here that is the lexical index, which
+	// is a complete answer on its own.
+	s.DocumentChunks = app.NewDocumentChunkService(
+		pgctl.NewDocumentChunkRepo(controlDB), s.EmbedCache,
+		docchunk.Options{MaxTokens: cfg.DocChunkTokens, Overlap: cfg.DocChunkOverlap},
+		cfg.DocSearchTopK,
+	)
+
 	asynqOpt, err := queue.BuildRedisOpt(cfg.ResolvedAsynqRedisURL(), cfg.RedisPassword)
 	if err != nil {
 		return nil, fmt.Errorf("asynq redis opt: %w", err)
@@ -371,7 +389,38 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 			} else {
 				s.DocumentParse = app.NewDocumentParseService(
 					pgctl.NewSourceDocumentRepo(controlDB), storageSvc, parser, cfg.DocMaxPages,
-				)
+				).WithChunker(s.DocumentChunks)
+				// The scan tail (T-P3), off unless an operator turned it on.
+				// Built from the deployment's own LLM host rather than the
+				// per-tenant resolver: reading a page is not a chat turn, it has
+				// no thread and no agent, and a tenant-keyed multimodal model is
+				// a configuration nobody has asked for yet. The spend still lands
+				// in that tenant's ledger, which is the part that matters.
+				if cfg.DocOCREnabled {
+					ocr := dococr.New(dococr.Options{
+						BaseURL: cfg.LLMBaseURL,
+						APIKey:  cfg.LLMAPIKey,
+						Model:   cfg.DocOCRModel,
+						Timeout: time.Duration(cfg.DocParseTimeoutSecs) * time.Second,
+					})
+					if ocr == nil {
+						// On with no model or no host. Said out loud for the
+						// reason the parser's own warning gives: the symptom —
+						// scanned pages staying empty — is identical to the
+						// feature being off, and an operator who set
+						// DOC_OCR_ENABLED believes it is on.
+						logrus.Warn("DOC_OCR_ENABLED is set but DOC_OCR_MODEL or LLM_BASE_URL is empty; scanned pages will stay unread")
+					} else {
+						s.DocumentParse = s.DocumentParse.WithOCR(
+							ocr, parser, s.UsageSvc, cfg.DocOCRMaxPagesDoc, cfg.DocPagesPerMonth,
+						)
+						logrus.WithFields(logrus.Fields{
+							"model":             cfg.DocOCRModel,
+							"max_pages_per_doc": cfg.DocOCRMaxPagesDoc,
+							"pages_per_month":   cfg.DocPagesPerMonth,
+						}).Info("document OCR enabled; scanned pages will be sent to a model")
+					}
+				}
 				logrus.WithFields(logrus.Fields{
 					"url":       cfg.DocParseURL,
 					"max_pages": cfg.DocMaxPages,
@@ -513,6 +562,10 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// harness's and cmd/mcp's tool descriptions: they have nothing that
 		// would ever finish the render.
 		Renders: s.scheduledEnq,
+		// What an uploaded document says (T-P9). Always non-nil in this process
+		// — the lexical index needs no credentials — so the tool answers rather
+		// than reporting itself unconfigured.
+		Documents: s.DocumentChunks,
 	})
 
 	// Every tool runs behind the per-turn budget guard (T-16). Wrapping here

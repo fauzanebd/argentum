@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -18,6 +19,7 @@ func NewSourceDocumentRepo(db *sql.DB) *SourceDocumentRepo { return &SourceDocum
 
 const sourceDocumentColumns = `
 	id, company_id, filename, content_sha256, byte_size, page_count,
+	ocr_page_count, ocr_cost_micro_usd,
 	storage_key, status, status_detail, uploaded_by, created_at, updated_at`
 
 func scanSourceDocument(s interface{ Scan(...any) error }) (*domain.SourceDocument, error) {
@@ -25,6 +27,7 @@ func scanSourceDocument(s interface{ Scan(...any) error }) (*domain.SourceDocume
 	var uploadedBy sql.NullString
 	if err := s.Scan(
 		&d.ID, &d.CompanyID, &d.Filename, &d.ContentSHA256, &d.ByteSize, &d.PageCount,
+		&d.OCRPageCount, &d.OCRCostMicroUSD,
 		&d.StorageKey, &d.Status, &d.StatusDetail, &uploadedBy, &d.CreatedAt, &d.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -168,4 +171,36 @@ func (r *SourceDocumentRepo) Delete(ctx context.Context, companyID, id string) e
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+// RecordOCR stores what a model charged to read this document (T-P3).
+//
+// Additive rather than assigning, because a document can be re-parsed: the
+// second pass reads the pages the first one could not, and a column that was
+// overwritten would make the month's budget forget what it already spent.
+func (r *SourceDocumentRepo) RecordOCR(ctx context.Context, id string, pages int, costMicroUSD int64) error {
+	const q = `
+		UPDATE source_documents
+		SET ocr_page_count = ocr_page_count + $2,
+		    ocr_cost_micro_usd = ocr_cost_micro_usd + $3,
+		    updated_at = now()
+		WHERE id = $1`
+	if _, err := r.db.ExecContext(ctx, q, id, pages, costMicroUSD); err != nil {
+		return fmt.Errorf("record document OCR usage: %w", err)
+	}
+	return nil
+}
+
+// OCRPagesSince is how many pages this company has had read by a model since a
+// point in time — the number the monthly budget is checked against (T-P11).
+func (r *SourceDocumentRepo) OCRPagesSince(ctx context.Context, companyID string, since time.Time) (int, error) {
+	const q = `
+		SELECT COALESCE(SUM(ocr_page_count), 0)
+		FROM source_documents
+		WHERE company_id = $1 AND created_at >= $2`
+	var n int
+	if err := r.db.QueryRowContext(ctx, q, companyID, since).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count OCR pages: %w", err)
+	}
+	return n, nil
 }

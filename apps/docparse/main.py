@@ -19,7 +19,7 @@ import os
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
-from parse import PageLimitExceeded, UnreadablePDF, parse_pdf
+from parse import PageLimitExceeded, UnreadablePDF, parse_pdf, render_pages
 
 # Sent as `x-docparse-secret`, matching apps/render's `x-render-secret`. It is
 # not the security boundary — the service is not meant to be reachable from
@@ -101,4 +101,50 @@ async def parse(
         needs_ocr,
         failed,
     )
+    return JSONResponse(status_code=200, content=result)
+
+
+@app.post("/render")
+async def render(
+    request: Request,
+    pages: str = Query(default=""),
+    x_docparse_secret: str = Header(default=""),
+) -> JSONResponse:
+    """Render the named pages to PNG for the OCR path (T-P3).
+
+    Separate from /parse rather than a flag on it, because the two have
+    different costs and different consequences: parsing is free and stays
+    inside the deployment, while a rendered page exists to be sent to a model.
+    A caller that wants images has to ask for them by name, on its own request,
+    with the page numbers it decided to spend money on.
+    """
+    if SECRET and x_docparse_secret != SECRET:
+        raise HTTPException(status_code=401, detail="bad or missing x-docparse-secret")
+
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="empty body")
+    if len(data) > MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="body exceeds DOCPARSE_MAX_BODY_MB")
+
+    wanted: list[int] = []
+    for part in pages.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            wanted.append(int(part))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="pages must be a comma-separated list of page numbers")
+    if not wanted:
+        raise HTTPException(status_code=400, detail="no pages requested")
+
+    try:
+        result = render_pages(data, wanted)
+    except UnreadablePDF as exc:
+        return JSONResponse(status_code=422, content={"error": "unreadable", "detail": str(exc)[:500]})
+
+    # Shape only, as everywhere else in this service: how many pages were
+    # rendered, never which document or what was on them.
+    log.info("rendered pages requested=%d produced=%d", len(wanted), len(result["pages"]))
     return JSONResponse(status_code=200, content=result)

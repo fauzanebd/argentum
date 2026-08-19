@@ -12,6 +12,7 @@ import {
 import { RecentChats } from "@/components/layout/recent-chats";
 import { ScheduledTasksNav } from "@/components/layout/scheduled-tasks-nav";
 import { WatchersNav } from "@/components/layout/watchers-nav";
+import { KnowledgeNav } from "@/components/layout/knowledge-nav";
 import { DocumentsNav } from "@/components/layout/documents-nav";
 import { ApprovalsNav } from "@/components/layout/approvals-nav";
 import { DashboardsNav } from "@/components/layout/dashboards-nav";
@@ -97,6 +98,7 @@ function AppSidebar() {
           <DashboardsNav />
           <WatchersNav />
           <DocumentsNav />
+          <KnowledgeNav />
           <ApprovalsNav />
           <RecentChats />
         </div>

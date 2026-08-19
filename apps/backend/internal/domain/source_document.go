@@ -37,6 +37,13 @@ type SourceDocument struct {
 	// PageCount is 0 until something has read the file. Written by the parse,
 	// never by the upload.
 	PageCount int `json:"page_count"`
+	// OCRPageCount is how many of those pages a model read (T-P3), and
+	// OCRCostMicroUSD is what that cost. Zero on every document a deployment
+	// with OCR off ever ingests, which is the default — a rendered page leaving
+	// for a third-party model is the operator's decision that `LLM_ZDR` exists
+	// to let them make.
+	OCRPageCount    int   `json:"ocr_page_count"`
+	OCRCostMicroUSD int64 `json:"ocr_cost_micro_usd"`
 	// StorageKey is the object key, not a URL — an endpoint changes when a
 	// deployment moves buckets or puts a CDN in front, and a stored URL would
 	// then point at nothing.
@@ -140,5 +147,14 @@ type SourceDocumentRepository interface {
 	// positive, so a status change cannot silently zero a count an earlier pass
 	// established.
 	UpdateStatus(ctx context.Context, id string, status SourceDocumentStatus, detail string, pageCount int) error
+	// RecordOCR stores what reading this document with a model cost (T-P3), and
+	// OCRPagesSince is what the monthly budget is checked against (T-P11).
+	//
+	// The budget reads pages rather than money on purpose: a page is what a
+	// tenant can count, an operator can reason about and a refusal can name,
+	// where a micro-USD ceiling would need somebody to know this month's model
+	// pricing to predict whether their upload will work.
+	RecordOCR(ctx context.Context, id string, pages int, costMicroUSD int64) error
+	OCRPagesSince(ctx context.Context, companyID string, since time.Time) (int, error)
 	Delete(ctx context.Context, companyID, id string) error
 }

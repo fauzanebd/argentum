@@ -16,7 +16,7 @@ func NewConnectionRepo(db *sql.DB) *ConnectionRepo { return &ConnectionRepo{db: 
 
 const connColumns = `id, company_id, db_type, label, dsn_encrypted, is_default,
 		description, description_source, metabase_database_id,
-		enable_table_embedding, embeddings_indexed_at,
+		enable_table_embedding, embeddings_indexed_at, origin,
 		created_at, updated_at`
 
 func scanConn(row interface {
@@ -28,7 +28,7 @@ func scanConn(row interface {
 	err := row.Scan(
 		&c.ID, &c.CompanyID, &c.DBType, &c.Label, &c.DSNEncrypted, &c.IsDefault,
 		&c.Description, &c.DescriptionSource, &mid,
-		&c.EnableTableEmbedding, &indexedAt,
+		&c.EnableTableEmbedding, &indexedAt, &c.Origin,
 		&c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
@@ -48,12 +48,13 @@ func scanConn(row interface {
 func (r *ConnectionRepo) Create(ctx context.Context, c *domain.DBConnection) error {
 	const q = `
 		INSERT INTO db_connections
-			(company_id, db_type, label, dsn_encrypted, is_default, description, description_source)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+			(company_id, db_type, label, dsn_encrypted, is_default, description, description_source, origin)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE(NULLIF($8, ''), 'tenant'))
 		RETURNING id, created_at, updated_at
 	`
 	if err := r.db.QueryRowContext(ctx, q,
 		c.CompanyID, c.DBType, c.Label, c.DSNEncrypted, c.IsDefault, c.Description, c.DescriptionSource,
+		c.Origin,
 	).Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return fmt.Errorf("insert connection: %w", err)
 	}

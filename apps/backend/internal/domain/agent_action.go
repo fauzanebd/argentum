@@ -102,8 +102,17 @@ type AgentAction struct {
 	// RequestID is the `X-Request-Id` of the HTTP call that started the turn
 	// (T-A1). Empty for anything that did not start with one — a cron tick, a
 	// watcher, a channel webhook — which is most rows.
-	RequestID string    `json:"request_id,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	RequestID string `json:"request_id,omitempty"`
+	// DocumentTainted says this call ran on a turn that had already read
+	// content out of an uploaded document (T-P10).
+	//
+	// It is a property of the *turn*, copied onto every row after the read,
+	// rather than a property of the call — which is what makes the question a
+	// security review actually asks ("what did the agent do after reading that
+	// supplier's PDF?") a WHERE clause instead of a join. Telemetry until T-H9
+	// turns it into an approval gate.
+	DocumentTainted bool      `json:"document_tainted,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // AgentActionFilter narrows an audit read. Zero values mean "no filter" except

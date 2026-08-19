@@ -9,7 +9,9 @@
     "./webhooks": "./src/webhooks.ts",
     "./videoplan": "./src/videoplan.ts",
     "./dashboard-spec": "./src/dashboardspec.ts",
-    "./dashboard": "./src/dashboard.ts"
+    "./dashboard": "./src/dashboard.ts",
+    "./doctable": "./src/doctable.ts",
+    "./docparse": "./src/docparse.ts"
   },
   "files": [
     "src"

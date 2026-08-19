@@ -45,6 +45,37 @@ services:
     networks: [ argentum_network ]
     profiles: [ dev ]
 
+  # The document warehouse (T-P6): where rows extracted from uploaded PDFs are
+  # published. A third Postgres, and the separation is the feature rather than
+  # an accident of local development — Decision 4 in
+  # `docs/plan/06-pdf-knowledge-roadmap.md`. Per company it holds one schema and
+  # one login role with USAGE on that schema and nothing else; the DSN the agent
+  # reaches it through authenticates as that role.
+  #
+  # Same image family as the others so the bootstrap script runs unchanged. In
+  # the `dev` profile beside postgres_demo: a deployment that wants publishing
+  # points DOC_WAREHOUSE_DSN at whatever database it runs, and one that does not
+  # is review-only and needs no container.
+  postgres_docs:
+    image: ankane/pgvector:latest
+    container_name: argentum_postgres_docs
+    environment:
+      POSTGRES_USER: ${DOC_WAREHOUSE_USER:-argentum_docs}
+      POSTGRES_PASSWORD: ${DOC_WAREHOUSE_PASSWORD:-argentum_docs}
+      POSTGRES_DB: ${DOC_WAREHOUSE_DB:-argentum_docs}
+    volumes:
+      - postgres_docs_data:/var/lib/postgresql/data
+      - ./migrations/docwarehouse:/docker-entrypoint-initdb.d
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DOC_WAREHOUSE_USER:-argentum_docs} -d ${DOC_WAREHOUSE_DB:-argentum_docs}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks: [ argentum_network ]
+    profiles: [ dev ]
+
   redis:
     image: redis:7-alpine
     container_name: argentum_redis
@@ -240,6 +271,14 @@ services:
       DOCPARSE_ENABLED: ${DOCPARSE_ENABLED:-false}
       DOC_MAX_UPLOAD_MB: ${DOC_MAX_UPLOAD_MB:-25}
       DOC_MAX_PAGES: ${DOC_MAX_PAGES:-200}
+
+      # Where published document tables live (T-P6). **Not the control
+      # database.** The agent runs model-written SQL against whatever a source
+      # points at, so a document source pointing at `argentum` would put
+      # api_keys and every tenant's rows one SELECT away. Unset leaves the
+      # product review-only: uploading, parsing and reviewing all work, and
+      # Apply refuses with a sentence.
+      DOC_WAREHOUSE_DSN: ${DOC_WAREHOUSE_DSN:-}
 
       # Frontend origin allowlist
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
@@ -476,6 +515,7 @@ services:
 volumes:
   postgres_data:
   postgres_demo_data:
+  postgres_docs_data:
   redis_data:
   metabase_data:
   minio_data:

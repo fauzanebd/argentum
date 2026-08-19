@@ -420,6 +420,48 @@ type Config struct {
 	// not meant to be reachable from outside the deployment — but what stops
 	// something else on the network calling it by accident.
 	DocParseSharedSecret string
+	// DocWarehouseDSN is the admin connection to the database published
+	// document tables live in (T-P6). Empty means this deployment cannot
+	// publish: uploading, parsing and reviewing all work, and Apply refuses
+	// with a sentence.
+	//
+	// **It must not be the control database, and nothing here enforces that
+	// beyond saying so.** The agent runs model-written SQL against whatever a
+	// source points at, so a document source pointing at `argentum` would put
+	// `api_keys` and every tenant's rows one SELECT away. The separation is the
+	// roadmap's Decision 4 and the acceptance item that proves it is a query
+	// somebody runs by hand: `SELECT … FROM companies` through a document
+	// source has to fail.
+	DocWarehouseDSN string
+	// The prose half (T-P8/T-P9). DocChunkTokens is the budget per chunk and
+	// DocChunkOverlap how much of the previous one is repeated at the start of
+	// the next, so a sentence that straddles a cut is retrievable from either
+	// side. DocSearchTopK is what `search_documents` returns when the model
+	// does not say.
+	//
+	// DocChunkSynopsis turns on the one generated sentence every chunk of a
+	// document is prefixed with before embedding. It costs one light-model call
+	// per document at ingest and nothing per turn; off, retrieval still works
+	// and finds slightly less.
+	// The scan tail (T-P3). Off by default and not by accident: a rendered page
+	// leaving this deployment for a third-party model is exactly what `LLM_ZDR`
+	// was shipped to let an operator control, so nothing here runs until
+	// somebody sets DocOCREnabled. DocOCRModel names the multimodal model —
+	// there is no default, because which model reads a tenant's bank statement
+	// is an operator's decision and a default here would make it ours.
+	DocOCREnabled     bool
+	DocOCRModel       string
+	DocOCRMaxPagesDoc int
+	// DocPagesPerMonth is the per-company monthly budget (T-P11), in pages read
+	// by a model. Zero is unlimited. Pages rather than money because a page is
+	// what a tenant can count and a refusal can name; a micro-USD ceiling would
+	// need somebody to know this month's model pricing to predict whether their
+	// upload will work.
+	DocPagesPerMonth int
+	DocChunkTokens   int
+	DocChunkOverlap  int
+	DocSearchTopK    int
+	DocChunkSynopsis bool
 	// DocParseTimeoutSecs bounds one whole parse. Two minutes by default, which
 	// sits above a 200-page text-layer read and well below anything a queue
 	// would call hung.
@@ -617,6 +659,15 @@ func Load() (*Config, error) {
 		DocParseURL:          getEnv("DOCPARSE_URL", "http://localhost:8091"),
 		DocParseSharedSecret: getEnv("DOCPARSE_SHARED_SECRET", ""),
 		DocParseTimeoutSecs:  getEnvAsInt("DOCPARSE_TIMEOUT_SECS", 120),
+		DocWarehouseDSN:      getEnv("DOC_WAREHOUSE_DSN", ""),
+		DocOCREnabled:        getEnv("DOC_OCR_ENABLED", "false") == "true",
+		DocOCRModel:          getEnv("DOC_OCR_MODEL", ""),
+		DocOCRMaxPagesDoc:    getEnvAsInt("DOC_OCR_MAX_PAGES_PER_DOC", 20),
+		DocPagesPerMonth:     getEnvAsInt("DOC_PAGES_PER_MONTH", 0),
+		DocChunkTokens:       getEnvAsInt("DOC_CHUNK_TOKENS", 500),
+		DocChunkOverlap:      getEnvAsInt("DOC_CHUNK_OVERLAP", 60),
+		DocSearchTopK:        getEnvAsInt("DOC_SEARCH_TOPK", 5),
+		DocChunkSynopsis:     getEnv("DOC_CHUNK_SYNOPSIS", "true") == "true",
 		// 15s, matching dashboard.DefaultPanelTimeout. Long enough for a real
 		// aggregate over a warehouse, short enough that a viewer waiting on a
 		// dozen panels has a bounded worst case.

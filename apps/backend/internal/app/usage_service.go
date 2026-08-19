@@ -105,6 +105,44 @@ func (s *UsageService) RecordLLM(ctx context.Context, companyID, threadID, messa
 	})
 }
 
+// RecordDocumentOCR records what reading one page of an uploaded document cost
+// (T-P3/T-P11), and returns that cost so the document row can carry it too.
+//
+// **It is an llm_call event with no thread.** Every other model call in this
+// product happens inside a chat turn and is attributed to one; ingestion is the
+// first thing a tenant can point at that spends outside a turn, so the
+// attribution is the document id in the metadata instead. Without that, "what
+// did documents cost this month" is a question the ledger holds the answer to
+// and cannot be asked.
+func (s *UsageService) RecordDocumentOCR(
+	ctx context.Context, companyID, documentID, model string, tokensIn, tokensOut int,
+) int64 {
+	inRate := s.pricing.LLMInputCostPer1K
+	outRate := s.pricing.LLMOutputCostPer1K
+	if mp, ok := lookupModelPricing(model); ok {
+		inRate, outRate = mp.InputCostPer1K, mp.OutputCostPer1K
+	}
+	cost := int64((float64(tokensIn)/1000.0)*inRate*1_000_000 +
+		(float64(tokensOut)/1000.0)*outRate*1_000_000)
+	s.append(ctx, &domain.UsageEvent{
+		CompanyID:    companyID,
+		EventType:    domain.UsageEventLLMCall,
+		Model:        model,
+		TokensIn:     tokensIn,
+		TokensOut:    tokensOut,
+		CostMicroUSD: cost,
+		Metadata: map[string]interface{}{
+			"document_id": documentID,
+			"feature":     UsageFeatureDocumentOCR,
+		},
+	})
+	return cost
+}
+
+// UsageFeatureDocumentOCR labels the ingestion spend, so the ledger can be
+// split by feature without a migration — the pattern T-B2 established.
+const UsageFeatureDocumentOCR = "document_ocr"
+
 // RecordSQL records a tenant SQL query.
 func (s *UsageService) RecordSQL(ctx context.Context, companyID, threadID string) {
 	s.append(ctx, &domain.UsageEvent{

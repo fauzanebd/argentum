@@ -83,6 +83,13 @@ func (s MetricsSnapshot) WriteProm(w io.Writer) error {
 	p.counter("unevidenced_actions_total",
 		"Replies claiming a completed change on a turn that made no successful mutating tool call.",
 		nil, float64(s.Grounding.UnevidencedActions))
+	// Not a turn-shaped number at all, and it is here because it is the same
+	// kind of claim: ingestion is the first thing in this product that spends
+	// money outside a chat turn (T-P3), and a spend with no counter is one
+	// nobody notices until the invoice.
+	p.counter("document_pages_ocr_total",
+		"Pages of uploaded documents read by a model.",
+		nil, float64(s.Grounding.DocumentPagesOCR))
 
 	// --- queue depth (T-17), sampled from Redis rather than counted here ---
 	//

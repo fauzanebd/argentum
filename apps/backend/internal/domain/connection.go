@@ -26,6 +26,17 @@ type DBConnection struct {
 	// MetabaseDatabaseID links this row to /api/database when db_type is
 	// postgres; nil until registration succeeds via Metabase REST API.
 	MetabaseDatabaseID *int `json:"metabase_database_id,omitempty"`
+	// Origin says who built this source: OriginTenant for a warehouse somebody
+	// connected, OriginDocument for one this product materialized out of
+	// uploaded PDFs (T-P6).
+	//
+	// It reaches the agent through `list_sources`, and that is the reason it
+	// exists rather than being inferrable from a label. An agent choosing
+	// between two sources should know that one of them is *derived* — its
+	// figures are this product's reading of a page, not a system of record —
+	// because the right follow-up when the two disagree depends on which is
+	// which.
+	Origin string `json:"origin"`
 	// EnableTableEmbedding turns on the embedding-based table picker for
 	// this source. When true and embeddings exist, the chat runner injects
 	// a top-K relevant-table hint into the user's message so the agent can
@@ -42,6 +53,16 @@ type DBConnection struct {
 const (
 	DescriptionSourceAuto   = "auto"
 	DescriptionSourceManual = "manual"
+)
+
+// Connection origins.
+const (
+	// OriginTenant is a database somebody connected. The default, and what
+	// every row that existed before migration 060 is.
+	OriginTenant = "tenant"
+	// OriginDocument is the document warehouse: rows this product extracted
+	// from uploaded PDFs and a reviewer applied.
+	OriginDocument = "document"
 )
 
 // ConnectionRepository is the persistence contract for tenant DB connections.

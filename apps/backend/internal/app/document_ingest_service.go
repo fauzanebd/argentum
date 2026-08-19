@@ -33,7 +33,11 @@ type DocumentIngestService struct {
 	blobs DocumentBlobStore
 	// queue is nil on a deployment with no parser, and that is a supported
 	// configuration rather than a broken one — see the service docblock.
-	queue    DocumentParseQueue
+	queue DocumentParseQueue
+	// tables removes what this document published into the document warehouse
+	// when it is deleted. Nil where there is no warehouse, which is also where
+	// nothing was ever published.
+	tables   DocumentTableCleaner
 	maxBytes int64
 }
 
@@ -52,6 +56,18 @@ type DocumentBlobStore interface {
 // DocumentParseQueue is the one method of queue.Enqueuer this service calls.
 type DocumentParseQueue interface {
 	EnqueueDocumentParse(ctx context.Context, documentID string) error
+}
+
+// DocumentTableCleaner removes what a document published into the warehouse.
+//
+// Declared here because delete is this service's method and the warehouse is
+// not its dependency: `document_tables` rows go with the document through ON
+// DELETE CASCADE, and the *materialized* tables are in another database that no
+// foreign key reaches. Without this hook a deleted document would leave the
+// agent able to query its figures — which is the one failure a deletion feature
+// must not have.
+type DocumentTableCleaner interface {
+	DropForDocument(ctx context.Context, companyID, documentID string) error
 }
 
 // ErrDocumentTooLarge is returned instead of storing a file over the configured
@@ -88,6 +104,15 @@ func (s *DocumentIngestService) WithParseQueue(q DocumentParseQueue) *DocumentIn
 		return s
 	}
 	s.queue = q
+	return s
+}
+
+// WithTableCleanup makes delete remove what the document published (T-P6).
+func (s *DocumentIngestService) WithTableCleanup(c DocumentTableCleaner) *DocumentIngestService {
+	if c == nil {
+		return s
+	}
+	s.tables = c
 	return s
 }
 
@@ -264,6 +289,16 @@ func (s *DocumentIngestService) Delete(ctx context.Context, companyID, id string
 	doc, err := s.docs.GetForCompany(ctx, companyID, id)
 	if err != nil {
 		return err
+	}
+	if s.tables != nil {
+		// The published rows go first, and a failure here stops the delete.
+		// Everything else this method removes is *ours*; the warehouse tables
+		// are what the agent answers questions from, so a delete that removed
+		// the row and left them behind would leave a deleted document still
+		// answering — with nothing left to explain where the figures came from.
+		if err := s.tables.DropForDocument(ctx, companyID, id); err != nil {
+			return fmt.Errorf("remove published tables: %w", err)
+		}
 	}
 	if err := s.blobs.RemoveKey(ctx, doc.StorageKey); err != nil {
 		return fmt.Errorf("remove document bytes: %w", err)
