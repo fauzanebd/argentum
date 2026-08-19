@@ -164,22 +164,113 @@ both were proven failing first; `go test -race ./...` is green on 58 packages an
 `golangci-lint` reports 0 issues. The re-proof and the two scoping decisions
 inside it are in [`live-gate-backlog.md`](live-gate-backlog.md) §1j.
 
+## 4b. Bucket B — run 2026-08-19, and the headline claim was false
+
+The gates that needed money (`T-P3`, `T-P6`, `T-P8`, `T-P9`, `T-P10`, and
+`T-P13`'s answer score) ran the same day for **$0.4287**. Full record:
+[`live-gate-backlog.md`](live-gate-backlog.md) §1k. The three scores are now all
+in one report: **100% cell accuracy, 100% publish correctness, 87.5% answer
+correctness (7 of 8), $0.1304 on `moonshotai/kimi-k2.6`, parser `pdfplumber
+0.11.4`.**
+
+**§1's table said `get_schema` works on a PDF "with no new code". It did not, and
+that is the sentence this gate falsified.** The Postgres adapter pinned its three
+introspection queries to `table_schema = 'public'`; a document source is a role
+whose `search_path` is its own `doc_<company>` schema, holding nothing on public.
+`run_sql` therefore worked — unqualified names resolve through `search_path` —
+while `get_schema` returned **zero tables**, so the agent was told every applied
+document was empty and answered from the tenant's warehouse instead. Introspection
+now reads `ANY(current_schemas(false))`: the set the server itself resolves an
+unqualified name against, which makes the answer exactly the tables the model can
+write `FROM x` against. An ordinary tenant source is byte-identical, diffed before
+and after.
+
+Beside it, publishing invalidated the cached *connection* and not the cached
+*schema*, so a reviewer's first Apply would have stayed invisible for a full
+`cacheTTL` regardless — and the API's `GetSchemaTool` had no Redis client, which
+means the rotate-DSN invalidation the platform has assumed since `T-14` was dead
+across processes too. Both fixed; the invalidator is a parameter of
+`WithWarehouse` rather than an optional setter, for the reason finding 5 below
+demonstrates.
+
+**Two more defects, both in the layer that decides what counts as evidence.**
+
+1. **A `strict` tenant's own sales figures came back `[CONTACT REDACTED]`.** §4a's
+   redaction reuses T-H10's classifier, whose phone pattern is
+   `^\+?\d{8,15}$` — and this file's §1 typing layer exists to strip the
+   separators that make `3.377.718.500` legible, so ten bare digits arrive at a
+   pattern that cannot tell them from a phone number. `internal/doctable`'s own
+   PII classifier had learned this at publish time one commit earlier and says so
+   in a comment. Fixed on both halves: the typed column, and the aggregate — a
+   `SUM()` over `bigint` returns `numeric`, which the driver layer stringifies on
+   purpose, so every total an analyst asks for was landing back on the pattern.
+   The email column beside it is still withheld, and `contact_ok` still returns
+   it.
+2. **A correct prose answer was replaced as a fabrication.** `search_documents`
+   has been in `agentbudget`'s `dataTools` since `T-P9`, and nothing counted its
+   passages, because the tally reads `row_count` and the tool answers with
+   `passages`. `CheckFabrication` saw `data_rows=0` and swapped a chunk-grounded
+   summary for an incomplete-answer message, while `CheckGrounding` on the same
+   text reported `ungrounded=0`. Passages are evidence now, and zero passages
+   still count as an empty result.
+
+**What passed as written.** `T-P10` on every line — the fence in the system
+prompt on 8 of 8 turns and around the content with its page label, the taint tag
+on the audit rows and `f` where retrieval matched nothing, no `propose_action` or
+`http_action` anywhere in the run. `T-P9`'s citation is finer than the ticket
+asked: *"halaman 1, baris 3"*, the page **and** the `source_row` column. `T-P6`'s
+isolation query refuses at both layers — by grant and through `run_sql` — with
+`relation "companies" does not exist` and `permission denied for schema
+doc_13801fa4bc2c`. `T-P3` produced the deployment's real OCR price: **$0.00036 a
+page**, four to ten times under the ticket's estimate.
+
+**And `T-P3`'s risk is now measured rather than assumed.** The scan tail's failure
+mode is a *wrong* figure, not a missing one: page 1 came back `1.850,000` for
+`1.850.000`, which `internal/numparse` reads as 1,850. Only the arithmetic
+self-check stands between that and a published table, and only when the document
+states a total.
+
+**Two pieces of §1's table have never run on any deployment.** The context prefix
+(`WithSynopsis` has no caller anywhere in the repository) and heading-first
+chunking (`docchunk.headingLine` matches only `#` headings; the sidecar's
+`to_markdown` emits page text and GFM tables and never a `#`, so every
+`heading_path` is empty and chunking is purely token-budget-driven).
+`internal/docchunk` has **no test file**. Both are filed rather than patched:
+wiring either changes what gets embedded and therefore what retrieval returns,
+which is a measurement, and `T-P13`'s answer score is where it belongs.
+
+**The dense half of retrieval is unrunnable on this deployment at all.**
+`EMBEDDING_API_KEY` is empty and the fallback correctly refuses to borrow the
+primary key across hosts, so `EmbedCache.For` returns `(nil, nil)` — without an
+error — and the lexical index answers alone. That is what the last failing eval
+case costs: an English question cannot reach Indonesian prose through a
+`tsvector`, and the same question asked in Indonesian passes, quoting *"Catatan:
+angka sementara"* with its page citation. The answer score has a ceiling of 7/8
+until a credential exists, and the ceiling is about the environment rather than
+the product.
+
 ## 5. What is owed
 
 Everything that needs Postgres, MinIO, a worker, a browser or a model. Filed in
 [`live-gate-backlog.md`](live-gate-backlog.md) §1h, and the ones that matter
 most:
 
-- **`T-P6`'s isolation query.** `SELECT … FROM companies` through a document
-  source must fail. It is the one place in this track where a mistake is
-  catastrophic and silent, and no unit test can prove it.
+- ~~**`T-P6`'s isolation query.**~~ **Run 2026-08-19 — refused at both layers**
+  (§4b). What the same gate found instead was that `get_schema` could not see the
+  tables at all.
 - ~~**`T-P7` in a browser**, both themes, including the disabled Apply control a
   member sees.~~ **Run 2026-08-19 — pass on every line** (§4a).
-- **`T-P9`'s grounding arm**: a figure quoted from a retrieved chunk must read
-  `ungrounded=0`, and the same figure asked without retrieval must read `1`.
-- **`T-P3` with `DOC_OCR_ENABLED=true`**, which is also the operator decision the
-  roadmap's open question 1 asks for.
-- **`T-P13`'s answer score**, which needs the corpus uploaded and applied first.
+- ~~**`T-P9`'s grounding arm**~~ **Run 2026-08-19 — pass** (§4b): `ungrounded=0`
+  on figures quoted from a retrieved chunk, `1` on a figure the model derived
+  itself.
+- ~~**`T-P3` with `DOC_OCR_ENABLED=true`**~~ **Run 2026-08-19 — pass, $0.0025**
+  (§4b). The operator decision the roadmap's open question 1 asks for is still
+  open; what is no longer missing is the price and the failure mode.
+- ~~**`T-P13`'s answer score**~~ **Run 2026-08-19 — 87.5% (7/8)** (§4b).
+
+What is left is the dense half of retrieval, which needs an embedding credential
+rather than a decision, and the two pieces of §1 that have never executed
+(`WithSynopsis`, heading-first chunking).
 
 ## 6. The questions still owed to the owner
 

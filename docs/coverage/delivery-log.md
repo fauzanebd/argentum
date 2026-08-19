@@ -3931,6 +3931,97 @@ the acceptance line can expose. The delete test that now pins it could not have
 caught the bug before, because the fake store only ever held the object the
 uploader wrote.
 
+## Phase 3f — Bucket B, and the feature that had never once worked (2026-08-19)
+
+The PDF track's paid gates — `T-P3`, `T-P6`, `T-P8`, `T-P9`, `T-P10` and
+`T-P13`'s answer score — run in one sitting for **$0.4287**, against the ~$0.30
+[`live-gate-backlog.md`](live-gate-backlog.md) §1h priced while the tickets were
+still prose. The overrun is two extra runs of the eight-case set, and each was
+bought by a defect the previous run exposed. The full record is §1k; what belongs
+here is the shape.
+
+**Four P0s, and the first one had made the whole track inert.** `get_schema`
+reported **zero tables** on a document source that `run_sql` was querying
+successfully in the same turn. `internal/adapters/db/postgres` pinned all three
+introspection queries to `table_schema = 'public'`, and `T-P6`'s isolation design
+— a schema per company, a role whose `search_path` is that schema and which holds
+nothing on public — is precisely what that misses. So the agent was told every
+applied document held nothing, and answered the December sales question out of
+the tenant's warehouse instead, in a reply that said so in its own words. Every
+unit test in the track passed throughout; nothing between `document_tables` and
+`run_sql` was wrong. The claim in the roadmap's own headline — *a PDF becomes a
+source the agent can query* — was false from the day it shipped, and only a turn
+could show it.
+
+**The other three are all the same species: an instrument that cannot see the
+shape of the evidence in front of it.**
+
+- A `strict` tenant's own sales figures came back `[CONTACT REDACTED]`. §1j's
+  redaction reuses T-H10's value classifier, whose phone pattern is
+  `^\+?\d{8,15}$`, and `T-P4` types a rupiah column by stripping the separators
+  that make `3.377.718.500` legible — so ten bare digits reach a pattern that
+  cannot tell them from a phone number. `doctable.ClassifyPII` had already learned
+  this at publish time and says so in a comment; the query path added one commit
+  later had not. Fixing the typed case was not enough, and the second half is the
+  better lesson: `SUM()` over a `bigint` returns a Postgres `numeric`, which the
+  driver layer stringifies **on purpose** (coercing it is `native-dashboards.md`
+  defect 3), so every total an analyst asks for landed back on the pattern.
+- A correct prose answer was replaced as a fabrication. `search_documents` has
+  been in `agentbudget`'s `dataTools` since `T-P9` with a comment arguing a figure
+  in a passage is evidence — and nothing ever counted one, because `rowCount`
+  reads `row_count` and the tool answers with `passages`. The turn showed
+  `data_calls=4, data_rows=0`, so `CheckFabrication` swapped a chunk-grounded
+  summary for *"I wasn't able to complete the query"* **while `CheckGrounding`, on
+  the same text, reported every figure evidenced**. Two instruments disagreeing
+  about one reply, and the blunter one wins because it rewrites and the other only
+  counts. Third time this guard has eaten a correct answer whose evidence was of a
+  shape it could not see; the first two are in its own doc comment.
+- Publishing never invalidated the schema cache, so a reviewer's first upload
+  would have stayed invisible for a full hour even with the introspection fixed.
+  Underneath it: the API's `GetSchemaTool` was built **without Redis**, so the
+  rotate-DSN invalidation this repo has assumed since `T-14` was also dead across
+  processes — the worker reads a key the API never deleted. The invalidator moved
+  into `WithWarehouse`'s parameter list rather than an optional setter, because
+  the sitting had already found what an optional setter costs (below).
+
+**The number that matters, and the number that lied.** `T-P13` now reports all
+three scores: **100% cell accuracy, 100% publish correctness, 87.5% answer
+correctness (7/8), $0.1304, `pdfplumber 0.11.4` on the report.** The first run of
+the same eight cases scored **50%** — and every one of its four passes was
+hollow. `doc-december-sales` passed because the figure came from the warehouse;
+three more passed because nothing was retrieved and "no/tidak" was in the
+expected strings. A pass rate computed over a broken source is not a measurement,
+and this is the clearest instance this repository has recorded of a green number
+describing nothing.
+
+**Two findings filed rather than fixed, both about code that cannot run.**
+`WithSynopsis` has no caller anywhere — `T-P8`'s contextual retrieval, the half
+carrying the published 35%/49% argument and a long comment defending its
+per-document trade, has never executed on any deployment. And
+`docchunk.headingLine` matches only markdown headings while the sidecar's
+`to_markdown` never emits a `#`, so heading-boundary chunking can never fire,
+every `heading_path` is empty, and chunking is purely token-budget-driven — the
+behaviour the package's opening comment says it is not. `internal/docchunk` has
+**no test file at all**, which is how a regex nothing can match survived.
+
+**And one environment fact that reads as a passing feature.**
+`EMBEDDING_API_KEY` is empty here, and the fallback correctly refuses to borrow
+the primary key across hosts — so `EmbedCache.For` returns `(nil, nil)`, no
+error, and the dense half of retrieval, the cookbook and the table picker are all
+inert. The line an operator reads says the opposite: the worker logs
+*"table-picker embeddings enabled"* off a boolean flag, never asking whether a
+client resolves. This is exactly what the last failing eval case costs — asked in
+Indonesian rather than English, the same question on the same tree passes, quoting
+*"angka sementara"* and citing *"halaman 1, baris 3"*.
+
+**What the rig found before any gate ran.** Three long-lived processes from the
+morning's §1j sitting were still up — and beside them the **local model sink**
+that had made that sitting free. A turn run against that rig would have cost
+nothing and proved nothing. §1g's rule caught it; §1g's *command* would not,
+because it greps for `exe/worker|bin/worker` and these were named `gate-*`. The
+check is "what long-lived processes exist here", not "is the binary I expect
+running".
+
 ## What the history says about how this project is built
 
 **Strengths visible in the log:**

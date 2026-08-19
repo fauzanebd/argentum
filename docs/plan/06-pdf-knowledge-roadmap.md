@@ -560,7 +560,7 @@ OCR. Typing. Chunking. Any tool the agent can call.
 
 ---
 
-### `T-P3` · The OCR fallback, off by default and counted when on — **built 2026-08-19, unit-gated; live half owed**
+### `T-P3` · The OCR fallback, off by default and counted when on — **built and gated live 2026-08-19: $0.00036 a page**
 **Repo:** BE · **Size:** 1.0d · **Deps:** `T-P2` · **Priority:** P1
 **Migration:** none
 
@@ -743,7 +743,7 @@ Table tests, plus one real document deliberately corrupted at one digit. **$0.00
 
 ---
 
-### `T-P6` · Publish: the document warehouse, and a PDF that is a source — **built 2026-08-19, unit-gated; live half owed**
+### `T-P6` · Publish: the document warehouse, and a PDF that is a source — **gated live 2026-08-19: failed on `get_schema`, fixed, re-proven**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-P5` · **Priority:** P0
 **Migration:** `060_document_tables` + `migrations/docwarehouse/001_bootstrap.sql`
 
@@ -881,7 +881,7 @@ is the bucket, and the parse it reviews was already paid for by `T-P2`'s gate.
 
 ## Track C — What the document says (3.0d)
 
-### `T-P8` · Chunks, context and a hybrid index — **built 2026-08-19, unit-gated; live half owed**
+### `T-P8` · Chunks, context and a hybrid index — **gated live 2026-08-19: five of six lines; two cannot pass on any deployment**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-P2` · **Priority:** P1
 **Migration:** `061_document_chunks`
 
@@ -923,7 +923,7 @@ Stack, plus embedding calls for one document. **~$0.01.**
 
 ---
 
-### `T-P9` · `search_documents`, and a figure that can be checked — **built 2026-08-19, unit-gated; live half owed**
+### `T-P9` · `search_documents`, and a figure that can be checked — **gated live 2026-08-19: pass, after a P0 the gate found**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-P8` · **Priority:** P1
 **Migration:** none
 
@@ -981,7 +981,7 @@ models with the number and the date posted.
 
 ## Track D — The parts a customer review asks about (2.5d)
 
-### `T-P10` · A document is the most untrusted input this product has read — **built 2026-08-19; the hygiene half is proven on a real PDF**
+### `T-P10` · A document is the most untrusted input this product has read — **gated live 2026-08-19 on every acceptance line**
 **Repo:** BE · **Size:** 1.0d · **Deps:** `T-P9` (or `T-P6`, whichever lands first) · **Priority:** P0
 **Migration:** none
 
@@ -1097,7 +1097,7 @@ Stack only, `$0.00`.
 
 ## Track E — The number that decides whether any of this works (2.0d)
 
-### `T-P13` · A document eval set — **built and run 2026-08-19: 100% cell accuracy, 100% publish correctness**
+### `T-P13` · A document eval set — **all three scores run 2026-08-19: 100% cells, 100% publish, 87.5% answers**
 **Repo:** BE (eval harness) · **Size:** 2.0d · **Deps:** `T-P6`, `T-P9` · **Priority:** P0
 **Migration:** none
 

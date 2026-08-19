@@ -12,7 +12,19 @@ measurement). These are actual results, not estimates.
 > `internal/evaldocs` and the two halves already there. The four without are the
 > ones whose behaviour is a network call or a context value:
 > `internal/dococr`, `internal/doctaint`, `internal/docchunk` (exercised through
-> `internal/app`) and `cmd/evaldocs`. The track also added a *second* kind of
+> `internal/app`) and `cmd/evaldocs`.
+>
+> **The `docchunk` parenthesis above was doing real work, and Bucket B collected
+> on it (2026-08-19).** "Exercised through `internal/app`" is true of the service
+> that *calls* the chunker and false of the chunker: `docchunk.headingLine`
+> matches `^#{1,6}\s+…` while its own comment claims it also matches an unmarked
+> heading, and the parser sidecar never emits a `#` at all — so heading-boundary
+> chunking has never fired on any document this product can read, every
+> `heading_path` in the database is empty, and the cut points are purely the token
+> budget. A package with no test file of its own is where a regex that matches
+> nothing survives review, and the service-level tests could not see it because
+> they feed the chunker markdown the real parser never produces
+> ([`live-gate-backlog.md`](live-gate-backlog.md) §1k, finding 6). The track also added a *second* kind of
 > test this file has not counted before — `make eval-docs` scores twelve
 > documents end to end through the real parser, and it found four defects that
 > every unit test beside it passed ([`pdf-knowledge.md`](pdf-knowledge.md) §3).
