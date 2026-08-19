@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -67,6 +68,101 @@ var (
 	// the ordinary case it exists for.
 	phoneSeparators = strings.NewReplacer(" ", "", "-", "", "(", "", ")", "")
 )
+
+// classifyResultValues is the query-time verdict on a column of driver values,
+// and it differs from classifyValues in one rule: on a column the driver
+// returned as numbers, the phone pattern is switched off.
+//
+// `doctable.ClassifyPII` reached this rule first, at publish time, and the
+// argument is the same one commit later: `T-P4` types a rupiah column by
+// stripping the separators that make `3.377.718.500` legible, so what arrives
+// here is `3377718500` — ten bare digits, indistinguishable from a phone number
+// to any pattern loose enough to catch a real one. The empty-result probe never
+// hit this because it reads `distinctValues`, which are strings by the time it
+// sees them; the redaction added beside it inherited the blindness.
+//
+// **Only the phone pattern.** An email address is not a Go number, so a
+// `contact` verdict on a numeric column can only have come from the phone
+// pattern — which is what makes demoting it here exactly as narrow as
+// doctable's `!numeric` guard. Identity and card patterns stay on everywhere,
+// because a column of national identity numbers types as an integer and that is
+// the class where a mistake matters most.
+func classifyResultValues(values []interface{}) piiClass {
+	numeric := len(values) > 0
+	strs := make([]string, 0, len(values))
+	for _, v := range values {
+		strs = append(strs, fmt.Sprintf("%v", v))
+		if !isNumericValue(v) {
+			numeric = false
+		}
+	}
+	worst := piiNone
+	for _, s := range strs {
+		switch classifyValue(s) {
+		case piiIdentity:
+			return piiIdentity
+		case piiContact:
+			// An email is an email whatever the column looks like.
+			if emailValue.MatchString(strings.TrimSpace(strings.Trim(s, `"`))) {
+				worst = piiContact
+				continue
+			}
+			// Everything else here reached `contact` through the phone
+			// pattern, which is the one rule narrowed: off entirely on a
+			// numeric column, and on a text column only for values shaped
+			// like a phone number rather than like a figure.
+			if !numeric && phoneShaped(s) {
+				worst = piiContact
+			}
+		}
+	}
+	return worst
+}
+
+// phoneShaped reports whether a digit run is written the way a phone number is
+// written rather than the way a figure is.
+//
+// Needed because the type rule above cannot see an aggregate: `SUM(nilai)` over
+// a bigint returns a Postgres `numeric`, lib/pq delivers it as bytes and the
+// connection layer turns those into a **string** on purpose — coercing a numeric
+// wider than float64 is `native-dashboards.md` defect 3. So every total an
+// analyst asks for arrives here as bare digits, and T-P13's answer score caught
+// one being withheld from the tenant that owns it.
+//
+// What separates the two in practice is punctuation a person types and a
+// stripped figure never carries: a `+`, a leading zero (`08…`, `021…` — every
+// Indonesian number has one), or the spaces, dashes and parentheses of a form
+// field. The residual is a bare international number with none of those, and it
+// is covered by the column-name rule, which is how such a column is named in
+// every case this repository has seen. Pinned by
+// TestABareInternationalNumberInAnUnnamedColumnIsNotCaught.
+func phoneShaped(v string) bool {
+	s := strings.TrimSpace(strings.Trim(v, `"`))
+	if s == "" {
+		return false
+	}
+	if strings.HasPrefix(s, "+") || strings.HasPrefix(s, "0") {
+		return true
+	}
+	return strings.ContainsAny(s, " -()")
+}
+
+// isNumericValue reports whether the driver handed back a number rather than
+// text. A string of digits is deliberately not numeric: a tenant who stores
+// phone numbers in a text column stores them with their leading zero, and that
+// column must still be withheld.
+func isNumericValue(v interface{}) bool {
+	switch v.(type) {
+	case int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64:
+		return true
+	case json.Number:
+		return true
+	default:
+		return false
+	}
+}
 
 // classifyColumnName reports what a column's name says it holds.
 func classifyColumnName(column string) piiClass {
@@ -210,13 +306,13 @@ func RedactResultColumns(columns []string, rows []map[string]interface{}, mode d
 	for _, col := range columns {
 		class := classifyColumnName(col)
 		if class == piiNone {
-			values := make([]string, 0, len(rows))
+			values := make([]interface{}, 0, len(rows))
 			for _, row := range rows {
 				if v, ok := row[col]; ok && v != nil {
-					values = append(values, fmt.Sprintf("%v", v))
+					values = append(values, v)
 				}
 			}
-			class = classifyValues(values)
+			class = classifyResultValues(values)
 		}
 		if class == piiNone || probeAllows(class, mode) {
 			continue

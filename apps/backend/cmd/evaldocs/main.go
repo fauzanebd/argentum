@@ -48,6 +48,15 @@ import (
 )
 
 func main() {
+	// `.env` before the flag defaults below are evaluated. The parser's shared
+	// secret lives there, and a default read from the bare process environment
+	// left `make eval-docs` on a stock checkout reporting **0% cell accuracy**
+	// with "the parser rejected our shared secret" beside it — a number that
+	// reads as a broken product and was a missing variable. Found 2026-08-19,
+	// and it is the same rule requireDocumentSource already enforces further
+	// down: a score nobody can tell from a setup mistake is worse than no score.
+	_, _ = config.Load()
+
 	var (
 		manifestPath = flag.String("manifest", "testdata/eval/documents/manifest.yaml", "corpus manifest")
 		gen          = flag.Bool("gen", false, "write the fixture PDFs and exit")
@@ -165,8 +174,16 @@ func printSummary(r evaldocs.Report) {
 		}
 	}
 
-	fmt.Printf("\ncell accuracy:       %.1f%%\n", r.CellAccuracy*100)
-	fmt.Printf("publish correctness: %.1f%%\n", r.PublishCorrectness*100)
+	// Nothing parsed means nothing was measured. Printing 0.0% here would
+	// publish a failure of the product for what is a failure of the rig — the
+	// mistake this run's own gate found.
+	if parsed := countParsed(r); parsed == 0 {
+		fmt.Printf("\ncell accuracy:       not run (no document parsed: %s)\n", firstParseError(r))
+		fmt.Printf("publish correctness: not run\n")
+	} else {
+		fmt.Printf("\ncell accuracy:       %.1f%%\n", r.CellAccuracy*100)
+		fmt.Printf("publish correctness: %.1f%%\n", r.PublishCorrectness*100)
+	}
 	if r.Answers == nil {
 		// Said rather than left blank: "not run" and "zero" are different
 		// facts, and a report that showed 0% here would be claiming a failure
@@ -255,6 +272,25 @@ func requireDocumentSource(ctx context.Context, stack *bootstrap.Stack, companyI
 	return fmt.Errorf(
 		"the eval tenant has no document source: upload the corpus in testdata/eval/documents, " +
 			"review it and apply its tables before scoring answers")
+}
+
+func countParsed(r evaldocs.Report) int {
+	n := 0
+	for _, s := range r.Scores {
+		if s.ParseError == "" {
+			n++
+		}
+	}
+	return n
+}
+
+func firstParseError(r evaldocs.Report) string {
+	for _, s := range r.Scores {
+		if s.ParseError != "" {
+			return s.ParseError
+		}
+	}
+	return "no documents in the manifest"
 }
 
 func orNone(s string) string {

@@ -214,3 +214,48 @@ func TestRetrievedSummaryDistinguishesEmptyFromUnqueried(t *testing.T) {
 		t.Errorf("summary = %q, want it to say no query ran", msg)
 	}
 }
+
+// search_documents has been in dataTools since T-P9, with a comment saying a
+// figure printed in a passage is evidence — and it contributed nothing to the
+// tally, because its result carries `passages` and rowCount only reads
+// `row_count`. Found live by T-P13's answer score on 2026-08-19: a turn that
+// retrieved four passages and quoted a figure out of one had its reply replaced
+// by CheckFabrication as unevidenced, while CheckGrounding on the same reply
+// reported ungrounded=0.
+func TestPassagesAreEvidence(t *testing.T) {
+	passages := func(n int) string {
+		items := make([]string, 0, n)
+		for i := 0; i < n; i++ {
+			items = append(items, `{"filename":"a.pdf","page_from":1,"page_to":1,"text":"Desember 3.863.405.700"}`)
+		}
+		return `{"passages":[` + strings.Join(items, ",") + `],"note":"..."}`
+	}
+	tests := []struct {
+		name      string
+		result    string
+		wantRows  int
+		wantEmpty int
+	}{
+		{name: "two passages", result: passages(2), wantRows: 2},
+		// A search that matched nothing is an empty result, not evidence: a
+		// figure quoted on such a turn came from nowhere and must still be
+		// caught.
+		{name: "no passage matched", result: passages(0), wantEmpty: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool := &fakeTool{name: "search_documents", result: tt.result}
+			ctx := WithTracker(context.Background(), New(Default()))
+			tr := FromContext(ctx)
+			_, _ = Guard(tool).Execute(ctx, "{}")
+
+			snap := tr.Snapshot()
+			if snap.DataRows != tt.wantRows {
+				t.Errorf("DataRows = %d, want %d", snap.DataRows, tt.wantRows)
+			}
+			if snap.EmptyResults != tt.wantEmpty {
+				t.Errorf("EmptyResults = %d, want %d", snap.EmptyResults, tt.wantEmpty)
+			}
+		})
+	}
+}

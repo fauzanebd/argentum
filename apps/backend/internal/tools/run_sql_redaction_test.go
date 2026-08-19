@@ -155,6 +155,70 @@ func TestAnOrdinaryPayloadIsUnchanged(t *testing.T) {
 	}
 }
 
+// The shape the 2026-08-19 Bucket B gate found, one day after the redaction
+// above landed: a published document table's own sales figures came back as
+// `[CONTACT REDACTED]` to the tenant that uploaded them.
+//
+// `T-P4` types a rupiah column by stripping the separators that make
+// `3.377.718.500` readable, so what reaches this classifier is `3377718500` —
+// ten bare digits, which is a phone number to any pattern loose enough to catch
+// a real one. `doctable.ClassifyPII` learned this at publish time and switched
+// the phone pattern off on numeric columns; the query path reuses T-H10's
+// value classifier, which has no column type to switch on.
+func TestARupiahColumnIsNotAPhoneNumber(t *testing.T) {
+	// Eight, ten and twelve digits: the range an Indonesian revenue column
+	// lives in, and the range `^\+?\d{8,15}$` claims.
+	rows := []map[string]interface{}{
+		{"bulan": "Oktober", "nilai": int64(3377718500)},
+		{"bulan": "November", "nilai": int64(370855230)},
+		{"bulan": "Desember", "nilai": int64(386340570000)},
+	}
+	redacted := RedactResultColumns([]string{"bulan", "nilai"}, rows, domain.PIIRedactionStrict)
+	if len(redacted) != 0 {
+		t.Fatalf("a tenant's own sales figures were withheld as personal data: %v", redacted)
+	}
+	if rows[0]["nilai"] != int64(3377718500) {
+		t.Errorf("the figure was replaced by a marker: %v", rows[0]["nilai"])
+	}
+}
+
+// The other direction, and the reason the rule is about the value's type rather
+// than about digits: a phone number a tenant stores as text is still withheld.
+func TestAPhoneColumnStoredAsTextIsStillWithheld(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"pelanggan": "PT Maju", "kontak": "081234567890"},
+		{"pelanggan": "CV Sentosa", "kontak": "+6281198765432"},
+	}
+	redacted := RedactResultColumns([]string{"pelanggan", "kontak"}, rows, domain.PIIRedactionStrict)
+	if len(redacted) != 1 || redacted[0] != "kontak" {
+		t.Fatalf("a column of phone numbers was returned whole: %v", redacted)
+	}
+}
+
+// Identity stays on everywhere, which is `doctable`'s own argument: a column of
+// national identity numbers types as an integer, so switching the identity
+// patterns off on numerics would miss the class that matters most.
+func TestANationalIDStoredAsAnIntegerIsStillWithheld(t *testing.T) {
+	rows := []map[string]interface{}{{"nama": "Andi", "nomor": int64(3171234567890123)}}
+	redacted := RedactResultColumns([]string{"nama", "nomor"}, rows, domain.PIIRedactionStrict)
+	if len(redacted) != 1 || redacted[0] != "nomor" {
+		t.Fatalf("a 16-digit identity number stored as an integer was disclosed: %v", redacted)
+	}
+}
+
+// The residual, pinned rather than papered over. Disabling the phone pattern on
+// numerics does not disable the identity one, so a rupiah amount of thirteen
+// digits or more — Rp 10 trillion — still reads as an identity number. It is the
+// same trade `doctable.ClassifyPII` already made and it is deliberate: the cost
+// here is one withheld column on a very large figure, and the cost the other way
+// is a NIK in a dashboard.
+func TestAThirteenDigitAmountStillReadsAsIdentity(t *testing.T) {
+	rows := []map[string]interface{}{{"nilai": int64(1000000000000)}}
+	if redacted := RedactResultColumns([]string{"nilai"}, rows, domain.PIIRedactionStrict); len(redacted) != 1 {
+		t.Fatalf("the identity/amount overlap has moved; re-measure before widening: %v", redacted)
+	}
+}
+
 func containsAny(s string, subs ...string) bool {
 	for _, sub := range subs {
 		if len(sub) > 0 && len(s) >= len(sub) && stringContains(s, sub) {
@@ -171,4 +235,60 @@ func stringContains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// The second half of the same defect, found by T-P13's answer score after the
+// first half was fixed: `SELECT SUM(nilai)` came back withheld.
+//
+// A Postgres `numeric` — which is what SUM over a bigint returns — arrives from
+// lib/pq as bytes, and the connection layer turns those into a **string** on
+// purpose: `native-dashboards.md` defect 3 is what happens when a numeric wider
+// than float64 is coerced. So the type rule above cannot see an aggregate, and
+// every total, average and rounded figure a tenant asks for was landing back on
+// the phone pattern.
+func TestAnAggregateOfARupiahColumnIsNotAPhoneNumber(t *testing.T) {
+	// Exactly what the driver hands over for SUM(nilai) on the channel summary.
+	rows := []map[string]interface{}{{"total_nilai": "10000000"}}
+	redacted := RedactResultColumns([]string{"total_nilai"}, rows, domain.PIIRedactionStrict)
+	if len(redacted) != 0 {
+		t.Fatalf("a summed rupiah total was withheld as personal data: %v", redacted)
+	}
+	if rows[0]["total_nilai"] != "10000000" {
+		t.Errorf("the total was replaced by a marker: %v", rows[0]["total_nilai"])
+	}
+}
+
+// And the shape that keeps the rule honest. A phone number as a person writes
+// one keeps something an amount never has: a leading zero, a `+`, or the
+// separators typed into a form.
+func TestPhoneShapesSurviveTheAggregateFix(t *testing.T) {
+	for _, tc := range []struct{ name, value string }{
+		{"leading zero", "081234567890"},
+		{"plus and country code", "+6281198765432"},
+		{"dashes", "0812-3456-7890"},
+		{"spaces", "021 555 0199"},
+	} {
+		rows := []map[string]interface{}{{"catatan": tc.value}}
+		if redacted := RedactResultColumns([]string{"catatan"}, rows, domain.PIIRedactionStrict); len(redacted) != 1 {
+			t.Errorf("%s (%s) was disclosed", tc.name, tc.value)
+		}
+	}
+}
+
+// The residual, named rather than assumed: an international number stored bare,
+// with no `+`, no leading zero and no separators, in a column whose name says
+// nothing, reads as an amount. Catching it would mean withholding every
+// eight-to-twelve-digit total a tenant asks for, which is the defect this test's
+// two neighbours exist to fix. The column-name rule is what covers this shape in
+// practice — `msisdn`, `no_hp`, `whatsapp` and `contact` are all in it.
+func TestABareInternationalNumberInAnUnnamedColumnIsNotCaught(t *testing.T) {
+	rows := []map[string]interface{}{{"catatan": "628123456789"}}
+	if redacted := RedactResultColumns([]string{"catatan"}, rows, domain.PIIRedactionStrict); len(redacted) != 0 {
+		t.Fatalf("this limit has moved; re-measure what it costs before keeping it: %v", redacted)
+	}
+	// Named, it is caught whatever its shape.
+	named := []map[string]interface{}{{"msisdn": "628123456789"}}
+	if redacted := RedactResultColumns([]string{"msisdn"}, named, domain.PIIRedactionStrict); len(redacted) != 1 {
+		t.Fatalf("a column named msisdn was disclosed: %v", redacted)
+	}
 }

@@ -585,14 +585,34 @@ func (t *Tracker) retrievedLocked() string {
 func rowCount(result string) (int, bool) {
 	var payload struct {
 		RowCount *int `json:"row_count"`
+		// search_documents answers with passages rather than rows, and a figure
+		// printed inside one is evidence of the same kind — which is why T-P9
+		// put the tool in dataTools and taught CheckGrounding to read chunk
+		// text with CollectNumbersInProse.
+		//
+		// Nothing counted them. The tool was in the evidence list while
+		// contributing nothing to the tally, so a prose turn quoting a figure
+		// out of a real document looked exactly like a turn that queried
+		// nothing: `data_calls=4, data_rows=0`. CheckFabrication replaced the
+		// reply while CheckGrounding, on the same text, reported every figure
+		// evidenced. Found live by T-P13's answer score, 2026-08-19 — the third
+		// time this guard has replaced a correct answer whose evidence was of a
+		// shape it could not see.
+		Passages *[]json.RawMessage `json:"passages"`
 	}
 	if err := json.Unmarshal([]byte(result), &payload); err != nil {
 		return 0, false
 	}
-	if payload.RowCount == nil {
-		return 0, false
+	if payload.RowCount != nil {
+		return *payload.RowCount, true
 	}
-	return *payload.RowCount, true
+	if payload.Passages != nil {
+		// Zero passages is an empty result, not silence: the caller turns it
+		// into emptyResults, so a figure quoted on a turn that retrieved
+		// nothing is still caught.
+		return len(*payload.Passages), true
+	}
+	return 0, false
 }
 
 // tokensUsed reads the turn's provider-reported token total off the HTTP tap

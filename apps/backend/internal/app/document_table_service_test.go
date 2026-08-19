@@ -273,7 +273,7 @@ func TestApplyRefusesAQuarantinedTable(t *testing.T) {
 	docs, blobs, _ := parsedDocument(t, salesRows("3.860.405.700", "10.949.676.500"))
 	tables := newFakeTables()
 	svc := NewDocumentTableService(docs, tables, blobs).
-		WithWarehouse(nil, nil, nil, nil)
+		WithWarehouse(nil, nil, nil, nil, nil)
 
 	out, err := svc.List(context.Background(), "co-1", "doc-1")
 	if err != nil {
@@ -365,5 +365,67 @@ func TestASecondDocumentWithTheSameTableNameGetsAFreeOne(t *testing.T) {
 	}
 	if !strings.HasPrefix(out[0].TableName, tables.rows[0].TableName) {
 		t.Errorf("second name = %q, want the first with a suffix", out[0].TableName)
+	}
+}
+
+// The pair the 2026-08-19 Bucket B gate found split apart: publishing dropped
+// the cached *connection* and left the cached *schema* alone, so `get_schema`
+// went on reporting an empty document source for a full cache TTL after a
+// reviewer pressed Apply — and the agent, told the source held nothing, answered
+// every document question from somewhere else.
+//
+// Only the helper is unit-tested here. Apply, Unpublish and DropForDocument all
+// call it, and each of those needs a real warehouse to reach, so the evidence
+// that they do is the live re-proof in the gate write-up rather than a fake.
+type connsListOnly struct {
+	// Embedded so the struct satisfies the interface; every other method
+	// panics, which is the assertion that this helper reads and nothing else.
+	domain.ConnectionRepository
+	conns []*domain.DBConnection
+}
+
+func (c connsListOnly) ListByCompany(context.Context, string) ([]*domain.DBConnection, error) {
+	return c.conns, nil
+}
+
+type recordingInvalidator struct{ calls []string }
+
+func (r *recordingInvalidator) Invalidate(companyID, connectionID string) {
+	r.calls = append(r.calls, companyID+"/"+connectionID)
+}
+
+func TestPublishingDropsTheSchemaCacheAndNotJustTheConnection(t *testing.T) {
+	pool, schema := &recordingInvalidator{}, &recordingInvalidator{}
+	svc := NewDocumentTableService(nil, nil, nil)
+	svc.conns = connsListOnly{conns: []*domain.DBConnection{
+		{ID: "conn-tenant", CompanyID: "co-1", Origin: domain.OriginTenant},
+		{ID: "conn-doc", CompanyID: "co-1", Origin: domain.OriginDocument},
+	}}
+	svc.pool, svc.schemaCache = pool, schema
+
+	svc.invalidateDocumentSource(context.Background(), "co-1")
+
+	if len(schema.calls) != 1 || schema.calls[0] != "co-1/conn-doc" {
+		t.Fatalf("the schema cache was not dropped for the document source: %v", schema.calls)
+	}
+	if len(pool.calls) != 1 || pool.calls[0] != "co-1/conn-doc" {
+		t.Fatalf("the connection cache was not dropped: %v", pool.calls)
+	}
+}
+
+// The tenant's own warehouse is not this path's business: publishing a document
+// table must not drop the cached schema of a source nobody touched.
+func TestPublishingLeavesATenantSourcesCachesAlone(t *testing.T) {
+	pool, schema := &recordingInvalidator{}, &recordingInvalidator{}
+	svc := NewDocumentTableService(nil, nil, nil)
+	svc.conns = connsListOnly{conns: []*domain.DBConnection{
+		{ID: "conn-tenant", CompanyID: "co-1", Origin: domain.OriginTenant},
+	}}
+	svc.pool, svc.schemaCache = pool, schema
+
+	svc.invalidateDocumentSource(context.Background(), "co-1")
+
+	if len(schema.calls) != 0 || len(pool.calls) != 0 {
+		t.Fatalf("a tenant source was invalidated: schema=%v pool=%v", schema.calls, pool.calls)
 	}
 }

@@ -92,11 +92,33 @@ func (c *conn) ExtractSchema(ctx context.Context) (*db.SchemaMetadata, error) {
 		ExtractedAt: time.Now(),
 	}
 
+	// The schemas this connection can query unqualified, rather than the
+	// literal `public`.
+	//
+	// A document source (T-P6) is a role whose search_path is its own
+	// `doc_<company>` schema and which holds no rights on public at all, so an
+	// introspection pinned to public reported **zero tables** for a source
+	// `run_sql` was querying successfully — the agent was told an applied
+	// document held nothing and answered from somewhere else. Found by the
+	// 2026-08-19 Bucket B gate.
+	//
+	// `current_schemas(false)` is exactly the right set: it is what the server
+	// itself resolves an unqualified name against, so every table it returns is
+	// one the model can write `FROM x` against and every table it omits is one
+	// that would need qualifying. On an ordinary tenant DSN with no explicit
+	// search_path it evaluates to `{public}`, which is what this query said
+	// before.
+	//
+	// The pg_class join is by namespace as well as name. With one schema in
+	// play a bare `relname` join was harmless; with a schema per company in one
+	// database — which is what the document warehouse is — a table slug two
+	// tenants both produce would join to both and return the row twice.
 	const tablesQ = `
 		SELECT t.table_name, COALESCE(obj_description(pgc.oid, 'pg_class'), '')
 		FROM information_schema.tables t
-		JOIN pg_class pgc ON pgc.relname = t.table_name
-		WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+		JOIN pg_namespace pgn ON pgn.nspname = t.table_schema
+		JOIN pg_class pgc ON pgc.relname = t.table_name AND pgc.relnamespace = pgn.oid
+		WHERE t.table_schema = ANY(current_schemas(false)) AND t.table_type = 'BASE TABLE'
 		ORDER BY t.table_name
 	`
 	rows, err := c.sqlDB.QueryContext(ctx, tablesQ)
@@ -137,15 +159,17 @@ func (c *conn) columns(ctx context.Context, table string) ([]db.ColumnInfo, erro
 			COALESCE(col_description(pgc.oid, c.ordinal_position), ''),
 			CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END AS is_pk
 		FROM information_schema.columns c
-		JOIN pg_class pgc ON pgc.relname = c.table_name
+		JOIN pg_namespace pgn ON pgn.nspname = c.table_schema
+		JOIN pg_class pgc ON pgc.relname = c.table_name AND pgc.relnamespace = pgn.oid
 		LEFT JOIN (
-			SELECT kcu.column_name, kcu.table_name
+			SELECT kcu.column_name, kcu.table_name, kcu.table_schema
 			FROM information_schema.table_constraints tc
 			JOIN information_schema.key_column_usage kcu
 				ON tc.constraint_name = kcu.constraint_name
 			WHERE tc.constraint_type = 'PRIMARY KEY'
 		) pk ON pk.column_name = c.column_name AND pk.table_name = c.table_name
-		WHERE c.table_schema = 'public' AND c.table_name = $1
+			AND pk.table_schema = c.table_schema
+		WHERE c.table_schema = ANY(current_schemas(false)) AND c.table_name = $1
 		ORDER BY c.ordinal_position
 	`
 	rows, err := c.sqlDB.QueryContext(ctx, q, table)
@@ -202,7 +226,8 @@ func (c *conn) relationships(ctx context.Context) ([]db.Relationship, error) {
 			ON tc.constraint_name = kcu.constraint_name
 		JOIN information_schema.constraint_column_usage ccu
 			ON ccu.constraint_name = tc.constraint_name
-		WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
+		WHERE tc.constraint_type = 'FOREIGN KEY'
+			AND tc.table_schema = ANY(current_schemas(false))
 	`
 	rows, err := c.sqlDB.QueryContext(ctx, q)
 	if err != nil {

@@ -44,6 +44,9 @@ type DocumentTableService struct {
 	conns     domain.ConnectionRepository
 	cipher    DSNEncryptor
 	pool      ConnectionInvalidator
+	// schemaCache is the get_schema cache, dropped on every publish and every
+	// drop. See WithWarehouse for why it is not optional.
+	schemaCache ConnectionInvalidator
 }
 
 // DSNEncryptor is the half of crypto.DSNCipher this service needs: it stores a
@@ -84,15 +87,54 @@ func NewDocumentTableService(
 
 // WithWarehouse enables publishing. Passing a nil warehouse leaves the service
 // review-only, which is a supported deployment rather than a broken one.
+// schemaCache is required rather than optional on purpose. Publishing changes
+// what the document source contains, and a schema cache that still holds the
+// pre-publish answer tells the agent an applied table does not exist —
+// found live on 2026-08-19, where it survived for a full cacheTTL. An
+// optional setter is how a dependency gets forgotten; this one cannot be
+// wired late, because a deployment that can publish is exactly a deployment
+// that must invalidate.
 func (s *DocumentTableService) WithWarehouse(
 	w *docwarehouse.Warehouse, conns domain.ConnectionRepository,
-	cipher DSNEncryptor, pool ConnectionInvalidator,
+	cipher DSNEncryptor, pool ConnectionInvalidator, schemaCache ConnectionInvalidator,
 ) *DocumentTableService {
 	s.warehouse = w
 	s.conns = conns
 	s.cipher = cipher
 	s.pool = pool
+	s.schemaCache = schemaCache
 	return s
+}
+
+// invalidateDocumentSource drops the cached connection and the cached schema
+// for this company's document source.
+//
+// Called by every path that changes what the warehouse holds — publish,
+// unpublish and delete — because each of them makes the cached schema a
+// statement about a warehouse that no longer exists. `company_service` has done
+// both halves together since a tenant could rotate a DSN; this is the same pair
+// for the source this product builds itself.
+func (s *DocumentTableService) invalidateDocumentSource(ctx context.Context, companyID string) {
+	if s.conns == nil {
+		return
+	}
+	conns, err := s.conns.ListByCompany(ctx, companyID)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("could not list sources to invalidate the document schema cache")
+		return
+	}
+	for _, c := range conns {
+		if c.Origin != domain.OriginDocument {
+			continue
+		}
+		if s.pool != nil {
+			s.pool.Invalidate(companyID, c.ID)
+		}
+		if s.schemaCache != nil {
+			s.schemaCache.Invalidate(companyID, c.ID)
+		}
+	}
 }
 
 // DraftTable is one extracted table as the review surface needs it: the stored
@@ -292,6 +334,8 @@ func (s *DocumentTableService) Apply(ctx context.Context, companyID, tableID, us
 	if err := s.tables.MarkApplied(ctx, companyID, tableID, userID, rows); err != nil {
 		return nil, err
 	}
+	// The table exists now; the cached schema says it does not.
+	s.invalidateDocumentSource(ctx, companyID)
 
 	logrus.WithFields(logrus.Fields{
 		"company_id": companyID,
@@ -324,6 +368,7 @@ func (s *DocumentTableService) Unpublish(ctx context.Context, companyID, tableID
 	if err := s.warehouse.Drop(ctx, docwarehouse.SchemaName(companyID), row.TableName); err != nil {
 		return err
 	}
+	s.invalidateDocumentSource(ctx, companyID)
 	// SetVerification is what moves the status off `applied`: it recomputes to
 	// draft or quarantined from the verification, which is exactly the state
 	// this table should return to.
@@ -342,6 +387,7 @@ func (s *DocumentTableService) DropForDocument(ctx context.Context, companyID, d
 		return err
 	}
 	schema := docwarehouse.SchemaName(companyID)
+	dropped := 0
 	for _, row := range rows {
 		if row.Status != domain.DocumentTableApplied {
 			continue
@@ -349,6 +395,10 @@ func (s *DocumentTableService) DropForDocument(ctx context.Context, companyID, d
 		if err := s.warehouse.Drop(ctx, schema, row.TableName); err != nil {
 			return err
 		}
+		dropped++
+	}
+	if dropped > 0 {
+		s.invalidateDocumentSource(ctx, companyID)
 	}
 	return nil
 }

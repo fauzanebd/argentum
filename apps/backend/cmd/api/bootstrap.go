@@ -193,8 +193,16 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	lightLLMClient := app.NewMeteredLLM(rawLightLLM, cfg.EffectiveLightLLMModel(), deps.usageSvc)
 	// Schema-cache invalidation for the API: chat tools live in the worker
 	// process, so this GetSchemaTool is dedicated to the api's invalidation
-	// hooks (rotate DSN -> drop cache). Each process has its own cache.
-	apiSchemaTool := tools.NewGetSchemaTool(deps.tenant, connRepo)
+	// hooks (rotate DSN -> drop cache, publish a document table -> drop cache).
+	//
+	// **Redis-backed, and that is the point.** The worker writes every schema it
+	// extracts into Redis with a one-hour TTL and reads it back there, so an
+	// in-memory-only tool here invalidated a map this process had never filled
+	// and left the entry the worker actually reads untouched. The 2026-08-19
+	// gate found it through the document path — a published table invisible for
+	// an hour — but it applies equally to the rotate-DSN hook this comment
+	// already described.
+	apiSchemaTool := tools.NewGetSchemaToolWithRedis(deps.tenant, connRepo, rdb)
 	describer := app.NewConnectionDescriber(lightLLMClient, deps.tenant, connRepo)
 	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse, apiSchemaTool, describer).
 		// Business inference runs in the worker (T-B2); this process only ever
@@ -361,7 +369,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		case warehouse != nil:
 			deps.docWarehouse = warehouse
 			deps.documentTableSvc = deps.documentTableSvc.WithWarehouse(
-				warehouse, connRepo, dsnCipher, deps.tenant,
+				warehouse, connRepo, dsnCipher, deps.tenant, apiSchemaTool,
 			)
 			// Deleting a document has to take its published rows with it. Wired
 			// here rather than inside the ingest service because it is the same
