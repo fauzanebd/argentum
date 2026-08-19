@@ -190,6 +190,44 @@ func (s *StorageService) RemoveKey(ctx context.Context, key string) error {
 	return nil
 }
 
+// RemovePrefix deletes every object under a prefix.
+//
+// Added 2026-08-19, because `RemoveKey` was not enough and the gap was invisible
+// for a day. `T-P1` deleted a document by removing one key — the `.pdf` — and
+// its gate asserted "the object and the prefix gone", which was true when it ran:
+// there was nothing else under the prefix yet. `T-P2` landed the same day and
+// began writing `<sha>/pages/N.json` and `<sha>/parse.json` beside it, and those
+// hold the document's *text*. So a tenant deleting a customer list kept the
+// customer list, in a bucket, under a key derived from its own hash, with
+// nothing left in the database referencing it.
+//
+// Listed recursively rather than reconstructed from page numbers: the page count
+// lives on a row this delete is about to remove, and a prefix that lost its row
+// is exactly the case that must still be cleanable.
+func (s *StorageService) RemovePrefix(ctx context.Context, prefix string) error {
+	if strings.TrimSpace(prefix) == "" {
+		// Refused rather than obeyed. An empty prefix matches every object in
+		// the bucket, and the one caller builds this string from a company id
+		// and a hash — if either were ever empty, this would be the line that
+		// emptied the tenant's storage.
+		return fmt.Errorf("storage: refusing to remove an empty prefix")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	objects := s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	})
+	var firstErr error
+	for err := range s.client.RemoveObjects(ctx, s.bucket, objects, minio.RemoveObjectsOptions{}) {
+		if err.Err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("storage: remove %q under %q: %w", err.ObjectName, prefix, err.Err)
+		}
+	}
+	return firstErr
+}
+
 func (s *StorageService) Bucket() string { return s.bucket }
 
 func (s *StorageService) directURL(key string) string {

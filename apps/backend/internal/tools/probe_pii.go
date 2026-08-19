@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -157,4 +158,76 @@ func normalizePIIMode(m domain.PIIRedactionMode) domain.PIIRedactionMode {
 		return m
 	}
 	return domain.PIIRedactionStrict
+}
+
+// --- Result-row redaction (T-P12) -------------------------------------------
+
+// redactedMarkerFor is what a withheld value is replaced with. It names the
+// class rather than blanking the cell, and that choice is the whole point: an
+// emptied column is the zero-row hazard again — the model cannot tell "no value
+// here" from "not allowed to see it", and this repository has twice watched a
+// model answer the first by inventing something. A marker the model can read is
+// a fact it can repeat to the user.
+func redactedMarkerFor(c piiClass) string {
+	switch c {
+	case piiIdentity:
+		return "[IDENTITY REDACTED]"
+	case piiContact:
+		return "[CONTACT REDACTED]"
+	default:
+		return "[REDACTED]"
+	}
+}
+
+// RedactResultColumns withholds the columns a tenant's redaction mode does not
+// allow, and reports which ones it took (T-P12).
+//
+// **Why this exists.** T-P12 asked for the tenant's `PIIRedactionMode` to be
+// respected "in what `run_sql` returns from a document source, using the same
+// code path T-H10 established". T-H10's path is the *zero-row probe*, which
+// only ever runs on a result with no rows in it — so until the 2026-08-19 gate
+// nothing inspected a result that had rows, and a `strict` tenant's published
+// customer list came back with three real email addresses on it.
+//
+// **Whole column, not cell by cell.** The same argument the probe makes at the
+// top of this file: one email among twenty rows means the column holds emails,
+// and returning the other nineteen discloses the same class of thing while
+// looking careful.
+//
+// **Why the classification is re-derived here rather than read off
+// `document_tables.columns`.** The stored classification is what a reviewer saw
+// and can override, and an override is a statement about what to *show in
+// review* — not permission to hand identity numbers to a model. Re-deriving
+// costs one pass over a capped result and cannot be turned off by an edit made
+// somewhere else.
+func RedactResultColumns(columns []string, rows []map[string]interface{}, mode domain.PIIRedactionMode) []string {
+	if len(columns) == 0 || len(rows) == 0 {
+		return nil
+	}
+	mode = normalizePIIMode(mode)
+
+	var redacted []string
+	for _, col := range columns {
+		class := classifyColumnName(col)
+		if class == piiNone {
+			values := make([]string, 0, len(rows))
+			for _, row := range rows {
+				if v, ok := row[col]; ok && v != nil {
+					values = append(values, fmt.Sprintf("%v", v))
+				}
+			}
+			class = classifyValues(values)
+		}
+		if class == piiNone || probeAllows(class, mode) {
+			continue
+		}
+		marker := redactedMarkerFor(class)
+		for _, row := range rows {
+			if _, ok := row[col]; ok {
+				row[col] = marker
+			}
+		}
+		redacted = append(redacted, col)
+	}
+	return redacted
 }

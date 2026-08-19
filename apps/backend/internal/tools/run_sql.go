@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 	"github.com/sirupsen/logrus"
@@ -194,6 +195,33 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 
 	t.recorder.RecordSQL(ctx, companyID, tenantctx.ThreadID(ctx))
 
+	// What a document source returns is subject to the tenant's redaction mode
+	// (T-P12), and it is checked here — on a result that *has* rows — because
+	// the probe below only ever runs on one that does not. The 2026-08-19 gate
+	// found the gap the hard way: a `strict` tenant's published customer list
+	// came back over MCP with three real email addresses on it.
+	//
+	// **Scoped to a document source on purpose.** A tenant's own warehouse is
+	// theirs and its columns are theirs to query; a table this product wrote out
+	// of a PDF is one nobody chose the shape of, which is the asymmetry T-P12
+	// names. Widening this to every source is a bigger change than a bug fix —
+	// it moves what reaches the model on ordinary warehouse turns, so it owes a
+	// rule-1 re-score rather than a same-sitting patch.
+	var redactedCols []string
+	if source.Origin == domain.OriginDocument {
+		redactedCols = RedactResultColumns(result.Columns, result.Rows, t.piiMode(ctx, companyID))
+		if len(redactedCols) > 0 {
+			// The columns, never their contents — the same rule the probe's own
+			// log line follows, and for the sharper reason here: these are the
+			// values the redaction just took out of the answer.
+			logrus.WithFields(logrus.Fields{
+				"company_id":       companyID,
+				"source_id":        source.ID,
+				"redacted_columns": redactedCols,
+			}).Info("document-source result: columns withheld under the tenant's redaction policy")
+		}
+	}
+
 	// A query that ran and matched nothing gets asked why (T-Q9). Only in that
 	// case: the probe is a second round trip to the tenant's database, and a
 	// result with rows in it has already answered the question.
@@ -219,7 +247,7 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 		}
 	}
 
-	return string(marshalSQLResult(source.ID, source.DBType, result, t.maxBytes, probes)), nil
+	return string(marshalSQLResult(source.ID, source.DBType, result, t.maxBytes, probes, redactedCols)), nil
 }
 
 // marshalSQLResult serialises a query result for the model, dropping rows from
@@ -233,13 +261,14 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 // Split out of Execute so the trimming loop is reachable without a live tenant
 // connection: it is the branch that decides how much of a result the model
 // ever sees.
-func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes int, probes []map[string]interface{}) []byte {
+func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes int, probes []map[string]interface{}, redacted []string) []byte {
 	payload := buildSQLPayload(sourceID, dbType, result)
 	// Before the shrink loop, and never shrunk away: the probe replaces the
 	// zero-row note, and a payload that lost it would tell the model nothing
 	// about why it got no rows. A zero-row result has no rows to drop anyway,
 	// so the loop below cannot run on the one payload this affects.
 	attachProbe(payload, probes)
+	attachRedaction(payload, redacted)
 	out, _ := json.Marshal(payload)
 	if maxBytes <= 0 || len(out) <= maxBytes {
 		return out
@@ -253,9 +282,29 @@ func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes 
 		result.Truncated = true
 		payload = buildSQLPayload(sourceID, dbType, result)
 		attachProbe(payload, probes)
+		attachRedaction(payload, redacted)
 		out, _ = json.Marshal(payload)
 	}
 	return out
+}
+
+// attachRedaction tells the model which columns it is not seeing, and that they
+// were withheld rather than empty (T-P12).
+//
+// The sentence matters as much as the marker in the cells. A model handed a
+// column of `[CONTACT REDACTED]` with no explanation has been known to describe
+// it as missing data — and "the customer emails are not recorded" is a false
+// statement about the tenant's own document, made by an instrument that was
+// working correctly.
+func attachRedaction(payload map[string]interface{}, redacted []string) {
+	if len(redacted) == 0 {
+		return
+	}
+	payload["redacted_columns"] = redacted
+	payload["redaction_note"] = "These columns hold personal data and were withheld by this workspace's " +
+		"privacy setting: " + strings.Join(redacted, ", ") + ". The values exist in the source — they were " +
+		"NOT empty. Say they are withheld by policy if the user asks; do not describe them as missing, " +
+		"blank or unrecorded, and do not try to recover them with another query."
 }
 
 func buildSQLPayload(sourceID, dbType string, result *db.QueryResult) map[string]interface{} {

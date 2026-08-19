@@ -99,10 +99,11 @@ func (f *fakeSourceDocs) Delete(_ context.Context, companyID, id string) error {
 }
 
 type fakeBlobs struct {
-	put       map[string][]byte
-	removed   []string
-	putErr    error
-	removeErr error
+	put             map[string][]byte
+	removed         []string
+	removedPrefixes []string
+	putErr          error
+	removeErr       error
 }
 
 func newFakeBlobs() *fakeBlobs { return &fakeBlobs{put: map[string][]byte{}} }
@@ -125,6 +126,23 @@ func (f *fakeBlobs) RemoveKey(_ context.Context, key string) error {
 	}
 	f.removed = append(f.removed, key)
 	delete(f.put, key)
+	return nil
+}
+
+// RemovePrefix mirrors the real store: everything under the prefix goes, and
+// what went is recorded so a test can assert the parse artifacts were taken and
+// another document's were not.
+func (f *fakeBlobs) RemovePrefix(_ context.Context, prefix string) error {
+	if f.removeErr != nil {
+		return f.removeErr
+	}
+	for key := range f.put {
+		if strings.HasPrefix(key, prefix) {
+			f.removed = append(f.removed, key)
+			delete(f.put, key)
+		}
+	}
+	f.removedPrefixes = append(f.removedPrefixes, prefix)
 	return nil
 }
 
@@ -332,6 +350,74 @@ func TestDeleteRemovesRowAndObject(t *testing.T) {
 	}
 	if len(blobs.put) != 0 {
 		t.Errorf("the object survived the delete: %v", keysOf(blobs.put))
+	}
+}
+
+// The test that was missing, and the reason the defect lived for a day: the
+// parse artifacts are written by DocumentParseService, so a test that only ever
+// uploads has nothing under the prefix to leave behind. The 2026-08-19 live gate
+// found `<sha>/pages/1.json` — the document's own text — surviving a delete,
+// with every unit test in this file passing.
+func TestDeleteRemovesTheParseArtifactsToo(t *testing.T) {
+	docs, blobs := &fakeSourceDocs{}, newFakeBlobs()
+	svc := NewDocumentIngestService(docs, blobs, 25)
+	ctx := context.Background()
+
+	out, err := svc.Upload(ctx, UploadInput{
+		CompanyID: "co-1", Filename: "pelanggan.pdf", Body: pdfBytes("customer list"),
+	})
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	sha := out.Document.ContentSHA256
+
+	// What a parse leaves beside the original: one artifact per page and the
+	// manifest. Written straight into the fake, because that is what
+	// DocumentParseService.storePages does to the real store.
+	blobs.put[PageArtifactKey("co-1", sha, 1)] = []byte(`{"markdown":"andi@maju.co.id"}`)
+	blobs.put[PageArtifactKey("co-1", sha, 2)] = []byte(`{"markdown":"budi@sentosa.co.id"}`)
+	blobs.put[ManifestKey("co-1", sha)] = []byte(`{"pages":2}`)
+
+	// And another document's, which must survive: the prefix is per document,
+	// not per company.
+	other := "source-documents/co-1/deadbeef/pages/1.json"
+	blobs.put[other] = []byte(`{"markdown":"someone else"}`)
+
+	if err := svc.Delete(ctx, "co-1", out.Document.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	for _, key := range []string{
+		PageArtifactKey("co-1", sha, 1),
+		PageArtifactKey("co-1", sha, 2),
+		ManifestKey("co-1", sha),
+	} {
+		if _, still := blobs.put[key]; still {
+			t.Errorf("the parse artifact survived the delete: %s", key)
+		}
+	}
+	if _, still := blobs.put[other]; !still {
+		t.Errorf("delete took another document's artifacts")
+	}
+}
+
+// An empty prefix would match the whole bucket. The one caller builds it from a
+// company id and a content hash, so this is a guard against a future caller
+// rather than against this one.
+func TestArtifactPrefixIsScopedToOneDocument(t *testing.T) {
+	prefix := DocumentArtifactPrefix("co-1", "abc123")
+	if prefix != "source-documents/co-1/abc123/" {
+		t.Fatalf("unexpected prefix: %q", prefix)
+	}
+	if !strings.HasPrefix(PageArtifactKey("co-1", "abc123", 7), prefix) {
+		t.Errorf("a page artifact is not under the prefix the delete removes")
+	}
+	if !strings.HasPrefix(ManifestKey("co-1", "abc123"), prefix) {
+		t.Errorf("the manifest is not under the prefix the delete removes")
+	}
+	// The trailing slash is what stops `abc123` from taking `abc1234`.
+	if strings.HasPrefix(PageArtifactKey("co-1", "abc1234", 1), prefix) {
+		t.Errorf("the prefix reaches a document whose hash merely starts the same")
 	}
 }
 

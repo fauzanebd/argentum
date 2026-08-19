@@ -468,6 +468,17 @@ func ManifestKey(companyID, sha string) string {
 	return fmt.Sprintf("source-documents/%s/%s/parse.json", companyID, sha)
 }
 
+// DocumentArtifactPrefix is what PageArtifactKey and ManifestKey share: every
+// object the parse wrote for one document, and nothing belonging to another.
+//
+// Named here, beside the two keys it covers, so a third artifact added later
+// falls under the delete automatically. That is the failure it exists to
+// prevent: the two functions above were added by T-P2 and the delete written by
+// T-P1 knew about neither.
+func DocumentArtifactPrefix(companyID, sha string) string {
+	return fmt.Sprintf("source-documents/%s/%s/", companyID, sha)
+}
+
 // fail records a terminal outcome. A status write that itself fails is logged
 // and swallowed: the caller is already returning the real error, and losing it
 // behind a second one would hide what actually happened.

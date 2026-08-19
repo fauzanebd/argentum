@@ -51,6 +51,10 @@ type DocumentIngestService struct {
 type DocumentBlobStore interface {
 	UploadKey(ctx context.Context, key string, r io.Reader, contentType string) (string, error)
 	RemoveKey(ctx context.Context, key string) error
+	// RemovePrefix takes the artifacts the parse wrote (T-P2) rather than only
+	// the original. Delete needs both, and needed them from the day T-P2 landed
+	// — see the note on Delete.
+	RemovePrefix(ctx context.Context, prefix string) error
 }
 
 // DocumentParseQueue is the one method of queue.Enqueuer this service calls.
@@ -302,6 +306,17 @@ func (s *DocumentIngestService) Delete(ctx context.Context, companyID, id string
 	}
 	if err := s.blobs.RemoveKey(ctx, doc.StorageKey); err != nil {
 		return fmt.Errorf("remove document bytes: %w", err)
+	}
+	// And the parse, which is the rest of the document (T-P2). The original PDF
+	// and the artifacts read out of it live under two different keys, and until
+	// the 2026-08-19 gate this method removed only the first: deleting a
+	// customer list left `<sha>/pages/1.json` — its names, its email addresses
+	// and its figures — in the bucket, referenced by nothing and cleaned up by
+	// nobody. Ordered after the bytes and before the row for the reason the
+	// tables above are ordered first: while the row still exists, a failure here
+	// is retryable by deleting again.
+	if err := s.blobs.RemovePrefix(ctx, DocumentArtifactPrefix(companyID, doc.ContentSHA256)); err != nil {
+		return fmt.Errorf("remove parse artifacts: %w", err)
 	}
 	if err := s.docs.Delete(ctx, companyID, id); err != nil {
 		return fmt.Errorf("delete document: %w", err)
