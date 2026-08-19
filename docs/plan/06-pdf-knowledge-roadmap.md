@@ -1244,3 +1244,77 @@ These change what gets built and cannot be guessed from the code.
    one Postgres is what this plan assumes and what `postgres_demo` makes cheap. A
    tenant with a data-residency clause needs a different answer, and knowing that
    before `T-P6` saves rewriting it after.
+
+---
+
+## `T-P14` A document nobody can ask for by name — 0.5d
+**Repo:** BE · **Deps:** `T-P8` · **Priority:** P2 · **Migration:** none
+
+> **Filed 2026-08-19** from the `T-H9` gate, which needed a turn to read a
+> document and got two lessons about retrieval instead
+> ([`../coverage/security-hardening.md`](../coverage/security-hardening.md) §17c).
+
+### Why
+
+Two separate failures, both met inside ten minutes by somebody simply trying to
+use the feature, and both invisible to `T-P13`'s eight cases because those cases
+are written the way a *test author* asks rather than the way a person does.
+
+**1. `search_documents` cannot find a document by its filename.** Asked to *"look
+up the uploaded invoice 09-scan-invoice.pdf"*, the model searched for exactly
+that string — the obvious thing to search for — and the lexical index holds
+chunk **content**, not filenames. The turn answered:
+
+> I couldn't find any uploaded document named **09-scan-invoice.pdf**. The search
+> returned no matches, so I can't read its contents or file an ops ticket based
+> on it.
+
+Thirty seconds after the upload, to the person who did it. Every part of that
+sentence is true and the whole of it is misleading: the document is there, it
+parsed, it chunked, and it answers perfectly when asked about its *contents*. The
+filename is the one handle a user is certain of, and it is the one the index
+cannot match.
+
+**2. A mixed-language query silently returns nothing.** `plainto_tsquery` is
+conjunctive — every term must be present — so *"Kopi Arabika 1kg faktur invoice"*
+matched **zero** chunks against Indonesian OCR text, because of the single
+English word `invoice`. The turn recovered only because the model happened to
+retry with a shorter query, at the cost of an extra iteration and a second model
+call. With `EMBEDDING_API_KEY` unset there is no dense half to fall back on, so
+the failure is total rather than degraded. Same root as `T-P13`'s one remaining
+failing case, arrived at from the other direction.
+
+### Do
+
+- **Index the filename with the document's chunks.** `document_chunks` already
+  joins to `source_documents`; the cheapest correct fix is to include the
+  filename (and its stem, split on `-` and `_`) in the `tsv` the chunk builds, so
+  `09-scan-invoice.pdf`, `scan invoice` and `invoice` all reach the right rows.
+  Weight it below the content, so a document *about* invoices still outranks one
+  merely *named* invoice.
+- **Fall back from conjunctive to disjunctive when the conjunctive query returns
+  nothing.** One extra query on the empty path only, ranked by `ts_rank` so the
+  chunk matching the most terms still wins. It costs a second index scan on
+  precisely the turns that currently cost a whole extra model iteration.
+- **Say which happened.** When the fallback fires, the tool result should carry
+  one line naming it, the way `run_sql`'s zero-row probe does — a model that
+  knows its query was loosened can say so rather than presenting a weak match as
+  a strong one.
+
+### Acceptance
+
+- [ ] A question naming a document by filename retrieves that document's chunks
+- [ ] The filename match ranks below a content match for the same query
+- [ ] A query mixing English and Indonesian terms against Indonesian prose returns
+      the right chunk rather than nothing
+- [ ] The conjunctive path is unchanged when it matches: no extra query, no
+      re-ranking, byte-identical results
+- [ ] The tool result names the fallback when it fired
+
+### Gate
+
+Two turns, ~$0.02: ask for a document by filename, and ask the mixed-language
+question that returned nothing on 2026-08-19. **Rule 1 applies** — this changes
+what retrieval returns on document turns, so `make eval-docs` is owed
+(~$0.13), and `doc-prose-citation` is the case that should move: it is the
+English-against-Indonesian case, and it is currently the set's only failure.
