@@ -122,3 +122,27 @@ func TestFindTokensReadsTheRawStatement(t *testing.T) {
 		t.Errorf("range spans %q, want the whole token", src[r.Start:r.End])
 	}
 }
+
+// The prefix refusal names the keyword it actually found. It said "it starts
+// with something else" until T-H4 step 3, which is true of every refusal and
+// therefore useful in none of them — a model reading it learns only that it was
+// wrong, and spends another call finding out how.
+func TestPrefixRefusalNamesTheLeadingKeyword(t *testing.T) {
+	cases := []struct{ sql, want string }{
+		{"INSERT INTO orders (id) VALUES (1)", "starts with INSERT"},
+		{"update orders set total = 0", "starts with UPDATE"},
+		{"EXEC sp_who", "starts with EXEC"},
+		// Punctuation keeps the old phrasing, because the refusal there is about
+		// the prefix rule rather than about a keyword.
+		{"(SELECT 1) UNION (SELECT 2)", "starts with something else"},
+	}
+	for _, tc := range cases {
+		err := ValidateStatement(tc.sql, nil)
+		if err == nil {
+			t.Fatalf("ValidateStatement(%q) = nil, want a refusal", tc.sql)
+		}
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("ValidateStatement(%q) = %q, want it to contain %q", tc.sql, err.Error(), tc.want)
+		}
+	}
+}

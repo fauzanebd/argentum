@@ -124,13 +124,41 @@ func ValidateStatement(sql string, declared []Token, required ...Token) error {
 	// A SELECT, or a WITH … SELECT (CTE). Nothing else starts a read.
 	lower := strings.ToLower(body)
 	if !strings.HasPrefix(lower, "select") && !strings.HasPrefix(lower, "with") {
-		return fmt.Errorf("the statement must be a SELECT (or a WITH … SELECT); it starts with something else")
+		return fmt.Errorf("the statement must be a SELECT (or a WITH … SELECT); it starts with %s", leadingWord(body))
 	}
 
 	if kw := forbiddenStmt.FindString(body); kw != "" {
 		return fmt.Errorf("the statement contains %q, which a read-only query may not use", strings.ToUpper(kw))
 	}
 	return nil
+}
+
+// leadingWord names the keyword a refused statement actually starts with, so
+// the refusal is a thing the caller can act on rather than a restatement of the
+// rule. "it starts with INSERT" tells a model which line to change; "it starts
+// with something else", which this said until T-H4 step 3 went looking, tells
+// it only that it was wrong.
+//
+// It falls back to the old phrasing when the statement opens with punctuation —
+// `(SELECT …) UNION (SELECT …)` is the real example, and it is refused here for
+// a reason that is about the prefix check and not about a keyword.
+func leadingWord(body string) string {
+	end := 0
+	for end < len(body) {
+		ch := body[end]
+		isWord := ch == '_' ||
+			(ch >= 'a' && ch <= 'z') ||
+			(ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9')
+		if !isWord {
+			break
+		}
+		end++
+	}
+	if end == 0 {
+		return "something else"
+	}
+	return strings.ToUpper(body[:end])
 }
 
 // wouldHaveWorked names the tokens the caller declared, the same repair-

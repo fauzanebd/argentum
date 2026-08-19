@@ -201,7 +201,26 @@ Each ticket here removes one disclosed limitation from the customer security
 brief. That brief's "Known boundaries" section is the acceptance test for this
 track: when a ticket lands, its paragraph comes out.
 
-### `T-H4` SQL statement validator — 2.0d
+### `T-H4` SQL statement validator — 2.0d · **steps 1 and 3 built; step 2 open**
+
+> **Status, 2026-08-19.** Step 1 (the check promoted to `internal/sqlguard`)
+> landed with the dashboards track at `105ad5b`. **Step 3 — `run_sql` actually
+> calling it — landed 2026-08-19**, and it had never been true: the package
+> comment named `run_sql` as one of three callers and it was the one that did
+> not call. Unit-gated, 21 assertions, the `run_sql` half proven failing first;
+> the record and what the lexer still cannot see are in
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §16.
+>
+> **Step 2 — a real parse — is open, and it is the expensive half.**
+> `pg_query_go` is cgo: it touches `apps/backend/Dockerfile.api` and
+> cross-compilation in the release build, which is the repo owner's call rather
+> than an implementer's. `sqlguard`'s signature was designed to survive the swap.
+>
+> **Owed:** the live half and a rule-1 re-score — this changes what reaches the
+> tenant's database on every ordinary warehouse turn, so a validator that refuses
+> analytical SQL the eval set contains would show up as a score drop and nothing
+> else ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1l).
+
 
 `run_sql.Execute` passes `params.SQL` straight to the driver
 (`apps/backend/internal/tools/run_sql.go:138`). The guardrail rules that look

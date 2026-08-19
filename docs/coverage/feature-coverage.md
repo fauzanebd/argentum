@@ -3,6 +3,18 @@
 What Argentum actually does. Written 2026-07-26 (`argentum` @ `3891579`) and
 kept current since; the rows below carry the ticket that last moved them.
 
+**Last revised 2026-08-19 (tenth pass)**, for `T-H4` step 3 — and two rows in
+*Safety and guardrails* were wrong in the confident direction, which is the
+third time in three passes that the row a reader would have trusted most was the
+one that had never been checked. *SQL mutation blocking* has read ✅ since this
+file was written; the rules it was describing are `scope: input` and screen the
+user's message, so nothing in this product had ever inspected the SQL the
+**model** wrote. And *Read-only query enforcement* claimed a read-only
+transaction without saying that SQL Server does not have one. `sqlguard` existed
+for both — its own package comment has named `run_sql` as one of its three
+callers since it was promoted under step 1 — and `run_sql` was the caller that
+never called it ([`security-hardening.md`](security-hardening.md) §12).
+
 **Last revised 2026-08-19 (ninth pass)**, after the three pieces of code that
 could not run were made to run — for $0.00 and no model call. Two rows change
 and neither moves up: *Prose retrieval* keeps its 🟡 on the embedding credential
@@ -209,9 +221,9 @@ retrieved by a tool. The split is the roadmap's Decision 1 and it is what makes
 
 | Feature                     | Status | Notes                                                                   |
 | --------------------------- | ------ | ----------------------------------------------------------------------- |
-| Read-only query enforcement | ✅     | Read-only transaction + per-statement timeout in the driver              |
+| Read-only query enforcement | ✅     | Read-only transaction + per-statement timeout in the driver — **on Postgres and MySQL**. SQL Server has no read-only transaction mode (go-mssqldb refuses `TxOptions.ReadOnly`), so `adapters/db/sqlserver/conn.go:36` opens a plain one and the barrier there is the customer's `db_datareader` grant plus the structural check below |
 | Row + byte result caps      | ✅     | 100 rows / 200 KB default, tail-trimmed with a `truncated` flag          |
-| SQL mutation blocking       | ✅     | Tuned so "create a dashboard" / "update me on sales" pass                |
+| SQL mutation blocking       | ✅     | **Two things, and this row named only the weaker one until 2026-08-19.** `block_sql_mutations` / `block_sql_injection` are `scope: input` (`config/guardrails.yaml:190,212`) — they screen the *user's message* and have never seen the model's output; they are tuned so "create a dashboard" / "update me on sales" pass. What screens model-authored SQL is `sqlguard.ValidateStatement`, and `run_sql` did not call it until `T-H4` step 3: a single statement, a SELECT or WITH … SELECT root, no mutating keyword, no unbound `{{token}}`, refused before the connection is dialled ([`security-hardening.md`](security-hardening.md) §12) |
 | SQL injection patterns      | ✅     | Regex family on input                                                   |
 | Prompt-injection blocking   | ✅     | Regex + conservative LLM classifier (defaults FALSE). Argentum's own per-turn instructions travel in the system prompt rather than the user message (`T-A2b`), so the classifier only ever judges what a caller sent — it refused four of five agentic report turns while they did not ([`api-reports.md`](api-reports.md) §7) |
 | Topic enforcement           | ✅     | Bilingual regex families + LLM admitting gate                           |

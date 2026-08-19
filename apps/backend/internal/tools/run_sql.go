@@ -15,6 +15,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/sqlguard"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
@@ -182,6 +183,20 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 		"source_id":  source.ID,
 		"sql_raw":    params.SQL,
 	}).Debug("Executing SQL query (literals intact)")
+
+	// Refused after the log lines and before the dial: an operator reading the
+	// query log for what a turn attempted should see the statement that was
+	// refused, and a statement that is not a read has no business opening a
+	// connection to the tenant's database.
+	if err := guardStatement(params.SQL); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"company_id": companyID,
+			"source_id":  source.ID,
+			"db_type":    source.DBType,
+			"sql":        normalizeSQLForLog(params.SQL),
+		}).Warn("run_sql refused a statement that is not a single read")
+		return "", err
+	}
 
 	conn, err := t.pool.For(ctx, companyID, source.ID)
 	if err != nil {
@@ -372,4 +387,48 @@ func matchedNothing(result *db.QueryResult) bool {
 		}
 	}
 	return true
+}
+
+// guardStatement is T-H4 step 3: the structural check run_sql was always
+// supposed to run and did not.
+//
+// `sqlguard`'s package comment has named run_sql as one of its three callers
+// since the package was promoted out of `metric.ValidateTemplate` under step 1,
+// and it was the one caller that never called it — so model-authored SQL went
+// from `params.SQL` to the driver with nothing structural in between. The two
+// guardrail rules that read like they cover this, `block_sql_mutations` and
+// `block_sql_injection`, are `scope: input` (config/guardrails.yaml:190,212):
+// they screen the user's message and have never seen the model's output.
+//
+// What was actually holding the line is the read-only transaction, and it does
+// hold on Postgres and MySQL. It does not exist on SQL Server — go-mssqldb
+// refuses TxOptions.ReadOnly, so adapters/db/sqlserver/conn.go:36 begins a
+// plain transaction and the only barrier there is the customer's db_datareader
+// grant. That is the gap this closes, and it is the reason the check runs for
+// every dialect rather than only where a parser exists.
+//
+// **This is defence in depth, not permission to loosen the login.** The grants
+// remain the guarantee; nobody should read this function as a reason to hand
+// Argentum a writable account.
+//
+// It stays an error rather than becoming a result, for explainSQLError's
+// reason: a query that did not run is not evidence, agentbudget.Observe has to
+// count it as a failure, and the audit row has to record it as one. The text
+// reaches the model regardless — the provider feeds a tool error back into the
+// conversation — so the refusal names what would have worked, because a model
+// told only "no" spends another call discovering what "yes" looks like.
+//
+// `nil` declared tokens is deliberate: a metric declares from and to and a
+// dashboard declares its filters, but nothing binds a `{{token}}` on this path,
+// so a statement carrying one would otherwise reach the driver with the braces
+// still in it.
+func guardStatement(sql string) error {
+	if err := sqlguard.ValidateStatement(sql, nil); err != nil {
+		return fmt.Errorf(
+			"run_sql refused this statement: %w. run_sql executes exactly one read — "+
+				"a single SELECT, or a WITH … SELECT. Rewrite it as a read and try again",
+			err,
+		)
+	}
+	return nil
 }

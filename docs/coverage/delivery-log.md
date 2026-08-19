@@ -4100,6 +4100,63 @@ tests, two of them proven failing against the old code first.
   the repo is now the one with the most test files, which is the right
   direction and not the same thing as being safe to edit.
 
+## Phase 3h — The caller a security package said it had (2026-08-19)
+
+`T-H4` step 3. **$0.00, no model call, no stack** — the same bucket as Phase 3g
+and the same shape of finding, one layer further in.
+
+**What was true.** `run_sql.Execute` handed the model's SQL straight to
+`conn.ExecuteReadOnly`. `internal/sqlguard` — the package whose own comment
+opens *"the one structural check this product runs over SQL it did not write
+itself"* — names three callers, and the third is `run_sql`. It was not one. The
+metric registry calls it; the dashboard spec calls it twice; a grep across
+`internal/` returns those two and stops.
+
+**Why nobody noticed for eight days.** Three separate things read as coverage.
+`config/guardrails.yaml` carries `block_sql_mutations` and
+`block_sql_injection`, and both are `scope: input` — they screen the user's
+message and have never once seen what the model wrote. The feature matrix's
+*SQL mutation blocking* row has said ✅ since the file was written. And the
+read-only transaction genuinely does hold the line — on Postgres and MySQL.
+
+**It does not exist on SQL Server.** go-mssqldb rejects `TxOptions.ReadOnly`, so
+`adapters/db/sqlserver/conn.go:36` opens a plain transaction and documents why.
+On that driver, between a model-authored `INSERT` and a tenant's data, there was
+the customer's `db_datareader` grant and nothing else. That is the sentence this
+phase exists to delete.
+
+**The refusal now names what it found.** `ValidateStatement`'s prefix check said
+*"it starts with something else"* — true of every statement it will ever refuse,
+and therefore useful in none of them. It names the leading keyword now, which
+reaches the metric registry and the dashboard spec too.
+
+**16 cases, and the eight that matter are the allowed ones.** A validator that
+refuses ordinary analytical SQL costs more than it saves, so half the set is
+`create_date, update_count, call_id FROM merge_log`, `status = 'deleted'`, a
+comment reading *"we do not delete rows here"*, and Indonesian column names.
+They pass because the lexer scrubs literals and comments before reading
+structure, and because `_` is a word character. The `run_sql` half was proven
+failing first, the honest way: `undefined: guardStatement`.
+
+**What is not closed.** Step 2 — a real parse, `pg_query_go` and `vitess` — is
+open, and it is cgo, so it touches `Dockerfile.api` and the release build. That
+is the repo owner's call. And this changes what reaches a tenant's database on
+every warehouse turn, so it owes a rule-1 re-score before anyone should call it
+measured (§1l).
+
+**Two things the full `-race` run found that have nothing to do with this
+ticket.** `internal/report/videoplan`'s golden plan fails in the working tree
+and passes at `04906fd`, and the whole of the difference is one line — the
+chart image's `sha256`, because an uncommitted change takes `supersample` from
+3 to 2 and the pixels move. The regenerated golden was **not** kept: it belongs
+to that change's own ticket, which does not exist yet, and a golden hash
+updated by a passing stranger is how a rendering regression gets committed as
+housekeeping. And `TestSSETurnStreamsDeltasAndEndsWithFinal` failed once inside
+`go test -race ./...` with `deltas = []`, then passed 8/8 alone and 3/3 as a
+package: it publishes to a fake event bus and never constructs a tool, so it is
+load-sensitive rather than related, and it is written down here because a flake
+nobody records is a flake somebody re-diagnoses.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

@@ -815,3 +815,101 @@ The mode was moved between runs with `PUT /api/settings`, the product's own
 path, and read back from `GET /api/settings` — so what the gate proves is the
 tenant's real stored policy reaching the tool, which was the only part unit
 tests could not reach. `log_statement` was reset afterwards.
+
+## 16. `T-H4` step 3 — the caller `sqlguard` said it had
+
+Built 2026-08-19. Unit-gated; the live half and the rule-1 re-score are owed
+([`live-gate-backlog.md`](live-gate-backlog.md) §1l).
+
+### What was true before
+
+`run_sql.Execute` read `params.SQL` off the model's tool call, logged it, and
+handed it to `conn.ExecuteReadOnly`. Nothing structural ran in between.
+
+Three things obscured that, and all three read as coverage:
+
+1. **`config/guardrails.yaml` has `block_sql_mutations` and
+   `block_sql_injection`.** Both are `scope: input` (`:190`, `:212`). They
+   screen the user's message. A statement the *model* writes has never passed
+   through either, and the feature matrix's *SQL mutation blocking* row said ✅
+   without drawing the distinction.
+2. **`internal/sqlguard` exists, and its package comment names `run_sql` as one
+   of its three callers** — "the metric registry …, the dashboard spec …, and
+   run_sql (T-H4 step 3)". The metric registry calls it. The dashboard spec
+   calls it, twice. `run_sql` did not call it at all. A grep for `sqlguard`
+   across `internal/` returns the other two and never the third.
+3. **The read-only transaction.** This is the one that was actually holding, and
+   it holds on Postgres (`SET TRANSACTION READ ONLY`) and MySQL. It does not
+   exist on SQL Server: go-mssqldb rejects `TxOptions.ReadOnly` with *"read-only
+   transactions are not supported"*, so `adapters/db/sqlserver/conn.go:36` opens
+   a plain transaction and says so in a comment. On that driver the only barrier
+   between a model-authored `INSERT` and the tenant's data was the customer's
+   `db_datareader` grant.
+
+The defect species is the one the 2026-08-19 sitting closed twice already —
+`WithSynopsis` with no caller, `embedding.Build` with its warning inside it. A
+comment that names a caller is not a caller. This one is worse than both,
+because the comment is in the security package.
+
+### What it does now
+
+`guardStatement` in `internal/tools/run_sql.go` calls
+`sqlguard.ValidateStatement(sql, nil)` before `t.pool.For` — so a refused
+statement never opens a connection — and after the two log lines, so an operator
+reading the query log for what a turn attempted still sees it, now beside a
+`Warn`. `nil` declared tokens is the run_sql case: nothing on this path binds a
+`{{token}}`, so one would otherwise reach the driver with the braces in it.
+
+It stays an **error**, not a result, for `explainSQLError`'s reason: a query that
+did not run is not evidence, `agentbudget.Observe` has to count it as a failure,
+and the audit row has to record it as one. The text still reaches the model.
+
+**This is defence in depth, not a replacement for grants** — the ticket asks for
+that sentence to be written down so nobody later reads the validator as
+permission to hand Argentum a writable login, and it is written here.
+
+### The refusal names what it found
+
+`ValidateStatement`'s prefix check said *"it starts with something else"*, which
+is true of every statement it ever refuses. It now names the leading keyword —
+*"it starts with INSERT"* — falling back to the old phrasing only when the
+statement opens with punctuation, where the refusal really is about the prefix
+rule (`(SELECT …) UNION (SELECT …)` is the honest example, and it is refused).
+That change reaches the metric registry and the dashboard spec too, which is the
+point of the promotion; the recorded refusal in
+[`metric-registry.md`](metric-registry.md) §4 reads better for it.
+
+### The gate
+
+21 assertions across two packages, the `run_sql` half proven failing first
+(`undefined: guardStatement`).
+
+| Arm | Cases | Result |
+| --- | ----- | ------ |
+| Refused | `INSERT`; `SELECT 1; UPDATE …`; `SELECT * INTO staging`; `COPY`; `EXEC`; a `DROP` behind a `--` comment; an unbound `{{from}}`; empty | 8/8, each naming both the fault and what would have worked |
+| Allowed | plain SELECT; trailing semicolon; CTE; `create_date, update_count, call_id FROM merge_log`; `status = 'deleted'`; a comment saying "we do not delete rows here"; lowercase with leading whitespace; Indonesian column names | 8/8 |
+| `sqlguard` prefix message | `INSERT` / `update` / `EXEC` named; punctuation falls back | 4/4 |
+
+The allowed arm is the one that matters. A validator that refuses ordinary
+analytical SQL costs more than it saves, and the four cases carrying a forbidden
+keyword inside an identifier, a literal or a comment are where a
+pattern-matching guard turns into an outage nobody can debug. They pass because
+`ValidateStatement` scrubs literals and comments before it reads structure, and
+because `_` is a word character — `create_date` has no word boundary after
+`create`.
+
+`go build ./...` clean, `go vet ./...` clean.
+
+### What this does not close
+
+`T-H4` steps 1 and 3 are done; **step 2 is not**. The body is still a lexer, not
+a parse. `pg_query_go` for Postgres and `vitess` for MySQL are what the ticket
+asks for, and `pg_query_go` is cgo — it touches `apps/backend/Dockerfile.api`
+and cross-compilation in the release build, which is a decision rather than an
+afternoon. The signature was designed to survive that swap, so callers do not
+move twice.
+
+What the lexer cannot see, and a parser would: a mutating statement hidden
+inside a construct it reads as a single SELECT — a CTE with a data-modifying
+`WITH … AS (INSERT …)` is refused today only because `insert` is in the keyword
+list, not because anything understood the tree.

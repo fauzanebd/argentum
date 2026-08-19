@@ -904,6 +904,25 @@ predicted: the reply is already persisted, so the check runs on stored text.
 | ~~`T-Q14`~~ | ~~One stored reply that prints a full-precision table, re-checked~~ | ~~§1 stack~~ | **Run 2026-08-18 — pass.** `messages.d0ef1f33`, the Q4 monthly table from §1g, re-checked against its own `run_sql` re-executed on the demo warehouse today (`3,377,718,500` / `3,708,552,300` / `3,863,405,700`). The build now reports **`ungrounded=[3,860,405,700, 10,946,676,500]`** where 08-18 reported only the second. The misquote is **0.0777%** off — grounded under the one-percent rule, flagged under the exact one — and the derived total is 3,000,000 low because it is the sum of the misquote. October and November match to the cent and are untouched, which is the arm that says the tightening did not simply flag everything |
 | `T-Q13` | Repeat §1g's sequence — a create turn engineered to spend its iteration budget, then the rename on the same thread — until one turn claims an unperformed edit (one in three at `AGENT_MAX_ITERATIONS=2` on `kimi-k2.6`), and show `unevidenced=1` on that turn's `turn completed` line and `unevidenced=0` on the control that called the tool | §2 money | **~$0.10**, about six turns. Rule 1 does not apply while it only counts; it does the day it rewrites a reply |
 
+## 1l. Owed by `T-H4` step 3 (2026-08-19)
+
+`run_sql` now refuses a statement that is not a single read, before it dials.
+Both arms below exist because the risk here is **not** that the check fails to
+refuse — 16 unit cases cover that — but that it refuses something real.
+
+| Owed by | The gate | Bucket | Cost |
+| ------- | -------- | ------ | ---- |
+| `T-H4` | One turn per driver against a live source, showing an ordinary analytical question still answered: the refusal must not fire on SQL a model legitimately writes. The SQL Server arm is the one that matters, because it is the driver with no read-only transaction behind the check | §1 stack (Postgres, MySQL) / §4 operator (SQL Server — this deployment has no SQL Server source) | $0.00 for the mechanism; a turn if it is driven through the agent |
+| `T-H4` | **Rule 1**: the 56-case set on both models. This changes what reaches the tenant's database on every warehouse turn, and a validator that refuses a case's SQL shows up as a score drop with no other tell | §2 money | ~$0.8 |
+| `T-H4` | A refused statement's `agent_actions` row: `status` must read as a failure and the audit row must exist, because the refusal is returned as an error precisely so `agentbudget.Observe` counts it | §1 stack | $0.00 |
+
+**Priced before the live half rather than after**, which is §1h's rule and the
+one that worked. The middle row is the only one carrying money, and it is the
+row this build cannot honestly skip: every previous structural change to what
+the agent sends has been re-scored, and the two that were not — `T-Q3`'s chart
+guideline and `T-Q10`'s pass — were both found later to have been doing nothing
+or something different from what their comment claimed.
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |
