@@ -27,6 +27,12 @@ type DocumentChunk struct {
 	// embedded with the content and shown to nobody: it exists to make
 	// retrieval find the right chunk, not to be quoted.
 	ContextPrefix string `json:"context_prefix,omitempty"`
+	// SourceName is the document's filename reduced to search terms
+	// ([FilenameSearchTerms]), copied onto every chunk so the lexical index can
+	// hold it (T-P14). It is indexed at a lower weight than the content and
+	// returned to nobody: a citation names `Filename`, which is the tenant's
+	// own string rather than this one's split form.
+	SourceName string `json:"-"`
 	// Embedding is nil where this deployment has no embedding credentials. The
 	// lexical half still answers, which is why the column is nullable and this
 	// field is a slice rather than a fixed array.
@@ -66,7 +72,13 @@ type DocumentChunkRepository interface {
 	SearchDense(ctx context.Context, companyID, documentID string, query []float32, limit int) ([]*DocumentChunkHit, error)
 	// SearchLexical is the tsvector half — exact terms, clause numbers, product
 	// codes: everything a dense vector is worst at and a contract is full of.
-	SearchLexical(ctx context.Context, companyID, documentID, query string, limit int) ([]*DocumentChunkHit, error)
+	//
+	// The bool is `loosened` (T-P14): the tsquery is conjunctive, so one term
+	// the document does not hold — an English word in an Indonesian question —
+	// returns nothing rather than less. When that happens the query is re-run
+	// disjunctively and this reports it, because a caller presenting a loosened
+	// match as an exact one is the failure mode the retry buys.
+	SearchLexical(ctx context.Context, companyID, documentID, query string, limit int) ([]*DocumentChunkHit, bool, error)
 	CountForDocument(ctx context.Context, companyID, documentID string) (int, error)
 	DeleteForDocument(ctx context.Context, companyID, documentID string) error
 }

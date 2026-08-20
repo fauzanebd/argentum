@@ -100,6 +100,44 @@ func (d *SourceDocument) Normalize() {
 	}
 }
 
+// FilenameSearchTerms is what a filename contributes to the lexical index
+// (T-P14): the name itself, then its stem split on the separators people put in
+// filenames.
+//
+// **Both halves are load-bearing, and the reason is the tokenizer.** Postgres's
+// default parser reads `09-scan-invoice.pdf` as one `host` token — a single
+// lexeme, matched only by somebody who types the whole name including the
+// extension. That is the query a person who just uploaded the file actually
+// writes, so the raw name stays. But `invoice` and `scan invoice` — what
+// anybody else would ask — match nothing against that lexeme, so the stem is
+// split as well: `09-scan-invoice.pdf 09 scan invoice`.
+//
+// The extension is deliberately dropped from the split half. Indexing `pdf` on
+// every document would make it a term that matches everything, which is the
+// same as a term that discriminates nothing; it survives only inside the whole
+// filename, where it is part of an exact handle.
+//
+// Called at ingest and stored on the chunk row rather than computed at query
+// time, because `document_chunks.tsv` is a generated column and a generated
+// expression cannot read the joined `source_documents` row (migration `065`).
+func FilenameSearchTerms(filename string) string {
+	name := strings.TrimSpace(filename)
+	if name == "" {
+		return ""
+	}
+	stem := strings.TrimSuffix(name, filepath.Ext(name))
+	split := strings.Map(func(r rune) rune {
+		switch r {
+		case '-', '_', '.':
+			return ' '
+		}
+		return r
+	}, stem)
+	// Fields collapses the runs of spaces the mapping above can produce, so two
+	// filenames differing only in separator punctuation index identically.
+	return strings.Join(append([]string{name}, strings.Fields(split)...), " ")
+}
+
 // pdfMagic is the header every PDF starts with. A version digit follows, which
 // is why the prefix stops at the hyphen.
 var pdfMagic = []byte("%PDF-")

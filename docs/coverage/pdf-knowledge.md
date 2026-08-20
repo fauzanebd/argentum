@@ -3,7 +3,8 @@
 `T-P1` → `T-P13`, the roadmap in
 [`../plan/06-pdf-knowledge-roadmap.md`](../plan/06-pdf-knowledge-roadmap.md).
 `T-P1` and `T-P2` landed 2026-08-18 with their live gates run; the remaining
-eleven landed **2026-08-19** in one sitting.
+eleven landed **2026-08-19** in one sitting. `T-P14` — the two ways a person asks
+for a document that the track could not answer — landed **2026-08-20** (§7).
 
 **The one-sentence version.** A tenant uploads a PDF; the parser reads its text
 layer; a deterministic typing layer turns each table candidate into typed
@@ -323,3 +324,120 @@ Unchanged from the roadmap, and none of them is guessable from the code:
 3. Do uploaded originals stay? They do, and nothing expires them yet.
 4. One document warehouse or one per deployment tier? Shipped as one, addressed
    by `DOC_WAREHOUSE_DSN`, schema per company.
+
+## 7. `T-P14` — the two ways a person asks for a document (2026-08-20)
+
+Both failures in this ticket were met inside ten minutes by somebody simply
+using the feature during `T-H9`'s gate, and neither is visible to `T-P13`'s
+eight cases, because those cases are written the way a test author asks rather
+than the way a person does. Filed as §17c of
+[`security-hardening.md`](security-hardening.md), built here.
+
+### What was wrong, measured before the fix
+
+Against the real control database at migration 64, on the corpus that has been
+there since 2026-08-19:
+
+| Query | Rows |
+| ----- | ---- |
+| `09-scan-invoice.pdf` — the document's own name, thirty seconds after uploading it | **0** |
+| `Kopi Arabika 1kg faktur invoice` — four Indonesian terms and one English one | **0** |
+| `faktur` — a term in the text | 1 |
+
+The document existed, had parsed, had chunked and answered perfectly about its
+contents. `061` built the lexical index over `heading_path || content`, which is
+what a document *says*; the filename is what a person *has*.
+
+### What was built
+
+**The filename's terms are on the chunk, at a lower weight.** Migration `065`
+adds `source_name` and redefines `tsv` as `setweight(prose,'A') ||
+setweight(source_name,'B')`, so `ts_rank`'s default weight array (0.1, 0.2, 0.4,
+1.0) makes "a document *about* invoices outranks one merely *named* invoice" the
+database's rule rather than a constant this repo would have to keep true.
+
+**It is a column and not a join, and that is the ticket's one deviation.**
+`T-P14` says *"Migration: none"*, on the assumption that the `tsv` could reach
+`source_documents.filename` through the join the query already has. A generated
+column may read only its own row, so the terms are denormalised onto the chunk.
+`ReplaceForDocument` is delete-then-insert, so a re-ingest rewrites them and the
+copy cannot drift.
+
+**The terms are the name *and* its split stem**, because Postgres reads
+`09-scan-invoice.pdf` as a single `host` token — one lexeme, matched only by
+somebody who types the whole name including the extension. `ts_debug` said so
+before the code was written. `domain.FilenameSearchTerms` stores
+`09-scan-invoice.pdf 09 scan invoice`; the extension survives only inside the
+whole name, because `pdf` on every document is a term that discriminates
+nothing.
+
+**The conjunctive query falls back to a disjunctive one on an empty result**, by
+rewriting `plainto_tsquery`'s own output (`' & '` → `' | '`) rather than by
+splitting the string in Go — one tokenizer in the system, and only the operator
+changes. It runs on the empty path only, and `ts_rank` over the OR still ranks
+the chunk matching the most terms first.
+
+**And the tool says when it fired.** The result's `note` opens with *"No passage
+held every term of that query, so the search was loosened…"*, in front of the
+untrusted-content sentence rather than instead of it. Same argument as
+`run_sql`'s zero-row probe: a model that is not told its query was widened
+presents the nearest passage as the matching one.
+
+### The free half of the gate — run 2026-08-20, $0.00
+
+Migration `065` applied by the `migrate` CLI against the real control database
+(64 → 65), `down 1` against the populated table, then up again: **14 chunk rows
+throughout, `dirty = f`, and the down restores `061`'s exact expression** —
+including the capability loss it is honest about, filename hits back to 0 until
+it is re-applied.
+
+Then the six arms below, driven **through `DocumentChunkRepo.SearchLexical`
+itself** in a gate binary rather than through SQL a gate retyped, so the strings
+under test are the ones the product builds:
+
+| Arm | Result |
+| --- | ------ |
+| The filename, whole | **1 hit**, `loosened=false`, rank 0.243 — the query that returned nothing |
+| `scan invoice` — the split stem | **1 hit**, rank 0.396 |
+| `faktur` — a content term on the same chunk | **1 hit**, rank **0.608** against the filename's 0.243. That ratio *is* the weighting: same row, same query shape, 2.5× for being in the text rather than in the name |
+| `Kopi Arabika 1kg faktur invoice` | **1 hit on the conjunctive path**, `loosened=false` — see below |
+| `harga satuan kopi quarterly revenue summary` | conjunctive **0**, then **`loosened=true`** with the price list (3 terms) ranked above the invoice (1 term) |
+| `zzz nothing matches this` | **0 hits, `loosened=false`** — nothing matched even loosened, so the caveat is not printed and the "do not guess" note is |
+
+**The conjunctive path is unchanged where it matched**: `faktur` returns the same
+single row it returned at migration 64, in the same order. What did change is the
+`ts_rank` *value* — 0.0608 → 0.6079, weight D to weight A — which reaches nobody:
+the repository's rank is an ordering key, and `fuse` overwrites `Score` with the
+reciprocal-rank result before any caller sees it. Worth writing down rather than
+claiming byte-identity that a `SELECT` would disprove.
+
+**The mixed-language row is the finding.** The ticket's own reproduction is
+fixed by the *filename* half, not by the fallback: `invoice` is an English word
+that appears in the document's *name*, so every term of that query is now
+present and the strict path answers. The fallback was measured separately, on a
+query where no term reaches a filename. Both mechanisms work; the ticket's
+example only ever needed one of them, which is the kind of thing a gate finds and
+a unit test cannot.
+
+**Two controls, one of them by accident.** The first run of the gate binary was
+pointed at the wrong tenant — it took `company_id` from the first chunk row
+rather than from the document's — and returned **0 hits on all six arms**, which
+is the tenant scope holding under a query that matches. And `zzz nothing matches
+this` is the negative arm for the caveat: `loosened` reports the fallback
+*finding something*, not the fallback *running*.
+
+**One environment note.** The GIN index is not used by any of this on the corpus
+as it stands: 14 rows is a sequential scan and the planner is right. With
+`enable_seqscan = off` both arms plan as a `Bitmap Index Scan on
+idx_document_chunks_tsv`, so the new expression is indexable and the seq scan is
+the table's size rather than the change.
+
+### What is owed
+
+**~$0.15 of model spend, and it is two lines.** The two turns the ticket asks
+for — ask for a document by filename, and re-ask the mixed-language question —
+prove the *model* does with this what a query does, which is where the third
+acceptance line about the fallback being named actually lands. And rule 1
+applies: this changes what retrieval returns on document turns, so `make
+eval-docs` (~$0.13) is owed, with `doc-prose-citation` the case that should move.
+Filed in [`live-gate-backlog.md`](live-gate-backlog.md) §1n.

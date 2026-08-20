@@ -310,6 +310,12 @@ directory that mirrors `migrations/demo_tenant/` in shape. If another roadmap
 lands first, renumber this one — the control migrations here have no interlock
 with anything outside it.
 
+**Corrected 2026-08-20: the roadmap also owns `065`.** `T-P14` was filed with
+*"Migration: none"* and needed one, for a reason worth keeping written down
+rather than rediscovering: `document_chunks.tsv` is a generated column, and a
+generated expression cannot read the joined `source_documents` row. Anything the
+lexical index must hold about a *document* has to be copied onto the *chunk*.
+
 ---
 
 ## Track A — Get the bytes in, and know what each page is (4.0d)
@@ -1247,8 +1253,42 @@ These change what gets built and cannot be guessed from the code.
 
 ---
 
-## `T-P14` A document nobody can ask for by name — 0.5d
-**Repo:** BE · **Deps:** `T-P8` · **Priority:** P2 · **Migration:** none
+## `T-P14` A document nobody can ask for by name — 0.5d · **built 2026-08-20, free arms gated; the two turns and `make eval-docs` owed**
+**Repo:** BE · **Deps:** `T-P8` · **Priority:** P2 · ~~**Migration:** none~~ →
+**`065`**
+
+> **Status, 2026-08-20: built and gated on everything that costs nothing.** The
+> lexical index holds the filename's terms, the conjunctive query falls back to
+> a disjunctive one on an empty result, and the tool says when it did. Unit
+> tests in three packages; the SQL half measured against the real control
+> database through the repository's own code.
+>
+> **One deviation, and it is this ticket's own header.** *"Migration: none"*
+> assumed the chunk's `tsv` could reach the filename through the join
+> `document_chunks` already has. It cannot: `tsv` is `GENERATED ALWAYS AS`, and
+> a generated expression may read only its own row. So `065` denormalises the
+> filename's search terms onto the chunk, which is the cheapest correct shape —
+> a re-ingest rewrites every chunk row anyway, so the copy cannot drift.
+>
+> **Two things the build learned that the ticket did not know.**
+>
+> 1. **Postgres reads `09-scan-invoice.pdf` as one token.** `ts_debug` calls it
+>    a `host`, so indexing the raw filename would have matched only somebody who
+>    typed the whole name — including the extension. The stored terms are the
+>    name *and* its stem split on `-`, `_` and `.`, which is what makes "scan
+>    invoice" and "invoice" reach the row. The ticket asked for the split; what
+>    it did not know is that without it the fix would have passed its own first
+>    acceptance line and failed every other way of asking.
+> 2. **The filename index answers the mixed-language case on the strict path.**
+>    *"Kopi Arabika 1kg faktur invoice"* — the query that returned zero — now
+>    matches conjunctively, because the English word `invoice` is in the
+>    document's *name*. The fallback is still what catches the general case, and
+>    it is measured separately (a query where no term reaches the filename), but
+>    the ticket's own reproduction is fixed by the other half of the ticket.
+>
+> Record: [`../coverage/pdf-knowledge.md`](../coverage/pdf-knowledge.md) §7.
+> Owed: the two turns (~$0.02) and the rule-1 `make eval-docs` (~$0.13),
+> [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1n.
 
 > **Filed 2026-08-19** from the `T-H9` gate, which needed a turn to read a
 > document and got two lessons about retrieval instead

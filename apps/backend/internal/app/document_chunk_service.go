@@ -118,6 +118,11 @@ func (s *DocumentChunkService) Ingest(ctx context.Context, doc *domain.SourceDoc
 	}
 	rows := make([]*domain.DocumentChunk, 0, len(built))
 	texts := make([]string, 0, len(built))
+	// The filename's search terms, computed once and copied onto every chunk
+	// (T-P14). It is stored rather than joined because the chunk's `tsv` is a
+	// generated column and cannot read another table's row; a rename that goes
+	// through the upload path re-ingests, which is what keeps the copy true.
+	sourceName := domain.FilenameSearchTerms(doc.Filename)
 	for _, c := range built {
 		row := &domain.DocumentChunk{
 			DocumentID:    doc.ID,
@@ -128,6 +133,7 @@ func (s *DocumentChunkService) Ingest(ctx context.Context, doc *domain.SourceDoc
 			HeadingPath:   c.HeadingPath,
 			Content:       c.Content,
 			ContextPrefix: prefix,
+			SourceName:    sourceName,
 		}
 		rows = append(rows, row)
 		texts = append(texts, embeddableText(row))
@@ -165,14 +171,20 @@ func (s *DocumentChunkService) Ingest(ctx context.Context, doc *domain.SourceDoc
 }
 
 // Search is the hybrid retrieval one tool call runs.
+//
+// The bool is `loosened` (T-P14): the lexical half found nothing with every
+// term required and answered with a disjunctive re-run. The caller is expected
+// to say so — a passage retrieved by four of a question's five terms is a
+// weaker answer than one retrieved by all five, and only the tool result can
+// carry that difference to the model.
 func (s *DocumentChunkService) Search(
 	ctx context.Context, companyID, documentID, query string, topK int,
-) ([]*domain.DocumentChunkHit, error) {
+) ([]*domain.DocumentChunkHit, bool, error) {
 	if s == nil || s.chunks == nil {
-		return nil, fmt.Errorf("document search is not configured on this deployment")
+		return nil, false, fmt.Errorf("document search is not configured on this deployment")
 	}
 	if strings.TrimSpace(query) == "" {
-		return nil, fmt.Errorf("%w: a search needs a query", domain.ErrInvalidInput)
+		return nil, false, fmt.Errorf("%w: a search needs a query", domain.ErrInvalidInput)
 	}
 	if topK <= 0 {
 		topK = s.topK
@@ -182,9 +194,9 @@ func (s *DocumentChunkService) Search(
 	// below rewards a chunk both halves found and a top-5 from each is a
 	// thinner overlap than a top-15.
 	depth := topK * 3
-	lexical, err := s.chunks.SearchLexical(ctx, companyID, documentID, query, depth)
+	lexical, loosened, err := s.chunks.SearchLexical(ctx, companyID, documentID, query, depth)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	var dense []*domain.DocumentChunkHit
@@ -192,14 +204,31 @@ func (s *DocumentChunkService) Search(
 		if vectors, err := client.Embed(ctx, []string{query}); err == nil && len(vectors) > 0 {
 			dense, err = s.chunks.SearchDense(ctx, companyID, documentID, vectors[0], depth)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		} else if err != nil {
 			logrus.WithError(err).Warn("embedding the search query failed; answering from the lexical index")
 		}
 	}
 
-	return fuse(dense, lexical, topK), nil
+	merged := fuse(dense, lexical, topK)
+	// Reported only where the loosened half is what the caller is reading. A
+	// dense index that answered the same question exactly makes the fallback an
+	// implementation detail rather than a caveat worth spending the model's
+	// attention on.
+	return merged, loosened && !onlyDense(merged), nil
+}
+
+// onlyDense reports whether every passage in the merged list came from the
+// vector half — the case where the lexical fallback contributed nothing that
+// survived fusion, so there is no loosened match for the caller to caveat.
+func onlyDense(hits []*domain.DocumentChunkHit) bool {
+	for _, h := range hits {
+		if h.Matched != "dense" {
+			return false
+		}
+	}
+	return true
 }
 
 // fuse merges the two result lists by reciprocal rank.

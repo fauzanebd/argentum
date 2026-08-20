@@ -42,8 +42,8 @@ func (r *DocumentChunkRepo) ReplaceForDocument(
 	const q = `
 		INSERT INTO document_chunks
 			(document_id, company_id, ordinal, page_from, page_to, heading_path,
-			 content, context_prefix, embedding, model)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			 content, context_prefix, embedding, model, source_name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, created_at`
 	for _, c := range chunks {
 		var vec any
@@ -56,7 +56,7 @@ func (r *DocumentChunkRepo) ReplaceForDocument(
 		}
 		if err := tx.QueryRowContext(ctx, q,
 			documentID, companyID, c.Ordinal, c.PageFrom, c.PageTo, c.HeadingPath,
-			c.Content, c.ContextPrefix, vec, c.Model,
+			c.Content, c.ContextPrefix, vec, c.Model, c.SourceName,
 		).Scan(&c.ID, &c.CreatedAt); err != nil {
 			return fmt.Errorf("insert chunk %d: %w", c.Ordinal, err)
 		}
@@ -104,31 +104,83 @@ func (r *DocumentChunkRepo) SearchDense(
 	return r.search(ctx, q, args...)
 }
 
-// SearchLexical is the tsvector half.
+// conjunctiveTSQuery is what a question becomes by default: every term must be
+// present.
 //
 // `plainto_tsquery` rather than `to_tsquery`: the input is a question a person
 // or a model wrote, and `to_tsquery` refuses anything with an unescaped
 // operator in it — a query containing "&" or a bare apostrophe would come back
 // as a database error rather than as results.
+const conjunctiveTSQuery = `plainto_tsquery('simple', $2)`
+
+// disjunctiveTSQuery is the same question with the AND turned into OR (T-P14).
+//
+// It is built by rewriting `plainto_tsquery`'s own output rather than by
+// splitting the string in Go, which keeps one tokenizer in the system: the
+// terms, the stopword handling and the escaping are whatever Postgres decided,
+// and only the operator changes. `plainto_tsquery` emits `&` and nothing else —
+// phrase operators come from `phraseto_tsquery` — so the rewrite is total.
+const disjunctiveTSQuery = `replace(plainto_tsquery('simple', $2)::text, ' & ', ' | ')::tsquery`
+
+// SearchLexical is the tsvector half.
+//
+// **Conjunctive first, disjunctive only on nothing.** A question mixing
+// languages — "Kopi Arabika 1kg faktur invoice" against Indonesian prose — has
+// every term in the document except one, and a conjunctive tsquery answers that
+// with zero rows rather than with a slightly worse match. Zero rows is the
+// worst possible answer here: the model either says the document holds nothing
+// (T-P14's first failure) or spends another iteration and another model call
+// re-asking with fewer words. The fallback costs one more index scan on exactly
+// the turns that currently cost a whole turn.
+//
+// The second return says the fallback fired, so the tool can tell the model its
+// query was loosened. A weak match presented as a strong one is the only thing
+// this retry can make worse.
 func (r *DocumentChunkRepo) SearchLexical(
 	ctx context.Context, companyID, documentID, query string, limit int,
-) ([]*domain.DocumentChunkHit, error) {
+) ([]*domain.DocumentChunkHit, bool, error) {
 	if query == "" {
-		return nil, nil
+		return nil, false, nil
 	}
 	limit = boundLimit(limit)
 	args := []any{companyID, query, limit}
-	where := `WHERE c.company_id = $1 AND c.tsv @@ plainto_tsquery('simple', $2)`
 	if documentID != "" {
-		where += ` AND c.document_id = $4`
 		args = append(args, documentID)
 	}
-	q := `SELECT ` + chunkColumns + `, ts_rank(c.tsv, plainto_tsquery('simple', $2)) AS rank
+
+	hits, err := r.search(ctx, lexicalQuery(conjunctiveTSQuery, documentID != ""), args...)
+	if err != nil || len(hits) > 0 {
+		return hits, false, err
+	}
+	// A one-term question rewrites to itself, so this arm re-runs an identical
+	// query against an index that just returned nothing. That is a second scan
+	// of an empty result and no rows to rank — cheap enough not to be worth a
+	// round trip to ask Postgres how many terms it found.
+	hits, err = r.search(ctx, lexicalQuery(disjunctiveTSQuery, documentID != ""), args...)
+	if err != nil {
+		return nil, false, err
+	}
+	return hits, len(hits) > 0, nil
+}
+
+// lexicalQuery is the one SELECT both arms run, differing only in how the
+// question was turned into a tsquery. Written as one function so the ranking,
+// the join and the tenant scope cannot drift apart between the two paths.
+func lexicalQuery(tsquery string, byDocument bool) string {
+	where := `WHERE c.company_id = $1 AND c.tsv @@ ` + tsquery
+	if byDocument {
+		where += ` AND c.document_id = $4`
+	}
+	// ts_rank over a weighted tsvector, which is where "the filename ranks
+	// below the content" is actually decided: migration 065 stores the prose at
+	// weight A and the filename's terms at B, and ts_rank's default weights
+	// (0.1, 0.2, 0.4, 1.0) do the rest. On the disjunctive arm the same
+	// function is what makes the chunk matching the most terms win.
+	return `SELECT ` + chunkColumns + `, ts_rank(c.tsv, ` + tsquery + `) AS rank
 		FROM document_chunks c
 		JOIN source_documents d ON d.id = c.document_id ` + where + `
 		ORDER BY rank DESC
 		LIMIT $3`
-	return r.search(ctx, q, args...)
 }
 
 func (r *DocumentChunkRepo) search(ctx context.Context, q string, args ...any) ([]*domain.DocumentChunkHit, error) {

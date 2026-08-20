@@ -4273,6 +4273,73 @@ that discharged three owed rule-1 obligations at once** — `T-H4` step 3,
 `T-P9`/`T-P10`. Running them separately, as each ticket assumed, would have cost
 half as much again and answered the same question three times.
 
+## Phase 3j — The filename, which is the one thing a person is sure of (2026-08-20)
+
+`T-P14`, built and gated on everything free the same day. It is the smallest
+ticket in the PDF track and it closes the two failures somebody met by *using*
+the feature rather than by testing it: a document that cannot be found by its own
+name, and a mixed-language query that returns nothing rather than less.
+
+**What `061` indexed was what a document says.** Thirty seconds after uploading
+`09-scan-invoice.pdf`, the person who uploaded it asked for it by that name and
+was told no such document existed — every word of the reply true, the whole of it
+misleading. Measured before the fix, against the real control database: the
+filename query returned **0 rows**, the mixed-language query returned **0 rows**,
+and a content term returned its chunk.
+
+**The fix is a column, not a join, and that is the ticket's own header being
+wrong.** `T-P14` said *"Migration: none"*. `document_chunks.tsv` is
+`GENERATED ALWAYS AS`, and a generated expression may read only its own row — so
+anything the lexical index must know about a *document* has to be copied onto the
+*chunk*. `065` adds `source_name` and redefines the vector as
+`setweight(prose,'A') || setweight(source_name,'B')`, which makes "a document
+about invoices outranks one merely named invoice" the database's rule.
+
+**And Postgres reads `09-scan-invoice.pdf` as one token.** `ts_debug` calls it a
+`host`: indexing the raw filename would have satisfied the ticket's first
+acceptance line and failed every other way of asking for the same file. The
+stored terms are the name *and* its stem split on `-`, `_` and `.`; the extension
+survives only inside the whole name, because `pdf` on every document is a term
+that discriminates nothing.
+
+**The conjunctive fallback rewrites Postgres's own output.** `plainto_tsquery`
+emits `&` and nothing else, so `' & '` → `' | '` turns a strict query into a
+loose one with one tokenizer still in the system — the terms, the stopwords and
+the escaping stay whatever Postgres decided. It runs on the empty path only, and
+the tool result opens with a sentence naming it, in front of the
+untrusted-content instruction rather than instead of it. Same argument as
+`run_sql`'s zero-row probe: a model not told its query was widened presents the
+nearest passage as the matching one.
+
+**The free gate: the migration both ways, and six arms through the repository's
+own code.** 64 → 65, `down 1` against 14 populated rows and back up, `dirty = f`,
+`061`'s expression restored exactly by the down. Then the retrieval arms, driven
+through `SearchLexical` in a gate binary rather than through SQL a gate retyped:
+the filename returns its chunk, the split stem returns it, a content term outranks
+a filename term **0.608 to 0.243** on the same row, the fallback fires only on a
+query the strict path cannot answer and ranks 3 matched terms above 1, and a query
+nothing matches reports no loosening at all.
+
+**The finding is about the ticket rather than the build.** The mixed-language
+query `T-P14` was written from — *"Kopi Arabika 1kg faktur invoice"* — is fixed by
+the **filename** half, not by the fallback the ticket wrote for it: `invoice` is
+an English word that appears in the document's *name*, so every term is present
+and the strict path answers. The fallback had to be measured on a query the ticket
+does not contain. A gate that ran only the reproduction would have proven one
+mechanism and shipped two.
+
+**One honest correction to an acceptance line.** *"The conjunctive path is
+byte-identical when it matches"* is true of the rows and their order and false of
+the `ts_rank` value, which moved from weight D to weight A. It reaches nobody —
+`fuse` overwrites `Score` with the reciprocal-rank result before a caller sees it
+— and it is written down rather than claimed away, because a `SELECT` disproves
+the stronger sentence in one line.
+
+**What is owed: ~$0.15.** Two turns to show what a *model* does with the loosened
+note, and rule 1's `make eval-docs`, where `doc-prose-citation` — the set's one
+remaining failure, and an English question against Indonesian prose — is the case
+that should move.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

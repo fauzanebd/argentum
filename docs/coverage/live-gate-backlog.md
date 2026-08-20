@@ -149,6 +149,16 @@ retires the habit of reading a passing score as a passing feature: **the first
 answer-correctness run scored 50% while every one of its four "passes" was
 hollow.**
 
+**Revised 2026-08-20 — §1n, and it is the second sitting after §1l to find
+nothing wrong in the ticket under test.** `T-P14` was built and its free arms run
+in the same sitting: the migration both ways and
+six retrieval arms driven through the repository's own code. Every arm held, and
+the sitting's finding is about the *ticket* rather than the build — the
+mixed-language query the ticket was written from is fixed by the filename index
+rather than by the fallback the ticket wrote for it, so the fallback had to be
+measured on a query the ticket does not contain. A gate that only ran the
+reproduction would have proven one mechanism and shipped two.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of four things: the stack up, money spent, a browser opened, or a
 message sent to a real person's phone — with the single exception of §1h, which
@@ -1038,6 +1048,44 @@ project's adminer container. The failure is a clean `bind: address already in
 use` and cost a minute, but it is the third environment fact in this file's
 history to look like a broken build, so: `MCP_SERVER_ADDR=:8099` was used
 instead, and checking what holds a port beats assuming the process is broken.
+
+## 1n. `T-P14`'s free arms — run 2026-08-20, and the second sitting to find nothing in the ticket under test
+
+Filed and run the same sitting the ticket was built, which is §1h's rule and the
+fourth time it has been followed. `T-P14` is the pair of retrieval failures
+`T-H9`'s gate met by accident: a document that cannot be found by its own
+filename, and a mixed-language query that returns nothing rather than less.
+
+**Everything that costs nothing ran: the migration both ways, and six retrieval
+arms through the repository's own code.** Migration `065` applied against the
+real control database (64 → 65), `down 1` against the populated table — 14 chunk
+rows kept, `061`'s exact `tsv` expression restored — and up again, `dirty = f`.
+
+| Owed by | The gate | Bucket | Outcome |
+| ------- | -------- | ------ | ------- |
+| ~~`T-P14`~~ | ~~A question naming a document by filename retrieves that document's chunks~~ | ~~§1 stack~~ | **Pass.** `09-scan-invoice.pdf` returned **1 hit** where the same query at migration 64 returned **0**, and the split stem (`scan invoice`) returns it too — which is the half the ticket's acceptance line does not ask for and every non-author needs, because Postgres reads the whole filename as one `host` token |
+| ~~`T-P14`~~ | ~~The filename match ranks below a content match for the same query~~ | ~~§1 stack~~ | **Pass, on the same row.** A content term ranks **0.608** against the filename's **0.243** — weight A against weight B, by `ts_rank`'s default array rather than by a constant this repo maintains |
+| ~~`T-P14`~~ | ~~The conjunctive path is unchanged when it matches~~ | ~~§1 stack~~ | **Pass on rows and order; the rank value moved and reaches nobody.** `faktur` returns the same single row it returned at 64. Its `ts_rank` went 0.0608 → 0.6079 (weight D → A) and `fuse` overwrites `Score` with the reciprocal-rank result before any caller reads it. Recorded rather than claimed as byte-identity, which a `SELECT` would disprove |
+| ~~`T-P14`~~ | ~~A query mixing English and Indonesian terms returns the right chunk rather than nothing~~ | ~~§1 stack~~ | **Pass, and the mechanism is not the one the ticket predicted.** The reproduction query now matches **conjunctively**, because its one English word — `invoice` — is in the document's *name*. The fallback was measured on a separate query where no term reaches a filename: conjunctive 0, then `loosened=true` with the chunk matching 3 terms ranked above the one matching 1 |
+| ~~`T-P14`~~ | ~~The tool result names the fallback when it fired~~ | ~~§1 stack~~ | **Pass, with its negative.** `loosened` is true only where the loosened query *found* something: a query nothing matches, even disjunctively, reports `loosened=false` and gets the "do not guess" note instead of a caveat about passages it did not receive |
+| `T-P14` | The two turns: ask for a document by filename, and re-ask the mixed-language question | §2 money | **~$0.02.** What a query cannot show is what a *model* does with the loosened note |
+| `T-P14` | **Rule 1**: `make eval-docs`, with `doc-prose-citation` the case that should move | §2 money | **~$0.13** |
+
+**Two controls, one by accident.** The gate binary's first run took `company_id`
+from the first chunk row rather than from the document's, and returned **0 hits
+on all six arms** — the tenant scope holding under a query that matches, which is
+not an arm anybody would have thought to write. And the empty-query arm is what
+makes the caveat mean something: it reports the fallback *finding* something
+rather than the fallback *running*.
+
+**One environment note, and it is not a defect.** None of this uses the GIN
+index on the corpus as it stands, because 14 rows is a sequential scan and the
+planner is right. With `enable_seqscan = off` both arms plan as a
+`Bitmap Index Scan on idx_document_chunks_tsv`, so the rewritten expression is
+still indexable — worth checking, because a generated column redefined into
+something unindexable would look exactly like this until the table grew.
+
+Record: [`pdf-knowledge.md`](pdf-knowledge.md) §7.
 
 ## 2. Needs the stack **and** real LLM spend
 

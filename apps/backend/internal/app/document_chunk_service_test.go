@@ -19,6 +19,9 @@ type stubChunkRepo struct {
 	deleted bool
 	lexical []*domain.DocumentChunkHit
 	dense   []*domain.DocumentChunkHit
+	// loosened is what the real repo reports when it had to drop the
+	// requirement that every term match (T-P14).
+	loosened bool
 }
 
 func (r *stubChunkRepo) ReplaceForDocument(_ context.Context, _, _ string, chunks []*domain.DocumentChunk) error {
@@ -30,8 +33,8 @@ func (r *stubChunkRepo) SearchDense(_ context.Context, _, _ string, _ []float32,
 	return r.dense, nil
 }
 
-func (r *stubChunkRepo) SearchLexical(_ context.Context, _, _, _ string, _ int) ([]*domain.DocumentChunkHit, error) {
-	return r.lexical, nil
+func (r *stubChunkRepo) SearchLexical(_ context.Context, _, _, _ string, _ int) ([]*domain.DocumentChunkHit, bool, error) {
+	return r.lexical, r.loosened, nil
 }
 
 func (r *stubChunkRepo) CountForDocument(_ context.Context, _, _ string) (int, error) { return 0, nil }
@@ -237,4 +240,96 @@ func TestSynopsisFailureIsNotAnIngestFailure(t *testing.T) {
 // stays one chunk, and no heading detection, which is the shipped default.
 func docchunkOptions() docchunk.Options {
 	return docchunk.Options{MaxTokens: 500, Overlap: 60}
+}
+
+// TestIngestStoresTheFilenamesSearchTerms is T-P14's write half: every chunk
+// carries the document's name reduced to terms, because the tsvector that
+// indexes it is a generated column and cannot reach the joined document row.
+//
+// The assertion is on the split half rather than on the whole string. Postgres
+// reads `09-scan-invoice.pdf` as one token, so storing only the raw name would
+// index a document nobody could find by asking for "the scan invoice" — which
+// is the failure this ticket was written from, one word further along.
+func TestIngestStoresTheFilenamesSearchTerms(t *testing.T) {
+	repo := &stubChunkRepo{}
+	svc := NewDocumentChunkService(repo, stubEmbedder{}, docchunkOptions(), 5)
+
+	doc := testDoc()
+	doc.Filename = "09-scan-invoice.pdf"
+	if err := svc.Ingest(context.Background(), doc, testPages()); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	if len(repo.stored) == 0 {
+		t.Fatal("no chunks stored")
+	}
+	for _, c := range repo.stored {
+		for _, want := range []string{"09-scan-invoice.pdf", "scan", "invoice"} {
+			if !strings.Contains(c.SourceName, want) {
+				t.Errorf("SourceName = %q, missing %q", c.SourceName, want)
+			}
+		}
+	}
+}
+
+// TestSearchReportsALoosenedLexicalMatch: the caller is told when the answer
+// came from a query that no longer required every term, because a partial match
+// presented as an exact one is the only thing the fallback can make worse.
+func TestSearchReportsALoosenedLexicalMatch(t *testing.T) {
+	repo := &stubChunkRepo{
+		loosened: true,
+		lexical:  []*domain.DocumentChunkHit{{DocumentChunk: domain.DocumentChunk{ID: 1}}},
+	}
+	svc := NewDocumentChunkService(repo, stubEmbedder{}, docchunkOptions(), 5)
+
+	hits, loosened, err := svc.Search(context.Background(), "co-1", "", "kopi arabika invoice", 5)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("hits = %d, want 1", len(hits))
+	}
+	if !loosened {
+		t.Error("loosened = false, want true when the lexical half fell back")
+	}
+}
+
+// TestSearchDoesNotReportLooseningItDidNotUse: the conjunctive path is the
+// common one and it must say nothing at all, so the caveat keeps meaning
+// something on the turns that carry it.
+func TestSearchDoesNotReportLooseningItDidNotUse(t *testing.T) {
+	repo := &stubChunkRepo{
+		lexical: []*domain.DocumentChunkHit{{DocumentChunk: domain.DocumentChunk{ID: 1}}},
+	}
+	svc := NewDocumentChunkService(repo, stubEmbedder{}, docchunkOptions(), 5)
+
+	_, loosened, err := svc.Search(context.Background(), "co-1", "", "kopi arabika", 5)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if loosened {
+		t.Error("loosened = true on a query the conjunctive index answered")
+	}
+}
+
+// TestSearchDropsTheCaveatWhenOnlyTheDenseHalfSurvives: a loosened lexical hit
+// that fusion left out of the result is not a caveat about anything the caller
+// is reading.
+func TestSearchDropsTheCaveatWhenOnlyTheDenseHalfSurvives(t *testing.T) {
+	repo := &stubChunkRepo{
+		loosened: true,
+		lexical:  []*domain.DocumentChunkHit{{DocumentChunk: domain.DocumentChunk{ID: 2}}},
+		dense:    []*domain.DocumentChunkHit{{DocumentChunk: domain.DocumentChunk{ID: 1}}},
+	}
+	svc := NewDocumentChunkService(repo, stubEmbedder{client: &stubEmbedClient{}}, docchunkOptions(), 1)
+
+	hits, loosened, err := svc.Search(context.Background(), "co-1", "", "kopi arabika invoice", 1)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Matched != "dense" {
+		t.Fatalf("hits = %+v, want one dense hit", hits)
+	}
+	if loosened {
+		t.Error("loosened = true where no loosened passage reached the caller")
+	}
 }
