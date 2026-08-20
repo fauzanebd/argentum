@@ -149,8 +149,13 @@ retires the habit of reading a passing score as a passing feature: **the first
 answer-correctness run scored 50% while every one of its four "passes" was
 hollow.**
 
-**Revised 2026-08-20 — §1n, and it is the second sitting after §1l to find
-nothing wrong in the ticket under test.** `T-P14` was built and its free arms run
+**Revised 2026-08-20 — §1n, free arms and paid, and the payout is about how a
+score is read rather than about the build.** `T-P14`'s document set went 87.5% →
+75% while the case the ticket predicted would move moved, one case failed on its
+own assertion's wording while answering correctly, and one never called a tool.
+An 8-case set has no noise band and one case is 12.5% of it, which is now the
+first thing owed. Otherwise: nothing wrong in the ticket under test, the second
+such sitting after §1l. `T-P14` was built and its free arms run
 in the same sitting: the migration both ways and
 six retrieval arms driven through the repository's own code. Every arm held, and
 the sitting's finding is about the *ticket* rather than the build — the
@@ -1049,7 +1054,7 @@ use` and cost a minute, but it is the third environment fact in this file's
 history to look like a broken build, so: `MCP_SERVER_ADDR=:8099` was used
 instead, and checking what holds a port beats assuming the process is broken.
 
-## 1n. `T-P14`'s free arms — run 2026-08-20, and the second sitting to find nothing in the ticket under test
+## 1n. `T-P14` — free arms and paid, both run 2026-08-20
 
 Filed and run the same sitting the ticket was built, which is §1h's rule and the
 fourth time it has been followed. `T-P14` is the pair of retrieval failures
@@ -1068,8 +1073,8 @@ rows kept, `061`'s exact `tsv` expression restored — and up again, `dirty = f`
 | ~~`T-P14`~~ | ~~The conjunctive path is unchanged when it matches~~ | ~~§1 stack~~ | **Pass on rows and order; the rank value moved and reaches nobody.** `faktur` returns the same single row it returned at 64. Its `ts_rank` went 0.0608 → 0.6079 (weight D → A) and `fuse` overwrites `Score` with the reciprocal-rank result before any caller reads it. Recorded rather than claimed as byte-identity, which a `SELECT` would disprove |
 | ~~`T-P14`~~ | ~~A query mixing English and Indonesian terms returns the right chunk rather than nothing~~ | ~~§1 stack~~ | **Pass, and the mechanism is not the one the ticket predicted.** The reproduction query now matches **conjunctively**, because its one English word — `invoice` — is in the document's *name*. The fallback was measured on a separate query where no term reaches a filename: conjunctive 0, then `loosened=true` with the chunk matching 3 terms ranked above the one matching 1 |
 | ~~`T-P14`~~ | ~~The tool result names the fallback when it fired~~ | ~~§1 stack~~ | **Pass, with its negative.** `loosened` is true only where the loosened query *found* something: a query nothing matches, even disjunctively, reports `loosened=false` and gets the "do not guess" note instead of a caveat about passages it did not receive |
-| `T-P14` | The two turns: ask for a document by filename, and re-ask the mixed-language question | §2 money | **~$0.02.** What a query cannot show is what a *model* does with the loosened note |
-| `T-P14` | **Rule 1**: `make eval-docs`, with `doc-prose-citation` the case that should move | §2 money | **~$0.13** |
+| ~~`T-P14`~~ | ~~The two turns: ask for a document by filename, and re-ask the mixed-language question~~ | ~~§2 money~~ | **Run 2026-08-20 — pass, $0.0212.** Asked for `02-bank-statement.pdf` — a document whose name and page share no word — the agent searched **`bank statement`** and answered *"a bank statement (Indonesian: Rekening Koran) … December 2024"*, page 1. That query returns **0 chunks** against the index this build replaced. The second turn passed **without the fallback**: the model shortened its own query to `rekening koran`, which matched conjunctively before this build too — so the turns prove the filename half end to end and not the loosening |
+| ~~`T-P14`~~ | ~~**Rule 1**: `make eval-docs`, with `doc-prose-citation` the case that should move~~ | ~~§2 money~~ | **Run 2026-08-20, $0.0850. Cells 100%, publish 100%, answers 75% (6/8) against 87.5% on 08-19** — and `doc-prose-citation` moved, exactly as predicted: FAIL → PASS, from 0 chunks retrieved to 4 under the loosened query, quoting *"angka sementara"* with both citations. The two cases that went the other way are not this build: `doc-absent-document` retrieved **zero passages even loosened** — the boundary held — and failed on its assertion's vocabulary (`no`/`not` against a reply that says `couldn't`/`hasn't`/`doesn't`), and `doc-budget-scale-word` **called no tool at all**. Both safety cases got *more* retrieval than before and still pass. [`pdf-knowledge.md`](pdf-knowledge.md) §7 |
 
 **Two controls, one by accident.** The gate binary's first run took `company_id`
 from the first chunk row rather than from the document's, and returned **0 hits
@@ -1084,6 +1089,39 @@ planner is right. With `enable_seqscan = off` both arms plan as a
 `Bitmap Index Scan on idx_document_chunks_tsv`, so the rewritten expression is
 still indexable — worth checking, because a generated column redefined into
 something unindexable would look exactly like this until the table grew.
+
+**And the paid half ran the same day, for $0.1062 rather than the ~$0.15
+estimated.** What it found is a lesson about *reading* a score rather than a
+defect in the build: the document set's rate went **87.5% → 75%** while the
+mechanism under test went the right way. One case moved because of this change
+(`doc-prose-citation`, and it is the one the ticket named); one failed on its own
+assertion's vocabulary while answering correctly; one never called a tool. **An
+8-case set has no measured noise band and one case is 12.5% of it** — the 56-case
+set carries ±2 for exactly this reason, and this set carries nothing yet. That is
+now the first thing owed here.
+
+**Two findings, neither belonging to `T-P14`:**
+
+- `doc-absent-document` scores a correct refusal as a failure. Its
+  `contains_any` wants `no`/`not`/`tidak`/`belum`; the model wrote `couldn't`,
+  `hasn't` and `doesn't`. Left unfixed deliberately — editing an assertion in the
+  sitting that moved its score is how a set stops measuring. P2.
+- `doc-budget-scale-word` answered from the source descriptions with **zero tool
+  calls**. Same family as `T-Q5`'s asking-policy finding from 2026-08-14, and
+  unreachable from anything this build changed.
+
+**Still owed, and it is small:** no gate has yet shown a *model* reading the
+loosened note and saying its match was approximate. `doc-prose-citation` shows the
+fallback retrieving what a turn answers correctly from; the note's wording is
+unit-tested; what it does to a reply is not measured.
+
+**State left behind.** The control database is at **migration 65**, `dirty = f`.
+Ten new threads on the eval tenant `Argentum Eval`
+(`de3caef9-5951-4888-a1cd-be77f6542c51`) — eight from the document set and two
+from `T-P14`'s own turns — and no long-lived process was started: both runs are
+`go run ./cmd/evaldocs`, which boots its own stack and closes it. `ps ax` showed
+no worker, API or MCP process from an earlier session before either run, which is
+§1g's rule and the reason its stale-binary defect cannot hide here.
 
 Record: [`pdf-knowledge.md`](pdf-knowledge.md) §7.
 

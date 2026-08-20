@@ -1253,7 +1253,7 @@ These change what gets built and cannot be guessed from the code.
 
 ---
 
-## `T-P14` A document nobody can ask for by name — 0.5d · **built 2026-08-20, free arms gated; the two turns and `make eval-docs` owed**
+## `T-P14` A document nobody can ask for by name — 0.5d · **built and gated live 2026-08-20, both halves, $0.1062**
 **Repo:** BE · **Deps:** `T-P8` · **Priority:** P2 · ~~**Migration:** none~~ →
 **`065`**
 
@@ -1286,8 +1286,20 @@ These change what gets built and cannot be guessed from the code.
 >    it is measured separately (a query where no term reaches the filename), but
 >    the ticket's own reproduction is fixed by the other half of the ticket.
 >
-> Record: [`../coverage/pdf-knowledge.md`](../coverage/pdf-knowledge.md) §7.
-> Owed: the two turns (~$0.02) and the rule-1 `make eval-docs` (~$0.13),
+> **The paid half ran the same day, $0.1062.** The two turns pass: asked for
+> `02-bank-statement.pdf` — a document whose name and page share no word — the
+> agent searched `bank statement` and answered correctly with a page citation,
+> from a query that returns **0 chunks** against the index this build replaced.
+> Rule 1's `make eval-docs` scored **cells 100% / publish 100% / answers 75%
+> (6/8)** against 87.5% on 08-19, and the per-case attribution is the result
+> rather than the rate: `doc-prose-citation` moved FAIL → PASS for the predicted
+> reason (0 chunks strict, 4 loosened), `doc-absent-document` retrieved **nothing
+> even loosened** — the boundary this change could have broken — and failed on
+> its assertion's vocabulary while answering correctly, and
+> `doc-budget-scale-word` called no tool at all. **The set has no measured noise
+> band and one case is 12.5% of it**, which is now the first thing owed.
+>
+> Record: [`../coverage/pdf-knowledge.md`](../coverage/pdf-knowledge.md) §7 and
 > [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1n.
 
 > **Filed 2026-08-19** from the `T-H9` gate, which needed a turn to read a

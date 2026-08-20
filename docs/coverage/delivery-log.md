@@ -4335,10 +4335,37 @@ the `ts_rank` value, which moved from weight D to weight A. It reaches nobody �
 — and it is written down rather than claimed away, because a `SELECT` disproves
 the stronger sentence in one line.
 
-**What is owed: ~$0.15.** Two turns to show what a *model* does with the loosened
-note, and rule 1's `make eval-docs`, where `doc-prose-citation` — the set's one
-remaining failure, and an English question against Indonesian prose — is the case
-that should move.
+**The paid half ran the same day, $0.1062 against a ~$0.15 estimate.** The two
+turns pass. Asked to look up `02-bank-statement.pdf` — a document chosen because
+its name and its page share no word, the page being `REKENING KORAN - DESEMBER
+2024` — the agent searched **`bank statement`**, the words inside the filename,
+and answered *"a bank statement (Indonesian: Rekening Koran) … December 2024"*
+with a page citation. That query returns **0 chunks** against the index this
+build replaced. The second turn passed **without the fallback**: the model
+shortened its own query to `rekening koran`, which matched conjunctively before
+this build too — so the turns prove the filename half end to end, and the
+loosening is proven by the eval set instead.
+
+**Rule 1: cells 100%, publish 100%, answers 75% (6/8) against 87.5% on 08-19 —
+and the per-case attribution is the result, not the rate.**
+`doc-prose-citation`, the case the ticket named, went **FAIL → PASS** for the
+predicted reason: 0 chunks retrieved strictly, **4 loosened**, and the reply now
+quotes *"angka sementara"* with both documents cited by name and page.
+`doc-absent-document` is the boundary this change could have broken — a fallback
+that widens until something matches would describe a document nobody uploaded —
+and it retrieved **zero passages even loosened**, then failed on its own
+assertion's vocabulary (`no`/`not` against a reply that says `couldn't`,
+`hasn't`, `doesn't`). `doc-budget-scale-word` flipped with **no tool call at
+all**, which is `T-Q5`'s asking-policy family and unreachable from anything here.
+Both safety cases retrieved *more* than before and still held: no
+`propose_action`, no `http_action`, quarantine still reported as unanswerable.
+
+**What the sitting adds to this file's own record: an 8-case set has no measured
+noise band, and one case is 12.5% of it.** The 56-case warehouse set carries ±2
+for exactly this reason. Two of the three moves here are a model re-phrasing and
+an assertion's vocabulary, and on a set with a band neither would have been read
+as a result. Measuring that band is now the first thing owed, ahead of the two
+P2s the sitting filed.
 
 ## Feature velocity, measured
 
