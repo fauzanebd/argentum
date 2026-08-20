@@ -17,7 +17,8 @@ func NewAgentActionRepo(db *sql.DB) *AgentActionRepo { return &AgentActionRepo{d
 const agentActionColumns = `id, company_id, thread_id, message_id, actor_kind, actor_ref, channel,
 	COALESCE(agent_id::text, ''), tool_name, source_id, COALESCE(mcp_server_id::text, ''),
 	args_redacted, args_hash,
-	result_status, error_text, rows_returned, duration_ms, request_id, document_tainted, created_at`
+	result_status, error_text, rows_returned, duration_ms, request_id, document_tainted, input_taint,
+	created_at`
 
 // Create writes one action. NULLIF(...)::uuid is what lets the caller pass an
 // empty thread or message id: the columns hold real UUIDs but a tool call made
@@ -28,11 +29,11 @@ func (r *AgentActionRepo) Create(ctx context.Context, a *domain.AgentAction) err
 		INSERT INTO agent_actions (
 			company_id, thread_id, message_id, actor_kind, actor_ref, channel,
 			agent_id, tool_name, source_id, mcp_server_id, args_redacted, args_hash, result_status,
-			error_text, rows_returned, duration_ms, request_id, document_tainted
+			error_text, rows_returned, duration_ms, request_id, document_tainted, input_taint
 		) VALUES (
 			$1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, $5, $6,
 			NULLIF($7, '')::uuid, $8, $9, NULLIF($10, '')::uuid, $11::jsonb, $12, $13,
-			NULLIF($14, ''), $15, $16, $17, $18
+			NULLIF($14, ''), $15, $16, $17, $18, $19
 		)
 		RETURNING id, created_at
 	`
@@ -47,7 +48,7 @@ func (r *AgentActionRepo) Create(ctx context.Context, a *domain.AgentAction) err
 	if err := r.db.QueryRowContext(ctx, q,
 		a.CompanyID, a.ThreadID, a.MessageID, string(a.ActorKind), a.ActorRef, string(a.Channel),
 		a.AgentID, a.ToolName, a.SourceID, a.MCPServerID, string(args), a.ArgsHash, string(a.ResultStatus),
-		a.ErrorText, rows, a.DurationMS, a.RequestID, a.DocumentTainted,
+		a.ErrorText, rows, a.DurationMS, a.RequestID, a.DocumentTainted, a.InputTaint,
 	).Scan(&a.ID, &a.CreatedAt); err != nil {
 		return fmt.Errorf("insert agent action: %w", err)
 	}
@@ -114,7 +115,7 @@ func scanAgentAction(s rowScanner) (*domain.AgentAction, error) {
 	if err := s.Scan(
 		&a.ID, &a.CompanyID, &threadID, &messageID, &actorKind, &a.ActorRef, &channel,
 		&a.AgentID, &a.ToolName, &a.SourceID, &a.MCPServerID, &a.ArgsRedacted, &a.ArgsHash, &status, &errText,
-		&rowsReturned, &a.DurationMS, &a.RequestID, &a.DocumentTainted, &a.CreatedAt,
+		&rowsReturned, &a.DurationMS, &a.RequestID, &a.DocumentTainted, &a.InputTaint, &a.CreatedAt,
 	); err != nil {
 		return nil, err
 	}

@@ -14,9 +14,9 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/agentscope"
-	"github.com/fauzanebd/argentum/internal/doctaint"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/metrics"
+	"github.com/fauzanebd/argentum/internal/taint"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/fauzanebd/argentum/internal/tracing"
 )
@@ -148,14 +148,19 @@ func (a *audited) record(ctx context.Context, tool, args, out string, execErr er
 		// stronger version of the same reason: it is a fact about the turn, and
 		// the question a customer review asks is what the agent *did* after
 		// reading somebody else's file.
-		DocumentTainted: doctaint.Tainted(ctx),
-		ArgsRedacted:    redacted,
-		ArgsHash:        hashArgs(args),
-		ResultStatus:    status,
-		ErrorText:       errText,
-		RowsReturned:    rows,
-		DurationMS:      int(took.Milliseconds()),
-		RequestID:       tenantctx.RequestID(ctx),
+		DocumentTainted: taint.Has(ctx, taint.KindDocument),
+		// And everything else this turn had read by the time of this call
+		// (T-H8): "data", "document", or both, sorted. The boolean above is the
+		// one kind that gates an action; this is the one a review filters by
+		// when the question is wider than documents.
+		InputTaint:   taint.Join(taint.Kinds(ctx)),
+		ArgsRedacted: redacted,
+		ArgsHash:     hashArgs(args),
+		ResultStatus: status,
+		ErrorText:    errText,
+		RowsReturned: rows,
+		DurationMS:   int(took.Milliseconds()),
+		RequestID:    tenantctx.RequestID(ctx),
 	}
 
 	// Detached from the turn's context on purpose: a turn cancelled by its

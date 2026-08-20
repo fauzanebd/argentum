@@ -336,7 +336,45 @@ row already carries what an incident actually needs.
 This track is the one with no partial credit available and the one a
 sophisticated reviewer will ask about first.
 
-### `T-H8` Tool results are untrusted input — 1.5d
+### `T-H8` Tool results are untrusted input — 1.5d · **built 2026-08-20, free arms gated; the turn half and rule 1 owed**
+
+> **Status, 2026-08-20: built, unit-gated (26 new tests across three packages)
+> and gated free against the real control database.** All three steps landed,
+> and two of them differ from the ticket for reasons the build found rather than
+> chose.
+>
+> **1. There is one fence, and it stopped saying DOCUMENT.** `fence.go`'s own
+> comment set this ticket's acceptance line — *"when T-H8 lands there must be
+> exactly one of these"* — so the markers are now
+> `<<<UNTRUSTED_CONTENT` / `<<<END_UNTRUSTED_CONTENT>>>`, with the `source=`
+> label carrying what a supplier's PDF and a warehouse row do not share.
+>
+> **2. The taint tag grew kinds instead of a second flag.** `internal/doctaint`
+> is `internal/taint`, with `document` and `data`. They stay separate because
+> the consequences do: `T-H9` gates a turn that read a *document*, and applying
+> that to warehouse rows would put an approval in front of every ordinary
+> analytics turn — not a control, an off switch. The audit row keeps
+> `document_tainted` (indexed, and what `T-H9` and `062` read) and gains
+> `input_taint`, a sorted list, so a new kind next year is a constant rather
+> than a migration (`066`).
+>
+> **3. Fencing is on the agent's registry, not on `s.Tools`.** `cmd/mcp` serves
+> the same registry to external clients that parse a result as JSON; a fence
+> there would be a breaking change to a published surface in the name of
+> protecting a model that is not in that path.
+>
+> **Two defects the build found in itself, both before any model was involved.**
+> The fence markers were being HTML-escaped by `json.Marshal`, so every
+> document passage had reached the model as `\u003c\u003c\u003cUNTRUSTED_…`
+> since `T-P10` — a boundary the system prompt names and the model could not
+> see. And the first cut marked data taint *above* the audit decorator, so the
+> call that did the reading recorded that it had read nothing: a lag of one call
+> on the column a review filters by. Both are pinned by tests.
+>
+> **Owed:** a turn (~$0.05) and rule 1's 56-case re-score on both models (~$1.0)
+> — this changes what every tool result looks like to the model, which is the
+> largest prompt-surface change since the track began.
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §18.
 
 Guardrails run on the user's message and on the final answer
 (`apps/backend/internal/app/chat_runner.go:957`). Nothing runs on what a tool
@@ -388,6 +426,11 @@ covered without its author knowing
 >    open, so what exists is `T-P10`'s `doctaint`. The gate reads it through one
 >    function; widening it when `T-H8` lands is a change to what marks the
 >    tracker, not to this control.
+>
+>    **Confirmed 2026-08-20, and the widening deliberately did not touch it.**
+>    `T-H8` made the tracker carry kinds; this gate reads `KindDocument` and
+>    nothing else, because a turn that read warehouse rows is every turn, and
+>    gating those would replace an approval policy with an off switch.
 > 3. **The reason is stored, and it is a sentence rather than a flag.** Not in
 >    the ticket, and the gate is the argument for it: an admin who switched a
 >    kind to automatic and then finds a card waiting has to tell a policy from a

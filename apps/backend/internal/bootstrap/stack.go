@@ -596,6 +596,14 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	}.Normalize()
 	s.Tools = agentbudget.GuardAll(s.Tools)
 
+	// What a turn read that we did not write, recorded BELOW the audit
+	// decorator (T-H8). Below, because the audit row says what the turn had
+	// read *at the time of the call*: marking above it would write the row
+	// first and the fact second, so every reading call would record that it had
+	// read nothing. `search_documents` already marks inside its own Execute,
+	// which is the behaviour this keeps every other tool consistent with.
+	s.Tools = tools.MarkUntrustedReadsAll(s.Tools)
+
 	// Audit outside the budget guard (T-05): a refused call returns a refusal
 	// string with a nil error, so wrapping the other way round would record it
 	// as an ordinary success — and "the agent tried to run one more query and
@@ -634,7 +642,23 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		}
 	}
 
-	agentTools := s.Tools
+	// The untrusted-content fence goes on here, on the agent's copy of the
+	// registry, and NOT on `s.Tools` (T-H8).
+	//
+	// `cmd/mcp` serves `s.Tools` to external MCP clients, which parse what a
+	// tool returns as JSON — a fence around it would be a breaking change to a
+	// published surface in the name of protecting a model that is not in that
+	// path. The fence exists for the one consumer that reads a tool result as
+	// *language*: this agent.
+	//
+	// Outermost of the agent's three decorators, and the order is the whole of
+	// why this works. What a tool returns is JSON that the digest, the row
+	// counter and the grounding evidence all parse; what the model receives is
+	// that JSON inside the fence. Wrapping outside the audit decorator means
+	// the two are the same bytes with a marker around them rather than two
+	// different truths, and the runner unwraps once with `guardrails.Unfence`
+	// before anything parses it.
+	agentTools := tools.FenceResultsAll(s.Tools)
 
 	// The registry, by name, once per boot. The SDK looks a tool call up by
 	// matching `tool.Name()` against what the model asked for and logs a bare

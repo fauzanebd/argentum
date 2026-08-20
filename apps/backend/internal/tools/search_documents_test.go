@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
@@ -100,4 +101,43 @@ func TestEmptySearchKeepsItsOwnNote(t *testing.T) {
 	if !strings.Contains(note, "Do not guess") {
 		t.Errorf("note = %q, want the no-match instruction", note)
 	}
+}
+
+// TestSearchDocumentsKeepsItsFenceLiteral pins the defect T-H8's fence tests
+// found: `json.Marshal` escapes `<` and `>`, so every marker in a passage
+// reached the model as `\\u003c\\u003c\\u003cUNTRUSTED_CONTENT`.
+//
+// It was not cosmetic. The system prompt tells the model to look for a literal
+// string, and it was looking at an escape sequence; the decorator that asks
+// "has this result already fenced itself?" saw nothing and would have wrapped
+// the whole JSON in a second, unlabelled fence. Both are invisible until
+// somebody prints the bytes.
+func TestSearchDocumentsKeepsItsFenceLiteral(t *testing.T) {
+	out := runSearchRaw(t, &stubDocumentSearch{hits: oneHit()}, `{"query":"faktur"}`)
+
+	if !strings.Contains(out, guardrails.FenceOpen) {
+		t.Fatalf("the fence is not literal in the tool result: %.200q", out)
+	}
+	if strings.Contains(out, "\\u003c") {
+		t.Errorf("the result carries HTML-escaped markers: %.200q", out)
+	}
+	// Still JSON, and still one object: the encoder's trailing newline is
+	// trimmed because everything downstream compares and fences this string.
+	var body map[string]any
+	if err := json.Unmarshal([]byte(out), &body); err != nil {
+		t.Fatalf("the result stopped being JSON: %v", err)
+	}
+	if strings.HasSuffix(out, "\n") {
+		t.Error("the encoder's newline reached the caller")
+	}
+}
+
+func runSearchRaw(t *testing.T, search DocumentSearch, args string) string {
+	t.Helper()
+	ctx := tenantctx.WithCompanyID(context.Background(), "co-1")
+	out, err := NewSearchDocumentsTool(search).Execute(ctx, args)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	return out
 }

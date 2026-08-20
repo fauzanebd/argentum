@@ -298,6 +298,18 @@ export interface AgentAction {
    * turns it into an approval gate.
    */
   document_tainted?: boolean;
+  /**
+   * InputTaint lists every kind of content this turn read that the product
+   * did not write, sorted and comma-separated — "data", "document",
+   * "data,document" (T-H8). Written from `taint.Join`, so the vocabulary has
+   * one definition.
+   * It is the general form of DocumentTainted above rather than a replacement
+   * for it: the boolean is indexed and gates an action, this answers the wider
+   * question a security review actually asks. Empty on a call whose turn read
+   * nothing, which is not the same as a call from before this column existed —
+   * those read empty too, and the migration says so.
+   */
+  input_taint?: string;
   created_at: string;
 }
 /**

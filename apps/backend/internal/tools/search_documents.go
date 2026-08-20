@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,9 +9,9 @@ import (
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 
-	"github.com/fauzanebd/argentum/internal/doctaint"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/guardrails"
+	"github.com/fauzanebd/argentum/internal/taint"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
@@ -146,26 +147,39 @@ func (t *SearchDocumentsTool) Execute(ctx context.Context, input string) (string
 		// have the sentence refer to something; the tag is what lets an audit
 		// row afterwards say which turns read a document at all.
 		label := fmt.Sprintf("%s pages %d-%d", h.Filename, h.PageFrom, h.PageTo)
-		doctaint.Mark(ctx, h.Filename)
+		taint.Mark(ctx, taint.KindDocument, h.Filename)
 		out = append(out, passage{
 			DocumentID: h.DocumentID,
 			Filename:   h.Filename,
 			Heading:    h.HeadingPath,
 			PageFrom:   h.PageFrom,
 			PageTo:     h.PageTo,
-			Text:       guardrails.FenceDocument(label, domain.ClampRunes(h.Content, t.maxChars)),
+			Text:       guardrails.Fence(label, domain.ClampRunes(h.Content, t.maxChars)),
 			Matched:    h.Matched,
 		})
 	}
 
-	body, _ := json.Marshal(map[string]any{
+	// Encoded with HTML escaping OFF, and that is not cosmetic (found by
+	// T-H8's fence tests). `json.Marshal` escapes `<` and `>` by default, so
+	// every fence marker in a passage reached the model as
+	// `\u003c\u003c\u003cUNTRUSTED_CONTENT` — the boundary the system prompt
+	// names, spelled in a way the prompt's own sentence does not match, and
+	// invisible to any code asking whether a result was already fenced.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(map[string]any{
 		"passages": out,
 		// Said out loud rather than left as an empty list, because "no passage
 		// matched" and "this organization has uploaded nothing" lead to
 		// different next moves, and a model given a bare `[]` guesses which.
 		"note": resultNote(len(out), args.DocumentID, loosened),
-	})
-	return string(body), nil
+	}); err != nil {
+		return "", fmt.Errorf("encode search result: %w", err)
+	}
+	// Encode appends a newline; the result is compared and fenced elsewhere, so
+	// it goes back as the JSON alone.
+	return strings.TrimRight(buf.String(), "\n"), nil
 }
 
 // loosenedNote is what the model is told when the search had to drop the

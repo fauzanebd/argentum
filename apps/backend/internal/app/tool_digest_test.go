@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/fauzanebd/argentum/internal/guardrails"
 )
 
 func argsOf(t *testing.T, raw string) map[string]interface{} {
@@ -289,5 +291,67 @@ func TestRenderPriorWorkForbidsQuotingStaleFigures(t *testing.T) {
 	}
 	if !strings.Contains(got, "SELECT SUM(x) FROM y") {
 		t.Error("the previous query is not in the block")
+	}
+}
+
+// TestTheDigestSurvivesTheFence is the seam T-H8 could most easily have broken,
+// and the failure would not have looked like a security change.
+//
+// Every tool result the model reads is now wrapped in an untrusted-content
+// fence, applied by a decorator outside the audit one. A fenced string is not
+// JSON. The runner unwraps it exactly once — `guardrails.Unfence` — and if that
+// call were ever removed, the digest would parse a marker line, find no rows,
+// and record every successful query as a call that returned nothing: the memory
+// block would tell the next turn its work is undone, which is the T-Q12 defect
+// arriving by a new route.
+func TestTheDigestSurvivesTheFence(t *testing.T) {
+	payload := `{"columns":["bulan","nilai"],"rows":[{"bulan":"Desember","nilai":3863405700}],"row_count":1}`
+	args := map[string]interface{}{"source_id": "src-1", "query": "SELECT bulan, nilai FROM laporan"}
+
+	fenced := guardrails.Fence("run_sql result", payload)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(guardrails.Unfence(fenced)), &parsed); err != nil {
+		t.Fatalf("the unfenced payload is not JSON: %v", err)
+	}
+	got := BuildToolDigest("run_sql", args, parsed, guardrails.Unfence(fenced))
+
+	if got.Outcome() != DigestStatusOK {
+		t.Fatalf("digest outcome = %q, want ok", got.Outcome())
+	}
+	if got.Rows != 1 {
+		t.Errorf("digest rows = %d, want 1", got.Rows)
+	}
+
+	// The control, and the reason the unwrap is a named call rather than an
+	// inline expression somebody can drop: handed the fenced string, the digest
+	// sees no rows at all.
+	var unparsed map[string]interface{}
+	_ = json.Unmarshal([]byte(fenced), &unparsed)
+	blind := BuildToolDigest("run_sql", args, unparsed, fenced)
+	if blind.Rows == 1 {
+		t.Fatal("the fenced string parsed as JSON — this control no longer controls for anything")
+	}
+}
+
+// The grounding evidence rides the same seam (T-Q9/T-Q11): the figures a reply
+// is checked against are collected from the parsed result. Fenced and unparsed,
+// the collection returns nothing and every figure in a correct answer reads as
+// ungrounded — which is how a gate replaces a right answer with "I wasn't able
+// to complete the query".
+func TestGroundingEvidenceSurvivesTheFence(t *testing.T) {
+	payload := `{"rows":[{"nilai":3863405700}],"row_count":1}`
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(guardrails.Unfence(guardrails.Fence("run_sql result", payload))), &parsed); err != nil {
+		t.Fatalf("unfenced payload is not JSON: %v", err)
+	}
+	nums := guardrails.CollectNumbers(parsed, 10)
+	found := false
+	for _, n := range nums {
+		if n == 3863405700 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the tool's own figure was not collected as evidence: %v", nums)
 	}
 }

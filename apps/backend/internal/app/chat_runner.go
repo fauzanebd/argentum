@@ -20,7 +20,6 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/agentscope"
-	"github.com/fauzanebd/argentum/internal/doctaint"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/lark"
@@ -28,6 +27,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/slack"
+	"github.com/fauzanebd/argentum/internal/taint"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/tracing"
@@ -551,12 +551,14 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	}
 	ctx = multitenancy.WithOrgID(ctx, p.CompanyID)
 	ctx = memory.WithConversationID(ctx, p.ThreadID)
-	// Did this turn read a tenant's uploaded document (T-P10)? The tracker is
-	// attached before any tool runs and written by search_documents, because
-	// the fact is discovered inside a call rather than decided before one — a
+	// What did this turn read that we did not write (T-P10, T-H8)? The tracker
+	// is attached before any tool runs and written from inside the calls —
+	// `search_documents` names the documents it returned, and the untrusted-
+	// result decorator names every other tool whose output was fenced — because
+	// the fact is discovered inside a call rather than decided before one: a
 	// context value set in the tool would be dropped when it returned.
-	taint := doctaint.New()
-	ctx = doctaint.With(ctx, taint)
+	taints := taint.New()
+	ctx = taint.With(ctx, taints)
 
 	// Cheap small-talk short-circuit: skip the agent (and the light-LLM
 	// guardrail/classifier pipeline behind it) when the message is a
@@ -803,13 +805,15 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		// reads. Zero on every honest turn, which is what makes a 1 findable.
 		"unevidenced": unevidenced,
 		"next_steps":  len(steps),
-		// Whether this turn read content somebody else wrote (T-P10). Telemetry
-		// until T-H9 turns it into a gate, and on the completion line for the
-		// same reason as the two counters above it: the question a review asks
-		// is "which turns read an uploaded file", and it has to be answerable
-		// by filtering rather than by joining.
-		"document_tainted": taint.Tainted(),
-		"document_sources": strings.Join(taint.Sources(), ","),
+		// What this turn read that somebody else wrote (T-P10, T-H8). The
+		// document half gates an action; the data half is recorded and fenced.
+		// Both are on the completion line for the same reason as the two
+		// counters above them: the question a review asks is "which turns read
+		// an uploaded file", and it has to be answerable by filtering rather
+		// than by joining.
+		"document_tainted": taints.Has(taint.KindDocument),
+		"document_sources": strings.Join(taints.Sources(taint.KindDocument), ","),
+		"input_taint":      taint.Join(taints.Kinds()),
 	}).Info("turn completed")
 	return nil
 }
@@ -1293,9 +1297,17 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 
 		case interfaces.AgentEventToolResult:
 			if evt.ToolCall != nil {
+				// The model-facing string is fenced (T-H8); everything below
+				// this line wants the payload. Unwrapped exactly once, here,
+				// because this is the only seam in the product that sees a tool
+				// result after the untrusted-result decorator has wrapped it —
+				// and a fenced string parsed as JSON would empty the digest and
+				// the grounding evidence at the same time, which reads as every
+				// tool having failed rather than as a fence.
+				rawResult := guardrails.Unfence(evt.ToolCall.Result)
 				res := map[string]interface{}{}
-				if evt.ToolCall.Result != "" {
-					_ = json.Unmarshal([]byte(evt.ToolCall.Result), &res)
+				if rawResult != "" {
+					_ = json.Unmarshal([]byte(rawResult), &res)
 				}
 				// The digest, built from the arguments and the result together
 				// (T-Q6). Arguments are re-parsed here rather than carried from
@@ -1311,7 +1323,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 				// plain string, which unmarshals into an empty map and used to
 				// leave a digest saying nothing happened wrong (T-Q12).
 				digests = append(digests,
-					BuildToolDigest(evt.ToolCall.Name, callArgs, res, evt.ToolCall.Result))
+					BuildToolDigest(evt.ToolCall.Name, callArgs, res, rawResult))
 
 				// Every number this turn's data tools actually returned (T-Q9),
 				// for the grounding check after the answer is written. Only the

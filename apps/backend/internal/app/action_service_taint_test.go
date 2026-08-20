@@ -6,19 +6,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fauzanebd/argentum/internal/doctaint"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/taint"
 	"github.com/fauzanebd/argentum/internal/tools"
 )
 
 // taintedCtx is the harness context with a turn that has already read one or
 // more documents, exactly as search_documents leaves it.
 func (h *actionHarness) taintedCtx(sources ...string) context.Context {
-	tracker := doctaint.New()
+	tracker := taint.New()
 	for _, s := range sources {
-		tracker.Mark(s)
+		tracker.Mark(taint.KindDocument, s)
 	}
-	return doctaint.With(h.ctx(), tracker)
+	return taint.With(h.ctx(), tracker)
 }
 
 func (h *actionHarness) proposeIn(t *testing.T, ctx context.Context) *tools.ProposeActionResult {
@@ -122,7 +122,7 @@ func TestAnEmptyTrackerIsNotTaint(t *testing.T) {
 	}
 }
 
-// A read with no nameable source still taints — doctaint.Mark records the flag
+// A read with no nameable source still taints — taint.Mark records the flag
 // either way, and a gate that decided on the filename list would let exactly
 // that case through.
 func TestAnUnnamedReadStillWithholdsApproval(t *testing.T) {
@@ -161,11 +161,11 @@ func TestAKindThatAlreadyNeedsApprovalIsUnchanged(t *testing.T) {
 
 func TestTaintApprovalReasonWording(t *testing.T) {
 	mk := func(sources ...string) context.Context {
-		tr := doctaint.New()
+		tr := taint.New()
 		for _, s := range sources {
-			tr.Mark(s)
+			tr.Mark(taint.KindDocument, s)
 		}
-		return doctaint.With(context.Background(), tr)
+		return taint.With(context.Background(), tr)
 	}
 
 	if got := taintApprovalReason(context.Background()); got != "" {
@@ -187,9 +187,9 @@ func TestTaintApprovalReasonWording(t *testing.T) {
 // and a security review. A 4 KB one must not.
 func TestTheReasonIsBoundedAndCutsOnARuneBoundary(t *testing.T) {
 	long := strings.Repeat("ä", 500) + ".pdf" // multi-byte, deliberately
-	tr := doctaint.New()
-	tr.Mark(long)
-	got := taintApprovalReason(doctaint.With(context.Background(), tr))
+	tr := taint.New()
+	tr.Mark(taint.KindDocument, long)
+	got := taintApprovalReason(taint.With(context.Background(), tr))
 
 	if len(got) > maxTaintReasonBytes {
 		t.Fatalf("reason is %d bytes, over the %d cap", len(got), maxTaintReasonBytes)

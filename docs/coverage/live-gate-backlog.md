@@ -164,6 +164,15 @@ rather than by the fallback the ticket wrote for it, so the fallback had to be
 measured on a query the ticket does not contain. A gate that only ran the
 reproduction would have proven one mechanism and shipped two.
 
+**Revised 2026-08-20 again — §1o, and the free bucket found two defects in
+`T-H8`'s own code.** The security track's last untouched hole is closed: every
+tool result now reaches the agent inside an untrusted-content fence, and what a
+turn read is on its audit row. What the sitting found is the argument for this
+whole file in miniature — the fence had been **HTML-escaped since `T-P10`**, so
+the marker the system prompt names had never once reached a model as written,
+and it was invisible to a live gate that signed the feature off three weeks ago.
+The first unit test ever written against that file found it in a minute.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of four things: the stack up, money spent, a browser opened, or a
 message sent to a real person's phone — with the single exception of §1h, which
@@ -1124,6 +1133,53 @@ no worker, API or MCP process from an earlier session before either run, which i
 §1g's rule and the reason its stale-binary defect cannot hide here.
 
 Record: [`pdf-knowledge.md`](pdf-knowledge.md) §7.
+
+## 1o. `T-H8`'s free arms — run 2026-08-20, and the bucket found two defects in the ticket's own code
+
+Filed and run the sitting the ticket was built, which is §1h's rule for the
+fifth time. `T-H8` fences every tool result and records what a turn read; the
+free half is the migration and the wiring, and the paid half is what a *model*
+does with a fence.
+
+| Owed by | The gate | Bucket | Outcome |
+| ------- | -------- | ------ | ------- |
+| ~~`T-H8`~~ | ~~Migration `066` up, down against a populated table, and up~~ | ~~§1 stack~~ | **Pass.** 65 → 66, `down 1` against **2,590 rows** — every row kept, all **26** `document_tainted` rows kept — up again, `dirty = f`, both indexes present |
+| ~~`T-H8`~~ | ~~A tool result reaches the agent fenced, and the product can still parse it~~ | ~~§1 stack~~ | **Pass, through the real chain.** `run_sql` against a live source returns `<<<UNTRUSTED_CONTENT source="run_sql result">>>`, and `guardrails.Unfence` gives back JSON that parses — the seam the digest, the row count and the grounding evidence all sit behind |
+| ~~`T-H8`~~ | ~~The MCP surface is unchanged~~ | ~~§1 stack~~ | **Pass.** The registry `cmd/mcp` serves external clients is **not** fenced. The fence went on the agent's copy for exactly this reason: an MCP client parses a result as JSON, and it is not the consumer that reads one as language |
+| ~~`T-H8`~~ | ~~`search_documents` is not double-fenced~~ | ~~§1 stack~~ | **Pass.** No outer fence, both passage fences intact with their filename and page range, JSON still parses, taint recorded as `document` |
+| ~~`T-H8`~~ | ~~The audit row answers "what had this turn read?"~~ | ~~§1 stack~~ | **Pass, after the gate found it wrong.** `search_documents`: `document_tainted=t`, `input_taint="document"`. Agent `run_sql`: `input_taint="data"`. MCP `run_sql`: `""` — no turn, no tracker, which is the honest answer rather than a default |
+| `T-H8` | A turn against a warehouse whose rows carry an injected instruction: the reply reports that the data says so and calls no tool it was not asked to | §2 money | **~$0.05.** The free arms prove the fence is there; only a model shows what it does with it |
+| `T-H8` | **Rule 1**: the 56-case set on both models | §2 money | **~$1.0.** The largest prompt-surface change this track has made — every tool result now arrives inside a marker — and the failure it could hide is a model that starts hedging figures it used to state |
+
+**Two defects, both in the ticket's own code, both found without a model.**
+
+1. **The fence had been HTML-escaped since `T-P10`.** `json.Marshal` escapes `<`
+   and `>`, so every document passage reached the model as
+   `\u003c\u003c\u003cUNTRUSTED_DOCUMENT_CONTENT`: the system prompt named a
+   literal string the model was never shown. Found by the first test ever written
+   against `fence.go` — a file that shipped with `T-P10`, passed a live gate, and
+   had **no test file at all** until this ticket. That is §1k's `docchunk` lesson
+   arriving in the security package.
+2. **The read was recorded one call late.** Marking data taint above the audit
+   decorator wrote the row before the fact, so the call that did the reading
+   recorded `input_taint=""` and only the next call carried it — a turn with one
+   tool call would have recorded nothing. Found by the audit arm above, fixed by
+   splitting the decorator (mark below the row, fence above it), pinned by a test
+   that stands a probe where the audit decorator stands.
+
+**What this sitting adds to the file's record.** Both defects are in code whose
+unit tests passed, and neither is reachable from a turn: one is a byte-level
+encoding detail and the other is decorator ordering. The bucket that needs only
+the stack found both in under an hour, and the second one was found by an arm
+that exists because `062` chose to record the taint *at the time of the call* —
+a design decision from a different ticket, doing work as an assertion two weeks
+later.
+
+**State left behind.** Control database at **migration 66**, `dirty = f`. Three
+audit rows on the eval tenant from the gate binary, which was deleted after the
+sitting. No long-lived process was started.
+
+Record: [`security-hardening.md`](security-hardening.md) §18.
 
 ## 2. Needs the stack **and** real LLM spend
 

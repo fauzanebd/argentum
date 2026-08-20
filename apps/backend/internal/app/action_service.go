@@ -31,9 +31,9 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/actions"
 	"github.com/fauzanebd/argentum/internal/agentscope"
-	"github.com/fauzanebd/argentum/internal/doctaint"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/metrics"
+	"github.com/fauzanebd/argentum/internal/taint"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/fauzanebd/argentum/internal/tools"
 )
@@ -214,14 +214,14 @@ const maxTaintReasonBytes = 200
 // withheld, or "" when it was not.
 //
 // It reads Tainted first and the names second, deliberately: a read with no
-// nameable source still taints (doctaint.Mark records the flag either way), so
+// nameable source still taints (taint.Mark records the flag either way), so
 // deciding on the list would let an unnamed read through the gate. The names
 // only make the sentence better.
 func taintApprovalReason(ctx context.Context) string {
-	if !doctaint.Tainted(ctx) {
+	if !taint.Has(ctx, taint.KindDocument) {
 		return ""
 	}
-	names := doctaint.Sources(ctx)
+	names := taint.Sources(ctx, taint.KindDocument)
 	switch {
 	case len(names) == 0:
 		return "this turn read content from an uploaded document"

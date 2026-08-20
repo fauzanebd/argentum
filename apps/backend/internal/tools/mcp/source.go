@@ -205,7 +205,11 @@ func (s *Source) CompanyTools(ctx context.Context, companyID string) []interface
 	// registry with: the budget guard inside (so a refusal is what the audit
 	// wrapper sees and records as blocked), the audit recorder outside. An MCP
 	// tool is bounded and audited exactly as run_sql is.
-	return tools.WithAuditAll(agentbudget.GuardAll(raw), s.recorder)
+	// Fenced outermost, like the built-in registry (T-H8) — and a tenant's MCP
+	// server is the clearest case in the product for it: the text comes from a
+	// process neither we nor necessarily the tenant wrote.
+	return tools.FenceResultsAll(
+		tools.WithAuditAll(tools.MarkUntrustedReadsAll(agentbudget.GuardAll(raw)), s.recorder))
 }
 
 // decrypt reads a server's bearer token. No token is not an error: a server
