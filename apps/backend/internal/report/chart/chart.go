@@ -75,10 +75,17 @@ import (
 // which is arithmetic and not a second finding: this is one allocation-bound
 // loop over pixels, and there are 4/9 as many of them.
 //
-// Two still resolves the axis type; what it gives up against 3 is a fraction of
-// a pixel of edge contrast on glyph stems, which is below what 200 DPI on paper
-// can show. If the type ever does look furry, the honest fix is a higher
-// renderDPI on a smaller canvas, not a larger multiple of the same one.
+// Two still resolves the axis type, and the thing it was assumed to cost is not
+// a cost. This comment used to say 2 gives up "a fraction of a pixel of edge
+// contrast on glyph stems"; measured on the contact sheet's axis labels, 2's
+// edge energy is **1.3% higher** than 3's, not lower — a shorter downscale
+// blurs less, so if anything the type is crisper. What 3 buys is smoother
+// antialiasing on diagonals, which is not what an axis label is made of.
+// Across that crop the two differ by a mean of 2.8/255 with 4.9% of pixels
+// apart by more than 8/255: real, and below what anybody reads off paper.
+//
+// If the type ever does look furry, the honest fix is a higher renderDPI on a
+// smaller canvas, not a larger multiple of the same one.
 //
 // The per-report peak this was chased for — a worker's RSS across nine charts —
 // is not what the benchmark measures, and no test in this repository measures

@@ -627,6 +627,10 @@ one.
 - [x] `go test ./internal/report/...` green, `videoplan` included.
 - [x] The contact sheet still renders and the axis type is still legible — the
       negative case: this must not be bought with unreadable labels.
+      **Looked at, 2026-08-21**, not inferred from a passing test: both sheets
+      rendered (`CHART_SHEET_DIR`), the axis-label region cropped from each and
+      magnified 3×, and *"Rp 400 Juta"* / *"Rp 350 Juta"* read cleanly at both
+      factors with no visible difference between them.
 
 ### Gate
 ```
@@ -644,6 +648,17 @@ go test ./internal/report/...
 For a final image of ~35KB either way. Time falls by the same 44%, which is
 arithmetic rather than a second finding — one allocation-bound loop over 4/9 as
 many pixels.
+
+**And the quality cost is not where the change said it was.** The comment above
+the constant claimed 2 gives up "a fraction of a pixel of edge contrast on glyph
+stems". Measured on the contact sheet's axis labels — mean absolute horizontal
+gradient, which is what acutance is — **supersample 2 scores 1.3% *higher* than
+3**, because a shorter downscale blurs less. The two crops differ by a mean of
+2.8/255, with 4.9% of pixels apart by more than 8/255 and a maximum of 142/255
+on the handful of stem edges that land on the other side of a pixel boundary.
+What 3 actually buys is smoother antialiasing on diagonals, which an axis label
+is not made of. The comment is corrected to say so; the direction of a claim
+nobody had measured happened to be backwards.
 
 **The figures this change originally carried did not reproduce.** The comment
 claimed 146MB for a full-measure PDF chart and 464MB for a deck chart at
@@ -698,8 +713,10 @@ A report without a chart is a table with a cover page.
   red `#F25C5C` and extended with hues that stay distinguishable under
   deuteranopia and in greyscale — enterprise reports get printed in black and
   white more often than anyone admits. Verify both, state the method.
-- Render at 3× and downscale, so a chart is sharp at print resolution rather
-  than a blurry screen-DPI bitmap.
+- ~~Render at 3× and downscale~~ **— 2× since `T-R6` (2026-08-21)**, so a chart
+  is sharp at print resolution rather than a blurry screen-DPI bitmap. The
+  factor squares into the canvas and 3 cost a worker its memory limit; the
+  measured trade is in that ticket.
 - Axis labels, tick values, and legends format through
   `internal/report/format` from `T-R2` — the axis and the table beneath it must
   agree on what a rupiah looks like.

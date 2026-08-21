@@ -80,11 +80,19 @@ measured what a real chart costs. One grouped bar, 90mm tall:
 | PDF, 174mm | 201.7 MB/op, 532 ms | 113.9 MB/op, 299 ms | −44% |
 | deck, 254mm | 293.5 MB/op, 790 ms | 165.4 MB/op, 443 ms | −44% |
 
-For a final image of ~35KB either way. What 2 gives up against 3 is a fraction
-of a pixel of edge contrast on glyph stems, below what 200 DPI on paper can
-show; the contact sheet is the check, and it is still legible. If the type ever
-does look furry, the fix is a higher `renderDPI` on a *smaller* canvas, not a
-larger multiple of the same one.
+For a final image of ~35KB either way.
+
+**What 2 gives up is not what the change assumed.** The claim was "a fraction of
+a pixel of edge contrast on glyph stems". Both sheets were rendered and the
+axis-label region compared: on mean absolute horizontal gradient — acutance —
+**supersample 2 scores 1.3% higher than 3**, not lower, because a shorter
+downscale blurs less. The crops differ by a mean of 2.8/255, 4.9% of pixels by
+more than 8/255, maximum 142/255 on stem edges that land the other side of a
+pixel boundary. Magnified 3×, *"Rp 400 Juta"* reads identically at both. What 3
+buys is smoother antialiasing on diagonals, which an axis label is not made of.
+
+If the type ever does look furry, the fix is a higher `renderDPI` on a *smaller*
+canvas, not a larger multiple of the same one.
 
 **One thing this moved that is not a chart.** `videoplan` pins its chart image
 by `sha256`, so different pixels are a different golden — it failed with *"plan

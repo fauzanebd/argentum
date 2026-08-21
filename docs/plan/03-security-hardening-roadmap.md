@@ -11,6 +11,29 @@ the `T-S…` scope tickets or the `S-n` finding codes in the research docs.
 > and are already applied inline. Track A survived re-verification unchanged and
 > is still live on `main`.
 
+> **Status, 2026-08-21 — ten of fifteen tickets are built, and the block below
+> this one is out of date.** That block says *"Not built: every ticket in Tracks
+> B, C and D — `T-H4` → `T-H14`"*, and it was true when written on 2026-08-11.
+> It has been false since 08-14 and increasingly so since; it is kept because
+> this file's convention is that a status is a dated record rather than a live
+> field, but a reader who stopped there would have the track exactly backwards.
+>
+> | Track | State |
+> | ----- | ----- |
+> | A — the bypass | `T-H1`, `T-H2`, `T-H3`, `T-H15` built 2026-08-11; `T-H1` and `T-H3` gated live 08-14 |
+> | B — the claims we make in writing | `T-H4` steps 1 and 3 built and **gated live 08-19** on 17 arms plus a rule-1 re-score; `T-H7` built 08-14, gated 08-16. **`T-H4` step 2 and `T-H6` are the two open tickets.** `T-H5` dropped 08-14 (Metabase decommission) |
+> | C — untrusted content | `T-H8` built 08-20, free arms gated; `T-H9` built **and gated live** 08-19; `T-H10` built 08-14, gated 08-16. **`T-H11` is the one open ticket, and it is unblocked as of 08-20** |
+> | D — enterprise buyers | `T-H13` built 08-14 and blocking in CI. **`T-H12` and `T-H14` unbuilt** |
+>
+> **Four tickets remain: `T-H4` step 2, `T-H6`, `T-H11`, `T-H12`, `T-H14`** —
+> five, counting step 2 as its own. `T-H11` is the one whose moment is now: its
+> cases were written to fail until `T-H4` and `T-H8` both landed, and both have.
+>
+> **What is owed on what is built:** `T-H8`'s turn half and its rule-1 re-score
+> (~$1.05 together), and `T-H4`'s SQL Server arm — which needs an operator to
+> stand a source up, not a gate
+> ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1l, §1o).
+
 > **Status, 2026-08-11.** **Track A and `T-H15` are built and unit-gated.**
 > `T-H1`, `T-H2`, `T-H3` (all three rows) and `T-H15` landed together; the
 > record, the deviations and what each ticket's Test section actually proved are
@@ -195,7 +218,7 @@ generalises — missing key is a fatal config error
 
 ---
 
-## Track B — The claims we make in writing (5.0d)
+## Track B — The claims we make in writing (5.0d) · **`T-H4` steps 1+3 and `T-H7` built and gated live; `T-H4` step 2 and `T-H6` open; `T-H5` dropped**
 
 Each ticket here removes one disclosed limitation from the customer security
 brief. That brief's "Known boundaries" section is the acceptance test for this
@@ -216,10 +239,28 @@ track: when a ticket lands, its paragraph comes out.
 > cross-compilation in the release build, which is the repo owner's call rather
 > than an implementer's. `sqlguard`'s signature was designed to survive the swap.
 >
-> **Owed:** the live half and a rule-1 re-score — this changes what reaches the
-> tenant's database on every ordinary warehouse turn, so a validator that refuses
-> analytical SQL the eval set contains would show up as a score drop and nothing
-> else ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1l).
+> ~~**Owed:** the live half and a rule-1 re-score~~ — **both ran 2026-08-19 and
+> both passed.** 17 arms across Postgres and MySQL: ten pieces of ordinary
+> analytical SQL allowed, seven refused each naming what it found, the audit
+> table agreeing with the guard, and the refusal proven to precede the dial in
+> the warehouse's own `log_statement=all` output. The re-score moved kimi +1 and
+> deepseek −1, both inside the ±2 band — and the stronger number is beside it:
+> across **112 model-driven case runs the refusal's `Warn` fired zero times**,
+> so several hundred model-authored statements reached `run_sql` and not one was
+> refused ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md)
+> §1l, §1m).
+>
+> **The gate found the case that argues for step 2**: `WITH gone AS (DELETE …
+> RETURNING *)` passes the prefix check and is caught only by the keyword rule.
+> A parser would see the tree; the lexer catches it by luck of vocabulary.
+>
+> **Still owed:** the SQL Server arm — the driver with no read-only transaction
+> behind the check, and the reason this ticket runs on every dialect. This
+> deployment has no SQL Server source, so it is an operator's decision (§4).
+>
+> **The ticket body below is unchanged**, because it is the description of what
+> the product carried until step 3 landed — its present tense is 2026-08-11's,
+> not today's.
 
 
 `run_sql.Execute` passes `params.SQL` straight to the driver
@@ -331,7 +372,7 @@ row already carries what an incident actually needs.
 
 ---
 
-## Track C — Untrusted content (4.0d)
+## Track C — Untrusted content (4.0d) · **`T-H8`, `T-H9`, `T-H10` built; `T-H9` and `T-H10` gated live; `T-H11` open and unblocked 2026-08-20**
 
 This track is the one with no partial credit available and the one a
 sophisticated reviewer will ask about first.
@@ -476,7 +517,7 @@ until their tickets work end to end.
 
 ---
 
-## Track D — What enterprise buyers ask for by name (3.5d)
+## Track D — What enterprise buyers ask for by name (3.5d) · **`T-H13` built; `T-H12` and `T-H14` unbuilt**
 
 ### `T-H12` Table and column allowlist per connection — 1.5d
 
