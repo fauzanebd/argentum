@@ -114,6 +114,34 @@ clauses are about the worker image and about documents; this browser ships in it
 own image behind its own deployment, no document renderer changes, and the plan
 is self-contained so the service needs no egress at all.
 
+### Agentic skills (`T-K1` → `T-K10`) — **planned, tickets written, not scheduled**
+A tenant writes down how their business does a thing — how the month closes,
+what counts as an active store, which channel a weekly report always excludes —
+and the agent opens it on the turns where it applies and carries one line on the
+turns where it does not. Progressive disclosure: an index of `name — when_to_use`
+in the cached system prefix, bodies fetched by a `load_skill` tool call.
+**Status:** written 2026-08-21 as
+[`07-agentic-skills-roadmap.md`](07-agentic-skills-roadmap.md). Ten tickets,
+14.5d (11.5 BE, 3.0 FE); gates priced in
+[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1p.
+**Why it is here and not in the sprint:** every other insert in
+[`00-sprint-overview.md`](00-sprint-overview.md) §8c–§9 was pulled forward by a
+named trigger — a pilot tenant, a customer question, a defect. This one is
+pulled forward by a measurement, and five security tickets are open in front of
+it including `T-H11`, which is 1.0d and closes a track.
+**The trigger, stated so this entry is not a wish:** *a tenant asks twice for the
+same procedural correction* — "remember to exclude staff purchases", "do it the
+way you did last month" — **or** any tenant's always-on context crosses the
+ceiling the roadmap measured (≈11,000 tokens fixed, before the ten prepended
+blocks, three of which are uncapped: §2). `bootstrap/stack.go:778` already logs
+`prompt_chars` per turn, so the second half of that trigger is observable today
+without building anything.
+**The cheapest way to find out whether the design works** is `T-K1`+`T-K3`+
+`T-K4`+`T-K9`, 6.0 days behind `SKILLS_ENABLED`, where one eval case
+(`skill-not-loaded-when-irrelevant`) decides it: a model that opens every skill
+on every turn has turned progressive disclosure back into the always-on channel
+the roadmap exists because of.
+
 ### Phases 2–6: metric registry, watchers, actions, MCP, hardening (T-06 → T-18)
 **Why deferred:** Scheduling, again, and this one is expensive. The API track
 (`T-A1`→`T-A5`, 10.5d plus the foundation it forces earlier) was made the

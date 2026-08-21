@@ -117,6 +117,7 @@ docs/
 │   ├── 05-next-steps-and-dashboard-revision.md
 │   │                             T-Q10/T-U13 suggested next steps; T-D22/T-D23 revising a dashboard
 │   ├── 06-pdf-knowledge-roadmap.md        T-P1→T-P13 a PDF the agent can query, not quote
+│   ├── 07-agentic-skills-roadmap.md       T-K1→T-K10 a procedure the tenant writes down (planned, unscheduled)
 │   └── backlog.md                Deferred work with rationale
 └── agents/
     ├── workspace-context.md      Repo map, invariants, danger zones

@@ -173,6 +173,19 @@ the marker the system prompt names had never once reached a model as written,
 and it was invisible to a live gate that signed the feature off three weeks ago.
 The first unit test ever written against that file found it in a minute.
 
+**Revised 2026-08-21 — §1p files nine gates for a roadmap that is not scheduled.**
+The agentic-skills plan
+([`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md))
+was written today and none of its ten tickets exists. §1h set the precedent of
+pricing a track's gates while its tickets are still prose; this is the second
+time, and the first for a track nobody has committed to. **~$0.65, seven of the
+nine free** — and the entry carries a constraint that belongs to this file
+rather than to the roadmap: `T-K3` owes the same 56-case rule-1 re-score `T-H8`
+already owes and has not paid (§1o, ~$1.05). Two unpaid prompt-surface re-scores
+at once is the state where a movement in the number cannot be attributed to
+either change, so **the order of those two payments is a real dependency**, not
+a preference.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of four things: the stack up, money spent, a browser opened, or a
 message sent to a real person's phone — with the single exception of §1h, which
@@ -1180,6 +1193,45 @@ audit rows on the eval tenant from the gate binary, which was deleted after the
 sitting. No long-lived process was started.
 
 Record: [`security-hardening.md`](security-hardening.md) §18.
+
+## 1p. Filed before the build — the agentic-skills roadmap's gates (2026-08-21)
+
+[`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md)
+was written today and **none of its ten tickets exists**. Its gates are priced
+here while they are still prose, which is §1h's rule — the practice that file's
+own revision called "the last step that direction goes" — and this is the second
+time it has been followed.
+
+**~$0.65 across nine gates, seven of which cost nothing.** The shape of the
+spend is the part worth reading: $0.15 buys the new eval category, and **~$0.5
+is rule 1's 56-case re-score on both models**, owed because `T-K3` puts a block
+in every turn's system prompt. That re-score is not this feature's invention —
+it is the standing price of touching the prompt, and `T-H8` owes an unpaid one
+of the same shape (§1o, ~$1.05). **Two unpaid prompt-surface re-scores would be
+the state where nobody can attribute a movement in the number to a change**,
+which is finding `Q-2` returning in a new costume. That is a scheduling
+constraint on this track and it is recorded here rather than in the roadmap,
+because this file is where the bill is kept.
+
+| Owed by | The gate | Bucket | Cost |
+| ------- | -------- | ------ | ---- |
+| `T-K1` | Migration `067` up, down and up again against the real control database, with the row count either side; a cross-tenant read and update answering 404 with nothing changed; the three caps refused at the boundary rather than truncated | §1 stack | $0.00 |
+| `T-K2` | The framed body read as bytes off the wire — **unescaped**, marker intact. `T-H8` found its own fence HTML-escaped since `T-P10`, invisible to a live gate that signed it off three weeks earlier, so the arm is: print what the provider was sent, not what the renderer returned | §1 stack | $0.00 |
+| `T-K3` | The composed prompt's `prompt_sha256` (`bootstrap/stack.go:778`) **byte-identical to today's** for a company with no skills, and changed for one with skills. The absence arm is the one a unit test is least likely to catch — an empty builder and no builder look identical downstream | §1 stack | $0.00 |
+| `T-K3` | A skill naming tables of a source the agent is scoped away from, absent from that agent's index and present in an unscoped agent's. A permission, not tidiness — same rule as the cookbook's at `chat_runner.go:2176` | §1 stack | $0.00 |
+| `T-K4` | The four refusals driven through the real chain, each a **result** the model can act on rather than a Go error; the audit row carrying the skill name; and `taint` **unchanged** by a `load_skill` result — asserted explicitly, because the feature is the claim that this one result is different | §1 stack | $0.00 |
+| `T-K6` | Both preview panes in a browser: the one index line, and the framed body as `load_skill` returns it. Plus the live character counters against caps that refuse rather than truncate | §3a browser | $0.00 |
+| `T-K8` | A malformed shipped skill failing the **boot**, not the request — the rule `tools.AllNames` exists for (`tools/registry.go:176`) | §1 stack | $0.00 |
+| `T-K9` | `make eval` with the `skill_follow` category, both arms of `skill-absent-degrades`, and `skill-not-loaded-when-irrelevant` asserted **in Indonesian as well as English** — `T-Q3`'s gate found all three `must_not_call` assertions in English while the violation landed in Indonesian | §2 money | ~$0.15 |
+| `T-K3` | **Rule 1: the 56-case set on both models**, with the number and the date posted. A new block in every turn's system prompt; the plausible failure is a model that starts hedging figures it used to state | §2 money | ~$0.5 |
+
+**One gate this file cannot price, and it is the feature's own question.**
+`skill-not-loaded-when-irrelevant` asserts the model does *not* open a skill on
+an ordinary question. If that fails, progressive disclosure has collapsed back
+into the always-on channel the roadmap's §2 measured as full — and no amount of
+further spend fixes it, because it is a design result rather than a defect.
+It is listed above at $0.15 with the rest of the category; it is worth more than
+the other eight put together.
 
 ## 2. Needs the stack **and** real LLM spend
 
