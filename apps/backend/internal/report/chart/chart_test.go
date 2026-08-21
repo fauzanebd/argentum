@@ -23,8 +23,8 @@ import (
 
 // idOpts is a deliberately small chart in the Indonesian convention.
 //
-// Small because every render here is supersampled 3× at 200 DPI, and a
-// full-measure 174mm chart is 6.6 megapixels of rasteriser per call — which
+// Small because every render here is supersampled at 200 DPI, and a
+// full-measure 174mm chart is millions of pixels of rasteriser per call — which
 // under `go test -race` is most of a minute across this file. 90mm still
 // exercises every layout decision the renderer makes; it just does it on a
 // quarter of the pixels. The contact sheet, which a human looks at, is drawn at

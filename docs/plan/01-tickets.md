@@ -588,6 +588,77 @@ carrying forward:
 
 ---
 
+## ~~T-R6~~ · Chart supersample 3 → 2 — **DONE 2026-08-21**
+**Repo:** BE · **Size:** 0.25d · **Deps:** T-R3 · **Priority:** P1
+
+### Why
+A report with nine charts in it killed the worker mid-turn. A turn that dies
+inside a tool call never writes a reply, so the failure a customer sees is not
+an error — the conversation simply stops.
+
+`supersample` squares into the canvas: at 3 the rasteriser covers nine times the
+final pixel area, and each of those pixels is allocated twice more — decoding
+the PNG the library returns, and again as the CatmullRom destination.
+
+### Do
+- `internal/report/chart/chart.go`: `supersample` 3 → 2.
+- Add `BenchmarkRenderFullMeasure` so the trade is a measurement in the
+  repository rather than a number in a commit message. Every other render in
+  this package's tests is 90mm — a quarter of the pixels — so nothing here
+  measured what a real chart costs.
+- Re-generate `internal/report/videoplan/testdata/monthly_sales.plan.json`: the
+  plan pins the chart image by `sha256`, and different pixels are a different
+  hash.
+
+### Notes for the implementer
+The pixels move, so anything hashing a rendered chart moves with them. At the
+time of writing that is exactly one golden — `videoplan` — and it fails with
+`plan differs from testdata/…; run with -update`, which reads like a stale
+fixture and is not one.
+
+Do not raise `renderDPI` to compensate. If the type ever does look furry the
+fix is a higher DPI on a *smaller* canvas, not a larger multiple of the same
+one.
+
+### Acceptance
+- [x] `supersample` is 2 and the comment above it carries reproducible figures.
+- [x] A benchmark in `internal/report/chart` reports `B/op` at both the PDF and
+      the deck measure.
+- [x] `go test ./internal/report/...` green, `videoplan` included.
+- [x] The contact sheet still renders and the axis type is still legible — the
+      negative case: this must not be bought with unreadable labels.
+
+### Gate
+```
+go test ./internal/report/chart/ -run XXX -bench BenchmarkRenderFullMeasure -benchtime 3x
+go test ./internal/report/...
+```
+
+**Run 2026-08-21.** One grouped bar, 90mm tall, `-benchtime 3x`:
+
+| | supersample 3 | supersample 2 | |
+| --- | --- | --- | --- |
+| PDF, 174mm | 201.7 MB/op, 532 ms | 113.9 MB/op, 299 ms | −44% |
+| deck, 254mm | 293.5 MB/op, 790 ms | 165.4 MB/op, 443 ms | −44% |
+
+For a final image of ~35KB either way. Time falls by the same 44%, which is
+arithmetic rather than a second finding — one allocation-bound loop over 4/9 as
+many pixels.
+
+**The figures this change originally carried did not reproduce.** The comment
+claimed 146MB for a full-measure PDF chart and 464MB for a deck chart at
+supersample 3; the benchmark reads 201.7MB and 293.5MB. Different fixture,
+almost certainly — the original names no chart type, height or method — which is
+the reason a number that cannot be re-derived was replaced by one that can. The
+direction and the magnitude of the argument survive it; the specific figures did
+not, and the per-report peak (195MB against 306MB across nine charts) is still
+unmeasured by anything in this repository.
+
+### Out of scope
+`renderDPI`, the palette, the resampler, and the per-report peak RSS — the last
+would need a harness that renders a whole report under a memory limit, which is
+a bigger thing than this ticket.
+
 ## ~~T-R3~~ · Chart images for documents and decks — **DONE 2026-07-28**
 **Repo:** BE · **Size:** 1.5d · **Deps:** T-R2 · **Priority:** P1 · **Cut: types only, never the ticket**
 

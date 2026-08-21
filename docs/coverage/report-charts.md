@@ -49,11 +49,11 @@ recorded because they are invisible until you look at the output:
 
 ## Resolution
 
-Charts are drawn at **3× and downscaled**, to a final **200 DPI** over their
+Charts are drawn at **2× and downscaled**, to a final **200 DPI** over their
 printed size.
 
 200 rather than 300: a chart is flat fills and strokes, where the difference is
-invisible on paper and doubles the file. 3× rather than 1×: the library
+invisible on paper and doubles the file. 2× rather than 1×: the library
 antialiases its geometry but not its type at these sizes, and drawing large then
 resampling is what makes a three-pixel axis label crisp instead of furry. The
 downscale is CatmullRom from `x/image/draw` — the sharpest resampler there that
@@ -63,6 +63,33 @@ flat ground.
 Output is a raster and not an SVG because neither consumer takes one: maroto
 embeds images, and OOXML drawings are not SVG. The sharpness has to come from
 resolution.
+
+**It was 3× until 2026-08-21** (`T-R6`), and the factor came down because it
+squares into the canvas: 3 rasterises nine times the final pixel area, and each
+of those pixels is allocated twice more — decoding the PNG the library returns,
+and again as the CatmullRom destination. A nine-chart report killed the worker
+mid-turn, and a turn that dies inside a tool call never writes a reply, so what
+a customer saw was not an error but a conversation that stopped.
+
+`BenchmarkRenderFullMeasure` now lives in the package, because every other
+render in these tests is 90mm — a quarter of the pixels — so nothing here
+measured what a real chart costs. One grouped bar, 90mm tall:
+
+| | supersample 3 | supersample 2 | |
+| --- | --- | --- | --- |
+| PDF, 174mm | 201.7 MB/op, 532 ms | 113.9 MB/op, 299 ms | −44% |
+| deck, 254mm | 293.5 MB/op, 790 ms | 165.4 MB/op, 443 ms | −44% |
+
+For a final image of ~35KB either way. What 2 gives up against 3 is a fraction
+of a pixel of edge contrast on glyph stems, below what 200 DPI on paper can
+show; the contact sheet is the check, and it is still legible. If the type ever
+does look furry, the fix is a higher `renderDPI` on a *smaller* canvas, not a
+larger multiple of the same one.
+
+**One thing this moved that is not a chart.** `videoplan` pins its chart image
+by `sha256`, so different pixels are a different golden — it failed with *"plan
+differs from testdata/…; run with -update"*, which reads like a stale fixture
+and is not one. Anything that hashes a rendered chart moves with the factor.
 
 ## The palette, and the green that was not colourblind-safe
 

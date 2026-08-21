@@ -4425,6 +4425,44 @@ prompt-surface change this track has made, whose plausible failure is a model
 that starts hedging figures it used to state. `T-H11`'s adversarial category is
 now buildable end to end: `T-H4` and `T-H8` are both in, which is the state those
 cases were written to fail until.
+## Phase 3l — A factor that squared, and figures that did not reproduce (2026-08-21)
+
+`T-R6`, ticketed after the fact: the change was sitting uncommitted in the
+working tree when the sitting started, with no ticket and a failing test behind
+it.
+
+**What it does.** `supersample` 3 → 2. The factor squares into the canvas, so 3
+rasterises nine times the final pixel area and each pixel is allocated twice
+more — decoding the PNG the library returns, and again as the CatmullRom
+destination. A nine-chart report killed the worker mid-turn, and a turn that
+dies inside a tool call never writes a reply: what the customer saw was not an
+error, it was a conversation that stopped.
+
+**It broke a golden nobody had run.** `videoplan` pins its chart image by
+`sha256`, so different pixels are a different plan. It failed with *"plan
+differs from testdata/…; run with -update"*, which reads exactly like a stale
+fixture and is not one. Found by `go test -race ./...`, which the change had
+plainly not been run through — and it is the second time in three sittings that
+the tell was a test nobody executed rather than a review nobody did.
+
+**The figures did not reproduce, and that is the finding.** The comment above
+the constant claimed 146MB for a full-measure PDF chart at supersample 3 and
+464MB for a deck chart. There was no benchmark, so there was no way to check
+either without writing one. `BenchmarkRenderFullMeasure` now exists — every
+other render in that package is 90mm, a quarter of the pixels, which is why the
+real cost was invisible from inside its own test file — and on one grouped bar
+at 90mm tall it reads **201.7 MB/op → 113.9 MB/op** for the PDF measure and
+**293.5 MB/op → 165.4 MB/op** for the deck: −44% on both, for a final image of
+about 35KB either way.
+
+Different fixture, almost certainly; the original names no chart type, no height
+and no method, which is the whole reason it could not be checked. The argument
+survives — the direction and the magnitude are right, and the change is correct
+— but the specific numbers went into the tree as fact and were not. They are
+replaced with numbers `go test -bench` re-derives. **The per-report peak the
+change was actually chased for — 195MB against 306MB across nine charts — is
+still unmeasured by anything in this repository**, and the comment now says so
+rather than implying otherwise.
 
 ## Feature velocity, measured
 

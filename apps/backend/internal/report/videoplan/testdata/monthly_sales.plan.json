@@ -182,7 +182,7 @@
         "Pendapatan per bulan"
       ],
       "chart": {
-        "data_uri": "sha256:d6f4b74dc12d8b71b10231ba00278f8cc39b3ca973fd70951382c52c930b5879",
+        "data_uri": "sha256:bdbf465e1aca90beb098df2f210aca57392afd0801ddc84f34f7976d0a68e2c3",
         "width": 1648,
         "height": 641,
         "reveal": "wipe"

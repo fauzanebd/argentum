@@ -53,10 +53,40 @@ import (
 // is multiplied by it, the chart is rasterised at that size, and the result is
 // resampled down. The library antialiases, but not across the type at these
 // sizes; drawing large and shrinking is what makes a 3-pixel axis label crisp
-// instead of furry. Three is the smallest factor where that is true.
+// instead of furry.
+//
+// It was 3, which is the factor at which that is unambiguously true, and 3 is
+// what a chart wants if memory is free. It is not: the factor squares into the
+// canvas, so 3 rasterises nine times the final pixel area, and every one of
+// those pixels is allocated twice more — once decoding the PNG the library
+// hands back, once as the CatmullRom destination. A report with nine charts in
+// it killed the worker mid-turn, and a turn that dies inside a tool call never
+// writes a reply — the conversation simply stops.
+//
+// So the factor is 2. BenchmarkRenderFullMeasure is in this package so the
+// trade stays a measurement rather than a memory, and on one grouped bar at
+// 90mm tall it reads:
+//
+//	                  supersample 3        supersample 2
+//	PDF, 174mm        201.7 MB/op          113.9 MB/op     −44%
+//	deck, 254mm       293.5 MB/op          165.4 MB/op     −44%
+//
+// — for a final image of about 35KB either way. Time falls by the same 44%,
+// which is arithmetic and not a second finding: this is one allocation-bound
+// loop over pixels, and there are 4/9 as many of them.
+//
+// Two still resolves the axis type; what it gives up against 3 is a fraction of
+// a pixel of edge contrast on glyph stems, which is below what 200 DPI on paper
+// can show. If the type ever does look furry, the honest fix is a higher
+// renderDPI on a smaller canvas, not a larger multiple of the same one.
+//
+// The per-report peak this was chased for — a worker's RSS across nine charts —
+// is not what the benchmark measures, and no test in this repository measures
+// it. What is written down is the per-chart allocation, because that is the
+// number anybody can reproduce with `go test -bench`.
 const (
 	renderDPI   = 200
-	supersample = 3
+	supersample = 2
 )
 
 // Default and bounds for the drawn size, in millimetres. The height is bounded
