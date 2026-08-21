@@ -4464,6 +4464,59 @@ change was actually chased for — 195MB against 306MB across nine charts — is
 still unmeasured by anything in this repository**, and the comment now says so
 rather than implying otherwise.
 
+## Phase 3m — The four that did not need a model (2026-08-21)
+
+`T-H6`, `T-H11`, `T-H12` and `T-H14`: what was left of the hardening track that
+could be built without spending anything. Track C's last ticket, Track B's last
+ticket, and both of Track D's.
+
+**The one design decision, and it was nearly the wrong one.** `T-H11`'s five
+adversarial cases were first appended to `golden.yaml`. Two of them need a
+warehouse whose *content* attacks the reader, which the harness supplies as a
+third source — and a third source changes `list_sources` for every case in the
+run while `multi_source` scores disambiguation between exactly two. `make eval`
+would have quietly become a 61-case run against a differently-shaped tenant, and
+the standing rule-1 re-score would have moved for a reason nobody could name.
+They live in `testdata/eval/security.yaml` behind `make eval-security`, and a
+test keeps them out of the golden file. The near-miss is the useful part: the
+ticket said "add a security category to the eval set" and doing exactly that
+would have damaged the instrument the category exists to serve.
+
+**`T-H12` is the ticket with a lexer in it, and it found three bypasses in
+itself — all three by probing rather than by reading.** Each admitted an
+excluded table with no refusal and no uncertainty, which is the one outcome an
+allowlist must never produce: `FROM a, salaries` (the old-style comma join, only
+the head read); `FROM a AS x, salaries AS y` (`, name AS` is also how a CTE
+binds, so the collector written to stop the *CTE* bypass created this one); and
+`FROM "public"."fact_sales"` (tokenised as three tokens, so the schema was
+checked as the table). The CTE-wrap bypass that everyone thinks of first was
+covered from the first cut. The three that shipped broken were the ones nobody
+thinks of — found in about four minutes of throwing shapes at the function and
+reading what came back, which is a cheaper habit than it looks.
+
+**`T-H6`'s hardest property was already paid for three tickets ago.** Erasure
+must not delete audit rows, and it does not — because migration `023` gave
+`agent_actions` no foreign key on `thread_id`, with a comment saying exactly
+why: *"a CASCADE would let a user erase the record of what the agent did in a
+thread by deleting the thread"*. Erasure is that same delete with a wider WHERE.
+The decision was made for a smaller reason and covered a larger one.
+
+**`T-H14` is half the ticket and says so.** The keyring — a version prefix, a
+key fingerprint, retired keys that read but never write, `cmd/rekey`, and a
+five-step procedure whose every step before the last is reversible — is built.
+Envelope encryption with per-tenant data keys is not: it needs a company id at
+ten call sites and a KMS decision that belongs to an operator. `cmd/rekey`
+covers `db_connections` only and prints that on every run, because a rotation
+somebody believes is finished when it is not is worse than one they know is
+partial.
+
+**Nothing here has a number.** All four are code-complete and unit-gated, which
+[`live-gate-backlog.md`](live-gate-backlog.md) records as the state fourteen
+sittings out of fourteen were hiding something in. Eight of the nine owed gates
+need only the stack; the ninth needs $0.15 and has to wait for `T-H8`'s unpaid
+re-score, because two unpaid prompt-surface measurements at once is a number
+nobody can attribute. §1q has the table.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

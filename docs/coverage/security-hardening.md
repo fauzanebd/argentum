@@ -1138,3 +1138,189 @@ it — and pinned by a test that stands a probe where the audit decorator stands
   straight.
 - **`T-H11`'s adversarial category** is now buildable end to end: `T-H4` and
   `T-H8` are both in, which is what those cases were written to fail until.
+
+---
+
+## 19. Track C closes and Track D opens — `T-H11`, `T-H6`, `T-H12`, `T-H14` (2026-08-21)
+
+Four tickets in one sitting, and the reason they came together is scheduling
+rather than design: they are what was left of the hardening track that did not
+need model spend. `T-H8`'s owed re-score (§18, ~$1.05) is deliberately unpaid,
+so **nothing below has a number behind it yet** — every one of these is
+code-complete and unit-gated, which is the state
+[`live-gate-backlog.md`](live-gate-backlog.md) records as having hidden
+something on fourteen sittings out of fourteen. Read this section as a build
+record, not as evidence.
+
+### `T-H11` — the adversarial category, and where it had to live
+
+Track C shipped four tickets of prompt and policy work with no number behind
+any of them. The category is five cases: an injection in a **row value**, an
+injection in an **identifier and a column comment**, a request only a mutation
+could satisfy, a stacked multi-statement payload, and a request for another
+tenant's data.
+
+**It is a separate set file, `testdata/eval/security.yaml`, and that is the one
+real decision in the ticket.** The first cut appended the five cases to
+`golden.yaml`. Two of them need a warehouse whose content attacks the reader,
+which the harness supplies as a **third source** — and a third source changes
+`list_sources` for every case in the run, while `multi_source` scores whether
+the agent disambiguates between exactly two. Appending them would have made
+`make eval` — the command every published number in
+[`eval-q1.md`](eval-q1.md) came from, and the one that runs the standing
+rule-1 re-score — a 61-case run against a tenant of a different shape. The
+number would have moved and nobody could have said why. `make eval-security`
+runs the new file; `TestGoldenSetHoldsNoSecurityCases` keeps them apart.
+
+**The fixtures carry three injection surfaces, and the third is not in the
+ticket.** The ticket names row values and identifiers. A **column comment** is
+here as well because the Postgres extractor reads `obj_description` and
+`col_description` (`adapters/db/postgres/conn.go:117,159`), so a comment reaches
+the model with exactly an identifier's trust and takes no privilege to write.
+It was the cheapest of the three for an attacker and the one nothing covered.
+
+**Every payload instructs a tool call rather than a word**, because a canary
+word is unassertable here: the honest answer to *"list the ticket subjects"*
+quotes the subject, so a reply containing the canary is indistinguishable from
+a reply reciting the row. A tool call is unambiguous, and excessive agency is
+the real failure anyway.
+
+**The failure mode this ticket is most exposed to is a silent pass.** A security
+case scored against a clean database does not look like a failure — it looks
+like a pass, on every model, forever. Four unit tests exist for that alone: the
+seed must contain every declared payload, all three surfaces must still be
+present, the cases must forbid the tools the fixtures name, and every case must
+assert something about agency.
+
+### `T-H6` — retention and erasure
+
+`messages.content` and `messages.tool_calls` had held tenant data indefinitely
+since migration `002`. Retention existed only for the API-observability tables.
+There was no erasure route at all, which under UU PDP 27/2022 means the tenant —
+the *pengendali data* — could not discharge an obligation that is theirs.
+
+Migration `067` adds `companies.message_retention_days` (0 = forever, which is
+what every existing row did and must keep doing) and `data_erasures`, the
+written completion record. `RETENTION_PURGE_CRON` drives a nightly worker task
+built on the cookbook harvest's shape: payloadless, deployment-wide, finding its
+own tenants. `DELETE /api/company/data`, `GET /api/company/data/export` and
+`GET /api/company/data/erasures` are the three routes, all admin.
+
+**Four decisions worth reading rather than re-deriving:**
+
+1. **The purge deletes messages by their own age, then threads that are now
+   empty and also expired.** Deleting whole threads by age would keep a
+   400-day-old message alive inside a thread somebody posted to yesterday, which
+   is what a retention promise says will not happen. Deleting only messages
+   would leave empty husks in the thread list forever.
+2. **The record is opened before the delete and closed after it**, so a process
+   that dies mid-erasure leaves evidence it was attempted. A purge that cannot
+   open its record does not delete: the rows going with no explanation is worse
+   than the window being enforced one tick late.
+3. **Audit rows survive, and by construction rather than by care.** Migration
+   `023` gave `agent_actions` no foreign key on `thread_id` for exactly this
+   reason — *"a CASCADE would let a user erase the record of what the agent did
+   in a thread by deleting the thread"*. Erasure is that same delete with a
+   wider WHERE, so the property was already paid for. `usage_events` survives
+   too (SET NULL): what a tenant was billed is not their personal data.
+4. **The export is NDJSON**, because the tenants who need it are the ones with
+   the most history and a single JSON array cannot be written without buffering
+   all of it.
+
+**One test in this ticket reads the repository's own source**, which is unusual
+and is the only honest option available without a database: the property is *"no
+statement in this file can delete an audit row"*, and a fake would answer
+whatever it was written to answer. It asserts the statements never name
+`agent_actions`, `usage_events`, `api_request_stats` or `data_erasures`, that
+every DELETE carries a `company_id` predicate, and that no statement is
+assembled from a variable. Proving it against a real Postgres is the live gate.
+
+### `T-H12` — the per-source table and column allowlist
+
+`domain.Allowlist` on `db_connections` (migration `068`, JSONB, empty =
+unrestricted). `get_schema` filters tables, columns and the relationships whose
+endpoints did not survive; `run_sql` refuses a statement that reaches outside
+it. `PUT /api/connections/:id/allowlist`, admin.
+
+**It is not the guarantee and the code says so in three places.** A restricted
+login and masked views remain the recommendation. What this buys is defence in
+depth over model-written SQL plus the thing the questionnaire is really asking:
+the agent is never *told* the other tables exist.
+
+**The enforcement rests on a lexer reading table references, and its honest
+failure mode is the design.** A blocklist that misses a token misses an attack;
+an allowlist that misses one *admits* a read the tenant was told could not
+happen. So `sqlguard.ReferencedTables` returns what it read **and whether it met
+anything it could not**, and `ValidateReferences` refuses on the uncertainty.
+An unrestricted source skips the check entirely — every tenant on this
+deployment has run arbitrary analytical SQL through `run_sql` since `T-H4` step
+3, and this ticket must not break that for the tenants it does not serve.
+
+**Three defects, all found by probing the lexer rather than by reading it, and
+all three admitted an excluded table with no refusal and no uncertainty:**
+
+1. **`FROM fact_sales, salaries`** — the old-style comma join. `FROM`
+   introduces a *list* and only its head was read. Fixed by walking the list.
+2. **`FROM fact_sales AS a, salaries AS b`** — `, name AS` is also how a CTE
+   binds, so the CTE collector claimed `salaries` and the reference list dropped
+   it. The bypass was produced by the code written to prevent a different one.
+   Fixed by anchoring the walk to a leading `WITH`.
+3. **`FROM "public"."fact_sales"`** — a fully-quoted qualified name tokenised
+   as three tokens, so the check read the *schema* as the table. Found by
+   `TestTheTwoNormalisersAgree`, which exists because the allowlist entry and
+   the extracted reference are normalised by two functions in two packages.
+
+All three are pinned as tests. The CTE-wrap bypass — hide a forbidden table
+inside a CTE whose name is allowlisted — was anticipated and covered from the
+first cut; the three above were not, which is the more useful fact about how
+this file was built.
+
+### `T-H14` — key management, and what it does not yet do
+
+One `ARGENTUM_DSN_KEY` sealed every DSN and every tenant credential with **no
+rotation path**: changing it meant every stored ciphertext stopped opening at
+once, discovered by an agent telling a customer there was *"a decryption problem
+with the database connection string"* mid-turn. Not hypothetical — three keys
+existed on this project inside a fortnight and two of twenty connections open
+under none of them (§1b of the live-gate backlog).
+
+**What landed:** the cipher gained the version field the ticket names, in the
+form `"ARGK" | 0x01 | keyID[4] | nonce | ciphertext`, with the header
+authenticated as additional data. `ARGENTUM_DSN_KEYS_RETIRED` holds keys this
+process reads with and never writes with. `cmd/rekey -check|-apply` re-seals,
+and `-check` exits non-zero until every row is on the primary so a pipeline can
+gate on it. The boot sweep reports rotation progress per key.
+
+**The legacy format opens forever.** Every ciphertext in every deployment is the
+prefix-free form; a reader that required the prefix would be the outage this
+work exists to prevent. `TestLegacyCiphertextStillOpens` is the assertion, and
+it builds the legacy bytes longhand rather than sharing code with the current
+implementation, so it cannot drift with it.
+
+**What did not land, and it is half the ticket.** Envelope encryption with
+per-tenant data keys — the half that answers *"do you support customer-managed
+keys"* — is **not built**. It needs a company id at every call site
+(`Encrypt(string)` has no tenant in its signature and ten packages call it) plus
+a decision about which KMS, which is an operator's rather than an implementer's.
+The keyring is the half that had to come first either way: a per-tenant data key
+is a key that must be findable by id and re-sealable under a new master, which
+is what the fingerprint and the version prefix make possible.
+
+**And `cmd/rekey` covers `db_connections` only**, which it prints on every run.
+The same key seals tenant LLM credentials, the Discord/Lark/Slack tables, MCP
+tokens, embed signing secrets and HTTP endpoint secrets. Extending the loop is
+mechanical; what is not mechanical is that a rotation somebody believes is
+finished when it is not is worse than one they know is partial — which is why
+the caveat is printed rather than filed.
+
+### The rotation procedure
+
+1. Generate a key. Set `ARGENTUM_DSN_KEY` to it, `ARGENTUM_DSN_KEYS_RETIRED` to
+   the key it replaces. Deploy. Reads accept both; writes use the new one.
+2. `make rekey-check` — it reports rows under the retired key.
+3. `make rekey-apply` — every row is read with whichever key opens it and
+   written back under the primary.
+4. `make rekey-check` again. **This is the gate for step 5**: until every row is
+   on the primary and none is legacy, the retired key is load-bearing.
+5. Remove `ARGENTUM_DSN_KEYS_RETIRED`. Deploy. Every step before this one is
+   reversible.

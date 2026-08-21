@@ -217,7 +217,10 @@ func runAnswers(ctx context.Context, setPath string) (*evaldocs.AnswerScore, err
 	}
 	defer stack.Close()
 
-	tenant, err := eval.EnsureTenant(ctx, stack, os.Getenv("EVAL_DEMO_DSN"), os.Getenv("EVAL_METABASE_HOST"), false)
+	tenant, err := eval.EnsureTenant(ctx, stack, eval.SeedOpts{
+		DemoDSN:          os.Getenv("EVAL_DEMO_DSN"),
+		MetabaseHostPort: os.Getenv("EVAL_METABASE_HOST"),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("eval tenant: %w", err)
 	}

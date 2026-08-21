@@ -198,6 +198,21 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 		return "", err
 	}
 
+	// The per-source allowlist (T-H12). After guardStatement, because that check
+	// is what makes the grammar small enough to read table names off: one
+	// statement, a SELECT or a WITH, no mutating keyword. Skipped entirely for
+	// an unrestricted source, so a tenant who configured nothing never pays for
+	// a statement this lexer cannot parse.
+	if err := guardAllowlist(params.SQL, source.Allowlist); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"company_id": companyID,
+			"source_id":  source.ID,
+			"db_type":    source.DBType,
+			"sql":        normalizeSQLForLog(params.SQL),
+		}).Warn("run_sql refused a statement that reaches outside this source's allowlist")
+		return "", err
+	}
+
 	conn, err := t.pool.For(ctx, companyID, source.ID)
 	if err != nil {
 		return "", fmt.Errorf("resolve tenant connection: %w", err)
@@ -431,4 +446,28 @@ func guardStatement(sql string) error {
 		)
 	}
 	return nil
+}
+
+// guardAllowlist is T-H12: a source may restrict which of its tables and
+// columns the agent can read, and this is where a statement that reaches past
+// that restriction is refused.
+//
+// **A no-op for an unrestricted source, and that is deliberate rather than an
+// optimisation.** The reference lexer refuses what it cannot read confidently
+// (sqlguard/references.go), which is the right trade for a tenant who asked for
+// a restriction and the wrong one for the tenants who did not — every one of
+// whom has been running arbitrary analytical SQL through here since T-H4 step 3
+// with no reference check at all. Widening that refusal to them would be this
+// ticket breaking working queries for the tenants it does not serve.
+//
+// **It is not the guarantee.** A restricted login and masked views are, they
+// stay the recommendation, and this is defence in depth over SQL a model wrote
+// — the same sentence guardStatement carries, and true for the same reason.
+// What it buys on its own is the questionnaire's real question: get_schema
+// never names the excluded tables, so the agent does not know they are there.
+func guardAllowlist(sql string, list domain.Allowlist) error {
+	if !list.Restricted() {
+		return nil
+	}
+	return sqlguard.ValidateReferences(sql, list.AllowsTable, list.ColumnsRestricted)
 }

@@ -134,8 +134,17 @@ type Config struct {
 	AgentTemplatesPath string // path to agent_templates.yaml
 
 	// Argentum control plane
-	JWTSecret            string
-	DSNEncryptionKeyHex  string // 64 hex chars => 32 bytes for AES-256-GCM
+	JWTSecret           string
+	DSNEncryptionKeyHex string // 64 hex chars => 32 bytes for AES-256-GCM
+	// DSNRetiredKeysHex are keys this process may still *read* with and will
+	// never write with (T-H14). Set during a rotation and unset when the
+	// re-seal is done — `cmd/rekey -check` is what says it is done.
+	//
+	// A rotation with no retired key is a hard cutover: every stored DSN and
+	// every tenant credential stops opening the moment the deployment restarts.
+	// That has happened on this project, twice, and cost two of twenty stored
+	// connections (live-gate-backlog §1b).
+	DSNRetiredKeysHex    []string
 	ControlMigrationsDir string
 	CookieSecure         bool
 	CORSOrigins          []string
@@ -200,6 +209,14 @@ type Config struct {
 	// examples. Empty disables the harvest without disabling retrieval, so a
 	// deployment can stop learning and keep using what it has already learned.
 	CookbookHarvestCron string
+
+	// RetentionPurgeCron is when the worker enforces each tenant's message
+	// retention window (T-H6). Nightly and off-peak by default: the purge is a
+	// bulk DELETE against the same tables live turns write to, so it belongs at
+	// the hour with the fewest of them. Empty switches it off, which leaves
+	// every tenant's window unenforced — a state a deployment may choose and
+	// should have to choose, so it is logged at boot either way.
+	RetentionPurgeCron string
 	// MetricZeroCoverageProbe decides whether a metric that returns exactly 0
 	// spends two more queries finding out whether that is a real zero.
 	//
@@ -569,6 +586,7 @@ func Load() (*Config, error) {
 		// Control plane
 		JWTSecret:            getEnv("ARGENTUM_JWT_SECRET", ""),
 		DSNEncryptionKeyHex:  getEnv("ARGENTUM_DSN_KEY", ""),
+		DSNRetiredKeysHex:    splitCSV(getEnv("ARGENTUM_DSN_KEYS_RETIRED", "")),
 		ControlMigrationsDir: getEnv("CONTROL_MIGRATIONS_DIR", "migrations/control"),
 		CookieSecure:         getEnv("COOKIE_SECURE", "false") == "true",
 		CORSOrigins:          splitCSV(getEnv("CORS_ORIGINS", "http://localhost:5173")),
@@ -598,6 +616,7 @@ func Load() (*Config, error) {
 		NextStepsTimeoutSecs: getEnvAsInt("NEXT_STEPS_TIMEOUT_SECS", 8),
 		CookbookTopK:         getEnvAsInt("COOKBOOK_TOP_K", 3),
 		CookbookHarvestCron:  getEnv("COOKBOOK_HARVEST_CRON", "17 * * * *"),
+		RetentionPurgeCron:   getEnv("RETENTION_PURGE_CRON", "41 3 * * *"),
 
 		MetricZeroCoverageProbe: getEnv("METRIC_ZERO_COVERAGE_PROBE", "true") == "true",
 

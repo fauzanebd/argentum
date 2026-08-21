@@ -61,7 +61,12 @@ func newRouter(d *apiDeps) *gin.Engine {
 	}
 	handlers.NewCompanyHandler(d.companySvc, d.embeddingSvc).
 		WithRequiredTLS(cfg.IsProduction()).
+		WithRetention(d.retentionSvc).
 		Register(authed)
+	// Retention, erasure and export (T-H6). Every route here is admin in
+	// apiPolicy: the delete has no undo, and the export is the tenant's whole
+	// conversation history in one response.
+	handlers.NewCompanyDataHandler(d.retentionSvc).Register(authed)
 	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.metabaseDashboardSvc).Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
 	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)

@@ -1,0 +1,21 @@
+-- Per-source table and column allowlist (T-H12).
+--
+-- Until now scoping was source-level only (`agentscope.Scope.AllowsSource`): a
+-- tenant could say which *database* an agent may reach and nothing about what
+-- inside it. "Can you restrict the agent to these twelve tables?" is a line
+-- item on every enterprise security questionnaire and the answer was "ask your
+-- DBA".
+--
+-- JSONB rather than TEXT[] for the tables, so both columns have the same shape
+-- and the column rules — which are a map — do not need a second encoding. The
+-- default is an empty object, which every reader treats as unrestricted: a row
+-- written before this migration must keep the behaviour it had, so absence
+-- cannot mean deny-all.
+--
+-- The allowlist is NOT the guarantee and this comment is the place to say so
+-- where a DBA will read it. A restricted login and masked views remain the
+-- recommendation; this is defence in depth over SQL a model wrote, plus the
+-- part the questionnaire is really asking about — the agent is never told the
+-- other tables exist.
+ALTER TABLE db_connections
+    ADD COLUMN IF NOT EXISTS allowlist JSONB NOT NULL DEFAULT '{}'::jsonb;

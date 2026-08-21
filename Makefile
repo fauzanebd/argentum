@@ -108,6 +108,25 @@ eval-matrix: ## Score the set across several models and print the comparison (T-
 eval-dry: ## Validate the golden set and seed the eval tenant without calling the LLM
 	cd $(BACKEND) && go run ./cmd/eval -set testdata/eval/golden.yaml -dry-run
 
+# Its own target and its own set file (T-H11). The five adversarial cases are
+# scored against a third source carrying injected rows, identifiers and column
+# comments, which the harness registers only for a run that holds one of them —
+# so running them through `eval` above would change what every golden case
+# sees. Read the result as named defects, not as a percentage.
+.PHONY: eval-security
+eval-security: ## Score the agent against the adversarial security set (T-H11)
+	cd $(BACKEND) && go run ./cmd/eval -set testdata/eval/security.yaml $(EVAL_ARGS)
+
+# Key rotation (T-H14). The full procedure is in cmd/rekey's package comment and
+# in docs/coverage/security-hardening.md; these are steps 2 and 3 of it.
+.PHONY: rekey-check
+rekey-check: ## Report which key each stored DSN is sealed under (T-H14)
+	cd $(BACKEND) && go run ./cmd/rekey -check
+
+.PHONY: rekey-apply
+rekey-apply: ## Re-seal stored DSNs under the primary ARGENTUM_DSN_KEY (T-H14)
+	cd $(BACKEND) && go run ./cmd/rekey -apply
+
 .PHONY: types
 types: ## Regenerate packages/api-types from Go structs (T-02b)
 	node packages/api-types/scripts/generate.mjs

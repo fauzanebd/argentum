@@ -169,6 +169,7 @@ func main() {
 	mux.HandleFunc(queue.TypeWatcherEval, makeWatcherEvalHandler(stack.Watchers))
 	mux.HandleFunc(queue.TypeCookbookHarvest, makeCookbookHarvestHandler(stack.Cookbook))
 	mux.HandleFunc(queue.TypeDocumentParse, makeDocumentParseHandler(stack.DocumentParse))
+	mux.HandleFunc(queue.TypeRetentionPurge, makeRetentionPurgeHandler(stack.Retention))
 
 	// --- Periodic task manager ---
 	// Polls scheduled_tasks every SyncInterval and registers/refreshes one
@@ -234,6 +235,33 @@ func main() {
 		}
 	} else {
 		logrus.Info("cookbook harvest disabled (COOKBOOK_HARVEST_CRON empty)")
+	}
+
+	// --- Retention purge (T-H6) ---
+	// A plain scheduler entry beside the cookbook harvest, for the same reason:
+	// the purge has no per-tenant configuration to poll for. One tick covers
+	// the deployment and the handler reads each tenant's own window.
+	//
+	// Nightly rather than hourly. The work is a bulk DELETE against the tables
+	// live turns write to, and a tenant's retention promise is measured in days
+	// — enforcing it twenty-four times a day buys nothing and puts twenty-four
+	// lock windows a day in front of the chat path. Empty switches it off,
+	// which leaves every window unenforced; the log line says so either way,
+	// because a retention setting that is silently not being applied is worse
+	// than one that was never offered.
+	if cfg.RetentionPurgeCron != "" {
+		sched := asynq.NewScheduler(stack.AsynqOpt, nil)
+		if _, err := sched.Register(cfg.RetentionPurgeCron,
+			asynq.NewTask(queue.TypeRetentionPurge, nil)); err != nil {
+			logrus.WithError(err).Error("retention purge: bad cron; no tenant's retention window will be enforced")
+		} else if err := sched.Start(); err != nil {
+			logrus.WithError(err).Error("retention purge: scheduler failed to start; no window will be enforced")
+		} else {
+			defer sched.Shutdown()
+			logrus.WithField("cron", cfg.RetentionPurgeCron).Info("retention purge scheduled")
+		}
+	} else {
+		logrus.Warn("retention purge disabled (RETENTION_PURGE_CRON empty); message_retention_days is stored and not enforced")
 	}
 
 	// Run blocks until OS signal. Capture signals here so we can shut
@@ -417,6 +445,43 @@ func makeWatcherEvalHandler(svc *app.WatcherService) asynq.HandlerFunc {
 // the agent can do — the cookbook is an improvement on today's prompt, never a
 // prerequisite for it — and letting asynq retry a deployment-wide scan on a
 // backoff would put the whole fleet's embedding spend behind one bad tenant.
+// makeRetentionPurgeHandler enforces every tenant's retention window (T-H6).
+//
+// No payload and no per-tenant scheduling, like the harvest above: the service
+// asks which companies have set a window and purges those. A job that had to be
+// told about each tenant would leave the ones added afterwards unenforced,
+// which for this job is not a missing improvement — it is a retention promise
+// the product is making and not keeping.
+//
+// **Errors are swallowed to nil, and this one needs its own argument.** The
+// service already isolates per-tenant failures and records them, so an error
+// reaching here means the *list* of tenants could not be read. Retrying that on
+// asynq's backoff would re-run the whole deployment's purge, and a purge is not
+// idempotent in the way a harvest is — it is, but only because the rows it
+// would delete twice are gone. What decides it is the cron: the next tick is
+// tonight, the window is measured in days, and a day late is inside the
+// promise. A retry storm against the tables the chat path writes is not.
+func makeRetentionPurgeHandler(svc *app.RetentionService) asynq.HandlerFunc {
+	return func(ctx context.Context, _ *asynq.Task) error {
+		if svc == nil {
+			return nil
+		}
+		res, err := svc.PurgeExpired(ctx)
+		if err != nil {
+			logrus.WithError(err).Error("retention purge: could not list tenants; the next tick retries")
+			return nil
+		}
+		if res.Companies > 0 {
+			logrus.WithFields(logrus.Fields{
+				"companies": res.Companies,
+				"threads":   res.Threads,
+				"messages":  res.Messages,
+			}).Info("retention purge complete")
+		}
+		return nil
+	}
+}
+
 // makeDocumentParseHandler reads one uploaded PDF into per-page artifacts
 // (T-P2).
 //

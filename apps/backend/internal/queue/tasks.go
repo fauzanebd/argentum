@@ -48,6 +48,11 @@ const (
 	// configured — a deployment with none leaves its documents 'uploaded',
 	// which is a resting state rather than a failure.
 	TypeDocumentParse = "document:parse"
+	// TypeRetentionPurge enforces each tenant's message retention window
+	// (T-H6). Payloadless and deployment-wide for TypeCookbookHarvest's exact
+	// reason, and one more: a retention promise that has to be told about each
+	// new tenant is a retention promise that quietly does not cover them.
+	TypeRetentionPurge = "retention:purge"
 )
 
 // WatcherEvalPayload is the body of a `watcher:eval` task (T-08). Only the id,

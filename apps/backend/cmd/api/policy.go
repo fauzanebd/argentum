@@ -43,10 +43,15 @@ var apiPolicy = middleware.RolePolicy{
 
 	// Data sources. Reads are open; everything that writes, tests or spends is
 	// not.
-	"GET /api/connections":                             domain.RoleMember,
-	"POST /api/connections":                            domain.RoleAdmin,
-	"PATCH /api/connections/:id":                       domain.RoleAdmin,
-	"PUT /api/connections/:id/dsn":                     domain.RoleAdmin,
+	"GET /api/connections":         domain.RoleMember,
+	"POST /api/connections":        domain.RoleAdmin,
+	"PATCH /api/connections/:id":   domain.RoleAdmin,
+	"PUT /api/connections/:id/dsn": domain.RoleAdmin,
+	// The table and column allowlist (T-H12). Admin under the line this table
+	// already draws — it changes what the agent can reach — and it is the one
+	// route here whose *loosening* is the dangerous direction rather than its
+	// use.
+	"PUT /api/connections/:id/allowlist":               domain.RoleAdmin,
 	"POST /api/connections/:id/default":                domain.RoleAdmin,
 	"POST /api/connections/:id/regenerate-description": domain.RoleAdmin,
 	"POST /api/connections/:id/reindex-embeddings":     domain.RoleAdmin,
@@ -168,6 +173,16 @@ var apiPolicy = middleware.RolePolicy{
 	// Company settings.
 	"GET /api/settings": domain.RoleMember,
 	"PUT /api/settings": domain.RoleAdmin,
+
+	// Retention, erasure and export (T-H6). All three are admin, and the
+	// export is the one worth arguing for: it is not a mutation, so the line
+	// drawn above would put it with the member reads. It is admin because it
+	// returns every conversation every member of the company has ever had in
+	// one response — a member can already read their own threads, and this is
+	// the only route that hands them everybody else's.
+	"GET /api/company/data/export":   domain.RoleAdmin,
+	"GET /api/company/data/erasures": domain.RoleAdmin,
+	"DELETE /api/company/data":       domain.RoleAdmin,
 
 	// The business profile (T-B1). Read is member because it is a description
 	// of the company every member already works for, and because the agents

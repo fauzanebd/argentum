@@ -35,16 +35,41 @@ const (
 	secondSourceDB    = "demo_people"
 )
 
+// SeedOpts is what the tenant should look like for this run. A struct rather
+// than five positional parameters, two of which are bools: at the call site
+// `EnsureTenant(ctx, stack, dsn, host, true, false)` says nothing about which
+// `true` is the metric registry, and cmd/eval already learned this lesson once
+// (see runOpts there).
+type SeedOpts struct {
+	// DemoDSN is the demo warehouse. The other seeded databases are derived
+	// from it by swapping the database name, so it is also how they are found.
+	DemoDSN string
+	// MetabaseHostPort is the host:port Metabase should use to reach the demo
+	// database, which is not the one this process uses. Empty registers the
+	// DSN unchanged.
+	MetabaseHostPort string
+	// WithMetrics defines the tenant's three metrics; false removes them.
+	// State on a reused tenant, so a run that wants them absent has to say so
+	// — otherwise T-07's before/after is the same run twice.
+	WithMetrics bool
+	// WithAdversarial registers the support source the `security` cases read
+	// (T-H11); false removes it. Same reasoning as WithMetrics and one more
+	// besides: a third source changes `list_sources` for every case, so a run
+	// that does not need it must not carry it. See adversarial.go.
+	WithAdversarial bool
+}
+
 // EnsureTenant makes the eval tenant exist and returns its identifiers. It
 // is idempotent: run it a hundred times and you still have one company, one
-// user and two sources.
+// user and two sources — three when opts.WithAdversarial asks for the support
+// fixtures.
 //
 // The second source is not decoration. Three of the golden categories test
 // what the agent does when a question could plausibly hit either database —
 // whether it asks instead of guessing — and that behaviour cannot be
 // measured against a tenant with one source, because the system prompt
 // explicitly says not to ask when only one exists.
-func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN, metabaseHostPort string, withMetrics bool) (Tenant, error) {
+func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, opts SeedOpts) (Tenant, error) {
 	users := pgctl.NewUserRepo(stack.ControlDB)
 
 	company, err := stack.Companies.GetBySlug(ctx, tenantSlug)
@@ -86,11 +111,12 @@ func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, demoDSN, metabase
 		return Tenant{}, fmt.Errorf("lookup user: %w", err)
 	}
 
-	if err := ensureSources(ctx, stack, company.ID, demoDSN, metabaseHostPort); err != nil {
+	if err := ensureSources(ctx, stack, company.ID, opts.DemoDSN, opts.MetabaseHostPort); err != nil {
 		return Tenant{}, err
 	}
 	ensureDefaultAgent(ctx, stack, company.ID)
-	ensureMetrics(ctx, stack, company.ID, user.ID, withMetrics)
+	ensureMetrics(ctx, stack, company.ID, user.ID, opts.WithMetrics)
+	ensureAdversarialSource(ctx, stack, company.ID, opts.DemoDSN, opts.WithAdversarial)
 
 	return Tenant{
 		CompanyID:   company.ID,

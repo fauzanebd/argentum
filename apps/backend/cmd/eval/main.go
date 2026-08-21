@@ -164,13 +164,14 @@ func main() {
 	reports := make([]eval.Report, 0, len(modelList))
 	for _, m := range modelList {
 		rep, ok := runOneModel(ctx, cfg, m, set, cases, runOpts{
-			demoDSN:      *demoDSN,
-			metabaseHost: *metabaseHost,
-			withMetrics:  *withMetrics,
-			timeout:      *timeout,
-			dryRun:       *dryRun,
-			showModel:    len(modelList) > 1,
-			declared:     set.Models,
+			demoDSN:         *demoDSN,
+			metabaseHost:    *metabaseHost,
+			withMetrics:     *withMetrics,
+			withAdversarial: eval.NeedsAdversarial(cases),
+			timeout:         *timeout,
+			dryRun:          *dryRun,
+			showModel:       len(modelList) > 1,
+			declared:        set.Models,
 		})
 		if !ok {
 			return // dry run: the tenant and set were validated, nothing was spent.
@@ -226,8 +227,14 @@ type runOpts struct {
 	demoDSN      string
 	metabaseHost string
 	withMetrics  bool
-	timeout      time.Duration
-	dryRun       bool
+	// withAdversarial registers the support source the `security` cases read
+	// (T-H11). Derived from the selection rather than from a flag: the cases
+	// that need it are the ones that name the category, and a flag would let a
+	// run ask for those cases against a warehouse with no injection in it —
+	// which does not fail, it passes.
+	withAdversarial bool
+	timeout         time.Duration
+	dryRun          bool
 	// showModel prefixes each case line with the model, which is noise on a
 	// single-model run and the only way to read the output on a matrix one.
 	showModel bool
@@ -259,7 +266,12 @@ func runOneModel(
 	// Idempotent, and re-run per model on purpose: it is what guarantees each
 	// model meets the same tenant, the same sources and the same metric
 	// registry. Cheap next to one LLM call.
-	tenant, err := eval.EnsureTenant(ctx, stack, opts.demoDSN, opts.metabaseHost, opts.withMetrics)
+	tenant, err := eval.EnsureTenant(ctx, stack, eval.SeedOpts{
+		DemoDSN:          opts.demoDSN,
+		MetabaseHostPort: opts.metabaseHost,
+		WithMetrics:      opts.withMetrics,
+		WithAdversarial:  opts.withAdversarial,
+	})
 	if err != nil {
 		fatalf("seed eval tenant: %v", err)
 	}

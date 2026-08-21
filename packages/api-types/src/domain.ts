@@ -756,7 +756,27 @@ export interface Company {
    * which is the column's default.
    */
   pii_redaction_mode: PIIRedactionMode;
+  /**
+   * MessageRetentionDays is how long this tenant's conversation transcripts
+   * are kept (T-H6). Zero means forever, which is what every row did before
+   * migration 067 and therefore what an unset row must keep doing — see
+   * [RetentionForever].
+   */
+  message_retention_days: number /* int */;
 }
+/**
+ * RetentionForever is the MessageRetentionDays value that disables the purge.
+ * Named rather than written as a bare 0 at each of its four uses, because the
+ * difference between "keep forever" and "keep for no time at all" is one
+ * character and the second one deletes a tenant's history.
+ */
+export const RetentionForever = 0;
+/**
+ * MaxMessageRetentionDays bounds what an admin may set. Ten years is longer
+ * than any retention policy this product will be asked for and short enough
+ * that a fat-fingered 36500000 is refused rather than stored.
+ */
+export const MaxMessageRetentionDays = 3650;
 
 //////////
 // source: company_profile.go
@@ -905,6 +925,12 @@ export interface DBConnection {
    * source were last (re)built. Nil means never indexed.
    */
   embeddings_indexed_at?: string;
+  /**
+   * Allowlist restricts which tables and columns of this source the agent may
+   * read (T-H12). The zero value is unrestricted, which is what every row
+   * written before migration 068 has to keep meaning.
+   */
+  allowlist: Allowlist;
   created_at: string;
   updated_at: string;
 }
@@ -953,6 +979,88 @@ export interface Dashboard {
   created_by?: string;
   created_at: string;
   updated_at: string;
+}
+
+//////////
+// source: data_erasure.go
+
+/**
+ * ErasureScope is why rows were deleted.
+ */
+/**
+ * ErasureScopeAll is an on-request erasure of every conversation a company
+ * has: what `DELETE /api/company/data` performs.
+ */
+export const ErasureScopeAll = "all";
+/**
+ * ErasureScopeRetention is one purge tick, recording what the nightly job
+ * removed for a company whose retention window had passed.
+ * It shares a table with the on-request kind on purpose. "When did you last
+ * delete my data, and how much?" is one question, and answering it from two
+ * tables that have drifted apart is how the answer becomes wrong.
+ */
+export const ErasureScopeRetention = "retention";
+export type ErasureScope = typeof ErasureScopeAll | typeof ErasureScopeRetention;
+export const ErasureStatusRunning = "running";
+export const ErasureStatusCompleted = "completed";
+export const ErasureStatusFailed = "failed";
+/**
+ * Erasure status values. A row is written `running` *before* the delete and
+ * updated after it, so a process that dies mid-erasure leaves evidence that it
+ * was attempted rather than no evidence at all.
+ */
+export type ErasureStatus = typeof ErasureStatusRunning | typeof ErasureStatusCompleted | typeof ErasureStatusFailed;
+/**
+ * DataErasure is the written completion record for one purge or erasure. It
+ * holds counts and timestamps and never content — the whole point is that it
+ * survives the thing it describes, including the erasure that created it.
+ */
+export interface DataErasure {
+  id: string;
+  company_id: string;
+  /**
+   * RequestedBy is empty for a retention purge, which nobody requested, and
+   * stays empty if the user who asked has since been deleted.
+   */
+  requested_by?: string;
+  scope: ErasureScope;
+  status: string;
+  threads_deleted: number /* int */;
+  messages_deleted: number /* int */;
+  error_text?: string;
+  requested_at: string;
+  /**
+   * CompletedAt is nil while the erasure is running, and on one that died.
+   */
+  completed_at?: string;
+}
+/**
+ * CompanyRetention is one tenant's purge window.
+ */
+export interface CompanyRetention {
+  CompanyID: string;
+  Days: number /* int */;
+}
+/**
+ * ExportedMessage is one row of the export. Flat rather than nested by thread:
+ * the export is streamed and a nested document cannot be written without
+ * holding a thread's whole transcript in memory, which is the shape that turns
+ * one large tenant into an OOM.
+ */
+export interface ExportedMessage {
+  thread_id: string;
+  thread_title: string;
+  channel: string;
+  message_id: string;
+  role: string;
+  content: string;
+  /**
+   * json.RawMessage rather than []byte: the column is JSONB, and []byte
+   * marshals to base64 — an export nobody can read without decoding it first,
+   * which defeats the point of offering one.
+   */
+  tool_calls?: unknown;
+  created_at: string;
 }
 
 //////////
@@ -1917,6 +2025,30 @@ export interface CompanySlackCredential {
   Enabled: boolean;
   CreatedAt: string;
   UpdatedAt: string;
+}
+
+//////////
+// source: source_allowlist.go
+
+/**
+ * Allowlist is what an agent may read inside one source.
+ */
+export interface Allowlist {
+  /**
+   * Tables is the set of table names the agent may reference. Empty means
+   * every table.
+   */
+  tables?: string[];
+  /**
+   * Columns restricts individual tables further: a table present here exposes
+   * only the columns listed. A table absent from this map exposes all of its
+   * columns, which is why an empty map is unrestricted rather than empty.
+   * Keys must also pass Tables when Tables is non-empty; a column rule on a
+   * table the allowlist excludes is dead configuration, and
+   * [Allowlist.Validate] refuses it rather than storing something that reads
+   * as a permission and grants nothing.
+   */
+  columns?: { [key: string]: string[]};
 }
 
 //////////

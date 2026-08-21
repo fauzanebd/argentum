@@ -59,7 +59,7 @@ func main() {
 	allowedUsersRepo := pgctl.NewAllowedDiscordUserRepo(controlDB)
 
 	// --- Crypto + Redis ---
-	dsnCipher, err := crypto.NewFromHex(cfg.DSNEncryptionKeyHex)
+	dsnCipher, err := crypto.NewKeyring(cfg.DSNEncryptionKeyHex, cfg.DSNRetiredKeysHex)
 	if err != nil {
 		logrus.Fatalf("DSN cipher: %v", err)
 	}

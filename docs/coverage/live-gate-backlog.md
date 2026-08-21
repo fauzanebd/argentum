@@ -188,6 +188,16 @@ at once is the state where a movement in the number cannot be attributed to
 either change, so **the order of those two payments is a real dependency**, not
 a preference.
 
+**Revised 2026-08-21 again — §1q, and the hardening track's remaining tickets
+are now built rather than written.** `T-H6`, `T-H11`, `T-H12` and `T-H14`
+landed code-complete in one sitting, and **eight of their nine gates need
+nothing but the stack**. The ninth is `T-H11`'s own run at ~$0.15, and it
+inherits §1p's constraint one track over: `T-H8`'s unpaid re-score has to be
+paid first, or a movement in either number has two candidate causes. Three
+unpaid prompt-surface measurements are now outstanding at once, which is the
+most this file has ever carried, and the ordering between them is the only
+thing that makes any of them readable.
+
 Nothing here is blocked on a decision about *how* to build something. Each item
 needs one of four things: the stack up, money spent, a browser opened, or a
 message sent to a real person's phone — with the single exception of §1h, which
@@ -1235,6 +1245,47 @@ into the always-on channel the roadmap's §2 measured as full — and no amount 
 further spend fixes it, because it is a design result rather than a defect.
 It is listed above at $0.15 with the rest of the category; it is worth more than
 the other eight put together.
+
+## 1q. Owed by the 2026-08-21 hardening build — four tickets, and only one costs money
+
+`T-H6`, `T-H11`, `T-H12` and `T-H14` landed code-complete and unit-gated in one
+sitting ([`delivery-log.md`](delivery-log.md) Phase 3m,
+[`security-hardening.md`](security-hardening.md) §19). By this file's own record
+that is the state fourteen sittings out of fourteen were hiding something in,
+so the rows are here the same day with prices — which is §1h's rule and the one
+that has worked every time it was followed.
+
+**Three of the four need nothing but the stack.** The fourth is `T-H11`'s own
+run, and it carries a scheduling constraint rather than a cost problem: see
+below.
+
+| Owed by | The gate | Bucket | Cost |
+| ------- | -------- | ------ | ---- |
+| `T-H6` | Migration `067` up, down and up again against the real control database. Then a seeded company with threads and messages older than its window: the purge removes the expired messages, removes the threads left empty, leaves a thread whose newest message is inside the window **with its old messages gone**, and writes one `data_erasures` row carrying the true counts | §1 stack | $0.00 |
+| `T-H6` | `DELETE /api/company/data` over HTTP with the confirmation body, then the arm this ticket exists for: **`agent_actions` rows for that company are still there afterwards, and `usage_events` too**. Unit tests assert the *statements* never name those tables; only a database can assert the CASCADE does not reach them | §1 stack | $0.00 |
+| `T-H6` | The export streaming a company with a few hundred messages: NDJSON, one object per line, `jq`-readable end to end — and the same export **after** an erasure returning zero lines rather than an error | §1 stack | $0.00 |
+| `T-H12` | Migration `068` up, down and up again. Then a source with an allowlist: `get_schema` names **only** the allowlisted tables, a foreign key to an excluded table does not appear, and a column-restricted table shows only its listed columns | §1 stack | $0.00 |
+| `T-H12` | `run_sql` through `cmd/mcp` — §1d's technique and §1l's, so the SQL is the gate's and the code path is the turn's: an allowlisted table answers, an excluded one is refused by name, a CTE wrapping an excluded table is refused, and `SELECT *` on a column-restricted table is refused while the same query naming columns succeeds | §1 stack | $0.00 |
+| `T-H12` | **The false-positive arm, and it is the one this ticket can most easily fail.** The ten pieces of ordinary analytical SQL §1l already ran, against an *unrestricted* source, all still answering. An allowlist that starts refusing working queries for tenants who configured nothing is a worse outcome than the feature not existing | §1 stack | $0.00 |
+| `T-H14` | A real rotation on a seeded control database, all five steps: deploy with the new key primary and the old retired, `rekey -check` reporting rows on the retired key **and exiting non-zero**, `-apply`, `-check` passing, then a boot with the retired key removed serving a turn. The arm that makes it mean something is a control — one row deliberately left unsealed, which must keep `-check` non-zero | §1 stack | $0.00 |
+| `T-H14` | A blob sealed by the *pre-T-H14 binary* opening under the new one. The unit test builds the legacy bytes longhand, which is the right test; this is the one that proves the bytes in `db_connections` today are the bytes that test describes | §1 stack | $0.00 |
+| `T-H11` | `make eval-security` — the five cases on both models, with the numbers and the date posted. Read as named defects, not as a percentage | §2 money | ~$0.15 |
+
+**The one scheduling constraint, and it is the same shape as §1p's.** `T-H8`
+owes an unpaid rule-1 re-score (§1o, ~$1.05) and it changed what every tool
+result looks like to the model. `T-H11`'s cases are scored on that same prompt
+surface. **Pay `T-H8`'s re-score first**, then run the security set: reversed,
+a movement in either number has two candidate causes and the sitting proves
+nothing. This is finding `Q-2` returning in a third costume, and the order is a
+dependency rather than a preference.
+
+**What this bucket is most likely to find, stated in advance so the sitting can
+be read honestly.** `T-H12` is the ticket with a lexer inside it, and its own
+build already found three bypasses by probing rather than by reading — all
+three admitting an excluded table with no refusal and no uncertainty. The free
+arms above are written to look for a fourth. `T-H6`'s exposure is the opposite
+shape: it is a bulk DELETE, and the failure that matters is one that deletes
+more than it said.
 
 ## 2. Needs the stack **and** real LLM spend
 

@@ -34,10 +34,10 @@ func (r *CompanyRepo) Create(ctx context.Context, c *domain.Company) error {
 }
 
 func (r *CompanyRepo) GetByID(ctx context.Context, id string) (*domain.Company, error) {
-	const q = `SELECT id, name, slug, default_currency, pii_redaction_mode, created_at FROM companies WHERE id = $1`
+	const q = `SELECT id, name, slug, default_currency, pii_redaction_mode, message_retention_days, created_at FROM companies WHERE id = $1`
 	c := &domain.Company{}
 	if err := r.db.QueryRowContext(ctx, q, id).Scan(
-		&c.ID, &c.Name, &c.Slug, &c.DefaultCurrency, &c.PIIRedactionMode, &c.CreatedAt,
+		&c.ID, &c.Name, &c.Slug, &c.DefaultCurrency, &c.PIIRedactionMode, &c.MessageRetentionDays, &c.CreatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -48,10 +48,10 @@ func (r *CompanyRepo) GetByID(ctx context.Context, id string) (*domain.Company, 
 }
 
 func (r *CompanyRepo) GetBySlug(ctx context.Context, slug string) (*domain.Company, error) {
-	const q = `SELECT id, name, slug, default_currency, pii_redaction_mode, created_at FROM companies WHERE slug = $1`
+	const q = `SELECT id, name, slug, default_currency, pii_redaction_mode, message_retention_days, created_at FROM companies WHERE slug = $1`
 	c := &domain.Company{}
 	if err := r.db.QueryRowContext(ctx, q, slug).Scan(
-		&c.ID, &c.Name, &c.Slug, &c.DefaultCurrency, &c.PIIRedactionMode, &c.CreatedAt,
+		&c.ID, &c.Name, &c.Slug, &c.DefaultCurrency, &c.PIIRedactionMode, &c.MessageRetentionDays, &c.CreatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -65,13 +65,23 @@ func (r *CompanyRepo) GetBySlug(ctx context.Context, slug string) (*domain.Compa
 // as `strict` rather than as the empty string — the column has a CHECK
 // constraint, and a caller that loaded a row, changed the name and wrote it back
 // must not have to know about a policy field to avoid failing the write.
+//
+// A retention out of range is clamped to forever for the same reason and a
+// sharper one: this method writes every column, so a caller that loaded a row
+// and changed the name must not be able to hand a negative day count to the
+// purge. The settable path validates and rejects (app.CompanyService); this is
+// the floor under it.
 func (r *CompanyRepo) Update(ctx context.Context, c *domain.Company) error {
-	const q = `UPDATE companies SET name = $1, slug = $2, default_currency = $3, pii_redaction_mode = $4 WHERE id = $5`
+	const q = `UPDATE companies SET name = $1, slug = $2, default_currency = $3, pii_redaction_mode = $4, message_retention_days = $5 WHERE id = $6`
 	mode := c.PIIRedactionMode
 	if !mode.Valid() {
 		mode = domain.PIIRedactionStrict
 	}
-	_, err := r.db.ExecContext(ctx, q, c.Name, c.Slug, c.DefaultCurrency, string(mode), c.ID)
+	retention := c.MessageRetentionDays
+	if !domain.ValidRetentionDays(retention) {
+		retention = domain.RetentionForever
+	}
+	_, err := r.db.ExecContext(ctx, q, c.Name, c.Slug, c.DefaultCurrency, string(mode), retention, c.ID)
 	return err
 }
 

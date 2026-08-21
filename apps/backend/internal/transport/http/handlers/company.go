@@ -26,12 +26,25 @@ type CompanyHandler struct {
 	// warehouse credential plus every row it can read in the clear anywhere
 	// else.
 	requireTLS bool
+	// retention sets the tenant's purge window (T-H6). Optional, like
+	// embedding above it: a deployment wired without it serves the rest of the
+	// settings form and refuses this one field with a 503 rather than dropping
+	// it silently, because a retention setting that appears to save and does
+	// not is the worst of the three outcomes.
+	retention *app.RetentionService
 }
 
 // NewCompanyHandler wires the company service. embeddingSvc is optional;
 // pass nil to disable the reindex-embeddings endpoint (it will return 503).
 func NewCompanyHandler(svc *app.CompanyService, embeddingSvc *app.EmbeddingService) *CompanyHandler {
 	return &CompanyHandler{svc: svc, embedding: embeddingSvc}
+}
+
+// WithRetention enables the message_retention_days half of the settings
+// endpoints. Without it that field answers 503 and the rest still works.
+func (h *CompanyHandler) WithRetention(svc *app.RetentionService) *CompanyHandler {
+	h.retention = svc
+	return h
 }
 
 // WithRequiredTLS refuses to register a connection whose DSN would not encrypt.
@@ -49,6 +62,10 @@ func (h *CompanyHandler) Register(rg *gin.RouterGroup) {
 	rg.POST("/connections", h.addConnection)
 	rg.PATCH("/connections/:id", h.updateConnectionMeta)
 	rg.PUT("/connections/:id/dsn", h.updateConnectionDSN)
+	// Its own route rather than a field on PATCH /connections/:id: the allowlist
+	// is a permission and that endpoint is a cosmetic edit — see
+	// CompanyService.SetConnectionAllowlist.
+	rg.PUT("/connections/:id/allowlist", h.updateConnectionAllowlist)
 	rg.POST("/connections/:id/default", h.setDefault)
 	rg.POST("/connections/:id/regenerate-description", h.regenerateDescription)
 	rg.POST("/connections/:id/rescan", h.rescanSource)
@@ -388,6 +405,34 @@ type updateMetaReq struct {
 	EnableTableEmbedding *bool  `json:"enable_table_embedding,omitempty"`
 }
 
+// updateConnectionAllowlist restricts what the agent may read inside one source
+// (T-H12).
+//
+// The body is the whole allowlist, not a patch. A tenant removing a table from
+// the list is the operation that matters most here, and a merge semantics that
+// could only add would make removal unexpressible.
+func (h *CompanyHandler) updateConnectionAllowlist(c *gin.Context) {
+	var req domain.Allowlist
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.svc.SetConnectionAllowlist(c.Request.Context(), companyID(c), c.Param("id"), req); err != nil {
+		switch {
+		case errors.Is(err, domain.ErrUnauthorized):
+			c.JSON(http.StatusForbidden, gin.H{"error": "not your connection"})
+		case errors.Is(err, domain.ErrInvalidInput):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, domain.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "connection not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *CompanyHandler) updateConnectionMeta(c *gin.Context) {
 	var req updateMetaReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -707,6 +752,13 @@ func (h *CompanyHandler) getSettings(c *gin.Context) {
 		"supported_currencies": app.SupportedCurrencies(),
 		"pii_redaction_mode":   mode,
 		"pii_redaction_modes":  domain.PIIRedactionModes(),
+		// T-H6. Zero is "keep forever" and is what every row held before
+		// migration 067, so the form has to render it as a choice rather than
+		// as an empty number field — otherwise an admin who opens the page and
+		// saves it turns "forever" into "delete everything tonight".
+		"message_retention_days":     company.MessageRetentionDays,
+		"message_retention_forever":  domain.RetentionForever,
+		"message_retention_days_max": domain.MaxMessageRetentionDays,
 	})
 }
 
@@ -717,6 +769,12 @@ func (h *CompanyHandler) getSettings(c *gin.Context) {
 type updateSettingsReq struct {
 	DefaultCurrency  string                  `json:"default_currency"`
 	PIIRedactionMode domain.PIIRedactionMode `json:"pii_redaction_mode"`
+	// MessageRetentionDays is a pointer because zero is a meaningful value
+	// here — it is "keep forever" — so the absent/zero distinction the other
+	// two fields get for free from the empty string has to be explicit. A
+	// client that does not send the field must not be read as asking for
+	// forever, and a client that sends 0 must not be read as sending nothing.
+	MessageRetentionDays *int `json:"message_retention_days"`
 }
 
 func (h *CompanyHandler) updateSettings(c *gin.Context) {
@@ -725,8 +783,8 @@ func (h *CompanyHandler) updateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.DefaultCurrency == "" && req.PIIRedactionMode == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no settings in request: send default_currency, pii_redaction_mode, or both"})
+	if req.DefaultCurrency == "" && req.PIIRedactionMode == "" && req.MessageRetentionDays == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no settings in request: send default_currency, pii_redaction_mode, message_retention_days, or any combination"})
 		return
 	}
 	if req.DefaultCurrency != "" {
@@ -737,6 +795,16 @@ func (h *CompanyHandler) updateSettings(c *gin.Context) {
 	}
 	if req.PIIRedactionMode != "" {
 		if err := h.svc.UpdatePIIRedactionMode(c.Request.Context(), companyID(c), req.PIIRedactionMode); err != nil {
+			writeSettingsErr(c, err)
+			return
+		}
+	}
+	if req.MessageRetentionDays != nil {
+		if h.retention == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "retention is not configured on this deployment"})
+			return
+		}
+		if err := h.retention.SetRetention(c.Request.Context(), companyID(c), *req.MessageRetentionDays); err != nil {
 			writeSettingsErr(c, err)
 			return
 		}

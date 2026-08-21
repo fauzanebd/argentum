@@ -128,6 +128,12 @@ type Stack struct {
 	Feedback        *app.FeedbackService
 	MessageFeedback domain.MessageFeedbackRepository
 
+	// Retention is the purge, the erasure and the export (T-H6). Wired
+	// unconditionally: it is the tenant's own UU PDP 27/2022 obligation, and a
+	// deployment that could switch it off would be a deployment where the
+	// obligation silently is not dischargeable.
+	Retention *app.RetentionService
+
 	// Cookbook is the tenant's own worked examples (T-Q8): what the harvester
 	// learned from agent_actions, and what a turn is shown before it writes a
 	// query. Both halves are nil on a deployment with no embedding support,
@@ -242,7 +248,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
 
-	dsnCipher, err := crypto.NewFromHex(cfg.DSNEncryptionKeyHex)
+	dsnCipher, err := crypto.NewKeyring(cfg.DSNEncryptionKeyHex, cfg.DSNRetiredKeysHex)
 	if err != nil {
 		return nil, fmt.Errorf("DSN cipher: %w", err)
 	}
@@ -301,6 +307,15 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// same reason as LogDSNKeyCoverage: a credential that silently resolves to
 	// nothing is indistinguishable, in a log, from a feature that is working.
 	embedding.LogEnvCoverage(cfg)
+
+	// Retention and erasure (T-H6). Its repositories are built here rather than
+	// beside the others because the bulk-delete contract is deliberately kept
+	// off the repositories the request path uses — see retention_repo.go.
+	s.Retention = app.NewRetentionService(
+		pgctl.NewRetentionRepo(controlDB),
+		pgctl.NewDataErasureRepo(controlDB),
+		s.Companies,
+	)
 
 	// The cookbook (T-Q8). Built here rather than beside the other repositories
 	// because it needs the embedding cache above: the harvester embeds each

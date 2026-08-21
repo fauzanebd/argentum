@@ -206,10 +206,13 @@ func randomBytes(t *testing.T, n int) []byte {
 	return b
 }
 
-func TestWireFormatIsNoncePlusSealed(t *testing.T) {
-	// The layout is documented on DSNCipher and is what is already sitting in
-	// db_connections rows, so it is a compatibility contract, not an
-	// implementation detail: 12-byte nonce, then ciphertext + 16-byte tag.
+func TestWireFormatIsTheVersionedEnvelope(t *testing.T) {
+	// T-H14 gave the format a version prefix, which is what makes "which key is
+	// this row sealed under?" answerable and therefore what makes a rotation
+	// finishable. This test asserted the prefix-free layout until then; it now
+	// asserts the new one, and TestLegacyCiphertextStillOpens below asserts the
+	// old one keeps reading — which is the half that is a compatibility
+	// contract.
 	c := newCipher(t, testKey)
 	const plain = "postgres://u:p@h:5432/d"
 
@@ -217,8 +220,16 @@ func TestWireFormatIsNoncePlusSealed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	if want := 12 + len(plain) + 16; len(blob) != want {
-		t.Errorf("len(blob) = %d, want %d (12 nonce + %d plaintext + 16 tag)", len(blob), want, len(plain))
+	// "ARGK" + version + keyID[4] + nonce[12] + ciphertext + tag[16]
+	if want := 4 + 1 + 4 + 12 + len(plain) + 16; len(blob) != want {
+		t.Errorf("len(blob) = %d, want %d", len(blob), want)
+	}
+	id, versioned := SealedUnder(blob)
+	if !versioned {
+		t.Fatal("a freshly sealed payload carries no version prefix")
+	}
+	if id != c.PrimaryKeyID() {
+		t.Errorf("payload names key %s, primary is %s", id, c.PrimaryKeyID())
 	}
 
 	// A blob produced elsewhere with the same key must decrypt here — the

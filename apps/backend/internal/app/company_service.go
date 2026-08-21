@@ -273,6 +273,49 @@ func (s *CompanyService) UpdateConnectionMeta(ctx context.Context, companyID, co
 	return nil
 }
 
+// SetConnectionAllowlist restricts which tables and columns of one source the
+// agent may read (T-H12).
+//
+// **Its own method, and its own route, rather than a field on
+// UpdateConnectionMeta.** That method writes label and description from the
+// request body, so folding a permission into it would mean every label edit
+// rewrites the allowlist — and a client that predates this field would clear it
+// by renaming a source. A permission must not be collateral damage of a
+// cosmetic edit.
+//
+// No cache invalidation: `get_schema` caches the source's *unfiltered* schema
+// and applies the allowlist after the read, precisely so a change here takes
+// effect on the next turn rather than after a one-hour TTL.
+func (s *CompanyService) SetConnectionAllowlist(ctx context.Context, companyID, connID string, list domain.Allowlist) error {
+	if err := list.Validate(); err != nil {
+		return err
+	}
+	conn, err := s.connections.GetByID(ctx, connID)
+	if err != nil {
+		return err
+	}
+	if conn.CompanyID != companyID {
+		return domain.ErrUnauthorized
+	}
+	was := conn.Allowlist.Restricted()
+	conn.Allowlist = list
+	if err := s.connections.Update(ctx, conn); err != nil {
+		return err
+	}
+	// Warn rather than Info: this changes what the agent can read for every
+	// user of this tenant, and the direction matters — widening is the one an
+	// operator wants to find in a log later.
+	logrus.WithFields(logrus.Fields{
+		"company_id":     companyID,
+		"source_id":      connID,
+		"was_restricted": was,
+		"now_restricted": list.Restricted(),
+		"tables":         len(list.Tables),
+		"column_rules":   len(list.Columns),
+	}).Warn("source allowlist changed")
+	return nil
+}
+
 // connectionEmbeddingToggler is the focused capability we need on the repo
 // to flip the per-source flag without round-tripping the DSN.
 type connectionEmbeddingToggler interface {

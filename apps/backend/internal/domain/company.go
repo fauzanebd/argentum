@@ -50,6 +50,28 @@ type Company struct {
 	// turns. Empty on a row written before migration 045 and read as strict,
 	// which is the column's default.
 	PIIRedactionMode PIIRedactionMode `json:"pii_redaction_mode"`
+	// MessageRetentionDays is how long this tenant's conversation transcripts
+	// are kept (T-H6). Zero means forever, which is what every row did before
+	// migration 067 and therefore what an unset row must keep doing — see
+	// [RetentionForever].
+	MessageRetentionDays int `json:"message_retention_days"`
+}
+
+// RetentionForever is the MessageRetentionDays value that disables the purge.
+//
+// Named rather than written as a bare 0 at each of its four uses, because the
+// difference between "keep forever" and "keep for no time at all" is one
+// character and the second one deletes a tenant's history.
+const RetentionForever = 0
+
+// MaxMessageRetentionDays bounds what an admin may set. Ten years is longer
+// than any retention policy this product will be asked for and short enough
+// that a fat-fingered 36500000 is refused rather than stored.
+const MaxMessageRetentionDays = 3650
+
+// ValidRetentionDays reports whether days is a settable retention.
+func ValidRetentionDays(days int) bool {
+	return days >= RetentionForever && days <= MaxMessageRetentionDays
 }
 
 // CompanyRepository is the persistence contract for companies.

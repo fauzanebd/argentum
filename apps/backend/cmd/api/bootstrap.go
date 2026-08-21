@@ -102,7 +102,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// `/v1`; the dashboard routes beside it are how an admin mints one.
 	deps.apiKeySvc = app.NewAPIKeyService(pgctl.NewAPIKeyRepo(controlDB))
 
-	dsnCipher, err := crypto.NewFromHex(cfg.DSNEncryptionKeyHex)
+	dsnCipher, err := crypto.NewKeyring(cfg.DSNEncryptionKeyHex, cfg.DSNRetiredKeysHex)
 	if err != nil {
 		return nil, fmt.Errorf("DSN cipher: %w", err)
 	}
@@ -508,6 +508,12 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		pgctl.NewQueryExampleRepo(controlDB), pgctl.NewCookbookCandidateRepo(controlDB),
 		feedbackRepo, deps.embedCache,
 	)
+
+	// Retention and erasure (T-H6). The API half: the settings write, the
+	// erasure route, the export and the record. The nightly purge that uses the
+	// same service lives in the worker.
+	deps.retentionSvc = app.NewRetentionService(
+		pgctl.NewRetentionRepo(controlDB), pgctl.NewDataErasureRepo(controlDB), companyRepo)
 
 	// Watchers (T-08): CRUD and the dry-run. It shares the metric service above,
 	// so a dry-run evaluates the same number the worker's fire path will. No

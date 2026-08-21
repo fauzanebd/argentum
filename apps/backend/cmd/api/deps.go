@@ -120,6 +120,10 @@ type apiDeps struct {
 	// The query cookbook (T-Q8): what the agent has learned about answering
 	// this tenant's questions against this tenant's warehouse.
 	cookbookSvc *app.CookbookService
+	// Retention, erasure and export (T-H6). The API owns all three: the purge
+	// runs in the worker, but its *record* and the two routes a tenant uses to
+	// discharge their own UU PDP obligation are read and written here.
+	retentionSvc *app.RetentionService
 	// Watchers (T-08): CRUD and the dry-run. The API never fires or delivers —
 	// that is the worker's WatcherService — so this instance carries no delivery
 	// providers and no budget checker.

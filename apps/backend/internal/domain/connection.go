@@ -45,8 +45,12 @@ type DBConnection struct {
 	// EmbeddingsIndexedAt records when the table_embeddings rows for this
 	// source were last (re)built. Nil means never indexed.
 	EmbeddingsIndexedAt *time.Time `json:"embeddings_indexed_at,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	// Allowlist restricts which tables and columns of this source the agent may
+	// read (T-H12). The zero value is unrestricted, which is what every row
+	// written before migration 068 has to keep meaning.
+	Allowlist Allowlist `json:"allowlist"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Description sources.

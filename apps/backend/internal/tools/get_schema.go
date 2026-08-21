@@ -263,7 +263,92 @@ func (t *GetSchemaTool) FetchSchema(ctx context.Context, companyID, sourceID str
 	return t.fetchSchema(ctx, companyID, sourceID, force)
 }
 
+// fetchSchema is the cached introspection with the source's allowlist applied
+// (T-H12).
+//
+// **The filter is here rather than in the response formatter**, so every
+// consumer of a schema gets the same restricted view: the tool's own output,
+// run_sql's name-error hints, the table-embedding picker. A filter applied at
+// one exit is a filter the next exit does not have, and the failure that
+// produces is an agent told about a table its tools will then refuse — which
+// the ticket names as the most confusing failure available here.
+//
+// **The cache holds the unfiltered schema and the filter runs after it.** The
+// allowlist is policy and can change without the schema changing; caching the
+// filtered form would mean an admin widening the allowlist waits out a
+// one-hour TTL, and — the direction that matters more — narrowing it would not
+// take effect until the entry expired.
 func (t *GetSchemaTool) fetchSchema(ctx context.Context, companyID, sourceID string, force bool) (*db.SchemaMetadata, error) {
+	schema, err := t.fetchSchemaRaw(ctx, companyID, sourceID, force)
+	if err != nil {
+		return nil, err
+	}
+	list, err := t.allowlistFor(ctx, companyID, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	if !list.Restricted() {
+		return schema, nil
+	}
+	return applyAllowlist(schema, list), nil
+}
+
+// allowlistFor reads the source's allowlist, refusing a source that is not this
+// company's.
+//
+// The ownership check is not redundant with ResolveSource. This method is
+// reachable from `FetchSchema`, which several callers reach with a sourceID
+// they got from somewhere else, and `GetByID` is not company-scoped — so the
+// check belongs at the read rather than in each caller's discipline. Failing
+// closed here costs a schema lookup; failing open would serve one tenant's
+// table names to another.
+func (t *GetSchemaTool) allowlistFor(ctx context.Context, companyID, sourceID string) (domain.Allowlist, error) {
+	conn, err := t.repo.GetByID(ctx, sourceID)
+	if err != nil {
+		return domain.Allowlist{}, fmt.Errorf("resolve source for allowlist: %w", err)
+	}
+	if conn.CompanyID != companyID {
+		return domain.Allowlist{}, fmt.Errorf("source_id %q not found for this company", sourceID)
+	}
+	return conn.Allowlist, nil
+}
+
+// applyAllowlist returns a copy of s holding only the tables and columns the
+// allowlist permits.
+//
+// Relationships are kept only when both endpoints survive, which is
+// filterSchema's existing rule and is load-bearing here for a different reason:
+// a foreign key pointing at an excluded table would name that table in the
+// prompt, which is precisely what the tenant asked not to happen.
+func applyAllowlist(s *db.SchemaMetadata, list domain.Allowlist) *db.SchemaMetadata {
+	out := &db.SchemaMetadata{DBType: s.DBType, ExtractedAt: s.ExtractedAt}
+	kept := make(map[string]bool, len(s.Tables))
+	for _, tbl := range s.Tables {
+		if !list.AllowsTable(tbl.Name) {
+			continue
+		}
+		kept[strings.ToLower(tbl.Name)] = true
+		copied := tbl
+		if list.ColumnsRestricted(tbl.Name) {
+			cols := make([]db.ColumnInfo, 0, len(tbl.Columns))
+			for _, col := range tbl.Columns {
+				if list.AllowsColumn(tbl.Name, col.Name) {
+					cols = append(cols, col)
+				}
+			}
+			copied.Columns = cols
+		}
+		out.Tables = append(out.Tables, copied)
+	}
+	for _, rel := range s.Relationships {
+		if kept[strings.ToLower(rel.FromTable)] && kept[strings.ToLower(rel.ToTable)] {
+			out.Relationships = append(out.Relationships, rel)
+		}
+	}
+	return out
+}
+
+func (t *GetSchemaTool) fetchSchemaRaw(ctx context.Context, companyID, sourceID string, force bool) (*db.SchemaMetadata, error) {
 	key := companyID + ":" + sourceID
 	if !force {
 		// L1: in-process map (microsecond hit when the same worker just served this).

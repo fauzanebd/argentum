@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -17,7 +18,7 @@ func NewConnectionRepo(db *sql.DB) *ConnectionRepo { return &ConnectionRepo{db: 
 const connColumns = `id, company_id, db_type, label, dsn_encrypted, is_default,
 		description, description_source, metabase_database_id,
 		enable_table_embedding, embeddings_indexed_at, origin,
-		created_at, updated_at`
+		allowlist, created_at, updated_at`
 
 func scanConn(row interface {
 	Scan(dest ...interface{}) error
@@ -25,14 +26,24 @@ func scanConn(row interface {
 	c := &domain.DBConnection{}
 	var mid sql.NullInt64
 	var indexedAt sql.NullTime
+	var allowlist []byte
 	err := row.Scan(
 		&c.ID, &c.CompanyID, &c.DBType, &c.Label, &c.DSNEncrypted, &c.IsDefault,
 		&c.Description, &c.DescriptionSource, &mid,
 		&c.EnableTableEmbedding, &indexedAt, &c.Origin,
-		&c.CreatedAt, &c.UpdatedAt,
+		&allowlist, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	// A malformed allowlist is refused rather than dropped. Ignoring the error
+	// would leave `c.Allowlist` at its zero value, which every reader treats as
+	// *unrestricted* — so a corrupt column would silently widen what the agent
+	// may read, which is the one direction this feature must never fail in.
+	if len(allowlist) > 0 {
+		if err := json.Unmarshal(allowlist, &c.Allowlist); err != nil {
+			return nil, fmt.Errorf("decode allowlist for source %s: %w", c.ID, err)
+		}
 	}
 	if mid.Valid {
 		v := int(mid.Int64)
@@ -132,14 +143,26 @@ func (r *ConnectionRepo) Update(ctx context.Context, c *domain.DBConnection) err
 			metabase_database_id = $4,
 			description = $5,
 			description_source = $6,
+			allowlist = $7,
 			updated_at = now()
-		WHERE id = $7
+		WHERE id = $8
 	`
 	var mid interface{}
 	if c.MetabaseDatabaseID != nil {
 		mid = *c.MetabaseDatabaseID
 	}
-	_, err := r.db.ExecContext(ctx, q, c.DBType, c.Label, c.DSNEncrypted, mid, c.Description, c.DescriptionSource, c.ID)
+	// Validated before it is written, not only at the handler. This method
+	// writes every column, so it is the last place a caller that loaded a row
+	// and changed the label can put an allowlist the readers cannot act on.
+	if err := c.Allowlist.Validate(); err != nil {
+		return fmt.Errorf("allowlist for source %s: %w", c.ID, err)
+	}
+	allowlist, err := json.Marshal(c.Allowlist)
+	if err != nil {
+		return fmt.Errorf("encode allowlist for source %s: %w", c.ID, err)
+	}
+	_, err = r.db.ExecContext(ctx, q, c.DBType, c.Label, c.DSNEncrypted, mid,
+		c.Description, c.DescriptionSource, allowlist, c.ID)
 	return err
 }
 

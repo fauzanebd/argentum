@@ -218,7 +218,7 @@ generalises — missing key is a fatal config error
 
 ---
 
-## Track B — The claims we make in writing (5.0d) · **`T-H4` steps 1+3 and `T-H7` built and gated live; `T-H4` step 2 and `T-H6` open; `T-H5` dropped**
+## Track B — The claims we make in writing (5.0d) · **`T-H4` steps 1+3, `T-H6` and `T-H7` built; `T-H4` step 2 open; `T-H5` dropped**
 
 Each ticket here removes one disclosed limitation from the customer security
 brief. That brief's "Known boundaries" section is the acceptance test for this
@@ -337,7 +337,30 @@ path a tenant can reach directly.
 > **Decided 2026-08-14: decommission. This ticket is not being built** — see the
 > note at the top of the section.
 
-### `T-H6` Retention and erasure — 1.5d
+### `T-H6` Retention and erasure — 1.5d · **built 2026-08-21, unit-gated only**
+
+> **Status, 2026-08-21: built.** Migration `067` adds
+> `companies.message_retention_days` (0 = forever, which is what every existing
+> row did) and `data_erasures` — the written completion record, opened before
+> the delete and closed after it, so a process that dies mid-erasure leaves
+> evidence it was attempted. `RETENTION_PURGE_CRON` drives a nightly
+> deployment-wide worker task on the cookbook harvest's shape;
+> `DELETE /api/company/data`, `GET /api/company/data/export` (NDJSON) and
+> `GET /api/company/data/erasures` are the routes, all admin.
+>
+> **The purge deletes messages by their own age, then the threads left empty
+> that are also expired.** Deleting whole threads by age would keep a
+> 400-day-old message inside a thread used yesterday; deleting only messages
+> would leave husks forever.
+>
+> **Audit rows survive by construction, not by care.** `023` gave
+> `agent_actions` no thread FK precisely so a thread delete could not launder
+> it; erasure is that delete with a wider WHERE.
+>
+> **Owed:** the live half — the purge and the erasure endpoint against a company
+> with history, confirming audit rows survive and conversation rows do not.
+> Free; §1q of the live-gate backlog.
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §19.
 
 `messages.content` and `messages.tool_calls`
 (`apps/backend/migrations/control/002_threading.up.sql:26`) hold tenant data
@@ -372,7 +395,7 @@ row already carries what an incident actually needs.
 
 ---
 
-## Track C — Untrusted content (4.0d) · **`T-H8`, `T-H9`, `T-H10` built; `T-H9` and `T-H10` gated live; `T-H11` open and unblocked 2026-08-20**
+## Track C — Untrusted content (4.0d) · **all four built; `T-H9` and `T-H10` gated live; `T-H8`'s and `T-H11`'s numbers unpaid**
 
 This track is the one with no partial credit available and the one a
 sophisticated reviewer will ask about first.
@@ -502,7 +525,29 @@ classes the guardrail rules already define
 (`apps/backend/config/guardrails.yaml:14-15`, applied at `:242`, `:262`, `:272`,
 `:286`, `:296`), and respect the tenant's `PIIRedactionMode` when deciding.
 
-### `T-H11` Adversarial eval cases — 1.0d
+### `T-H11` Adversarial eval cases — 1.0d · **built 2026-08-21, not yet run**
+
+> **Status, 2026-08-21: built, and it lives in its own set file.** Five cases in
+> `testdata/eval/security.yaml`, run by `make eval-security`: an injection in a
+> row value, an injection in an identifier and a column comment, a
+> mutation-only request, a stacked multi-statement payload, a cross-tenant
+> request.
+>
+> **Not appended to `golden.yaml`, and the reason is the instrument.** Two cases
+> need a warehouse whose content attacks the reader, supplied as a *third*
+> source — which changes `list_sources` for every case in the run while
+> `multi_source` scores disambiguation between exactly two. Appending them would
+> have turned `make eval` into a 61-case run against a differently-shaped
+> tenant, and the standing rule-1 re-score would have moved for a reason nobody
+> could name. `TestGoldenSetHoldsNoSecurityCases` keeps them apart.
+>
+> **A third injection surface is covered that the ticket does not name:** a
+> column comment. The Postgres extractor reads `obj_description` and
+> `col_description`, so a comment reaches the model with an identifier's trust
+> and takes no privilege to write.
+>
+> **Owed:** the run itself, ~$0.15, and it should be paid *after* `T-H8`'s
+> re-score rather than beside it. §1q.
 
 This repo's rule is that an unmeasured change is an unshipped change
 (`docs/coverage/eval-baseline.md` rule 1), and Track C is four tickets of prompt
@@ -517,9 +562,30 @@ until their tickets work end to end.
 
 ---
 
-## Track D — What enterprise buyers ask for by name (3.5d) · **`T-H13` built; `T-H12` and `T-H14` unbuilt**
+## Track D — What enterprise buyers ask for by name (3.5d) · **`T-H12` and `T-H13` built; `T-H14` half built — the keyring, not the envelope**
 
-### `T-H12` Table and column allowlist per connection — 1.5d
+### `T-H12` Table and column allowlist per connection — 1.5d · **built 2026-08-21, unit-gated only**
+
+> **Status, 2026-08-21: built.** `domain.Allowlist` on `db_connections`
+> (migration `068`, JSONB, empty = unrestricted). `get_schema` filters tables,
+> columns and orphaned relationships; `run_sql` refuses a statement reaching
+> outside it; `PUT /api/connections/:id/allowlist`, admin.
+>
+> **The lexer's uncertainty is the design, not a limitation.** An allowlist that
+> misses a token *admits* a read the tenant was told could not happen, so
+> `sqlguard.ReferencedTables` reports what it could not read and the caller
+> refuses on it. An unrestricted source is not checked at all — this ticket must
+> not start refusing queries for the tenants it does not serve.
+>
+> **Three bypasses were found by probing the lexer rather than reading it**, all
+> three admitting an excluded table silently: the old-style comma join, an
+> aliased comma join being mistaken for a CTE binding by the code written to
+> stop the CTE bypass, and a fully-quoted schema-qualified name read as its
+> schema. All pinned.
+>
+> **Owed:** the live half — `068` both ways, an allowlisted source through a
+> real turn, and the arm that matters most, that ordinary analytical SQL against
+> an *unrestricted* source is unaffected. §1q.
 
 `domain.DBConnection` (`apps/backend/internal/domain/connection.go:11`) has no
 allowlist; scoping is source-level only (`agentscope.Scope.AllowsSource`). Masked
@@ -553,7 +619,34 @@ remembering to look.
 > [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §14,
 > so raising the bar is a decision rather than a discovery.
 
-### `T-H14` Key management — 1.5d
+### `T-H14` Key management — 1.5d · **half built 2026-08-21 — the keyring, not the envelope**
+
+> **Status, 2026-08-21: the rotation half is built and the envelope half is
+> not.** Read the split as the ticket's, not as a shortfall discovered late.
+>
+> **Built:** the cipher gained the version field this ticket names —
+> `"ARGK" | 0x01 | keyID[4] | nonce | ciphertext`, header authenticated as
+> additional data. `ARGENTUM_DSN_KEYS_RETIRED` holds keys read but never
+> written, which is what turns a rotation from a hard cutover into a window.
+> `cmd/rekey -check|-apply` re-seals and exits non-zero until every row is on
+> the primary, so a pipeline can gate on it. The boot sweep reports progress per
+> key. The legacy prefix-free format opens forever, pinned by a test that builds
+> those bytes longhand so it cannot drift with the implementation.
+>
+> **Not built: envelope encryption with per-tenant data keys**, which is the
+> half that answers "do you support customer-managed keys". It needs a company
+> id at every call site — `Encrypt(string)` has no tenant in its signature and
+> ten packages call it — plus a decision about which KMS, which is an operator's
+> call. The keyring is the prerequisite either way: a per-tenant data key is one
+> that must be findable by id and re-sealable under a new master.
+>
+> **And `cmd/rekey` covers `db_connections` only**, printed on every run. The
+> same key seals LLM credentials, the channel credential tables, MCP tokens,
+> embed secrets and HTTP endpoint secrets.
+>
+> **Owed:** the live half — a real rotation against a seeded control database,
+> all five procedure steps. Free; §1q.
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §19.
 
 One `ARGENTUM_DSN_KEY` seals every DSN and every tenant LLM credential
 (`apps/backend/internal/crypto/dsn.go`), with no rotation path and no KMS
@@ -647,7 +740,16 @@ that the live half finds what unit tests cannot.
   including one query that legitimately uses a CTE and one that uses a window
   function, to confirm the parse does not reject working analytics SQL.
 - `T-H6` — the purge and the erasure endpoint against a company with history,
-  confirming audit rows survive and conversation rows do not.
+  confirming audit rows survive and conversation rows do not. **Built
+  2026-08-21; still owed, and now cheap** — `067` both ways plus one seeded
+  company is the whole gate.
+- `T-H12` — `068` both ways; an allowlisted source through a real turn, showing
+  `get_schema` naming only the allowlisted tables and `run_sql` refusing one it
+  does not; and the arm that matters most, that an *unrestricted* source's
+  ordinary analytical SQL is unaffected. Added 2026-08-21.
+- `T-H14` — a real rotation against a seeded control database: all five steps,
+  including the one that proves `rekey -check` exits non-zero while a row is
+  still on the retired key. Added 2026-08-21.
 - `T-H7` — one turn with a literal in the query, read back out of the API log:
   the Info line must carry `'?'` and the raw statement must appear only under
   `LOG_LEVEL=debug`.
@@ -668,7 +770,11 @@ that the live half finds what unit tests cannot.
   wiring is the same `NewDeliverer` call, read rather than measured
   ([`../coverage/security-hardening.md`](../coverage/security-hardening.md) §11).
 
-**Needs model spend:** `T-H11`'s category, run against the current model. Note
+**Needs model spend:** `T-H11`'s category, run against the current model —
+**built 2026-08-21 and unrun**, ~$0.15 through `make eval-security`. Plus
+`T-H8`'s owed rule-1 re-score (~$1.0), and **the order is a real dependency
+rather than a preference**: two unpaid prompt-surface re-scores at once is the
+state where a movement in the number cannot be attributed to either change. Note
 that every published quality number for this project is `deepseek/deepseek-v3.2`,
 which is also the model these refusal cases will be scored on — a refusal rate is
 model-specific in a way a SQL correctness rate is not, so this belongs in the
