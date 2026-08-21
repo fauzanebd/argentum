@@ -173,13 +173,15 @@ the marker the system prompt names had never once reached a model as written,
 and it was invisible to a live gate that signed the feature off three weeks ago.
 The first unit test ever written against that file found it in a minute.
 
-**Revised 2026-08-21 — §1p files nine gates for a roadmap that is not scheduled.**
+**Revised 2026-08-21 — §1p files ten gates for a roadmap that is not scheduled.**
 The agentic-skills plan
 ([`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md))
 was written today and none of its ten tickets exists. §1h set the precedent of
 pricing a track's gates while its tickets are still prose; this is the second
-time, and the first for a track nobody has committed to. **~$0.65, seven of the
-nine free** — and the entry carries a constraint that belongs to this file
+time, and the first for a track nobody has committed to. **~$0.65, eight of the
+ten free** — the tenth added later the same day, when drafting `T-K8`'s built-in
+skills raised the question of whether a trusted skill body can outrank a
+guideline — and the entry carries a constraint that belongs to this file
 rather than to the roadmap: `T-K3` owes the same 56-case rule-1 re-score `T-H8`
 already owes and has not paid (§1o, ~$1.05). Two unpaid prompt-surface re-scores
 at once is the state where a movement in the number cannot be attributed to
@@ -1202,7 +1204,7 @@ here while they are still prose, which is §1h's rule — the practice that file
 own revision called "the last step that direction goes" — and this is the second
 time it has been followed.
 
-**~$0.65 across nine gates, seven of which cost nothing.** The shape of the
+**~$0.65 across ten gates, eight of which cost nothing.** The shape of the
 spend is the part worth reading: $0.15 buys the new eval category, and **~$0.5
 is rule 1's 56-case re-score on both models**, owed because `T-K3` puts a block
 in every turn's system prompt. That re-score is not this feature's invention —
@@ -1223,6 +1225,7 @@ because this file is where the bill is kept.
 | `T-K6` | Both preview panes in a browser: the one index line, and the framed body as `load_skill` returns it. Plus the live character counters against caps that refuse rather than truncate | §3a browser | $0.00 |
 | `T-K8` | A malformed shipped skill failing the **boot**, not the request — the rule `tools.AllNames` exists for (`tools/registry.go:176`) | §1 stack | $0.00 |
 | `T-K9` | `make eval` with the `skill_follow` category, both arms of `skill-absent-degrades`, and `skill-not-loaded-when-irrelevant` asserted **in Indonesian as well as English** — `T-Q3`'s gate found all three `must_not_call` assertions in English while the violation landed in Indonesian | §2 money | ~$0.15 |
+| `T-K9` | **`zero_row_trap` still 3/3 with a skill loaded that tells the model to state a figure anyway** (`skill-cannot-override-a-guideline`, added to the roadmap 2026-08-21). A trusted, unfenced skill body is the one channel in this product that could plausibly outrank a guideline, and this is the cheapest detector we have: the category is at 3/3 on kimi today, so any movement is attributable. Runs inside the category above, no separate spend | §2 money | $0.00 |
 | `T-K3` | **Rule 1: the 56-case set on both models**, with the number and the date posted. A new block in every turn's system prompt; the plausible failure is a model that starts hedging figures it used to state | §2 money | ~$0.5 |
 
 **One gate this file cannot price, and it is the feature's own question.**

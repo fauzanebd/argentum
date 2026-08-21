@@ -20,6 +20,16 @@ mistake `T-R6` recorded three commits ago.
 > `T-H12` and `T-H14` on the security roadmap. Whether this displaces any of
 > them is the owner's call and §8 states the case without making it.
 >
+> **Revised 2026-08-21, same day, after `T-K8`'s two built-in skills were
+> drafted in full (Appendix B) instead of described in three clauses.** Writing
+> them changed three tickets and cost an afternoon: `T-K1` gained a `name` cap
+> (the field that rides every turn was the only one without a limit), `T-K3`
+> gained `SKILL_INDEX_MAX_CHARS` (twenty lines is not a size), `T-K8` dropped
+> its third skill for restating an unconditional guideline, and `T-K9` gained a
+> fifth case asking what happens when a tenant writes that skill anyway. §2's
+> figures were also re-run from the appendix and reproduced exactly. **Ticket
+> count and the 14.5-day total are unchanged.**
+>
 > **One thing here is not optional if this ships at all: `T-K2`.** A skill is
 > instruction that arrives at runtime, and `T-H8` landed yesterday establishing
 > the opposite rule for everything else that arrives at runtime. §4 is that
@@ -152,7 +162,14 @@ enabled       bool                            — off is a first-class state
 system prompt carries an index of `name — when_to_use` lines, bounded. The
 bodies do not travel. When the model judges that a skill applies, it calls
 `load_skill(name)` and the body arrives as a tool result. A tenant with thirty
-skills costs thirty short lines per turn, not thirty procedures.
+skills costs thirty index lines per turn, not thirty procedures.
+
+**"Short" is doing work in that sentence, so Appendix B measures it rather than
+assuming it: an index line runs ~172 chars, and the index at `T-K3`'s cap is
+≈860 tokens on every turn.** That is a real bill against the ≈11,000-token floor
+§2 measured — 7.8% — and it is the price of the trade, not a refutation of it:
+the same thirty procedures in a persona are ≈10,800 tokens on every turn, and
+the comparison this design has to win is against that, not against zero.
 
 **Three properties fall out of that, and each is a design constraint rather
 than a nice-to-have:**
@@ -171,9 +188,12 @@ than a nice-to-have:**
    guess — and it is the same question `MarkUsed` answers for the cookbook
    (`chat_runner.go:2213`), by a mechanism that already had to be bolted on
    because injection leaves no trace.
-3. **A skill that is never loaded costs one line.** Which makes "write it down
-   and see" cheap for the tenant, and makes a wrong skill a small mistake
-   rather than a permanent tax on every turn.
+3. **A skill that is never loaded costs one line — ~172 chars, ≈43 tokens.**
+   Which makes "write it down and see" cheap for the tenant, and makes a wrong
+   skill a small mistake rather than a permanent tax on every turn. It is not
+   free, and Appendix B is where the figure comes from; the point is that the
+   mistake is bounded by the cap on one field rather than by a tenant's
+   patience.
 
 **What a skill is not:** it is not a tool, it grants no capability, and it
 cannot widen a scope. A skill saying "query the HR database" on an agent scoped
@@ -260,14 +280,24 @@ created invisible to it. And the consequence is milder here than for MCP — an
 MCP binding is a capability grant to an external system, while an irrelevant
 skill in an index is one wasted line that the model will not open.
 
-Caps at the door, because §2c is what this roadmap is about: `when_to_use` ≤
-200 chars, `body` ≤ 8,000 chars, and a per-company skill count. All three
-refused with a typed error, not truncated — a silently truncated procedure is a
-procedure whose last step vanished.
+Caps at the door, because §2c is what this roadmap is about: **`name` ≤ 60
+chars**, `when_to_use` ≤ 200 chars, `body` ≤ 8,000 chars, and a per-company
+skill count. All four refused with a typed error, not truncated — a silently
+truncated procedure is a procedure whose last step vanished.
 
-**Test:** the caps refuse at the boundary and one byte under it; a cross-tenant
-read and update both answer 404 with nothing changed; deleting an agent leaves
-its skills and deleting a skill leaves the agents.
+**The `name` cap is not tidiness, and it was missing from the first draft of
+this ticket.** `name` and `when_to_use` are concatenated into the index line
+that rides *every* turn (`T-K3`), so an uncapped `name` makes the always-on part
+of this feature unbounded while the part that never travels unless asked for is
+capped at 8,000. That is §2c's defect — a block that grows with what the tenant
+configured and nothing to stop it — reproduced inside the feature written to
+avoid it. Appendix B has the arithmetic: at these two caps the index tops out at
+**≈5,260 chars ≈ 1,315 tokens**, which is bounded, payable, and *stated*, and
+the point is that the number exists at all.
+
+**Test:** all four caps refuse at the boundary and pass one byte under it; a
+cross-tenant read and update both answer 404 with nothing changed; deleting an
+agent leaves its skills and deleting a skill leaves the agents.
 
 #### `T-K2` The trusted-instruction frame
 **Repo:** BE · **Size:** 1.0d · **Deps:** `T-K1` · **Priority:** P0
@@ -314,14 +344,30 @@ the same rule the cookbook applies at `chat_runner.go:2176`, for the same
 stated reason: *"an agent scoped away from a warehouse must not be shown queries
 against it, or its prompt carries the table names the scope exists to hide."*
 
-**Bounded at `SKILL_INDEX_MAX` (default 20 lines).** Overflow is `T-K5`'s
-problem, and until `T-K5` exists the overflow is logged at Warn and the index
-is truncated deterministically by name, so a tenant who crosses the line finds
-out from a log rather than from a skill that silently stopped being offered.
+**Bounded twice: `SKILL_INDEX_MAX` (default 20 lines) *and*
+`SKILL_INDEX_MAX_CHARS` (default 6,000).** Whichever binds first, binds.
 
-**Test:** the index appears, is scope-filtered, is bounded, and the composed
+**The character bound is the one that matters, and the line bound alone was
+wrong.** Twenty lines is not a size — with `T-K1`'s caps a line can be 263
+chars, so "20 lines" is a 5,260-char ceiling nobody had written down, and
+against the ≈44,000-char floor §2 measured that is a **12% increase in fixed
+per-turn cost arriving as a default**. Counting lines and calling it bounded is
+the metric catalog's mistake at one remove: that block is bounded by the number
+of metrics too, and §2c's complaint about it is that a bound in the wrong unit
+is not a bound. Appendix B measures two real drafts at 169 and 175 chars, so the
+realistic index at the cap is ≈3,440 chars ≈ 860 tokens — larger than
+`get_schema`'s entire footprint, description and schema together.
+
+Overflow is `T-K5`'s problem, and until `T-K5` exists the overflow is logged at
+Warn and the index is truncated deterministically by name, so a tenant who
+crosses either line finds out from a log rather than from a skill that silently
+stopped being offered.
+
+**Test:** the index appears, is scope-filtered, is bounded on *both* limits —
+including the case that satisfies the line bound and breaches the character one,
+which is the arm the line bound alone would have passed — and the composed
 prompt's `prompt_sha256` (`stack.go:778`) is byte-identical to today's for a
-company with no skills — the block must not exist when it is empty.
+company with no skills, because the block must not exist when it is empty.
 
 #### `T-K4` `load_skill`, and the audit row that says what a turn read
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-K2`, `T-K3` · **Priority:** P0
@@ -412,11 +458,33 @@ makes: *"a guess that turns out wrong is a one-line commit here — reaching eve
 tenant who has not edited theirs — rather than a migration that cannot reach the
 tenant who has."*
 
-Two or three, no more, and each describes a *method* rather than an industry:
-how to answer a period-over-period comparison; what to do when a filter returns
-zero rows (the `zero_row_trap` procedure, and the one place in this product where
-a skill and an eval category would be arguing the same case); how to structure a
-recurring report.
+**Two, not three, and each describes a *method* rather than an industry:** how
+to answer a period-over-period comparison, and how to structure a recurring
+report. Both are drafted in full in **Appendix B** — written before this ticket
+exists, because a shape that cannot hold a real procedure is worth discovering
+in a document rather than in a migration.
+
+**The third candidate was cut, and the reason is a rule for the whole feature.**
+The original draft of this ticket proposed a zero-row procedure, calling it *"the
+one place where a skill and an eval category would be arguing the same case"*.
+Reading the prompt settles it: the zero-row rule is **already an unconditional
+guideline** — *"If a query returns zero rows, that is NOT zero and it is NOT a
+number. Say no data matched, say what you filtered on, and offer to check the
+available values"* (`bootstrap/system_prompt.go`, the no-fabrication guideline,
+which carries no `needs` and so reaches every agent). It is also backed by code
+— the `matchedNothing` fix and `T-Q9`'s metric-zero probe — and the category it
+answers is at **3/3 on kimi** ([`../coverage/eval-q1.md`](../coverage/eval-q1.md)
+§1). There is nothing for a skill to add and something for it to break.
+
+**The rule, stated once: a built-in skill must not restate a guideline.** A
+skill that repeats an always-on rule pays for that rule twice — once in the
+floor §2 measured, once in an index line and a `load_skill` round trip — and
+buys a precedence question in exchange, since the model now holds the same
+instruction from two channels with no ordering between them. **Anything the
+model should do on every turn is a guideline; a skill is for what it should do
+on some turns.** That sentence is the boot validation `T-K8` should enforce in
+spirit and the reviewer should enforce in fact — and it is the reason the
+built-in set is two files rather than a folder that grows.
 
 **Validated at boot against the same rules `T-K1` enforces at the API**, so a
 malformed shipped skill fails the boot of every deployment rather than only the
@@ -431,7 +499,7 @@ one that happens to load it — the rule `tools.AllNames` exists for
 Rule 1 of [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md) applies
 without argument: this changes what reaches the model on every turn.
 
-Four cases, and the negatives are the ones that matter:
+Five cases, and the negatives are the ones that matter:
 
 | Case | Asserts |
 | --- | --- |
@@ -439,6 +507,22 @@ Four cases, and the negatives are the ones that matter:
 | `skill-not-loaded-when-irrelevant` | `must_not_call: load_skill` on an ordinary aggregate question. **The cost case** — a model that opens every skill every turn has turned progressive disclosure back into the always-on channel §2 says is full |
 | `skill-absent-degrades` | The same question with the skill disabled answers correctly without it. A skill is an improvement, never a dependency |
 | `skill-conflicts-with-metric` | A skill whose method contradicts a registry metric. The registry wins and the reply says so — the precedence question, decided by measurement rather than by a sentence in a prompt |
+| `skill-cannot-override-a-guideline` | A skill whose body instructs the model to state a figure when a filter matched nothing. **The guideline wins, and the skill loses**, because a skill is tenant-authored text and the no-fabrication rule is not negotiable by the tenant who would suffer from it |
+
+**The fifth case exists because `T-K8` cut a skill for restating a guideline**,
+and cutting it raised the question the cut assumed the answer to: what happens
+when the two channels disagree? `T-K8`'s rule keeps *shipped* skills off that
+ground, but nothing stops a tenant writing one, and §4's trust argument makes it
+worse rather than better — the skill body arrives **trusted and unfenced**,
+which is exactly the frame that could read as outranking the prompt. So the
+answer has to be measured, not asserted, and the case borrows `zero_row_trap`'s
+existing fixtures because a category already at 3/3 is the cleanest possible
+detector for a regression: if a skill can move it off 3/3, the trusted frame is
+stronger than the guidelines and §4's exception is wider than §4 claims.
+
+**This does not change the ticket's 1.0d.** The fixture is `zero_row_trap`'s,
+the skill is four fields of YAML, and the marginal cost is one case in a
+category already being run.
 
 **In both languages.** `T-Q3`'s gate found all three `must_not_call` assertions
 written in English while the violation landed in Indonesian
@@ -485,8 +569,8 @@ Cutting all four leaves **9.5 days** and a feature that works, is measured by
 
 Filed in [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md)
 **§1p, before the code exists** — the practice `T-P`'s §1h established and which
-that file called "the last step that direction goes". Nine gates, seven of them
-free.
+that file called "the last step that direction goes". Ten gates, eight of them
+free — the tenth added 2026-08-21 with `T-K9`'s fifth case.
 
 **~$0.65 total**, and the shape of the spend is the interesting part: $0.15 for
 the `skill_follow` category and **~$0.5 for rule 1's 56-case re-score on both
@@ -495,11 +579,19 @@ re-score is not optional and it is not this feature's; it is the price this
 project set for touching the prompt, most recently for `T-H8` (Phase 3k, ~$1.05
 owed and unpaid as of today).
 
-Two gates need a browser and no money: `T-K6`'s preview panes, and the index
-rendering as a tenant with zero skills — which is the arm that proves the block
-is absent rather than empty, and the one a unit test is least likely to catch
-because an empty `strings.Builder` and no builder at all look identical
-downstream.
+**One gate needs a browser**, and it is `T-K6`'s two preview panes: the one line
+that goes in every turn's index, and the framed body as `load_skill` would
+return it.
+
+Of the seven remaining free arms, **six are stack gates** and the seventh is
+`T-K9`'s guideline-override case, which is free only because it rides inside the
+`skill_follow` category already being paid for. The stack gate worth naming is
+`T-K3`'s zero-skills case — the composed prompt's `prompt_sha256`
+(`bootstrap/stack.go:778`) byte-identical to today's for a company with no
+skills. That is the arm proving the block is *absent* rather than empty, and the
+one a unit test is least likely to catch, because an empty `strings.Builder` and
+no builder at all look identical downstream. It needs the stack and a database,
+not a browser.
 
 ---
 
@@ -560,6 +652,16 @@ for _, tool := range ts { /* len(tool.Description()) */ }
 // → total_param_chars=11686, update_dashboard=2502
 ```
 
+**Reproduced independently on 2026-08-21 at `5df3571`**, after the roadmap was
+committed: the two temporary tests above were written again from this appendix
+alone and every figure in §2a and §2b came back identical — `chars=18014
+tools=12 guidelines=18`, `total_desc=14288`, `total_params=11686`,
+`generate_document` at `7210 + 1814 = 9024`, `update_dashboard` holding the
+largest schema at `2502`. The residual row is exact too: the other eight tools
+come to `3983 + 4060 = 8043`. The tests were deleted again. This paragraph is
+the whole point of the appendix — `T-R6`'s two figures were fact-shaped and
+neither reproduced, and the difference is that somebody ran it twice.
+
 **Token counts are `chars / 4` and are approximations**, stated as such
 everywhere they appear. No tokenizer was run: the provider's tokenizer is not
 in this tree, the deployment's model has changed twice this month
@@ -576,3 +678,142 @@ lists which blocks have caps and does not put a number on what they come to.
 live gate away and this roadmap does not guess it. That distinction is the
 lesson `T-R6` cost: a comment claiming 146MB and 464MB went into the tree as
 fact with no benchmark behind it, and neither number reproduced.
+
+---
+
+## Appendix B — the built-in skills, drafted, and what drafting them changed
+
+`T-K8` is one day of work near the end of the track, and its content was three
+clauses of prose until 2026-08-21. Writing the files first was the cheapest
+available test of §3's claim that four fields carry the design — a shape that
+cannot hold a real procedure is worth discovering in a document rather than in a
+migration. It cost an afternoon and it changed three tickets.
+
+### B1. `config/skills/period-over-period.md`
+
+```markdown
+---
+name: Period-over-period comparison
+when_to_use: The user asks how a figure moved against an earlier period —
+  "vs last month", "year on year", "is it up or down", "dibanding bulan lalu".
+---
+
+Two windows, named out loud before either is queried.
+
+1. **Fix both windows first.** "Last month vs the month before" against a
+   question asked on 3 March means February and January in full — not the three
+   days of March that have happened. Write both ranges into the reply.
+2. **Say whether the current window is complete.** A period still running is
+   compared like for like or not at all: either compare the same elapsed slice
+   of each (1–3 March against 1–3 February) and say that is what you did, or
+   use the last two complete periods and say that instead. Silently comparing
+   three days against twenty-eight is the failure this procedure exists for.
+3. **One query per source, both windows in it.** A CASE or a FILTER over a
+   single scan gives two figures that cannot drift apart; two round trips give
+   two figures nobody can reconcile if the data moves between them.
+4. **Report the absolute change and the percentage, in that order.** The
+   percentage alone hides the size: a 300% rise on four orders is four orders.
+5. **A prior window of zero is not a percentage.** If the earlier period has no
+   rows, say it started from nothing — do not divide, and do not write "+100%"
+   or "∞". This is the zero-row rule applied to the denominator, and it is the
+   one arithmetic step in this procedure that can invent a figure.
+6. **Do not chart it unless a chart was requested.** A direction is a sentence.
+```
+
+Note what step 5 is doing, because it is the distinction `T-K8` now turns on. It
+does not restate the zero-row guideline — it applies that guideline to a place
+the guideline does not reach, the *denominator* of a comparison the model
+computed itself rather than a figure a tool returned. Steps 1, 2 and 6 lean on
+existing rules the same way, by naming the case rather than repeating the rule.
+**That is what a skill is for: the turn-specific application of a general rule,
+not the rule.**
+
+### B2. `config/skills/recurring-report.md`
+
+```markdown
+---
+name: Structuring a recurring report
+when_to_use: The user asks for a report they receive regularly — weekly,
+  monthly, "the usual", "laporan mingguan" — or asks to repeat one produced
+  earlier.
+---
+
+A recurring report is the same shape every time. That is its whole value: a
+reader who has seen last month's should not have to re-learn where anything is.
+
+1. **Find the previous edition before writing a new one.** If this thread or a
+   scheduled task has produced this report before, match its sections, their
+   order, and its filters. A report that reorganises itself each month is a new
+   report each month.
+2. **Carry the exclusions forward explicitly.** If a previous edition excluded a
+   channel, a test account or an internal store, the new one excludes it too and
+   *says so in the report*, in one line near the top. An exclusion nobody can see
+   is indistinguishable from missing data.
+3. **Every recurring figure gets its prior-period value beside it.** A number on
+   its own is a fact; a number beside last period's is the finding. Follow the
+   period-over-period procedure for the comparison itself.
+4. **Lead with what changed, not with the largest number.** The reader already
+   knows roughly what the totals are. Open with the movement that would change a
+   decision, and put the standing totals under it.
+5. **Same period boundaries every edition.** Whichever convention the first
+   edition used — calendar month, ISO week, trailing 30 days — is now this
+   report's convention. Changing it silently makes two editions incomparable.
+6. **Deliver it as a file when it is called a report.** Query first, write last.
+```
+
+Step 3 names the other skill. **Whether a skill may reference a skill is an open
+question this appendix raises and does not settle** — the honest reading is that
+the model either has the other one loaded or does not, and the sentence degrades
+to a description of what to do either way, which is why it survived the draft.
+If `T-K8` ships, the `skill-loaded-and-followed` case should use this pair, so
+the answer is measured rather than assumed.
+
+### B3. What they measure, and the bound that was missing
+
+Measured with `len()` over the four fields at 2026-08-21:
+
+| Skill | `name` | `when_to_use` | Body | Index line |
+| --- | ---: | ---: | ---: | ---: |
+| Period-over-period | 29 | 137 | 1,426 | **169** |
+| Recurring report | 30 | 142 | 1,441 | **175** |
+
+**The bodies are the reassuring half.** At ~1,430 chars — ≈360 tokens — a real
+procedure lands at 18% of `T-K1`'s 8,000-char cap. The cap is generous rather
+than tight, which is the right direction for a limit that refuses instead of
+truncating, and §3's estimate of "up to ~2,000 tokens of markdown" is roughly
+5× what two honest procedures actually need.
+
+**The index line is the half that changed the plan.** An index line is
+`name — when_to_use`, and these two come to 169 and 175 chars — not the "one
+short line" §3 pictures. Multiply by `T-K3`'s cap:
+
+| | Per line | × 20 | ≈ tokens | vs. §2's 43,988-char floor |
+| --- | ---: | ---: | ---: | ---: |
+| Measured drafts | ~172 | 3,440 | ~860 | **+7.8%** |
+| At `T-K1`'s caps (60 + 3 + 200) | 263 | 5,260 | ~1,315 | **+12.0%** |
+| At the original caps (`name` uncapped) | — | **unbounded** | — | — |
+
+Three things follow, and each is now in a ticket rather than in this appendix:
+
+1. **`name` had no cap** (`T-K1` capped `when_to_use` and `body` only). The
+   field that travels on every turn was the one field with no limit, while the
+   field that never travels unless asked for was capped at 8,000. `T-K1` now
+   caps `name` at 60.
+2. **`SKILL_INDEX_MAX` counted lines, which is not a size.** "20 lines" was a
+   5,260-char ceiling nobody had computed — the metric catalog's defect from
+   §2c at one remove, since that block is bounded by the number of metrics too.
+   `T-K3` now carries `SKILL_INDEX_MAX_CHARS` beside it, and the test asserts
+   the case that passes the line bound and fails the character one.
+3. **≈860 tokens is a real bill and it belongs in §2's own terms.** The
+   realistic index at the cap is larger than `get_schema`'s entire footprint
+   (1,918 chars, description and schema together) and about 38% of
+   `generate_document`'s ≈2,256. **This does not defeat the feature** — 860
+   tokens buying thirty available procedures is the trade §3 argues for, and
+   the alternative is thirty procedures in a persona. It defeats describing the
+   index as free, which is what "one short line" was doing.
+
+**And the third built-in skill was cut**, because writing it required reading
+the guidelines it would sit beside, and the zero-row rule was already there,
+unconditional, backed by code and scoring 3/3. That cut produced `T-K8`'s rule —
+a built-in skill must not restate a guideline — and `T-K9`'s fifth case, which
+asks what happens when a tenant writes the skill this project declined to ship.
