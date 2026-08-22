@@ -17,6 +17,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/skill"
 	"github.com/fauzanebd/argentum/internal/report/video"
 	"github.com/fauzanebd/argentum/internal/report/videoplan"
 )
@@ -205,6 +206,18 @@ type Config struct {
 	// feature is measured: the same deployment, the same examples accumulating,
 	// with only the injection off.
 	CookbookTopK int
+	// SkillIndexMax and SkillIndexMaxChars bound the index of tenant
+	// procedures that rides every turn's system prompt (T-K3). Whichever binds
+	// first, binds.
+	//
+	// **The character bound is the one that matters.** Twenty lines is not a
+	// size: at T-K1's caps a line reaches 263 characters, so a line bound alone
+	// is a 5,260-character ceiling nobody wrote down — against the ≈44,000-char
+	// prompt floor that is a 12% rise in fixed per-turn cost arriving as a
+	// default. A bound in the wrong unit is not a bound, which is the metric
+	// catalog's own mistake at one remove.
+	SkillIndexMax      int
+	SkillIndexMaxChars int
 	// CookbookHarvestCron is when the worker mines finished turns into
 	// examples. Empty disables the harvest without disabling retrieval, so a
 	// deployment can stop learning and keep using what it has already learned.
@@ -615,6 +628,8 @@ func Load() (*Config, error) {
 		NextStepsEnabled:     getEnv("NEXT_STEPS_ENABLED", "false") == "true",
 		NextStepsTimeoutSecs: getEnvAsInt("NEXT_STEPS_TIMEOUT_SECS", 8),
 		CookbookTopK:         getEnvAsInt("COOKBOOK_TOP_K", 3),
+		SkillIndexMax:        getEnvAsInt("SKILL_INDEX_MAX", skill.DefaultIndexMaxLines),
+		SkillIndexMaxChars:   getEnvAsInt("SKILL_INDEX_MAX_CHARS", skill.DefaultIndexMaxChars),
 		CookbookHarvestCron:  getEnv("COOKBOOK_HARVEST_CRON", "17 * * * *"),
 		RetentionPurgeCron:   getEnv("RETENTION_PURGE_CRON", "41 3 * * *"),
 

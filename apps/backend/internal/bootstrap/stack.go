@@ -140,6 +140,10 @@ type Stack struct {
 	// which leaves every turn exactly as it is today.
 	Cookbook      *app.CookbookService
 	QueryExamples domain.QueryExampleRepository
+	// Skills is the tenant's written procedures (T-K1). The index composed
+	// from it rides every turn's system prompt (T-K3) and `load_skill` opens
+	// one body on request (T-K4).
+	Skills domain.SkillRepository
 
 	// messageRepo is the concrete store behind Messages. Kept because two
 	// features need reads the shared interface deliberately does not carry:
@@ -245,6 +249,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.MessageFeedback = pgctl.NewMessageFeedbackRepo(controlDB)
 	s.Feedback = app.NewFeedbackService(s.MessageFeedback, messageRepo)
 	s.QueryExamples = pgctl.NewQueryExampleRepo(controlDB)
+	s.Skills = pgctl.NewSkillRepo(controlDB)
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
 
@@ -778,6 +783,13 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 		if spec.CompanyContext != "" {
 			turnPrompt += "\n\n" + frameCompanyContext(spec.CompanyContext)
 		}
+		// The procedures this workspace has written down (T-K3), between the
+		// facts and the persona: a persona that says "follow our weekly
+		// reporting procedure" reads correctly only once the model has been
+		// shown that there is one.
+		if spec.SkillIndex != "" {
+			turnPrompt += "\n\n" + spec.SkillIndex
+		}
 		if spec.Persona != "" {
 			turnPrompt += "\n\n" + framePersona(spec.Persona)
 		}
@@ -800,6 +812,7 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 			"prompt_chars":   len(turnPrompt),
 			"company_chars":  len(spec.CompanyContext),
 			"persona_chars":  len(spec.Persona),
+			"skill_chars":    len(spec.SkillIndex),
 			"addendum_chars": len(spec.SystemAddendum),
 			"tools":          turnToolNames,
 		})
@@ -1005,6 +1018,11 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 	if s.QueryExamples != nil && s.EmbedCache != nil && s.Cfg.CookbookTopK > 0 {
 		runner = runner.WithCookbook(s.QueryExamples, s.Cfg.CookbookTopK)
 	}
+	// The workspace's written procedures (T-K3). Unconditional, unlike the
+	// cookbook above: this needs no embedding credential and no harvester, and
+	// a company with no skills composes today's prompt byte for byte — which is
+	// what makes turning it on for everybody safe rather than a re-score.
+	runner = runner.WithSkills(s.Skills, s.Cfg.SkillIndexMax, s.Cfg.SkillIndexMaxChars)
 	// What is worth asking next (T-Q10). One more LLM call per answered turn, so
 	// it is switchable — NEXT_STEPS_ENABLED=false restores the previous turn
 	// exactly — and it defers to the credit check, because an answer must never

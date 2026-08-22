@@ -26,6 +26,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/queue"
+	"github.com/fauzanebd/argentum/internal/skill"
 	"github.com/fauzanebd/argentum/internal/slack"
 	"github.com/fauzanebd/argentum/internal/taint"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
@@ -62,6 +63,20 @@ type AgentSpec struct {
 	// company until somebody fills the form in — and an empty string composes
 	// to a byte-identical prompt.
 	CompanyContext string
+	// SkillIndex is the tenant's procedure index, rendered (T-K3): one
+	// `name — when_to_use` line per skill this agent is offered, and no bodies.
+	//
+	// Composed between the company context and the persona — facts, then
+	// procedures, then the instructions that act on both — because a persona
+	// that references a procedure has to read after it.
+	//
+	// Empty for a company with no skills, which is every company until
+	// somebody writes one, and an empty string composes to a byte-identical
+	// prompt. That is the property T-K3's own test asserts on
+	// `prompt_sha256`: the block must be *absent* rather than empty, because
+	// an empty builder and no builder look identical downstream until they
+	// don't.
+	SkillIndex string
 	// ToolNames restricts this turn to a subset of the registry, by name.
 	// Empty means every tool — the roster's rule, stated once in
 	// domain.Agent.AllowsTool and not restated here.
@@ -298,6 +313,13 @@ type ChatRunner struct {
 	cookbook     domain.QueryExampleRepository
 	cookbookTopK int
 
+	// The tenant's written procedures (T-K1/T-K3). Nil is legal and is every
+	// deployment until somebody writes one; a nil repository composes today's
+	// exact prompt, which is the property the sha256 test pins.
+	skills             domain.SkillRepository
+	skillIndexMax      int
+	skillIndexMaxChars int
+
 	// What is worth asking next (T-Q10). Off unless a caller says otherwise —
 	// see WithNextSteps — because the pass adds an LLM call and its latency to
 	// every turn, and a runner nobody configured must behave exactly as it did
@@ -517,6 +539,74 @@ func (r *ChatRunner) WithCookbook(repo domain.QueryExampleRepository, topK int) 
 	return r
 }
 
+// WithSkills enables the procedure index in the composed prompt (T-K3).
+//
+// Optional and inert without it: a runner with no repository composes the
+// prompt it composed yesterday, byte for byte. That matters more here than it
+// reads — this block lands in the *system* prompt, which on Anthropic
+// deployments is what the cached prefix is keyed on, so a feature that
+// appeared as an empty section would move every tenant's cache entry and every
+// published `prompt_sha256` on the day it shipped.
+//
+// Both bounds fall back to the package defaults when a caller passes zero,
+// because a deployment that sets one and forgets the other should get the
+// stated ceiling rather than no ceiling.
+func (r *ChatRunner) WithSkills(repo domain.SkillRepository, maxLines, maxChars int) *ChatRunner {
+	if repo == nil {
+		return r
+	}
+	if maxLines <= 0 {
+		maxLines = skill.DefaultIndexMaxLines
+	}
+	if maxChars <= 0 {
+		maxChars = skill.DefaultIndexMaxChars
+	}
+	r.skills = repo
+	r.skillIndexMax = maxLines
+	r.skillIndexMaxChars = maxChars
+	return r
+}
+
+// skillIndex renders the index this turn's agent is offered.
+//
+// **Scoped by the agent binding**, which is the precise permission T-K1 built:
+// an empty binding means every enabled company skill, and a restricted agent
+// sees only what an admin bound to it.
+//
+// **What this does not do, stated because the ticket asks for it.** T-K3 also
+// specifies dropping a skill whose *body* names tables of a source the agent
+// cannot read — the cookbook's rule at withCookbookContext. The cookbook can
+// apply it because a `query_examples` row carries the connection it came from;
+// a skill carries no source at all, so the same rule here would mean scanning
+// prose for table names and guessing. What actually reaches the prompt is the
+// name and the trigger sentence an admin typed, not the body — so the leak that
+// rule prevents is narrower here than it is there. Binding an agent to a subset
+// is the mechanism a tenant has today; a `source_id` on the skill would make it
+// exact, and it is not in this ticket.
+func (r *ChatRunner) skillIndex(ctx context.Context, companyID string, agent *domain.Agent) string {
+	if r.skills == nil {
+		return ""
+	}
+	rows, err := r.skills.ListEnabledForIndex(ctx, companyID)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("skill index: lookup failed; this turn runs without the workspace's procedures")
+		return ""
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	var allowed func(string) bool
+	agentID := ""
+	if agent != nil {
+		agentID = agent.ID
+		allowed = agent.AllowsSkill
+	}
+	block, dropped := skill.Compose(rows, allowed, r.skillIndexMax, r.skillIndexMaxChars)
+	skill.LogDropped(companyID, agentID, dropped, r.skillIndexMax, r.skillIndexMaxChars)
+	return block
+}
+
 // WithTablePicker enables the embedding-based table-hint injection. Pass
 // a nil repo or cache to leave the feature disabled. topK <= 0 falls back
 // to 8.
@@ -665,6 +755,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		// not in the shared system prompt, so it applies to this turn alone.
 		SystemAddendum: p.Directive,
 		CompanyContext: r.companyContext(ctx, p.CompanyID),
+		SkillIndex:     r.skillIndex(ctx, p.CompanyID, agentRow),
 		Persona:        personaOf(agentRow),
 		ToolNames:      toolNamesOf(agentRow),
 		CompanyTools:   companyTools,
