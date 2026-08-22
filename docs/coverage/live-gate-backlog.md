@@ -1219,7 +1219,7 @@ sitting. No long-lived process was started.
 
 Record: [`security-hardening.md`](security-hardening.md) §18.
 
-## 1p. Filed before the build — the agentic-skills roadmap's gates (2026-08-21)
+## 1p. Filed before the build — the agentic-skills roadmap's gates (2026-08-21) · **`T-K1`→`T-K4` built 2026-08-22; every gate below is still owed**
 
 [`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md)
 was written today and **none of its ten tickets exists**. Its gates are priced
@@ -1250,6 +1250,25 @@ because this file is where the bill is kept.
 | `T-K9` | `make eval` with the `skill_follow` category, both arms of `skill-absent-degrades`, and `skill-not-loaded-when-irrelevant` asserted **in Indonesian as well as English** — `T-Q3`'s gate found all three `must_not_call` assertions in English while the violation landed in Indonesian | §2 money | ~$0.15 |
 | `T-K9` | **`zero_row_trap` still 3/3 with a skill loaded that tells the model to state a figure anyway** (`skill-cannot-override-a-guideline`, added to the roadmap 2026-08-21). A trusted, unfenced skill body is the one channel in this product that could plausibly outrank a guideline, and this is the cheapest detector we have: the category is at 3/3 on kimi today, so any movement is attributable. Runs inside the category above, no separate spend | §2 money | $0.00 |
 | `T-K3` | **Rule 1: the 56-case set on both models**, with the number and the date posted. A new block in every turn's system prompt; the plausible failure is a model that starts hedging figures it used to state | §2 money | ~$0.5 |
+
+**Revised 2026-08-22 — the never-cut four are built, and the bill did not
+move.** `T-K1` → `T-K4` landed unit-gated in one sitting; the eight free arms in
+the table above are unchanged and unrun, and the two paid ones still sit behind
+`T-H8`'s re-score. Three notes for whoever runs them:
+
+- **`T-K1`'s migration is `069`**, not `067`. The row above says so now.
+- **`T-K3`'s character bound moved from 6,000 to 4,000, because 6,000 could
+  never bind** — the whole 20-line index tops out at 5,662 characters, so the
+  bound would have been dead configuration and the gate's own case
+  ("satisfies the line bound and breaches the character one") did not exist.
+  It exists at 4,000. That arm is now runnable as written.
+- **`T-K3`'s `prompt_sha256` arm is narrower than it reads.** The index block is
+  absent rather than empty for a company with no skills, which is what the arm
+  asserts and what the unit test pins. But `load_skill` adds a tool-catalog line
+  and a guardrail paragraph to *every* composed prompt, so the digest does move
+  for every tenant on the day this ships. Run the arm against a build with the
+  tool registered, or it will fail for a reason that is not the one it is
+  looking for.
 
 **One gate this file cannot price, and it is the feature's own question.**
 `skill-not-loaded-when-irrelevant` asserts the model does *not* open a skill on

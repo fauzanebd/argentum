@@ -257,11 +257,51 @@ widening did not become a hole.
 
 ---
 
+## 4a. Status, 2026-08-22 — the never-cut four are built
+
+`T-K1` → `T-K4` landed in one sitting, unit-gated, on `d13679d`, `f8e3ff9`,
+`51e8718` and `151b144`. What exists: the record and its CRUD behind migration
+`069` (not `067` — `T-H6` took that number the day before this file was
+written), the trusted frame and its two property tests, the bounded index in the
+composed prompt, and `load_skill` with four refusals that are results rather
+than Go errors.
+
+**Three things moved against what §5 specifies, and each is written up where the
+code is rather than only here.**
+
+1. **`SKILL_INDEX_MAX_CHARS = 6000` could never bind.** Header (342) + 20 lines
+   × 266 = 5,662, so no index inside the line bound could reach it: the
+   character bound would have been dead configuration and this ticket's own
+   acceptance case — "satisfies the line bound and breaches the character one" —
+   was unreachable. A bound above the maximum is not a bound, which is the same
+   species as the mistake the pair was introduced to fix. The default is now
+   **4,000**: the realistic twenty-line index measured in Appendix B is 3,802
+   characters and is untouched, the pathological one at `T-K1`'s caps is 5,662
+   and is cut.
+2. **`T-K3`'s scope filter is the agent binding, not a table-name scan.** The
+   cookbook can drop an example naming an out-of-scope table because a
+   `query_examples` row carries the connection it came from; a skill carries no
+   source, so the same rule here would mean scanning prose and guessing. What
+   reaches the prompt is the name and trigger an admin typed, not the body, so
+   the leak that rule prevents is narrower here. **A `source_id` on `skills`
+   would make it exact and is not in this track** — it is the obvious follow-up
+   and it is filed nowhere else, so it is filed here.
+3. **The prompt moves for every tenant, not only those with skills.** `T-K3`'s
+   byte-identical arm holds — the index block is absent rather than empty — but
+   registering `load_skill` adds a tool-catalog line and a guardrail paragraph
+   to every composed prompt. That is what §7's ~$0.5 rule-1 re-score is for, and
+   it is worth stating plainly because the two properties read like the same
+   claim and are not.
+
+**Owed:** every gate in
+[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1p. The
+free arms need the stack; the paid ones sit behind `T-H8`'s unpaid re-score.
+
 ## 5. The tickets
 
 ### Track A — The object and its trust boundary (3.0d) · do first
 
-#### `T-K1` The skill record, its store, and CRUD
+#### `T-K1` The skill record, its store, and CRUD · **built 2026-08-22, unit-gated**
 **Repo:** BE · **Size:** 2.0d · **Deps:** none · **Priority:** P0
 **Migration:** `069_skills` — `067` and `068` were taken by `T-H6` and `T-H12` on 2026-08-21, after this ticket was written. Claim the number with `make migration-next` rather than from this line.
 
@@ -299,7 +339,7 @@ the point is that the number exists at all.
 cross-tenant read and update both answer 404 with nothing changed; deleting an
 agent leaves its skills and deleting a skill leaves the agents.
 
-#### `T-K2` The trusted-instruction frame
+#### `T-K2` The trusted-instruction frame · **built 2026-08-22, unit-gated**
 **Repo:** BE · **Size:** 1.0d · **Deps:** `T-K1` · **Priority:** P0
 **Migration:** none
 
@@ -325,7 +365,7 @@ rather than of this feature:
 
 ### Track B — Progressive disclosure (4.5d)
 
-#### `T-K3` The skill index in the composed prompt
+#### `T-K3` The skill index in the composed prompt · **built 2026-08-22 — and its character bound could not bind; see §4a**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-K1` · **Priority:** P0
 
 An index block — `name — when_to_use`, one line each — composed into the system
@@ -369,7 +409,7 @@ which is the arm the line bound alone would have passed — and the composed
 prompt's `prompt_sha256` (`stack.go:778`) is byte-identical to today's for a
 company with no skills, because the block must not exist when it is empty.
 
-#### `T-K4` `load_skill`, and the audit row that says what a turn read
+#### `T-K4` `load_skill`, and the audit row that says what a turn read · **built 2026-08-22, unit-gated**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-K2`, `T-K3` · **Priority:** P0
 
 One tool: `load_skill(name)` → the body inside `T-K2`'s frame. Registered in
