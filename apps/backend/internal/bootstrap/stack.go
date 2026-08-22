@@ -587,9 +587,14 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 			dashboard.NewResolver(s.Connections, s.TenantPool, s.Metrics).
 				WithPanelTimeout(time.Duration(cfg.DashboardPanelTimeoutSecs)*time.Second),
 		),
-		Scheduled:           s.ScheduledSvc,
-		Docs:                s.Docs,
-		Metrics:             s.Metrics,
+		Scheduled: s.ScheduledSvc,
+		Docs:      s.Docs,
+		Metrics:   s.Metrics,
+		// The workspace's own procedures (T-K4). The same repository the index
+		// is composed from, so what `load_skill` opens is what the model was
+		// shown — a tool that could disagree with the index would be the
+		// confusing failure T-H12's own ticket warns about, in a new place.
+		Skills:              s.Skills,
 		MaxQueryRows:        cfg.MaxQueryRows,
 		MaxQueryResultBytes: cfg.MaxQueryResultBytes,
 		Actions:             s.Actions,

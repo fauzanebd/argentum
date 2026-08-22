@@ -1000,6 +1000,7 @@ func scopeOf(a *domain.Agent) agentscope.Scope {
 		Name:         a.Name,
 		SourceIDs:    a.SourceIDs,
 		MCPServerIDs: a.MCPServerIDs,
+		SkillIDs:     a.SkillIDs,
 	}
 }
 

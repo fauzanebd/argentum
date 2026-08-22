@@ -50,6 +50,14 @@ type Scope struct {
 	// the company-tools path returns empty and the turn is byte-for-byte what it
 	// was before this ticket.
 	MCPServerIDs []string
+	// SkillIDs is the tenant procedures this turn's agent is offered (T-K1).
+	// **Empty means every enabled company skill**, which is SourceIDs' rule and
+	// not MCPServerIDs' — the two adjacent bindings read the empty list in
+	// opposite directions, and domain.Agent.AllowsSkill is where that is
+	// argued. The zero Scope is therefore offered everything, which is what an
+	// unscoped turn and the eval harness get everywhere else in this struct's
+	// source half.
+	SkillIDs []string
 }
 
 type scopeKey struct{}
@@ -70,6 +78,12 @@ func FromContext(ctx context.Context) Scope {
 // AgentID is the turn's agent, or "" when it is running unscoped. It is the
 // value the audit log and the usage events record.
 func AgentID(ctx context.Context) string { return FromContext(ctx).AgentID }
+
+// AllowsSkill reports whether this turn's agent may open a written procedure.
+// Empty binding means every enabled company skill; see the field comment.
+func (s Scope) AllowsSkill(skillID string) bool {
+	return len(s.SkillIDs) == 0 || slices.Contains(s.SkillIDs, skillID)
+}
 
 // AllowsSource reports whether this turn's agent may reach a connection.
 // Empty allowlist means every source; see the field comment.

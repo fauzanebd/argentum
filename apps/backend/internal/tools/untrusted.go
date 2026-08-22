@@ -94,6 +94,23 @@ var trustedResults = map[string]bool{
 	"ask_clarification": true,
 	"propose_action":    true,
 	"generate_document": true,
+	// **The seventh entry, and the only one that is not this product's own
+	// words** (T-K2/T-K4). Every line above is a confirmation we wrote; this
+	// one is the tenant's prose, returned to the model as instruction inside
+	// `skill.Frame`.
+	//
+	// The widening is argued rather than assumed, and the principle is
+	// authorship rather than channel: this product already trusts the persona
+	// and the company profile unfenced because an authenticated member of that
+	// company typed them into the dashboard, and a skill body arrives by the
+	// same route. What stays untrusted is everything that arrived inside
+	// *content* — a PDF, a warehouse row, an MCP result — which is every path
+	// an attacker actually has.
+	//
+	// `docs/plan/07-agentic-skills-roadmap.md` §4 carries the table, and T-K10
+	// is the adversarial case that has to keep proving the widening did not
+	// become a hole.
+	"load_skill": true,
 }
 
 // carriesUntrustedContent reports whether this result is somebody else's text

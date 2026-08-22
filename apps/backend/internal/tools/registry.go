@@ -103,6 +103,11 @@ type RegistryDeps struct {
 	// that has not indexed anything yet should not have a different tool list
 	// from one that has.
 	Documents DocumentSearch
+	// Skills is the tenant's written procedures (T-K1). Optional in the way
+	// Metrics is: a nil repository still registers `load_skill`, so the tool
+	// appears in the allowlist checkboxes and the template vocabulary on every
+	// deployment, and answers "not configured" if it is called.
+	Skills domain.SkillRepository
 }
 
 // Registry returns the tools an agent may call on this deployment, unwrapped.
@@ -156,6 +161,11 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// better answered by querying it, and a passage is what you fall back
 		// to when the answer is prose.
 		NewSearchDocumentsTool(d.Documents),
+		// The workspace's own procedures (T-K4). Last of the read tools and
+		// registered unconditionally: what it returns is instruction rather
+		// than data, so it belongs beside them in the list and nowhere near
+		// the write-capable one below.
+		NewLoadSkillTool(d.Skills),
 	}
 	if d.Docs != nil {
 		ts = append(ts, NewGenerateDocumentTool(d.Docs).WithVideoQueue(d.Renders))
