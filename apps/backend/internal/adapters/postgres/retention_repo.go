@@ -129,6 +129,40 @@ func (r *RetentionRepo) EraseCompanyConversations(ctx context.Context, companyID
 	return int(threads), messages, nil
 }
 
+// HasExpired answers whether one tenant has anything for tonight's tick.
+//
+// Two shapes count as expired, and they are the same two the purge deletes: a
+// message older than the cutoff, and a thread that is both past the cutoff and
+// already empty. Missing the second would leave husks that never get collected
+// — the tick would skip the tenant forever on the grounds that no *message* is
+// expired, which is how a bug fixing one log line creates a slower one.
+//
+// EXISTS over a UNION ALL of the two, LIMIT 1: Postgres stops at the first row
+// either arm produces, so the ordinary answer (nothing expired) costs two
+// index probes and no scan.
+func (r *RetentionRepo) HasExpired(ctx context.Context, companyID string, before time.Time) (bool, error) {
+	const q = `
+		SELECT EXISTS (
+			SELECT 1
+			FROM messages m
+			JOIN conversation_threads t ON t.id = m.thread_id
+			WHERE t.company_id = $1
+			  AND m.created_at < $2
+			UNION ALL
+			SELECT 1
+			FROM conversation_threads t
+			WHERE t.company_id = $1
+			  AND t.last_message_at < $2
+			  AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id)
+			LIMIT 1
+		)`
+	var found bool
+	if err := r.db.QueryRowContext(ctx, q, companyID, before).Scan(&found); err != nil {
+		return false, fmt.Errorf("check expired conversations: %w", err)
+	}
+	return found, nil
+}
+
 // CompaniesWithRetention returns only the tenants that opted in. A deployment
 // where nobody has set a window does no per-company work at all, which is what
 // makes a nightly tick free on the deployments this ships to first.

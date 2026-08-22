@@ -19,7 +19,17 @@ func demoSchema() *db.SchemaMetadata {
 	return &db.SchemaMetadata{
 		DBType: "postgres",
 		Tables: []db.TableInfo{
-			{Name: "fact_sales", Columns: []db.ColumnInfo{{Name: "id"}, {Name: "sales_amount"}}},
+			// The foreign-key annotations are on the columns as well as in
+			// Relationships, because that is how a real driver fills this
+			// struct — and until 2026-08-22 the fixture omitted them, which is
+			// why every test here passed while the live schema handed the
+			// model two excluded table names (§1q).
+			{Name: "fact_sales", Columns: []db.ColumnInfo{
+				{Name: "id", IsPrimaryKey: true},
+				{Name: "sales_amount"},
+				{Name: "date_id", IsForeignKey: true, ForeignKeyTable: "dim_date", ForeignKeyColumn: "date_id"},
+				{Name: "employee_id", IsForeignKey: true, ForeignKeyTable: "employees", ForeignKeyColumn: "employee_id"},
+			}},
 			{Name: "dim_date", Columns: []db.ColumnInfo{{Name: "date_id"}, {Name: "full_date"}}},
 			{Name: "employees", Columns: []db.ColumnInfo{
 				{Name: "employee_id"}, {Name: "full_name"}, {Name: "monthly_salary"},
@@ -85,7 +95,7 @@ func TestApplyAllowlistHidesExcludedColumns(t *testing.T) {
 		t.Errorf("employees columns = %s, want employee_id,full_name", cols)
 	}
 	// A table with no rule keeps everything.
-	if cols := strings.Join(columnNames(got, "fact_sales"), ","); cols != "id,sales_amount" {
+	if cols := strings.Join(columnNames(got, "fact_sales"), ","); cols != "id,sales_amount,date_id,employee_id" {
 		t.Errorf("fact_sales columns = %s, want them all", cols)
 	}
 }
@@ -176,5 +186,57 @@ func TestGuardAllowlistRefusesTheCTEWrapBypass(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "employees") {
 		t.Errorf("refusal does not name the table actually read: %v", err)
+	}
+}
+
+// The arm the §1q live gate failed. `applyAllowlist` filtered `Relationships`
+// and left the per-column foreign keys alone, so `get_schema` rendered
+// `customer_id (integer) → dim_customers.customer_id` on a source whose
+// allowlist excluded `dim_customers` — naming an excluded table, its key
+// column, and the join that reaches it.
+//
+// Migration 068's own comment is the acceptance line: "the agent is never told
+// the other tables exist". A relationships block that hides what the column
+// list prints is not a restriction, it is a formatting preference.
+func TestApplyAllowlistStripsForeignKeysToExcludedTables(t *testing.T) {
+	got := applyAllowlist(demoSchema(), domain.Allowlist{Tables: []string{"fact_sales", "dim_date"}})
+
+	rendered := db.FormatSchemaForPrompt(got)
+	if strings.Contains(rendered, "employees") {
+		t.Errorf("the rendered schema names an excluded table:\n%s", rendered)
+	}
+	// The surviving foreign key must still be there — stripping every arrow
+	// would cost the model the joins it is allowed to make, which is a worse
+	// answer than the defect.
+	if !strings.Contains(rendered, "→ dim_date.date_id") {
+		t.Errorf("the allowed foreign key was stripped too:\n%s", rendered)
+	}
+	for _, tbl := range got.Tables {
+		for _, col := range tbl.Columns {
+			if col.ForeignKeyTable == "employees" {
+				t.Errorf("%s.%s still carries a foreign key to an excluded table", tbl.Name, col.Name)
+			}
+		}
+	}
+}
+
+// Filtering must not write through the shared slice: the same
+// *SchemaMetadata is held in get_schema's L1 cache and served to every tenant
+// that asks, so a filter that mutated it in place would leak one source's
+// restrictions onto the next call.
+func TestApplyAllowlistDoesNotMutateTheCachedSchema(t *testing.T) {
+	original := demoSchema()
+	applyAllowlist(original, domain.Allowlist{
+		Tables:  []string{"fact_sales"},
+		Columns: map[string][]string{"fact_sales": {"id"}},
+	})
+
+	if cols := strings.Join(columnNames(original, "fact_sales"), ","); cols != "id,sales_amount,date_id,employee_id" {
+		t.Errorf("the source schema was modified in place: fact_sales = %s", cols)
+	}
+	for _, col := range original.Tables[0].Columns {
+		if col.Name == "employee_id" && col.ForeignKeyTable != "employees" {
+			t.Error("the source schema's foreign key was cleared in place")
+		}
 	}
 }

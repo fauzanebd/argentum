@@ -108,6 +108,17 @@ type RetentionRepository interface {
 	// tenant's thread list forever. So: messages by their own age, then the
 	// threads that no longer have any.
 	PurgeCompanyMessages(ctx context.Context, companyID string, before time.Time) (threads, messages int, err error)
+	// HasExpired reports whether this company has anything older than
+	// `before` — a message, or a thread already empty and past the window.
+	//
+	// It exists so a tick with nothing to do can write nothing at all. The
+	// record is opened *before* the delete so a crash leaves evidence, which
+	// means the service cannot learn the counts are zero until the row is
+	// already written; the §1q gate found two nights of `0 threads / 0
+	// messages` rows sitting above a tenant's real erasure in their own
+	// history. One EXISTS probe per opted-in tenant per night is the cost of
+	// keeping the evidence table readable.
+	HasExpired(ctx context.Context, companyID string, before time.Time) (bool, error)
 	// EraseCompanyConversations deletes every thread and message a company has.
 	// Audit rows are untouched; see the file comment.
 	EraseCompanyConversations(ctx context.Context, companyID string) (threads, messages int, err error)

@@ -4517,6 +4517,66 @@ need only the stack; the ninth needs $0.15 and has to wait for `T-H8`'s unpaid
 re-score, because two unpaid prompt-surface measurements at once is a number
 nobody can attribute. §1q has the table.
 
+## Phase 3n — Eight free arms, four findings (2026-08-22)
+
+The live half of Phase 3m's build: `T-H6`, `T-H12` and `T-H14`, eight arms, one
+sitting, **$0.00 and no model call**. Fifteenth sitting of the bucket that only
+ever needs the stack; fifteenth to find something no unit test had.
+
+**Two of the four findings are the same species, and it is worth naming
+because this repo produces it repeatedly: a comment describing a property the
+code does not have.** `purgeOne` says *"a tick that deleted nothing writes no
+record"* — it opened one every night, and by the eleventh minute of a
+tick-a-minute rig five of the tenant's seven evidence rows were `0 / 0` with
+their real erasure buried underneath. `applyAllowlist` says a foreign key
+pointing at an excluded table *"would name that table in the prompt, which is
+precisely what the tenant asked not to happen"* — a correct sentence above a
+filter covering one of the two places a foreign key lives, so `get_schema`
+handed the model `customer_id (integer) → dim_customers.customer_id` on a
+source that excluded `dim_customers`. Both comments were written by whoever was
+surest of the property. Neither had a test that could fail; in the second case
+the shared fixture had **no column-level foreign keys at all**, so the suite
+agreed with itself.
+
+**The third finding is a refusal that could not be obeyed.** `count(*)` trips
+the star rule — deliberately, and the rule stays — but the refusal said *"name
+the columns you need"*, which a model can follow exactly and be refused again.
+It now names `count(1)`, and the sitting ran the named remedy verbatim to check
+it works. That is the `query_metric` retry loop's shape, caught before it cost
+a turn.
+
+**The fourth is not a defect and is the most consequential.** `T-H12` is titled
+*"Table and column allowlist"*; a caller naming a non-allowlisted column of an
+allowlisted table reads it. `domain.AllowsColumn` exists and `run_sql` never
+calls it — the column half is enforced by hiding names in `get_schema` and
+refusing `*`. Closing it needs column-to-table attribution under a
+uncertain-means-refuse rule that would refuse most real analytical SQL, so it
+is an owner's decision rather than a patch, and until it is made the
+questionnaire answer is "hidden from the agent", not "cannot be read".
+
+**What passed is worth as much as what failed.** Every refusal shape held (11
+of 13 statements, including the three bypasses the build found by probing and
+two nobody had tried); **the false-positive arm was 10 of 10**, so the tenant
+who configured nothing is untouched; the erasure left `agent_actions` holding
+rows that still point at deleted threads, which is migration 023's no-FK
+decision met from the outside; and `T-H14`'s five-step rotation passed on exit
+codes, with a deliberately unreadable row keeping `-check` non-zero and a blob
+sealed by the pre-`T-H14` binary — 94 prefix-free bytes, built by compiling
+`df22845`'s own crypto file — opened by the **running** MCP server.
+
+**And one finding belonging to no ticket, found by needing the stack at all.**
+`.env.example`, the file `make setup` copies, was missing both variables
+`config.Validate()` refuses to boot without, plus the retired-keys variable
+`T-H14`'s whole procedure turns on and the cron without which `T-H6` never
+runs — while carrying twelve variables nothing has read since the multi-tenant
+refactor. A fresh machine following it cannot start the process. Rewritten and
+proven by booting `cmd/api` from a copy of it in an empty directory.
+
+Three fixes, each with a test proven failing first; `go test -race` green
+across 63 packages. Still owed on these three tickets: `T-H11`'s ~$0.15 eval
+run, queued behind `T-H8`'s unpaid re-score for the reason §1q gave before the
+sitting.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

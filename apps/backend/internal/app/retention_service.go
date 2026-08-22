@@ -88,6 +88,13 @@ func (s *RetentionService) PurgeExpired(ctx context.Context) (PurgeResult, error
 				Error("retention: purge failed for this tenant; other tenants continue")
 			continue
 		}
+		if threads == 0 && messages == 0 {
+			// Nothing was expired, so nothing was recorded and this tenant is
+			// not one of tonight's. `Companies` is what the tick's log line
+			// reports, and counting a tenant it did no work for is how a purge
+			// that has quietly stopped deleting still reads as busy.
+			continue
+		}
 		out.Companies++
 		out.Threads += threads
 		out.Messages += messages
@@ -101,8 +108,29 @@ func (s *RetentionService) PurgeExpired(ctx context.Context) (PurgeResult, error
 // `data_erasures` table that grows by one row per tenant per night forever and
 // buries the four rows somebody is looking for — and "nothing was expired" is
 // already answerable from the window and the transcript.
+//
+// **That paragraph described an intention rather than the code until
+// 2026-08-22.** The record has to be opened before the delete, or a crash
+// mid-purge leaves no evidence it was attempted; opening it first also means
+// the counts are unknown until the row exists. So the tick asks first. The
+// §1q gate caught it the only way it could be caught — by running two nights
+// against a tenant with nothing left to purge and reading their history back
+// over HTTP, where the two `0 threads / 0 messages` rows already outnumbered
+// the erasure the tenant actually performed.
 func (s *RetentionService) purgeOne(ctx context.Context, t domain.CompanyRetention) (int, int, error) {
 	before := s.now().UTC().AddDate(0, 0, -t.Days)
+
+	// A failed probe is not an empty night. Returning the error skips this
+	// tenant and records nothing, which is the same treatment a failed delete
+	// gets — the caller logs it against the company and the other tenants
+	// continue.
+	expired, err := s.repo.HasExpired(ctx, t.CompanyID, before)
+	if err != nil {
+		return 0, 0, fmt.Errorf("check expired conversations: %w", err)
+	}
+	if !expired {
+		return 0, 0, nil
+	}
 
 	rec := &domain.DataErasure{
 		CompanyID: t.CompanyID,

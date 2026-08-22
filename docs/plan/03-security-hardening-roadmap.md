@@ -11,6 +11,21 @@ the `T-S…` scope tickets or the `S-n` finding codes in the research docs.
 > and are already applied inline. Track A survived re-verification unchanged and
 > is still live on `main`.
 
+> **Status, 2026-08-22 — the free live half of the 08-21 build is run.**
+> `T-H6`, `T-H12` and `T-H14` are now built *and* gated live on eight arms at
+> $0.00 (§1q,
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §20).
+> Four findings: the retention tick wrote a `0 / 0` evidence row every night
+> until the tenant's real erasure was buried in their own history; `get_schema`
+> named two excluded tables through per-column foreign keys its filter did not
+> cover; a refusal told the model to do the one thing that would not clear it;
+> and — the one that is not a bug — **`T-H12` enforces less than its title
+> says**: a caller who names a non-allowlisted column of an allowlisted table
+> reads it. Three fixed and re-proven; the fourth needs an owner's decision
+> before the questionnaire answer for column restriction can be written. The
+> only thing still owed on these three is `T-H11`'s ~$0.15 eval run, which is
+> queued behind `T-H8`'s unpaid re-score.
+
 > **Status, 2026-08-21 — ten of fifteen tickets are built, and the block below
 > this one is out of date.** That block says *"Not built: every ticket in Tracks
 > B, C and D — `T-H4` → `T-H14`"*, and it was true when written on 2026-08-11.
@@ -218,7 +233,7 @@ generalises — missing key is a fatal config error
 
 ---
 
-## Track B — The claims we make in writing (5.0d) · **`T-H4` steps 1+3, `T-H6` and `T-H7` built; `T-H4` step 2 open; `T-H5` dropped**
+## Track B — The claims we make in writing (5.0d) · **`T-H4` steps 1+3, `T-H6` and `T-H7` built; `T-H6` gated live 2026-08-22; `T-H4` step 2 open; `T-H5` dropped**
 
 Each ticket here removes one disclosed limitation from the customer security
 brief. That brief's "Known boundaries" section is the acceptance test for this
@@ -337,7 +352,7 @@ path a tenant can reach directly.
 > **Decided 2026-08-14: decommission. This ticket is not being built** — see the
 > note at the top of the section.
 
-### `T-H6` Retention and erasure — 1.5d · **built 2026-08-21, unit-gated only**
+### `T-H6` Retention and erasure — 1.5d · **built 2026-08-21; gated live 2026-08-22, and the gate found one**
 
 > **Status, 2026-08-21: built.** Migration `067` adds
 > `companies.message_retention_days` (0 = forever, which is what every existing
@@ -357,10 +372,21 @@ path a tenant can reach directly.
 > `agent_actions` no thread FK precisely so a thread delete could not launder
 > it; erasure is that delete with a wider WHERE.
 >
-> **Owed:** the live half — the purge and the erasure endpoint against a company
-> with history, confirming audit rows survive and conversation rows do not.
-> Free; §1q of the live-gate backlog.
-> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §19.
+> ~~**Owed:** the live half~~ — **run 2026-08-22 and it passed on every
+> acceptance line, with one defect beside them.** `067` both ways clean; the
+> purge removed 5 messages and 2 threads and left the in-window thread with its
+> old messages gone; the erasure returned `3 / 303` and **`agent_actions` kept
+> its rows, still carrying the `thread_id` of threads that no longer exist**;
+> the export read 303 lines through `jq` and zero lines after the erasure.
+>
+> **The defect is in the evidence table, not the delete.** `purgeOne` opens the
+> record before the delete — which is right, and which also means it cannot
+> know the counts are zero until the row exists — so every idle nightly tick
+> wrote a `0 threads / 0 messages` row, exactly the outcome its own comment says
+> it avoids. Five of the tenant's seven rows were noise by the time the erasure
+> ran. Fixed with a `HasExpired` probe, two tests proven failing first, and
+> re-proven on the running worker. §1q,
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §20.
 
 `messages.content` and `messages.tool_calls`
 (`apps/backend/migrations/control/002_threading.up.sql:26`) hold tenant data
@@ -562,9 +588,9 @@ until their tickets work end to end.
 
 ---
 
-## Track D — What enterprise buyers ask for by name (3.5d) · **`T-H12` and `T-H13` built; `T-H14` half built — the keyring, not the envelope**
+## Track D — What enterprise buyers ask for by name (3.5d) · **`T-H12` built and gated live 2026-08-22 — its column half enforces less than its title claims; `T-H13` built; `T-H14` half built and that half gated live**
 
-### `T-H12` Table and column allowlist per connection — 1.5d · **built 2026-08-21, unit-gated only**
+### `T-H12` Table and column allowlist per connection — 1.5d · **built 2026-08-21; gated live 2026-08-22 — the table half holds, the column half is weaker than the title**
 
 > **Status, 2026-08-21: built.** `domain.Allowlist` on `db_connections`
 > (migration `068`, JSONB, empty = unrestricted). `get_schema` filters tables,
@@ -583,9 +609,32 @@ until their tickets work end to end.
 > stop the CTE bypass, and a fully-quoted schema-qualified name read as its
 > schema. All pinned.
 >
-> **Owed:** the live half — `068` both ways, an allowlisted source through a
-> real turn, and the arm that matters most, that ordinary analytical SQL against
-> an *unrestricted* source is unaffected. §1q.
+> ~~**Owed:** the live half~~ — **run 2026-08-22, and it found two things.**
+> `068` both ways clean; every refusal shape held (11 of 13 statements, the
+> three probed bypasses still shut and two new shapes with them); and **the arm
+> that matters most passed 10 of 10** — a tenant who configured nothing is
+> untouched.
+>
+> **What failed is not the lexer.** `get_schema` still rendered `date_id
+> (integer) → dim_date.date_id` and `customer_id → dim_customers.customer_id`
+> on a source excluding both: `applyAllowlist` filtered `Relationships` and not
+> the per-column foreign keys, and the formatter prints both. Fixed — the unit
+> fixture had no column-level foreign keys at all, which is why the suite
+> agreed with itself. A refusal that told the model to "name the columns you
+> need" for a `count(*)` now names `count(1)` instead.
+>
+> **And one line of this ticket is not built, which the title has been
+> claiming.** `SELECT product_id, unit_cost FROM dim_products` answers with
+> real values on a source whose allowlist does not list `unit_cost`:
+> `domain.AllowsColumn` exists and `run_sql` never calls it, so the column half
+> is enforced by hiding names in `get_schema` and refusing `*`, and a caller
+> who knows the name reads the column. Closing it needs column-to-table
+> attribution in the lexer under this package's uncertain-means-refuse rule,
+> which would refuse most real analytical SQL touching such a table. **That
+> trade is an owner's decision** — until it is made, the questionnaire answer
+> is "these tables, and these columns are hidden from the agent", not "these
+> columns cannot be read". §1q,
+> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §20.
 
 `domain.DBConnection` (`apps/backend/internal/domain/connection.go:11`) has no
 allowlist; scoping is source-level only (`agentscope.Scope.AllowsSource`). Masked
@@ -644,9 +693,16 @@ remembering to look.
 > same key seals LLM credentials, the channel credential tables, MCP tokens,
 > embed secrets and HTTP endpoint secrets.
 >
-> **Owed:** the live half — a real rotation against a seeded control database,
-> all five procedure steps. Free; §1q.
-> [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §19.
+> ~~**Owed:** the live half~~ — **run 2026-08-22: all five steps, and the
+> control with them.** `-check` 0 → the retired key deployed → `-check` **1**
+> naming the rows → `-apply` → `-check` 0 → `-apply` again re-sealing **0** →
+> boot without the retired key, every connection decrypting, a real `run_sql`
+> answering. A row sealed under an unconfigured key kept `-check` non-zero and
+> was skipped loudly by `-apply` while the others rotated. And the arm the unit
+> test cannot make: a blob sealed by the binary at `df22845` — 94 prefix-free
+> bytes — was opened by the **running** `cmd/mcp` and re-sealed to 103.
+> §1q, [`../coverage/security-hardening.md`](../coverage/security-hardening.md)
+> §19–§20.
 
 One `ARGENTUM_DSN_KEY` seals every DSN and every tenant LLM credential
 (`apps/backend/internal/crypto/dsn.go`), with no rotation path and no KMS
@@ -739,17 +795,24 @@ that the live half finds what unit tests cannot.
 - `T-H4` — the validator against a real warehouse on all three dialects,
   including one query that legitimately uses a CTE and one that uses a window
   function, to confirm the parse does not reject working analytics SQL.
-- `T-H6` — the purge and the erasure endpoint against a company with history,
-  confirming audit rows survive and conversation rows do not. **Built
-  2026-08-21; still owed, and now cheap** — `067` both ways plus one seeded
-  company is the whole gate.
-- `T-H12` — `068` both ways; an allowlisted source through a real turn, showing
-  `get_schema` naming only the allowlisted tables and `run_sql` refusing one it
-  does not; and the arm that matters most, that an *unrestricted* source's
-  ordinary analytical SQL is unaffected. Added 2026-08-21.
-- `T-H14` — a real rotation against a seeded control database: all five steps,
-  including the one that proves `rekey -check` exits non-zero while a row is
-  still on the retired key. Added 2026-08-21.
+- ~~`T-H6` — the purge and the erasure endpoint against a company with
+  history~~ — **run 2026-08-22.** `067` both ways clean, the purge removing 5
+  messages and 2 threads and keeping the in-window thread with its old messages
+  gone, the erasure returning `3 / 303`, and **`agent_actions` still holding
+  its rows with the `thread_id` of threads that no longer exist**. The export
+  read 303 lines through `jq` and zero after the erasure. **One defect**: the
+  nightly tick wrote a `0 / 0` record every time it ran, burying the tenant's
+  real erasure in their own history — fixed, tests proven failing first, and
+  re-proven live
+  ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1q).
+- ~~`T-H12` — `068` both ways; an allowlisted source through a real turn~~ —
+  **run 2026-08-22.** 11 of 13 refusal shapes as specified and **10 of 10 on
+  the unrestricted arm**. Two findings: `get_schema` named two excluded tables
+  through per-column foreign keys (fixed), and the column half is not enforced
+  against a named column (an owner's decision — see the ticket).
+- ~~`T-H14` — a real rotation against a seeded control database~~ — **run
+  2026-08-22, all five steps with the unreadable-row control and the
+  pre-`T-H14` blob opened by the running binary.** Pass on every arm.
 - `T-H7` — one turn with a literal in the query, read back out of the API log:
   the Info line must carry `'?'` and the raw statement must appear only under
   `LOG_LEVEL=debug`.

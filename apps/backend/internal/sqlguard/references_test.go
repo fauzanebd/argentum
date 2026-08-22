@@ -163,7 +163,7 @@ func TestValidateReferencesRefusesStarOnAColumnRestrictedTable(t *testing.T) {
 	if err == nil {
 		t.Fatal("SELECT * against a column-restricted table was allowed")
 	}
-	if !strings.Contains(err.Error(), "Name the columns") {
+	if !strings.Contains(err.Error(), "name the columns you need") {
 		t.Errorf("refusal does not say what to do instead: %v", err)
 	}
 	// Naming columns is the repair, and it has to work.
@@ -273,5 +273,32 @@ func TestUnionArmsAreBothRead(t *testing.T) {
 	}
 	if strings.Join(got.Tables, ",") != "fact_sales,salaries" {
 		t.Errorf("tables = %v, want both arms", got.Tables)
+	}
+}
+
+// The §1q live gate's false-positive arm. `containsSelectStar` is crude in the
+// safe direction on purpose — `count(*)` sets it — and the argument for that
+// is sound, but the refusal it produced told the model to do the one thing
+// that does not fix it: "Name the columns you need" on a query whose select
+// list is `p.category, count(*)` is advice the model can follow to the letter
+// and be refused again. Ten other tool paths in this repo have already
+// produced a retry loop out of exactly that shape.
+//
+// The rule does not move. The sentence names the remedy that works.
+func TestStarRefusalNamesTheRemedyForCountStar(t *testing.T) {
+	allows := func(string) bool { return true }
+	restricted := func(table string) bool { return table == "dim_products" }
+
+	sql := "SELECT p.category, count(*) AS n FROM fact_sales s JOIN dim_products p ON p.product_id = s.product_id GROUP BY p.category"
+	err := ValidateReferences(sql, allows, restricted)
+	if err == nil {
+		t.Fatal("a statement containing `*` against a column-restricted table was allowed; the rule is crude in the safe direction and must stay that way")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "count(1)") {
+		t.Errorf("the refusal does not name the rewrite that works: %s", msg)
+	}
+	if !strings.Contains(msg, "count(*)") {
+		t.Errorf("the refusal does not say that count(*) is what tripped it: %s", msg)
 	}
 }

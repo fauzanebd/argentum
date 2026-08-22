@@ -153,9 +153,15 @@ func ValidateReferences(sql string, allows func(table string) bool, columnsRestr
 			return fmt.Errorf("table %q is not readable by this agent on this source", t)
 		}
 		if refs.SelectsStar && columnsRestricted != nil && columnsRestricted(t) {
+			// The sentence carries both remedies because the rule catches two
+			// different statements. A real `SELECT *` is fixed by naming
+			// columns; a `count(*)` is not — it is fixed by `count(1)`, and a
+			// model told only to name columns will rewrite the select list,
+			// keep the `count(*)`, and be refused again. The §1q gate found
+			// this on the first ordinary analytical query it tried.
 			return fmt.Errorf(
-				"table %q exposes only some of its columns, so `SELECT *` cannot be run against it. "+
-					"Name the columns you need", t)
+				"table %q exposes only some of its columns, so a statement containing `*` cannot be run against it — "+
+					"including `count(*)`. Use `count(1)` for a row count, and name the columns you need elsewhere", t)
 		}
 	}
 	return nil

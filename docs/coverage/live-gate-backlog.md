@@ -46,6 +46,19 @@ constraint this file has not carried before — a gate can be blocked by a missi
 *credential file* rather than by a cost, and that is worse, because a cost can be
 decided and a missing file just looks like a passing test suite.
 
+**Revised 2026-08-22 — §1q is run, and the bucket has now paid fifteen times
+out of fifteen.** Eight free arms across `T-H6`, `T-H12` and `T-H14`, $0.00,
+**four findings**: a nightly job writing an evidence row that says nothing, one
+per tenant per night, until the tenant's real erasure was buried under them;
+`get_schema` handing the model two excluded table names through the per-column
+foreign keys its filter did not cover; a refusal whose advice does not fix the
+statement it refused; and the column half of a "table **and column** allowlist"
+that a caller who knows the column name reads straight through. Plus one that
+belongs to no ticket: `.env.example`, the file `make setup` copies, was missing
+both variables the process refuses to boot without and carrying twelve nothing
+has read since the multi-tenant refactor. Three fixed and re-proven the same
+sitting, one filed for an owner's decision. §1q.
+
 **Revised 2026-08-16 — §1d is run, and the bucket has now paid six times out of
 six.** The three stack-only gates the 2026-08-14 build owed all passed, and the
 sitting's one defect came from an endpoint none of them was aimed at: the
@@ -1246,7 +1259,7 @@ further spend fixes it, because it is a design result rather than a defect.
 It is listed above at $0.15 with the rest of the category; it is worth more than
 the other eight put together.
 
-## 1q. Owed by the 2026-08-21 hardening build — four tickets, and only one costs money
+## 1q. ~~Owed by the 2026-08-21 hardening build~~ — the free arms ran 2026-08-22, and the bucket has paid fifteen times out of fifteen
 
 `T-H6`, `T-H11`, `T-H12` and `T-H14` landed code-complete and unit-gated in one
 sitting ([`delivery-log.md`](delivery-log.md) Phase 3m,
@@ -1286,6 +1299,51 @@ three admitting an excluded table with no refusal and no uncertainty. The free
 arms above are written to look for a fourth. `T-H6`'s exposure is the opposite
 shape: it is a bulk DELETE, and the failure that matters is one that deletes
 more than it said.
+
+### Run 2026-08-22 — eight arms, $0.00, and four findings
+
+**The prediction above was half right and wrong in an instructive direction.**
+`T-H12` was indeed where the defects were, but not in the lexer: the fourth
+bypass the arms were written to look for is not there — eleven refusal shapes
+held, including the three the build found by probing and two nobody had tried.
+What broke was the *other* half of the same ticket, the half a lexer has
+nothing to do with. And `T-H6`'s bulk DELETE deleted exactly what it said;
+its defect was in the evidence table beside it.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-H6` | `067` up, down and up; then the purge against a seeded company | **Pass on every line.** 66 → 68 clean and not dirty, every `companies` and `users` row surviving the round trip, and each restored column in its declared shape — so every existing company comes back reading *keep forever*. One tick removed **5 messages and 2 threads**, kept the in-window thread with its old messages gone, and wrote one record reading `2 / 5` |
+| `T-H6` | `DELETE /api/company/data`, and the arm the ticket exists for | **Pass, and the audit half is proven at the database.** Both ceremony controls refused with 400 and deleted nothing; the real call returned `3 threads / 303 messages` with the requester's id. Afterwards **`agent_actions` still holds its rows and still carries the `thread_id` of threads that no longer exist** — migration 023's no-FK decision, met from the outside — and `usage_events` keeps its rows and its costs with `thread_id` set NULL |
+| `T-H6` | The NDJSON export, before and after an erasure | **Pass.** 303 lines / 303 objects, `jq -s` agreeing end to end, 300 embedded newlines that did not break a line, 150 `tool_calls` arrays intact, no purged content anywhere in the file. After the erasure: 200, **zero bytes**, no `export_error`, an empty stream rather than a parse failure |
+| `T-H6` | *(the finding)* The nightly tick's own record | **`0 threads / 0 messages` rows, one per tenant per night** — the exact outcome `purgeOne`'s comment says it avoids. By the time the erasure ran, **5 of the tenant's 7 record rows were noise and the real erasure was buried under two of them** in `GET /company/data/erasures`. Fixed with a `HasExpired` probe before the record is opened; two tests proven failing first; re-proven live — work tick writes, three idle ticks write nothing, and a fixture seeded a minute later still purges, which is the control that separates a quiet scheduler from a dead one |
+| `T-H12` | `068` up, down and up; `get_schema` under an allowlist | **Two of three lines pass and the third failed.** Only the allowlisted tables appear and the column-restricted table shows 3 of 12 columns — but `fact_sales` still rendered `date_id (integer) → dim_date.date_id` and `customer_id → dim_customers.customer_id`, **naming two excluded tables, their key columns and the joins that reach them**. `applyAllowlist` filtered `Relationships` and not the per-column foreign keys, and `FormatSchemaForPrompt` prints both. Fixed; the shared unit fixture had no column-level foreign keys at all, which is why nothing caught it |
+| `T-H12` | `run_sql` through `cmd/mcp` | **11 of 13.** Every refusal shape held — plain FROM, CTE wrap, comma join, aliased comma join, schema-qualified, fully-quoted, explicit JOIN, `IN (SELECT …)` — and the allowed pair behaved. The two that did not are below |
+| `T-H12` | *(finding)* A refusal the model cannot act on | `SELECT p.category, count(*) … JOIN dim_products` refused with *"`SELECT *` cannot be run… Name the columns you need"* — advice that does not fix a `count(*)`, and a model following it is refused again. The crude rule stays; the sentence now names `count(1)`, and the named remedy was run verbatim and returned rows |
+| `T-H12` | *(finding — needs a decision)* The column half | `SELECT product_id, unit_cost FROM dim_products` **answered with real values** on a source whose allowlist does not list that column. `domain.AllowsColumn` exists and `run_sql` never calls it: the column half is enforced by hiding names in `get_schema` and refusing `*`. The ticket is titled *"Table and column allowlist"* and the questionnaire answer it supports currently overstates what it does. Closing it needs column-to-table attribution under this package's uncertain-means-refuse rule, which would refuse most real analytical SQL — an owner's call, filed rather than guessed |
+| `T-H12` | **The false-positive arm** | **10 of 10 allowed** against the unrestricted source — §1l's ten statements plus `SELECT *`, `count(*)`, a window function and a schema-qualified three-table join. The tenant who configured nothing is untouched |
+| `T-H14` | The five-step rotation, with the control | **Pass on all five, exit codes included.** `-check` 0 → deploy with the retired key → `-check` **1** naming 2 rows on the retired key → `-apply` re-sealed 2 → `-check` 0 → `-apply` again re-sealed **0** (idempotent) → boot with the retired key removed, all connections decrypting, and a real `run_sql` answering. The control: a row sealed under a key nobody configured kept `-check` non-zero, was skipped loudly by `-apply` while the others rotated, and cleared on removal |
+| `T-H14` | A pre-`T-H14` blob opening under the new binary | **Pass, with the bytes built by the old binary rather than by hand.** The sealer was compiled from `git show df22845:…/crypto/dsn.go` — the commit before the keyring — and produced **94 prefix-free bytes** against a versioned row's 103. `rekey -check` counted it legacy, the **running `cmd/mcp` opened it and answered a query**, `-apply` re-sealed it to `ARGK`-prefixed 103, `-check` clean |
+| *(not in any ticket)* | `.env.example`, the file `make setup` copies | **Missing both variables `config.Validate()` refuses to boot without**, plus `ARGENTUM_DSN_KEYS_RETIRED` — the variable `T-H14`'s whole procedure turns on — and `RETENTION_PURGE_CRON`, without which `T-H6` never runs. What it did carry was twelve variables **nothing has read since the multi-tenant refactor**. Rewritten and proven by booting `cmd/api` from a copy of it in an empty directory |
+
+**What it cost:** one sitting, $0.00, no model call. Three fixes with tests
+proven failing first, `go test -race` green across 63 packages, and one finding
+filed for an owner's decision rather than patched.
+
+**The pattern this sitting adds to the file's own record.** Two of the four
+findings are a *comment that describes an intention the code does not have* —
+`purgeOne`'s "a tick that deleted nothing writes no record", and
+`applyAllowlist`'s "a foreign key pointing at an excluded table would name that
+table in the prompt, which is precisely what the tenant asked not to happen",
+which is a correct sentence sitting above a filter that only covered one of the
+two places a foreign key lives. Both comments were written by whoever was most
+sure of the property. Neither had a test that could fail, and in the second case
+the fixture was *thinner than any real driver's output*, so the suite agreed
+with itself. The cheapest detector for both was a running system and somebody
+reading what it actually printed.
+
+**What is still owed on these three tickets:** `T-H11`'s `make eval-security`
+(~$0.15, §2), which is still queued behind `T-H8`'s unpaid rule-1 re-score for
+the reason §1q gave before the sitting and which has not changed.
 
 ## 2. Needs the stack **and** real LLM spend
 

@@ -20,6 +20,13 @@ type fakeRetentionRepo struct {
 	targets []domain.CompanyRetention
 	listErr error
 
+	// nothingExpired makes HasExpired answer false, which is the ordinary
+	// state of a tenant on any night after the first: a window is set, and
+	// nothing has aged past it since the last tick.
+	nothingExpired bool
+	expiredErr     error
+	expiredCall    []purgeCall
+
 	purgeErr  error
 	eraseErr  error
 	purgeCall []purgeCall
@@ -39,6 +46,14 @@ func (f *fakeRetentionRepo) PurgeCompanyMessages(_ context.Context, companyID st
 		return 0, 0, f.purgeErr
 	}
 	return 1, 4, nil
+}
+
+func (f *fakeRetentionRepo) HasExpired(_ context.Context, companyID string, before time.Time) (bool, error) {
+	f.expiredCall = append(f.expiredCall, purgeCall{companyID, before})
+	if f.expiredErr != nil {
+		return false, f.expiredErr
+	}
+	return !f.nothingExpired, nil
 }
 
 func (f *fakeRetentionRepo) EraseCompanyConversations(_ context.Context, companyID string) (int, int, error) {
@@ -306,5 +321,63 @@ func TestExportStreamsEveryMessage(t *testing.T) {
 	}
 	if len(got) != 2 || got[0] != "m1" || got[1] != "m2" {
 		t.Errorf("exported %v, want [m1 m2]", got)
+	}
+}
+
+// A tick that deleted nothing must write no record — the property purgeOne's
+// own comment claims and, until 2026-08-22, did not have. Found by the §1q
+// live gate: two nightly ticks against a tenant with nothing left to purge
+// left two `completed` rows reading 0 threads / 0 messages, and the tenant's
+// real erasure was already outnumbered by them in `GET /company/data/erasures`.
+//
+// The cost of the defect is not storage. `data_erasures` is the evidence table
+// a tenant hands a regulator, and one 0/0 row per tenant per night buries the
+// four rows somebody is looking for.
+func TestPurgeWritesNoRecordWhenNothingIsExpired(t *testing.T) {
+	repo := &fakeRetentionRepo{
+		targets:        []domain.CompanyRetention{{CompanyID: "co-1", Days: 30}},
+		nothingExpired: true,
+	}
+	records := newFakeRecords()
+	svc := NewRetentionService(repo, records, &fakeRetentionCompanies{})
+
+	res, err := svc.PurgeExpired(context.Background())
+	if err != nil {
+		t.Fatalf("PurgeExpired: %v", err)
+	}
+	if len(records.begun) != 0 {
+		t.Errorf("opened %d record(s) for a tick with nothing to delete; the evidence table must not grow by a row per tenant per night", len(records.begun))
+	}
+	if len(repo.purgeCall) != 0 {
+		t.Errorf("ran %d delete(s) against a tenant with nothing expired", len(repo.purgeCall))
+	}
+	if res.Companies != 0 || res.Threads != 0 || res.Messages != 0 {
+		t.Errorf("result = %+v, want an empty tick", res)
+	}
+	// The check itself must still have used the tenant's own cutoff, or a
+	// skipped tick is only skipped by luck.
+	if len(repo.expiredCall) != 1 {
+		t.Fatalf("checked %d tenants, want 1", len(repo.expiredCall))
+	}
+}
+
+// The check failing is not "nothing expired". A tenant whose EXISTS probe
+// errors must be skipped and logged, not read as an empty night.
+func TestPurgeSkipsTheTenantWhenTheExpiryCheckFails(t *testing.T) {
+	repo := &fakeRetentionRepo{
+		targets:    []domain.CompanyRetention{{CompanyID: "co-1", Days: 30}},
+		expiredErr: errors.New("control database unavailable"),
+	}
+	records := newFakeRecords()
+	svc := NewRetentionService(repo, records, &fakeRetentionCompanies{})
+
+	if _, err := svc.PurgeExpired(context.Background()); err != nil {
+		t.Fatalf("PurgeExpired returned an error for a per-tenant failure: %v", err)
+	}
+	if len(repo.purgeCall) != 0 {
+		t.Error("deleted rows after the expiry check failed")
+	}
+	if len(records.begun) != 0 {
+		t.Error("opened a record after the expiry check failed")
 	}
 }

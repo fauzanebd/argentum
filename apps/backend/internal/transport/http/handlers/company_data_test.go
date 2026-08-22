@@ -29,6 +29,9 @@ type stubRetentionRepo struct {
 func (s *stubRetentionRepo) PurgeCompanyMessages(context.Context, string, time.Time) (int, int, error) {
 	return 0, 0, nil
 }
+func (s *stubRetentionRepo) HasExpired(context.Context, string, time.Time) (bool, error) {
+	return false, nil
+}
 func (s *stubRetentionRepo) EraseCompanyConversations(_ context.Context, companyID string) (int, int, error) {
 	s.erased = append(s.erased, companyID)
 	return 2, 7, nil

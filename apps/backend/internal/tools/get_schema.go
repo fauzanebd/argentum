@@ -320,24 +320,49 @@ func (t *GetSchemaTool) allowlistFor(ctx context.Context, companyID, sourceID st
 // filterSchema's existing rule and is load-bearing here for a different reason:
 // a foreign key pointing at an excluded table would name that table in the
 // prompt, which is precisely what the tenant asked not to happen.
+//
+// **The same rule has to be applied twice, and until 2026-08-22 it was applied
+// once.** A foreign key lives in two places on this struct: the
+// `Relationships` slice and the referencing column's own
+// `IsForeignKey`/`ForeignKeyTable` fields — and `FormatSchemaForPrompt` prints
+// both. Filtering only the slice left the model reading `customer_id (integer)
+// → dim_customers.customer_id` on a source whose allowlist excluded
+// `dim_customers`, which is the excluded table's name, its key column, and the
+// join that reaches it. Found by the §1q live gate; the unit fixture had no
+// column-level foreign keys at all, so nothing here could have caught it.
+//
+// Two passes, because a column can reference a table that appears later in the
+// list and the answer depends on the whole set having been decided.
 func applyAllowlist(s *db.SchemaMetadata, list domain.Allowlist) *db.SchemaMetadata {
 	out := &db.SchemaMetadata{DBType: s.DBType, ExtractedAt: s.ExtractedAt}
 	kept := make(map[string]bool, len(s.Tables))
 	for _, tbl := range s.Tables {
-		if !list.AllowsTable(tbl.Name) {
+		if list.AllowsTable(tbl.Name) {
+			kept[strings.ToLower(tbl.Name)] = true
+		}
+	}
+	for _, tbl := range s.Tables {
+		if !kept[strings.ToLower(tbl.Name)] {
 			continue
 		}
-		kept[strings.ToLower(tbl.Name)] = true
 		copied := tbl
-		if list.ColumnsRestricted(tbl.Name) {
-			cols := make([]db.ColumnInfo, 0, len(tbl.Columns))
-			for _, col := range tbl.Columns {
-				if list.AllowsColumn(tbl.Name, col.Name) {
-					cols = append(cols, col)
-				}
+		restricted := list.ColumnsRestricted(tbl.Name)
+		// A fresh slice whenever anything changes. `s` is the cached schema
+		// get_schema serves to every caller, so editing a ColumnInfo in place
+		// would carry one source's restrictions into the next request.
+		cols := make([]db.ColumnInfo, 0, len(tbl.Columns))
+		for _, col := range tbl.Columns {
+			if restricted && !list.AllowsColumn(tbl.Name, col.Name) {
+				continue
 			}
-			copied.Columns = cols
+			if col.IsForeignKey && !kept[strings.ToLower(col.ForeignKeyTable)] {
+				col.IsForeignKey = false
+				col.ForeignKeyTable = ""
+				col.ForeignKeyColumn = ""
+			}
+			cols = append(cols, col)
 		}
+		copied.Columns = cols
 		out.Tables = append(out.Tables, copied)
 	}
 	for _, rel := range s.Relationships {

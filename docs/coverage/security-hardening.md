@@ -1324,3 +1324,243 @@ the caveat is printed rather than filed.
    on the primary and none is legacy, the retired key is load-bearing.
 5. Remove `ARGENTUM_DSN_KEYS_RETIRED`. Deploy. Every step before this one is
    reversible.
+
+---
+
+## 20. The §1q live half — `T-H6`, `T-H12`, `T-H14` (2026-08-22)
+
+Eight owed arms, all free, run in one sitting. **Every arm behaved except
+three, and the three are the reason this bucket exists** — none of them was
+reachable from a unit test, and one had a unit test asserting the opposite of
+what the running system did.
+
+**The rig.** No compose plugin on this machine, so the three services were
+started with `docker run` against the same images and environment the compose
+file declares: control Postgres (`ankane/pgvector`) on 5432, the demo warehouse
+on 5433 seeded from `migrations/demo_tenant`, Redis on 6380. `cmd/api` on
+:8085, `cmd/worker` with `RETENTION_PURGE_CRON="* * * * *"` so a nightly job
+could be watched in minutes, `cmd/mcp` on :8091 behind a `read:data` key —
+§1d's technique and for §1d's reason: `run_sql` and `get_schema` are not
+reachable from `cmd/api`, and MCP adapts the same registry instance, so each
+call runs the code path a turn runs with the SQL chosen by the gate. Tenant
+`Gate Tenant H6` created through signup; two sources registered against the
+same warehouse, one with an allowlist and one without, because the arm that
+matters most is the one measuring the tenant who configured nothing.
+
+### The migrations, both ways
+
+`068` down, then `067` down, then up: version 66 with
+`companies.message_retention_days`, `data_erasures`, its index and
+`db_connections.allowlist` all gone and **every `companies` and `users` row
+still there**; up again to 68, not dirty, with the columns back in their
+declared shape — `integer NOT NULL DEFAULT 0` and `jsonb NOT NULL DEFAULT
+'{}'`. The property worth naming is the one `067`'s own comment claims: after
+the round trip every existing company reads `message_retention_days = 0`, which
+is *keep forever*, which is what those rows did before the column existed.
+
+### `T-H6` — the purge, and the record that grew a row a night
+
+A five-thread fixture: one thread whose every message was expired, one whose
+newest message was inside the window, one entirely inside it, one expired husk
+already empty, and one carrying 300 messages for the export. The window was set
+to 30 days through `PUT /api/settings` (204, read back as 30), not by writing
+the column.
+
+One tick: **5 messages and 2 threads deleted**, and the four assertions all
+hold — the expired messages gone, the two expired-and-empty threads gone, the
+in-window thread **kept with its old messages removed** (`B3 asked two days
+ago` is all that survives of it), and one `data_erasures` row reading
+`scope=retention status=completed threads_deleted=2 messages_deleted=5`.
+
+**Then the second tick wrote another row, and it should not have.**
+`purgeOne`'s own comment says *"A tick that deleted nothing writes no record.
+The alternative is a `data_erasures` table that grows by one row per tenant per
+night forever and buries the four rows somebody is looking for"* — and that
+described an intention rather than the code. The record is opened *before* the
+delete, which is right (a crash mid-purge must leave evidence it was attempted)
+and which also means the counts are unknown until the row exists. Nothing
+closed the loop afterwards.
+
+By the time the erasure ran, **5 of the tenant's 7 record rows were `0 threads
+/ 0 messages`**, and `GET /api/company/data/erasures` returned the tenant's real
+erasure with two of them stacked on top of it. That is the failure the comment
+names, reached in eleven minutes at one tick a minute; a real deployment reaches
+it in a week at one a night, and `data_erasures` is the table a tenant hands a
+regulator.
+
+**Fixed by asking first.** `RetentionRepository.HasExpired` is one `EXISTS` over
+a `UNION ALL` of the two shapes the purge deletes — a message past the cutoff,
+and a thread that is both past it and already empty — and `purgeOne` returns
+before opening a record when it answers false. Both shapes are checked because
+covering only messages would leave husks nothing ever collects. A *failed*
+probe is not an empty night: it returns the error, so the tenant is skipped and
+logged exactly as a failed delete is. Two tests, both proven failing first.
+
+**Re-proven live on the same rig**: a tick with work wrote its row (`1/1` at
+16:56), the next three ticks wrote nothing at all, and a fixture seeded at
+16:59:36 was purged at 17:00 with its row — which is the control, because
+silence from a scheduler that has died looks exactly like silence from a
+scheduler with nothing to do.
+
+### `T-H6` — erasure, and the audit rows
+
+Both ceremony controls refused: an empty body and another company's id each got
+400 with *"confirm_company_id must match the authenticated company"*, and
+nothing was deleted by either. The real call returned 200 and the record —
+`threads_deleted=3 messages_deleted=303`, `requested_by` carrying the admin's
+user id.
+
+After it: **`agent_actions` still holds its three rows, and they still carry
+the `thread_id` of threads that no longer exist** — which is migration 023's
+no-foreign-key decision proven at the database rather than read off a comment.
+`usage_events` keeps its three rows with `cost_micro_usd` intact and
+`thread_id` set to NULL, which is the SET NULL its FK declares. And the
+`data_erasures` row survived the erasure that created it.
+
+### `T-H6` — the export
+
+Before: 200, `application/x-ndjson`, a filename in `Content-Disposition`, **303
+lines and 303 objects** — `jq -c .` parses every line and `jq -s length` agrees
+end to end. The 300 export-thread messages each carry an embedded newline in
+their content and none of them broke a line, 150 carry a `tool_calls` array
+that survived the round trip, and no purged message appears anywhere in the
+file. After the erasure: 200, **zero bytes, zero lines**, no `export_error`
+line, and `jq` reads it as an empty stream rather than a parse failure.
+
+### `T-H12` — what `get_schema` still told the model
+
+The restricted source serves exactly its two allowlisted tables, `dim_products`
+shows 3 of its 12 columns, and the `Relationships` block holds only the
+edge whose endpoints both survived. All as designed.
+
+**And the column list underneath it read:**
+
+```
+Table: fact_sales
+  • date_id (integer) → dim_date.date_id
+  • customer_id (integer) → dim_customers.customer_id
+```
+
+Both of those tables are excluded. `applyAllowlist` filtered
+`SchemaMetadata.Relationships` and left `ColumnInfo.IsForeignKey` alone, and
+`FormatSchemaForPrompt` prints both — so the tenant who restricted the source to
+two tables was handing the model two excluded table names, their key columns,
+and the join that reaches them. Migration `068`'s own comment is the acceptance
+line it fails: *"the agent is never told the other tables exist."*
+
+**Why no unit test caught it:** `demoSchema()`, the fixture every test in
+`source_allowlist_test.go` shares, had no column-level foreign keys at all. The
+tests asserted the relationship filter and agreed with themselves. The fixture
+now carries them, which is what a real driver fills in.
+
+**Fixed** with two passes — the surviving set has to be known before any
+column's reference can be judged — and by always copying the column slice: `s`
+is the schema `get_schema` caches and serves to every caller, so editing a
+`ColumnInfo` in place would carry one source's restrictions into the next
+request. A test pins that too. Live re-proof: both arrows gone, `product_id →
+dim_products.product_id` still there, and the unrestricted control still lists
+all four tables.
+
+### `T-H12` — `run_sql`, 13 statements
+
+Eleven behaved: the allowlisted table answered, and `dim_customers` was refused
+**by name** through a plain FROM, a CTE wrapping it, an old-style comma join, an
+aliased comma join, a schema-qualified name, a fully-quoted schema-qualified
+name, an explicit JOIN and an `IN (SELECT …)` subquery — the three bypasses the
+build found by probing are still shut, and the two nobody had tried are shut
+too. `SELECT *` on the column-restricted table was refused and the same query
+naming allowed columns answered.
+
+**Two did not.**
+
+1. **A refusal the model cannot act on.** `SELECT p.category, count(*) … JOIN
+   dim_products` was refused — correctly, because `containsSelectStar` is crude
+   in the safe direction on purpose — with *"`SELECT *` cannot be run against
+   it. Name the columns you need"*. That query has no star select; a model
+   that follows the advice to the letter rewrites the select list, keeps the
+   `count(*)`, and is refused again. This repo has already lost a turn to that
+   exact loop once (`query_metric`, §`eval-q1.md`). The rule does not move; the
+   sentence now names the rewrite that works — `count(1)` — and the remedy was
+   run verbatim afterwards and returned rows.
+
+2. **The column half is not enforced against a named column, and that is a
+   decision rather than a patch.** `SELECT product_id, unit_cost FROM
+   dim_products` returned real unit costs on a source whose allowlist lists
+   three columns and not that one. `domain.AllowsColumn` exists; `run_sql` does
+   not call it — `guardAllowlist` passes only `ColumnsRestricted`, so the
+   column half is enforced by hiding the names in `get_schema` and refusing
+   `*`, and a caller who knows the name reads the column. **The ticket is
+   titled "Table and column allowlist per connection"**, and the questionnaire
+   answer it exists to support is "we can restrict the agent to these columns",
+   which today overstates it. Closing it needs column-to-table attribution in
+   the lexer — aliases, unqualified names — under this package's
+   uncertain-means-refuse rule, which would refuse most real analytical SQL
+   touching such a table. That trade is the repo owner's call; it is filed in
+   the roadmap and in `live-gate-backlog.md` §1q rather than guessed at here.
+
+### `T-H12` — the false-positive arm
+
+**10 of 10 allowed** against the unrestricted source: §1l's ten statements —
+the CTE whose comment names DELETE, the `'deleted from the ledger'` literal,
+the block comment saying do not DROP, the join with HAVING, the trailing
+semicolon, the double-quoted identifier — plus `SELECT *`, `count(*)`, a window
+function and a schema-qualified three-table join. A tenant who configured
+nothing is untouched, which is the arm this ticket could most easily have
+failed.
+
+One thing that looks like a finding and is not: an `email` column came back in
+plaintext on a tenant whose `pii_redaction_mode` is `strict`. That is
+documented behaviour — `RedactResultColumns` is scoped to document-origin
+sources (`run_sql.go:241`), because a tenant's own warehouse is theirs and a
+table this product wrote out of a PDF is not, and widening it owes a rule-1
+re-score.
+
+### `T-H14` — the rotation, all five steps
+
+| Step | What ran | Result |
+| ---- | -------- | ------ |
+| 0 | `rekey -check`, primary only | 2 of 2 on the primary, exit 0 |
+| 1–2 | New key primary, old key retired, `-check` | `0 on the primary, 2 on a retired key`, **exit 1** |
+| 3 | `-apply` | re-sealed 2, skipped 0 |
+| 4 | `-check` | 2 on the primary, exit 0 — the gate for step 5 |
+| — | `-apply` again | re-sealed **0**: idempotent, as the package comment claims |
+| 5 | Boot with `ARGENTUM_DSN_KEYS_RETIRED` removed | *"all stored connections decrypt under the current ARGENTUM_DSN_KEY"*, and a real `run_sql` through `cmd/mcp` answered `1348` |
+
+**The control is what makes the table mean something.** A row sealed under a key
+nobody configured was inserted and `-check` named it — `UNREADABLE … decrypt:
+cipher: message authentication failed` with its company and label — and **stayed
+non-zero**; `-apply` skipped it loudly, left the other rows alone and exited 1;
+removing it returned the deployment to a clean exit 0.
+
+### `T-H14` — the bytes that are already in the database
+
+The unit test builds the legacy ciphertext longhand, which is the right test and
+is not the same claim as *the rows written by the old binary open*. So the
+sealer was built from `git show df22845:apps/backend/internal/crypto/dsn.go` —
+the commit before the keyring — and used to seal a real DSN: **94 bytes,
+nonce-first, no prefix**, against the 103 bytes of an `ARGK`-prefixed row. Put
+in `db_connections` as a fourth source: `rekey -check` counted it as legacy, the
+running `cmd/mcp` **opened it and answered a query against the warehouse**, and
+`-apply` re-sealed it to 103 bytes beginning `ARGK` with `-check` then clean.
+
+### The finding that was not in any ticket
+
+`.env.example` — the file `make setup` copies to `.env` — **did not contain
+`ARGENTUM_JWT_SECRET` or `ARGENTUM_DSN_KEY`**, the two variables
+`config.Validate()` refuses to boot without, nor `ARGENTUM_DSN_KEYS_RETIRED`,
+which is the variable the entire `T-H14` rotation procedure turns on, nor
+`RETENTION_PURGE_CRON`, which is what makes `T-H6` run at all. What it did
+contain was `TENANT_ID`, `TENANT_NAME`, `SOURCE_DB_*` and `INTERNAL_DB_*` —
+**twelve variables nothing in the tree has read since the multi-tenant
+refactor**, describing a one-tenant-per-deployment architecture that no longer
+exists.
+
+A fresh machine following the template therefore gets `ARGENTUM_JWT_SECRET is
+required` and a database section pointing at variables the process ignores. This
+sitting lost an afternoon to it, which is how it was found. Rewritten: the
+control-plane block now names the variables actually read, the two secrets carry
+the `openssl` line that generates each and the warning that losing the DSN key
+loses the rows, the retired-keys variable is documented against the rotation
+procedure, and the purge cron says what an empty value costs. **Proven by
+copying the repaired template into an empty directory, filling only the two
+secrets as its own comments instruct, and booting `cmd/api` from it.**
