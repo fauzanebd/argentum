@@ -1219,7 +1219,7 @@ sitting. No long-lived process was started.
 
 Record: [`security-hardening.md`](security-hardening.md) §18.
 
-## 1p. Filed before the build — the agentic-skills roadmap's gates (2026-08-21) · **`T-K1`→`T-K4` built 2026-08-22; five free arms run the same day, three free arms and both paid ones still owed**
+## 1p. Filed before the build — the agentic-skills roadmap's gates (2026-08-21) · **`T-K1`→`T-K4` built 2026-08-22; the free arms ran 2026-08-22/23 and all but one are closed — `T-K2`'s wire half and both paid arms still owed**
 
 [`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md)
 was written today and **none of its ten tickets exists**. Its gates are priced
@@ -1320,6 +1320,58 @@ gets edited into passing is the shape worth being suspicious of.
 - **`T-K6`, `T-K8`, `T-K9`, `T-K10`** — the tickets do not exist yet.
 - **The two paid arms** stay queued behind `T-H8`'s unpaid rule-1 re-score
   (§1o, ~$1.05), for the reason §1q gave and which has not changed.
+
+### Run 2026-08-23 — the stack arms, on a real model, $0.032
+
+**The blocker the previous sitting filed was the whole point of this one.** All
+three arms it left owed were blocked on "a composed turn"; a repo-root `.env`
+carrying real OpenRouter credentials arrived, so the stack came up and they ran.
+
+**What the environment needed, recorded because the next sitting will need it
+too.** The root `.env` is the credential source and its local-service values do
+not match this box: `DB_USER=metabase` against a container that only accepts
+`argentum`, and an `ARGENTUM_DSN_KEY` that is **not** the one the five stored
+`db_connections` rows are sealed under. The merged `apps/backend/.env` keeps the
+old key deliberately — the worker's boot line
+`all stored connections decrypt under the current ARGENTUM_DSN_KEY` (5) is the
+arm that says the choice was right, and adopting the root file's key is a
+`cmd/rekey -apply` away (`T-H14`, already proven §1q). `EMBEDDING_ENABLED` is
+**false**: `EMBEDDING_API_KEY` is empty and OpenRouter serves no embeddings
+endpoint, which degrades `T-Q8`'s cookbook and the table picker but touches
+nothing these arms assert.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-K1` | The cross-tenant `404` and the caps, **over HTTP** | **Pass, 14 assertions.** Tenant B reading, updating *and* deleting tenant A's skill by id all answer 404, A's row is byte-unchanged afterwards, and B's own list is empty. Each cap refuses at the boundary and admits one byte under it — 60/61 on `name`, 200/201 on `when_to_use`, 8000/8001 on `body` — and the 8,000-char body is stored **whole**, with no row created by any over-cap attempt. Refused, not truncated, asserted from the outside |
+| `T-K3` | The composed prompt's `prompt_sha256`, byte-identical with no skills | **Pass, and the absence arm is now the strong form.** Four real turns on one tenant: no skills → `db40166b89851684` / 18,118 chars / `skill_chars=0`; one skill → `d2105fcf4846aef9` / 18,533 / `skill_chars=413`; the skill **disabled** → back to `db40166b89851684` exactly; the skill **deleted** → `db40166b89851684` again. An empty builder and no builder look identical downstream, which is what this arm was written to separate, and a digest that returns *to the byte* after the block leaves is the separation |
+| `T-K4` | The audit row and the taint, driven by a real model | **Pass.** kimi-k2.6 read the index, called `load_skill`, and the row reads `tool_name=load_skill`, `args_redacted={"name": "Weekly Sales Report"}`, `result_status=ok`, `rows_returned=0` — so "which skills get used" is answerable without the dedicated column the ticket declined to add. `input_taint` is **empty** and `document_tainted` **false** on that turn: the claim the feature rests on, now measured through the whole decorator chain rather than in-process |
+| `T-K2` | The framed body as the **provider** received it | **Half closed, and the other half is still owed.** A capture proxy in front of OpenRouter proved the *system prompt* arrives as written — the index header and `- Weekly Sales Report — when someone asks…` intact and unescaped, with `load_skill` among the 12 tool definitions. The **tool-result** frame on the wire was not captured: see the blocker below |
+
+**Two `T-K9` cases were observed in passing, and they are observations rather
+than a category.** On the question *"How do I produce the weekly sales report?
+Follow our procedure."* the model opened the skill and applied its content —
+naming the staff-purchase exclusion, and declining to invent the six panels the
+procedure does not specify. On *"What is 17 multiplied by 4?"* with the same
+skill enabled, `tool_calls=0` and no `load_skill` row. That is
+`skill-loaded-and-followed` and `skill-not-loaded-when-irrelevant` both going
+the right way on one model — **the cost case §1p called worth more than the
+other eight put together, pointing the right direction once.** `T-K9` still owes
+the category, both models, both languages.
+
+**The blocker, and the false finding it nearly produced.** The capture proxy
+buffered its upstream response, and the agent's provider client streams
+(`"stream": true`). Two turns came back as *"this turn finished without
+producing an answer"* with `tool_calls=0` — which reads exactly like the model
+declining to open a skill, i.e. like the feature's own design failing. It was
+the proxy. Rewriting it to relay chunked did not fix it either; pointing the
+worker straight at OpenRouter did, on the identical question, first try.
+**Closing `T-K2`'s wire arm needs an SSE-aware capture proxy** — one that
+forwards the request body to disk and relays the event stream untouched. That
+is the one thing still owed on the free half of §1p, and it is a tooling
+problem rather than a product one.
+
+**What it cost:** 16 usage events, **$0.032**, one sitting. Three product
+findings: none.
 
 ## 1q. ~~Owed by the 2026-08-21 hardening build~~ — the free arms ran 2026-08-22, and the bucket has paid fifteen times out of fifteen
 

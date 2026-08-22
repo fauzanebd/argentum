@@ -303,13 +303,27 @@ framed; and `taint` is unchanged through both real decorators. `T-K3`'s
 character bound was measured binding — 20 lines inside the line bound cut to 13
 at 4,000 chars, the case that did not exist at 6,000.
 
-**Three free arms are still owed and each is blocked on the same thing:** a
-composed turn. `T-K1`'s cross-tenant 404 and its cap refusals need `cmd/api`
-running; `T-K2`'s arm asks for what the *provider* was sent, not what the tool
-returned; `T-K3`'s `prompt_sha256` needs the whole `bootstrap.Stack`. The
-cheapest way to close all three is one stack boot with a capture proxy standing
-in for the LLM, which costs nothing. The paid ones sit behind `T-H8`'s unpaid
-re-score.
+**Revised 2026-08-23 — the stack came up and all but one of those arms
+closed, for $0.032.** `T-K1`'s cross-tenant 404 and its cap refusals hold over
+HTTP (14 assertions, refused rather than truncated). `T-K3`'s digest arm is
+now the strong form: a skill added moves the prompt by 415 chars, and the skill
+**disabled** or **deleted** returns it to the same digest *to the byte* — an
+empty builder and no builder are separated by measurement rather than by
+reading. And a real kimi-k2.6 turn opened a skill, wrote
+`tool_name=load_skill` with the name in `args_redacted`, and left `input_taint`
+empty — the feature's central claim, through the whole decorator chain.
+
+**Two of `T-K9`'s cases pointed the right way on one model**: the skill was
+opened and followed on a matching question, and left shut on an ordinary one.
+One observation each, not a category — but the cost case is the one §8 said
+decides whether the remaining days are worth spending, and it did not fail.
+
+**One free arm is still owed and it is a tooling problem.** `T-K2` asks what the
+*provider* was sent; the system prompt was captured and is correct, but the
+tool-result frame was not, because the capture proxy buffered a response the
+client streams and turned two good turns into empty replies that looked exactly
+like the design failing. It needs an SSE-aware proxy. The paid arms still sit
+behind `T-H8`'s unpaid re-score.
 
 ## 5. The tickets
 
