@@ -46,6 +46,12 @@ type Agent struct {
 	// agent_mcp_servers, and a deleted server leaves every agent's binding with
 	// it, exactly as a deleted connection leaves SourceIDs.
 	MCPServerIDs []string `json:"mcp_server_ids"`
+	// SkillIDs is the tenant procedures this agent is offered (T-K1). Empty is
+	// SourceIDs' rule — **every enabled company skill** — and not
+	// MCPServerIDs'; see AllowsSkill for why two adjacent bindings differ.
+	// Stored in agent_skills, and a deleted skill leaves every agent's binding
+	// with it.
+	SkillIDs []string `json:"skill_ids"`
 	// TemplateKey records which gallery card this agent was created from
 	// (T-B3), or "" for the blank path and for every agent that predates it.
 	//

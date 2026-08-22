@@ -115,6 +115,18 @@ var apiPolicy = middleware.RolePolicy{
 	"POST /api/mcp-servers/:id/refresh":      domain.RoleAdmin,
 	"PUT /api/mcp-servers/:id/tools/:toolId": domain.RoleAdmin,
 
+	// Skills (T-K1). Admin for the writes for the obvious reason and admin for
+	// the *reads* for a less obvious one: a body is text that reaches the model
+	// as this product's own instruction, so the list of them is the list of
+	// things every agent in the workspace is being told to do.
+	"GET /api/skills":            domain.RoleAdmin,
+	"POST /api/skills":           domain.RoleAdmin,
+	"GET /api/skills/:id":        domain.RoleAdmin,
+	"PUT /api/skills/:id":        domain.RoleAdmin,
+	"DELETE /api/skills/:id":     domain.RoleAdmin,
+	"GET /api/agents/:id/skills": domain.RoleAdmin,
+	"PUT /api/agents/:id/skills": domain.RoleAdmin,
+
 	// Metric registry (T-06). Reads are open to members — a member asking a
 	// question gets the same authoritative number — and writes plus Test are
 	// admin, because defining one is a privileged act and Test runs tenant SQL.

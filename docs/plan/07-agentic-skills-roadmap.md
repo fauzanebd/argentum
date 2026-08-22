@@ -263,7 +263,7 @@ widening did not become a hole.
 
 #### `T-K1` The skill record, its store, and CRUD
 **Repo:** BE · **Size:** 2.0d · **Deps:** none · **Priority:** P0
-**Migration:** `067_skills`
+**Migration:** `069_skills` — `067` and `068` were taken by `T-H6` and `T-H12` on 2026-08-21, after this ticket was written. Claim the number with `make migration-next` rather than from this line.
 
 `skills` (id, company_id, name, when_to_use, body, enabled, created_by,
 updated_by, created_at, updated_at, source) plus `agent_skills` for the

@@ -1240,7 +1240,7 @@ because this file is where the bill is kept.
 
 | Owed by | The gate | Bucket | Cost |
 | ------- | -------- | ------ | ---- |
-| `T-K1` | Migration `067` up, down and up again against the real control database, with the row count either side; a cross-tenant read and update answering 404 with nothing changed; the three caps refused at the boundary rather than truncated | §1 stack | $0.00 |
+| `T-K1` | Migration `069` up, down and up again against the real control database (**`067` when this row was written; `T-H6` and `T-H12` took `067` and `068` the same week**), with the row count either side; a cross-tenant read and update answering 404 with nothing changed; the three caps refused at the boundary rather than truncated | §1 stack | $0.00 |
 | `T-K2` | The framed body read as bytes off the wire — **unescaped**, marker intact. `T-H8` found its own fence HTML-escaped since `T-P10`, invisible to a live gate that signed it off three weeks earlier, so the arm is: print what the provider was sent, not what the renderer returned | §1 stack | $0.00 |
 | `T-K3` | The composed prompt's `prompt_sha256` (`bootstrap/stack.go:778`) **byte-identical to today's** for a company with no skills, and changed for one with skills. The absence arm is the one a unit test is least likely to catch — an empty builder and no builder look identical downstream | §1 stack | $0.00 |
 | `T-K3` | A skill naming tables of a source the agent is scoped away from, absent from that agent's index and present in an unscoped agent's. A permission, not tidiness — same rule as the cookbook's at `chat_runner.go:2176` | §1 stack | $0.00 |

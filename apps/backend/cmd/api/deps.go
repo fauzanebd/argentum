@@ -109,6 +109,10 @@ type apiDeps struct {
 	// process makes outbound requests through, which is why it is built in
 	// bootstrap from config rather than at the handler.
 	mcpServerSvc *app.MCPServerService
+	// The tenant's written procedures (T-K1). CRUD and the agent binding only:
+	// the index that rides the prompt is composed in bootstrap (T-K3) and the
+	// tool that opens a body is registered with the rest (T-K4).
+	skillSvc *app.SkillService
 	// The metric registry (T-06): the tenant's named, validated numbers, and the
 	// turn-time query path query_metric runs through.
 	metricSvc *app.MetricService

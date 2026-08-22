@@ -471,6 +471,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	mcpHTTPClient := mcpclient.NewClient(mcpGuard)
 	deps.mcpServerSvc = app.NewMCPServerService(mcpRepo, dsnCipher, mcpHTTPClient)
 
+	// The tenant's written procedures (T-K1). It reaches the roster repository
+	// because a binding names an agent, and it holds no credential and makes no
+	// outbound call — the whole object is text a company typed about itself.
+	deps.skillSvc = app.NewSkillService(pgctl.NewSkillRepo(controlDB), agentRepo)
+
 	// The metric registry (T-06). It renders each definition against the tenant
 	// pool with the window bound as parameters, so validate-on-save and
 	// query_metric run the same SQL the same way.
