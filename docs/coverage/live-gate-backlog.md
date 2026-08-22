@@ -1496,6 +1496,64 @@ recording why it sat out twice: it was written down in a *group 2* table headed
 "needs real LLM spend", so every reading of this file filed it behind a cost it
 did not have. A gate in the wrong bucket is a gate nobody runs.
 
+## 2b. The two paid re-scores are blocked, and it is the instrument rather than the money (2026-08-23)
+
+**Both owed re-scores — `T-H8`'s rule-1 (~$1.05, §1o) and `T-H11`'s
+`make eval-security` (~$0.15, §1q) — were attempted on 2026-08-23 with real
+credentials and a booted stack, and stopped after three cases and $0.028.** The
+reason is not cost and not the ordering constraint §1q records. It is that
+**the golden set's numeric expectations cannot be reproduced from this
+repository**, so any number the run produced would measure fixture drift rather
+than the prompt change rule 1 exists to attribute.
+
+**What the first case showed.** `total-sales-all-time` expects
+`21231619600`; the agent replied `Rp 126,284,100` and was marked off by 99.4%.
+**The agent was right.** `select sum(sales_amount) from fact_sales` on the demo
+warehouse returns exactly 126,284,100. The expectation is what does not match
+the data.
+
+**Why re-seeding does not fix it.** `migrations/demo_tenant/003_seed_data_facts.sql`
+draws quantity, discount, product and channel from `random()` with **no
+`setseed()`**, so every fresh volume produces a different warehouse. The
+divergence is visible in the current one:
+
+- `fact_sales` holds **1,348 rows**, which is exactly what the golden set's one
+  row-count expectation asks for — the row count is driven by the date range and
+  is **deterministic**.
+- Those rows reference just **2 distinct unit prices** (12,900 and 69,900) out
+  of a `dim_products` catalogue spanning **8,500 → 16,999,000**. All 1,348 rows
+  agree with their own product's price, so the warehouse is internally
+  consistent — this draw simply sampled two cheap products.
+- So the deterministic half of the fixture matches the golden set and **the
+  random half is three orders of magnitude away from it**. `21231619600` was
+  recorded from one draw and pinned; no later draw reproduces it.
+
+**Twenty-two of the 56 cases carry a `kind: numeric` expectation.** One of them
+(the row count) is reproducible and the rest are not, which is the worst
+available shape: the set looks calibrated, runs, and produces a percentage that
+reads like a regression.
+
+**What this costs the project, stated plainly.** Every eval number in
+[`eval-q1.md`](eval-q1.md) — 87.5%, 94.6%, 98.2%, the ±2 noise band, the
+kimi/deepseek comparison — was measured against one unreproducible warehouse.
+They are not wrong, but they are **not re-derivable by anyone who does not have
+that volume**, and this bucket's whole premise is that a gate is something
+somebody else can run. That makes it an instrument defect of the same family as
+`T-Q3`'s English-only `must_not_call` assertions (§1n): the measurement was
+sound and the thing doing the measuring could not see what it claimed to.
+
+**The fix, and it is a ticket rather than a patch.** Put `setseed()` ahead of the
+random draws in `003_seed_data_facts.sql` so a fresh volume is byte-reproducible,
+regenerate the 22 numeric expectations **once** against that warehouse, and
+record the seed beside them. Until then both paid re-scores stay owed, and the
+right order remains §1q's: `T-H8`'s rule-1 first, then the security set.
+
+**What it cost to find:** $0.028, three cases, one sitting. The stack work it
+took to get there — MinIO started so `generate_document` registers again, which
+is 20.5% of the prompt's tool overhead and was silently absent from the first
+dry run — is worth keeping: **a re-score run without that container is already
+not comparable to the baseline**, and nothing in the harness says so.
+
 ## 2a. Needs a Slack workspace
 
 | Owed by | The gate | Why it is deferred |
