@@ -293,9 +293,23 @@ code is rather than only here.**
    it is worth stating plainly because the two properties read like the same
    claim and are not.
 
-**Owed:** every gate in
-[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1p. The
-free arms need the stack; the paid ones sit behind `T-H8`'s unpaid re-score.
+**Owed:** the gates in
+[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1p —
+**five of the eight free arms ran 2026-08-22 against the live control database,
+24 assertions, no findings.** Migration `069` round-trips clean and restores the
+unique index the repository's comment depends on; the four refusals are results
+and three of them are byte-identical; the body reaches the wire unescaped and
+framed; and `taint` is unchanged through both real decorators. `T-K3`'s
+character bound was measured binding — 20 lines inside the line bound cut to 13
+at 4,000 chars, the case that did not exist at 6,000.
+
+**Three free arms are still owed and each is blocked on the same thing:** a
+composed turn. `T-K1`'s cross-tenant 404 and its cap refusals need `cmd/api`
+running; `T-K2`'s arm asks for what the *provider* was sent, not what the tool
+returned; `T-K3`'s `prompt_sha256` needs the whole `bootstrap.Stack`. The
+cheapest way to close all three is one stack boot with a capture proxy standing
+in for the LLM, which costs nothing. The paid ones sit behind `T-H8`'s unpaid
+re-score.
 
 ## 5. The tickets
 

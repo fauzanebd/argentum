@@ -1219,7 +1219,7 @@ sitting. No long-lived process was started.
 
 Record: [`security-hardening.md`](security-hardening.md) §18.
 
-## 1p. Filed before the build — the agentic-skills roadmap's gates (2026-08-21) · **`T-K1`→`T-K4` built 2026-08-22; every gate below is still owed**
+## 1p. Filed before the build — the agentic-skills roadmap's gates (2026-08-21) · **`T-K1`→`T-K4` built 2026-08-22; five free arms run the same day, three free arms and both paid ones still owed**
 
 [`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md)
 was written today and **none of its ten tickets exists**. Its gates are priced
@@ -1277,6 +1277,49 @@ into the always-on channel the roadmap's §2 measured as full — and no amount 
 further spend fixes it, because it is a design result rather than a defect.
 It is listed above at $0.15 with the rest of the category; it is worth more than
 the other eight put together.
+
+### Run 2026-08-22 — five of the eight free arms, $0.00, 24 assertions, no findings
+
+**Run against the live control database** (`ankane/pgvector` on :5432, the §1q
+stack still up), driving the real `postgres.SkillRepo` and the real
+`tools.LoadSkillTool` rather than a fake — one throwaway `cmd/gatek` in the
+tree, run and deleted, which is the Appendix technique `07-agentic-skills-roadmap.md`
+used for its own figures.
+
+| Owed by | The arm | Outcome |
+| ------- | ------- | ------- |
+| `T-K1` | Migration `069` up, down and up again, with the row count either side | **Pass.** 69 → 68 → 69, `dirty=false` at every step, and `companies`, `users` and `agents` all surviving the round trip with their counts unchanged. `skills` and `agent_skills` go absent and come back at 0 |
+| `T-K1` | The restored shape, read from `information_schema` rather than from the migration file | **Pass, and the caps are enforced twice.** All eleven columns in their declared shape, and the three caps `T-K1` refuses at the API are *also* CHECK constraints at the database — `length(name) <= 60`, `when_to_use <= 200`, `body <= 8000`. `idx_skills_company_name` — the unique index `skill_repo.go:54` says makes a duplicate name unreachable — is restored by the down/up, which is the arm that says the comment is still true after a rollback |
+| `T-K4` | The four refusals through the real repository, each a **result** and not a Go error | **Pass on all four.** Unknown name, another company's skill and an out-of-binding skill return the *byte-identical* sentence once the name is normalised — a 404 is not a directory, asserted rather than asserted-in-prose — and each lists back the names this agent can open. A disabled skill gets its own sentence (`"exists but is currently switched off"`). `err == nil` on every one |
+| `T-K4` | The body arrives framed and unescaped | **Pass — `T-H8`'s defect does not recur here.** A body containing `<internal>` and `& returns` reaches the wire with both characters literal and neither `\u003c` nor `\u0026` anywhere in the payload. The frame marker is `<<<WORKSPACE_PROCEDURE`, distinct from the untrusted fence, and `row_count` is `0` — a procedure is instruction, not evidence |
+| `T-K4` | `taint` unchanged by a `load_skill` result | **Pass, driven through both real decorators.** `FenceResults(MarkUntrustedReads(tool))` against a context carrying a real `taint.Tracker`: `Kinds()` comes back empty, the result is not fenced, and the trusted frame survives both wrappers. This is the arm the feature *is* — asserted explicitly, per the ticket |
+| `T-K3` | The scope filter, and both bounds | **Pass, and the character bound now binds.** A disabled skill is absent from the index; a skill outside the agent's binding is dropped for that agent and present for an unscoped one. Twenty lines at `T-K1`'s caps — inside the line bound — are cut to **13 lines / 3,825 chars with 7 dropped** at `SKILL_INDEX_MAX_CHARS = 4000`. **That case did not exist at 6,000**, which is what §4a's revision claimed and this is the measurement of it. The line bound still binds on its own when the character bound cannot (3 kept, 17 dropped at `maxLines=3`) |
+
+**No findings.** Twenty-four assertions, zero failures, one sitting, $0.00 and
+no model call. The two failures the first run produced were both the gate's own
+fixtures — synthetic skills left at `Enabled: false`, which `Compose` correctly
+skips — and are recorded here because a gate that fails on its own fixture and
+gets edited into passing is the shape worth being suspicious of.
+
+**What is still owed on §1p, and why each one did not run today:**
+
+- **`T-K1`'s cross-tenant `404` over HTTP, and the caps refused at the API
+  boundary.** Both were exercised at the repository and domain layer; the arm as
+  written is an HTTP one and needs `cmd/api` running with a seeded operator
+  token. **Blocker: no running API in this sitting** — the infra containers are
+  up, the server is not.
+- **`T-K2`'s bytes-off-the-wire arm.** Today's run proves the *tool's* output is
+  unescaped, which is one layer short of what the row asks: print what the
+  **provider** was sent. That needs a turn, and a turn needs either LLM spend or
+  a capture proxy standing in for the provider. **Blocker: needs a composed turn**;
+  the capture-proxy version is free and is the cheapest way to close it.
+- **`T-K3`'s `prompt_sha256` byte-identical arm.** Needs the whole
+  `bootstrap.Stack` composed, not the `skill` package alone. **Blocker: same as
+  above** — and note §4a's warning that it must run against a build with
+  `load_skill` registered or it fails for the wrong reason.
+- **`T-K6`, `T-K8`, `T-K9`, `T-K10`** — the tickets do not exist yet.
+- **The two paid arms** stay queued behind `T-H8`'s unpaid rule-1 re-score
+  (§1o, ~$1.05), for the reason §1q gave and which has not changed.
 
 ## 1q. ~~Owed by the 2026-08-21 hardening build~~ — the free arms ran 2026-08-22, and the bucket has paid fifteen times out of fifteen
 
