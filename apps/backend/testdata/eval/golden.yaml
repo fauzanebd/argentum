@@ -917,7 +917,13 @@ cases:
     expect:
       kind: contains
       no_figure: true
-      contains_any: ["no ", "not ", "cannot", "unable", "does not", "isn't", "is not"]
+      # Contractions and "neither" were missing until 2026-08-23, when kimi
+      # answered "I don't see any purchase order data… Neither source contains
+      # purchase orders" — the exact refusal this case is written to reward —
+      # and was scored a failure for phrasing it naturally. Same species as
+      # T-Q3's must_not_call assertions being English-only (eval-q1.md §5): the
+      # behaviour was right and the detector could not see it.
+      contains_any: ["no ", "not ", "n't", "cannot", "unable", "does not", "isn't", "is not", "neither", "none of"]
 
   - id: dirty-ask-rather-than-guess
     category: dirty_schema
