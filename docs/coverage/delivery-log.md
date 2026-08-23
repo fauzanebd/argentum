@@ -4577,6 +4577,84 @@ across 63 packages. Still owed on these three tickets: `T-H11`'s ~$0.15 eval
 run, queued behind `T-H8`'s unpaid re-score for the reason §1q gave before the
 sitting.
 
+## Phase 3o — The never-cut four, and a bound that could not bind (2026-08-22)
+
+`T-K1`→`T-K4` of the agentic-skills roadmap, built in one sitting and
+unit-gated: the skill record and its CRUD behind migration `069`, the
+trusted-instruction frame, the bounded index in the composed prompt, and
+`load_skill` with four refusals that are results rather than Go errors.
+
+**The feature is a hole in `T-H8`'s rule and it was built that way on purpose.**
+Two days earlier `T-H8` established that nothing a tool returns was written by
+us — results arrive fenced and taint the turn. A skill is returned *unfenced, as
+instruction*, because an administrator of the workspace typed it and saved it.
+That is a trust boundary moving, so it is `T-K2`, its own ticket ahead of the
+feature, with two property tests rather than a paragraph of reassurance.
+
+**What the build found in its own ticket: `SKILL_INDEX_MAX_CHARS = 6000` could
+never bind.** Header (342) plus twenty lines at `T-K1`'s caps (266) is 5,662, so
+no index inside the line bound could reach the character bound — and the
+ticket's own acceptance case, *"satisfies the line bound and breaches the
+character one"*, described a state that did not exist. A bound above the maximum
+is not a bound, which is the same mistake the pair was introduced to fix, one
+level in. The default is 4,000, where the case is real and was later measured.
+
+Full write-up in [`skills.md`](skills.md); what moved against the tickets is in
+[`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md) §4a.
+
+## Phase 3p — The gate that measured the measuring device (2026-08-22/23)
+
+Two sittings against the skills build, then a third that was supposed to pay a
+bill and found the till broken.
+
+**The first two closed seven of the eight free arms for $0.032.** Migration
+`069` round-trips and restores the unique index the repository's comment depends
+on; three of the four refusals are byte-identical because a 404 is not a
+directory; a body containing `<` and `&` reaches the wire with both literal.
+The digest arm is the one worth keeping: a skill added moves the composed prompt
+415 characters, and disabling it or deleting it returns the digest **to the
+byte** — the block is absent rather than empty, which an empty `strings.Builder`
+and no builder would have made indistinguishable.
+
+**One finding was nearly recorded and was not real.** A capture proxy in front
+of the provider buffered a response the client streams, and two turns came back
+empty with `tool_calls=0` — which reads exactly like a model declining to open a
+skill, i.e. like progressive disclosure failing by design. It was the proxy.
+Pointing the worker straight at the provider answered the identical question on
+the first try, and the model opened the skill, applied its exclusion, and
+declined to invent the parts the procedure does not specify.
+
+**Then the third sitting: the golden set's numbers could not be reproduced.**
+`total-sales-all-time` expects 21,231,619,600; the agent answered
+Rp 126,284,100 and was scored 99.4% wrong. **The agent was right** — that is
+what `sum(sales_amount)` returned. `003_seed_data_facts.sql` drew from
+`random()` with no seed, so the fixture's deterministic half (row counts, fixed
+by the date range) and its random half (every money column) had drifted three
+orders of magnitude apart while the set went on reporting percentages.
+
+Fixing the draw exposed two defects it had been hiding. The `LATERAL` pick named
+no outer column, so Postgres evaluated it **once per statement** and a
+30-product catalogue reached the eval as a 2-product warehouse — every top-N and
+grouping case vacuous. And money was `DECIMAL(10,2)`, which cannot hold eight
+units at the catalogue's top price: the first seeding that touched an expensive
+product failed with a numeric overflow, a schema unable to represent its own
+fixture, surviving only because the broken draw never selected one.
+
+`demo_rand()` now hashes the row's own key, so reproducibility is a property of
+the data rather than of the query plan — `setseed()` would have repeated a
+sequence while leaving a plan change free to re-roll the warehouse. Three
+independent seedings, one of them through `initdb` on a fresh volume, produce
+byte-identical fact tables, and `internal/eval/fixture_digest_test.go` fails
+loudly if that stops being true.
+
+**The pattern this adds to the record.** Phase 3n's finding was a comment
+describing a property the code did not have. This one is a *measurement*
+describing a warehouse that no longer existed — and it survived four months and
+a dozen published percentages because the half of the fixture that was
+reproducible was the half everyone spot-checked. Every eval number in
+[`eval-q1.md`](eval-q1.md) was measured against a database nobody else could
+build.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
