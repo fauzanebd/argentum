@@ -181,6 +181,16 @@ type Tracker struct {
 	exhausted        bool
 	reason           string
 	tools            []string
+	// repeats counts how many times one (tool, arguments, failure) triple has
+	// come back in this turn. It is the repeat-guard's whole state.
+	//
+	// Keyed on the failure as well as the call, because two different errors
+	// from the same arguments are progress — the second one says something the
+	// first did not — while the same error twice is a model that has stopped
+	// reading. Measured on the 2026-08-23 baseline: eleven of deepseek's
+	// fifteen failures were one call re-sent unchanged until the iteration
+	// budget ended the turn.
+	repeats map[string]int
 	// succeeded is the subset of tools whose call actually worked (T-Q13).
 	//
 	// Separate from `tools` because the two answer different questions and the
@@ -378,6 +388,69 @@ func (t *Tracker) Observe(tool, result string, err error) {
 		return
 	}
 	t.dataRows += n
+}
+
+// NoteOutcome records what one call returned and reports whether this turn has
+// now seen the same failure, from byte-identical arguments, twice. When it has,
+// the tool loop is ended here and the refusal payload is returned for the model
+// to read.
+//
+// **The second call is executed rather than refused, and that is deliberate.**
+// A transient failure — a reset connection, a warehouse that was briefly busy —
+// deserves its retry, and refusing the retry unseen would turn a recoverable
+// turn into a dead one. What this guard reacts to is the retry *failing the
+// same way*, which is the signature no amount of repetition will fix.
+//
+// T-Q11 established that making the refusal itself more actionable does not
+// rescue these turns: the refusal was rewritten as a result the model could act
+// on, re-run, and scored 0/3, as did a prompt sentence asking for the same
+// behaviour twice. What was left is this — ending the loop rather than
+// describing it — and it is why the guard exhausts the budget instead of
+// returning a sterner sentence.
+func (t *Tracker) NoteOutcome(tool, args, result string, err error) (string, bool) {
+	if t == nil {
+		return "", false
+	}
+	sig, failed := failureSignature(result, err)
+	if !failed {
+		return "", false
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.repeats == nil {
+		t.repeats = map[string]int{}
+	}
+	key := tool + "\x00" + args + "\x00" + sig
+	t.repeats[key]++
+	if t.repeats[key] < 2 {
+		return "", false
+	}
+	t.exhaustLocked("the same tool call failed the same way twice")
+	return t.refusalLocked(), true
+}
+
+// failureSignature reduces a tool outcome to a string that is stable across
+// identical failures and different across different ones, or reports that the
+// call worked.
+//
+// The three shapes a failure arrives in are the three this package already
+// knows about, and they are checked in the order that keeps them distinct: a Go
+// error, the SDK's rendering of one, and a result carrying its own `error`
+// field. Anything else is a successful call, including an empty result — zero
+// rows is an answer, and T-Q9 spent a release establishing that it is not a
+// fault.
+func failureSignature(result string, err error) (string, bool) {
+	if err != nil {
+		return "err:" + err.Error(), true
+	}
+	if txt, ok := ToolErrorText(result); ok {
+		return "sdk:" + txt, true
+	}
+	if resultCarriesError(result) {
+		return "res:" + strings.TrimSpace(result), true
+	}
+	return "", false
 }
 
 // Exhaust trips the budget from outside the tool path — the chat runner uses

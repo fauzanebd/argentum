@@ -1472,6 +1472,42 @@ reading what it actually printed.
 (~$0.15, §2), which is still queued behind `T-H8`'s unpaid rule-1 re-score for
 the reason §1q gave before the sitting and which has not changed.
 
+## 2z. What the sets actually cost, measured 2026-08-23
+
+**This file has been pricing gates from estimates that are wrong in both
+directions.** Four runs on one afternoon, all on the reproducible fixture, all
+through OpenRouter:
+
+| What | This file's standing estimate | Measured 2026-08-23 |
+| ---- | ----------------------------- | ------------------- |
+| The 56-case golden set, kimi-k2.6 | ~$2.10 (the "full set" figure carried since the 2026-08-09 prompt-contradiction row) | **$0.843** — 15m30s, 136 responses |
+| The same set, deepseek-v3.2 | — | **$0.188** — 32m27s |
+| **Rule 1: the set on both models** | **~$0.5** | **$1.031** |
+| `T-H11`'s adversarial set, 5 cases | ~$0.15 | **$0.044** — 1m12s |
+
+**The one that matters is rule 1, and the estimate was half what it costs.**
+Every "~$0.5 re-score" priced in this file and in
+[`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md)
+§7 should be read as **~$1.03**: `T-H8`'s owed re-score, `T-K3`'s owed re-score,
+and any future prompt change. The skills roadmap's §7 total of ~$0.65 is
+therefore ~$1.20, and its §8 argument-from-cost was made against the low figure.
+
+**The per-case figures, for pricing a new category.** kimi averages
+**$0.0150/case** and deepseek **$0.0034/case**, so a five-case category like
+`T-K9`'s costs about **$0.09 on both models** rather than the $0.15 carried for
+it — the adversarial set is the closest measured analogue at $0.044 for five
+cases on one model.
+
+**Why the old numbers were wrong is worth one line each.** The ~$2.10 came from
+a 2026-08-08 haiku measurement of a 40-case set and was never re-derived after
+the model changed twice and the set grew to 56. The ~$0.5 re-score appears to
+have been the ~$2.10 figure discounted for a cheaper model and applied to both,
+which double-counted the discount. The ~$0.15 security estimate predates the set
+existing. **None of them was measured at the time it was written**, which is the
+same fault this file spent 2026-08-23 finding in the fixture and the detectors.
+
+---
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |

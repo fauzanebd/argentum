@@ -77,5 +77,18 @@ func (g *guarded) Execute(ctx context.Context, args string) (string, error) {
 
 	out, err := g.Tool.Execute(ctx, args)
 	tr.Observe(name, out, err)
+
+	// The repeat-guard, and it sits here for the reason this file's own comment
+	// gives: the tool boundary is the only place inside the provider's loop
+	// where a message can be handed to the model mid-turn. A loop that has to
+	// be broken has to be broken from here.
+	if refusal, looped := tr.NoteOutcome(name, args, out, err); looped {
+		logrus.WithFields(logrus.Fields{
+			"company_id": tenantctx.CompanyID(ctx),
+			"thread_id":  tenantctx.ThreadID(ctx),
+			"tool":       name,
+		}).Warn("the same tool call failed the same way twice; ending the tool loop")
+		return refusal, nil
+	}
 	return out, err
 }

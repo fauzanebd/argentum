@@ -640,9 +640,17 @@ Filed in [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md)
 that file called "the last step that direction goes". Ten gates, eight of them
 free — the tenth added 2026-08-21 with `T-K9`'s fifth case.
 
-**~$0.65 total**, and the shape of the spend is the interesting part: $0.15 for
-the `skill_follow` category and **~$0.5 for rule 1's 56-case re-score on both
-models**, because `T-K3` puts a new block in every turn's system prompt. That
+**~$0.65 total** as first priced — **~$1.12 as measured on 2026-08-23**, and
+the correction matters because §8 argues partly from this number. The
+`skill_follow` category is ~$0.09 for five cases on both models, not $0.15; the
+rule-1 re-score is **$1.031**, not ~$0.5, because the standing estimate was a
+40-case haiku figure discounted for a cheaper model and then applied to both,
+which counted the discount twice. Measured prices are in
+[`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §2z.
+
+The shape of the spend is unchanged and is still the interesting part: the
+category is small and **the re-score is nearly all of it**, because `T-K3` puts
+a new block in every turn's system prompt. That
 re-score is not optional and it is not this feature's; it is the price this
 project set for touching the prompt, most recently for `T-H8` (Phase 3k, ~$1.05
 owed and unpaid as of today).
@@ -679,8 +687,13 @@ against this document's enthusiasm.**
    fail until `T-H4` and `T-H8` both landed. Starting a 14.5-day track in front
    of a 1.0-day ticket that closes a track is the scheduling mistake §8c
    records having made once already.
-3. **`T-H8` is owed ~$1.05 and unpaid.** This roadmap's §7 owes another ~$0.5 of
-   the same re-score for the same reason. Two unpaid prompt-surface re-scores is
+3. ~~**`T-H8` is owed ~$1.05 and unpaid.** This roadmap's §7 owes another ~$0.5 of
+   the same re-score for the same reason.~~ **Closed 2026-08-23: `T-H8`'s
+   re-score is unpayable, not unpaid** — its "before" state was measured against
+   a warehouse that cannot be rebuilt, so there is nothing for a new number to
+   be compared with. What replaced it is the 2026-08-23 baseline (kimi 96.4%,
+   deepseek 73.2%), and this roadmap's own re-score — now **$1.03**, not ~$0.5 —
+   is the first change that will have something to move against. Two unpaid prompt-surface re-scores is
    the state where nobody can say which change moved the number — finding `Q-2`
    in a new costume, which is the sentence
    [`02-agent-quality-roadmap.md`](02-agent-quality-roadmap.md) opens with.
