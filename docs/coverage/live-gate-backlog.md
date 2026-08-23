@@ -1363,12 +1363,25 @@ buffered its upstream response, and the agent's provider client streams
 (`"stream": true`). Two turns came back as *"this turn finished without
 producing an answer"* with `tool_calls=0` — which reads exactly like the model
 declining to open a skill, i.e. like the feature's own design failing. It was
-the proxy. Rewriting it to relay chunked did not fix it either; pointing the
-worker straight at OpenRouter did, on the identical question, first try.
-**Closing `T-K2`'s wire arm needs an SSE-aware capture proxy** — one that
-forwards the request body to disk and relays the event stream untouched. That
-is the one thing still owed on the free half of §1p, and it is a tooling
-problem rather than a product one.
+the proxy. Pointing the worker straight at OpenRouter answered the identical
+question first try, and the model opened the skill.
+
+**Three proxy shapes were tried on 2026-08-23 and none of them closed the
+arm.** Buffered-and-forward, chunked re-framing, and HTTP/1.0
+relay-until-EOF. The third streams correctly under `curl -N` — the SSE frames
+arrive one by one, `: OPENROUTER PROCESSING` first — and *still* produces an
+empty reply from the agent's own client, in 4.1s, with no error on either side.
+So the remaining fault is in how that client reads a relayed stream, and
+another afternoon of proxy variants is not the way to find it.
+
+**The technique that should close it is not a proxy at all: a debug
+`http.RoundTripper` on the provider client**, enabled by an env var, teeing the
+outbound request body to a file before it goes to the real transport. That
+captures *exactly* what the provider was sent — which is what this row asks for
+— with no network in the middle to be wrong about, and it works identically for
+whatever provider a deployment is pointed at. It is a small change where the
+client is constructed rather than a tooling problem to be solved outside the
+process.
 
 **What it cost:** 16 usage events, **$0.032**, one sitting. Three product
 findings: none.

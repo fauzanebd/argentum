@@ -299,15 +299,24 @@ func ensureSources(ctx context.Context, stack *bootstrap.Stack, companyID, demoD
 		}
 	}
 
+	// **Provisioned unconditionally, and the source row separately.** This used
+	// to sit inside `if !have[secondSourceLabel]`, which treated a control-plane
+	// row as proof that the database behind it existed. It is not: on 2026-08-23
+	// the demo volume was recreated while the control plane kept its rows, and
+	// `people-total-salary` failed the run with
+	// `database "demo_people" does not exist` — the exact case this function's
+	// own comment says it exists to prevent, in the mirror image. Both halves are
+	// idempotent (`CREATE DATABASE` guarded by a catalog check, fixed values,
+	// `WHERE NOT EXISTS`), so re-running costs a catalog lookup.
+	peopleDSN, err := ensurePeopleDatabase(demoDSN)
+	if err != nil {
+		// A missing second source costs three cases, not the run.
+		// Report it and carry on rather than blocking a scoring run
+		// on a seeding convenience.
+		logrus.WithError(err).Warn("eval: could not provision the second demo source; multi_source cases will fail")
+		return nil
+	}
 	if !have[secondSourceLabel] {
-		peopleDSN, err := ensurePeopleDatabase(demoDSN)
-		if err != nil {
-			// A missing second source costs three cases, not the run.
-			// Report it and carry on rather than blocking a scoring run
-			// on a seeding convenience.
-			logrus.WithError(err).Warn("eval: could not provision the second demo source; multi_source cases will fail")
-			return nil
-		}
 		if err := createSource(ctx, stack, companyID, secondSourceLabel, secondSourceDesc, peopleDSN, false); err != nil {
 			return err
 		}
