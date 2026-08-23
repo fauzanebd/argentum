@@ -1472,6 +1472,72 @@ reading what it actually printed.
 (~$0.15, §2), which is still queued behind `T-H8`'s unpaid rule-1 re-score for
 the reason §1q gave before the sitting and which has not changed.
 
+## 2y. The repeat-guard works, and it did not buy what it was predicted to (2026-08-24)
+
+**Built, tested, measured — and the ~19-point estimate that justified it was
+wrong. Recording that first, because the estimate was mine and it was the whole
+argument for the ticket.**
+
+| | Before | After |
+| --- | --- | --- |
+| deepseek-v3.2 on the 56-case set | 73.2% (41/56) | **76.8% (43/56)** |
+| Cost | $0.188 | $0.167 |
+| Duration | 32m27s | **23m12s** |
+| `query_metric` calls on `metric-revenue-december` | 6 | **2** |
+
+**The guard does exactly what it was built to do.** `agent_actions` shows the
+signature on every affected case: the first call executes and returns the
+tool's own refusal, the second identical call executes, fails identically, and
+comes back `blocked` — this package's refusal payload — with the loop ended. Six
+wasted calls became two, and nine minutes of wall clock and 11% of the run's
+cost went with them.
+
+**What it did not do is make the turns pass, and the reason is that the loop was
+a symptom.** `metric_registry` is still 1/5, `time_window` 2/6, `zero_row_trap`
+0/3. Ending the loop sooner does not produce the figure the case is asking for:
+the model still never obtains the number, it just stops asking earlier and
+writes the same apology.
+
+**The real defect, read off the arguments rather than inferred.** deepseek sends
+
+    {"metric_key": "revenue", "to": "2024-12-31"}
+
+— a window with one bound. `halfWindow` refuses it with a message that is
+already as good as a refusal gets: it names the bound that arrived, the one that
+did not, both legal shapes, a worked example (*"December 2024 is
+from=2024-12-01, to=2024-12-31"*), and an instruction not to repeat the call.
+**The model re-sends it byte-identical anyway.** That is not a message-quality
+problem — [`eval-q1.md`](eval-q1.md) §2 already rewrote the message and scored
+0/3, then tried a prompt sentence and scored 0/3 twice.
+
+**So the fix is an affordance, not another sentence, and this codebase has
+already made exactly this call once.** `query_metric` required both bounds until
+2026-08-14, when a question naming no window left the model three bad options
+and the answer was to make *both omitted* legal — over all the data the metric
+holds. The comment beside it records the reasoning in one line: **"A guideline
+loses to a missing affordance."** The same sentence applies one level down. A
+single bound is not an under-specified window needing a guess; it is the
+all-time window restricted on one side, and the other side is the data's own
+boundary — which is precisely what the both-omitted case already computes.
+
+`halfWindow`'s comment argues the opposite — *"guessing which half they meant is
+how a metric answers a question nobody asked"* — and it was written before there
+was evidence. There is now: two models, four eval runs, a maximally explicit
+refusal, and up to **eleven cases** that cannot be answered because a
+syntactically valid intent is refused.
+
+**It is a change to what a metric means, so it is filed and not made.** The
+decision is the owner's, and the two options are: accept a one-sided window and
+complete it from the data's coverage, or keep refusing and accept that these
+categories score what they score on any model that will not correct itself.
+
+**One confound, stated.** The before-run was served by more than one identity
+and the after-run entirely by StreamLake, so the +2 cases (`dirty_schema` 2/3 →
+3/3, `guardrail` 7/8 → 8/8) sit inside the provider variance this file has
+recorded twice. **The guard should be credited with the six-calls-to-two, the
+nine minutes and the 11%, which are deterministic and visible in the audit
+table — not with the two cases.**
+
 ## 2z. What the sets actually cost, measured 2026-08-23
 
 **This file has been pricing gates from estimates that are wrong in both
