@@ -1,4 +1,11 @@
 -- Migration: Create star schema for retail analytics
+--
+-- Money is DECIMAL(14,2), not DECIMAL(10,2). The catalogue in 002 runs to
+-- Rp 16,999,000 a unit and 003 draws quantities up to 8, so a single line can
+-- reach ~136,000,000 — past what DECIMAL(10,2) can hold. The narrower type
+-- survived for months only because 003's uncorrelated LATERAL was picking one
+-- cheap product for every row in the table; the first seeding that used the
+-- whole catalogue failed with a numeric field overflow.
 -- Tables: dim_date, dim_customers, dim_products, fact_sales
 
 -- Create metabase_app database for Metabase internal use
@@ -52,8 +59,8 @@ CREATE TABLE IF NOT EXISTS dim_products (
     subcategory VARCHAR(100),
     brand VARCHAR(100),
     supplier VARCHAR(100),
-    unit_cost DECIMAL(10,2),
-    unit_price DECIMAL(10,2) NOT NULL,
+    unit_cost DECIMAL(14,2),
+    unit_price DECIMAL(14,2) NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -66,11 +73,11 @@ CREATE TABLE IF NOT EXISTS fact_sales (
     customer_id INTEGER NOT NULL REFERENCES dim_customers(customer_id),
     product_id INTEGER NOT NULL REFERENCES dim_products(product_id),
     quantity INTEGER NOT NULL,
-    unit_price DECIMAL(10,2) NOT NULL,
-    discount_amount DECIMAL(10,2) DEFAULT 0,
-    sales_amount DECIMAL(10,2) NOT NULL,
-    cost_amount DECIMAL(10,2) NOT NULL,
-    profit_amount DECIMAL(10,2) NOT NULL,
+    unit_price DECIMAL(14,2) NOT NULL,
+    discount_amount DECIMAL(14,2) DEFAULT 0,
+    sales_amount DECIMAL(14,2) NOT NULL,
+    cost_amount DECIMAL(14,2) NOT NULL,
+    profit_amount DECIMAL(14,2) NOT NULL,
     payment_method VARCHAR(50),
     sales_channel VARCHAR(50) DEFAULT 'In-Store',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

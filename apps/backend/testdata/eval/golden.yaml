@@ -51,7 +51,7 @@ cases:
     notes: "select sum(sales_amount) from fact_sales"
     expect:
       kind: numeric
-      value: 21231619600
+      value: 8684393970
       must_call_any: [run_sql, query_metric]
 
   - id: total-profit-all-time
@@ -61,7 +61,7 @@ cases:
     notes: "select sum(profit_amount) from fact_sales"
     expect:
       kind: numeric
-      value: 5865819600
+      value: 2300098470
       must_call: [run_sql]
 
   - id: transaction-count
@@ -82,7 +82,7 @@ cases:
     notes: "select avg(sales_amount) from fact_sales"
     expect:
       kind: numeric
-      value: 15750459.64
+      value: 6442428.76
       tolerance: 0.02
       must_call_any: [run_sql, query_metric]
 
@@ -93,7 +93,7 @@ cases:
     notes: "select sum(quantity) from fact_sales"
     expect:
       kind: numeric
-      value: 2171
+      value: 2510
       tolerance: 0.001
       must_call: [run_sql]
 
@@ -104,7 +104,7 @@ cases:
     notes: "select sum(discount_amount) from fact_sales"
     expect:
       kind: numeric
-      value: 527509400
+      value: 348733830
       must_call: [run_sql]
 
   # ── time windows ───────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ cases:
       interpretation; the relative-phrasing version is last-month-relative.
     expect:
       kind: numeric
-      value: 3863405700
+      value: 1899065495
       must_call_any: [run_sql, query_metric]
 
   - id: november-2024-sales
@@ -132,7 +132,7 @@ cases:
     notes: "same query, month_number = 11"
     expect:
       kind: numeric
-      value: 3708552300
+      value: 1976092600
       must_call_any: [run_sql, query_metric]
 
   - id: q4-2024-sales
@@ -142,7 +142,7 @@ cases:
     notes: "d.year = 2024 and d.quarter = 4"
     expect:
       kind: numeric
-      value: 10949676500
+      value: 4712187400
       must_call_any: [run_sql, query_metric]
 
   - id: best-quarter-2024
@@ -169,7 +169,7 @@ cases:
       of them, which is the entire point of this case.
     expect:
       kind: numeric
-      value: 3863405700
+      value: 1899065495
       or_values: [3708552300]
       or_contains:
         - "no data"
@@ -199,7 +199,7 @@ cases:
     notes: "select sum(sales_amount) from fact_sales where sales_channel = 'Online'"
     expect:
       kind: numeric
-      value: 7375766100
+      value: 2685876960
       must_call: [run_sql]
 
   - id: top-payment-method
@@ -267,7 +267,7 @@ cases:
     notes: "sum(profit_amount) for 2024-12 = 1,089,105,700"
     expect:
       kind: numeric
-      value: 1089105700
+      value: 511782495
       must_call: [run_sql]
 
   # ── charts and dashboards ──────────────────────────────────────────────
@@ -317,7 +317,7 @@ cases:
     notes: "same as total-sales-all-time; also asserts the reply is Indonesian"
     expect:
       kind: numeric
-      value: 21231619600
+      value: 8684393970
       must_call_any: [run_sql, query_metric]
       must_not_call: [create_dashboard]
 
@@ -327,7 +327,7 @@ cases:
     question: "Berapa total penjualan pada bulan Desember 2024?"
     expect:
       kind: numeric
-      value: 3863405700
+      value: 1899065495
       must_call_any: [run_sql, query_metric]
       must_not_call: [create_dashboard]
 
@@ -377,12 +377,12 @@ cases:
     question: "Berapa total laba kita? Tolong tampilkan dalam format rupiah."
     notes: |
       Exercises the magnitude formatting the system prompt spends ten lines
-      on: 5,865,819,600 should come back as "Rp 5,87 Miliar" or the full
-      grouped number, never "Rp 5,87 Juta". The comparator parses both
+      on: 2,300,098,470 should come back as "Rp 2,30 Miliar" or the full
+      grouped number, never "Rp 2,30 Juta". The comparator parses both
       forms, so a wrong suffix fails on value.
     expect:
       kind: numeric
-      value: 5865819600
+      value: 2300098470
       must_call: [run_sql]
       must_not_call: [create_dashboard]
 
@@ -525,7 +525,7 @@ cases:
       The other direction: profit margin is a legitimate BI question that a
       blunt topic filter would refuse. guardrails.yaml carries a specific
       pattern for financial "margin" phrasing precisely so this passes.
-      5,865,819,600 / 21,231,619,600 = 27.6%.
+      2,300,098,470 / 8,684,393,970 = 27.6%.
     expect:
       kind: tool_called
       must_call: [run_sql]
@@ -552,11 +552,11 @@ cases:
     notes: |
       select sum(sales_amount) from fact_sales fs join dim_date d
       on d.date_id = fs.date_id where d.year = 2024 and d.month_number = 12
-      → 3,863,405,700. The `revenue` metric answers exactly this, so the
+      → 1,899,065,495. The `revenue` metric answers exactly this, so the
       agent must reach for it rather than write the join again.
     expect:
       kind: numeric
-      value: 3863405700
+      value: 1899065495
       must_call: [query_metric]
       must_not_call: [run_sql]
 
@@ -580,13 +580,13 @@ cases:
     lang: en
     question: "What was our average order value in December 2024?"
     notes: |
-      3,863,405,700 / 310 = 12,462,599.03. AOV is the case where re-derivation
+      1,899,065,495 / 310 = 6,126,017.73. AOV is the case where re-derivation
       goes wrong quietly — sum/count(*) over line items gives a different,
       defensible-looking number — so the metric is the difference between one
       answer and several.
     expect:
       kind: numeric
-      value: 12462599.03
+      value: 6126017.73
       must_call: [query_metric]
       must_not_call: [run_sql]
 
@@ -595,14 +595,14 @@ cases:
     lang: en
     question: "How did revenue in December 2024 compare with November 2024?"
     notes: |
-      December 3,863,405,700 against November 3,708,552,300 — a rise of
-      154,853,400, or 4.2%. Whether the agent passes compare_to or calls the
+      December 1,899,065,495 against November 1,976,092,600 — a fall of
+      77,027,105, or 3.9%. Whether the agent passes compare_to or calls the
       metric twice is its business; what this case pins is that both figures
       came from the registry and neither was re-derived.
     expect:
       kind: numeric
-      value: 3863405700
-      or_values: [3708552300]
+      value: 1899065495
+      or_values: [1976092600]
       must_call: [query_metric]
       must_not_call: [run_sql]
 
@@ -783,7 +783,7 @@ cases:
       repeats across them". Against the demo warehouse: 1,348 rows, 1,348
       distinct transaction_ids, and no transaction with more than one line. So
       avg(sales_amount) and avg-of-sum-grouped-by-transaction are the same
-      number — 15,750,459.64 — and there is no grain to get wrong.
+      number — 6,442,428.76 — and there is no grain to get wrong.
 
       It failed the 2026-08-14 run on `sql_shape: agent executed no SQL` after
       the agent answered that exact figure from `query_metric`, which is the
@@ -798,7 +798,7 @@ cases:
       the fixture and not to this case.
     expect:
       kind: numeric
-      value: 15750459.64
+      value: 6442428.76
       tolerance: 0.02
       must_call_any: [run_sql, query_metric]
 
@@ -810,7 +810,7 @@ cases:
       Written 2026-08-14 to replace the grain trap
       `grain-average-per-order-not-per-line` claimed and the fixture does not
       have. This one is measured: avg(sales_amount) over fact_sales is
-      15,750,459.64 and the answer to the question asked is 10,615,809,800 —
+      6,442,428.76 and the answer to the question asked is 10,615,809,800 —
       three orders of magnitude apart, both plausible-looking rupiah figures,
       and only the second one is per customer. The correct query sums by
       customer first (GROUP BY customer_id) or divides by
