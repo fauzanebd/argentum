@@ -1608,6 +1608,7 @@ for so long.
 | --- | ----- | ----- | ---- | ----- |
 | First, on the repaired fixture | kimi-k2.6 | **94.6% (53/56)** | $0.788 | Two of the three failures were the instrument defects in (3), both fixed and both re-run green |
 | **The baseline** | kimi-k2.6 | **96.4% (54/56)** | $0.842 | 15m30s, 136 responses. `guardrail` 8/8, `zero_row_trap` 3/3, `simple_aggregate` 7/7, `time_window` 6/6, `metric_registry` 5/5, `indonesian` 5/5, `grouping_topn` 4/4 |
+| **The baseline** | deepseek-v3.2 | **73.2% (41/56)** | $0.188 | 32m27s. Eleven of fifteen failures are the `query_metric` repeat loop; `served` flagged more than one identity |
 
 **Both remaining failures are one defect, and it is a real one.**
 `dirty-ask-rather-than-guess` and `ambiguous-headcount` each asked a good
@@ -1616,6 +1617,30 @@ the asking-policy finding [`eval-q1.md`](eval-q1.md) §2 recorded on 2026-08-14 
 *"the tool is a model property and the asking policy is ours and wrong on both"*
 — still open, now reproducing on two cases against a set where nothing else
 fails.
+
+**deepseek-v3.2 scored 73.2% (41/56) for $0.188 in 32m27s, and the number is
+almost entirely one open defect.** Eleven of its fifteen failures are the
+`query_metric` repeat loop [`eval-q1.md`](eval-q1.md) §2 recorded on 2026-08-16:
+the model receives a refusal, re-sends the byte-identical call — six times on
+`metric-revenue-december` — and the iteration budget ends the turn on an apology
+carrying no figure. It is why `metric_registry` is 1/5, `time_window` 2/6 and
+`zero_row_trap` 0/3 on a model that scores 7/7 on `simple_aggregate` and 4/4 on
+`grouping_topn`.
+
+**That is the clearest price anyone has put on the missing repeat-guard: about
+nineteen points on this model.** The fix that file names — *"a guard where a
+tool returning the same refusal to byte-identical arguments twice ends the
+loop"* — is now the highest-value open item in the eval, and ten other tool
+paths share the shape.
+
+**Two caveats on the deepseek arm, and they cut in opposite directions.** The
+harness printed `served: ! more than one identity answered this run`, so
+provider drift is live in this number exactly as it was on 2026-08-18 — read it
+as "this model, this afternoon, these providers" rather than as a property of
+deepseek. And `dirty-ask-rather-than-guess` **passes here and fails on kimi**,
+which is the 2026-08-14 finding intact: `ask_clarification` is called by
+deepseek and never by kimi, so the asking policy is ours and still wrong on one
+of the two.
 
 **What this number is, stated precisely.** It is **a new baseline, not a delta.**
 The 94.6% of 2026-08-18 and every figure before it was measured against a
