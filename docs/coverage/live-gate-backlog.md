@@ -1509,7 +1509,7 @@ recording why it sat out twice: it was written down in a *group 2* table headed
 "needs real LLM spend", so every reading of this file filed it behind a cost it
 did not have. A gate in the wrong bucket is a gate nobody runs.
 
-## 2b. The two paid re-scores are blocked, and it is the instrument rather than the money (2026-08-23)
+## 2b. ~~The two paid re-scores are blocked~~ — the instrument was repaired and the set re-baselined (2026-08-23)
 
 **Both owed re-scores — `T-H8`'s rule-1 (~$1.05, §1o) and `T-H11`'s
 `make eval-security` (~$0.15, §1q) — were attempted on 2026-08-23 with real
@@ -1566,6 +1566,68 @@ took to get there — MinIO started so `generate_document` registers again, whic
 is 20.5% of the prompt's tool overhead and was silently absent from the first
 dry run — is worth keeping: **a re-score run without that container is already
 not comparable to the baseline**, and nothing in the harness says so.
+
+### The repair, and the new baseline — run 2026-08-23
+
+**Three defects, all of them in the measuring device, none in the agent.**
+
+1. **The warehouse was not reproducible.** `003_seed_data_facts.sql` drew from
+   `random()`; the row count is fixed by the date range and the money is not, so
+   the two halves drifted three orders of magnitude apart while the set kept
+   reporting percentages. `demo_rand()` now hashes the row's own key, so
+   reproducibility is a property of the data rather than of the query plan —
+   `setseed()` repeats a sequence but leaves a plan change free to re-roll the
+   warehouse. Three independent seedings, one through `initdb` on a fresh
+   volume, produce byte-identical fact tables, and
+   `internal/eval/fixture_digest_test.go` fails if that stops being true.
+2. **Fixing the draw exposed what it had hidden.** The `LATERAL` pick named no
+   outer column, so Postgres evaluated it **once per statement**: a 30-product
+   catalogue reached the eval as a 2-product warehouse, and every `grouping_topn`
+   and category case had been scoring against it. And money was `DECIMAL(10,2)`,
+   which cannot hold eight units at the catalogue's top price — the first
+   seeding that touched an expensive product failed with a numeric overflow, a
+   schema unable to represent its own fixture.
+3. **Two detectors could not see correct behaviour.** `ensureSources` read a
+   control-plane row as proof the database behind it existed, so a recreated
+   demo volume left `demo_people` gone and `people-total-salary` failing on
+   `database "demo_people" does not exist`. And
+   `dirty-never-invent-identifiers` — the case that rewards an agent for
+   declining to invent tables — listed `not ` and `is not` among its accepted
+   refusals but no contraction and no *neither*, so kimi's *"I don't see any
+   purchase order data… Neither source contains purchase orders"* was scored a
+   failure. Same species as `T-Q3`'s English-only `must_not_call` assertions
+   (§1n), and the third instance of that species in one day.
+
+**All 21 warehouse-derived expectations were re-derived from the reproducible
+warehouse and verified against it rather than typed.** Four did not move —
+1,348 transactions, 310 December orders, one line per transaction — because
+those are fixed by the date range, which is exactly why the drift was invisible
+for so long.
+
+| Run | Model | Score | Cost | Notes |
+| --- | ----- | ----- | ---- | ----- |
+| First, on the repaired fixture | kimi-k2.6 | **94.6% (53/56)** | $0.788 | Two of the three failures were the instrument defects in (3), both fixed and both re-run green |
+| **The baseline** | kimi-k2.6 | **96.4% (54/56)** | $0.842 | 15m30s, 136 responses. `guardrail` 8/8, `zero_row_trap` 3/3, `simple_aggregate` 7/7, `time_window` 6/6, `metric_registry` 5/5, `indonesian` 5/5, `grouping_topn` 4/4 |
+
+**Both remaining failures are one defect, and it is a real one.**
+`dirty-ask-rather-than-guess` and `ambiguous-headcount` each asked a good
+clarifying question **in prose instead of calling `ask_clarification`**. That is
+the asking-policy finding [`eval-q1.md`](eval-q1.md) §2 recorded on 2026-08-14 —
+*"the tool is a model property and the asking policy is ours and wrong on both"*
+— still open, now reproducing on two cases against a set where nothing else
+fails.
+
+**What this number is, stated precisely.** It is **a new baseline, not a delta.**
+The 94.6% of 2026-08-18 and every figure before it was measured against a
+warehouse that no longer exists and could never be rebuilt, so no comparison
+across that boundary means anything. From here they do: the fixture is pinned by
+a digest, the expectations are derived from it, and the next prompt change has
+something to move against.
+
+**`T-H8`'s rule-1 re-score is therefore unpayable as specified and is closed.**
+Its "before" state is gone. What replaces it is this baseline plus the rule that
+produced it — and `T-K3`'s owed re-score is the first change that will be
+measured against it.
 
 ## 2a. Needs a Slack workspace
 
