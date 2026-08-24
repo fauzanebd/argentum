@@ -343,57 +343,79 @@ func TestAnOmittedWindowCoversAllAvailableData(t *testing.T) {
 	}
 }
 
-// A caller who named one bound half-specified a window, and guessing the other
-// half is how a metric answers a question nobody asked. So it is still refused —
-// but as a result rather than as an error.
+// A caller who names one bound gets the window they described, with the other
+// side taken from the data's own boundary.
 //
-// The distinction is the whole test. Until 2026-08-16 this returned a Go error,
-// and the eval run that day caught deepseek-v3.2 sending
-// {"metric_key":"revenue","to":"2024-12-31"} six times in one turn, reading the
-// same error each time, until the iteration budget ended the turn with no
-// figure. Three time_window cases died that way. An error the model cannot act
-// on is a loop; a result naming the missing bound is a correction.
-func TestHalfAWindowIsRefusedAsAResultTheModelCanAct(t *testing.T) {
-	store := &windowCapturingStore{result: oneMetricResult(false)}
-	tool := NewQueryMetricTool(store, nil)
-	ctx := tenantctx.WithCompanyID(context.Background(), "c1")
+// **This test asserted the opposite until 2026-08-24**, and the reversal is
+// worth reading rather than just seeing. The old behaviour refused a one-sided
+// window — first as a Go error, then, after the 2026-08-16 eval run caught
+// deepseek sending {"metric_key":"revenue","to":"2024-12-31"} six times in one
+// turn, as a result the model could act on. That second version was a real
+// improvement to the *message* and it did not move a single case: the refusal
+// named the bound that arrived, the one that did not, both legal shapes, a
+// worked example for December 2024, and an instruction not to repeat the call,
+// and deepseek re-sent it byte-identical anyway. Rewriting it scored 0/3 and a
+// prompt sentence scored 0/3 twice (docs/coverage/eval-q1.md §2). On the
+// 2026-08-23 baseline up to eleven cases were still dying on it.
+//
+// The premise was wrong, not the wording. A one-sided window is not
+// half-specified: it is the all-time window restricted on one side, and the
+// other side is the boundary the both-omitted case already computes. This tool
+// made the same call once before — both bounds were required until 2026-08-14 —
+// and the comment beside that change is the rule: a guideline loses to a
+// missing affordance.
+func TestOneSidedWindowRunsAgainstTheDataBoundary(t *testing.T) {
+	all := metric.AllTimeWindow(time.Now())
 
-	for _, tc := range []struct{ args, sent, missing string }{
-		{`{"metric_key":"revenue","from":"2024-07-01"}`, `"from"`, `"to"`},
-		{`{"metric_key":"revenue","to":"2024-12-31"}`, `"to"`, `"from"`},
+	for _, tc := range []struct {
+		args     string
+		wantFrom time.Time
+		wantTo   time.Time
+		scope    string
+	}{
+		{`{"metric_key":"revenue","from":"2024-07-01"}`, time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC), all.To, "open_end"},
+		{`{"metric_key":"revenue","to":"2024-12-31"}`, all.From, time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC), "open_start"},
 	} {
+		store := &windowCapturingStore{result: oneMetricResult(false)}
+		tool := NewQueryMetricTool(store, nil)
+		ctx := tenantctx.WithCompanyID(context.Background(), "c1")
+
 		out, err := tool.Execute(ctx, tc.args)
 		if err != nil {
 			t.Errorf("%s returned a Go error (%v); the model loops on those", tc.args, err)
 			continue
 		}
+		// The whole point of the change: the query runs.
+		if store.numCalls != 1 {
+			t.Errorf("%s: store called %d times, want 1 — a one-sided window must reach the warehouse", tc.args, store.numCalls)
+			continue
+		}
+		if !store.gotFrom.Equal(tc.wantFrom) {
+			t.Errorf("%s: from = %s, want %s", tc.args, store.gotFrom, tc.wantFrom)
+		}
+		if !store.gotTo.Equal(tc.wantTo) {
+			t.Errorf("%s: to = %s, want %s", tc.args, store.gotTo, tc.wantTo)
+		}
+
 		var payload map[string]any
 		if err := json.Unmarshal([]byte(out), &payload); err != nil {
 			t.Fatalf("result is not JSON: %v", err)
 		}
-		msg, _ := payload["error"].(string)
-		if !strings.Contains(msg, tc.sent) || !strings.Contains(msg, tc.missing) {
-			t.Errorf("error = %q, want it to name both %s (sent) and %s (missing)", msg, tc.sent, tc.missing)
+		if payload["error"] != nil {
+			t.Errorf("%s: still refused (%v)", tc.args, payload["error"])
 		}
-		note, _ := payload["note"].(string)
-		if !strings.Contains(note, "BOTH") || !strings.Contains(note, "NEITHER") {
-			t.Errorf("note = %q, want both legal shapes spelled out", note)
+		if payload["window_scope"] != tc.scope {
+			t.Errorf("%s: window_scope = %v, want %q", tc.args, payload["window_scope"], tc.scope)
 		}
-		if !strings.Contains(note, "unchanged") {
-			t.Errorf("note = %q, want it to say not to repeat the call unchanged", note)
+		// The model must not read a sentinel bound back to a user as a date
+		// they chose — the failure the all-time note exists to prevent.
+		note, _ := payload["window_note"].(string)
+		if note == "" {
+			t.Errorf("%s: no window_note, so the model may quote a boundary the caller never chose", tc.args)
 		}
-		// A refusal is not evidence, and agentbudget reads this field.
-		if rc, ok := payload["row_count"].(float64); !ok || rc != 0 {
-			t.Errorf("row_count = %v, want 0 — a refusal must not ground a figure", payload["row_count"])
+		if strings.Contains(note, "1900") {
+			t.Errorf("%s: note quotes the sentinel: %q", tc.args, note)
 		}
-		if _, ok := payload["value"]; ok {
-			t.Errorf("%s produced a value key; a refused window has no value", tc.args)
-		}
-	}
-
-	// And the refusal is a refusal: nothing reached the warehouse.
-	if store.numCalls != 0 {
-		t.Errorf("store called %d times, want 0 — half a window must not be guessed at", store.numCalls)
 	}
 }
 

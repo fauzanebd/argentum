@@ -112,8 +112,8 @@ func (t *QueryMetricTool) Description() string {
 func (t *QueryMetricTool) Parameters() map[string]interfaces.ParameterSpec {
 	return map[string]interfaces.ParameterSpec{
 		"metric_key": {Type: "string", Description: "The metric's key, as returned by list_metrics (e.g. 'revenue').", Required: true},
-		"from":       {Type: "string", Description: "Optional. Window start, inclusive, as YYYY-MM-DD (or RFC3339). Omit together with 'to' to cover all available data.", Required: false},
-		"to":         {Type: "string", Description: "Optional. Window end as YYYY-MM-DD (or RFC3339); whether it is inclusive depends on the metric's definition. Omit together with 'from' to cover all available data.", Required: false},
+		"from":       {Type: "string", Description: "Optional. Window start, inclusive, as YYYY-MM-DD (or RFC3339). Send it alone to cover everything from that date onward; omit it together with 'to' to cover all available data.", Required: false},
+		"to":         {Type: "string", Description: "Optional. Window end as YYYY-MM-DD (or RFC3339); whether it is inclusive depends on the metric's definition. Send it alone to cover everything up to that date; omit it together with 'from' to cover all available data.", Required: false},
 		"compare_to": {
 			Type:        "string",
 			Description: "Optional. 'previous_period' compares against the immediately preceding window of equal length; 'same_period_last_year' compares against the same window one year earlier.",
@@ -147,34 +147,9 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 	if strings.TrimSpace(p.MetricKey) == "" {
 		return "", fmt.Errorf("metric_key is required")
 	}
-	var from, to time.Time
-	allTime := strings.TrimSpace(p.From) == "" && strings.TrimSpace(p.To) == ""
-	if allTime {
-		// Both omitted means "every period the data holds" (2026-08-14). They
-		// were both required until then, and a question that names no window —
-		// "what is our total revenue", "berapa total penjualan sepanjang waktu"
-		// — left the model three bad options: invent a range, abandon the
-		// authoritative metric for run_sql, or ask. Two eval runs took the
-		// third, on four cases across two models, against a guideline that
-		// already told them not to. A guideline loses to a missing affordance.
-		//
-		// One bound without the other stays an error: "from 2024-07-01" with no
-		// end is a window the caller half-specified, and guessing which half
-		// they meant is how a metric answers a question nobody asked.
-		w := metric.AllTimeWindow(time.Now())
-		from, to = w.From, w.To
-	} else if strings.TrimSpace(p.From) == "" || strings.TrimSpace(p.To) == "" {
-		return t.halfWindow(p.From, p.To), nil
-	} else {
-		var err error
-		from, err = parseWindowBound(p.From)
-		if err != nil {
-			return "", fmt.Errorf("from: %w", err)
-		}
-		to, err = parseWindowBound(p.To)
-		if err != nil {
-			return "", fmt.Errorf("to: %w", err)
-		}
+	from, to, windowScope, err := resolveWindow(p.From, p.To, time.Now())
+	if err != nil {
+		return "", err
 	}
 	compare := metric.Comparison(strings.TrimSpace(p.CompareTo))
 
@@ -229,14 +204,7 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 		"value":      res.Primary.Value,
 		"window":     map[string]string{"from": res.Primary.From.Format(time.RFC3339), "to": res.Primary.To.Format(time.RFC3339)},
 	}
-	if allTime {
-		// Say the window was not the caller's, or the model quotes 1900 at a
-		// user who asked about their total sales. What it should say is "all
-		// time", which is what was actually computed.
-		payload["window_scope"] = "all_available_data"
-		payload["window_note"] = "No window was requested, so this covers ALL available data. " +
-			"Describe it as the all-time total; do not quote these bounds as if the user chose them."
-	}
+	annotateWindowScope(payload, windowScope)
 	// The note carries the distinction in words, for the same reason run_sql's
 	// zero-row note does: the empty set alone was not enough of a signal there
 	// either, and the model asked the same question a different way answered
@@ -385,32 +353,98 @@ func (t *QueryMetricTool) unknownKey(ctx context.Context, companyID, key string)
 // reading `from: a date is required (YYYY-MM-DD)`, and sending the identical
 // call five more times until T-16's iteration budget ended the turn. Three
 // time_window cases died that way in one run, each costing eight iterations to
-// produce no figure at all. An error the model reads and cannot act on is a
-// loop, and the budget is the only thing that ends it.
+// / Window scopes: which bounds the caller actually chose.
+const (
+	windowScopeCaller    = "caller"
+	windowScopeAll       = "all_available_data"
+	windowScopeOpenStart = "open_start"
+	windowScopeOpenEnd   = "open_end"
+)
+
+// resolveWindow turns the two optional bounds into a real window, and says
+// which parts of it the caller chose.
 //
-// So the refusal is a result instead. It is the trade unknownKey already makes
-// for an unknown metric key: a recoverable mistake the model can correct is
-// worth more than a correct error it cannot. It names the bound that arrived,
-// the one that did not, and both legal shapes — and it says not to repeat the
-// call unchanged, because that is the observed failure and not a hypothetical.
+// **A one-sided window is legal, and it was not until 2026-08-24.** It used to
+// be refused by `halfWindow` on the argument that "guessing which half they
+// meant is how a metric answers a question nobody asked". That was written
+// before there was evidence, and the evidence says the opposite: a one-sided
+// window is not under-specified at all. It is the all-time window restricted on
+// one side, and the other side is the data's own boundary — exactly what the
+// both-omitted case already computes.
 //
-// row_count is 0 for the same reason the empty and out-of-coverage branches set
-// it: a refusal is not evidence, and agentbudget reads this field to decide
-// whether the turn retrieved anything.
-func (t *QueryMetricTool) halfWindow(rawFrom, rawTo string) string {
-	sent, missing := "from", "to"
-	if strings.TrimSpace(rawFrom) == "" && strings.TrimSpace(rawTo) != "" {
-		sent, missing = "to", "from"
+// The evidence, because reversing a stated decision should carry it. deepseek
+// sends {"metric_key":"revenue","to":"2024-12-31"}. The refusal named the bound
+// that arrived, the one that did not, both legal shapes, a worked example for
+// December 2024, and an instruction not to repeat the call — and the model
+// re-sent it byte-identical, six times before the repeat-guard and twice after.
+// Rewriting the message scored 0/3; a prompt sentence scored 0/3 twice and was
+// reverted under rule 1 (docs/coverage/eval-q1.md §2). Up to eleven cases of
+// the golden set were blocked by an intent the tool understood and refused.
+//
+// This is the same call this tool already made once. Both bounds were required
+// until 2026-08-14, when a question naming no window left the model three bad
+// options and the answer was to make both-omitted legal. The comment beside
+// that change is the rule being applied again: a guideline loses to a missing
+// affordance.
+//
+// A bound that cannot be parsed is still an error. Completing a bound the
+// caller omitted is not the same as repairing one they got wrong.
+func resolveWindow(rawFrom, rawTo string, now time.Time) (from, to time.Time, scope string, err error) {
+	rawFrom, rawTo = strings.TrimSpace(rawFrom), strings.TrimSpace(rawTo)
+	all := metric.AllTimeWindow(now)
+
+	switch {
+	case rawFrom == "" && rawTo == "":
+		return all.From, all.To, windowScopeAll, nil
+	case rawFrom == "":
+		to, err = parseWindowBound(rawTo)
+		if err != nil {
+			return time.Time{}, time.Time{}, "", fmt.Errorf("to: %w", err)
+		}
+		return all.From, to, windowScopeOpenStart, nil
+	case rawTo == "":
+		from, err = parseWindowBound(rawFrom)
+		if err != nil {
+			return time.Time{}, time.Time{}, "", fmt.Errorf("from: %w", err)
+		}
+		return from, all.To, windowScopeOpenEnd, nil
 	}
-	out, _ := json.Marshal(map[string]any{
-		"error": fmt.Sprintf("a window needs both bounds: %q was sent without %q", sent, missing),
-		"note": "Call query_metric again in one of the two shapes it accepts: with BOTH from and to as " +
-			"YYYY-MM-DD (December 2024 is from=2024-12-01, to=2024-12-31), or with NEITHER, which " +
-			"evaluates the metric over every period the data holds. Do not send the same call again " +
-			"unchanged.",
-		"row_count": 0,
-	})
-	return string(out)
+
+	from, err = parseWindowBound(rawFrom)
+	if err != nil {
+		return time.Time{}, time.Time{}, "", fmt.Errorf("from: %w", err)
+	}
+	to, err = parseWindowBound(rawTo)
+	if err != nil {
+		return time.Time{}, time.Time{}, "", fmt.Errorf("to: %w", err)
+	}
+	return from, to, windowScopeCaller, nil
+}
+
+// annotateWindowScope tells the model which bounds were its own.
+//
+// Without it the model quotes 1900 at a user who asked about their total sales
+// — the failure the all-time note was written to prevent. A one-sided window
+// reintroduces exactly that failure on one side, so it gets the same treatment:
+// the computed bound is described in words the model can repeat ("the earliest
+// data available") instead of as a sentinel date it should never show anyone.
+func annotateWindowScope(payload map[string]any, scope string) {
+	switch scope {
+	case windowScopeAll:
+		payload["window_scope"] = windowScopeAll
+		payload["window_note"] = "No window was requested, so this covers ALL available data. " +
+			"Describe it as the all-time total; do not quote these bounds as if the user chose them."
+	case windowScopeOpenStart:
+		payload["window_scope"] = windowScopeOpenStart
+		payload["window_note"] = "Only an end date was requested, so this covers everything from the " +
+			"earliest data available up to that date. Quote the end date, which the user chose; " +
+			"describe the start as the earliest data available rather than quoting it."
+	case windowScopeOpenEnd:
+		payload["window_scope"] = windowScopeOpenEnd
+		payload["window_note"] = "Only a start date was requested, so this covers everything from that " +
+			"date through the latest data available. Quote the start date, which the user chose; " +
+			"describe the end as the latest data available rather than quoting it."
+	}
 }
 
 // The all-time window moved to metric.AllTimeWindow on 2026-08-14, because the

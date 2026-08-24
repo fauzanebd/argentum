@@ -1538,6 +1538,57 @@ recorded twice. **The guard should be credited with the six-calls-to-two, the
 nine minutes and the 11%, which are deterministic and visible in the audit
 table — not with the two cases.**
 
+## 2x. A one-sided window became legal, and the model corrected itself (2026-08-24)
+
+**`halfWindow` is gone.** `to` alone now means everything up to that date and
+`from` alone everything from it onward — the all-time window restricted on one
+side, which is the boundary the both-omitted case already computed. The full
+argument is in `resolveWindow`'s comment and in §2y; the short version is that
+the premise was wrong rather than the wording, and this tool had already made
+the identical call once on 2026-08-14.
+
+**deepseek-v3.2: 76.8% (43/56) → 78.6% (44/56), $0.233.** Net one case, and the
+net is the least informative number here.
+
+| Category | Before the guard | After the guard | After one-sided windows |
+| --- | --- | --- | --- |
+| `metric_registry` | 1/5 | 1/5 | **3/5** |
+| `time_window` | 2/6 | 2/6 | **3/6** |
+| `indonesian` | 4/5 | 4/5 | **5/5** |
+| `zero_row_trap` | 0/3 | 0/3 | 0/3 |
+
+**Four cases moved where the change was aimed and three moved the other way
+somewhere else**, which is why the total says +1. All three are known defects
+rather than consequences of this change, and each was checked rather than
+assumed:
+
+- `total-units-sold` and `no-data-marketing-spend` failed on **`replied in "id",
+  expected "en"`** with the answers otherwise correct — `total-units-sold`
+  reported *2.510 unit*, which is the right figure. That is the shape §1g
+  attributed to provider drift in an unpinned model on 2026-08-18, and this run
+  again printed `served: ! more than one identity answered this run`.
+- `ambiguous-headcount` asked its clarifying question in prose instead of
+  calling `ask_clarification` — the asking-policy defect, which has now flipped
+  in three consecutive runs and is noise until it is fixed.
+
+**The mechanism did something the refusal never did: the model corrected
+itself.** `agent_actions` for the run shows `{"metric_key":"revenue","to":"2024-12-31"}`
+answering `ok` with a row, and then — in the same turn — the same key re-sent as
+`{"from":"2024-12-01","to":"2024-12-31"}`. The result carries
+`window_scope: open_start` and a note saying the start was not the caller's, and
+the model read it and supplied the missing bound. Fourteen `query_metric` calls
+across the run, **one** blocked by the repeat-guard, against six identical calls
+in a single turn two days ago.
+
+**The risk this creates, stated because it is the thing the old comment was
+right to worry about.** A model that *ignores* the note now gets a wider window
+and a real number where it used to get a refusal — a silently wrong answer in
+place of a visibly blocked one. `window_scope` and `window_note` are the whole
+mitigation, and a test pins that the sentinel bound cannot leak into the note so
+nobody is shown a total "since 1900". **`zero_row_trap` staying at 0/3 is where
+to watch for this**: those cases are about not stating a figure that is not
+there, and a one-sided window makes a figure easier to reach.
+
 ## 2z. What the sets actually cost, measured 2026-08-23
 
 **This file has been pricing gates from estimates that are wrong in both
