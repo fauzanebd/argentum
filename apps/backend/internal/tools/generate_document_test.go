@@ -46,9 +46,6 @@ func (d *memDocs) ListByCompany(context.Context, string, domain.DocumentFilter) 
 	return nil, false, nil
 }
 func (d *memDocs) ListByThread(context.Context, string) ([]*domain.Document, error) { return nil, nil }
-func (d *memDocs) NewestForThreadSince(context.Context, string, string, time.Time) (*domain.Document, error) {
-	return nil, domain.ErrNotFound
-}
 
 const csvArgs = `{"format":"csv","title":"t","content":{"table":{"columns":["A"],"rows":[["1"]]}}}`
 

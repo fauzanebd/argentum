@@ -142,9 +142,4 @@ type DocumentRepository interface {
 	// from a full middle one.
 	ListByCompany(ctx context.Context, companyID string, f DocumentFilter) ([]*Document, bool, error)
 	ListByThread(ctx context.Context, threadID string) ([]*Document, error)
-	// NewestForThreadSince finds the document a turn produced. The completer
-	// for an agentic report has the report row and therefore its start time;
-	// bounding on it is what stops a turn that generated nothing from
-	// attaching the *previous* turn's document to this report.
-	NewestForThreadSince(ctx context.Context, companyID, threadID string, since time.Time) (*Document, error)
 }

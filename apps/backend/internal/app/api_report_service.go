@@ -91,7 +91,25 @@ func NewAPIReportService(
 // cannot run when a turn times out. The status write is not part of the turn's
 // work; it is what has to happen *because* the turn ended, most of all when it
 // ended badly. Same idiom as the audit decorator and `recordBlockedTurn`.
-func (s *APIReportService) CompleteReport(ctx context.Context, reportID, threadID string, runErr error) {
+// CompleteReport marks a report finished and attaches the document the turn
+// produced.
+//
+// **`docID` is passed in rather than re-derived, and that is the fix for a
+// defect the 2026-08-13 gate found** (api-reports.md §7a). It used to call
+// `NewestForThreadSince(companyID, threadID, rep.CreatedAt)`, whose bound is
+// one-sided: it excludes documents older than the report and does nothing about
+// newer ones. Ten calls sharing one thread produced a report that timed out
+// generating nothing and was completed carrying a document created nine minutes
+// later by a *different* request. Every prompt was identical there, so the
+// content was harmless; with two different prompts the caller downloads the
+// answer to somebody else's question and nothing in the response says so.
+//
+// No query can distinguish two turns on one thread. The turn can: it runs
+// `generate_document` itself and knows the id it got back. So the id travels
+// with the completion, and an empty one on a successful turn now means what it
+// says — this turn generated nothing — instead of triggering a search that
+// might find somebody else's file.
+func (s *APIReportService) CompleteReport(ctx context.Context, reportID, threadID, docID string, runErr error) {
 	if s == nil || s.reports == nil || reportID == "" {
 		return
 	}
@@ -115,24 +133,28 @@ func (s *APIReportService) CompleteReport(ctx context.Context, reportID, threadI
 		errMsg = "The agent could not complete this report. Try again, or simplify the prompt."
 	}
 
-	docID := ""
-	if runErr == nil && s.docs != nil && threadID != "" {
-		// Bounded by the job's own created_at: a turn that generated nothing
-		// would otherwise attach the *previous* turn's document to this report,
-		// and the caller would download a file answering a question they did
-		// not ask.
-		doc, err := s.docs.NewestForThreadSince(ctx, rep.CompanyID, threadID, rep.CreatedAt)
-		switch {
-		case err == nil:
-			docID = doc.ID
-		case errors.Is(err, domain.ErrNotFound):
-			logrus.WithFields(logrus.Fields{
-				"company_id": rep.CompanyID,
-				"report_id":  reportID,
-			}).Info("agentic report turn finished without generating a document")
-		default:
-			logrus.WithError(err).WithField("report_id", reportID).
-				Warn("document lookup failed while completing a report; completing without one")
+	if runErr != nil {
+		// A failed report carries no file, whatever the turn managed to write
+		// before it failed.
+		docID = ""
+	}
+	if runErr == nil && docID == "" {
+		logrus.WithFields(logrus.Fields{
+			"company_id": rep.CompanyID,
+			"report_id":  reportID,
+		}).Info("agentic report turn finished without generating a document")
+	}
+	// Ownership is checked rather than trusted. The id arrives from the turn
+	// and the turn is ours, but this row is what a caller downloads from, and
+	// one confused id here is a cross-tenant file read.
+	if docID != "" && s.docs != nil {
+		if _, err := s.docs.GetForCompany(ctx, rep.CompanyID, docID); err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"company_id":  rep.CompanyID,
+				"report_id":   reportID,
+				"document_id": docID,
+			}).Warn("the document a report turn reported does not belong to it; completing without one")
+			docID = ""
 		}
 	}
 

@@ -99,21 +99,6 @@ func (f *fakeDocLookup) ListByCompany(context.Context, string, domain.DocumentFi
 func (f *fakeDocLookup) ListByThread(context.Context, string) ([]*domain.Document, error) {
 	return nil, nil
 }
-func (f *fakeDocLookup) NewestForThreadSince(_ context.Context, companyID, threadID string, since time.Time) (*domain.Document, error) {
-	var newest *domain.Document
-	for _, d := range f.docs {
-		if d.CompanyID != companyID || d.ThreadID != threadID || d.CreatedAt.Before(since) {
-			continue
-		}
-		if newest == nil || d.CreatedAt.After(newest.CreatedAt) {
-			newest = d
-		}
-	}
-	if newest == nil {
-		return nil, domain.ErrNotFound
-	}
-	return newest, nil
-}
 
 var reportStart = time.Unix(1_800_000_000, 0)
 
@@ -132,7 +117,7 @@ func TestCompleteReportAttachesTheTurnsDocument(t *testing.T) {
 	}}}
 
 	NewAPIReportService(reports, docs, nil, nil).
-		CompleteReport(context.Background(), "rep-1", "th-1", nil)
+		CompleteReport(context.Background(), "rep-1", "th-1", "doc-new", nil)
 
 	got := reports.rows["rep-1"]
 	if got.Status != domain.APIReportCompleted {
@@ -146,10 +131,13 @@ func TestCompleteReportAttachesTheTurnsDocument(t *testing.T) {
 	}
 }
 
-// The bound that matters. A turn that answered in prose without calling
-// generate_document must not inherit the previous turn's document — the caller
-// would download a file answering a question they did not ask, and would have
-// no way to tell.
+// A turn that answered in prose without calling generate_document must not
+// inherit another turn's document — the caller would download a file answering
+// a question they did not ask, and would have no way to tell.
+//
+// It used to be enforced by a `since` bound on a query. It is now enforced by
+// there being no query: the turn reports the id it produced, and this one
+// produced none.
 func TestCompleteReportIgnoresAnEarlierTurnsDocument(t *testing.T) {
 	reports := newFakeReports(queuedReport())
 	docs := &fakeDocLookup{docs: []*domain.Document{{
@@ -157,7 +145,7 @@ func TestCompleteReportIgnoresAnEarlierTurnsDocument(t *testing.T) {
 	}}}
 
 	NewAPIReportService(reports, docs, nil, nil).
-		CompleteReport(context.Background(), "rep-1", "th-1", nil)
+		CompleteReport(context.Background(), "rep-1", "th-1", "", nil)
 
 	got := reports.rows["rep-1"]
 	// Completed, not failed: the agent was asked for a report and answered.
@@ -171,10 +159,10 @@ func TestCompleteReportIgnoresAnEarlierTurnsDocument(t *testing.T) {
 	}
 }
 
-// Cross-tenant: a document on the same thread id belonging to another company
-// is not this report's. The bound is on company as well as thread because the
-// query is, and a test that only covered the thread would let a repository
-// regression through.
+// Cross-tenant: an id naming another company's document is refused even though
+// it arrived from the turn. The id is ours and the turn is ours, but this row is
+// what a caller downloads from, and one confused id here is a cross-tenant file
+// read — so ownership is checked rather than trusted.
 func TestCompleteReportIsCompanyScoped(t *testing.T) {
 	reports := newFakeReports(queuedReport())
 	docs := &fakeDocLookup{docs: []*domain.Document{{
@@ -182,7 +170,7 @@ func TestCompleteReportIsCompanyScoped(t *testing.T) {
 	}}}
 
 	NewAPIReportService(reports, docs, nil, nil).
-		CompleteReport(context.Background(), "rep-1", "th-1", nil)
+		CompleteReport(context.Background(), "rep-1", "th-1", "doc-other", nil)
 
 	if got := reports.rows["rep-1"].DocumentID; got != "" {
 		t.Errorf("document_id = %q — another tenant's document was attached", got)
@@ -192,7 +180,7 @@ func TestCompleteReportIsCompanyScoped(t *testing.T) {
 func TestCompleteReportRecordsAFailure(t *testing.T) {
 	reports := newFakeReports(queuedReport())
 	NewAPIReportService(reports, &fakeDocLookup{}, nil, nil).
-		CompleteReport(context.Background(), "rep-1", "th-1", context.DeadlineExceeded)
+		CompleteReport(context.Background(), "rep-1", "th-1", "", context.DeadlineExceeded)
 
 	got := reports.rows["rep-1"]
 	if got.Status != domain.APIReportFailed {
@@ -219,8 +207,8 @@ func TestCompleteReportIsIdempotent(t *testing.T) {
 	}}}
 	svc := NewAPIReportService(reports, docs, nil, nil)
 
-	svc.CompleteReport(context.Background(), "rep-1", "th-1", nil)
-	svc.CompleteReport(context.Background(), "rep-1", "th-1", context.DeadlineExceeded)
+	svc.CompleteReport(context.Background(), "rep-1", "th-1", "doc-new", nil)
+	svc.CompleteReport(context.Background(), "rep-1", "th-1", "", context.DeadlineExceeded)
 
 	got := reports.rows["rep-1"]
 	if got.Status != domain.APIReportCompleted || got.DocumentID != "doc-new" {
@@ -232,7 +220,7 @@ func TestCompleteReportIsIdempotent(t *testing.T) {
 // caller keeps polling and sees the truth, which is that nothing finished.
 func TestCompleteReportToleratesAMissingRow(t *testing.T) {
 	NewAPIReportService(newFakeReports(), &fakeDocLookup{}, nil, nil).
-		CompleteReport(context.Background(), "rep-missing", "th-1", nil)
+		CompleteReport(context.Background(), "rep-missing", "th-1", "", nil)
 }
 
 // ctxAwareReports fails every call once its context is done, which is what a
@@ -272,7 +260,7 @@ func TestCompleteReportWritesTheTerminalStatusOnADeadContext(t *testing.T) {
 	cancel()
 
 	NewAPIReportService(reports, &fakeDocLookup{}, nil, nil).
-		CompleteReport(dead, "rep-1", "th-1", context.DeadlineExceeded)
+		CompleteReport(dead, "rep-1", "th-1", "", context.DeadlineExceeded)
 
 	got := reports.rows["rep-1"]
 	if got.Status != domain.APIReportFailed {
@@ -290,7 +278,7 @@ func TestCompleteReportWritesTheTerminalStatusOnADeadContext(t *testing.T) {
 // ChatRunner calls through it on every turn that carries a report id.
 func TestCompleteReportOnANilServiceIsANoOp(t *testing.T) {
 	var svc *APIReportService
-	svc.CompleteReport(context.Background(), "rep-1", "th-1", nil)
+	svc.CompleteReport(context.Background(), "rep-1", "th-1", "", nil)
 }
 
 // recordingBus is the report channel, plus the one property the SSE bridge
@@ -369,5 +357,32 @@ func TestARenderJobWithNoBusStillFinishes(t *testing.T) {
 	got, _ := reports.Get(context.Background(), "rep-r1")
 	if got.Status != domain.APIReportFailed {
 		t.Errorf("want the row failed with no bus installed, got %q", got.Status)
+	}
+}
+
+// The defect the 2026-08-13 gate found, as a test (api-reports.md §7a).
+//
+// Ten calls sharing one thread: a report timed out generating nothing and was
+// completed carrying a document created nine minutes later by a *different*
+// request. The old lookup bounded documents by the report's created_at on one
+// side only — it excluded older ones and said nothing about newer — so in a
+// shared thread a slow report collected a later report's file. Every prompt was
+// identical there, so the content was harmless; with two different prompts the
+// caller downloads the answer to somebody else's question.
+func TestCompleteReportDoesNotCollectALaterReportsDocument(t *testing.T) {
+	reports := newFakeReports(queuedReport())
+	// A document created nine minutes after this report, by another request on
+	// the same thread. The old query would have found exactly this row.
+	docs := &fakeDocLookup{docs: []*domain.Document{{
+		ID: "doc-somebody-elses", CompanyID: "co-1", ThreadID: "th-1",
+		CreatedAt: reportStart.Add(9 * time.Minute),
+	}}}
+
+	// This turn generated nothing, and says so.
+	NewAPIReportService(reports, docs, nil, nil).
+		CompleteReport(context.Background(), "rep-1", "th-1", "", nil)
+
+	if got := reports.rows["rep-1"].DocumentID; got != "" {
+		t.Errorf("document_id = %q — a later request's file was attached to this report", got)
 	}
 }

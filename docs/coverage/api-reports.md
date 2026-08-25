@@ -669,6 +669,25 @@ instead of having it re-derived by a query that cannot distinguish turns. That i
 a signature change through `ChatRunner` and `cmd/worker`, so it is filed here as
 a decision rather than made silently.
 
+**Fixed 2026-08-25, as filed.** `CompleteReport` takes the document id; the
+runner reads it off `generate_document`'s own result and carries it through
+`completeWith`; `cmd/worker` passes `""` because its only call is the
+retries-exhausted failure path, where a report carries no file anyway.
+
+`NewestForThreadSince` is **deleted** — the repository method, the interface
+entry and three test stubs. Leaving it would have left a query whose one-sided
+bound is a defect wherever it is called next, and it had exactly one caller.
+
+An empty id on a successful turn now means what it says: this turn generated
+nothing. It no longer triggers a search that might find somebody else's file.
+The id is checked for ownership before it is written, because the row is what a
+caller downloads from and one confused id there is a cross-tenant file read.
+
+Nine tests pass, including
+`TestCompleteReportDoesNotCollectALaterReportsDocument` — a document created
+nine minutes after the report by another request on the same thread, which is
+the exact row the old query would have found.
+
 ### Residual
 
 - **A report turn that produces no document still completes.**

@@ -250,7 +250,7 @@ type ScheduledRunMarker interface {
 // ScheduledRunMarker and installed the same way, because it is the same idea:
 // a turn that somebody else is waiting on the outcome of.
 type APIReportCompleter interface {
-	CompleteReport(ctx context.Context, reportID, threadID string, runErr error)
+	CompleteReport(ctx context.Context, reportID, threadID, docID string, runErr error)
 }
 
 // WatcherFireCloser is the narrow contract ChatRunner uses to close out a
@@ -666,7 +666,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		// No suggestions on a greeting. The small-talk path never called the model
 		// or a tool, so the agent has discovered nothing to suggest from — and
 		// three chips under "hello" is the product talking to itself.
-		r.completeWith(ctx, p, reply, 0, 0, 0, nil)
+		r.completeWith(ctx, p, reply, 0, 0, 0, nil, "")
 		return nil
 	}
 
@@ -826,10 +826,13 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// (T-Q9). Empty after a blocking run, which produces no tool events at all
 	// — CheckGrounding reports Checked=false for that and says nothing.
 	var returnedNumbers []float64
+	// The document this turn generated, if it generated one. Empty after a
+	// blocking run for the same reason returnedNumbers is: no tool events.
+	var generatedDocID string
 	if agent.GetLLM().SupportsStreaming() {
 		sp := p
 		sp.Message = agentMsg
-		if streamResp, err := r.runStream(ctx, agent, sp, &returnedNumbers); err == nil {
+		if streamResp, err := r.runStream(ctx, agent, sp, &returnedNumbers, &generatedDocID); err == nil {
 			response = streamResp
 			streaming = true
 		} else {
@@ -877,7 +880,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	steps := r.suggestNextSteps(ctx, p, response,
 		heldToolNames(agent.GetTools()), snap.Tools,
 		response != agentWrote)
-	r.completeWith(ctx, p, response, 0, 0, latency, steps)
+	r.completeWith(ctx, p, response, 0, 0, latency, steps, generatedDocID)
 	// One line per turn, carrying what the turn cost and what it may have got
 	// wrong (T-Q11). `ungrounded` is here rather than only in checkGrounding's
 	// own Warn because a turn is found by its completion line: a rate nobody
@@ -1305,7 +1308,7 @@ func sha256Hex(s string) string {
 // runStream executes the agent with streaming and fans out delta / thinking /
 // tool_call / tool_result events to the EventBus. It returns the full
 // assembled response text.
-func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p queue.ChatRunPayload, groundTruth *[]float64) (string, error) {
+func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p queue.ChatRunPayload, groundTruth *[]float64, producedDoc *string) (string, error) {
 	events, err := agent.RunStream(ctx, p.Message)
 	if err != nil {
 		return "", err
@@ -1328,6 +1331,13 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 	// closure below, because runStream returns only the text.
 	var returnedNumbers []float64
 	defer func() { *groundTruth = returnedNumbers }()
+
+	// The document *this* turn generated, for the report completer (api-reports
+	// §7a). Threaded out the same way and for the same reason: no query can
+	// tell two turns on one thread apart, and the turn does not need to — it
+	// ran the tool and read the id back.
+	var generatedDoc string
+	defer func() { *producedDoc = generatedDoc }()
 
 	// The reply, kept per iteration rather than concatenated (T-Q11). What the
 	// reader watches is unchanged — every delta is published below — but what
@@ -1422,6 +1432,15 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 				// data tools: a Metabase card id and a document's byte count are
 				// numbers no reply should be quoting as a business figure, and
 				// counting them as evidence would ground a fabrication.
+				// The last document this turn produced wins: a turn that
+				// generates twice delivers the newer file, which is what a
+				// caller who asked for one file and got two revisions expects.
+				if evt.ToolCall.Name == generateDocumentTool {
+					if id := documentIDFrom(res); id != "" {
+						generatedDoc = id
+					}
+				}
+
 				if agentbudget.IsDataTool(evt.ToolCall.Name) && len(returnedNumbers) < maxGroundingNumbers {
 					room := maxGroundingNumbers - len(returnedNumbers)
 					if evt.ToolCall.Name == searchDocumentsTool {
@@ -1523,6 +1542,18 @@ const maxGroundingNumbers = 200
 // grounding collection and the untrusted-content fence — cannot drift apart on
 // a rename.
 const searchDocumentsTool = "search_documents"
+
+// generateDocumentTool is the one tool whose result the report completer needs
+// the id out of.
+const generateDocumentTool = "generate_document"
+
+// documentIDFrom reads the id `generate_document` reports back. A result that
+// carries no id yields "" — which the completer reads as "this turn produced no
+// file", the honest answer when the tool did not say.
+func documentIDFrom(result map[string]interface{}) string {
+	id, _ := result["document_id"].(string)
+	return strings.TrimSpace(id)
+}
 
 // checkGrounding measures whether the figures in a finished reply are the
 // figures the tools returned (T-Q9).
@@ -1825,7 +1856,7 @@ func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload,
 		// A refusal is a guardrail's message, not an answer, so it carries no
 		// suggestions — the same rule the post-turn chain applies to a reply the
 		// fabrication gate replaced.
-		r.completeWith(ctx, p, userMsg, 0, 0, 0, nil)
+		r.completeWith(ctx, p, userMsg, 0, 0, 0, nil, "")
 		return nil
 	}
 	_ = r.bus.Publish(p.ThreadID, ChatEvent{
@@ -1845,6 +1876,10 @@ func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload,
 func (r *ChatRunner) completeWith(
 	ctx context.Context, p queue.ChatRunPayload, response string,
 	tokensIn, tokensOut int, latency time.Duration, steps []domain.NextStep,
+	// generatedDocID is the document this turn produced, or "" — see
+	// APIReportService.CompleteReport for why it travels rather than being
+	// looked up.
+	generatedDocID string,
 ) {
 	now := time.Now()
 	// The suggestions ride the message's metadata column, which already exists
@@ -1870,7 +1905,7 @@ func (r *ChatRunner) completeWith(
 	// reports itself as still running, and close the stream on it. Ordering it
 	// here is what lets the SSE bridge be a forwarder rather than a poll loop.
 	if p.APIReportID != "" && r.apiReports != nil {
-		r.apiReports.CompleteReport(ctx, p.APIReportID, p.ThreadID, nil)
+		r.apiReports.CompleteReport(ctx, p.APIReportID, p.ThreadID, generatedDocID, nil)
 	}
 	// A watcher's briefing turn (T-08): record the assistant message on the
 	// event and push the answer to every channel the watcher names. After the

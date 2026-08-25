@@ -6,7 +6,6 @@ import (
 	"errors"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/fauzanebd/argentum/internal/domain"
 )
@@ -190,26 +189,4 @@ func (r *DocumentRepo) ListByThread(ctx context.Context, threadID string) ([]*do
 		out = append(out, d)
 	}
 	return out, rows.Err()
-}
-
-// NewestForThreadSince finds the document one turn produced.
-//
-// `since` is the report job's own created_at, and it is the whole point: a
-// turn that answered in prose without calling generate_document would
-// otherwise attach the *previous* turn's document to this report, and the
-// caller would download a file that answers a question they did not ask.
-// ErrNotFound here means "this turn produced no document", which is a normal
-// outcome rather than a failure.
-func (r *DocumentRepo) NewestForThreadSince(ctx context.Context, companyID, threadID string, since time.Time) (*domain.Document, error) {
-	q := `SELECT ` + documentColumns + ` FROM documents
-		WHERE company_id = $1 AND thread_id = $2 AND created_at >= $3
-		ORDER BY created_at DESC, id DESC LIMIT 1`
-	d, err := scanDocument(r.db.QueryRowContext(ctx, q, companyID, threadID, since))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, domain.ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return d, nil
 }

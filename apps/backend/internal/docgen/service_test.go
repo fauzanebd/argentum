@@ -70,9 +70,6 @@ func (f *fakeDocs) ListByCompany(context.Context, string, domain.DocumentFilter)
 func (f *fakeDocs) ListByThread(context.Context, string) ([]*domain.Document, error) {
 	return nil, nil
 }
-func (f *fakeDocs) NewestForThreadSince(context.Context, string, string, time.Time) (*domain.Document, error) {
-	return nil, domain.ErrNotFound
-}
 
 type countingMeter struct {
 	calls   int

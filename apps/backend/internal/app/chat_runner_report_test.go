@@ -28,13 +28,14 @@ type recordingCompleter struct {
 	calls  int
 	report string
 	thread string
+	docID  string
 	err    error
 }
 
-func (c *recordingCompleter) CompleteReport(_ context.Context, reportID, threadID string, runErr error) {
+func (c *recordingCompleter) CompleteReport(_ context.Context, reportID, threadID, docID string, runErr error) {
 	*c.seq = append(*c.seq, "complete")
 	c.calls++
-	c.report, c.thread, c.err = reportID, threadID, runErr
+	c.report, c.thread, c.docID, c.err = reportID, threadID, docID, runErr
 }
 
 type stubMessages struct{}
@@ -97,7 +98,7 @@ func TestReportCompletesBeforeTheFinalEventIsPublished(t *testing.T) {
 	r.completeWith(context.Background(), queue.ChatRunPayload{
 		CompanyID: "co-1", ThreadID: "th-1", Channel: domain.ChannelAPI,
 		APIReportID: "rep-1", UserMsgID: "msg-0",
-	}, "here is your report", 0, 0, time.Second, nil)
+	}, "here is your report", 0, 0, time.Second, nil, "")
 
 	if completer.calls != 1 {
 		t.Fatalf("CompleteReport called %d times, want 1", completer.calls)
@@ -137,7 +138,7 @@ func TestCompleteWithLeavesNonReportTurnsAlone(t *testing.T) {
 
 	r.completeWith(context.Background(), queue.ChatRunPayload{
 		CompanyID: "co-1", ThreadID: "th-1", Channel: domain.ChannelDashboard,
-	}, "hello", 0, 0, 0, nil)
+	}, "hello", 0, 0, 0, nil, "")
 
 	if completer.calls != 0 {
 		t.Errorf("CompleteReport called on a dashboard turn")
@@ -147,7 +148,7 @@ func TestCompleteWithLeavesNonReportTurnsAlone(t *testing.T) {
 	bare := runnerForCompletion(&seq2, nil)
 	bare.completeWith(context.Background(), queue.ChatRunPayload{
 		CompanyID: "co-1", ThreadID: "th-1", Channel: domain.ChannelAPI, APIReportID: "rep-1",
-	}, "hello", 0, 0, 0, nil)
+	}, "hello", 0, 0, 0, nil, "")
 }
 
 // The `api` channel's empty case in completeWith is deliberate and load-bearing
@@ -160,7 +161,7 @@ func TestAPIChannelSendsNothingOutbound(t *testing.T) {
 
 	r.completeWith(context.Background(), queue.ChatRunPayload{
 		CompanyID: "co-1", ThreadID: "th-1", Channel: domain.ChannelAPI,
-	}, "here is your answer", 0, 0, 0, nil)
+	}, "here is your answer", 0, 0, 0, nil, "")
 
 	for _, step := range seq {
 		if step == "outbound" {

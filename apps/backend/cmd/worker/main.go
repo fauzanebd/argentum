@@ -308,7 +308,9 @@ func makeChatRunHandler(runner *app.ChatRunner, reports *app.APIReportService) a
 			retried, _ := asynq.GetRetryCount(ctx)
 			maxRetry, _ := asynq.GetMaxRetry(ctx)
 			if retried >= maxRetry {
-				reports.CompleteReport(ctx, p.APIReportID, p.ThreadID, err)
+				// No document id: this path only runs when the turn failed after
+				// its last retry, and a failed report carries no file.
+				reports.CompleteReport(ctx, p.APIReportID, p.ThreadID, "", err)
 			}
 		}
 		return err
