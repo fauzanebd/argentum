@@ -275,6 +275,17 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/dashboards/:id/data": domain.RoleMember,
 	"DELETE /api/dashboards/:id":   domain.RoleAdmin,
 
+	// Dashboard share links (T-D13). Admin on all three, including the read,
+	// and matching the report player's shares one line above rather than the
+	// dashboards' own RoleMember two lines above. Minting one publishes live
+	// access to a customer's warehouse to anyone holding a URL; listing them
+	// enumerates every such link that exists. Neither is a thing a member
+	// should do without an admin knowing, and revocation sits beside them so
+	// the person who can create can also take back.
+	"POST /api/dashboards/:id/shares":            domain.RoleAdmin,
+	"GET /api/dashboards/:id/shares":             domain.RoleAdmin,
+	"DELETE /api/dashboards/:id/shares/:shareID": domain.RoleAdmin,
+
 	// The Metabase-backed dashboards (006), moved off /api/dashboards in T-D10
 	// and deleted with the rest of the Metabase surface in T-D15.
 	"GET /api/saved-dashboards":        domain.RoleMember,
@@ -477,6 +488,13 @@ var unpolicedPaths = map[string]bool{
 	// authenticates nobody" stays a decision somebody wrote down — the same
 	// reason the auth routes above are named one by one.
 	"/share/:token": true,
+
+	// The shared dashboard page (T-D13), keyless for the same reason and with
+	// one difference worth writing down: this route runs live SQL against a
+	// customer's warehouse for a visitor with no account. Expiry, revocation,
+	// the optional password and the per-hour refresh cap are the controls, and
+	// they live on the share row rather than in this table.
+	"/share/dashboard/:token": true,
 
 	// The public API (T-13). Authenticated by an API key, which carries
 	// scopes rather than a role — apiPolicy answers a question that does not

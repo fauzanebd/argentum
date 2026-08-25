@@ -116,6 +116,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// a typed 503 when the service is absent, which tells a client why, where a
 	// missing route reads as a wrong path.
 	handlers.NewNativeDashboardsHandler(d.dashboardSvc).Register(authed)
+	handlers.NewDashboardShareHandler(d.dashboardShareSvc).Register(authed)
 	if d.scheduledSvc != nil {
 		handlers.NewScheduledTasksHandler(d.scheduledSvc).Register(authed)
 	}
@@ -213,6 +214,11 @@ func newRouter(d *apiDeps) *gin.Engine {
 		share.Use(shareLimiter.ShareMiddleware())
 	}
 	handlers.NewShareHandler(d.shareSvc).Register(share)
+	// Mounted at /share/dashboard/:token rather than /share/:token, which the
+	// report player holds: gin panics on a conflicting wildcard at the same
+	// position. Inside this group it inherits the rate limiter above, which is
+	// the right default for a route anyone on the internet may call.
+	handlers.NewDashboardSharePageHandler(d.dashboardShareSvc).Register(share)
 
 	// The public API (T-13; T-A1 builds the rest of the contract on this
 	// group). It is a sibling of /api rather than a subtree of it, and it

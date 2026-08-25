@@ -487,10 +487,21 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// so a KPI panel is the number query_metric would give the same question in a
 	// chat thread rather than a second derivation of it. Built after metricSvc
 	// for that reason.
-	deps.dashboardSvc = app.NewDashboardService(
-		pgctl.NewDashboardRepo(controlDB), connRepo,
-		dashboard.NewResolver(connRepo, deps.tenant, deps.metricSvc).
-			WithPanelTimeout(time.Duration(cfg.DashboardPanelTimeoutSecs)*time.Second),
+	dashboardRepo := pgctl.NewDashboardRepo(controlDB)
+	// One resolver, shared by the authenticated service and the share page, so
+	// a stranger's render goes through exactly the code an owner's does — the
+	// cache, the timeout, the guard and the query log included. Two resolvers
+	// would be two places for the share path to quietly diverge.
+	dashResolver := dashboard.NewResolver(connRepo, deps.tenant, deps.metricSvc).
+		WithPanelTimeout(time.Duration(cfg.DashboardPanelTimeoutSecs) * time.Second).
+		WithCache(dashboard.NewPanelCache(deps.rdb, time.Duration(cfg.DashboardPanelCacheTTLSecs)*time.Second)).
+		WithQueryLog(pgctl.NewDashboardQueryLogRepo(controlDB))
+	deps.dashboardSvc = app.NewDashboardService(dashboardRepo, connRepo, dashResolver)
+
+	// Dashboard share links (T-D13). The only place in this product where an
+	// unauthenticated request runs a query against a customer's warehouse.
+	deps.dashboardShareSvc = app.NewDashboardShareService(
+		pgctl.NewDashboardShareRepo(controlDB), dashboardRepo, dashResolver, deps.rdb,
 	)
 
 	// Answer feedback (T-Q2). It takes the concrete message repo rather than

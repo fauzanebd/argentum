@@ -160,8 +160,12 @@ type apiDeps struct {
 	// shareSvc mints and resolves report player links (T-V4). Nil when there
 	// is no object storage: without it no plan was ever written, so there is
 	// nothing a link could play.
-	shareSvc  *app.ReportShareService
-	idemStore idempotency.Store
+	shareSvc *app.ReportShareService
+	// dashboardShareSvc mints and opens native-dashboard links (T-D13). Unlike
+	// shareSvc it needs no object storage — what it serves is a live query, not
+	// a stored artefact — so it is built unconditionally.
+	dashboardShareSvc *app.DashboardShareService
+	idemStore         idempotency.Store
 	// apiKeyAuth overrides what authenticates `/v1`. Nil in production, where
 	// apiKeySvc is used; see apiKeyAuthOf in router.go for why the seam exists.
 	apiKeyAuth middleware.APIKeyAuthenticator
