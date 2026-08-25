@@ -57,6 +57,12 @@ type SeedOpts struct {
 	// besides: a third source changes `list_sources` for every case, so a run
 	// that does not need it must not carry it. See adversarial.go.
 	WithAdversarial bool
+	// WithSkills seeds the procedures the skill_follow cases score against
+	// (T-K9); false removes them. The same rule as WithAdversarial and a
+	// sharper reason: a skill puts a line in **every turn's system prompt**, so
+	// a run carrying fixtures it does not need is scoring a different prompt
+	// from the one it reports. See skills.go.
+	WithSkills bool
 }
 
 // EnsureTenant makes the eval tenant exist and returns its identifiers. It
@@ -116,6 +122,7 @@ func EnsureTenant(ctx context.Context, stack *bootstrap.Stack, opts SeedOpts) (T
 	}
 	ensureDefaultAgent(ctx, stack, company.ID)
 	ensureMetrics(ctx, stack, company.ID, user.ID, opts.WithMetrics)
+	ensureSkills(ctx, stack, company.ID, user.ID, opts.WithSkills)
 	ensureAdversarialSource(ctx, stack, company.ID, opts.DemoDSN, opts.WithAdversarial)
 
 	return Tenant{

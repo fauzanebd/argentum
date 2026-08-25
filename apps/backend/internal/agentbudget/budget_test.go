@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -56,12 +57,16 @@ func TestGuardStopsAtToolCallBudget(t *testing.T) {
 	guarded := Guard(tool)
 	ctx := WithTracker(context.Background(), New(Budget{MaxToolCalls: 2}))
 
+	// Distinct arguments on purpose. Identical ones would trip the repeat-guard
+	// first and this test would report *its* reason, measuring the wrong
+	// dimension — which is exactly what happened when that guard widened to
+	// cover identical successes on 2026-08-25.
 	for i := 0; i < 2; i++ {
-		if _, err := guarded.Execute(ctx, "{}"); err != nil {
+		if _, err := guarded.Execute(ctx, fmt.Sprintf(`{"n":%d}`, i)); err != nil {
 			t.Fatalf("call %d: %v", i, err)
 		}
 	}
-	out, err := guarded.Execute(ctx, "{}")
+	out, err := guarded.Execute(ctx, `{"n":2}`)
 	if err != nil {
 		t.Fatalf("blocked call returned an error: %v — the model never sees errors, "+
 			"so the refusal must come back as a normal tool result", err)

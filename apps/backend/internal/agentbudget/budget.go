@@ -411,10 +411,7 @@ func (t *Tracker) NoteOutcome(tool, args, result string, err error) (string, boo
 	if t == nil {
 		return "", false
 	}
-	sig, failed := failureSignature(result, err)
-	if !failed {
-		return "", false
-	}
+	sig := outcomeSignature(result, err)
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -426,31 +423,42 @@ func (t *Tracker) NoteOutcome(tool, args, result string, err error) (string, boo
 	if t.repeats[key] < 2 {
 		return "", false
 	}
-	t.exhaustLocked("the same tool call failed the same way twice")
+	t.exhaustLocked("the same tool call returned the same result twice")
 	return t.refusalLocked(), true
 }
 
-// failureSignature reduces a tool outcome to a string that is stable across
-// identical failures and different across different ones, or reports that the
-// call worked.
+// outcomeSignature reduces a tool outcome to a string that is stable across
+// identical outcomes and different across different ones.
 //
-// The three shapes a failure arrives in are the three this package already
-// knows about, and they are checked in the order that keeps them distinct: a Go
-// error, the SDK's rendering of one, and a result carrying its own `error`
-// field. Anything else is a successful call, including an empty result — zero
-// rows is an answer, and T-Q9 spent a release establishing that it is not a
-// fault.
-func failureSignature(result string, err error) (string, bool) {
+// **Successes are signed too, and that is a widening the evidence forced.** The
+// guard first shipped keyed on failures alone, on the reasoning that repeating
+// a *successful* call is harmless. It is not: on 2026-08-25 the
+// `skill-conflicts-with-metric` case sent
+// `{"metric_key":"revenue","to":"2024-12-31"}` **six times, every one of them
+// `ok`**, and spent the whole iteration budget without answering the question.
+// Making a one-sided window legal the day before had turned a refusal loop into
+// a success loop, and a guard watching only refusals could not see it.
+//
+// A tool handed byte-identical arguments and returning a byte-identical result
+// has told the turn everything it is going to tell it. Whether that answer was
+// an error is irrelevant to whether asking again is progress.
+//
+// The three failure shapes still sign distinctly — a Go error, the SDK's
+// rendering of one, and a result carrying its own `error` field — because a
+// call that fails two different ways *is* making progress and must not trip
+// this. An empty result signs as the success it is: zero rows is an answer, and
+// T-Q9 spent a release establishing that it is not a fault.
+func outcomeSignature(result string, err error) string {
 	if err != nil {
-		return "err:" + err.Error(), true
+		return "err:" + err.Error()
 	}
 	if txt, ok := ToolErrorText(result); ok {
-		return "sdk:" + txt, true
+		return "sdk:" + txt
 	}
 	if resultCarriesError(result) {
-		return "res:" + strings.TrimSpace(result), true
+		return "res:" + strings.TrimSpace(result)
 	}
-	return "", false
+	return "ok:" + strings.TrimSpace(result)
 }
 
 // Exhaust trips the budget from outside the tool path — the chat runner uses

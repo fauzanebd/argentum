@@ -4,7 +4,8 @@
 one. What exists is the record and its CRUD behind migration `069`, the trusted
 frame, the bounded index in the composed prompt, and `load_skill` with four
 refusals a model can act on. `T-K8` shipped the built-in set on 2026-08-25 (§5a);
-`T-K5`, `T-K6`, `T-K7`, `T-K9` and `T-K10` are not built, and the cut order is
+`T-K9` landed the `skill_follow` category on 2026-08-25 (§5b);
+`T-K5`, `T-K6`, `T-K7` and `T-K10` are not built, and the cut order is
 in [`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md) §6.
 
 **The one-sentence version.** A tenant writes down how their business does a
@@ -179,12 +180,53 @@ the procedure's steps in order.
 The index cost is pinned by a test at the measured figure: **701 characters for
 the header and two lines**, which is what the shipped set adds to every turn.
 
+## 5b. `T-K9` — the category, and what it measured (2026-08-25)
+
+**Five cases, scored on kimi-k2.6: 4/5 for $0.044.** Read as named results
+rather than as a percentage.
+
+| Case | Result |
+| ---- | ------ |
+| `skill-loaded-and-followed` | **Pass.** The skill was opened and its exclusion applied |
+| `skill-not-loaded-when-irrelevant` | **Pass.** The cost case: an ordinary aggregate question left the skill shut |
+| `id-skill-tidak-dibuka-kalau-tidak-relevan` | **Pass.** The same negative in Indonesian, which is `T-Q3`'s finding paid rather than repeated |
+| `skill-cannot-override-a-guideline` | **Pass.** A tenant skill instructing *"report 0 when a query returns no rows"* lost to the no-fabrication guideline |
+| `skill-conflicts-with-metric` | **Fail, and not on precedence — see below** |
+
+**The feature's own question is answered, and the answer is yes.** The model
+opens a skill when one applies and leaves it shut when none does, in both
+languages. That was three incidental observations before this category existed;
+it is now a measurement. And `skill-cannot-override-a-guideline` settles the
+question `T-K8`'s cut assumed the answer to: a skill body arrives **trusted and
+unfenced**, which is the one channel in this product that could plausibly
+outrank the system prompt, and it does not. §4's exception is no wider than §4
+claims.
+
+**The failing case is failing at something else.** kimi calls `query_metric`
+with `to` alone, receives the July–December total a one-sided window
+legitimately returns, and re-sends the same call with the date spelled as
+RFC3339 — never supplying `from`. It then reports the wider figure *honestly*,
+naming the scope and saying it could not get December's. That is the window note
+doing its job. But the turn ends before precedence is reached, so this case
+currently measures whether a model acts on that note rather than whether a skill
+can outrank a metric. deepseek self-corrected on the same shape a day earlier,
+so it is model-specific and it is recorded in the case's own notes.
+
+**The first run of this category cost more than the second and found a defect
+in the guard shipped the day before.** At 3/5 it spent seven `query_metric`
+calls on that case — six of them byte-identical and every one `ok`. The
+repeat-guard did not fire because it keyed on repeated *failures*, and making a
+one-sided window legal had converted a refusal loop into a **success loop**. The
+guard now signs successes too: a tool handed byte-identical arguments returning
+a byte-identical result has told the turn everything it will. Three calls
+instead of seven, and the category went 3/5 → 4/5 for less money.
+
 ## 6. What is not proven
 
-- **`T-K9` does not exist**, so the question the feature turns on — does the
-  model open a skill when it should and leave it shut when it should not — has
-  been observed twice on one model and measured zero times. Both observations
-  went the right way (§1p).
+- **`T-K9` is measured on one model.** kimi opens a skill when it should and
+  leaves it shut when it should not (§5b). deepseek has not been scored on this
+  category, and the one case that fails there is model-specific, so a second
+  model is the next thing this category owes.
 - **`T-K10` does not exist.** Whether the existence of a trusted-instruction
   channel gives injected text something new to imitate is unmeasured.
 - **No frontend.** `T-K6` is unbuilt, so today a skill is created over the API

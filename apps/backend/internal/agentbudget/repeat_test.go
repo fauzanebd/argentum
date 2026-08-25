@@ -93,6 +93,64 @@ func TestRepeatedIdenticalFailureEndsTheLoop(t *testing.T) {
 	}
 }
 
+// The shape that forced the guard to widen (2026-08-25).
+//
+// `skill-conflicts-with-metric` sent {"metric_key":"revenue","to":"2024-12-31"}
+// six times, every one `ok`, and spent the iteration budget without answering.
+// Making a one-sided window legal the day before had converted a refusal loop
+// into a success loop, and a guard watching only refusals could not see it.
+func TestRepeatedIdenticalSuccessAlsoEndsTheLoop(t *testing.T) {
+	const same = `{"metric_key":"revenue","value":8684393970,"row_count":1}`
+	tool := &stubTool{name: "query_metric", results: []string{same, same, same, same}}
+	ctx, tr := turnCtx(t, Budget{MaxToolCalls: 20, MaxIterations: 20})
+	g := Guard(tool)
+
+	args := `{"metric_key":"revenue","to":"2024-12-31"}`
+
+	out1, err := g.Execute(ctx, args)
+	if err != nil || out1 != same {
+		t.Fatalf("the first call must pass through untouched: %q %v", out1, err)
+	}
+	if tr.Snapshot().Exhausted {
+		t.Fatal("one successful call must not end the turn")
+	}
+
+	out2, err := g.Execute(ctx, args)
+	if err != nil {
+		t.Fatalf("the repeat must be a result, not a Go error: %v", err)
+	}
+	if !IsRefusal(out2) {
+		t.Errorf("a byte-identical repeat should come back as the refusal payload, got %q", out2)
+	}
+	if !tr.Snapshot().Exhausted {
+		t.Error("a tool returning the same answer to the same arguments twice has told the turn everything it will")
+	}
+	if len(tool.calls) != 2 {
+		t.Errorf("tool called %d times, want 2 — the third must not reach it", len(tool.calls))
+	}
+}
+
+// A tool answering *differently* is making progress, whatever it answered
+// before. This is what keeps the widening from ending ordinary work.
+func TestADifferentResultToTheSameCallIsProgress(t *testing.T) {
+	tool := &stubTool{name: "run_sql", results: []string{
+		`{"rows":[{"n":1}],"count":1}`,
+		`{"rows":[{"n":2}],"count":1}`,
+	}}
+	ctx, tr := turnCtx(t, Budget{MaxToolCalls: 20, MaxIterations: 20})
+	g := Guard(tool)
+
+	args := `{"sql":"select n from t"}`
+	for i := 0; i < 2; i++ {
+		if _, err := g.Execute(ctx, args); err != nil {
+			t.Fatalf("call %d: %v", i, err)
+		}
+	}
+	if tr.Snapshot().Exhausted {
+		t.Error("two different answers are not a loop")
+	}
+}
+
 // Different arguments are a different question, however many of them fail.
 func TestDifferentArgumentsAreNotALoop(t *testing.T) {
 	const bad = `{"error":"no rows"}`

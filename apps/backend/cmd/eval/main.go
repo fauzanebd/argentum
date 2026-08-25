@@ -168,6 +168,7 @@ func main() {
 			metabaseHost:    *metabaseHost,
 			withMetrics:     *withMetrics,
 			withAdversarial: eval.NeedsAdversarial(cases),
+			withSkills:      eval.NeedsSkills(cases),
 			timeout:         *timeout,
 			dryRun:          *dryRun,
 			showModel:       len(modelList) > 1,
@@ -233,6 +234,7 @@ type runOpts struct {
 	// run ask for those cases against a warehouse with no injection in it —
 	// which does not fail, it passes.
 	withAdversarial bool
+	withSkills      bool
 	timeout         time.Duration
 	dryRun          bool
 	// showModel prefixes each case line with the model, which is noise on a
@@ -271,6 +273,7 @@ func runOneModel(
 		MetabaseHostPort: opts.metabaseHost,
 		WithMetrics:      opts.withMetrics,
 		WithAdversarial:  opts.withAdversarial,
+		WithSkills:       opts.withSkills,
 	})
 	if err != nil {
 		fatalf("seed eval tenant: %v", err)
