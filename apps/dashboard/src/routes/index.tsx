@@ -17,6 +17,7 @@ import { UsagePage } from "@/features/usage/usage-page";
 import { ScheduledTasksPage } from "@/features/scheduled-tasks/scheduled-tasks-page";
 import { WatchersPage } from "@/features/watchers/watchers-page";
 import { SharePage } from "@/features/share/share-page";
+import { DashboardSharePage } from "@/features/share/dashboard-share-page";
 import { DocumentsPage } from "@/features/documents/documents-page";
 import {
   DashboardDetailPage,
@@ -72,6 +73,19 @@ const shareRoute = createRoute({
   component: function SharedReport() {
     const { token } = shareRoute.useParams();
     return <SharePage token={token} />;
+  },
+});
+
+// The shared dashboard (T-D13/T-D21). Public, outside `protectedRoute`, and
+// for the same reasons the report player above is — with one difference worth
+// naming: this page runs live SQL against a customer's warehouse when it opens,
+// where the player replays a plan that was already produced.
+const dashboardShareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/d/$token",
+  component: function SharedDashboard() {
+    const { token } = dashboardShareRoute.useParams();
+    return <DashboardSharePage token={token} />;
   },
 });
 
@@ -179,6 +193,7 @@ export const routeTree = rootRoute.addChildren([
   signupRoute,
   acceptInviteRoute,
   shareRoute,
+  dashboardShareRoute,
     protectedRoute.addChildren([
       onboardingRoute,
       chatRoute,
