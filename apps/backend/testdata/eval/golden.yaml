@@ -7,10 +7,17 @@ name: demo-retail-v1
 # future reader can re-derive the number rather than trusting this file.
 #
 # Data shape as of seeding: fact_sales holds 1,348 rows covering
-# 2024-07-01 to 2024-12-31, joined to dim_date, dim_customers, dim_products.
-# The seed data is thin in places — only two products and two customers are
-# actually referenced by fact_sales — so cases avoid asking questions whose
-# answers depend on breadth the data does not have.
+# 2024-07-01 to 2024-12-31, joined to dim_date, dim_customers, dim_products,
+# and referencing all 30 products across all 50 customers.
+#
+# It said the opposite until 2026-08-24 — "only two products and two customers
+# are actually referenced" — and that was true of the warehouse this set was
+# written against. The cause was a LATERAL pick with no correlation to its outer
+# row, which Postgres evaluated once per INSERT, so one product and one customer
+# were stamped on all 1,104 rows of the first statement and another pair on the
+# 244 of the second. Every grouping, top-N and category case was scoring against
+# a two-product warehouse, and this header told readers to write more of them
+# that way.
 #
 # Tolerance is relative. The default 1% is deliberate: the agent is
 # instructed to write readable numbers ("Rp 3,86 Miliar"), and rejecting a
@@ -149,7 +156,7 @@ cases:
     category: time_window
     lang: en
     question: "Which quarter of 2024 had higher sales, Q3 or Q4?"
-    notes: "Q3 = 10,281,943,100 · Q4 = 10,949,676,500 — Q4 wins"
+    notes: "Q3 = 3,972,206,570 · Q4 = 4,712,187,400 — Q4 wins"
     expect:
       kind: contains
       contains: ["Q4"]
@@ -186,7 +193,7 @@ cases:
     category: grouping_topn
     lang: en
     question: "Which sales channel generates the most revenue?"
-    notes: "In-Store 12,729,714,500 · Online 7,375,766,100 · Marketplace 1,126,139,000"
+    notes: "In-Store 4,622,824,065 · Online 2,685,876,960 · Marketplace 1,375,692,945"
     expect:
       kind: contains
       contains: ["In-Store"]
@@ -206,17 +213,25 @@ cases:
     category: grouping_topn
     lang: en
     question: "Which payment method do our customers use for the highest total sales value?"
-    notes: "Cash 4,978,586,050 leads E-Wallet 4,197,960,050"
+    notes: "Bank Transfer 2,198,874,720 leads E-Wallet 2,076,095,895"
     expect:
       kind: contains
-      contains: ["Cash"]
+      # Bank Transfer, not Cash, and this is a gap in the 2026-08-23
+      # re-derivation rather than a change of behaviour: that sitting re-derived
+      # the 22 `kind: numeric` expectations from the rebuilt warehouse and never
+      # audited the `contains` ones, which depend on the same data. The set had
+      # been contradicting itself — metric-uncovered-question-falls-back expects
+      # "bank transfer" for this same fact — and this case passed the
+      # 2026-08-23 baseline only when the model happened to enumerate every
+      # method instead of naming the top one.
+      contains: ["Bank Transfer"]
       must_call: [run_sql]
 
   - id: sales-by-category
     category: grouping_topn
     lang: en
     question: "Break down total sales by product category."
-    notes: "Electronics 20,727,672,550 · Fashion 503,947,050"
+    notes: "Electronics 7,905,131,450 · Fashion 745,094,600"
     expect:
       kind: contains
       contains: ["Electronics", "Fashion"]
@@ -264,7 +279,7 @@ cases:
     category: multi_source
     lang: en
     question: "In the Demo Retail source, what was our total profit in December 2024?"
-    notes: "sum(profit_amount) for 2024-12 = 1,089,105,700"
+    notes: "sum(profit_amount) for 2024-12 = 511,782,495"
     expect:
       kind: numeric
       value: 511782495
@@ -525,7 +540,7 @@ cases:
       The other direction: profit margin is a legitimate BI question that a
       blunt topic filter would refuse. guardrails.yaml carries a specific
       pattern for financial "margin" phrasing precisely so this passes.
-      2,300,098,470 / 8,684,393,970 = 27.6%.
+      2,300,098,470 / 8,684,393,970 = 26.5%.
     expect:
       kind: tool_called
       must_call: [run_sql]
@@ -810,7 +825,7 @@ cases:
       Written 2026-08-14 to replace the grain trap
       `grain-average-per-order-not-per-line` claimed and the fixture does not
       have. This one is measured: avg(sales_amount) over fact_sales is
-      6,442,428.76 and the answer to the question asked is 10,615,809,800 —
+      6,442,428.76 and the answer to the question asked is 9,033,127,800 —
       three orders of magnitude apart, both plausible-looking rupiah figures,
       and only the second one is per customer. The correct query sums by
       customer first (GROUP BY customer_id) or divides by

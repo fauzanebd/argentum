@@ -1538,6 +1538,54 @@ recorded twice. **The guard should be credited with the six-calls-to-two, the
 nine minutes and the 11%, which are deterministic and visible in the audit
 table — not with the two cases.**
 
+## 2w. The re-derivation was incomplete, and the set had been contradicting itself (2026-08-25)
+
+**Rule 1 on the one-sided-window change: kimi 94.6% (53/56), $0.726** — one case
+below the 96.4% baseline and inside the ±2 band, with `metric_registry` 5/5,
+`time_window` 6/6 and `zero_row_trap` 3/3 all holding. deepseek is 78.6%. Two of
+kimi's three failures are the asking-policy defect. **The third was mine.**
+
+`top-payment-method` expects the reply to name **Cash**. On the rebuilt
+warehouse the top payment method is **Bank Transfer** — 2,198,874,720 against
+Cash's 1,557,135,150, and 291 transactions against 274.
+
+**The 2026-08-23 re-derivation re-derived the 22 `kind: numeric` expectations
+and never audited the `contains` ones, which depend on the same data.** That is
+the same species as everything else that sitting found, committed by the sitting
+that found them.
+
+**The set had been telling itself both answers.**
+`metric-uncovered-question-falls-back` expects *"bank transfer"* for this exact
+fact while `top-payment-method` expected *"Cash"*, and both were passing — the
+second only when the model happened to enumerate every method rather than name
+the top one. **So the 96.4% baseline contains one case that passed for the wrong
+reason**, which is worth knowing before that figure is quoted as a clean run.
+
+Audited all thirteen data-dependent text expectations. One was wrong; the rest
+hold — `best-quarter-2024` (Q4, 4,712,187,400 over Q3's 3,972,206,570),
+`top-sales-channel` and `id-kanal-terbesar` (In-Store, 4,622,824,065),
+`sales-by-category` (Electronics then Fashion) and
+`zero-row-probe-offers-real-values` (the three real channel values).
+
+**Five figures quoted in `notes` prose were also stale**, and prose is what the
+next person reads before deciding whether a failure is real: Q3/Q4, the three
+channel totals, the two category totals, December's profit, and the margin
+percentage. All re-derived.
+
+**And the file's own header described the warehouse the rebuild replaced.** It
+said *"only two products and two customers are actually referenced by
+fact_sales — so cases avoid asking questions whose answers depend on breadth the
+data does not have"*, which was true, was caused by the uncorrelated `LATERAL`,
+and had become an instruction to keep writing cases around a defect that no
+longer exists. Corrected, with the reason recorded in place.
+
+**The lesson, since this file keeps collecting them.** A fixture rebuild
+invalidates every expectation derived from the fixture, not merely the ones
+shaped like numbers. The digest test added on 2026-08-23 catches the fixture
+moving; it cannot catch an expectation that was never re-derived. What would
+have caught this is the question nobody asked that day: *which assertions in
+this file are functions of the data?*
+
 ## 2x. A one-sided window became legal, and the model corrected itself (2026-08-24)
 
 **`halfWindow` is gone.** `to` alone now means everything up to that date and
