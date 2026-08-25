@@ -82,7 +82,7 @@ func newWhatsAppRig(t *testing.T, transport whatsapp.Transport) (*gin.Engine, *s
 	phones := &stubPhones{}
 	// Only the phone repository is reached: ResolveCompanyByPhone is the whole
 	// of what this handler asks the service for.
-	companySvc := app.NewCompanyService(nil, nil, phones, nil, nil, nil, nil, nil)
+	companySvc := app.NewCompanyService(nil, nil, phones, nil, nil, nil, nil)
 
 	r := gin.New()
 	NewWebhookHandler(nil, companySvc, wa, transport, "verify-token").Register(r.Group("/webhook"))

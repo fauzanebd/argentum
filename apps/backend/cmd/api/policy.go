@@ -538,7 +538,4 @@ var unpolicedPaths = map[string]bool{
 	"/webhook/discord/interactions": true,
 	"/webhook/lark/events/:app_id":  true,
 	"/webhook/slack/events/:app_id": true,
-
-	// The Metabase reverse proxy forwards to Metabase's own auth.
-	"/metabase/*path": true,
 }

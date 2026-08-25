@@ -16,7 +16,6 @@ import { KnowledgeNav } from "@/components/layout/knowledge-nav";
 import { DocumentsNav } from "@/components/layout/documents-nav";
 import { ApprovalsNav } from "@/components/layout/approvals-nav";
 import { DashboardsNav } from "@/components/layout/dashboards-nav";
-import { GeneratedDashboards } from "@/components/layout/generated-dashboards";
 import { NavUser } from "@/components/layout/nav-user";
 import { CommandPalette } from "@/features/search/command-palette";
 import { useThemeStore } from "@/store/theme";
@@ -105,7 +104,6 @@ function AppSidebar() {
 
         {/* Bottom region: Generated Dashboards — capped height, scrolls */}
         <div className="max-h-[38%] overflow-y-auto overflow-x-hidden shrink-0 px-2 pb-2">
-          <GeneratedDashboards />
         </div>
       </SidebarContent>
 

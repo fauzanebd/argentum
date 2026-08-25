@@ -28,7 +28,6 @@ import (
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
-	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/migrate"
 	"github.com/fauzanebd/argentum/internal/queue"
@@ -184,13 +183,6 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 
 	deps.authSvc = app.NewAuthService(companyRepo, userRepo, signer)
 
-	var mbCli *metabase.Client
-	var metabaseWarehouse *app.MetabaseWarehouseSync
-	if cfg.MetabaseURL != "" && cfg.MetabaseAdminEmail != "" && cfg.MetabaseAdminPassword != "" {
-		mbCli = metabase.NewClient(cfg.MetabaseURL, cfg.MetabasePublicURL,
-			cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword)
-		metabaseWarehouse = app.NewMetabaseWarehouseSync(mbCli)
-	}
 	rawLightLLM, err := llmclient.BuildLight(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("light LLM: %w", err)
@@ -209,7 +201,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// already described.
 	apiSchemaTool := tools.NewGetSchemaToolWithRedis(deps.tenant, connRepo, rdb)
 	describer := app.NewConnectionDescriber(lightLLMClient, deps.tenant, connRepo)
-	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, metabaseWarehouse, apiSchemaTool, describer).
+	deps.companySvc = app.NewCompanyService(companyRepo, connRepo, phoneRepo, dsnCipher, deps.tenant, apiSchemaTool, describer).
 		// Business inference runs in the worker (T-B2); this process only ever
 		// asks for it — when a source is added, when its DSN rotates, when a
 		// test passes, and when a tenant presses Re-scan.
@@ -236,7 +228,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		deps.embeddingSvc = app.NewEmbeddingService(connRepo, connRepo, tableEmbRepo, apiSchemaTool, deps.embedCache)
 	}
 	savedDashboardRepo := pgctl.NewSavedDashboardRepo(controlDB)
-	deps.metabaseDashboardSvc = app.NewMetabaseDashboardService(savedDashboardRepo, mbCli)
+	deps.savedDashboardSvc = app.NewSavedDashboardService(savedDashboardRepo)
 	classifierLLM := lightLLMClient
 	if cfg.ClassifierModel != "" {
 		rawClassifier, err := llmclient.BuildClassifier(cfg)

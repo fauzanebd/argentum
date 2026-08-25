@@ -88,20 +88,12 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
                 </Suspense>
               );
             }
-            const isDashboard =
-              typeof href === "string" &&
-              (href.includes("/metabase/public/dashboard/") ||
-                href.includes("/metabase/public/card/"));
             return (
               <a
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={
-                  isDashboard
-                    ? "inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground no-underline hover:bg-primary/90 transition-colors"
-                    : "text-primary underline underline-offset-2 hover:text-primary/80"
-                }
+                className="text-primary underline underline-offset-2 hover:text-primary/80"
               >
                 {children}
                 {isDashboard && <ExternalLink className="h-3 w-3" />}

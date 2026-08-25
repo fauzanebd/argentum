@@ -156,7 +156,7 @@ func (t *CreateDashboardTool) Execute(ctx context.Context, args string) (string,
 	if err != nil {
 		return "", err
 	}
-	t.recorder.RecordMetabaseDashboard(ctx, companyID, tenantctx.ThreadID(ctx))
+	t.recorder.RecordDashboard(ctx, companyID, tenantctx.ThreadID(ctx))
 
 	out := map[string]any{
 		"dashboard_id": res.Dashboard.ID,

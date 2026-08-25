@@ -71,7 +71,7 @@ type apiDeps struct {
 	// The Metabase-backed dashboards (006), on their way out under T-D15. The
 	// native ones (056) are a separate service so the decommission is a deletion
 	// rather than an edit.
-	metabaseDashboardSvc *app.MetabaseDashboardService
+	savedDashboardSvc *app.SavedDashboardService
 	// Native dashboards (T-D6/T-D7): the stored spec, and the resolver that runs
 	// it against the tenant warehouse through this process's own pool.
 	dashboardSvc *app.DashboardService

@@ -15,10 +15,10 @@ type ChatHandler struct {
 	chat       *app.ChatEnqueuer
 	threads    domain.ThreadRepository
 	messages   domain.MessageRepository
-	dashboards *app.MetabaseDashboardService
+	dashboards *app.SavedDashboardService
 }
 
-func NewChatHandler(chat *app.ChatEnqueuer, threads domain.ThreadRepository, messages domain.MessageRepository, dashboards *app.MetabaseDashboardService) *ChatHandler {
+func NewChatHandler(chat *app.ChatEnqueuer, threads domain.ThreadRepository, messages domain.MessageRepository, dashboards *app.SavedDashboardService) *ChatHandler {
 	return &ChatHandler{chat: chat, threads: threads, messages: messages, dashboards: dashboards}
 }
 

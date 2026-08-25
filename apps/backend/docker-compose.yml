@@ -9,8 +9,6 @@ services:
       POSTGRES_DB: ${DB_NAME:-argentum}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Ensures MB_DB_DBNAME exists before Metabase starts (fresh volumes only).
-      - ./docker/postgres-docker-init-metabase.sql:/docker-entrypoint-initdb.d/01-metabase_app.sql
     ports:
       - "5432:5432"
     healthcheck:
@@ -127,40 +125,6 @@ services:
       retries: 5
     networks: [ argentum_network ]
 
-  metabase:
-    image: metabase/metabase:v0.60.x
-    container_name: argentum_metabase
-    environment:
-      MB_DB_TYPE: postgres
-      MB_DB_DBNAME: metabase_app
-      MB_DB_PORT: 5432
-      MB_DB_USER: ${DB_USER:-argentum}
-      MB_DB_PASS: ${DB_PASSWORD:-argentum123}
-      MB_DB_HOST: postgres
-      MB_JETTY_PORT: 3000
-      MB_ENABLE_EMBEDDING: "true"
-      MB_EMBEDDING_SECRET_KEY: ${MB_EMBEDDING_SECRET:-change_me_in_production}
-      JAVA_OPTS: "-Xmx2g -Xms1g"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "3000:3000"
-    volumes:
-      - metabase_data:/metabase-data
-    networks: [ argentum_network ]
-
-  # Trace collector (T-17). Jaeger all-in-one speaks OTLP natively, so it is
-  # both the collector and the UI — no separate otel-collector process to
-  # configure for a local waterfall. Off by default: the `tracing` profile
-  # starts it, and nothing exports until OTEL_EXPORTER_OTLP_ENDPOINT is set on
-  # api/worker/discord (see .env.example). A stack without it behaves exactly
-  # as before, which is the property internal/tracing was built to keep.
-  #
-  #   docker compose --profile tracing up -d jaeger
-  #   OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 \
-  #   OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf docker compose up -d api worker
-  #   open http://localhost:16686
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
     container_name: argentum_jaeger
@@ -223,10 +187,6 @@ services:
       LLM_ZDR: ${LLM_ZDR:-false}
 
       # Metabase
-      METABASE_URL: http://metabase:3000
-      METABASE_PUBLIC_URL: ${METABASE_PUBLIC_URL:-http://localhost:3000}
-      METABASE_ADMIN_EMAIL: ${METABASE_ADMIN_EMAIL:-argentum@test.com}
-      METABASE_ADMIN_PASSWORD: ${METABASE_ADMIN_PASSWORD:-Metabase123!}
 
       # WhatsApp / Twilio
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-twilio}
@@ -392,10 +352,6 @@ services:
       # OpenRouter zero-data-retention routing; see .env.example before enabling.
       LLM_ZDR: ${LLM_ZDR:-false}
 
-      METABASE_URL: http://metabase:3000
-      METABASE_PUBLIC_URL: ${METABASE_PUBLIC_URL:-http://localhost:3000}
-      METABASE_ADMIN_EMAIL: ${METABASE_ADMIN_EMAIL:-argentum@test.com}
-      METABASE_ADMIN_PASSWORD: ${METABASE_ADMIN_PASSWORD:-Metabase123!}
 
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-twilio}
       WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v18.0}
@@ -517,7 +473,6 @@ volumes:
   postgres_demo_data:
   postgres_docs_data:
   redis_data:
-  metabase_data:
   minio_data:
 
 networks:

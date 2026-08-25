@@ -321,56 +321,6 @@ func ensureSources(ctx context.Context, stack *bootstrap.Stack, companyID, demoD
 			return err
 		}
 	}
-	return syncToMetabase(ctx, stack, companyID, metabaseHostPort)
-}
-
-// syncToMetabase registers every source of the eval tenant as a Metabase
-// database, which is what create_visualization needed and what creating a
-// source through this file — rather than through the HTTP API — skips.
-//
-// Found while gating T-16: every chart case had been failing with "warehouse
-// not synced to Metabase", so the three chart_dashboard cases were scoring
-// the agent's reaction to a broken tool rather than its ability to build a
-// dashboard. Idempotent — sources that already carry an ID are left alone,
-// and a Metabase that is down costs three cases, not the run.
-//
-// **Vestigial since T-D11 (2026-08-17).** create_visualization is deleted and
-// create_dashboard is native, so no case in golden.yaml needs a Metabase
-// database id any more. The step is left in place rather than removed because
-// it is idempotent, costs one round trip per source at setup, and the tenant
-// rows it writes are still read by the Metabase-backed surfaces this repo has
-// not decommissioned yet. Delete it with T-D15.
-func syncToMetabase(ctx context.Context, stack *bootstrap.Stack, companyID, metabaseHostPort string) error {
-	if stack.MetabaseSync == nil {
-		logrus.Debug("eval: no Metabase client configured; harmless since T-D11 — no case needs one")
-		return nil
-	}
-	sources, err := stack.Connections.ListByCompany(ctx, companyID)
-	if err != nil {
-		return fmt.Errorf("list sources for metabase sync: %w", err)
-	}
-	for _, conn := range sources {
-		if conn.MetabaseDatabaseID != nil && *conn.MetabaseDatabaseID != 0 {
-			continue
-		}
-		dsn, err := stack.DSNCipher.Decrypt(conn.DSNEncrypted)
-		if err != nil {
-			logrus.WithError(err).WithField("label", conn.Label).Warn("eval: decrypt DSN for metabase sync")
-			continue
-		}
-		id, err := stack.MetabaseSync.SyncCompanyDatabase(ctx, conn, swapHostPort(dsn, metabaseHostPort))
-		if err != nil {
-			logrus.WithError(err).WithField("label", conn.Label).
-				Warn("eval: metabase warehouse sync failed; harmless since T-D11 — no case needs this id")
-			continue
-		}
-		conn.MetabaseDatabaseID = &id
-		if err := stack.Connections.Update(ctx, conn); err != nil {
-			return fmt.Errorf("persist metabase id for %s: %w", conn.Label, err)
-		}
-		logrus.WithFields(logrus.Fields{"label": conn.Label, "metabase_database_id": id}).
-			Info("eval: source registered with Metabase")
-	}
 	return nil
 }
 

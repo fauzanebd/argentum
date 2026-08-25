@@ -47,7 +47,6 @@ type CompanyService struct {
 	phones      domain.PhoneRepository
 	dsnCipher   *crypto.DSNCipher
 	pool        *db.TenantConnPool
-	mb          *MetabaseWarehouseSync
 	schemaTool  *tools.GetSchemaTool // optional; nil in tests
 	describer   *ConnectionDescriber // optional; nil disables LLM autogen
 	inference   InferenceEnqueuer    // optional; nil disables business inference
@@ -121,7 +120,6 @@ func NewCompanyService(
 	phones domain.PhoneRepository,
 	dsnCipher *crypto.DSNCipher,
 	pool *db.TenantConnPool,
-	mb *MetabaseWarehouseSync,
 	schemaTool *tools.GetSchemaTool,
 	describer *ConnectionDescriber,
 ) *CompanyService {
@@ -131,7 +129,6 @@ func NewCompanyService(
 		phones:      phones,
 		dsnCipher:   dsnCipher,
 		pool:        pool,
-		mb:          mb,
 		schemaTool:  schemaTool,
 		describer:   describer,
 	}
@@ -180,17 +177,6 @@ func (s *CompanyService) AddConnection(ctx context.Context, companyID, dbType, l
 		// so the next empty-source-id resolve picks the new default.
 		s.pool.InvalidateAll(companyID)
 	}
-	if s.mb != nil {
-		id, err := s.mb.SyncCompanyDatabase(ctx, c, dsn)
-		if err != nil {
-			logrus.WithError(err).Warn("metabase warehouse sync failed; dashboards stay disabled until connection can be synced")
-		} else {
-			c.MetabaseDatabaseID = &id
-			if err := s.connections.Update(ctx, c); err != nil {
-				return nil, err
-			}
-		}
-	}
 	if description == "" && s.describer != nil {
 		s.describer.DescribeAsync(companyID, c.ID)
 	}
@@ -224,16 +210,6 @@ func (s *CompanyService) UpdateConnectionDSN(ctx context.Context, companyID, con
 		s.schemaTool.Invalidate(companyID, conn.ID)
 	}
 
-	if s.mb != nil {
-		id, err := s.mb.SyncCompanyDatabase(ctx, conn, dsn)
-		if err != nil {
-			return fmt.Errorf("connection saved but Metabase sync failed: %w", err)
-		}
-		conn.MetabaseDatabaseID = &id
-		if err := s.connections.Update(ctx, conn); err != nil {
-			return err
-		}
-	}
 	// Schema may have changed; refresh the description unless the user has
 	// explicitly written one.
 	if s.describer != nil && conn.DescriptionSource != domain.DescriptionSourceManual {
@@ -386,9 +362,6 @@ func (s *CompanyService) DeleteConnection(ctx context.Context, companyID, connID
 	}
 	if conn.CompanyID != companyID {
 		return domain.ErrUnauthorized
-	}
-	if s.mb != nil && conn.MetabaseDatabaseID != nil && *conn.MetabaseDatabaseID > 0 {
-		s.mb.DeleteWarehouse(ctx, *conn.MetabaseDatabaseID)
 	}
 	if err := s.connections.Delete(ctx, connID); err != nil {
 		return err

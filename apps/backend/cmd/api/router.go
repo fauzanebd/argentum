@@ -2,9 +2,6 @@ package main
 
 import (
 	"net/http"
-	"net/http/httputil"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -67,7 +64,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// apiPolicy: the delete has no undo, and the export is the tenant's whole
 	// conversation history in one response.
 	handlers.NewCompanyDataHandler(d.retentionSvc).Register(authed)
-	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.metabaseDashboardSvc).Register(authed)
+	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, d.savedDashboardSvc).Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
 	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)
 	handlers.NewSuggestionsHandler(d.suggestionSvc).Register(authed)
@@ -109,8 +106,8 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewActionsHandler(d.actionSvc).Register(authed)
 	handlers.NewHTTPEndpointsHandler(d.httpEndpointSvc).Register(authed)
 	handlers.NewWebhooksHandler(d.webhookSubsSvc).Register(authed)
-	if d.metabaseDashboardSvc != nil {
-		handlers.NewDashboardHandler(d.metabaseDashboardSvc).Register(authed)
+	if d.savedDashboardSvc != nil {
+		handlers.NewDashboardHandler(d.savedDashboardSvc).Register(authed)
 	}
 	// Native dashboards (T-D10). Registered unconditionally: the handler answers
 	// a typed 503 when the service is absent, which tells a client why, where a
@@ -302,7 +299,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewV1ChatHandler(
 		chatEnqueuerOrNil(d.chatEnq), d.threadRepo, d.msgRepo, turnUsageOrNil(d.usageRepo), d.rdb, d.idemStore,
 		time.Duration(cfg.APIV1SyncTimeoutSeconds)*time.Second,
-	).WithDashboards(d.metabaseDashboardSvc).Register(v1)
+	).WithDashboards(d.savedDashboardSvc).Register(v1)
 
 	webhookGroup := r.Group("/webhook")
 	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, d.waTransport, cfg.WhatsAppWebhookVerifyToken).
@@ -320,19 +317,6 @@ func newRouter(d *apiDeps) *gin.Engine {
 			WithReplier(d.slackReplier).
 			WithDeduper(d.slackDedupe).
 			Register(webhookGroup)
-	}
-
-	if cfg.MetabaseURL != "" {
-		mbURL, _ := url.Parse(cfg.MetabaseURL)
-		mbProxy := httputil.NewSingleHostReverseProxy(mbURL)
-		r.Any("/metabase/*path", func(c *gin.Context) {
-			c.Request.URL.Path = strings.TrimPrefix(c.Param("path"), "/metabase")
-			if c.Request.URL.Path == "" {
-				c.Request.URL.Path = "/"
-			}
-			c.Request.Host = mbURL.Host
-			mbProxy.ServeHTTP(c.Writer, c.Request)
-		})
 	}
 
 	return r

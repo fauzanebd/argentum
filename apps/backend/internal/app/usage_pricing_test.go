@@ -235,8 +235,7 @@ func TestAppendDropsEventsWithNoCompany(t *testing.T) {
 
 	svc.RecordLLM(ctx, "", "th-1", "msg-1", "gpt-4o", 1000, 1000, 0, 0)
 	svc.RecordSQL(ctx, "", "th-1")
-	svc.RecordMetabaseCard(ctx, "", "th-1")
-	svc.RecordMetabaseDashboard(ctx, "", "th-1")
+	svc.RecordDashboard(ctx, "", "th-1")
 	svc.RecordDocument(ctx, "", "th-1", "pdf")
 
 	if len(usage.events) != 0 {
@@ -252,8 +251,7 @@ func TestFlatRateEventsUseTheConfiguredPricing(t *testing.T) {
 	ctx := context.Background()
 
 	svc.RecordSQL(ctx, "co-1", "th-1")
-	svc.RecordMetabaseCard(ctx, "co-1", "th-1")
-	svc.RecordMetabaseDashboard(ctx, "co-1", "th-1")
+	svc.RecordDashboard(ctx, "co-1", "th-1")
 	svc.RecordDocument(ctx, "co-1", "th-1", "pdf")
 
 	want := []struct {
@@ -261,8 +259,9 @@ func TestFlatRateEventsUseTheConfiguredPricing(t *testing.T) {
 		cost      int64
 	}{
 		{domain.UsageEventSQLQuery, int64(DefaultPricing.SQLQueryCost * 1_000_000)},
-		{domain.UsageEventMetabaseCard, int64(DefaultPricing.MetabaseCardCost * 1_000_000)},
-		{domain.UsageEventMetabaseDashboard, int64(DefaultPricing.MetabaseDashboardCost * 1_000_000)},
+		// The event type keeps its historical name so the usage series does not
+		// split at the decommission date (T-D15).
+		{domain.UsageEventMetabaseDashboard, int64(DefaultPricing.DashboardCost * 1_000_000)},
 		{domain.UsageEventDocumentGenerated, int64(DefaultPricing.DocumentCost * 1_000_000)},
 	}
 	if len(usage.events) != len(want) {
@@ -283,7 +282,9 @@ func TestFlatRateEventsUseTheConfiguredPricing(t *testing.T) {
 
 	// The format rides along as metadata so pricing can be split per format
 	// later without a migration.
-	doc := usage.events[3]
+	// events[2], not [3]: the Metabase card recorder was deleted with the rest
+	// of that surface (T-D15) and this list is one shorter.
+	doc := usage.events[2]
 	if got := doc.Metadata["format"]; got != "pdf" {
 		t.Errorf("document metadata format = %v, want pdf", got)
 	}

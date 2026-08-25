@@ -15,13 +15,16 @@ import (
 // Pricing is intentionally conservative — we surface usage to users now,
 // charge against their credits later.
 type Pricing struct {
-	LLMInputCostPer1K     float64 // USD per 1000 input tokens
-	LLMOutputCostPer1K    float64 // USD per 1000 output tokens
-	SQLQueryCost          float64 // USD per query
-	MetabaseCardCost      float64 // USD per card
-	MetabaseDashboardCost float64 // USD per dashboard
-	DocumentCost          float64 // USD per generated document
-	MCPCallCost           float64 // USD per call to a tenant's own MCP server
+	LLMInputCostPer1K  float64 // USD per 1000 input tokens
+	LLMOutputCostPer1K float64 // USD per 1000 output tokens
+	SQLQueryCost       float64 // USD per query
+	// DashboardCost is charged per dashboard the agent builds. The field and
+	// the event type still say "metabase" underneath (T-D15): the name is
+	// historical, the series is not, and renaming the event would split every
+	// existing tenant's usage chart in two at the decommission date.
+	DashboardCost float64 // USD per dashboard
+	DocumentCost  float64 // USD per generated document
+	MCPCallCost   float64 // USD per call to a tenant's own MCP server
 	// VideoRenderCostPerSec is USD per second of wall clock in the render
 	// service (T-V3). Per second rather than per video, because the two
 	// numbers a video costs are the same for a 30-second summary and a
@@ -32,12 +35,11 @@ type Pricing struct {
 
 // DefaultPricing approximates GPT-4o + a small per-action operations charge.
 var DefaultPricing = Pricing{
-	LLMInputCostPer1K:     0.005,
-	LLMOutputCostPer1K:    0.015,
-	SQLQueryCost:          0.0005,
-	MetabaseCardCost:      0.001,
-	MetabaseDashboardCost: 0.002,
-	DocumentCost:          0.001,
+	LLMInputCostPer1K:  0.005,
+	LLMOutputCostPer1K: 0.015,
+	SQLQueryCost:       0.0005,
+	DashboardCost:      0.002,
+	DocumentCost:       0.001,
 	// Priced like a SQL query: one round trip on the tenant's behalf. It is
 	// deliberately not zero — a metered call at zero cost is invisible in every
 	// summary that sorts by spend, which is where an operator looks first when a
@@ -153,23 +155,16 @@ func (s *UsageService) RecordSQL(ctx context.Context, companyID, threadID string
 	})
 }
 
-// RecordMetabaseCard records one chart creation.
-func (s *UsageService) RecordMetabaseCard(ctx context.Context, companyID, threadID string) {
-	s.append(ctx, &domain.UsageEvent{
-		CompanyID:    companyID,
-		ThreadID:     threadID,
-		EventType:    domain.UsageEventMetabaseCard,
-		CostMicroUSD: int64(s.pricing.MetabaseCardCost * 1_000_000),
-	})
-}
-
-// RecordMetabaseDashboard records one dashboard creation.
-func (s *UsageService) RecordMetabaseDashboard(ctx context.Context, companyID, threadID string) {
+// RecordDashboard records one dashboard the agent built.
+//
+// Named for what it meters rather than for what used to draw it. The event type
+// it writes is unchanged on purpose — see DashboardCost.
+func (s *UsageService) RecordDashboard(ctx context.Context, companyID, threadID string) {
 	s.append(ctx, &domain.UsageEvent{
 		CompanyID:    companyID,
 		ThreadID:     threadID,
 		EventType:    domain.UsageEventMetabaseDashboard,
-		CostMicroUSD: int64(s.pricing.MetabaseDashboardCost * 1_000_000),
+		CostMicroUSD: int64(s.pricing.DashboardCost * 1_000_000),
 	})
 }
 

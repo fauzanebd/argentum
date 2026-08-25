@@ -69,11 +69,6 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: true,
         },
-        "/metabase": {
-          target: apiTarget,
-          changeOrigin: true,
-          secure: true,
-        },
       },
     },
   };

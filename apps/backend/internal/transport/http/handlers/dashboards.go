@@ -8,16 +8,17 @@ import (
 	"github.com/fauzanebd/argentum/internal/app"
 )
 
-// DashboardHandler exposes the Metabase-backed saved dashboard endpoints (006).
+// SavedDashboardHandler exposes the saved-dashboard endpoints left from the
+// Metabase era (006), kept read-mostly through the deprecation window (T-D15).
 //
 // It moved off `/api/dashboards` in T-D10, which the native dashboards now own.
 // The rename is the honest one — these rows are `saved_dashboards`, pointers at
 // objects in another system — and it keeps the two surfaces from arguing over
 // one path during the deprecation window. Both this handler and its routes go in
 // T-D15.
-type DashboardHandler struct{ svc *app.MetabaseDashboardService }
+type DashboardHandler struct{ svc *app.SavedDashboardService }
 
-func NewDashboardHandler(svc *app.MetabaseDashboardService) *DashboardHandler {
+func NewDashboardHandler(svc *app.SavedDashboardService) *DashboardHandler {
 	return &DashboardHandler{svc: svc}
 }
 

@@ -54,7 +54,6 @@ import (
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
-	"github.com/fauzanebd/argentum/internal/metabase"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/theme"
 	"github.com/fauzanebd/argentum/internal/tools"
@@ -97,11 +96,6 @@ type Stack struct {
 
 	ThreadSvc    *app.ThreadService
 	ScheduledSvc *app.ScheduledTaskService
-	// MetabaseSync registers a tenant DSN as a Metabase database. Exposed
-	// because a source created outside the HTTP API — the eval harness seeds
-	// its own — is invisible to Metabase until this runs, and every
-	// query against it fails.
-	MetabaseSync *app.MetabaseWarehouseSync
 
 	Tools        []interfaces.Tool
 	AgentFactory app.AgentFactory
@@ -381,11 +375,6 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.ScheduledSvc = app.NewScheduledTaskService(s.ScheduledRepo, s.ThreadSvc, s.Companies, s.scheduledEnq).
 		WithBudget(s.UsageSvc)
 
-	metabaseClient := metabase.NewClient(
-		cfg.MetabaseURL, cfg.MetabasePublicURL,
-		cfg.MetabaseAdminEmail, cfg.MetabaseAdminPassword,
-	)
-	s.MetabaseSync = app.NewMetabaseWarehouseSync(metabaseClient)
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
 	s.Documents = documentRepo
 

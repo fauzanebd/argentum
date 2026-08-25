@@ -15,8 +15,8 @@ help:
 # ---------------------------------------------------------------------------
 
 .PHONY: infra
-infra: ## Start postgres, demo postgres, redis, minio, metabase
-	cd $(BACKEND) && docker-compose --profile dev up -d postgres postgres_demo redis minio metabase
+infra: ## Start postgres, demo postgres, redis, minio
+	cd $(BACKEND) && docker-compose --profile dev up -d postgres postgres_demo redis minio
 
 .PHONY: infra-down
 infra-down: ## Stop local infrastructure

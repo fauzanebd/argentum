@@ -9,11 +9,12 @@ import {
 /**
  * The dashboards this product runs itself (T-D10).
  *
- * A plain nav entry rather than the list of rows GeneratedDashboards renders
- * below it: that list is the Metabase one, on its way out, and it exists as a
- * list because a Metabase dashboard could only be reached by its own link. A
- * native one is reachable from the chat reply that produced it and from here,
- * and the page is where somebody goes when the conversation has scrolled away.
+ * A plain nav entry rather than a list of rows. It sat beside one until
+ * T-D15: the Metabase sidebar list existed because a Metabase dashboard could
+ * only be reached by its own link, so every one of them had to be on screen.
+ * A native dashboard is reachable from the chat reply that produced it and
+ * from here, and the page is where somebody goes when the conversation has
+ * scrolled away.
  */
 export function DashboardsNav() {
   const { pathname } = useLocation();

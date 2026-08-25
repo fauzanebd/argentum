@@ -53,10 +53,6 @@ func routerWith(t *testing.T, tweaks ...func(*config.Config)) *gin.Engine {
 	cfg := &config.Config{
 		Env:         "test",
 		CORSOrigins: []string{"*"},
-		// Non-empty so the Metabase proxy route registers; the router
-		// skips it otherwise and TestUnpolicedPathsAreReal would be
-		// checking an exemption that is not in play.
-		MetabaseURL: "http://metabase.invalid",
 		// The kill switch defaults to off in a zero-value Config, and off
 		// answers 503 before authentication runs — every /v1 assertion in
 		// this package would then be testing the switch rather than the
@@ -82,7 +78,6 @@ func routerWithDeps(t *testing.T, tweak func(*apiDeps)) *gin.Engine {
 	d := testDeps(&config.Config{
 		Env:          "test",
 		CORSOrigins:  []string{"*"},
-		MetabaseURL:  "http://metabase.invalid",
 		APIV1Enabled: true,
 	}, signer)
 	tweak(d)
@@ -94,17 +89,17 @@ func testDeps(cfg *config.Config, signer *auth.TokenSigner) *apiDeps {
 		cfg:    cfg,
 		signer: signer,
 
-		authSvc:              app.NewAuthService(nil, nil, signer),
-		teamSvc:              app.NewTeamService(nil, nil),
-		apiKeySvc:            app.NewAPIKeyService(nil),
-		agentSvc:             app.NewAgentService(nil, nil, nil),
-		companySvc:           &app.CompanyService{},
-		usageSvc:             &app.UsageService{},
-		metabaseDashboardSvc: app.NewMetabaseDashboardService(nil, nil),
-		scheduledSvc:         app.NewScheduledTaskService(nil, nil, nil, nil),
-		discordSvc:           app.NewDiscordService(nil, nil, nil, nil),
-		larkSvc:              app.NewLarkService(nil, nil, nil),
-		slackSvc:             app.NewSlackService(nil, nil, nil),
+		authSvc:           app.NewAuthService(nil, nil, signer),
+		teamSvc:           app.NewTeamService(nil, nil),
+		apiKeySvc:         app.NewAPIKeyService(nil),
+		agentSvc:          app.NewAgentService(nil, nil, nil),
+		companySvc:        &app.CompanyService{},
+		usageSvc:          &app.UsageService{},
+		savedDashboardSvc: app.NewSavedDashboardService(nil),
+		scheduledSvc:      app.NewScheduledTaskService(nil, nil, nil, nil),
+		discordSvc:        app.NewDiscordService(nil, nil, nil, nil),
+		larkSvc:           app.NewLarkService(nil, nil, nil),
+		slackSvc:          app.NewSlackService(nil, nil, nil),
 	}
 }
 

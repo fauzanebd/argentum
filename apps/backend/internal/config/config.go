@@ -117,13 +117,6 @@ type Config struct {
 	SlackEnabled    bool
 	SlackAPIBaseURL string
 
-	// Metabase
-	MetabaseURL           string
-	MetabasePublicURL     string
-	MetabaseAPIKey        string
-	MetabaseAdminEmail    string
-	MetabaseAdminPassword string
-
 	// Agent SDK Configuration
 	AgentConfigPath      string // path to agents.yaml
 	GuardrailsConfigPath string // path to guardrails.yaml
@@ -592,13 +585,6 @@ func Load() (*Config, error) {
 
 		SlackEnabled:    getEnv("SLACK_ENABLED", "true") == "true",
 		SlackAPIBaseURL: getEnv("SLACK_API_BASE_URL", ""),
-
-		// Metabase
-		MetabaseURL:           getEnv("METABASE_URL", "http://localhost:3000"),
-		MetabasePublicURL:     getEnv("METABASE_PUBLIC_URL", ""),
-		MetabaseAPIKey:        getEnv("METABASE_API_KEY", ""),
-		MetabaseAdminEmail:    getEnv("METABASE_ADMIN_EMAIL", "admin@argentum.local"),
-		MetabaseAdminPassword: getEnv("METABASE_ADMIN_PASSWORD", ""),
 
 		// Agent SDK Configuration
 		AgentConfigPath:      getEnv("AGENT_CONFIG_PATH", "config/agents.yaml"),
