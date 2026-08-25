@@ -340,6 +340,30 @@ func CollectNumbersInProse(v any, max int) []float64 {
 // result, which is what a bounded walk in document order returns.
 func CollectNumbers(v any, max int) []float64 {
 	var out []float64
+
+	// Cells of returned rows are read for numbers *inside* their text, and
+	// nothing else is (2026-08-25).
+	//
+	// T-H11's gate found the gap: the agent listed support-ticket subjects and
+	// the turn logged `ungrounded=[88213]`, where 88213 sits inside the row
+	// value "Refund not received for order 88213" that run_sql had just
+	// returned. The walk below parses a string as a *whole* number, so a figure
+	// embedded in text was never evidence, and a reply quoting the cell
+	// verbatim was recorded as fabricating it. Ticket subjects, addresses, SKUs
+	// and product names like "iPhone 15 Pro" are all that shape.
+	//
+	// **Scoped to `rows` deliberately.** Reading every string of every result
+	// would collect the digits out of table names, column names, SQL text and
+	// error messages, and each of those is a number that would ground a
+	// fabrication — the risk this function's own comment guards, and the reason
+	// CollectNumbersInProse exists as a separate, opt-in function for the one
+	// tool whose figures really do live in sentences.
+	if m, ok := v.(map[string]any); ok {
+		if rows, ok := m["rows"].([]any); ok {
+			out = append(out, cellFigures(rows, max)...)
+		}
+	}
+
 	var walk func(any, int)
 	walk = func(node any, depth int) {
 		if len(out) >= max || depth > 6 {
@@ -369,5 +393,34 @@ func CollectNumbers(v any, max int) []float64 {
 		}
 	}
 	walk(v, 0)
+	return out
+}
+
+// cellFigures reads numbers embedded in the text of returned row cells.
+//
+// Bounded by the same cap as the walk it feeds, and deduplicated against
+// nothing: a figure appearing in two rows is two pieces of evidence for the
+// same claim, and the comparison downstream only asks whether a stated figure
+// appears at all.
+func cellFigures(rows []any, max int) []float64 {
+	var out []float64
+	for _, row := range rows {
+		cells, ok := row.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, cell := range cells {
+			str, ok := cell.(string)
+			if !ok {
+				continue
+			}
+			for _, f := range extractStatedFigures(str) {
+				if len(out) >= max {
+					return out
+				}
+				out = append(out, f.value)
+			}
+		}
+	}
 	return out
 }

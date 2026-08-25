@@ -1884,11 +1884,16 @@ shape.
 
 It blocks nothing; it is Warn and a counter. But that counter is the evidence
 §1g used to say *"`ungrounded=0` on three honest turns"*, and this is the first
-demonstration that it can read non-zero on a turn that did nothing wrong. The
-fix is not "widen the collector" — that is the fabrication risk the comment
-guards. It is to collect embedded numbers only from **string cells of rows a
-data tool actually returned**, which is a narrower rule than prose-scraping and
-a wider one than whole-string parsing. Filed, not fixed.
+demonstration that it can read non-zero on a turn that did nothing wrong.
+
+**Fixed 2026-08-25, and along the narrow line the finding named.** `CollectNumbers`
+now reads figures embedded in the text of returned **row cells**, and in nothing
+else. Table names, column names, SQL text and error messages stay unread —
+widening to every string would collect the digits out of all four, and each is a
+number that would ground a fabrication, which is the risk the function's own
+comment guards. Four tests, the reproduction proven failing first, and one of
+them exists solely to pin what must *not* be collected: a column named
+`revenue_2019`, an error naming line 42, and SQL containing `region_id = 7`.
 
 ## 2a. Needs a Slack workspace
 
