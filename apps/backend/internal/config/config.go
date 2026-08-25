@@ -126,6 +126,10 @@ type Config struct {
 	// just made, and a deployment that started anyway would show every tenant an
 	// empty create screen with the reason in a log line nobody reads.
 	AgentTemplatesPath string // path to agent_templates.yaml
+	// BuiltinSkillsPath holds the procedures this product ships (T-K8). A
+	// deployment that points it at nothing ships none, which is a supported
+	// state and not an error.
+	BuiltinSkillsPath string
 
 	// Argentum control plane
 	JWTSecret           string
@@ -590,6 +594,7 @@ func Load() (*Config, error) {
 		AgentConfigPath:      getEnv("AGENT_CONFIG_PATH", "config/agents.yaml"),
 		GuardrailsConfigPath: getEnv("GUARDRAILS_CONFIG_PATH", "config/guardrails.yaml"),
 		AgentTemplatesPath:   getEnv("AGENT_TEMPLATES_PATH", "config/agent_templates.yaml"),
+		BuiltinSkillsPath:    getEnv("BUILTIN_SKILLS_PATH", "config/skills"),
 
 		// Control plane
 		JWTSecret:            getEnv("ARGENTUM_JWT_SECRET", ""),

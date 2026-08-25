@@ -466,6 +466,9 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// The tenant's written procedures (T-K1). It reaches the roster repository
 	// because a binding names an agent, and it holds no credential and makes no
 	// outbound call — the whole object is text a company typed about itself.
+	// The CRUD surface is the tenant's own rows only: an admin edits what they
+	// wrote, and the shipped procedures are code rather than rows they can
+	// reach. The merge happens on the read paths a turn uses (T-K8).
 	deps.skillSvc = app.NewSkillService(pgctl.NewSkillRepo(controlDB), agentRepo)
 
 	// The metric registry (T-06). It renders each definition against the tenant

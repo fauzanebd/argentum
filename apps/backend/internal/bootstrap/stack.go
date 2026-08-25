@@ -56,6 +56,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/theme"
+	"github.com/fauzanebd/argentum/internal/skill"
 	"github.com/fauzanebd/argentum/internal/tools"
 	mcptools "github.com/fauzanebd/argentum/internal/tools/mcp"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
@@ -243,7 +244,18 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.MessageFeedback = pgctl.NewMessageFeedbackRepo(controlDB)
 	s.Feedback = app.NewFeedbackService(s.MessageFeedback, messageRepo)
 	s.QueryExamples = pgctl.NewQueryExampleRepo(controlDB)
-	s.Skills = pgctl.NewSkillRepo(controlDB)
+	// The procedures this product ships (T-K8), merged in behind the tenant's
+	// own. Loaded here so a malformed shipped skill fails the boot of every
+	// deployment rather than the one tenant whose turn happens to compose an
+	// index — the rule `tools.AllNames` exists for.
+	builtinSkills, err := skill.LoadBuiltins(cfg.BuiltinSkillsPath)
+	if err != nil {
+		return nil, fmt.Errorf("load built-in skills: %w", err)
+	}
+	if len(builtinSkills) > 0 {
+		logrus.WithField("count", len(builtinSkills)).Info("built-in skills loaded")
+	}
+	s.Skills = skill.WithBuiltins(pgctl.NewSkillRepo(controlDB), builtinSkills)
 	creditsRepo := pgctl.NewCreditsRepo(controlDB)
 	llmCredRepo := pgctl.NewCompanyLLMCredentialRepo(controlDB)
 

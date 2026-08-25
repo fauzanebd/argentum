@@ -3,8 +3,9 @@
 **Status: BUILT 2026-08-22, and gated live 2026-08-22/23** on every free arm but
 one. What exists is the record and its CRUD behind migration `069`, the trusted
 frame, the bounded index in the composed prompt, and `load_skill` with four
-refusals a model can act on. `T-K5`→`T-K10` are not built; the roadmap's cut
-order is in [`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md) §6.
+refusals a model can act on. `T-K8` shipped the built-in set on 2026-08-25 (§5a);
+`T-K5`, `T-K6`, `T-K7`, `T-K9` and `T-K10` are not built, and the cut order is
+in [`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md) §6.
 
 **The one-sentence version.** A tenant writes down how their business does a
 thing; the agent is shown one line about it on every turn and opens the steps
@@ -127,6 +128,56 @@ grant to an external system; an irrelevant skill in an index is one wasted line
 the model will not open. **And a skill grants nothing** — a procedure that says
 "query the HR database" on an agent scoped away from it produces a refused
 `run_sql` and a confused turn, not access.
+
+## 5a. The shipped set (`T-K8`), built 2026-08-25
+
+Two files in `config/skills/`, drafted in the roadmap's Appendix B before the
+ticket existed and shipped unchanged: **how to answer a period-over-period
+comparison**, and **how to structure a recurring report**. Both describe a
+*method* rather than an industry, which is what keeps them right for the next
+tenant.
+
+**They are code, not rows**, on `config/agent_templates.yaml`'s argument: a
+guess that turns out wrong is a one-line commit reaching every tenant who has
+not written their own, rather than a migration that cannot reach the tenant who
+has.
+
+**The rule that keeps the set at two: a built-in skill must not restate a
+guideline.** Anything the model should do on every turn belongs in the system
+prompt, where it is paid for once; a skill is for what it should do on *some*
+turns. A third candidate was drafted and cut for restating the no-fabrication
+rule, which is unconditional and already at 3/3 in the eval. A test pins the
+cut, asserting no shipped body contains the guideline's own phrasing.
+
+**Merged by a repository decorator**, not at each call site, because there are
+two call sites — the index the prompt is composed from and `load_skill`'s
+lookup — and a shipped skill visible in one but not the other is an index line
+the agent can read and cannot open, which looks like a bug in the model.
+
+Three rules fall out of that and are each tested:
+
+- **Tenant skills sort first.** When an index is truncated a tenant loses ours
+  before they lose their own; theirs are about their business, ours about
+  method.
+- **A tenant shadows a built-in by name.** `GetByName` asks the repository
+  first, so a company skill called "Period-over-period comparison" wins. The
+  tenant who wrote that name meant theirs.
+- **A built-in's id is its source string**, so an agent with an explicit
+  `agent_skills` binding — which names uuids, none of which is that — is not
+  offered the shipped set either. The same empty-means-everything rule the
+  tenant's own skills follow, and an admin who narrowed an agent gets the
+  narrowing they asked for.
+
+**Gated live 2026-08-25.** The worker boots logging `built-in skills loaded
+count=2`; a shipped skill one character over `T-K1`'s name cap kills the boot
+with the tenant-facing message rather than failing a request (`fatal … name is
+61 characters; the limit is 60, because it rides in every turn's prompt`); and
+a real kimi-k2.6 turn on a tenant with **no skills of its own** opened
+`load_skill{"name":"Period-over-period comparison"}` and answered by walking
+the procedure's steps in order.
+
+The index cost is pinned by a test at the measured figure: **701 characters for
+the header and two lines**, which is what the shipped set adds to every turn.
 
 ## 6. What is not proven
 
