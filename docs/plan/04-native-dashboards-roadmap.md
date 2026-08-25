@@ -40,11 +40,36 @@ tickets in `02-agent-quality-roadmap.md`, or the `S-n` finding codes.
 > it is about, so the gate's own request saved a dashboard that draws nothing on
 > open. Record: [`../coverage/native-dashboards.md`](../coverage/native-dashboards.md) §4.
 >
-> **What is left:** `T-D8` (panel cache) and `T-D9` (query log) in Track C — so
-> every open runs every panel against the tenant warehouse; `T-D13` (sharing) and
-> `T-D21` (the share page), which is why *public* embedding is still a Metabase
-> sentence; and Track E's decommission, `T-D15`/`T-D16`. `T-D14` does not exist
-> and never did — the numbering skips it.
+> ~~**What is left:** `T-D8` (panel cache) and `T-D9` (query log) in Track C…~~
+>
+> **Status, 2026-08-25 — the track is built except `T-D16`.** `T-D8`, `T-D9`,
+> `T-D13`, `T-D21` and `T-D15` all landed; `T-D14` does not exist and never did,
+> the numbering skips it. Records in
+> [`../coverage/native-dashboards.md`](../coverage/native-dashboards.md).
+>
+> **`T-D16` is held deliberately, not forgotten.** It must land a release after
+> `T-D15` or a rolling deploy faults on `SELECT metabase_database_id` in the
+> previous binary, on every connection read. `T-D15` removed every reader — the
+> SELECT, the scan, the UPDATE, the dead accessor and the domain field — which
+> is precisely what makes the drop safe *next* release and unsafe in this one.
+>
+> ⚠ **And its evidence gate cannot be run as written.** The Cutover table gates
+> `T-D16` on *"a recorded check that no `/metabase/*` request was served in the
+> preceding 30 days"*, sourced from `internal/apiobs`. **apiobs never saw that
+> route, for two independent reasons.** `middleware.RecordAPIRequests` is
+> mounted on the `/v1` group alone (`cmd/api/router.go:268`) and its own comment
+> says it "observes every `/v1` response"; the Metabase proxy was registered on
+> the root router. And `api_request_stats.api_key_id` is `NOT NULL REFERENCES
+> api_keys(id)`, while the proxy carried a browser session and no API key — so
+> the row could not have existed even had the middleware been there.
+>
+> The evidence has to come from the ingress or gin access log instead
+> (`msg:"request"`, `path:"/metabase/…"`), which is an operator's check against
+> production traffic rather than a query anyone can run from this repo. **It is
+> also now largely moot:** `T-D15` deleted the proxy, so the route already
+> 404s and anyone still depending on it has been told by their own client. The
+> gate's remaining value is naming *who* that was, and only the access log can
+> answer it.
 >
 > **What moved between `cc06dc7` and that build:** nothing in the code.
 > `git diff --stat cc06dc7 HEAD` is two files, both of them roadmaps in this
