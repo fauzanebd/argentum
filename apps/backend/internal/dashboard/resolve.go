@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -43,6 +44,18 @@ type ConnResolver interface {
 	For(ctx context.Context, companyID, sourceID string) (db.Conn, error)
 }
 
+// metaConnResolver is ConnResolver plus the connection's identity, which the
+// panel cache needs and nothing else does (T-D8).
+//
+// An optional interface rather than a widened ConnResolver, so every existing
+// implementation — including the fakes in this package's own tests — keeps
+// compiling. *db.TenantConnPool satisfies it. A resolver that does not is
+// simply not cached, which is the safe direction: caching without the
+// connection version is the one thing this cache must never do.
+type metaConnResolver interface {
+	ForWithMeta(ctx context.Context, companyID, sourceID string) (db.Conn, db.ConnMeta, error)
+}
+
 // SourceLookup is the one read the resolver makes of the connection repo: a
 // source by id, for its db_type (the dialect) and its owner.
 type SourceLookup interface {
@@ -64,6 +77,8 @@ type Resolver struct {
 	now         func() time.Time
 	timeout     time.Duration
 	concurrency int
+	cache       *PanelCache
+	log         QueryLogger
 }
 
 func NewResolver(conns SourceLookup, pool ConnResolver, metrics MetricQuerier) *Resolver {
@@ -82,6 +97,20 @@ func (r *Resolver) WithPanelTimeout(d time.Duration) *Resolver {
 	if d > 0 {
 		r.timeout = d
 	}
+	return r
+}
+
+// WithCache turns on T-D8's panel cache. A nil cache leaves the resolver
+// behaving exactly as it did before, which is what a deployment without Redis
+// gets.
+func (r *Resolver) WithCache(c *PanelCache) *Resolver {
+	r.cache = c
+	return r
+}
+
+// WithQueryLog turns on T-D9's log of what ran against the tenant warehouse.
+func (r *Resolver) WithQueryLog(l QueryLogger) *Resolver {
+	r.log = l
 	return r
 }
 
@@ -188,15 +217,74 @@ func (r *Resolver) resolveSQLPanel(ctx context.Context, companyID string, d *dom
 	if err != nil {
 		return nil, err
 	}
-	conn, err := r.pool.For(ctx, companyID, d.SourceID)
+	maxRows := maxRowsFor(p.Viz)
+
+	// ForWithMeta where the pool offers it, because the connection's version is
+	// part of the cache key and a cache without it can serve a disconnected
+	// warehouse (T-D8). A resolver that cannot supply it still works and simply
+	// is not cached.
+	var (
+		conn db.Conn
+		meta db.ConnMeta
+	)
+	if mp, ok := r.pool.(metaConnResolver); ok {
+		conn, meta, err = mp.ForWithMeta(ctx, companyID, d.SourceID)
+	} else {
+		conn, err = r.pool.For(ctx, companyID, d.SourceID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("connect to dashboard source: %w", err)
 	}
-	res, err := conn.ExecuteReadOnlyParams(ctx, sql, args, maxRowsFor(p.Viz))
+
+	run := func() ([]byte, error) {
+		started := r.now()
+		res, execErr := conn.ExecuteReadOnlyParams(ctx, sql, args, maxRows)
+		// Logged here rather than after Do returns, so the row is written once
+		// per execution by construction: a cache hit and a collapsed wait never
+		// reach this function, and an error still leaves a record of what was
+		// attempted (T-D9).
+		r.logQuery(ctx, d, p, sql, params, res, execErr, r.now().Sub(started))
+		if execErr != nil {
+			return nil, execErr
+		}
+		return json.Marshal(res)
+	}
+
+	var raw []byte
+	if meta.Version != "" {
+		key := SQLPanelKey(companyID, meta.SourceID, meta.Version, meta.DBType, sql, argsFingerprint(args), maxRows)
+		raw, _, err = r.cache.Do(ctx, key, run)
+	} else {
+		raw, err = run()
+	}
 	if err != nil {
 		return nil, err
 	}
-	return spec.Project(p, res)
+
+	var res db.QueryResult
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, fmt.Errorf("decode cached panel result: %w", err)
+	}
+	// Projected after the cache, not before it. The cached value is the answer
+	// the warehouse gave; the title, viz and format are the panel's, and an
+	// author who renames a panel without touching its SQL must see the new name
+	// on the next render rather than at the next TTL expiry.
+	return spec.Project(p, &res)
+}
+
+// argsFingerprint renders bound parameters into the cache key. json.Marshal of
+// []any is stable for the scalar types Render produces.
+func argsFingerprint(args []any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		// Unfingerprintable arguments must not collide with a different set, so
+		// the key becomes unique and this panel simply is not shared.
+		return fmt.Sprintf("unmarshalable:%d:%v", len(args), args)
+	}
+	return string(b)
 }
 
 // resolveMetricPanel reads a KPI from the registry instead of the warehouse
@@ -215,9 +303,23 @@ func (r *Resolver) resolveMetricPanel(ctx context.Context, companyID string, d *
 	if !ok {
 		return nil, fmt.Errorf("a metric panel needs a date_range filter to be measured over; this dashboard declares none")
 	}
-	res, err := r.metrics.Query(ctx, companyID, p.MetricKey, w.From, w.To, "")
+	// Keyed on the metric and the window rather than on rendered SQL, because
+	// MetricService owns its own rendering and this package never sees the
+	// statement (T-D8). No query-log row: the log records statements this
+	// resolver ran, and a metric panel's statement is the registry's.
+	var res *metric.Result
+	raw, _, err := r.cache.Do(ctx, MetricPanelKey(companyID, p.MetricKey, w.From, w.To), func() ([]byte, error) {
+		out, qErr := r.metrics.Query(ctx, companyID, p.MetricKey, w.From, w.To, "")
+		if qErr != nil {
+			return nil, qErr
+		}
+		return json.Marshal(out)
+	})
 	if err != nil {
 		return nil, err
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, fmt.Errorf("decode cached metric panel: %w", err)
 	}
 
 	out := &spec.Resolved{PanelID: p.ID, Title: p.Title, Viz: p.Viz, Fmt: p.Fmt, RowCount: 1}

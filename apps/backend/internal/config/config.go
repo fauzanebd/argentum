@@ -17,9 +17,9 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/queue"
-	"github.com/fauzanebd/argentum/internal/skill"
 	"github.com/fauzanebd/argentum/internal/report/video"
 	"github.com/fauzanebd/argentum/internal/report/videoplan"
+	"github.com/fauzanebd/argentum/internal/skill"
 )
 
 // Config holds all application configuration
@@ -508,6 +508,15 @@ type Config struct {
 	// concurrently, so this is what decides the worst case a viewer waits
 	// through — and a panel that gives up leaves the other eleven rendered.
 	DashboardPanelTimeoutSecs int
+	// DashboardPanelCacheTTLSecs is how long a resolved panel is served from
+	// Redis before the tenant warehouse is read again (T-D8). 0 disables the
+	// cache, which is also what a deployment with no Redis gets.
+	//
+	// Short by design. A dashboard's whole value is that the number is current,
+	// so this is sized to absorb the 09:00 thundering herd — twenty people
+	// opening the same dashboard, twelve panels each — rather than to keep
+	// figures around.
+	DashboardPanelCacheTTLSecs int
 }
 
 // Load loads configuration from environment variables
@@ -712,7 +721,8 @@ func Load() (*Config, error) {
 		// 15s, matching dashboard.DefaultPanelTimeout. Long enough for a real
 		// aggregate over a warehouse, short enough that a viewer waiting on a
 		// dozen panels has a bounded worst case.
-		DashboardPanelTimeoutSecs: getEnvAsInt("DASHBOARD_PANEL_TIMEOUT", 15),
+		DashboardPanelTimeoutSecs:  getEnvAsInt("DASHBOARD_PANEL_TIMEOUT", 15),
+		DashboardPanelCacheTTLSecs: getEnvAsInt("DASHBOARD_PANEL_CACHE_TTL", 60),
 	}
 
 	// Validate required configuration

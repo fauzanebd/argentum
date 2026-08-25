@@ -585,7 +585,12 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		Dashboards: app.NewDashboardService(
 			pgctl.NewDashboardRepo(controlDB), s.Connections,
 			dashboard.NewResolver(s.Connections, s.TenantPool, s.Metrics).
-				WithPanelTimeout(time.Duration(cfg.DashboardPanelTimeoutSecs)*time.Second),
+				WithPanelTimeout(time.Duration(cfg.DashboardPanelTimeoutSecs)*time.Second).
+				// T-D8 and T-D9. Both are nil-safe: no Redis means no cache and
+				// no control DB means no log, and in either case the resolver
+				// behaves exactly as it did before they existed.
+				WithCache(dashboard.NewPanelCache(s.Redis, time.Duration(cfg.DashboardPanelCacheTTLSecs)*time.Second)).
+				WithQueryLog(pgctl.NewDashboardQueryLogRepo(controlDB)),
 		),
 		Scheduled: s.ScheduledSvc,
 		Docs:      s.Docs,

@@ -72,18 +72,48 @@ func cacheKey(companyID, sourceID string) string {
 	return companyID + ":" + sourceID
 }
 
+// ConnMeta is what the pool knows about a connection besides the connection:
+// which record it resolved to, which driver it speaks, and the opaque version
+// token that changes when the control-plane record does.
+//
+// It exists because a cache keyed on SQL alone is wrong. A rotated DSN can
+// point at an entirely different database, and a panel cache that did not carry
+// `Version` would keep serving the old warehouse's numbers under the new
+// connection — the failure being read as "the dashboard is stale" while it is
+// actually "the dashboard is answering from a database you disconnected"
+// (T-D8).
+type ConnMeta struct {
+	// SourceID is the resolved id, never empty — callers that passed "" for
+	// the company default get the real row's id back and can key on it.
+	SourceID string
+	DBType   string
+	Version  string
+}
+
 // For returns a live Conn for the given (company, source). Empty sourceID
 // resolves to the company's default connection; the pool keys the cache by
 // the resolver-returned ID so default-by-empty and explicit-id share an entry.
+//
+// Signature deliberately unchanged by T-D8: MetricService depends on a narrowed
+// interface with exactly this method (internal/app/metric_service.go), and that
+// is the interface that would break. ForWithMeta is the addition; this
+// delegates to it.
 func (p *TenantConnPool) For(ctx context.Context, companyID, sourceID string) (Conn, error) {
+	conn, _, err := p.ForWithMeta(ctx, companyID, sourceID)
+	return conn, err
+}
+
+// ForWithMeta is For, and also says which connection answered.
+func (p *TenantConnPool) ForWithMeta(ctx context.Context, companyID, sourceID string) (Conn, ConnMeta, error) {
 	if companyID == "" {
-		return nil, errors.New("companyID is required")
+		return nil, ConnMeta{}, errors.New("companyID is required")
 	}
 
 	resolvedID, dbType, dsn, version, err := p.resolver.Resolve(ctx, companyID, sourceID)
 	if err != nil {
-		return nil, fmt.Errorf("resolve tenant connection: %w", err)
+		return nil, ConnMeta{}, fmt.Errorf("resolve tenant connection: %w", err)
 	}
+	meta := ConnMeta{SourceID: resolvedID, DBType: dbType, Version: version}
 
 	key := cacheKey(companyID, resolvedID)
 
@@ -93,7 +123,7 @@ func (p *TenantConnPool) For(ctx context.Context, companyID, sourceID string) (C
 			e.lastUsedAt = time.Now()
 			conn := e.conn
 			p.mu.Unlock()
-			return conn, nil
+			return conn, meta, nil
 		}
 		_ = e.conn.Close()
 		delete(p.entries, key)
@@ -102,11 +132,11 @@ func (p *TenantConnPool) For(ctx context.Context, companyID, sourceID string) (C
 
 	driver, err := Get(dbType)
 	if err != nil {
-		return nil, err
+		return nil, ConnMeta{}, err
 	}
 	conn, err := driver.Open(ctx, dsn)
 	if err != nil {
-		return nil, fmt.Errorf("open tenant connection: %w", err)
+		return nil, ConnMeta{}, fmt.Errorf("open tenant connection: %w", err)
 	}
 
 	p.mu.Lock()
@@ -120,7 +150,7 @@ func (p *TenantConnPool) For(ctx context.Context, companyID, sourceID string) (C
 		dbType:     dbType,
 		lastUsedAt: time.Now(),
 	}
-	return conn, nil
+	return conn, meta, nil
 }
 
 // Invalidate forcibly drops the cached connection for one (company, source).
