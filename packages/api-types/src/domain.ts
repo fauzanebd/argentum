@@ -167,6 +167,14 @@ export interface Agent {
    */
   mcp_server_ids: string[];
   /**
+   * SkillIDs is the tenant procedures this agent is offered (T-K1). Empty is
+   * SourceIDs' rule — **every enabled company skill** — and not
+   * MCPServerIDs'; see AllowsSkill for why two adjacent bindings differ.
+   * Stored in agent_skills, and a deleted skill leaves every agent's binding
+   * with it.
+   */
+  skill_ids: string[];
+  /**
    * TemplateKey records which gallery card this agent was created from
    * (T-B3), or "" for the blank path and for every agent that predates it.
    * **Analytics only — never read at turn time** (locked decision 4). Nothing
@@ -897,11 +905,6 @@ export interface DBConnection {
    */
   description_source: string;
   /**
-   * MetabaseDatabaseID links this row to /api/database when db_type is
-   * postgres; nil until registration succeeds via Metabase REST API.
-   */
-  metabase_database_id?: number /* int */;
-  /**
    * Origin says who built this source: OriginTenant for a warehouse somebody
    * connected, OriginDocument for one this product materialized out of
    * uploaded PDFs (T-P6).
@@ -980,6 +983,26 @@ export interface Dashboard {
   created_at: string;
   updated_at: string;
 }
+
+//////////
+// source: dashboard_share.go
+
+/**
+ * DashboardShare is a bearer credential for one native dashboard (T-D13).
+ * **It is the only object in this product where an unauthenticated request
+ * causes a query against a customer's production database.** A report share
+ * serves a rendered artefact that was produced once; this one runs live SQL for
+ * whoever holds the link. Every field below that is not on `ReportShare` exists
+ * because of that difference.
+ */
+export const DashboardShareDefaultRefreshPerHour = 60;
+export const DashboardShareMaxRefreshPerHour = 600;
+/**
+ * DashboardShareLimits. A default that is not forever and a ceiling an admin
+ * cannot type past, in the same unit and for the same reasons as the report
+ * share's.
+ */
+export type DashboardShare = typeof DashboardShareDefaultRefreshPerHour | typeof DashboardShareMaxRefreshPerHour;
 
 //////////
 // source: data_erasure.go
@@ -2002,6 +2025,81 @@ export interface ScheduledTaskRun {
   started_at: string;
   finished_at?: string;
 }
+
+//////////
+// source: skill.go
+
+/**
+ * A skill is a tenant-authored, named procedure with a stated trigger (T-K1).
+ * Four fields carry the design. `Name` and `WhenToUse` are the only parts that
+ * travel in the system prompt — one index line per skill, every turn (T-K3).
+ * `Body` does not travel until the model calls `load_skill` (T-K4), which is
+ * what makes thirty procedures cost thirty lines rather than thirty procedures.
+ * **A skill grants nothing.** It is not a tool, it cannot widen a scope, and a
+ * body saying "query the HR database" on an agent scoped away from it produces
+ * a refused `run_sql` and a confused turn — the same thing T-S2 established for
+ * the persona: scoping is enforced at the tool, and a prompt saying "only use
+ * the finance database" is a wish.
+ * **The body is trusted text**, and that is an argued exception to T-H8's rule
+ * that a tool result is data rather than instruction. The basis is authorship,
+ * not channel: this product already trusts the persona and the company profile
+ * unfenced because an authenticated member typed them into the dashboard, and a
+ * skill sits beside them. Nothing that arrived *inside content* — a PDF, a
+ * warehouse row, an MCP result — may reach this struct without a human saving
+ * it. `docs/plan/07-agentic-skills-roadmap.md` §4 is the argument; `T-K2` is
+ * where it becomes code.
+ */
+export interface Skill {
+  id: string;
+  company_id: string;
+  name: string;
+  when_to_use: string;
+  body: string;
+  enabled: boolean;
+  source: string;
+  created_by?: string;
+  updated_by?: string;
+  created_at: string;
+  updated_at: string;
+  /**
+   * EmbeddingModel is which model produced Embedding. Two vectors from
+   * different models are not comparable, so a deployment that changes its
+   * embedding model needs to be able to find what predates the change.
+   */
+  embedding_model?: string;
+}
+export const MaxSkillNameChars = 60;
+export const MaxSkillWhenToUseChars = 200;
+export const MaxSkillBodyChars = 8000;
+export const MaxSkillsPerCompany = 200;
+/**
+ * The four caps, and none of them is tidiness.
+ * `MaxSkillNameChars` and `MaxSkillWhenToUseChars` bound the part that rides
+ * **every** turn: they are concatenated into one index line, so together they
+ * are what makes the always-on cost of this feature a number somebody can state
+ * rather than a function of how much a tenant typed. At these two caps a line
+ * tops out at 263 characters and the index at `SkillIndexMaxLines` tops out at
+ * ≈5,260 — which is why `SKILL_INDEX_MAX_CHARS` exists too, in the unit that
+ * matters.
+ * `MaxSkillBodyChars` bounds the part that only travels when asked for, which
+ * is why it can afford to be twenty times larger.
+ * `MaxSkillsPerCompany` bounds the table. Without it the index truncation is
+ * the only thing standing between a tenant and an unbounded list, and a
+ * truncation is a worse place to discover a limit than a save.
+ */
+export type MaxSkill = typeof MaxSkillNameChars | typeof MaxSkillWhenToUseChars | typeof MaxSkillBodyChars | typeof MaxSkillsPerCompany;
+/**
+ * SkillSourceTenant marks a skill an admin typed. Anything else is
+ * `builtin:<key>` — a skill shipped in `config/skills/` (T-K8), trusted on the
+ * same basis as `config/agent_templates.yaml`: it arrived in a commit somebody
+ * reviewed.
+ */
+export const SkillSourceTenant = "tenant";
+/**
+ * SkillSourceBuiltinPrefix is what a shipped skill's Source starts with, so
+ * "which of these did we write" is a prefix test rather than a second column.
+ */
+export const SkillSourceBuiltinPrefix = "builtin:";
 
 //////////
 // source: slack_credential.go

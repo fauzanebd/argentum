@@ -1034,6 +1034,10 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 	// a company with no skills composes today's prompt byte for byte — which is
 	// what makes turning it on for everybody safe rather than a re-score.
 	runner = runner.WithSkills(s.Skills, s.Cfg.SkillIndexMax, s.Cfg.SkillIndexMaxChars)
+	// T-K5's repair path, and only the repair path: the ranking itself needs no
+	// wiring beyond the repository, and it does not run at all until a tenant's
+	// index is over one of the two bounds above.
+	runner = runner.WithSkillEmbedder(app.NewSkillEmbedder(s.Skills, s.EmbedCache))
 	// What is worth asking next (T-Q10). One more LLM call per answered turn, so
 	// it is switchable — NEXT_STEPS_ENABLED=false restores the previous turn
 	// exactly — and it defers to the credit check, because an answer must never

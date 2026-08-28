@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/lib/pq"
+	"github.com/pgvector/pgvector-go"
 
 	"github.com/fauzanebd/argentum/internal/domain"
 )
@@ -38,7 +39,7 @@ func scanSkill(row interface {
 }
 
 // nullableUUID turns an empty id into a NULL rather than into the error
-// Postgres gives for `''::uuid`. Both audit columns are optional: a skill
+// Postgres gives for `”::uuid`. Both audit columns are optional: a skill
 // shipped in `config/skills/` has no author, and a member who leaves takes
 // their id out of these columns without taking the procedure.
 func nullableUUID(id string) any {
@@ -138,10 +139,20 @@ func (r *SkillRepo) querySkills(ctx context.Context, q string, args ...any) ([]*
 // Update rewrites the editable fields. `company_id` is in the WHERE rather than
 // the SET: an update that could move a skill between tenants is one typo away
 // from handing a procedure to somebody else's agent.
+//
+// **The vector is cleared when — and only when — the text it describes moved**
+// (T-K5), and the comparison is against the stored row rather than against
+// anything the caller remembered. An edit that fixes a typo in the body leaves
+// the ranking alone; an edit that rewrites `when_to_use` invalidates a vector
+// that now points at a sentence nobody wrote. Doing this in the same statement
+// is what makes "stale vector" a state this table cannot be in, rather than a
+// state a service is trusted to avoid.
 func (r *SkillRepo) Update(ctx context.Context, s *domain.Skill) error {
 	const q = `
 		UPDATE skills
-		SET name = $1, when_to_use = $2, body = $3, enabled = $4, updated_by = $5, updated_at = now()
+		SET name = $1, when_to_use = $2, body = $3, enabled = $4, updated_by = $5, updated_at = now(),
+		    embedding       = CASE WHEN name = $1 AND when_to_use = $2 THEN embedding       ELSE NULL END,
+		    embedding_model = CASE WHEN name = $1 AND when_to_use = $2 THEN embedding_model ELSE NULL END
 		WHERE company_id = $6 AND id = $7`
 	res, err := r.db.ExecContext(ctx, q,
 		s.Name, s.WhenToUse, s.Body, s.Enabled, nullableUUID(s.UpdatedBy), s.CompanyID, s.ID)
@@ -171,6 +182,84 @@ func (r *SkillRepo) Delete(ctx context.Context, companyID, id string) error {
 	n, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("delete skill rows: %w", err)
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// ListEnabledRankedForIndex is T-K5: the same set ListEnabledForIndex returns,
+// ordered by how close each skill's index line is to this turn's question.
+//
+// **Three sort keys, and the order between them is the design.** Rows with a
+// vector come first, ordered by cosine distance; rows without one follow,
+// ordered by `lower(name)`. So a company that has never been embedded gets
+// ListEnabledForIndex's answer exactly, a company mid-backfill gets its ranked
+// rows promoted and the rest in the old stable order, and nobody gets a
+// silently different result depending on how far a background job has got.
+//
+// Cosine distance (`<=>`), matching QueryExampleRepo and TableEmbeddingRepo.
+//
+// No `k`: the caller is about to apply T-K3's two bounds, and a limit here
+// would be a third bound in a third place. What this returns is an order, not a
+// selection.
+func (r *SkillRepo) ListEnabledRankedForIndex(
+	ctx context.Context, companyID string, queryVec []float32,
+) ([]*domain.Skill, error) {
+	if len(queryVec) == 0 {
+		return r.ListEnabledForIndex(ctx, companyID)
+	}
+	q := `SELECT ` + skillColumns + `
+		FROM skills
+		WHERE company_id = $1 AND enabled
+		ORDER BY (embedding IS NULL), embedding <=> $2, lower(name)`
+	return r.querySkills(ctx, q, companyID, pgvector.NewVector(queryVec))
+}
+
+// ListUnembedded returns the enabled skills with no vector, which is what the
+// backfill works through.
+//
+// Enabled only: a disabled skill is not in any index, so embedding it would be
+// paying for a ranking nobody will read. It gets its vector if and when it is
+// switched back on and the company is over the bound.
+func (r *SkillRepo) ListUnembedded(ctx context.Context, companyID string) ([]*domain.Skill, error) {
+	q := `SELECT ` + skillColumns + `
+		FROM skills WHERE company_id = $1 AND enabled AND embedding IS NULL ORDER BY lower(name)`
+	return r.querySkills(ctx, q, companyID)
+}
+
+// SetEmbedding stores one skill's vector.
+//
+// **It does not touch `updated_at` or `updated_by`**, and that is the reason it
+// is not part of Update. A backfill is not an edit: a tenant looking at who
+// last changed a procedure must not be shown a vector job, and a support
+// question about when a procedure changed must not be answered with the day
+// somebody rotated the embedding model.
+//
+// **The write is conditional on the text still being what was embedded**, which
+// is why this takes the skill rather than its id. The backfill reads a row,
+// embeds it over a network call, and writes back; an admin who edits the
+// trigger sentence inside that window would otherwise be handed a vector for
+// the sentence they just replaced — a stale ranking with no way to tell it is
+// stale. Losing that write costs one embedding call and the next backfill
+// picks the row up again, so the safe direction is obvious.
+func (r *SkillRepo) SetEmbedding(
+	ctx context.Context, companyID string, s *domain.Skill, vec []float32, model string,
+) error {
+	if s == nil || len(vec) == 0 {
+		return fmt.Errorf("set skill embedding: empty vector")
+	}
+	const q = `
+		UPDATE skills SET embedding = $1, embedding_model = $2
+		WHERE company_id = $3 AND id = $4 AND name = $5 AND when_to_use = $6`
+	res, err := r.db.ExecContext(ctx, q, pgvector.NewVector(vec), model, companyID, s.ID, s.Name, s.WhenToUse)
+	if err != nil {
+		return fmt.Errorf("set skill embedding: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set skill embedding rows: %w", err)
 	}
 	if n == 0 {
 		return domain.ErrNotFound

@@ -8,7 +8,36 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/llmtenant"
+	"github.com/fauzanebd/argentum/internal/skill"
 )
+
+// NewSkillEmbedder builds T-K5's embedder over the per-tenant embedding cache.
+//
+// **It exists in this package because of an import cycle**, which is worth
+// stating so nobody moves it somewhere tidier. `internal/config` imports
+// `internal/skill` for T-K3's default bounds, and `internal/llmtenant` imports
+// `internal/config`; so the skill package cannot name the cache, and the two
+// wirings that hold one — `cmd/api` and `internal/bootstrap` — would otherwise
+// each carry their own copy of this adapter.
+//
+// **The nil check is the substance of it.** The cache answers (nil, nil) for a
+// tenant with no embedding credentials, which every existing caller branches
+// on; returning that nil directly through a differently-typed interface would
+// produce a non-nil skill.Client wrapping a nil value, and the branch would
+// stop working everywhere at once.
+func NewSkillEmbedder(repo domain.SkillRepository, cache *llmtenant.EmbeddingCache) *skill.Embedder {
+	if cache == nil {
+		return nil
+	}
+	return skill.NewEmbedder(repo, func(ctx context.Context, companyID string) (skill.Client, error) {
+		client, err := cache.For(ctx, companyID)
+		if err != nil || client == nil {
+			return nil, err
+		}
+		return client, nil
+	})
+}
 
 // SkillService is the tenant's written procedures: create, edit, enable,
 // delete, and bind to an agent (T-K1).
@@ -26,13 +55,22 @@ import (
 // trusted at the moment a human presses save rather than at the moment the
 // agent proposed it.
 type SkillService struct {
-	skills domain.SkillRepository
-	agents domain.AgentRepository
+	skills   domain.SkillRepository
+	agents   domain.AgentRepository
+	embedder *skill.Embedder
 }
 
 // NewSkillService wires the service.
 func NewSkillService(skills domain.SkillRepository, agents domain.AgentRepository) *SkillService {
 	return &SkillService{skills: skills, agents: agents}
+}
+
+// WithEmbedder enables T-K5's write-time vector. Nil leaves it off, which is a
+// supported state: a deployment with no embedding credentials keeps T-K3's
+// alphabetical index and loses nothing until a tenant crosses the bound.
+func (s *SkillService) WithEmbedder(e *skill.Embedder) *SkillService {
+	s.embedder = e
+	return s
 }
 
 // Create validates the caps, checks the per-company limit, and writes.
@@ -64,6 +102,11 @@ func (s *SkillService) Create(ctx context.Context, companyID, userID string, ski
 		"name":       skill.Name,
 		"created_by": userID,
 	}).Info("skill: created; its index line rides every turn from now on")
+	// Synchronous, and inside the save the admin is already waiting on. It is
+	// one short embedding call, it makes the skill rankable the moment it
+	// exists rather than at the next backfill, and it cannot fail the save —
+	// EmbedOne returns nothing to fail with (T-K5).
+	s.embedder.EmbedOne(ctx, companyID, skill)
 	return skill, nil
 }
 
@@ -77,6 +120,10 @@ func (s *SkillService) Update(ctx context.Context, companyID, userID, id string,
 	if err != nil {
 		return nil, err
 	}
+	// Captured before the assignment because the repository clears the vector
+	// when either of these moves, and re-embedding a skill whose trigger
+	// sentence nobody touched would be paying for a vector we already hold.
+	wasIndexedAs := existing.EmbedText()
 	existing.Name = in.Name
 	existing.WhenToUse = in.WhenToUse
 	existing.Body = in.Body
@@ -94,6 +141,9 @@ func (s *SkillService) Update(ctx context.Context, companyID, userID, id string,
 		"enabled":    existing.Enabled,
 		"updated_by": userID,
 	}).Info("skill: updated")
+	if existing.EmbedText() != wasIndexedAs {
+		s.embedder.EmbedOne(ctx, companyID, existing)
+	}
 	return existing, nil
 }
 

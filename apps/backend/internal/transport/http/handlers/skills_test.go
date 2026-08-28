@@ -77,6 +77,18 @@ func (s *skillStore) ListByCompany(_ context.Context, companyID string) ([]*doma
 	return out, nil
 }
 
+func (s *skillStore) ListEnabledRankedForIndex(ctx context.Context, companyID string, _ []float32) ([]*domain.Skill, error) {
+	return s.ListEnabledForIndex(ctx, companyID)
+}
+
+func (s *skillStore) ListUnembedded(context.Context, string) ([]*domain.Skill, error) {
+	return nil, nil
+}
+
+func (s *skillStore) SetEmbedding(context.Context, string, *domain.Skill, []float32, string) error {
+	return nil
+}
+
 func (s *skillStore) ListEnabledForIndex(ctx context.Context, companyID string) ([]*domain.Skill, error) {
 	all, _ := s.ListByCompany(ctx, companyID)
 	out := []*domain.Skill{}

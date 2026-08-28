@@ -175,6 +175,14 @@ func (w *withBuiltins) ListEnabledForIndex(ctx context.Context, companyID string
 	if err != nil {
 		return nil, err
 	}
+	return w.appendBuiltins(rows, companyID), nil
+}
+
+// appendBuiltins puts the shipped set after the tenant's own, skipping any the
+// tenant has shadowed by name. Shared by the two list methods, because a
+// built-in that appeared in the alphabetical index and vanished from the ranked
+// one would be a procedure the model saw yesterday and cannot find today.
+func (w *withBuiltins) appendBuiltins(rows []*domain.Skill, companyID string) []*domain.Skill {
 	taken := make(map[string]bool, len(rows))
 	for _, r := range rows {
 		taken[strings.ToLower(r.Name)] = true
@@ -186,7 +194,49 @@ func (w *withBuiltins) ListEnabledForIndex(ctx context.Context, companyID string
 		}
 		out = append(out, w.forCompany(b, companyID))
 	}
-	return out, nil
+	return out
+}
+
+// ListEnabledRankedForIndex applies T-K5's ranking to the tenant's own rows and
+// leaves the shipped set where it has always been: after them.
+//
+// **Built-ins are not ranked, and that is the existing rule rather than a gap.**
+// A shipped skill has no row, so it has nowhere to hold a vector; and the rule
+// this decorator already enforces — tenant skills first, so a truncated index
+// costs a tenant ours before theirs — decides the same order the ranker would
+// have to override to do anything else. A tenant over the bound is a tenant
+// with twenty procedures of their own, which is the case where "our two
+// method skills lose" is the answer we would have chosen anyway.
+func (w *withBuiltins) ListEnabledRankedForIndex(
+	ctx context.Context, companyID string, queryVec []float32,
+) ([]*domain.Skill, error) {
+	rows, err := w.SkillRepository.ListEnabledRankedForIndex(ctx, companyID, queryVec)
+	if err != nil {
+		return nil, err
+	}
+	return w.appendBuiltins(rows, companyID), nil
+}
+
+// ListUnembedded returns the tenant's rows only. A built-in is not in the
+// table, so there is nothing to backfill and an id like `builtin:recurring-
+// report` handed to SetEmbedding would reach a `WHERE id = $4` against a uuid
+// column — a Postgres error rather than a no-op, on a path whose whole design
+// is to be best-effort.
+func (w *withBuiltins) ListUnembedded(ctx context.Context, companyID string) ([]*domain.Skill, error) {
+	return w.SkillRepository.ListUnembedded(ctx, companyID)
+}
+
+// SetEmbedding refuses a built-in by name rather than letting it reach SQL, for
+// ListUnembedded's reason. Nothing in this tree should be able to call it with
+// one — the backfill reads its work list from ListUnembedded — so this is the
+// guard that says so out loud if a later caller forgets.
+func (w *withBuiltins) SetEmbedding(
+	ctx context.Context, companyID string, s *domain.Skill, vec []float32, model string,
+) error {
+	if s != nil && s.IsBuiltin() {
+		return fmt.Errorf("%w: %q ships in config/skills and has no row to embed", domain.ErrInvalidInput, s.Name)
+	}
+	return w.SkillRepository.SetEmbedding(ctx, companyID, s, vec, model)
 }
 
 func (w *withBuiltins) GetByName(ctx context.Context, companyID, name string) (*domain.Skill, error) {

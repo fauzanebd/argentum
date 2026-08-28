@@ -46,6 +46,18 @@ func (s *skillRepoStub) ListByCompany(context.Context, string) ([]*domain.Skill,
 	return nil, nil
 }
 
+func (s *skillRepoStub) ListEnabledRankedForIndex(ctx context.Context, companyID string, _ []float32) ([]*domain.Skill, error) {
+	return s.ListEnabledForIndex(ctx, companyID)
+}
+
+func (s *skillRepoStub) ListUnembedded(context.Context, string) ([]*domain.Skill, error) {
+	return nil, nil
+}
+
+func (s *skillRepoStub) SetEmbedding(context.Context, string, *domain.Skill, []float32, string) error {
+	return nil
+}
+
 func (s *skillRepoStub) ListEnabledForIndex(_ context.Context, companyID string) ([]*domain.Skill, error) {
 	if s.listErr != nil {
 		return nil, s.listErr

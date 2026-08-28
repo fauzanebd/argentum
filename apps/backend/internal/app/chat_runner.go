@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	sdkagent "github.com/Ingenimax/agent-sdk-go/pkg/agent"
@@ -319,6 +320,7 @@ type ChatRunner struct {
 	skills             domain.SkillRepository
 	skillIndexMax      int
 	skillIndexMaxChars int
+	skillEmbedder      *skill.Embedder
 
 	// What is worth asking next (T-Q10). Off unless a caller says otherwise —
 	// see WithNextSteps — because the pass adds an LLM call and its latency to
@@ -567,6 +569,15 @@ func (r *ChatRunner) WithSkills(repo domain.SkillRepository, maxLines, maxChars 
 	return r
 }
 
+// WithSkillEmbedder enables T-K5's background repair of missing vectors. Nil
+// leaves it off and every call on it is a no-op, so a deployment with no
+// embedding credentials keeps T-K3's alphabetical index and nothing else
+// changes.
+func (r *ChatRunner) WithSkillEmbedder(e *skill.Embedder) *ChatRunner {
+	r.skillEmbedder = e
+	return r
+}
+
 // skillIndex renders the index this turn's agent is offered.
 //
 // **Scoped by the agent binding**, which is the precise permission T-K1 built:
@@ -583,7 +594,29 @@ func (r *ChatRunner) WithSkills(repo domain.SkillRepository, maxLines, maxChars 
 // rule prevents is narrower here than it is there. Binding an agent to a subset
 // is the mechanism a tenant has today; a `source_id` on the skill would make it
 // exact, and it is not in this ticket.
-func (r *ChatRunner) skillIndex(ctx context.Context, companyID string, agent *domain.Agent) string {
+//
+// **T-K5's ranking runs only when the alphabetical order would drop something**,
+// and that condition is the ticket's design rather than an optimisation. Two
+// reasons, and the second is the one the ticket did not have:
+//
+//  1. Below the bound nothing is lost, so a ranker can only reorder lines the
+//     model was going to be shown anyway. It would be spending an embedding
+//     call to change the order of a list it does not change the contents of.
+//
+//  2. **The index lives in the system prompt, which is the cached prefix.** An
+//     order that moved with the question would invalidate that prefix on every
+//     turn — the exact cost this package's own header says putting bodies in
+//     the prompt would have incurred, arriving through the retrieval that was
+//     supposed to make the feature cheaper. A tenant over the bound is already
+//     paying it, because they are already losing procedures; a tenant under it
+//     must not start paying it to gain nothing.
+//
+// So: compose alphabetically, and re-compose ranked only if the first pass had
+// to drop a name. The turn a tenant crosses the bound is the turn the vector
+// starts being asked for.
+func (r *ChatRunner) skillIndex(
+	ctx context.Context, companyID string, agent *domain.Agent, questionVec func() []float32,
+) string {
 	if r.skills == nil {
 		return ""
 	}
@@ -603,7 +636,56 @@ func (r *ChatRunner) skillIndex(ctx context.Context, companyID string, agent *do
 		allowed = agent.AllowsSkill
 	}
 	block, dropped := skill.Compose(rows, allowed, r.skillIndexMax, r.skillIndexMaxChars)
+	if len(dropped) == 0 {
+		return block
+	}
+
+	// Over the bound. Every skill this tenant wrote after the twentieth is
+	// invisible on every turn until they delete one, and which twenty survive
+	// was decided by their first letters. Rank instead — and keep the
+	// alphabetical block if anything about the ranking is unavailable, because
+	// a worse order is better than no procedures at all.
+	if ranked := r.rankedSkillIndex(ctx, companyID, allowed, questionVec); ranked != "" {
+		return ranked
+	}
 	skill.LogDropped(companyID, agentID, dropped, r.skillIndexMax, r.skillIndexMaxChars)
+	// The names dropped alphabetically are the ones a backfill would let the
+	// ranker reconsider, so this is where the repair is triggered — detached,
+	// and at most once every ten minutes per company (T-K5).
+	r.skillEmbedder.BackfillSoon(ctx, companyID)
+	return block
+}
+
+// rankedSkillIndex re-composes the index ordered by relevance to this turn's
+// question. Returns "" for every reason the ranking is unavailable — no
+// embedding credentials, a failed lookup, an empty result — and the caller
+// keeps the alphabetical block.
+func (r *ChatRunner) rankedSkillIndex(
+	ctx context.Context, companyID string, allowed func(string) bool, questionVec func() []float32,
+) string {
+	vec := questionVec()
+	if len(vec) == 0 {
+		return ""
+	}
+	ranked, err := r.skills.ListEnabledRankedForIndex(ctx, companyID, vec)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("skill index: ranking failed; falling back to the alphabetical order")
+		return ""
+	}
+	block, dropped := skill.Compose(ranked, allowed, r.skillIndexMax, r.skillIndexMaxChars)
+	if block == "" {
+		return ""
+	}
+	// Still a Warn, and it still names what was left out. Ranking changes
+	// *which* procedures a tenant loses, not *that* they lose some, and the
+	// line T-K3 added to tell somebody they had outgrown the bound is the line
+	// that says so.
+	skill.LogDropped(companyID, "", dropped, r.skillIndexMax, r.skillIndexMaxChars)
+	// Fired here too: a company mid-backfill ranks the rows that have vectors
+	// and leaves the rest in name order behind them, which is a partial answer
+	// worth completing.
+	r.skillEmbedder.BackfillSoon(ctx, companyID)
 	return block
 }
 
@@ -746,6 +828,13 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		logrus.WithError(err).Warn("resolve light LLM failed; using primary for guardrails")
 		lightLLM = primaryLLM
 	}
+	// One embedding call per turn at most, shared by the skill ranker, the
+	// cookbook and the table picker, and not made at all unless one of them
+	// asks (T-Q8, T-K5). Built here because the skill index is composed as part
+	// of the system prompt below, which is earlier than the two prepended
+	// blocks that were its original callers.
+	questionVec := r.questionVectorOnce(ctx, p.CompanyID, p.Message)
+
 	agent, err := r.agentFactory(AgentSpec{
 		Primary:          primaryLLM,
 		Light:            lightLLM,
@@ -755,7 +844,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		// not in the shared system prompt, so it applies to this turn alone.
 		SystemAddendum: p.Directive,
 		CompanyContext: r.companyContext(ctx, p.CompanyID),
-		SkillIndex:     r.skillIndex(ctx, p.CompanyID, agentRow),
+		SkillIndex:     r.skillIndex(ctx, p.CompanyID, agentRow, questionVec),
 		Persona:        personaOf(agentRow),
 		ToolNames:      toolNamesOf(agentRow),
 		CompanyTools:   companyTools,
@@ -798,10 +887,6 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	agentMsg = withSourcesContext(agentMsg, sources)
 	agentMsg = r.withMetricsContext(ctx, agentMsg, p.CompanyID)
 	agentMsg = r.withActionsContext(ctx, agentMsg, p.CompanyID)
-	// One embedding call per turn, shared by the table picker and the cookbook
-	// (T-Q8). Both ask the same question of the same sentence; doing it twice
-	// would be two network round trips before the model is called at all.
-	questionVec := r.questionVector(ctx, p.CompanyID, p.Message)
 	agentMsg = r.withCookbookContext(ctx, agentMsg, questionVec)
 	agentMsg = r.withRelevantTablesContext(ctx, agentMsg, questionVec, sources)
 	// Last, so it sits closest to the user's own words — above only the
@@ -2144,7 +2229,7 @@ func withCurrencyContext(msg, currency string) string {
 // `tables` argument instead of dumping the full catalog. Silent skip when
 // the feature is off, the source has no embeddings, or the embedding API
 // fails — the agent's regular get_schema flow still works.
-func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg string, questionVec []float32, sources []*domain.DBConnection) string {
+func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg string, questionVec func() []float32, sources []*domain.DBConnection) string {
 	// Plain End rather than tracing.End: every failure in here is a deliberate
 	// silent skip, so there is no error to record — what the waterfall answers
 	// is how long the embedding round-trip cost before the turn even started.
@@ -2167,10 +2252,12 @@ func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg string, 
 		return msg
 	}
 
-	// The vector is computed once per turn and passed in (T-Q8): the cookbook
-	// asks the same question of the same text, and embedding it twice would be
-	// two network round trips before the model is even called.
-	qv := questionVec
+	// The vector is computed once per turn and shared (T-Q8): the cookbook asks
+	// the same question of the same text, and embedding it twice would be two
+	// network round trips before the model is even called. Asked for here
+	// rather than above the eligibility checks, so a deployment with the
+	// picker off and no eligible sources pays nothing for it.
+	qv := questionVec()
 	if len(qv) == 0 {
 		logrus.WithField("company_id", companyID).Debug("table picker: no question vector; skipping hint")
 		return msg
@@ -2227,18 +2314,43 @@ func (r *ChatRunner) withRelevantTablesContext(ctx context.Context, msg string, 
 	return b.String()
 }
 
-// questionVector embeds the user's message once for every consumer that wants
-// it: the table picker and the cookbook (T-Q8).
+// questionVectorOnce returns a lazy, memoised accessor for the turn's question
+// vector, shared by every consumer that wants one: the table picker, the
+// cookbook (T-Q8) and — since T-K5 — the skill index when it has to truncate.
+//
+// **Lazy rather than eager, and the third consumer is why.** The first two want
+// the vector on every turn they are enabled for, so computing it up front cost
+// nothing. The skill ranker wants it only on the turns where a tenant's index
+// is over its bound, which is a fact discovered while composing the prompt and
+// is false for every tenant today. An eager call would have put an embedding
+// round trip on every turn of every deployment that has skills wired, to serve
+// a case that almost never fires.
+//
+// Memoised, so the three callers still share one round trip — which is the
+// property T-Q8 introduced this function for and the one it would be easiest to
+// lose here.
+func (r *ChatRunner) questionVectorOnce(ctx context.Context, companyID, userMsg string) func() []float32 {
+	var (
+		once sync.Once
+		vec  []float32
+	)
+	return func() []float32 {
+		once.Do(func() { vec = r.questionVector(ctx, companyID, userMsg) })
+		return vec
+	}
+}
+
+// questionVector embeds the user's message.
 //
 // Returns nil for every ordinary reason a tenant has no embeddings — no cache
 // wired, no credentials, an API that failed — and each of those disables the
-// features that need it rather than the turn. Skipped entirely when nothing
-// would use the vector, so a deployment with neither feature pays nothing.
+// features that need it rather than the turn. Callers reach it through
+// questionVectorOnce, which is what keeps it to one call per turn.
 func (r *ChatRunner) questionVector(ctx context.Context, companyID, userMsg string) []float32 {
 	if r.embedCache == nil || strings.TrimSpace(userMsg) == "" {
 		return nil
 	}
-	if r.embRepo == nil && r.cookbook == nil {
+	if r.embRepo == nil && r.cookbook == nil && r.skills == nil {
 		return nil
 	}
 
@@ -2290,8 +2402,15 @@ func (r *ChatRunner) questionVector(ctx context.Context, companyID, userMsg stri
 // answer: a question that resembles a previous one is not the previous one, and
 // an agent that pattern-matches too hard will answer last week's question with
 // this week's words.
-func (r *ChatRunner) withCookbookContext(ctx context.Context, msg string, questionVec []float32) string {
-	if r.cookbook == nil || len(questionVec) == 0 {
+func (r *ChatRunner) withCookbookContext(ctx context.Context, msg string, questionVec func() []float32) string {
+	if r.cookbook == nil {
+		return msg
+	}
+	// Asked for after the nil check rather than before it, so a deployment with
+	// the cookbook off never triggers the embedding call (T-K5 made the vector
+	// lazy; this is the check that has to move for that to mean anything).
+	vec := questionVec()
+	if len(vec) == 0 {
 		return msg
 	}
 
@@ -2303,7 +2422,7 @@ func (r *ChatRunner) withCookbookContext(ctx context.Context, msg string, questi
 	// agent scoped away from a warehouse must not be shown queries against it,
 	// or its prompt carries the table names the scope exists to hide (T-S2).
 	scope := agentscope.FromContext(ctx)
-	hits, err := r.cookbook.TopK(ctx, companyID, scope.SourceIDs, questionVec, r.cookbookTopK)
+	hits, err := r.cookbook.TopK(ctx, companyID, scope.SourceIDs, vec, r.cookbookTopK)
 	if err != nil {
 		logrus.WithError(err).WithField("company_id", companyID).
 			Warn("cookbook: lookup failed; this turn runs without examples")

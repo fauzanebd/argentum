@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/skill"
 )
 
 // A fake store rather than a live Postgres, for the reason retention_service's
@@ -72,6 +73,31 @@ func (f *fakeSkillRepo) ListByCompany(_ context.Context, companyID string) ([]*d
 
 func (f *fakeSkillRepo) ListEnabledForIndex(_ context.Context, companyID string) ([]*domain.Skill, error) {
 	return f.list(companyID, true), nil
+}
+
+func (f *fakeSkillRepo) ListEnabledRankedForIndex(ctx context.Context, companyID string, _ []float32) ([]*domain.Skill, error) {
+	return f.ListEnabledForIndex(ctx, companyID)
+}
+
+func (f *fakeSkillRepo) ListUnembedded(_ context.Context, companyID string) ([]*domain.Skill, error) {
+	out := []*domain.Skill{}
+	for _, s := range f.list(companyID, true) {
+		if len(s.Embedding) == 0 {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+// SetEmbedding is conditional on the text still being what was embedded, like
+// the real one — that guard is the reason SetEmbedding takes a skill.
+func (f *fakeSkillRepo) SetEmbedding(_ context.Context, companyID string, s *domain.Skill, vec []float32, model string) error {
+	row, ok := f.byID[s.ID]
+	if !ok || row.CompanyID != companyID || row.EmbedText() != s.EmbedText() {
+		return domain.ErrNotFound
+	}
+	row.Embedding, row.EmbeddingModel = vec, model
+	return nil
 }
 
 func (f *fakeSkillRepo) list(companyID string, enabledOnly bool) []*domain.Skill {
@@ -278,5 +304,107 @@ func TestSetAgentBindingAcceptsTheEmptyList(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("binding = %v, want empty — which means every enabled company skill", got)
+	}
+}
+
+// T-K5's write-time vector, from the service's side. The question here is when
+// the embedding call happens rather than what it produces.
+
+type countingEmbedClient struct {
+	calls int
+	sent  []string
+}
+
+func (c *countingEmbedClient) Embed(_ context.Context, inputs []string) ([][]float32, error) {
+	c.calls++
+	c.sent = append(c.sent, inputs...)
+	out := make([][]float32, len(inputs))
+	for i := range inputs {
+		out[i] = []float32{1, 2, 3}
+	}
+	return out, nil
+}
+
+func (c *countingEmbedClient) Model() string { return "text-embedding-3-small" }
+
+func serviceWithEmbedding(repo domain.SkillRepository) (*SkillService, *countingEmbedClient) {
+	client := &countingEmbedClient{}
+	e := skill.NewEmbedder(repo, func(context.Context, string) (skill.Client, error) { return client, nil })
+	return NewSkillService(repo, &fakeSkillAgents{}).WithEmbedder(e), client
+}
+
+// A skill is rankable the moment it exists, rather than at the next backfill.
+func TestCreatingASkillEmbedsIt(t *testing.T) {
+	repo := newFakeSkillRepo()
+	svc, client := serviceWithEmbedding(repo)
+
+	got, err := svc.Create(context.Background(), "co-1", "user-1", skillFixture("co-1", "", "Weekly report"))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if client.calls != 1 {
+		t.Errorf("the provider was called %d times, want one", client.calls)
+	}
+	if len(got.Embedding) == 0 {
+		t.Error("the returned skill carries no vector")
+	}
+	if len(repo.byID[got.ID].Embedding) == 0 {
+		t.Error("the stored row carries no vector")
+	}
+}
+
+// **An edit that does not move the index line must not re-embed.** The vector
+// describes `name — when_to_use` and nothing else, so a tenant fixing a typo in
+// step four of a procedure is not a reason to pay a provider.
+func TestEditingOnlyTheBodyDoesNotReEmbed(t *testing.T) {
+	existing := skillFixture("co-1", "skill-1", "Weekly report")
+	repo := newFakeSkillRepo(existing)
+	svc, client := serviceWithEmbedding(repo)
+
+	in := skillFixture("co-1", "skill-1", "Weekly report")
+	in.Body = existing.Body + " And exclude cancelled orders."
+	if _, err := svc.Update(context.Background(), "co-1", "user-1", "skill-1", in); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if client.calls != 0 {
+		t.Errorf("a body-only edit cost %d embedding calls", client.calls)
+	}
+}
+
+// And the other half: an edit that *does* move it must, because the repository
+// cleared the old vector in the same statement and a skill with none ranks
+// behind every skill that has one.
+func TestEditingTheTriggerReEmbeds(t *testing.T) {
+	repo := newFakeSkillRepo(skillFixture("co-1", "skill-1", "Weekly report"))
+	svc, client := serviceWithEmbedding(repo)
+
+	in := skillFixture("co-1", "skill-1", "Weekly report")
+	in.WhenToUse = "The user asks for the Monday numbers."
+	if _, err := svc.Update(context.Background(), "co-1", "user-1", "skill-1", in); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if client.calls != 1 {
+		t.Errorf("the provider was called %d times after the trigger changed, want one", client.calls)
+	}
+	if len(client.sent) != 1 || !strings.Contains(client.sent[0], "Monday numbers") {
+		t.Errorf("embedded %v, want the new trigger sentence", client.sent)
+	}
+}
+
+// A provider outage is a ranking the tenant does not get. It is never a
+// procedure they do not get.
+func TestAFailedEmbeddingStillSavesTheSkill(t *testing.T) {
+	repo := newFakeSkillRepo()
+	e := skill.NewEmbedder(repo, func(context.Context, string) (skill.Client, error) {
+		return nil, errors.New("no embedding credentials for this tenant")
+	})
+	svc := NewSkillService(repo, &fakeSkillAgents{}).WithEmbedder(e)
+
+	got, err := svc.Create(context.Background(), "co-1", "user-1", skillFixture("co-1", "", "Weekly report"))
+	if err != nil {
+		t.Fatalf("the save failed because the embedding did: %v", err)
+	}
+	if len(repo.created) != 1 || got.ID == "" {
+		t.Error("the skill was not written")
 	}
 }

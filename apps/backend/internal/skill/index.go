@@ -118,10 +118,12 @@ func Compose(skills []*domain.Skill, allowed func(skillID string) bool, maxLines
 
 // LogDropped reports what did not fit, at Warn.
 //
-// Overflow is `T-K5`'s problem to solve properly. Until then a tenant who
-// crosses either bound has to find out from a log rather than from a procedure
-// that silently stopped being offered — which is the failure mode this
-// project's own metric catalog produced by counting in the wrong unit.
+// **Still Warn after T-K5, because ranking changed which procedures a tenant
+// loses and not that they lose some.** The ranker promotes what the question
+// matches; the twenty-first line is still not offered, and a tenant who has
+// outgrown the bound needs to know that from something other than a procedure
+// quietly ceasing to be used. T-K6 puts the same fact on the settings screen,
+// where somebody is actually looking.
 func LogDropped(companyID, agentID string, dropped []string, maxLines, maxChars int) {
 	if len(dropped) == 0 {
 		return

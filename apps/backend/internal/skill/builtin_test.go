@@ -197,6 +197,21 @@ func (s *stubSkills) ListByCompany(context.Context, string) ([]*domain.Skill, er
 func (s *stubSkills) ListEnabledForIndex(context.Context, string) ([]*domain.Skill, error) {
 	return s.rows, s.err
 }
+func (s *stubSkills) ListEnabledRankedForIndex(_ context.Context, _ string, _ []float32) ([]*domain.Skill, error) {
+	// Reversed, so a test can tell a ranked call from an alphabetical one
+	// without owning a vector space.
+	out := make([]*domain.Skill, 0, len(s.rows))
+	for i := len(s.rows) - 1; i >= 0; i-- {
+		out = append(out, s.rows[i])
+	}
+	return out, s.err
+}
+func (s *stubSkills) ListUnembedded(context.Context, string) ([]*domain.Skill, error) {
+	return nil, nil
+}
+func (s *stubSkills) SetEmbedding(context.Context, string, *domain.Skill, []float32, string) error {
+	return nil
+}
 func (s *stubSkills) Update(context.Context, *domain.Skill) error                     { return nil }
 func (s *stubSkills) Delete(context.Context, string, string) error                    { return nil }
 func (s *stubSkills) CountByCompany(context.Context, string) (int, error)             { return len(s.rows), nil }
@@ -304,5 +319,46 @@ func TestARepositoryErrorIsNotMaskedByBuiltins(t *testing.T) {
 	repo := WithBuiltins(&stubSkills{err: errors.New("control DB down")}, builtinFixture())
 	if _, err := repo.ListEnabledForIndex(context.Background(), "co-1"); err == nil {
 		t.Fatal("a repository error was swallowed")
+	}
+}
+
+// T-K5 through the decorator. The ranking applies to the tenant's rows; the
+// shipped set stays where the truncation rule already put it.
+func TestRankingLeavesTheShippedSetAfterTheTenantsOwn(t *testing.T) {
+	repo := WithBuiltins(&stubSkills{rows: []*domain.Skill{
+		{ID: "t1", Name: "How we close the month", Enabled: true, Source: domain.SkillSourceTenant},
+		{ID: "t2", Name: "How we price a quote", Enabled: true, Source: domain.SkillSourceTenant},
+	}}, builtinFixture())
+
+	got, err := repo.ListEnabledRankedForIndex(context.Background(), "co-1", []float32{0.1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d skills, want two tenant rows and the shipped one", len(got))
+	}
+	if got[0].IsBuiltin() || got[1].IsBuiltin() {
+		t.Error("a shipped skill ranked ahead of a tenant's own; truncation must cost them ours first")
+	}
+	if !got[2].IsBuiltin() {
+		t.Errorf("the shipped skill is not last: %q", got[2].Name)
+	}
+	// The stub reverses, so this also proves the ranked query is what was
+	// asked — not the alphabetical one with a different name.
+	if got[0].Name != "How we price a quote" {
+		t.Errorf("first is %q; the ranked order was not used", got[0].Name)
+	}
+}
+
+// A shipped skill has no row. An id like `builtin:recurring-report` reaching
+// `WHERE id = $4` against a uuid column is a Postgres error on a path whose
+// whole design is to be best-effort, so it is refused before it gets there.
+func TestABuiltinCannotBeHandedToSetEmbedding(t *testing.T) {
+	repo := WithBuiltins(&stubSkills{}, builtinFixture())
+	shipped := builtinFixture()[0]
+
+	err := repo.SetEmbedding(context.Background(), "co-1", shipped, []float32{0.1}, "m")
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Errorf("error = %v, want ErrInvalidInput", err)
 	}
 }

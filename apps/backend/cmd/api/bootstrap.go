@@ -469,7 +469,12 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// The CRUD surface is the tenant's own rows only: an admin edits what they
 	// wrote, and the shipped procedures are code rather than rows they can
 	// reach. The merge happens on the read paths a turn uses (T-K8).
-	deps.skillSvc = app.NewSkillService(pgctl.NewSkillRepo(controlDB), agentRepo)
+	skillRepo := pgctl.NewSkillRepo(controlDB)
+	// The write-time vector T-K5 ranks with. Embedded inside the save because
+	// that is the one moment the text is known to be new and somebody is
+	// already waiting on a round trip; failing to get one never fails the save.
+	deps.skillSvc = app.NewSkillService(skillRepo, agentRepo).
+		WithEmbedder(app.NewSkillEmbedder(skillRepo, deps.embedCache))
 
 	// The metric registry (T-06). It renders each definition against the tenant
 	// pool with the window bound as parameters, so validate-on-save and

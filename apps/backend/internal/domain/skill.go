@@ -42,6 +42,20 @@ type Skill struct {
 	UpdatedBy string    `json:"updated_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// Embedding is the vector of EmbedText, used only to decide which skills
+	// survive the index bound (T-K5). Nil is the ordinary state: a skill
+	// written before 072, a tenant with no embedding credentials, and a
+	// built-in all have none, and each of those ranks after the rows that do.
+	//
+	// `json:"-"` because it is 1,536 floats of derived data that no client has
+	// a use for, and serialising it would make every list response an order of
+	// magnitude larger than the text it describes.
+	Embedding []float32 `json:"-"`
+	// EmbeddingModel is which model produced Embedding. Two vectors from
+	// different models are not comparable, so a deployment that changes its
+	// embedding model needs to be able to find what predates the change.
+	EmbeddingModel string `json:"embedding_model,omitempty"`
 }
 
 // The four caps, and none of them is tidiness.
@@ -87,7 +101,22 @@ func (s *Skill) IsBuiltin() bool {
 // two caps above bound, and a caller that assembles it differently would make
 // those caps describe a string nobody produces.
 func (s *Skill) IndexLine() string {
-	return "- " + s.Name + " — " + s.WhenToUse
+	return "- " + s.EmbedText()
+}
+
+// EmbedText is what T-K5 embeds, and it is IndexLine without its bullet on
+// purpose.
+//
+// **The ranker has to rank the text the model is shown.** What the model reads
+// before deciding whether to open a procedure is the index line and nothing
+// else — not the body, which does not travel until `load_skill` asks for it.
+// Embedding the body instead would rank on prose that plays no part in the
+// decision being ranked, which is a ranker answering a question nobody asked.
+//
+// Defined beside IndexLine and used by it, so the two cannot drift into
+// describing different strings.
+func (s *Skill) EmbedText() string {
+	return s.Name + " — " + s.WhenToUse
 }
 
 // Validate refuses a skill that breaks a cap, **naming the field and the
@@ -174,6 +203,30 @@ type SkillRepository interface {
 	// truncates them, so a tenant who crosses a bound loses the same skills
 	// every turn rather than a different one each time.
 	ListEnabledForIndex(ctx context.Context, companyID string) ([]*Skill, error)
+	// ListEnabledRankedForIndex returns the same set ordered by how close each
+	// skill's EmbedText is to this turn's question (T-K5).
+	//
+	// **Only called when the alphabetical order would drop something**, which
+	// is the property that keeps this from costing anything: below the bound
+	// nothing is lost, and a set that reordered every turn would invalidate the
+	// cached system-prompt prefix the index was deliberately put inside.
+	//
+	// Rows with no vector sort last and keep lower(name) among themselves, so a
+	// company that has never been embedded gets exactly ListEnabledForIndex's
+	// answer.
+	ListEnabledRankedForIndex(ctx context.Context, companyID string, queryVec []float32) ([]*Skill, error)
+	// ListUnembedded returns the enabled skills that have no vector, so the
+	// backfill can find what a write-time embed missed.
+	ListUnembedded(ctx context.Context, companyID string) ([]*Skill, error)
+	// SetEmbedding stores one skill's vector. Separate from Update because it
+	// writes derived data and must not touch updated_by or updated_at: a
+	// backfill is not an edit, and a tenant looking at "last changed by" should
+	// not see a vector job there.
+	//
+	// It takes the whole skill rather than an id because the write is
+	// conditional on the text still being what was embedded — see the
+	// implementation — and answers ErrNotFound when it no longer is.
+	SetEmbedding(ctx context.Context, companyID string, s *Skill, vec []float32, model string) error
 	Update(ctx context.Context, s *Skill) error
 	Delete(ctx context.Context, companyID, id string) error
 	CountByCompany(ctx context.Context, companyID string) (int, error)
