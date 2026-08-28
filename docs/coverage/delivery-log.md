@@ -4655,6 +4655,55 @@ reproducible was the half everyone spot-checked. Every eval number in
 [`eval-q1.md`](eval-q1.md) was measured against a database nobody else could
 build.
 
+## Phase 3q — The three that were cuttable, and a binding nobody read (2026-08-27)
+
+`T-K5`, `T-K6` and `T-K7` — the whole of the agentic-skills cut order — built in
+one sitting, unit-gated, plus the transport that unblocks `T-K2`'s owed wire arm.
+The track is code-complete. Write-ups in [`skills.md`](skills.md) §5d–§5h.
+
+**The finding is that building `T-K6` exposed a defect in `T-K1`.** The per-agent
+skill binding was written by `SkillRepo.SetAgentBinding`, read by
+`Agent.AllowsSkill`, and **never loaded**: `agentColumns` folds `agent_sources`
+and `agent_mcp_servers` into the roster row and did not fold the third table. For
+five days every agent was offered every enabled skill, and `load_skill` never
+refused on binding grounds.
+
+**Every unit test around it passed, and each of them was right.** The domain's
+`AllowsSkill` is correct. The tool's refusal is correct. The service's write is
+correct. The field they all agreed about was never populated — and because an
+empty binding means *everything*, the failure was silent by design. The live arm
+filed as covering it (`live-gate-backlog.md` §1p, 2026-08-22) built the `Agent`
+in the test rather than loading one, so it was asserting against a struct
+literal.
+
+**The pattern this adds to the record, beside Phase 3n's and 3l's.** 3n found a
+comment describing a property the code did not have. 3l found a measurement
+describing a warehouse that no longer existed. This is the third shape: **a
+field every layer agrees about and nothing fills in**. The general test is now
+in `agent_repo_test.go` — a column in the SELECT without a destination in the
+Scan, or the reverse, is a runtime error on every read, and neither compiles
+differently.
+
+**What made it findable was building the surface that would have used it.** The
+cut order put `T-K6` at position 3 of 4; cutting it is what left the binding with
+no user, and building it is what showed it had no reader either.
+
+Three smaller things moved against their tickets. `T-K5` ranks only on the turns
+that would otherwise drop a procedure, because the index lives in the cached
+system-prompt prefix and an order that moves with the question invalidates it —
+the exact cost `T-K3` avoided by keeping bodies out of the prompt, arriving
+through the retrieval meant to make the feature cheaper. `T-K6` needed a backend
+endpoint the ticket filed as frontend work, because the preview panes have to be
+the server's bytes rather than a second implementation of the index line. And
+`T-K2`'s wire arm is unblocked by an `http.RoundTripper` inside the client's own
+chain rather than by a fourth capture proxy — three shapes of proxy failed on
+08-23 and one of them produced a false finding that read exactly like the feature
+failing.
+
+**Nothing here has touched a database, a provider or a browser.** Twelve arms
+are filed in [`live-gate-backlog.md`](live-gate-backlog.md), eight of them free,
+and the first is the one that was never really run.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

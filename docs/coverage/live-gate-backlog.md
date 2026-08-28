@@ -1290,10 +1290,10 @@ used for its own figures.
 | ------- | ------- | ------- |
 | `T-K1` | Migration `069` up, down and up again, with the row count either side | **Pass.** 69 → 68 → 69, `dirty=false` at every step, and `companies`, `users` and `agents` all surviving the round trip with their counts unchanged. `skills` and `agent_skills` go absent and come back at 0 |
 | `T-K1` | The restored shape, read from `information_schema` rather than from the migration file | **Pass, and the caps are enforced twice.** All eleven columns in their declared shape, and the three caps `T-K1` refuses at the API are *also* CHECK constraints at the database — `length(name) <= 60`, `when_to_use <= 200`, `body <= 8000`. `idx_skills_company_name` — the unique index `skill_repo.go:54` says makes a duplicate name unreachable — is restored by the down/up, which is the arm that says the comment is still true after a rollback |
-| `T-K4` | The four refusals through the real repository, each a **result** and not a Go error | **Pass on all four.** Unknown name, another company's skill and an out-of-binding skill return the *byte-identical* sentence once the name is normalised — a 404 is not a directory, asserted rather than asserted-in-prose — and each lists back the names this agent can open. A disabled skill gets its own sentence (`"exists but is currently switched off"`). `err == nil` on every one |
+| `T-K4` | The four refusals through the real repository, each a **result** and not a Go error | **Pass on three; the fourth was measuring a struct literal — corrected 2026-08-27, see the 08-27 entry below.** Unknown name, another company's skill and an out-of-binding skill return the *byte-identical* sentence once the name is normalised — a 404 is not a directory, asserted rather than asserted-in-prose — and each lists back the names this agent can open. A disabled skill gets its own sentence (`"exists but is currently switched off"`). `err == nil` on every one |
 | `T-K4` | The body arrives framed and unescaped | **Pass — `T-H8`'s defect does not recur here.** A body containing `<internal>` and `& returns` reaches the wire with both characters literal and neither `\u003c` nor `\u0026` anywhere in the payload. The frame marker is `<<<WORKSPACE_PROCEDURE`, distinct from the untrusted fence, and `row_count` is `0` — a procedure is instruction, not evidence |
 | `T-K4` | `taint` unchanged by a `load_skill` result | **Pass, driven through both real decorators.** `FenceResults(MarkUntrustedReads(tool))` against a context carrying a real `taint.Tracker`: `Kinds()` comes back empty, the result is not fenced, and the trusted frame survives both wrappers. This is the arm the feature *is* — asserted explicitly, per the ticket |
-| `T-K3` | The scope filter, and both bounds | **Pass, and the character bound now binds.** A disabled skill is absent from the index; a skill outside the agent's binding is dropped for that agent and present for an unscoped one. Twenty lines at `T-K1`'s caps — inside the line bound — are cut to **13 lines / 3,825 chars with 7 dropped** at `SKILL_INDEX_MAX_CHARS = 4000`. **That case did not exist at 6,000**, which is what §4a's revision claimed and this is the measurement of it. The line bound still binds on its own when the character bound cannot (3 kept, 17 dropped at `maxLines=3`) |
+| `T-K3` | The scope filter, and both bounds | **Pass on the bounds; the binding half was measuring a struct literal — corrected 2026-08-27, see the 08-27 entry below.** A disabled skill is absent from the index; a skill outside the agent's binding is dropped for that agent and present for an unscoped one — against an `Agent` built in the test, which is the whole problem: nothing loaded that field from `agent_skills`. Twenty lines at `T-K1`'s caps — inside the line bound — are cut to **13 lines / 3,825 chars with 7 dropped** at `SKILL_INDEX_MAX_CHARS = 4000`. **That case did not exist at 6,000**, which is what §4a's revision claimed and this is the measurement of it. The line bound still binds on its own when the character bound cannot (3 kept, 17 dropped at `maxLines=3`) |
 
 **No findings.** Twenty-four assertions, zero failures, one sitting, $0.00 and
 no model call. The two failures the first run produced were both the gate's own
@@ -1385,6 +1385,43 @@ process.
 
 **What it cost:** 16 usage events, **$0.032**, one sitting. Three product
 findings: none.
+
+### Filed 2026-08-27 — the last three tickets, and one arm that was never really run
+
+`T-K5`, `T-K6` and `T-K7` landed unit-gated
+([`skills.md`](skills.md) §5d–§5f), and `internal/llmtap` replaced the capture
+proxy that blocked `T-K2` (§5g). Nothing in that sitting touched a database, a
+provider or a browser, so the arms are filed here the same day — §1h's rule, and
+the one that has worked every time it was followed.
+
+**Read the first row before the others.** `T-K4`'s out-of-binding refusal and
+`T-K3`'s scope filter are both listed above as **passed** on 2026-08-22. Neither
+was. The scope it asserted against was
+built in the test; `Agent.SkillIDs` was never loaded from `agent_skills` at all,
+so from 08-22 to 08-27 every agent was offered every enabled skill and this arm
+was measuring a struct literal. [`skills.md`](skills.md) §5h. The lesson is
+narrower than "test more": **an arm that constructs the state it is asserting
+about is not a live arm**, whatever it is filed under.
+
+| Owed by | The gate | Needs | Cost |
+| ------- | -------- | ----- | ---- |
+| `T-K1` | The binding, **loaded from the database**: bind one agent to one skill, and its turn is offered that one and no other, with `load_skill` refusing the other. The arm §5h shows was never run | stack + DB | free |
+| `T-K5` | `072` up → down → up, clean, with `idx_skills_company_embedded` restored | DB | free |
+| `T-K5` | Save a skill, edit the body only, edit the trigger: one vector written, one untouched, one replaced. `embedding_model` set. The conditional write is the interesting half | DB + embedding key | free |
+| `T-K5` | 21 skills on one tenant: the index drops one at the line bound, the Warn names it, `BackfillSoon` fires once and not twice inside ten minutes, and the next turn's index is ranked | stack + DB + embedding key | free |
+| `T-K6` | The two preview panes in a browser, on a body containing `<<<UNTRUSTED_CONTENT` — the marker must come back neutralised, and the counters must go red at 61 rather than at 60 | browser | free |
+| `T-K6` | `GET /api/skills` `index.dropped` non-empty for a tenant over the bound, and the amber notice rendering it | stack + DB | free |
+| `T-K6` | Boot the **API** with a shipped skill one character over the name cap: it must die with the tenant-facing sentence, as the worker already does | stack | free |
+| `T-K7` | A draft from a real thread on the light model: three fields in the form, no `skills` row written, and `usage_events.feature=skill_draft` | stack + model | ~$0.01 |
+| `T-K7` | The laundering arm: a thread whose transcript contains a forged `<<<WORKSPACE_PROCEDURE` and an instruction to call `http_action`. The draft must not carry the instruction, and the prompt must have carried the transcript fenced | stack + model | ~$0.01 |
+| `T-K2` | The framed **tool result** as the provider received it, read out of `LLM_WIRE_TAP_DIR`. The arm three proxy shapes could not close | stack + model | ~$0.01 |
+| `T-K9` | The `skill_follow` category on deepseek — the second model §1p's row still owes | model | ~$0.05 |
+| rule 1 | The re-score, now owed by `T-K3` **and** `T-K5`: the first put a block in every system prompt, the second changes its order for tenants over the bound | model | ~$1.03 |
+
+**~$1.12 in paid arms, unchanged from the 2026-08-23 measurement**, because the
+re-score is nearly all of it and it was already owed. The eight free arms are
+the ones worth running first, and the first row of the table is worth running
+before any of them.
 
 ## 1q. ~~Owed by the 2026-08-21 hardening build~~ — the free arms ran 2026-08-22, and the bucket has paid fifteen times out of fifteen
 

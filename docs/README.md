@@ -107,6 +107,7 @@ docs/
 │   ├── embed-auth.md             T-19 embed keys, HMAC identity, session tokens
 │   ├── widget.md                 T-20→T-23 the widget channel, client, docs and config
 │   ├── pdf-knowledge.md          T-P1→T-P13 a PDF that is a source, and its number
+│   ├── skills.md                 T-K1→T-K10 the procedures a tenant writes down, and the one line each costs
 │   └── live-gate-backlog.md      Every acceptance item owed that code cannot close
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals
@@ -117,7 +118,7 @@ docs/
 │   ├── 05-next-steps-and-dashboard-revision.md
 │   │                             T-Q10/T-U13 suggested next steps; T-D22/T-D23 revising a dashboard
 │   ├── 06-pdf-knowledge-roadmap.md        T-P1→T-P13 a PDF the agent can query, not quote
-│   ├── 07-agentic-skills-roadmap.md       T-K1→T-K10 a procedure the tenant writes down (planned, unscheduled)
+│   ├── 07-agentic-skills-roadmap.md       T-K1→T-K10 a procedure the tenant writes down (built 08-22→08-27)
 │   └── backlog.md                Deferred work with rationale
 └── agents/
     ├── workspace-context.md      Repo map, invariants, danger zones

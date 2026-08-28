@@ -114,7 +114,16 @@ clauses are about the worker image and about documents; this browser ships in it
 own image behind its own deployment, no document renderer changes, and the plan
 is self-contained so the service needs no egress at all.
 
-### Agentic skills (`T-K1` → `T-K10`) — **planned, tickets written, not scheduled**
+### Agentic skills (`T-K1` → `T-K10`) — ~~planned, tickets written, not scheduled~~ **built 2026-08-22 → 2026-08-27**
+**Superseded.** All ten tickets are built and nothing in the cut order below was
+cut. Coverage, and the live arms still owed, are in
+[`../coverage/skills.md`](../coverage/skills.md); the ticket-by-ticket deltas are
+in [`07-agentic-skills-roadmap.md`](07-agentic-skills-roadmap.md) §4a and §4b.
+The trigger this entry named — *a tenant asks twice for the same procedural
+correction* — was never observed; the track was built out anyway, which is a
+scheduling fact this entry should not hide. What follows is the entry as written
+on 2026-08-21.
+
 A tenant writes down how their business does a thing — how the month closes,
 what counts as an active store, which channel a weekly report always excludes —
 and the agent opens it on the turns where it applies and carries one line on the

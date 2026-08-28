@@ -35,6 +35,24 @@ mistake `T-R6` recorded three commits ago.
 > the opposite rule for everything else that arrives at runtime. §4 is that
 > argument, and it is why the trust boundary is its own ticket ahead of the
 > feature rather than a paragraph inside one.
+>
+> ---
+>
+> **Superseded 2026-08-27: all ten tickets are built.** `T-K1`→`T-K4` landed
+> 08-22, `T-K8`→`T-K10` landed 08-25, and `T-K5`, `T-K6` and `T-K7` — the three
+> the cut order put first — landed 08-27. The status of every ticket, what moved
+> against it, and the live arms still owed are in
+> [`../coverage/skills.md`](../coverage/skills.md); §4a below carries the
+> ticket-by-ticket deltas. Nothing in §6's cut order was exercised: none of the
+> four cuttable tickets was cut.
+>
+> **The build of the last three found a defect in the first four.** The
+> per-agent binding was written by `T-K1` and read by nobody — `agentColumns`
+> folded two of the three binding tables into the roster row — so every agent was
+> offered every enabled skill from 08-22 until 08-27. It is one line of SQL, it
+> was invisible to every unit test, and the live arm that claimed to cover it
+> built the scope in the test rather than loading it.
+> [`../coverage/skills.md`](../coverage/skills.md) §5h is the write-up.
 
 ---
 
@@ -325,6 +343,53 @@ client streams and turned two good turns into empty replies that looked exactly
 like the design failing. It needs an SSE-aware proxy. The paid arms still sit
 behind `T-H8`'s unpaid re-score.
 
+### 4b. Status, 2026-08-27 — the remaining three, and one defect in the first four
+
+`T-K5`, `T-K6` and `T-K7` are built and unit-gated. Full write-ups in
+[`../coverage/skills.md`](../coverage/skills.md) §5d–§5g; four things moved
+against these tickets and one against a ticket that was already closed.
+
+1. **`T-K5` ranks only on the turns that would otherwise drop something**, where
+   the ticket said "rank against the turn's question vector and show the top
+   `SKILL_INDEX_MAX`" unconditionally. **The reason is a cost this ticket did not
+   reckon with:** the index is in the system prompt, which is the cached prefix,
+   and an order that moves with the question invalidates that prefix on every
+   turn — the exact cost `T-K3`'s own header says putting bodies in the prompt
+   would incur, arriving through the retrieval meant to make the feature cheaper.
+   Below the bound nothing is dropped, so a ranker there reorders lines the model
+   was going to see anyway and charges an embedding call for it. The composed
+   index is now alphabetical until a name is dropped, and ranked from then on.
+2. **`T-K5` gained a background backfill the ticket did not describe.** Embedding
+   at write time cannot reach the two states that matter on the day it ships —
+   every skill written before `072`, and every skill written by a tenant whose
+   embedding key was missing. Without a repair path the feature would be dead for
+   exactly the tenant it is for: one with twenty-five procedures, all of them
+   written last month. It is detached from the turn and rate-limited per company.
+3. **`T-K6` needed a backend endpoint the ticket filed as frontend work.** The
+   two preview panes have to be the server's bytes — a form that assembles
+   `- name — trigger` itself is a second implementation of the index line, and
+   the day it drifts it reassures an author about text nobody sends. So
+   `POST /api/skills/preview` exists, and `GET /api/skills` now carries what the
+   composed index costs. That also made `cmd/api` load `config/skills/`, which
+   extends `T-K8`'s boot validation to the second process.
+4. **`T-K2`'s owed wire arm is unblocked by a transport, not a proxy.** Three
+   proxy shapes failed on 2026-08-23 and one of them produced a false finding.
+   `internal/llmtap` tees the outbound request body to a file from inside the
+   client's own transport chain, behind `LLM_WIRE_TAP_DIR`, so there is no
+   network hop to be wrong about the stream. The arm is unblocked, not closed.
+5. **The defect: `agent_skills` was written and never read.** `T-K1`'s per-agent
+   binding never reached `Agent.SkillIDs`, because `agentColumns` folds two of
+   the three binding tables into the roster row. Every agent was offered every
+   enabled skill from 08-22 to 08-27. One line of SQL; invisible to every unit
+   test, because each layer around the field was correct; and the live arm that
+   claimed to cover it built the scope in the test rather than loading it.
+   `../coverage/skills.md` §5h. **The cut order in §6 is what made this
+   findable:** cutting `T-K6` is what left the binding with no user, and building
+   it is what exposed that it had no reader either.
+
+**Owed:** everything in `../coverage/skills.md` §7. Nothing built on 08-27 has
+touched a database, a provider or a browser.
+
 ## 5. The tickets
 
 ### Track A — The object and its trust boundary (3.0d) · do first
@@ -464,8 +529,8 @@ carries the skill name; and a `load_skill` result does **not** set
 `taint.KindData` — asserted explicitly, because the whole feature is the claim
 that this one result is different.
 
-#### `T-K5` Retrieval when the index overflows
-**Repo:** BE · **Size:** 1.5d · **Deps:** `T-K3` · **Priority:** P2 — **cut #1**
+#### `T-K5` Retrieval when the index overflows · **built 2026-08-27, unit-gated — and it ranks only on overflow; see §4b**
+**Repo:** BE · **Size:** 1.5d · **Deps:** `T-K3` · **Priority:** P2 — **cut #1, not cut**
 
 Embed `when_to_use` at write time, rank against the turn's question vector, and
 show the top `SKILL_INDEX_MAX`. The vector already exists: `questionVector` is
@@ -480,7 +545,7 @@ exist, which is how `T-Q3`'s prompt change ended up with no number behind it.
 
 ### Track C — Authoring (4.5d)
 
-#### `T-K6` Settings → Skills
+#### `T-K6` Settings → Skills · **built 2026-08-27, unit-gated — and it needed a backend endpoint; see §4b**
 **Repo:** FE · **Size:** 2.5d · **Deps:** `T-K1` · **Priority:** P0
 
 List, create, edit, enable/disable, delete, and per-agent binding — the shape
@@ -498,8 +563,8 @@ until somebody looks at the index.
 truncates and a form that discovers the cap on submit is a form that loses a
 paragraph.
 
-#### `T-K7` Draft a skill from a thread
-**Repo:** BE 1.5d + FE 0.5d · **Size:** 2.0d · **Deps:** `T-K6` · **Priority:** P2 — **cut #2**
+#### `T-K7` Draft a skill from a thread · **built 2026-08-27, unit-gated**
+**Repo:** BE 1.5d + FE 0.5d · **Size:** 2.0d · **Deps:** `T-K6` · **Priority:** P2 — **cut #2, not cut**
 
 "Save this as a skill" on a finished thread: one light-LLM call over the
 thread's messages and its `agent_actions` rows produces a draft `name`,
