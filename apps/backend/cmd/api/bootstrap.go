@@ -32,6 +32,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/migrate"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/spec"
+	"github.com/fauzanebd/argentum/internal/skill"
 	"github.com/fauzanebd/argentum/internal/slack"
 	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
@@ -470,11 +471,31 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// wrote, and the shipped procedures are code rather than rows they can
 	// reach. The merge happens on the read paths a turn uses (T-K8).
 	skillRepo := pgctl.NewSkillRepo(controlDB)
+	// **Loaded here as well as in the worker, and a malformed one is fatal in
+	// both.** T-K8's rule is that a shipped skill over a cap fails the boot of
+	// every deployment rather than only the process that happens to read it;
+	// until now only the worker loaded them, so the API would have started
+	// happily beside a worker that could not. The API needs them anyway: the
+	// index cost it reports on the settings screen has to count the block a
+	// turn actually carries, and two of its lines are ours.
+	builtinSkills, err := skill.LoadBuiltins(cfg.BuiltinSkillsPath)
+	if err != nil {
+		return nil, fmt.Errorf("load built-in skills: %w", err)
+	}
 	// The write-time vector T-K5 ranks with. Embedded inside the save because
 	// that is the one moment the text is known to be new and somebody is
 	// already waiting on a round trip; failing to get one never fails the save.
 	deps.skillSvc = app.NewSkillService(skillRepo, agentRepo).
-		WithEmbedder(app.NewSkillEmbedder(skillRepo, deps.embedCache))
+		WithEmbedder(app.NewSkillEmbedder(skillRepo, deps.embedCache)).
+		WithIndexReader(skill.WithBuiltins(skillRepo, builtinSkills))
+	// "Draft from a conversation" (T-K7), on the light model like T-B4's
+	// generator and for its reason: one short structured call, billed because
+	// the client is already the metered one. It writes nothing — what comes
+	// back lands in the form, and the save above is the authorship event.
+	deps.skillDraftSvc = app.NewSkillDraftService(
+		lightLLMClient, threadRepo, messageRepo, cfg.EffectiveLightLLMModel(),
+	).WithActions(deps.actionRepo).
+		WithBudget(deps.usageSvc)
 
 	// The metric registry (T-06). It renders each definition against the tenant
 	// pool with the window bound as parameters, so validate-on-save and

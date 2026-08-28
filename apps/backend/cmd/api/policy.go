@@ -121,6 +121,8 @@ var apiPolicy = middleware.RolePolicy{
 	// things every agent in the workspace is being told to do.
 	"GET /api/skills":            domain.RoleAdmin,
 	"POST /api/skills":           domain.RoleAdmin,
+	"POST /api/skills/preview":   domain.RoleAdmin,
+	"POST /api/skills/draft":     domain.RoleAdmin,
 	"GET /api/skills/:id":        domain.RoleAdmin,
 	"PUT /api/skills/:id":        domain.RoleAdmin,
 	"DELETE /api/skills/:id":     domain.RoleAdmin,

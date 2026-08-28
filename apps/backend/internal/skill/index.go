@@ -116,6 +116,22 @@ func Compose(skills []*domain.Skill, allowed func(skillID string) bool, maxLines
 	return Header + strings.Join(lines, "\n"), dropped
 }
 
+// Lines reports how many procedures a composed block offers.
+//
+// Counted off the rendered block rather than off the input, because what a
+// settings screen has to show is what the prompt carries: a skill filtered out
+// by an agent binding, one dropped at a bound, and one nobody enabled all look
+// identical from the input side and none of them is a line.
+func Lines(block string) int {
+	n := 0
+	for _, line := range strings.Split(block, "\n") {
+		if strings.HasPrefix(line, "- ") {
+			n++
+		}
+	}
+	return n
+}
+
 // LogDropped reports what did not fit, at Warn.
 //
 // **Still Warn after T-K5, because ranking changed which procedures a tenant

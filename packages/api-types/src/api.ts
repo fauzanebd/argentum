@@ -2,7 +2,7 @@
 /* eslint-disable */
 // `/api` response bodies that are not domain entities, from
 // apps/backend/internal/transport/http/handlers/wire.go.
-import type { BudgetState } from "./events.js";
+import type { BudgetState, SkillIndexCost } from "./events.js";
 import type {
   Agent,
   AgentChannelBinding,
@@ -16,6 +16,7 @@ import type {
   MetricDefinition,
   MetricGrain,
   MetricUnit,
+  Skill,
 } from "./domain.js";
 
 //////////
@@ -316,6 +317,50 @@ export interface MCPToolView {
   approved: boolean;
   drifted: boolean;
   discovered_at: string;
+}
+/**
+ * SkillsResponse is the body of `GET /api/skills` (T-K1, T-K6).
+ * Two things ride along with the rows, and both are here for MCPServersResponse'
+ * reason — a fact the backend owns, printed beside a form that would otherwise
+ * hard-code it.
+ * `Limits` is the four caps. The form counts characters live because the save
+ * refuses rather than truncates, and a form that discovers a cap on submit is a
+ * form that loses a paragraph; a second copy of "60" in TypeScript is the copy
+ * that disagrees with the CHECK constraint.
+ * `Index` is what this workspace's procedures cost every turn, composed by the
+ * code that composes the prompt. Without it the bound is invisible until
+ * somebody reads a production log — which is exactly how a tenant's twenty-first
+ * procedure stops being offered without anybody noticing.
+ */
+export interface SkillsResponse {
+  skills: (Skill | undefined)[];
+  /**
+   * Index is nil when it could not be computed. A failure to price the index
+   * is not a failure to list: the list is what the screen is for.
+   */
+  index?: SkillIndexCost;
+  limits: SkillLimits;
+}
+/**
+ * SkillLimits are T-K1's four caps, served rather than duplicated.
+ */
+export interface SkillLimits {
+  name_chars: number /* int */;
+  when_to_use_chars: number /* int */;
+  body_chars: number /* int */;
+  per_company: number /* int */;
+}
+/**
+ * SkillBindingResponse is the body of `GET /api/agents/:id/skills`.
+ * `Means` is served rather than left to the client, and it is not decoration:
+ * this endpoint returns an empty array for the state that means *everything*,
+ * which is the opposite of what the identically-shaped MCP binding endpoint
+ * means by it. One sentence on the wire is cheaper than two frontends that
+ * each guessed.
+ */
+export interface SkillBindingResponse {
+  skill_ids: string[];
+  means: string;
 }
 /**
  * MetricsResponse is the body of `GET /api/metrics` (T-06).

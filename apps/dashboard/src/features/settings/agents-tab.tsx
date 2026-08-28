@@ -36,6 +36,8 @@ import type {
   Channel,
   MCPServer,
   MCPServersResponse,
+  Skill,
+  SkillsResponse,
 } from "@argentum/api-types";
 
 interface Connection {
@@ -61,6 +63,13 @@ interface AgentDraft {
    *  MEANS NONE — an agent reaches an MCP server only when it is bound. The
    *  form always sends the full set, the same contract source_ids relies on. */
   mcp_server_ids: string[];
+  /** Tenant procedures this agent is offered (T-K1). Empty means EVERY enabled
+   *  procedure — the opposite of mcp_server_ids directly above, and the same
+   *  rule source_ids follows. Not sent with the agent body: it is saved through
+   *  `PUT /agents/:id/skills` after the agent exists, because `agent_skills`
+   *  has one writer on the backend and an agent payload that omitted the field
+   *  would clear every binding on an unrelated edit. */
+  skill_ids: string[];
   /** Which gallery card this came from, or "" for the blank path. Sent on
    *  create and ignored on update — the backend treats it as provenance. */
   template_key: string;
@@ -74,6 +83,7 @@ const EMPTY_DRAFT: AgentDraft = {
   allowed_tools: [],
   source_ids: [],
   mcp_server_ids: [],
+  skill_ids: [],
   template_key: "",
   enabled: true,
 };
@@ -126,6 +136,7 @@ function draftFromTemplate(t: AgentTemplate, sources: Connection[]): AgentDraft 
     // Nothing matched means nothing ticked, which the backend reads as every
     // source — the same rule an empty allowlist has always carried.
     source_ids: [...matchSources(t.source_hints, sources).keys()],
+    skill_ids: [],
     // Templates never bind an MCP server: they describe a job, and a server is
     // a per-tenant integration the admin binds deliberately. Empty means none.
     mcp_server_ids: [],
@@ -207,6 +218,13 @@ export function AgentsTab() {
       (await api.get<{ connections: Connection[] }>("/connections")).data.connections ?? [],
   });
 
+  // The workspace's procedures, for the binding checklist (T-K6). Same query
+  // key the Procedures tab uses, so React Query serves one cached list to both.
+  const { data: skillsData } = useQuery({
+    queryKey: ["skills"],
+    queryFn: async () => (await api.get<SkillsResponse>("/skills")).data,
+  });
+
   // The company's MCP servers, for the binding checklist (T-M3). Same query key
   // the MCP servers tab uses, so React Query serves one cached list to both.
   const { data: mcpServersData } = useQuery({
@@ -230,6 +248,9 @@ export function AgentsTab() {
   const sources: Connection[] = connections ?? [];
   // Only enabled servers can be bound to a meaningful effect — a disabled one
   // reaches no turn — so the checklist offers the ones that would actually work.
+  const skills: Skill[] = (skillsData?.skills ?? [])
+    .filter((s): s is Skill => !!s)
+    .sort((a, b) => a.name.localeCompare(b.name));
   const mcpServers: MCPServer[] = (mcpServersData?.servers ?? [])
     .filter((s): s is MCPServer => !!s)
     .filter((s) => s.enabled);
@@ -267,6 +288,7 @@ export function AgentsTab() {
       allowed_tools: [...a.allowed_tools],
       source_ids: [...a.source_ids],
       mcp_server_ids: [...a.mcp_server_ids],
+      skill_ids: [...(a.skill_ids ?? [])],
       template_key: a.template_key,
       enabled: a.enabled,
     });
@@ -298,9 +320,17 @@ export function AgentsTab() {
 
   const save = useMutation({
     mutationFn: async () => {
-      const body = { ...draft, name: draft.name.trim() };
-      if (editing) return (await api.put<{ agent: Agent }>(`/agents/${editing}`, body)).data;
-      return (await api.post<{ agent: Agent }>("/agents", body)).data;
+      // `skill_ids` is deliberately not in the agent body: the backend writes
+      // `agent_skills` from one route only, so that an agent save carrying no
+      // skills cannot clear a binding somebody set deliberately (T-K6).
+      const { skill_ids, ...rest } = draft;
+      const body = { ...rest, name: draft.name.trim() };
+      const res = editing
+        ? (await api.put<{ agent: Agent }>(`/agents/${editing}`, body)).data
+        : (await api.post<{ agent: Agent }>("/agents", body)).data;
+      const id = res.agent?.id ?? editing;
+      if (id) await api.put(`/agents/${id}/skills`, { skill_ids });
+      return res;
     },
     onSuccess: () => {
       resetForm();
@@ -390,7 +420,7 @@ export function AgentsTab() {
       }),
   });
 
-  function toggleIn(key: "allowed_tools" | "source_ids" | "mcp_server_ids", value: string) {
+  function toggleIn(key: "allowed_tools" | "source_ids" | "mcp_server_ids" | "skill_ids", value: string) {
     if (key === "source_ids" && hintedSources.has(value)) {
       // The tick is the admin's from here on, so stop crediting a template
       // for it.
@@ -658,6 +688,40 @@ export function AgentsTab() {
                   {s.description && (
                     <code className="block text-xs text-muted-foreground">{s.description}</code>
                   )}
+                </span>
+              </label>
+            ))}
+          </ScopeGroup>
+
+          {/* Back to the databases rule rather than the MCP one, and the copy
+              has to say which — this box sits directly under the one control on
+              this form that means the opposite by an empty list. */}
+          <ScopeGroup
+            title="Procedures"
+            summary={scopeSummary(draft.skill_ids.length, skills.length, "procedures")}
+            hint="Nothing ticked means every procedure this workspace writes, including ones added later. Tick some to narrow this agent to those."
+            onClear={
+              draft.skill_ids.length > 0 ? () => setDraft({ ...draft, skill_ids: [] }) : undefined
+            }
+          >
+            {skills.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No procedures written yet. Write one on the Procedures tab — your agents already
+                follow the two Argentum ships either way.
+              </p>
+            )}
+            {skills.map((s) => (
+              <label key={s.id} className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={draft.skill_ids.includes(s.id)}
+                  onChange={() => toggleIn("skill_ids", s.id)}
+                />
+                <span>
+                  {s.name}
+                  {!s.enabled && <span className="ml-1.5 text-xs text-muted-foreground">(off)</span>}
+                  <code className="block text-xs text-muted-foreground">{s.when_to_use}</code>
                 </span>
               </label>
             ))}

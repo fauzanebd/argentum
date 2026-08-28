@@ -4,6 +4,7 @@ import { GeneralTab } from "./general-tab";
 import { DataSourcesTab } from "./data-sources-tab";
 import { MetricsTab } from "./metrics-tab";
 import { AgentsTab } from "./agents-tab";
+import { SkillsTab } from "./skills-tab";
 import { WebhooksTab } from "./webhooks-tab";
 import { PhonesTab } from "./phones-tab";
 import { IntegrationsTab } from "./integrations-tab";
@@ -32,6 +33,11 @@ export function SettingsPage() {
     { id: "data-sources", label: "Data sources" },
     { id: "metrics", label: "Metrics" },
     { id: "agents", label: "Agents" },
+    // Beside Agents rather than under it: a procedure belongs to the workspace
+    // and every agent is offered it unless an admin narrows one, so filing it
+    // inside the agent form would put a workspace-level thing behind whichever
+    // agent somebody happened to open.
+    { id: "skills", label: "Procedures" },
     { id: "phones", label: "Phone numbers" },
     { id: "integrations", label: "Integrations" },
     ...(isAdmin ? [{ id: "reports", label: "Reports" }] : []),
@@ -105,6 +111,13 @@ export function SettingsPage() {
               <WebhooksTab />
             </Tabs.Content>
           )}
+          {/* Admin on every route including the read, like MCP servers: a
+              procedure is text the agents follow as an instruction. */}
+          <Tabs.Content value="skills">
+            <AdminGate>
+              <SkillsTab />
+            </AdminGate>
+          </Tabs.Content>
           <Tabs.Content value="phones">
             <AdminGate>
               <PhonesTab />

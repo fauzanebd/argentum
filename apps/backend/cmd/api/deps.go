@@ -112,7 +112,8 @@ type apiDeps struct {
 	// The tenant's written procedures (T-K1). CRUD and the agent binding only:
 	// the index that rides the prompt is composed in bootstrap (T-K3) and the
 	// tool that opens a body is registered with the rest (T-K4).
-	skillSvc *app.SkillService
+	skillSvc      *app.SkillService
+	skillDraftSvc *app.SkillDraftService
 	// The metric registry (T-06): the tenant's named, validated numbers, and the
 	// turn-time query path query_metric runs through.
 	metricSvc *app.MetricService

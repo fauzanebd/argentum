@@ -100,7 +100,10 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewAgentBindingsHandler(d.agentBindingSvc).Register(authed)
 	handlers.NewCompanyProfileHandler(d.companyProfileSvc).Register(authed)
 	handlers.NewMCPServersHandler(d.mcpServerSvc).Register(authed)
-	handlers.NewSkillsHandler(d.skillSvc).Register(authed)
+	handlers.NewSkillsHandler(d.skillSvc).
+		WithIndexBounds(d.cfg.SkillIndexMax, d.cfg.SkillIndexMaxChars).
+		WithDrafter(d.skillDraftSvc).
+		Register(authed)
 	handlers.NewMetricsHandler(d.metricSvc).Register(authed)
 	handlers.NewWatchersHandler(d.watcherSvc).Register(authed)
 	handlers.NewActionsHandler(d.actionSvc).Register(authed)

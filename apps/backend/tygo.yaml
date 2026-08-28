@@ -103,11 +103,17 @@ packages:
     include_files:
       - "event_bus.go"
       - "budget_state.go"
+      # The skills surface's three response shapes (T-K6, T-K7). Here rather
+      # than in a file of their own because this entry is already "the
+      # non-entity shapes internal/app answers with", and a fourth output file
+      # would mean a fourth entry in the barrel for three interfaces.
+      - "skill_wire.go"
     output_path: "../../packages/api-types/src/events.ts"
     enum_style: "union"
     frontmatter: |
       /* eslint-disable */
-      // WebSocket frames and the credit position, from apps/backend/internal/app.
+      // WebSocket frames, the credit position and the skills surface's
+      // response shapes, from apps/backend/internal/app.
 
   # Responses that are neither entities nor events. One file, by design: see
   # its package comment for what belongs in it.
@@ -130,6 +136,8 @@ packages:
       domain.APIRequestError: "APIRequestError"
       domain.MCPServer: "MCPServer"
       domain.MCPTransport: "MCPTransport"
+      domain.Skill: "Skill"
+      app.SkillIndexCost: "SkillIndexCost"
       domain.MetricDefinition: "MetricDefinition"
       domain.MetricGrain: "MetricGrain"
       domain.MetricUnit: "MetricUnit"
@@ -137,7 +145,7 @@ packages:
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
       // apps/backend/internal/transport/http/handlers/wire.go.
-      import type { BudgetState } from "./events.js";
+      import type { BudgetState, SkillIndexCost } from "./events.js";
       import type {
         Agent,
         AgentChannelBinding,
@@ -151,6 +159,7 @@ packages:
         MetricDefinition,
         MetricGrain,
         MetricUnit,
+        Skill,
       } from "./domain.js";
 
   # What was extracted from an uploaded PDF (T-P4/T-P7): the typed columns, the

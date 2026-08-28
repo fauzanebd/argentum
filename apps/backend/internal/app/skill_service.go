@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/sirupsen/logrus"
 
@@ -58,6 +60,13 @@ type SkillService struct {
 	skills   domain.SkillRepository
 	agents   domain.AgentRepository
 	embedder *skill.Embedder
+	// index is the repository a *turn* reads, which is the tenant's rows with
+	// the shipped set merged in (T-K8). Separate from `skills` because the CRUD
+	// surface is deliberately the tenant's own rows only — an admin edits what
+	// they wrote — while the answer to "what does my index cost every turn"
+	// has to count what the prompt actually carries. Nil falls back to
+	// `skills`, which is a smaller number and an honest one.
+	index domain.SkillRepository
 }
 
 // NewSkillService wires the service.
@@ -71,6 +80,78 @@ func NewSkillService(skills domain.SkillRepository, agents domain.AgentRepositor
 func (s *SkillService) WithEmbedder(e *skill.Embedder) *SkillService {
 	s.embedder = e
 	return s
+}
+
+// WithIndexReader supplies the repository a turn composes its index from, so
+// the preview surface can show the tenant the block their prompt really
+// carries rather than a subset of it (T-K6).
+func (s *SkillService) WithIndexReader(repo domain.SkillRepository) *SkillService {
+	s.index = repo
+	return s
+}
+
+// Preview renders a draft without saving it.
+//
+// Nothing here writes, and nothing here is an authorship event: what comes back
+// is a rendering of text the caller already holds. It deliberately does not
+// refuse an over-cap draft — an author who has pasted too much needs to see
+// the counter and the sentence, not an error page instead of their own words.
+func (s *SkillService) Preview(in *domain.Skill) *SkillPreview {
+	draft := *in
+	draft.Name = strings.TrimSpace(draft.Name)
+	draft.WhenToUse = strings.TrimSpace(draft.WhenToUse)
+	draft.Body = strings.TrimSpace(draft.Body)
+
+	p := &SkillPreview{
+		IndexLine:      draft.IndexLine(),
+		FramedBody:     skill.Frame(draft.Name, draft.Body),
+		NameChars:      utf8.RuneCountInString(draft.Name),
+		WhenToUseChars: utf8.RuneCountInString(draft.WhenToUse),
+		BodyChars:      utf8.RuneCountInString(draft.Body),
+	}
+	p.IndexLineChars = utf8.RuneCountInString(p.IndexLine)
+	check := draft
+	check.Source = domain.SkillSourceTenant
+	if err := check.Validate(); err != nil {
+		p.Refusal = err.Error()
+	}
+	return p
+}
+
+// IndexCost composes this company's index exactly as a turn would and reports
+// what it cost.
+//
+// Composed rather than estimated. The bounds interact — whichever binds first
+// binds — and a client adding up name lengths would be reimplementing the
+// truncation rule in a place nobody would think to update.
+func (s *SkillService) IndexCost(ctx context.Context, companyID string, maxLines, maxChars int) (*SkillIndexCost, error) {
+	repo := s.index
+	if repo == nil {
+		repo = s.skills
+	}
+	rows, err := repo.ListEnabledForIndex(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	if maxLines <= 0 {
+		maxLines = skill.DefaultIndexMaxLines
+	}
+	if maxChars <= 0 {
+		maxChars = skill.DefaultIndexMaxChars
+	}
+	// A nil `allowed` is the unrestricted view — what an agent with no binding
+	// is offered, which is every enabled skill. That is the right number for a
+	// settings screen: it is the workspace's cost, not one agent's.
+	block, dropped := skill.Compose(rows, nil, maxLines, maxChars)
+	cost := &SkillIndexCost{MaxChars: maxChars, MaxLines: maxLines, Dropped: dropped}
+	if cost.Dropped == nil {
+		cost.Dropped = []string{}
+	}
+	if block != "" {
+		cost.Chars = utf8.RuneCountInString(block)
+		cost.Lines = skill.Lines(block)
+	}
+	return cost, nil
 }
 
 // Create validates the caps, checks the per-company limit, and writes.
