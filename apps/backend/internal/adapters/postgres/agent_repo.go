@@ -26,7 +26,9 @@ const agentColumns = `a.id, a.company_id, a.name, a.description, a.persona_promp
 	ARRAY(SELECT s.connection_id::text FROM agent_sources s
 		WHERE s.agent_id = a.id ORDER BY s.connection_id) AS source_ids,
 	ARRAY(SELECT m.server_id::text FROM agent_mcp_servers m
-		WHERE m.agent_id = a.id ORDER BY m.server_id) AS mcp_server_ids`
+		WHERE m.agent_id = a.id ORDER BY m.server_id) AS mcp_server_ids,
+	ARRAY(SELECT k.skill_id::text FROM agent_skills k
+		WHERE k.agent_id = a.id ORDER BY k.skill_id) AS skill_ids`
 
 // uniqueViolation is Postgres 23505. The roster has two unique indexes an
 // ordinary request can collide with — (company_id, lower(name)) and the
@@ -241,11 +243,11 @@ func replaceSources(ctx context.Context, tx *sql.Tx, companyID, agentID string, 
 
 func scanAgent(s rowScanner) (*domain.Agent, error) {
 	a := &domain.Agent{}
-	var tools, sources, mcpServers pq.StringArray
+	var tools, sources, mcpServers, skills pq.StringArray
 	if err := s.Scan(
 		&a.ID, &a.CompanyID, &a.Name, &a.Description, &a.PersonaPrompt,
 		&tools, &a.TemplateKey, &a.IsDefault, &a.Enabled, &a.CreatedAt, &a.UpdatedAt, &sources,
-		&mcpServers,
+		&mcpServers, &skills,
 	); err != nil {
 		return nil, err
 	}
@@ -264,8 +266,23 @@ func scanAgent(s rowScanner) (*domain.Agent, error) {
 	if a.MCPServerIDs == nil {
 		a.MCPServerIDs = []string{}
 	}
+	a.SkillIDs = []string(skills)
+	if a.SkillIDs == nil {
+		a.SkillIDs = []string{}
+	}
 	return a, nil
 }
+
+// **`agent_skills` is read here and written only by SkillRepo.SetAgentBinding**,
+// which is the one binding on this row with a single writer — and deliberately,
+// unlike sources and MCP servers, which Create and Update replace from the
+// payload.
+//
+// The reason is what an omitted field would mean. An agent save that carried no
+// `skill_ids` and replaced the table from it would clear every binding on every
+// unrelated edit — renaming an agent would silently un-scope it — and the
+// dashboard's agent form is not where a procedure is bound. Two writers for one
+// table is the shape that produces that; one writer and one reader is not.
 
 // replaceMCPServers rewrites one agent's MCP-server bindings (T-M2/T-M3),
 // folded into Create and Update in the same transaction the row and its sources
