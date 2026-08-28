@@ -18,6 +18,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/llmtap"
 	"github.com/fauzanebd/argentum/internal/llmusage"
 	"github.com/fauzanebd/argentum/internal/llmzdr"
 )
@@ -31,6 +32,9 @@ type Spec struct {
 	Model     string
 	BaseURL   string
 	ZDR       bool // LLM_ZDR: pin routing to OpenRouter zero-data-retention endpoints
+	// WireTapDir writes every outbound request to a file (internal/llmtap).
+	// Empty is off, which is what every deployment carries outside a capture.
+	WireTapDir string
 }
 
 // Build constructs an LLM client from a fully-resolved spec.
@@ -41,11 +45,12 @@ func Build(spec Spec) (interfaces.LLM, error) {
 // BuildPrimary constructs the main agent LLM per LLM_INTERFACE / LLM_PROVIDER.
 func BuildPrimary(cfg *config.Config) (interfaces.LLM, error) {
 	return Build(Spec{
-		Interface: cfg.EffectiveLLMInterface(),
-		APIKey:    cfg.LLMAPIKey,
-		Model:     cfg.LLMModel,
-		BaseURL:   cfg.LLMBaseURL,
-		ZDR:       cfg.LLMZDR,
+		Interface:  cfg.EffectiveLLMInterface(),
+		APIKey:     cfg.LLMAPIKey,
+		Model:      cfg.LLMModel,
+		BaseURL:    cfg.LLMBaseURL,
+		ZDR:        cfg.LLMZDR,
+		WireTapDir: cfg.LLMWireTapDir,
 	})
 }
 
@@ -56,11 +61,12 @@ func BuildLight(cfg *config.Config) (interfaces.LLM, error) {
 		return BuildPrimary(cfg)
 	}
 	return Build(Spec{
-		Interface: cfg.EffectiveLightLLMInterface(),
-		APIKey:    cfg.LightLLMAPIKey,
-		Model:     cfg.LightLLMModel,
-		BaseURL:   cfg.LightLLMBaseURL,
-		ZDR:       cfg.LLMZDR,
+		Interface:  cfg.EffectiveLightLLMInterface(),
+		APIKey:     cfg.LightLLMAPIKey,
+		Model:      cfg.LightLLMModel,
+		BaseURL:    cfg.LightLLMBaseURL,
+		ZDR:        cfg.LLMZDR,
+		WireTapDir: cfg.LLMWireTapDir,
 	})
 }
 
@@ -81,7 +87,10 @@ func BuildClassifier(cfg *config.Config) (interfaces.LLM, error) {
 		iface = cfg.EffectiveLLMInterface()
 		baseURL = cfg.LLMBaseURL
 	}
-	return Build(Spec{Interface: iface, APIKey: apiKey, Model: model, BaseURL: baseURL, ZDR: cfg.LLMZDR})
+	return Build(Spec{
+		Interface: iface, APIKey: apiKey, Model: model, BaseURL: baseURL,
+		ZDR: cfg.LLMZDR, WireTapDir: cfg.LLMWireTapDir,
+	})
 }
 
 func build(ctx context.Context, spec Spec) (interfaces.LLM, error) {
@@ -139,7 +148,7 @@ func build(ctx context.Context, spec Spec) (interfaces.LLM, error) {
 			opts = append(opts, openai.WithBaseURL(baseURL))
 		}
 		client := openai.NewClient(apiKey, opts...)
-		installUsageTap(client, apiKey, baseURL, spec.ZDR)
+		installUsageTap(client, apiKey, baseURL, spec.ZDR, spec.WireTapDir)
 		return client, nil
 	}
 }
@@ -175,7 +184,7 @@ const defaultOpenAIBaseURL = "https://api.openai.com/v1"
 // The tap only acts when app.MeteredLLM has put a collector in the request
 // context and the response is text/event-stream, so non-streaming calls keep
 // being metered from the SDK's own LLMResponse.Usage with no double counting.
-func installUsageTap(c *openai.OpenAIClient, apiKey, baseURL string, zdr bool) {
+func installUsageTap(c *openai.OpenAIClient, apiKey, baseURL string, zdr bool, wireTapDir string) {
 	if c == nil {
 		return
 	}
@@ -190,6 +199,13 @@ func installUsageTap(c *openai.OpenAIClient, apiKey, baseURL string, zdr bool) {
 	if zdr {
 		base = llmzdr.New(nil)
 	}
+	// **The wire tap goes below the ZDR rewriter**, so what it captures is what
+	// the provider receives rather than what this process composed — the
+	// `provider.zdr` field included. Capturing above it would produce a file
+	// that differs from the wire in exactly the way T-K2 exists to rule out.
+	// New() returns `base` untouched when no directory is configured, which is
+	// every deployment outside a capture.
+	base = llmtap.New(base, wireTapDir)
 	httpClient := llmusage.NewClient(base)
 	reqOpts := []option.RequestOption{
 		option.WithAPIKey(apiKey),

@@ -80,11 +80,12 @@ func (c *ClientCache) For(ctx context.Context, companyID string, tier domain.LLM
 	c.mu.Unlock()
 
 	raw, err := llmclient.Build(llmclient.Spec{
-		Interface: profile.Interface,
-		APIKey:    profile.APIKey,
-		Model:     profile.Model,
-		BaseURL:   profile.BaseURL,
-		ZDR:       profile.ZDR,
+		Interface:  profile.Interface,
+		APIKey:     profile.APIKey,
+		Model:      profile.Model,
+		BaseURL:    profile.BaseURL,
+		ZDR:        profile.ZDR,
+		WireTapDir: profile.WireTapDir,
 	})
 	if err != nil {
 		return nil, nil, err

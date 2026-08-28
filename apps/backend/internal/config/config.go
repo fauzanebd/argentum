@@ -131,6 +131,14 @@ type Config struct {
 	// state and not an error.
 	BuiltinSkillsPath string
 
+	// LLMWireTapDir turns on the outbound request capture (internal/llmtap).
+	// Empty is off and empty is the only value any deployment should carry:
+	// what it writes is the composed prompt, which is tenant data on disk. It
+	// exists because `T-K2` owes one row of evidence about what the provider
+	// received, and three shapes of capture proxy could not produce it —
+	// `docs/coverage/live-gate-backlog.md` §1p.
+	LLMWireTapDir string
+
 	// Argentum control plane
 	JWTSecret           string
 	DSNEncryptionKeyHex string // 64 hex chars => 32 bytes for AES-256-GCM
@@ -595,6 +603,8 @@ func Load() (*Config, error) {
 		GuardrailsConfigPath: getEnv("GUARDRAILS_CONFIG_PATH", "config/guardrails.yaml"),
 		AgentTemplatesPath:   getEnv("AGENT_TEMPLATES_PATH", "config/agent_templates.yaml"),
 		BuiltinSkillsPath:    getEnv("BUILTIN_SKILLS_PATH", "config/skills"),
+
+		LLMWireTapDir: getEnv("LLM_WIRE_TAP_DIR", ""),
 
 		// Control plane
 		JWTSecret:            getEnv("ARGENTUM_JWT_SECRET", ""),

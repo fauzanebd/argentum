@@ -33,6 +33,13 @@ type EffectiveProfile struct {
 	// embeddings endpoint, so there is nothing there to route.
 	ZDR bool
 
+	// WireTapDir mirrors cfg.LLMWireTapDir onto the LLM tiers, beside ZDR and
+	// for its reason: it is a deployment switch a tenant row cannot set, so it
+	// never varies between profiles of the same process and is deliberately
+	// absent from Version. Unset for the embedding tier — an embedding request
+	// carries no prompt and is not what T-K2 asks about.
+	WireTapDir string
+
 	Dim       int // embedding only
 	BatchSize int // embedding only
 
@@ -90,12 +97,13 @@ func (r *Resolver) envProfile(tier domain.LLMTier) *EffectiveProfile {
 	switch tier {
 	case domain.LLMTierPrimary:
 		return &EffectiveProfile{
-			Interface: r.cfg.EffectiveLLMInterface(),
-			Model:     r.cfg.LLMModel,
-			BaseURL:   r.cfg.LLMBaseURL,
-			APIKey:    r.cfg.LLMAPIKey,
-			ZDR:       r.cfg.LLMZDR,
-			Version:   "env:primary",
+			Interface:  r.cfg.EffectiveLLMInterface(),
+			Model:      r.cfg.LLMModel,
+			BaseURL:    r.cfg.LLMBaseURL,
+			APIKey:     r.cfg.LLMAPIKey,
+			ZDR:        r.cfg.LLMZDR,
+			WireTapDir: r.cfg.LLMWireTapDir,
+			Version:    "env:primary",
 		}
 	case domain.LLMTierLight:
 		// Mirror llmclient.BuildLight: when LIGHT_LLM_API_KEY is empty,
@@ -106,12 +114,13 @@ func (r *Resolver) envProfile(tier domain.LLMTier) *EffectiveProfile {
 			return p
 		}
 		return &EffectiveProfile{
-			Interface: r.cfg.EffectiveLightLLMInterface(),
-			Model:     r.cfg.LightLLMModel,
-			BaseURL:   r.cfg.LightLLMBaseURL,
-			APIKey:    r.cfg.LightLLMAPIKey,
-			ZDR:       r.cfg.LLMZDR,
-			Version:   "env:light",
+			Interface:  r.cfg.EffectiveLightLLMInterface(),
+			Model:      r.cfg.LightLLMModel,
+			BaseURL:    r.cfg.LightLLMBaseURL,
+			APIKey:     r.cfg.LightLLMAPIKey,
+			ZDR:        r.cfg.LLMZDR,
+			WireTapDir: r.cfg.LLMWireTapDir,
+			Version:    "env:light",
 		}
 	case domain.LLMTierEmbedding:
 		provider := r.cfg.EmbeddingProvider
