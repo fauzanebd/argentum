@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/fauzanebd/argentum/internal/domain"
 )
@@ -51,13 +52,22 @@ func TestShippedSkillsCostALineEach(t *testing.T) {
 	if n := strings.Count(index, "\n- "); n != 2 {
 		t.Errorf("index carries %d shipped lines, want 2", n)
 	}
-	// Measured 701 characters on 2026-08-25 — header plus two lines. The bound
+	// Measured 691 characters on 2026-08-29 — header plus two lines. The bound
 	// is the measurement with a little headroom, not a guess: what it is here
 	// to catch is a third shipped skill or a `when_to_use` that grew into a
 	// paragraph, both of which are always-on cost paid by every tenant on
 	// every turn.
-	if len(index) > 900 {
-		t.Errorf("the shipped index block is %d chars, against 701 measured when it was written; it rides every turn", len(index))
+	//
+	// **Counted in runes, and the correction is the point.** This read `len()`
+	// and recorded 701, which is the same block in bytes — the two shipped
+	// `when_to_use` sentences carry an em-dash apiece. `Compose` enforces
+	// SKILL_INDEX_MAX_CHARS in runes, so a byte figure here described a
+	// quantity the product does not bound, and the number a live gate reads off
+	// `GET /api/skills` (691) disagreed with the number the docs quoted. A bound
+	// in the wrong unit is not a bound, which is this feature's own lesson at
+	// one remove.
+	if n := utf8.RuneCountInString(index); n > 900 {
+		t.Errorf("the shipped index block is %d runes, against 691 measured when it was written; it rides every turn", n)
 	}
 }
 

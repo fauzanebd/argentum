@@ -482,6 +482,13 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	if err != nil {
 		return nil, fmt.Errorf("load built-in skills: %w", err)
 	}
+	if len(builtinSkills) > 0 {
+		// Said in this process too, in the worker's words. Two processes load
+		// the shipped set and only one of them used to say so, which makes
+		// "did my procedures load" a question an operator can only answer by
+		// reading the other service's log.
+		logrus.WithField("count", len(builtinSkills)).Info("built-in skills loaded")
+	}
 	// The write-time vector T-K5 ranks with. Embedded inside the save because
 	// that is the one moment the text is known to be new and somebody is
 	// already waiting on a round trip; failing to get one never fails the save.
