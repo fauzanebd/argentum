@@ -61,7 +61,10 @@ func (d *draftThreads) GetForCompany(_ context.Context, companyID, id string) (*
 	if d.owner[id] != companyID {
 		return nil, domain.ErrNotFound
 	}
-	return &domain.ConversationThread{ID: id, CompanyID: companyID}, nil
+	return &domain.ConversationThread{
+		ID: id, CompanyID: companyID,
+		CreatedAt: time.Now().Add(-2 * time.Hour),
+	}, nil
 }
 
 type draftMessages struct {
@@ -76,9 +79,13 @@ func (d *draftMessages) ListByThread(_ context.Context, _ string, _, _ int) ([]*
 type draftActions struct {
 	rows []*domain.AgentAction
 	err  error
+	// got records the filter, because the first live run of this service found
+	// a defect that lives entirely in it.
+	got domain.AgentActionFilter
 }
 
-func (d *draftActions) ListByCompany(_ context.Context, _ string, _ domain.AgentActionFilter) ([]*domain.AgentAction, error) {
+func (d *draftActions) ListByCompany(_ context.Context, _ string, f domain.AgentActionFilter) ([]*domain.AgentAction, error) {
+	d.got = f
 	return d.rows, d.err
 }
 
@@ -290,5 +297,50 @@ func TestACodeFencedReplyIsAccepted(t *testing.T) {
 	}
 	if got.Name == "" {
 		t.Error("the draft came back empty")
+	}
+}
+
+// **The defect the first live run found, pinned.** AgentActionFilter's window
+// is not optional: the repository builds `created_at >= From AND < To`
+// unconditionally, so a zero filter is an empty range rather than an absent
+// one. This service read the audit log with one for its whole first life, and
+// nothing said so — the degradation path reported "no tool calls", which is
+// indistinguishable from a conversation that ran none.
+//
+// A stub that ignores the filter cannot catch that, which is why this one
+// records it.
+func TestTheAuditReadCarriesAWindowTheRepositoryWillHonour(t *testing.T) {
+	llm := &draftLLM{replies: []string{draftReply}}
+	actions := &draftActions{rows: []*domain.AgentAction{{
+		ToolName:     "run_sql",
+		ArgsRedacted: json.RawMessage(`{"sql":"SELECT 1"}`),
+		ResultStatus: domain.ActionStatusOK,
+	}}}
+	svc := NewSkillDraftService(
+		llm,
+		&draftThreads{owner: map[string]string{"thread-1": "co-1"}},
+		&draftMessages{rows: conversation()},
+		"light-model",
+	).WithActions(actions)
+
+	if _, err := svc.Draft(context.Background(), "co-1", "thread-1"); err != nil {
+		t.Fatalf("draft: %v", err)
+	}
+
+	if actions.got.From.IsZero() || actions.got.To.IsZero() {
+		t.Fatalf("the audit read used a zero window (%v .. %v); the repository turns that into an empty range",
+			actions.got.From, actions.got.To)
+	}
+	if !actions.got.To.After(actions.got.From) {
+		t.Errorf("the window is not a range: %v .. %v", actions.got.From, actions.got.To)
+	}
+	// The floor is the thread, because an audit row cannot predate the
+	// conversation it belongs to — and a floor of "now" would exclude the
+	// whole thread.
+	if actions.got.From.After(time.Now().Add(-time.Hour)) {
+		t.Errorf("the window floor is %v, which is after the thread it is drafting from", actions.got.From)
+	}
+	if actions.got.ThreadID != "thread-1" {
+		t.Errorf("the audit read is not narrowed to the thread: %q", actions.got.ThreadID)
 	}
 }

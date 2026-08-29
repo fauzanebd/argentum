@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
@@ -148,7 +149,8 @@ func (s *SkillDraftService) Draft(ctx context.Context, companyID, threadID strin
 	if s == nil || s.llm == nil {
 		return nil, fmt.Errorf("%w: drafting is not configured on this deployment", domain.ErrInvalidInput)
 	}
-	if _, err := s.threads.GetForCompany(ctx, companyID, threadID); err != nil {
+	thread, err := s.threads.GetForCompany(ctx, companyID, threadID)
+	if err != nil {
 		return nil, err
 	}
 	if s.budget != nil {
@@ -166,7 +168,7 @@ func (s *SkillDraftService) Draft(ctx context.Context, companyID, threadID strin
 		return nil, fmt.Errorf("read thread: %w", err)
 	}
 	transcript, msgCount := s.transcript(msgs)
-	calls, callCount := s.toolCalls(ctx, companyID, threadID)
+	calls, callCount := s.toolCalls(ctx, companyID, thread)
 	if msgCount == 0 {
 		return nil, ErrSkillDraftEmpty
 	}
@@ -245,17 +247,31 @@ func (s *SkillDraftService) transcript(msgs []*domain.Message) (string, int) {
 // A failed audit read costs the draft its most useful half — the table names —
 // and must not cost the tenant their button. Same rule the generator's profile
 // reads follow.
-func (s *SkillDraftService) toolCalls(ctx context.Context, companyID, threadID string) (string, int) {
-	if s.actions == nil {
+func (s *SkillDraftService) toolCalls(ctx context.Context, companyID string, thread *domain.ConversationThread) (string, int) {
+	if s.actions == nil || thread == nil {
 		return "", 0
 	}
+	// **The window is not optional, and leaving it zero is why this returned
+	// nothing on the first live run.** AgentActionFilter's own comment says so
+	// — "zero values mean no filter except for the window, which the caller
+	// always supplies" — and the repository builds `created_at >= $2 AND
+	// created_at < $3` unconditionally, so a zero From and To is an empty
+	// range rather than an absent one. The degradation path then reported "no
+	// tool calls" for every thread, which reads exactly like a conversation
+	// that ran none.
+	//
+	// The floor is the thread itself: an audit row for a conversation cannot
+	// predate the conversation. Both ends carry a minute of margin because
+	// `created_at` is Postgres's clock and these bounds are this process's.
 	rows, err := s.actions.ListByCompany(ctx, companyID, domain.AgentActionFilter{
-		ThreadID: threadID,
+		ThreadID: thread.ID,
+		From:     thread.CreatedAt.Add(-time.Minute),
+		To:       time.Now().Add(time.Minute),
 		Limit:    draftToolCalls,
 	})
 	if err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
-			"company_id": companyID, "thread_id": threadID,
+			"company_id": companyID, "thread_id": thread.ID,
 		}).Warn("skill draft: the audit log could not be read; drafting from the transcript alone")
 		return "", 0
 	}
