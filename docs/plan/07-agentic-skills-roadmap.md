@@ -387,8 +387,24 @@ against these tickets and one against a ticket that was already closed.
    findable:** cutting `T-K6` is what left the binding with no user, and building
    it is what exposed that it had no reader either.
 
-**Owed:** everything in `../coverage/skills.md` §7. Nothing built on 08-27 has
-touched a database, a provider or a browser.
+**Owed:** everything in `../coverage/skills.md` §7.
+
+**Revised 2026-08-29 — the free arms ran, and two defects came out of them.**
+Everything filed as free on 08-27 has been run against the real database, the
+real API and a real turn: the binding loaded from Postgres, `072`'s round-trip,
+the vector's storage rules, the ranking over the bound, the preview endpoint, the
+API's boot validation, and — closed at last — `T-K2`'s framed body as the
+provider received it, captured by `internal/llmtap` in the same request where
+`list_sources` and `list_metrics` arrive fenced. `T-K9` was scored on deepseek
+for the first time.
+
+The two defects are worth carrying up here because neither is in a ticket this
+roadmap wrote. `T-K7` had been reading the audit log with a zero time window,
+which `AgentActionRepo` turns into an empty range rather than an absent filter,
+so every draft it ever produced came from the transcript alone. And this
+roadmap's own §7 claim that `skill-conflicts-with-metric` fails
+*model-specifically* is false: deepseek fails it identically. See
+`../coverage/skills.md` §6a and §5b1.
 
 ## 5. The tickets
 

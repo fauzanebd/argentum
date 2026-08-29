@@ -4704,6 +4704,72 @@ failing.
 are filed in [`live-gate-backlog.md`](live-gate-backlog.md), eight of them free,
 and the first is the one that was never really run.
 
+## Phase 3r — The gates the credentials had been hiding (2026-08-29)
+
+Every free arm the skills track owed, run against the real database, the real
+API and a real turn. Two product defects, one falsified claim, and one closed
+arm that three capture proxies could not close. Ledger in
+[`live-gate-backlog.md`](live-gate-backlog.md) §1p; detail in
+[`skills.md`](skills.md) §6a.
+
+**What had been blocking it was a comment.** Three sittings recorded the control
+database as unreachable. It was not. The repo-root `.env` names a `metabase`
+superuser that does not exist in the cluster and warns that compose's own
+credentials would open an empty database; those credentials open the gate
+database itself, with 901 `agent_actions` spanning three and a half months.
+`apps/backend/.env` had been right since 08-23 — the root file, which is what a
+reader reaches first, had not. **A credential comment that predicts a consequence
+is a claim, and nobody had tested this one in four months.**
+
+**The defect the gate was written for is closed.** The per-agent binding, loaded
+from the database this time: the roster row carries it, `AllowsSkill` enforces
+it, the composed index offers only what is bound, and `load_skill` refuses the
+rest byte-identically to an unknown name. Phase 3q fixed it against a unit test;
+this is the arm that says so against Postgres.
+
+**`T-K2` is closed by the transport.** In one request, as OpenRouter received
+it: `load_skill`'s result framed and not fenced, `list_sources` and
+`list_metrics` fenced and not framed, the frame unescaped in a `role: tool`
+message, the index line in the system prompt and the body absent from it. The
+contrast is the trust argument itself — if the first stopped holding the feature
+would be dangerous, and if the second did it would be pointless.
+
+**Finding: the drafter had been reading the audit log with an empty window.**
+`AgentActionFilter`'s window is the one field a caller always supplies, and the
+repository applies it unconditionally, so `T-K7`'s zero filter was an empty range
+rather than an absent one. Every draft it had ever produced came from the
+transcript alone. Nothing failed: the degradation path reports "no tool calls",
+which is exactly what a conversation that ran none looks like, and the unit
+test's stub ignored the filter. The before/after is the ticket's own claim
+measured — *"Use data sources: orders and branches"* became the actual `SELECT`,
+join predicate and both `WHERE` clauses.
+
+**Finding: `skill-conflicts-with-metric` is not model-specific, and this log's
+own track said it was.** deepseek was scored on the category for the first time
+and fails the same case the same way kimi does — one-sided window, all-time
+figure, repeat-guard on the identical retry. The 08-25 claim that deepseek
+"self-corrected on the same shape" was an inference from one observation of a
+different question. What deepseek *does* prove is the feature's own question:
+all three cases that reach the skill mechanism pass, in both languages, on both
+models.
+
+**And the re-score is paid.** kimi over the full set: 60/61 = 98.4% for $0.9213,
+`skill_follow` 5/5. The headline is not comparable to the 96.4% baseline — the
+set grew to 61 cases and every turn now carries the skills block — so the figure
+that answers rule 1 is the subset: **the 56 cases that predate this track score
+55/56 = 98.2%**, which is the upper of the two values this set is known to
+wander between. No regression, and not an improvement either. `T-K3`'s block and
+`T-K5`'s ordering are measured rather than argued about, and the
+two-unpaid-re-scores state the roadmap's §8 warned about was never entered.
+≈$0.94 for the sitting against a ~$1.12 estimate.
+
+**The pattern this adds.** 3n found a comment describing a property the code did
+not have; 3l a measurement describing a warehouse that no longer existed; 3q a
+field every layer agreed about and nothing filled in. This is the fourth: **a
+degradation path that reported the absence of something it had never looked
+for.** All four are invisible to a green test suite, and all four were found by
+running the thing.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

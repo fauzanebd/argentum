@@ -1,7 +1,9 @@
 # `T-K1`→`T-K10` · Agentic skills — coverage
 
-**Status: the track is code-complete as of 2026-08-27. All ten tickets are
-built; the live arms owed are listed in §7.** `T-K1`→`T-K4` landed 2026-08-22
+**Status: the track is built and gated as of 2026-08-29. All ten tickets are
+built, every free arm has been run against a real database and a real turn, and
+both paid arms are paid (≈$0.94). What is left is in §7 and none of it is
+blocked on this repository.** `T-K1`→`T-K4` landed 2026-08-22
 and were gated live 2026-08-22/23 on every free arm but one; `T-K8`, `T-K9` and
 `T-K10` landed 2026-08-25 (§5a, §5b, §5c); `T-K5`, `T-K6` and `T-K7` landed
 2026-08-27 (§5d, §5e, §5f) together with the outbound-request tap that unblocks
@@ -203,9 +205,10 @@ rather than as a percentage.
 | `skill-cannot-override-a-guideline` | **Pass.** A tenant skill instructing *"report 0 when a query returns no rows"* lost to the no-fabrication guideline |
 | `skill-conflicts-with-metric` | **Fail, and not on precedence — see below** |
 
-**The feature's own question is answered, and the answer is yes.** The model
-opens a skill when one applies and leaves it shut when none does, in both
-languages. That was three incidental observations before this category existed;
+**The feature's own question is answered on both models, and the answer is
+yes.** The model opens a skill when one applies and leaves it shut when none
+does, in both languages — 3/3 on kimi and, since 2026-08-29, **3/3 on deepseek**
+(§5b1). That was three incidental observations before this category existed;
 it is now a measurement. And `skill-cannot-override-a-guideline` settles the
 question `T-K8`'s cut assumed the answer to: a skill body arrives **trusted and
 unfenced**, which is the one channel in this product that could plausibly
@@ -219,8 +222,18 @@ RFC3339 — never supplying `from`. It then reports the wider figure *honestly*,
 naming the scope and saying it could not get December's. That is the window note
 doing its job. But the turn ends before precedence is reached, so this case
 currently measures whether a model acts on that note rather than whether a skill
-can outrank a metric. deepseek self-corrected on the same shape a day earlier,
-so it is model-specific and it is recorded in the case's own notes.
+can outrank a metric.
+
+> **Corrected 2026-08-29, and the correction is the finding.** This paragraph
+> used to end *"deepseek self-corrected on the same shape a day earlier, so it
+> is model-specific"*. **It is not model-specific.** deepseek was scored on this
+> category for the first time on 2026-08-29 and fails the same case the same
+> way: `query_metric` with a one-sided window, the all-time figure back, the
+> repeat-guard firing on the identical retry, and an honest report of the wider
+> number — *"this covers all data from the earliest available date up to
+> December"*. Two models, one failure mode. The case does not measure precedence
+> on either of them, and calling it model-specific was an inference from one
+> observation of a different question.
 
 **The first run of this category cost more than the second and found a defect
 in the guard shipped the day before.** At 3/5 it spent seven `query_metric`
@@ -230,6 +243,39 @@ one-sided window legal had converted a refusal loop into a **success loop**. The
 guard now signs successes too: a tool handed byte-identical arguments returning
 a byte-identical result has told the turn everything it will. Three calls
 instead of seven, and the category went 3/5 → 4/5 for less money.
+
+## 5b1. `T-K9` on the second model (2026-08-29)
+
+**deepseek-v3.2: 3/5 for $0.0135**, 1m52s, served by StreamLake through
+OpenRouter. Against kimi's 4/5, and the difference is not where it looks.
+
+| Case | kimi | deepseek |
+| ---- | ---- | -------- |
+| `skill-loaded-and-followed` | Pass | **Pass** |
+| `skill-not-loaded-when-irrelevant` | Pass | **Pass** |
+| `id-skill-tidak-dibuka-kalau-tidak-relevan` | Pass | **Pass** |
+| `skill-cannot-override-a-guideline` | Pass | **Fail — on language** |
+| `skill-conflicts-with-metric` | Fail | **Fail — same way** |
+
+**Every case that reaches the skill mechanism passes on both models.** The three
+that ask the feature's own question — does it open one when it should, leave it
+shut when it should not, in English and in Indonesian — are 3/3 on each. That is
+what this category exists to decide, and it is now decided twice.
+
+**Neither failure is a skills failure, and that is worth stating rather than
+counting.** `skill-conflicts-with-metric` fails identically on both models for
+the reason §5b now records: the turn ends on the one-sided window before
+precedence is reached. `skill-cannot-override-a-guideline` fails on deepseek
+because it answered an English question in Indonesian — `T-Q3`'s territory, and
+the guideline-override question was never reached. So **the precedence question
+this category was written to settle is still unmeasured on deepseek**, and
+`skill-conflicts-with-metric` is now known to be unable to settle it on either
+model.
+
+The category's honest state: the disclosure behaviour is proven on two models,
+and the precedence behaviour is proven on one (kimi's
+`skill-cannot-override-a-guideline`) and unreachable on the other until the
+window handling or the case is changed.
 
 ## 5c. `T-K10` — a document is not a skill (2026-08-25)
 
@@ -453,37 +499,196 @@ and the coverage doc claimed a property the code did not have — which is Phase
 
 ## 6. What is not proven
 
-- **`T-K9` is measured on one model.** kimi opens a skill when it should and
-  leaves it shut when it should not (§5b). deepseek has not been scored on this
-  category, and the one case that fails there is model-specific, so a second
-  model is the next thing this category owes.
+- ~~**`T-K9` is measured on one model.**~~ deepseek scored 2026-08-29 (§5b1).
+  What that run replaced it with is sharper: **the disclosure behaviour is
+  proven on two models and the precedence behaviour on one**, because
+  `skill-conflicts-with-metric` ends before precedence is reached on both.
 - ~~**`T-K10` does not exist.**~~ Measured 2026-08-25 (§5c) on one model.
 - ~~**No frontend.**~~ Built 2026-08-27 (§5e).
-- **Nothing built on 2026-08-27 has been run against a database or a model.**
-  `T-K5`, `T-K6` and `T-K7` are unit-gated only: `go build`, `go vet` and
-  `go test ./...` are clean, `tsc` and `vite build` are clean on the dashboard,
-  and `packages/api-types` regenerates with no diff. Migration `072` has not been
-  round-tripped, no skill has been embedded by a real provider, no draft has been
-  written by a real model, and nobody has opened the preview panes in a browser.
-  §7 is the list.
+- ~~**Nothing built on 2026-08-27 has been run against a database or a model.**~~
+  Run 2026-08-29 (§6a). Two defects came out of it, both fixed.
 - **The ranker is unmeasured as a ranker.** Every test here asserts *when* the
   ranking runs, not how well it ranks — that is pgvector's business and the
   provider's, and it needs a tenant with more than twenty procedures to have an
   opinion about. No such tenant exists.
 
-## 7. The live arms this owes
+## 6a. What the live gates found, 2026-08-29
 
-Filed here and priced in
-[`live-gate-backlog.md`](live-gate-backlog.md) §1p, which is where they get run.
+**Everything in §7 that did not need a paid model was run against the real
+database, the real API and a real turn. Two product defects, both found by
+running rather than by reading.**
 
-| Arm | Needs | Cost |
+### The environment, because the last two sittings lost time to it
+
+The repo-root `.env` insisted the control database ran under a `metabase`
+superuser and warned that using compose's `argentum/argentum123` would boot
+against an empty database. **Every clause of that was false.** The cluster has
+exactly one non-system role — `argentum` — and no `metabase`; compose's
+credentials open a database holding 4 companies, 381 threads, 1,123 messages and
+901 `agent_actions` spanning 2026-05-14 to 2026-08-25, which is every skills
+gate this repo has run. `apps/backend/.env`, rebuilt on 08-23, already had it
+right; the root file did not, and it is the one a reader reaches first. Both are
+corrected, and the correction records that a credential comment predicting a
+consequence is a claim nobody had tested in four months.
+
+### Defect 1 — the drafter read the audit log with an empty window
+
+`T-K7`'s first live run returned `tool_calls: 0` on a thread with two
+`agent_actions` rows. `AgentActionFilter`'s own comment says the window is the
+one field a caller always supplies, and `AgentActionRepo.ListByCompany` builds
+`created_at >= $2 AND created_at < $3` unconditionally — so the zero filter this
+service passed was an *empty range*, not an absent one. Every draft since the
+ticket was written had been composed from the transcript alone.
+
+**Nothing failed.** The degradation path reported "no tool calls" and drafted
+anyway, which is indistinguishable from a conversation that ran none — and the
+unit test's stub ignored the filter, so it could not have caught it. Fixed by
+flooring the window at the thread's own `created_at`, with a test that records
+the filter and refuses a zero one.
+
+The before/after is the ticket's own claim, measured. Without the audit rows the
+draft said *"Use data sources: orders and branches"*. With them it wrote the
+actual `SELECT`, the actual join predicate, the two `WHERE` clauses in the order
+they were applied, and the `ORDER BY`. That is the difference between a
+procedure that names real tables and one that describes an intention.
+
+### Defect 2 — the pinned index cost was in the wrong unit
+
+`T-K8` pinned the shipped set's always-on cost at **701 characters**, measured
+with `len()` — bytes. `Compose` enforces `SKILL_INDEX_MAX_CHARS` in **runes**,
+and `GET /api/skills` reports 691. The two shipped `when_to_use` sentences carry
+an em-dash apiece. Nothing was broken by it — a byte count over-reports, so the
+guard fired early rather than late — but the number the docs quoted described a
+quantity the product does not bound. Corrected to 691 runes, which is this
+feature's own lesson (a bound in the wrong unit is not a bound) at one remove.
+
+### The arms that passed
+
+**The binding, loaded from the database — the arm §5h shows was never run.**
+Bind one agent to one of two skills, reload it through `AgentRepo`, and: the
+roster row carries the binding, an unbound agent comes back empty,
+`AllowsSkill` enforces it, the composed index offers only the bound procedure,
+the unbound agent's index offers both, `load_skill` opens the bound one framed
+and refuses the other — and the refusal is byte-identical to an unknown name
+once the name is normalised, which is what §1p's row actually claimed.
+
+**Migration `072` round-trips**: 71 → 72 → 71 → 72, columns and the partial
+index dropped and restored, and the four pre-existing skills untouched
+throughout.
+
+**The vector's storage rules, against the real column.** `SetEmbedding` writes
+without moving `updated_at` (a backfill is not an edit) and refuses a row whose
+text moved under it; a body-only edit keeps the vector; an edit to the trigger
+clears it in the same statement; `ListUnembedded` picks that row back up.
+
+**The ranking, on 21 procedures.** The alphabetical index drops the tail; giving
+the dropped one the closest vector promotes it to first and it survives, with
+the same number of procedures lost — ranking changes *which*, not *that*. Every
+embedded row sorts ahead of every unembedded one, the unembedded tail stays in
+name order, and a ranked call with no vector returns the alphabetical list
+exactly. **Written by hand rather than by a provider** — this deployment has no
+embedding credential — so what is proven is the ordering and the storage, not
+the write-time call. That half stays owed.
+
+**The settings surface over HTTP.** A workspace with no skills of its own reports
+`lines=2, chars=691` — the shipped set, which is `cmd/api` loading
+`config/skills/` for the first time. The preview returns the index line and the
+framed body with all three forged markers neutralised to `[marker removed]`,
+opening and closing the frame exactly once. An over-cap draft previews at `200`
+carrying the refusal sentence, and the same draft saved answers `400` with **the
+identical sentence** — the property that a form and an API never word one rule
+twice. One rune under the cap saves.
+
+**Over the bound, the shipped set is dropped first.** At 22 tenant procedures the
+index reports `dropped: [Z19, Z20, Period-over-period comparison, Structuring a
+recurring report]` — §5a's rule (a tenant loses ours before theirs) holding in
+production rather than in a unit test.
+
+**The API now dies at boot on a malformed shipped skill**, as the worker already
+did: `fatal … load built-in skills: /tmp/badskills/over-cap.md: invalid input:
+name is 61 characters; the limit is 60`. Exit 1. And on a good boot it now logs
+`built-in skills loaded count=2` — two processes loaded the set and only one of
+them used to say so.
+
+### `T-K2`'s wire arm, closed
+
+The arm three capture proxies could not close, closed by the transport, from a
+real kimi-k2.6 turn that opened a skill.
+
+In **one** request, as OpenRouter received it:
+
+| Tool result | framed | fenced |
 | --- | --- | --- |
-| `072` up/down/up round-trip, and the partial index restored | a database | free |
-| A skill saved, edited in the body only, edited in the trigger — one vector written, one left alone, one replaced | a database + an embedding key | free |
-| 21 skills on one tenant: the index drops one, the drop is logged, the backfill fires once, the next turn ranks | a database + an embedding key | free |
-| The preview panes in a browser, against a body containing a fence marker | a browser | free |
-| The Agents tab binding: tick one skill, save, and the turn is offered only that one — **the arm §5h shows was never actually run** | stack + database | free |
-| A draft from a real thread on the light model | a model | ~$0.01 |
-| `T-K2`'s frame on the wire, through `LLM_WIRE_TAP_DIR` | stack + a model | ~$0.01 |
-| `skill_follow` on deepseek | a model | ~$0.05 |
-| The rule-1 re-score, because `T-K3` and `T-K5` both touch what reaches the model | a model | ~$1.03 |
+| `load_skill` | **yes** | no |
+| `list_sources` | no | **yes** |
+| `list_metrics` | no | **yes** |
+
+The frame arrives unescaped, in a `role: tool` message, markers intact. The
+system prompt carries the index header and the line `- Weekly Sales Report — …`
+and **not** the body — progressive disclosure visible on the wire. `load_skill`
+is among the tool definitions. `Authorization: [redacted]` in every capture.
+
+That contrast is the trust argument itself: if the first row stopped holding the
+feature would be dangerous, and if the second stopped holding it would be
+pointless.
+
+## 6b. The rule-1 re-score, paid 2026-08-29
+
+**kimi-k2.6, the full set: 60/61 = 98.4% for $0.9213**, 20m11s, 149 responses
+via Baidu. `skill_follow` 5/5. The only failure is `ambiguous-headcount`, where
+the model asked for the clarification in prose and did not call
+`ask_clarification` — a `multi_source` case, unrelated to this track.
+
+**The headline number is not comparable to the 96.4% baseline, and saying so is
+the point of paying for this.** Two things differ at once. The set grew from 56
+cases to 61 when `T-K9` added `skill_follow`. And because a `skill_follow` case
+is selected, the harness seeds the eval tenant's skills — `NeedsSkills` is driven
+off the selected cases precisely so a run that does not need them does not carry
+them — so **every turn in this run carries the index block**, which is the prompt
+surface rule 1 exists to re-measure.
+
+So the comparable figure is the 56 cases that predate this track:
+
+| | Cases | Result |
+| --- | --- | --- |
+| Baseline, 2026-08-23 | 56 | 54/56 = **96.4%** |
+| The same 56 today, with the skills block on every turn | 56 | 55/56 = **98.2%** |
+| This run, whole set | 61 | 60/61 = 98.4% |
+
+**98.2% is exactly the upper of the two values this set has been observed at.**
+[`eval-q1.md`](eval-q1.md) §1170 already records kimi as *"96.4% or 98.2%
+depending on the day"*, so the honest reading is **no regression**, not an
+improvement: one case of movement inside a range this set is known to wander
+across on its own.
+
+**What that buys.** `T-K3` put a block in every turn's system prompt and `T-K5`
+changes its order for tenants over the bound; both are now measured against the
+set rather than argued about. The two-unpaid-re-scores state
+[`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md)
+§8 warned about — where nobody can say which change moved the number — has not
+been entered.
+
+**One thing not to read into it.** kimi's `skill_follow` went 4/5 → 5/5, and the
+case that recovered is `skill-conflicts-with-metric`. That is the same case
+deepseek failed today and kimi failed on 08-25, and its passing here does **not**
+mean precedence was measured: it means the one-sided window happened to go right
+this time. §5b and §5b1 are unchanged — the case still cannot settle the question
+it was written for.
+
+**Total model spend this sitting: ≈$0.94** — $0.9213 for the re-score, $0.0135
+for deepseek's category, and two light-model calls for the draft arm.
+
+## 7. What is still owed
+
+Everything free in the previous version of this table ran on 2026-08-29 and is
+in §6a. What is left is four things, and none of them is blocked on tooling.
+
+| Arm | Why it did not run | Cost |
+| --- | --- | --- |
+| A vector written by a **real embedding provider**, at save time and through the backfill | This deployment has no embedding credential: `EMBEDDING_API_KEY` is empty and OpenRouter serves no embeddings endpoint. §6a proved the ordering and the storage against hand-written vectors; the provider call is the half that stays owed | free, needs an OpenAI-compatible key |
+| `BackfillSoon` firing from a real overflowing turn, once and not twice inside the cooldown | Same credential. The trigger path is unit-tested; it has never run against a provider | free, same key |
+| The preview panes **in a browser** | The bytes are proven on the wire (§6a); nobody has looked at the rendering, the live counters going red, or the amber over-the-bound notice | free, needs a browser |
+| `skill-conflicts-with-metric` measuring precedence **at all** | It fails identically on both models before precedence is reached (§5b, §5b1). This is a case to rewrite, not an arm to run | — |
+
+**The rule-1 re-score is being paid rather than owed** — see §6b.
+

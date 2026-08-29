@@ -1219,7 +1219,7 @@ sitting. No long-lived process was started.
 
 Record: [`security-hardening.md`](security-hardening.md) §18.
 
-## 1p. Filed before the build — the agentic-skills roadmap's gates (2026-08-21) · **`T-K1`→`T-K4` built 2026-08-22; the free arms ran 2026-08-22/23 and all but one are closed — `T-K2`'s wire half and both paid arms still owed**
+## 1p. Filed before the build — the agentic-skills roadmap's gates (2026-08-21) · **closed 2026-08-29: all ten tickets built, every free arm run, `T-K2`'s wire half closed by a transport, and both paid arms paid (≈$0.94)**
 
 [`../plan/07-agentic-skills-roadmap.md`](../plan/07-agentic-skills-roadmap.md)
 was written today and **none of its ten tickets exists**. Its gates are priced
@@ -1422,6 +1422,86 @@ about is not a live arm**, whatever it is filed under.
 re-score is nearly all of it and it was already owed. The eight free arms are
 the ones worth running first, and the first row of the table is worth running
 before any of them.
+
+### Run 2026-08-29 — every free arm, the wire arm, and the second model
+
+**Two product findings, both from running rather than reading**, and one of them
+is a claim this file made on 2026-08-25 that turned out to be false.
+
+**What unblocked it was one connection.** The three previous sittings recorded
+the control database as unreachable. It was not: the repo-root `.env` names a
+`metabase` superuser that does not exist in the cluster, and its warning that
+compose's `argentum/argentum123` would open an *empty* database is false — those
+credentials open the gate database itself, 901 `agent_actions` spanning
+2026-05-14 to 2026-08-25. `apps/backend/.env` already had it right since 08-23;
+the root file, which is what a reader reaches first, did not. Both are corrected.
+**A credential comment that predicts a consequence is a claim, and this one went
+four months without anybody testing it.**
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-K1` | The binding, **loaded from the database** — the arm §5h shows was never run | **Pass, 9 assertions.** The roster row carries the binding; an unbound agent comes back empty; `AllowsSkill` enforces it; the composed index offers only the bound procedure and the unbound agent's offers both; `load_skill` opens the bound one framed and refuses the other, byte-identically to an unknown name once the name is normalised. The regression is closed against a real database |
+| `T-K5` | `072` up → down → up | **Pass.** 71 → 72 → 71 → 72, columns and `idx_skills_company_embedded` dropped and restored, the four pre-existing skills untouched throughout |
+| `T-K5` | The vector's storage rules | **Pass, 6 assertions.** `SetEmbedding` writes without moving `updated_at`, and refuses a row whose text moved under it; a body-only edit keeps the vector, an edit to the trigger clears it in the same statement, and `ListUnembedded` picks that row back up |
+| `T-K5` | 21 procedures, the drop, and what the ranking changes | **Pass, 6 assertions.** The alphabetical index drops the tail; giving the dropped one the closest vector promotes it to first and it survives, with the same number lost. Embedded rows sort ahead of unembedded ones, the tail keeps name order, and a ranked call with no vector is the alphabetical list exactly. **Hand-written vectors** — no embedding credential exists here — so the ordering is proven and the provider call is not |
+| `T-K6` | The preview endpoint, and the index cost over HTTP | **Pass.** A workspace with no skills of its own reports `lines=2, chars=691` — `cmd/api` loading `config/skills/` for the first time. The preview neutralises all three forged markers to `[marker removed]` and closes the frame exactly once. An over-cap draft previews `200` carrying the refusal sentence and saves `400` with **the identical sentence**; one rune under, it saves |
+| `T-K6` | Over the bound, in production | **Pass, and it demonstrates §5a's rule.** At 22 tenant procedures the index drops `Z19, Z20` **and both shipped procedures** — a tenant loses ours before theirs |
+| `T-K6`/`T-K8` | The API's boot validation | **Pass.** A shipped skill one character over the name cap kills the API boot with the tenant-facing sentence naming the file, exit 1 — the property the worker already had, now in both processes. A good boot logs `built-in skills loaded count=2`, which the API did not used to say |
+| `T-K2` | The framed body as the **provider** received it | **Pass — the arm three capture proxies could not close.** In one request, on the wire: `load_skill`'s result framed and not fenced, `list_sources` and `list_metrics` fenced and not framed. The frame unescaped in a `role: tool` message; the system prompt carrying the index line and **not** the body; `Authorization: [redacted]` in every capture |
+| `T-K7` | A draft from a real thread | **Pass on the second attempt — the first found a defect.** See below |
+| `T-K9` | The category on a second model | **3/5 on deepseek-v3.2, $0.0135.** See below |
+
+**Finding 1 — the drafter read the audit log with an empty window.** `T-K7`'s
+first live run reported `tool_calls: 0` on a thread with two `agent_actions`
+rows. `AgentActionFilter`'s own comment says the window is the one field a
+caller always supplies, and the repository builds `created_at >= $2 AND
+created_at < $3` unconditionally — so a zero filter is an *empty range*, not an
+absent one. Every draft since the ticket was written had been composed from the
+transcript alone, and nothing said so: the degradation path reports "no tool
+calls", which is what a conversation that ran none looks like. Fixed, with a test
+that records the filter and refuses a zero window. The before/after is the
+ticket's own claim measured — without the rows the draft said *"Use data sources:
+orders and branches"*; with them it wrote the actual `SELECT`, join predicate and
+both `WHERE` clauses.
+
+**Finding 2 — `skill-conflicts-with-metric` is not model-specific, and this file
+said it was.** The 2026-08-25 entry recorded that kimi's failure on that case was
+model-specific because *"deepseek self-corrected on the same shape a day
+earlier"*. deepseek was scored on the category for the first time today and
+**fails the same case the same way**: `query_metric` with a one-sided window, the
+all-time figure back, the repeat-guard firing on the identical retry, an honest
+report of the wider number. Two models, one failure mode, and the case measures
+precedence on neither. The earlier claim was an inference from one observation of
+a different question.
+
+**What deepseek does prove.** All three cases that reach the skill mechanism pass
+— opened when relevant, shut when not, in English and in Indonesian — so the
+feature's own question is now answered on two models. Its second failure,
+`skill-cannot-override-a-guideline`, is a language failure (English question,
+Indonesian answer) that never reaches the precedence question at all.
+
+**The rule-1 re-score, paid.** kimi-k2.6 over the full set: **60/61 = 98.4% for
+$0.9213**, `skill_follow` 5/5, one failure (`ambiguous-headcount`, a
+`multi_source` case where the model asked in prose without calling
+`ask_clarification`).
+
+The headline is not comparable to the 96.4% baseline and the comparison that
+matters is the subset: the **56 cases that predate this track score 55/56 =
+98.2%**, against 54/56 before. The set grew to 61 when `T-K9` landed, and
+because a `skill_follow` case is selected the harness seeds skills — so every
+turn in this run carried the index block, which is exactly the surface rule 1
+asks about. 98.2% is the upper of the two values this set is already known to
+wander between, so the finding is **no regression**, not an improvement.
+`T-K3`'s block and `T-K5`'s ordering are both now measured rather than argued
+about, and the two-unpaid-re-scores state §1p warned about was never entered.
+
+**Do not read kimi's `skill_follow` 4/5 → 5/5 as precedence being measured.**
+The case that recovered is `skill-conflicts-with-metric`, the one deepseek
+failed today; it passed here because the one-sided window went right this time.
+
+**What it cost:** the re-score $0.9213, deepseek's category $0.0135, and two
+light-model calls for the draft arm. **≈$0.94 for the sitting**, against the
+~$1.12 this file priced on 2026-08-23 — the estimate held.
 
 ## 1q. ~~Owed by the 2026-08-21 hardening build~~ — the free arms ran 2026-08-22, and the bucket has paid fifteen times out of fifteen
 
