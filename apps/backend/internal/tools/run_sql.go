@@ -467,5 +467,5 @@ func guardAllowlist(sql string, list domain.Allowlist) error {
 	if !list.Restricted() {
 		return nil
 	}
-	return sqlguard.ValidateReferences(sql, list.AllowsTable, list.ColumnsRestricted)
+	return sqlguard.ValidateReferences(sql, list.AllowsTable, list.ColumnsRestricted, list.AllowsColumn)
 }

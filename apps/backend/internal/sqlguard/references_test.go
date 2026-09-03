@@ -125,11 +125,11 @@ func TestUnreadableShapesAreReportedAsUncertain(t *testing.T) {
 func TestValidateReferencesRefusesAnExcludedTable(t *testing.T) {
 	allows := func(t string) bool { return t == "fact_sales" }
 
-	if err := ValidateReferences("SELECT 1 FROM fact_sales", allows, nil); err != nil {
+	if err := ValidateReferences("SELECT 1 FROM fact_sales", allows, nil, nil); err != nil {
 		t.Errorf("allowed table refused: %v", err)
 	}
 
-	err := ValidateReferences("SELECT 1 FROM fact_sales JOIN salaries s ON s.id = 1", allows, nil)
+	err := ValidateReferences("SELECT 1 FROM fact_sales JOIN salaries s ON s.id = 1", allows, nil, nil)
 	if err == nil {
 		t.Fatal("a join onto an excluded table was allowed")
 	}
@@ -144,11 +144,16 @@ func TestValidateReferencesRefusesAnExcludedTable(t *testing.T) {
 }
 
 func TestValidateReferencesRefusesWhatItCannotRead(t *testing.T) {
-	err := ValidateReferences("SELECT 1 FROM", func(string) bool { return true }, nil)
+	err := ValidateReferences("SELECT 1 FROM", func(string) bool { return true }, nil, nil)
 	if err == nil {
 		t.Fatal("an unreadable statement was allowed against a restricted source")
 	}
 }
+
+// allowsCol is the column predicate for tests that only care about the table
+// and star rules: it permits everything, so a refusal in those tests is never
+// the column half firing.
+func allowsCol(string, string) bool { return true }
 
 // A star names no column and expands at the database to every one of them, so
 // it cannot be inspected — only refused.
@@ -156,10 +161,10 @@ func TestValidateReferencesRefusesStarOnAColumnRestrictedTable(t *testing.T) {
 	allows := func(string) bool { return true }
 	restricted := func(t string) bool { return t == "employees" }
 
-	if err := ValidateReferences("SELECT * FROM fact_sales", allows, restricted); err != nil {
+	if err := ValidateReferences("SELECT * FROM fact_sales", allows, restricted, allowsCol); err != nil {
 		t.Errorf("star on an unrestricted table refused: %v", err)
 	}
-	err := ValidateReferences("SELECT * FROM employees", allows, restricted)
+	err := ValidateReferences("SELECT * FROM employees", allows, restricted, allowsCol)
 	if err == nil {
 		t.Fatal("SELECT * against a column-restricted table was allowed")
 	}
@@ -167,7 +172,7 @@ func TestValidateReferencesRefusesStarOnAColumnRestrictedTable(t *testing.T) {
 		t.Errorf("refusal does not say what to do instead: %v", err)
 	}
 	// Naming columns is the repair, and it has to work.
-	if err := ValidateReferences("SELECT full_name FROM employees", allows, restricted); err != nil {
+	if err := ValidateReferences("SELECT full_name FROM employees", allows, restricted, allowsCol); err != nil {
 		t.Errorf("named columns refused: %v", err)
 	}
 }
@@ -290,7 +295,7 @@ func TestStarRefusalNamesTheRemedyForCountStar(t *testing.T) {
 	restricted := func(table string) bool { return table == "dim_products" }
 
 	sql := "SELECT p.category, count(*) AS n FROM fact_sales s JOIN dim_products p ON p.product_id = s.product_id GROUP BY p.category"
-	err := ValidateReferences(sql, allows, restricted)
+	err := ValidateReferences(sql, allows, restricted, allowsCol)
 	if err == nil {
 		t.Fatal("a statement containing `*` against a column-restricted table was allowed; the rule is crude in the safe direction and must stay that way")
 	}

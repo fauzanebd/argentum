@@ -47,6 +47,24 @@ type References struct {
 	// and expands, at the database, to every column the table has — including
 	// the ones a column allowlist excludes.
 	SelectsStar bool
+	// Aliases maps a table alias to the table it names, so `e.salary` can be
+	// attributed to `employees`. A table named with no alias maps to itself.
+	Aliases map[string]string
+	// QualifiedColumns are the `qualifier.column` references found anywhere in
+	// the statement — select list, predicate, join condition, ordering.
+	QualifiedColumns []QualifiedColumn
+	// BareColumns are identifiers in expression position with no qualifier.
+	// They can only be attributed to a table when exactly one is in play; see
+	// ValidateReferences.
+	BareColumns []string
+}
+
+// QualifiedColumn is one `qualifier.column` reference, with the qualifier left
+// as written. Resolving it against Aliases is the caller's job because an
+// unresolvable qualifier is an uncertainty rather than a lookup failure.
+type QualifiedColumn struct {
+	Qualifier string
+	Column    string
 }
 
 // tableKeywords introduce a table reference. `INTO`, `UPDATE` and the rest are
@@ -80,9 +98,14 @@ func ReferencedTables(sql string) References {
 	ctes := cteNames(words)
 
 	seen := map[string]bool{}
+	refs.Aliases = map[string]string{}
+	// `FROM` inside a function's argument list is part of that function's
+	// syntax, not a table clause — see insideFunctionCall in columns.go for the
+	// two ordinary queries this was getting wrong.
+	inFn := insideFunctionCall(words)
 	for i, w := range words {
 		lw := strings.ToLower(w)
-		if !tableKeywords[lw] {
+		if !tableKeywords[lw] || inFn[i] {
 			continue
 		}
 		// FROM introduces a *list*; JOIN introduces exactly one. The
@@ -90,17 +113,40 @@ func ReferencedTables(sql string) References {
 		// `FROM fact_sales, salaries` is two tables in one clause, and reading
 		// only the first admits the second — which is worse than refusing,
 		// because the tenant has been told the agent is restricted.
-		names, ok := tableNamesAfter(words, i, lw == "from")
+		trs, ok := tableRefsAfter(words, i, lw == "from")
 		if !ok {
 			refs.Uncertain = true
 			refs.UncertainReason = fmt.Sprintf("could not read the table name after %q", strings.ToUpper(w))
 			continue
 		}
-		for _, name := range names {
-			n := normalizeSQLIdentifier(name)
-			if n == "" || ctes[n] {
+		for _, tr := range trs {
+			n := normalizeSQLIdentifier(tr.name)
+			a := normalizeSQLIdentifier(tr.alias)
+			if tr.derived {
+				// A derived table's alias names a projection, not a table.
+				// Mapping it to "" is what makes the column check refuse a
+				// reference through it rather than attribute it wrongly.
+				if a != "" {
+					refs.Aliases[a] = ""
+				}
 				continue
 			}
+			if n == "" {
+				continue
+			}
+			if a != "" {
+				refs.Aliases[a] = n
+			}
+			if ctes[n] {
+				// A CTE name resolves through to its body, which the loop
+				// reads separately. Its alias cannot be attributed to a table.
+				if a != "" {
+					refs.Aliases[a] = ""
+				}
+				refs.Aliases[n] = ""
+				continue
+			}
+			refs.Aliases[n] = n
 			seen[n] = true
 		}
 	}
@@ -120,6 +166,12 @@ func ReferencedTables(sql string) References {
 		refs.Uncertain = true
 		refs.UncertainReason = "the statement has a FROM clause but no table name could be read from it"
 	}
+
+	// The column half (T-H12). Runs unconditionally so `References` describes
+	// the statement rather than the policy; whether any of it is *checked* is
+	// ValidateReferences' decision, and it checks nothing unless a referenced
+	// table carries a column rule.
+	extractColumns(words, &refs)
 	return refs
 }
 
@@ -129,13 +181,22 @@ func ReferencedTables(sql string) References {
 // `allows` is the caller's predicate rather than a list, so this package does
 // not have to import the domain type that holds the rule. `columnsRestricted`
 // answers whether a table exposes fewer than all of its columns, which is what
-// makes the `SELECT *` refusal possible.
+// makes the `SELECT *` refusal possible. `allowsColumn` answers the column
+// half — whether one named column of one table may be read — and is what
+// closes the gap the 2026-08-22 gate found: a caller who names the column
+// instead of starring it used to read straight through a "table **and column**
+// allowlist". See columns.go for why that half is a separate walk.
 //
 // An empty allowlist never reaches here: the caller checks
 // `Allowlist.Restricted()` first, because a statement refused for being
 // unreadable is a real cost and must not be paid by a tenant who configured no
 // restriction at all.
-func ValidateReferences(sql string, allows func(table string) bool, columnsRestricted func(table string) bool) error {
+func ValidateReferences(
+	sql string,
+	allows func(table string) bool,
+	columnsRestricted func(table string) bool,
+	allowsColumn func(table, column string) bool,
+) error {
 	refs := ReferencedTables(sql)
 	if refs.Uncertain {
 		return fmt.Errorf(
@@ -164,7 +225,10 @@ func ValidateReferences(sql string, allows func(table string) bool, columnsRestr
 					"including `count(*)`. Use `count(1)` for a row count, and name the columns you need elsewhere", t)
 		}
 	}
-	return nil
+	if columnsRestricted == nil {
+		return nil
+	}
+	return validateColumns(refs, columnsRestricted, allowsColumn)
 }
 
 // containsSelectStar reports whether a select list contains `*`.
@@ -256,7 +320,7 @@ var clauseKeywords = map[string]bool{
 	"on": true, "using": true, "select": true, "for": true,
 }
 
-// tableNamesAfter reads the table reference (or, when list is true, the
+// tableRefsAfter reads the table reference (or, when list is true, the
 // comma-separated list of them) that follows words[i].
 //
 // A `(` in table position is a derived table or a subquery. Its own FROM is
@@ -268,8 +332,8 @@ var clauseKeywords = map[string]bool{
 // ok is false only when a name could not be read at all. Everything this
 // returns is a name it is confident about; everything it is not confident about
 // makes the whole statement uncertain, which is the direction that fails safe.
-func tableNamesAfter(words []string, i int, list bool) ([]string, bool) {
-	var out []string
+func tableRefsAfter(words []string, i int, list bool) ([]tableRef, bool) {
+	var out []tableRef
 	pos := i + 1
 	for {
 		// ONLY and LATERAL sit between the keyword and the name.
@@ -285,6 +349,7 @@ func tableNamesAfter(words []string, i int, list bool) ([]string, bool) {
 			return nil, false
 		}
 
+		cur := tableRef{}
 		switch {
 		case words[pos] == "(":
 			end, ok := matchParen(words, pos)
@@ -292,8 +357,13 @@ func tableNamesAfter(words []string, i int, list bool) ([]string, bool) {
 				return nil, false
 			}
 			pos = end + 1
+			// A derived table. Its own FROM is read by the caller's loop, so
+			// the tables underneath it are still found; what is lost is which
+			// of them any `alias.column` belongs to. Recorded rather than
+			// dropped so the column check can refuse instead of guess.
+			cur.derived = true
 		case isIdentifierWord(words[pos]) && !clauseKeywords[strings.ToLower(words[pos])]:
-			out = append(out, words[pos])
+			cur.name = words[pos]
 			pos++
 		default:
 			// Punctuation or a clause keyword where a table name belongs. If
@@ -309,17 +379,28 @@ func tableNamesAfter(words []string, i int, list bool) ([]string, bool) {
 		if pos < len(words) && strings.ToLower(words[pos]) == "as" {
 			pos++
 			if pos < len(words) && isIdentifierWord(words[pos]) {
+				cur.alias = words[pos]
 				pos++
 			}
 		} else if pos < len(words) && isIdentifierWord(words[pos]) && !clauseKeywords[strings.ToLower(words[pos])] {
+			cur.alias = words[pos]
 			pos++
 		}
+		out = append(out, cur)
 
 		if !list || pos >= len(words) || words[pos] != "," {
 			return out, true
 		}
 		pos++ // past the comma, round again
 	}
+}
+
+// tableRef is one entry in a FROM list: the table, whatever it was aliased to,
+// and whether it was a derived table rather than a name.
+type tableRef struct {
+	name    string
+	alias   string
+	derived bool
 }
 
 // matchParen returns the index of the `)` closing the `(` at open.
