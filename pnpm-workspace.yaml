@@ -10,5 +10,12 @@ packages:
   # packaging bugs.
   - '!apps/widget/examples/**'
 
-onlyBuiltDependencies:
-  - esbuild
+# esbuild ships a platform-specific binary and installs it from a postinstall
+# script. pnpm 11 refuses to run any build script not listed here and exits
+# non-zero when it skips one — which fails `pnpm install` itself, and therefore
+# every `pnpm --filter … <script>`, because each one runs a dependency-status
+# check first. `onlyBuiltDependencies`, the key this replaces, is no longer
+# honoured by that version, so the whole workspace's tooling was unrunnable
+# while the config still looked like it said the right thing.
+allowBuilds:
+  esbuild: true

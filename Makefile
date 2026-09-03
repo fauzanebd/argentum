@@ -77,8 +77,12 @@ lint-go: ## golangci-lint the backend (config: apps/backend/.golangci.yml)
 	cd $(BACKEND) && golangci-lint run ./...
 
 .PHONY: lint-web
-lint-web: ## Lint every workspace app (dashboard=tsc + eslint, landing=tsc --noEmit)
+lint-web: ## Lint every workspace app (dashboard=tsc + eslint + vitest, landing=tsc --noEmit)
 	pnpm -r lint
+
+.PHONY: test-web
+test-web: ## Frontend unit tests (vitest, apps/dashboard)
+	pnpm --filter dashboard test
 
 .PHONY: lint
 lint: lint-go lint-web ## Lint the backend and every workspace app

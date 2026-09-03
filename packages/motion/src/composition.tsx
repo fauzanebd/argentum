@@ -73,7 +73,12 @@ export const RemotionRoot: React.FC = () => (
     height={DEFAULT_PLAN.height}
     fps={DEFAULT_PLAN.fps}
     durationInFrames={DEFAULT_PLAN.total_frames}
-    calculateMetadata={({ props }) => ({
+    // Typed explicitly: Remotion infers the callback's props from the
+    // component's own prop type, and `Report` takes `plan` through a generic
+    // that does not survive the inference here — leaving `props` implicitly
+    // `any` under `strict`, which is an error the package's own tsconfig asks
+    // for and nothing was catching until the dashboard's `tsc -b` reached it.
+    calculateMetadata={({ props }: { props: { plan: Plan } }) => ({
       width: props.plan.width,
       height: props.plan.height,
       fps: props.plan.fps,

@@ -1,7 +1,6 @@
 import { lazy, Suspense } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ExternalLink } from "lucide-react";
 import { CodeBlock } from "@/components/ui/code-block";
 
 // recharts is ~390 kB and most turns never draw a chart, so the panel renderer
@@ -96,7 +95,6 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
                 className="text-primary underline underline-offset-2 hover:text-primary/80"
               >
                 {children}
-                {isDashboard && <ExternalLink className="h-3 w-3" />}
               </a>
             );
           },
