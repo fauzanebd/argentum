@@ -290,8 +290,6 @@ var apiPolicy = middleware.RolePolicy{
 
 	// The Metabase-backed dashboards (006), moved off /api/dashboards in T-D10
 	// and deleted with the rest of the Metabase surface in T-D15.
-	"GET /api/saved-dashboards":        domain.RoleMember,
-	"DELETE /api/saved-dashboards/:id": domain.RoleMember,
 
 	// Usage reporting.
 	"GET /api/usage/summary":            domain.RoleMember,

@@ -46,7 +46,6 @@ type V1ChatHandler struct {
 	// syncTimeout caps how long the synchronous door holds a connection. It is
 	// deliberately a cap on the *wait*, never on the turn.
 	syncTimeout time.Duration
-	dashboards  *app.SavedDashboardService
 	// heartbeat is heartbeatEvery in production and is never configured. It is
 	// a field only so a test can watch a beat arrive without sleeping for one.
 	heartbeat time.Duration
@@ -89,14 +88,6 @@ func NewV1ChatHandler(
 		rdb: rdb, idem: idem, syncTimeout: syncTimeout,
 		heartbeat: heartbeatEvery,
 	}
-}
-
-// WithDashboards lets `DELETE /v1/threads/:id` clean up the saved dashboards a
-// turn produced, exactly as the dashboard's own delete does. Two surfaces
-// deleting the same thing differently is how orphan rows appear.
-func (h *V1ChatHandler) WithDashboards(d *app.SavedDashboardService) *V1ChatHandler {
-	h.dashboards = d
-	return h
 }
 
 // heartbeatEvery is the SSE keepalive interval. Fifteen seconds because the
@@ -841,11 +832,6 @@ func (h *V1ChatHandler) deleteThread(c *gin.Context) {
 	t, ok := h.loadThread(c)
 	if !ok {
 		return
-	}
-	// Saved dashboards first, exactly as the dashboard's own delete does: the
-	// thread's rows cascade, a Metabase card keyed to it does not.
-	if h.dashboards != nil {
-		_ = h.dashboards.DeleteByThread(c.Request.Context(), t.CompanyID, t.ID)
 	}
 	if err := h.threads.Delete(c.Request.Context(), t.ID); err != nil {
 		logrus.WithError(err).WithField("thread_id", t.ID).Error("delete api thread")

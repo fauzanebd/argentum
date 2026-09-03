@@ -12,14 +12,13 @@ import (
 
 // ChatHandler exposes /threads + /chat endpoints to the dashboard.
 type ChatHandler struct {
-	chat       *app.ChatEnqueuer
-	threads    domain.ThreadRepository
-	messages   domain.MessageRepository
-	dashboards *app.SavedDashboardService
+	chat     *app.ChatEnqueuer
+	threads  domain.ThreadRepository
+	messages domain.MessageRepository
 }
 
-func NewChatHandler(chat *app.ChatEnqueuer, threads domain.ThreadRepository, messages domain.MessageRepository, dashboards *app.SavedDashboardService) *ChatHandler {
-	return &ChatHandler{chat: chat, threads: threads, messages: messages, dashboards: dashboards}
+func NewChatHandler(chat *app.ChatEnqueuer, threads domain.ThreadRepository, messages domain.MessageRepository) *ChatHandler {
+	return &ChatHandler{chat: chat, threads: threads, messages: messages}
 }
 
 // Register installs the routes. Caller wraps with Auth middleware.
@@ -107,9 +106,6 @@ func (h *ChatHandler) deleteThread(c *gin.Context) {
 	if thread.CompanyID != companyID(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
-	}
-	if h.dashboards != nil {
-		_ = h.dashboards.DeleteByThread(c.Request.Context(), thread.CompanyID, thread.ID)
 	}
 	if err := h.threads.Delete(c.Request.Context(), thread.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

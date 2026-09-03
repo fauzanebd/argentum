@@ -561,7 +561,7 @@
                 }
               ]
             },
-            "description": "`write:chat` rather than `read:threads`: destroying a conversation is\nnot a read. Saved dashboards the turns produced are removed with it.\n\nScope: `write:chat`"
+            "description": "`write:chat` rather than `read:threads`: destroying a conversation is\nnot a read.\n\nScope: `write:chat`"
           }
         },
         {

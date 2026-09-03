@@ -363,7 +363,7 @@ export interface paths {
         /**
          * Delete a conversation
          * @description `write:chat` rather than `read:threads`: destroying a conversation is
-         *     not a read. Saved dashboards the turns produced are removed with it.
+         *     not a read.
          */
         delete: operations["deleteThread"];
         options?: never;

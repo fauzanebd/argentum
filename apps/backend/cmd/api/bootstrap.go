@@ -228,8 +228,6 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		tableEmbRepo := pgctl.NewTableEmbeddingRepo(controlDB)
 		deps.embeddingSvc = app.NewEmbeddingService(connRepo, connRepo, tableEmbRepo, apiSchemaTool, deps.embedCache)
 	}
-	savedDashboardRepo := pgctl.NewSavedDashboardRepo(controlDB)
-	deps.savedDashboardSvc = app.NewSavedDashboardService(savedDashboardRepo)
 	classifierLLM := lightLLMClient
 	if cfg.ClassifierModel != "" {
 		rawClassifier, err := llmclient.BuildClassifier(cfg)
