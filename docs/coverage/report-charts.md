@@ -355,3 +355,34 @@ one (16mm default, no axes, filled area), but `kpi_row` does not take a
 spec rendered into a PDF and a deck will run the renderer twice. It is
 deterministic, so the two images are identical; `T-R4` can cache by spec hash if
 the double render shows up in a profile.
+
+## The light ramp's 3:1 debt, measured — and why it stays a warning (2026-09-03)
+
+`make palette` has warned on three light-ramp series since `T-R3`: amber
+`#EAAA3E` at **2.04:1**, grey `#CACCD1` at **1.61:1** and azure `#5CA8E0` at
+**2.58:1** against white, where the floor for a non-text mark is 3:1. The
+2026-08-17 dark-ramp work recorded the debt and did not price it. This is the
+price.
+
+**It cannot be fixed locally, and that is arithmetic rather than taste.** 3:1
+against white caps a series at **L\* 61.7**. Eight series that must stay 5 L\*
+apart for the greyscale floor need a span of **35 L\***. So every series has to
+fit between L\* ~24 and L\* 61.7 — which the current ramp's darkest, navy at
+24.2, clears by 2.5 points and nothing else does. Three series are above the cap
+today (grey 82.0, amber 73.9, azure 66.3) and there is no room above brand red
+at 59.3 to put them: the cap leaves one slot, and three need filling.
+
+**So a compliant ramp exists and every one of the eight moves, brand red
+included.** The consequences are not confined to a stylesheet: the light ramp is
+the *document* ramp, so adopting it re-renders every chart in every PDF and deck
+this product has delivered, and it compresses eight hues into a narrower
+lightness band while protanopia separation is already at ΔE 12.7 against a floor
+of 12 — the CVD margin would have to be re-won by hue where lightness used to
+help.
+
+**Decision, 2026-09-03 (repo owner): leave it as a recorded warning.** The debt
+stays visible on every `make palette` run rather than being silently carried,
+and the redesign is a brand decision with a delivered-document migration behind
+it, not a lint fix. What this section adds is that the fix is now *sized*: it is
+a whole-ramp redesign, not three hex edits, and nobody has to re-derive that to
+find out.

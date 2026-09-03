@@ -6417,9 +6417,20 @@ lint was clean through all of it. Only looking at the screen found it.
   got a categorical breakdown instead. A bucketed usage endpoint is a backend
   ticket; drawing a shape that looks like time out of data that has none was
   the worse option.
-- **No test runner.** `T-U2`'s gating was proved with a throwaway script
-  because the workspace has none. Every component in this sprint is untested in
-  the sense CI would mean.
+- ~~**No test runner.**~~ **Closed 2026-09-03.** Vitest + jsdom +
+  Testing Library in `apps/dashboard`, wired into `pnpm lint` (so `make
+  lint-web` runs it) with `make test-web` beside it. `T-U2`'s throwaway script
+  is re-homed as `src/lib/motion.test.ts` and `motion-reduced.test.ts`, plus
+  `lib/contrast.test.ts`. 11 tests, 3 files.
+  **Standing up the gate found that `main` had not typechecked since `T-D15`**
+  — three defects, all pre-existing, none of which any command in the repo was
+  running: `markdown-renderer.tsx` referenced an undefined `isDashboard` (dead
+  Metabase-era code left by `a82cf8b`); `@hookform/resolvers` had floated to
+  3.10.0, whose types are written against zod v4 while the app is on zod 3, so
+  every `zodResolver` call was a type error; and `packages/motion`'s
+  `calculateMetadata` callback was an implicit `any` under its own `strict`.
+  The suite is small. What it is worth is that `pnpm lint` can now go green,
+  which it could not before today.
 
 ### Dependencies added
 

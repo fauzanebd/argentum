@@ -1790,12 +1790,97 @@ same fault this file spent 2026-08-23 finding in the fixture and the detectors.
 
 ---
 
+## 1r. The security batch's stack-only arms — run 2026-09-03, and the bucket has paid sixteen times out of sixteen
+
+Four of the hardening track's owed stack gates, driven through the **real MCP
+server** against the **real demo warehouse** so `run_sql` was reached without a
+model. **$0.00.** Three passed as written; the fourth passed and produced an
+environment finding that is worth more than the gate.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-H2` | A Lark event with the signature header omitted, expecting 401 | **Pass, five arms.** No signature → 401 (`missing signature`); a wrong signature → 401 (`signature mismatch`); **a correct signature and a correct verification token → 200**, which is the control that makes the other four mean something; an unknown app id → 404 *before* any signature work; and the same valid body with only the signature header removed → 401 again, which is what says the refusal is the signature rather than the payload. The seeding step the 08-14 entry predicted was the whole cost: a `company_lark_credentials` row with an `encrypt_key`, and `LARK_ENABLED=true` |
+| `T-H7` | One turn with a literal in the query, read back out of the log | **Pass, both arms.** At `LOG_LEVEL=info` the Info line reads `… WHERE product_name = '?' LIMIT ?` and the literal `Samsung Galaxy S24` appears **nowhere** in the log — no `sql_raw` key at all. At `LOG_LEVEL=debug` the `sql_raw` line carries the statement intact. Exactly the split the ticket specifies |
+| `T-H10` | A zero-row query filtered on an email column, under each of the three redaction modes | **Pass, four arms.** Under `strict` the probe is refused: the result carries the zero-row note and **no `available_values`**, so twenty real customer email addresses stayed in the warehouse. Under `contact_ok` and under `off` the probe runs and returns them, which is the tenant's own decision being honoured rather than second-guessed. And the control the ticket insists on — **an ordinary label column still probes under `strict`** (`city`, filtered for `Atlantis`, returns the seven real cities) — so the `T-Q9` behaviour this ticket must not have cost is intact |
+| `T-H4` | The validator against a real warehouse, including a legitimate CTE and a window function | **Pass on the postgres arm.** A CTE, a `sum(…) OVER (PARTITION BY …)`, and `extract(year FROM created_at)` all executed; `DELETE`, two statements separated by `;`, and `WITH gone AS (DELETE … RETURNING *)` were each refused with a sentence naming what was wrong. The `extract` case is the one worth naming: it is the shape that was **refused as a table reference** until this morning (§`T-H12`). **MySQL and SQL Server remain unrun** — this deployment has neither source, which is the operator's decision the ticket already records |
+
+### The environment finding, and it is the same species as §1b's missing credential
+
+**`T-H7`'s protection is conditional on a log level, and this repo's own `.env`
+ships `LOG_LEVEL=debug`.**
+
+The ticket's requirement is that the raw statement "appear only under
+`LOG_LEVEL=debug`", and it does — the mechanism is correct and the gate passes.
+But the gate only passes *as a statement about production* if production is not
+running at debug. The committed `apps/backend/.env` sets `LOG_LEVEL=debug`, and
+that is the file a developer copies and an operator reads first. In that
+configuration every literal a model puts in a `WHERE` clause — a customer's
+email, a phone number, the identifier the 08-19 write-up says used to reach the
+Info line — is written to the log in full, by design and with a ticket saying it
+is safe.
+
+Nothing here is a code defect. What it is, is a control whose effectiveness
+lives in a variable nobody has been asked to decide, filed alongside §1b's
+missing credential file and §1q's `.env.example` for the same reason: **it looks
+exactly like a passing test.** The owner's call: whether the deployed
+`LOG_LEVEL` is `info`, and whether `T-H7`'s coverage row should say "at info"
+rather than full stop.
+
+## 1s. The native dashboards batch — run 2026-09-03, and it found a P1 nobody was looking for
+
+`T-D6`/`T-D7`, `T-D8` and `T-D13`, driven through the real API against the real
+demo warehouse. **$0.00, no model** — the dashboards were built by calling
+`create_dashboard` over the **MCP server**, which is also the first live
+exercise of the `write:visualizations` scope since `T-D11` re-pointed it.
+
+| Owed by | The gate | Outcome |
+| ------- | -------- | ------- |
+| `T-D6`/`T-D7` | A dashboard saved and resolved against the demo warehouse, including one panel that legitimately times out, to prove eleven panels still render | **Pass.** Three panels resolved with real figures. Then the timeout arm as written: **eleven panels, one of them `SELECT count(1) FROM (SELECT pg_sleep(25))`. Ten rendered, one errored with `canceling statement due to user request`, and the whole request returned in 15s** — bounded by the per-panel deadline rather than by the slow query. `create_dashboard`'s own `dryRun` had already flagged that panel as a warning at save time |
+| `T-D8` | Twenty concurrent opens of one dashboard, counting rows in `dashboard_query_log`. The singleflight claim is arithmetic until it is a count | **Pass, and it took two attempts to measure the right thing.** The first run — 20 concurrent opens, 425ms, **delta 0** — proved the *cache*, not the collapse: the panels were already warm from the create's `dryRun`. `?refresh=1` does not help (the handler says so in as many words: *"accepted and currently does nothing"*). Evicting the `dash:panel:*` keys from Redis and re-firing gives the number the ticket asked for: **20 concurrent cold opens → delta 3, one execution per panel**, 343ms. 60 executions would mean nothing collapsed |
+| `T-D13` | The share path, forged and replayed: an expired token, a revoked token, a token with edited query-string filters, and a `refresh=1` that must be ignored | **Pass on every arm** — and see below, because the arm that passed is not the thing the sitting found. Valid token 200; a one-character-forged token **404**, the same answer expiry and revocation give, so the route is not an oracle; revoke → replay the same token **404**; and injected `?city=&period_from=&period_to=` returned **byte-identical panel values** to the plain fetch on a share with `allow_filters: false`, as did `?refresh=1` |
+
+### Finding (P1): a public share link was serving the tenant's panel SQL
+
+`/share/dashboard/:token` takes no session and no key — *"the token in the path
+is the whole credential"* — and it was returning the **entire stored
+`Dashboard`**. So an unauthenticated caller holding a link received, for every
+panel, the statement behind it:
+
+```
+panel-1 -> 'SELECT count(1) AS n FROM dim_products'
+panel-2 -> 'SELECT count(1) AS n FROM dim_customers'
+panel-3 -> 'SELECT count(1) AS n FROM fact_sales'
+source_id : b9b0b993-…   company_id : 44ba4ee2-…
+```
+
+That is the warehouse's table and column names, the join structure, and any
+literal a panel pins in a `WHERE` clause — to anyone the link reaches, including
+whoever it is forwarded to. **It contradicts two decisions this product had
+already taken**: `T-H7` holds that a statement's literals are sensitive enough
+to keep out of an *operator's log*, and `T-H12` holds that `get_schema` must not
+so much as name a table the tenant excluded. A public link published both.
+
+**Fixed** with `Dashboard.PublicCopy()` — SQL, metric key, `source_id`,
+`company_id`, thread and author removed; title, viz, layout, mapping and format
+kept. Re-checked over the wire on the same link: no `SELECT`, none of the three
+table names, empty ids, **and the panels still resolve to 30 / 50 / 1348**. The
+authenticated route is untouched and still carries the SQL, which is the arm
+that says the redaction is scoped to the public door rather than applied to the
+owner's own view.
+
+**The methodological note, and it is the one worth keeping.** Three unit tests
+pin `PublicCopy` — including one that serialises the whole payload and greps it,
+so a field added later is caught. **All three pass with the service wiring
+removed**, because they test the method rather than the route. What proves the
+fix is the live re-fetch. This is §1g's *"the tickets passing is not the sitting
+passing"* in a second costume: a test can be green about a method nobody calls.
+
 ## 2. Needs the stack **and** real LLM spend
 
 | Owed by | The gate | Cost |
 | ------- | -------- | ---- |
 | ~~`T-07b`~~ | ~~`make eval` on both sides of switching the output guardrails on~~ — **run 2026-08-13, and it could not measure its own question** | `off` 35/39, `strict` 35/40. The narrow risk this row named turns out to be an **empty** one: the golden set holds no email, phone or NIK, so **no case in it can score differently under a redaction rule**. Activation is free on ordinary BI traffic; the contact-list answer `contact_ok` exists for is still unmeasured. Adding PII-shaped cases is the follow-up ([`eval-sprint1.md`](eval-sprint1.md) §2). ⚠ Run on the **40-case set at `4caf1fa`**, before `T-Q1`→`T-Q9` |
-| ~~`T-A2b`~~ | ~~Ten live agentic report calls~~ — **run 2026-08-13** | **The guardrail question is closed: 0 refusals in 10 calls**, against 4 in 5 before the fix, with no `guardrail` row in `agent_actions` at all. The acceptance line is not met — 5 documents in 10 — and the misses found two defects **both still present on `origin/main` at the time**: the terminal status write ran on the turn's dead context (fixed here), and a report can be handed a later report's document in a shared thread (open). [`api-reports.md`](api-reports.md) §7a |
+| ~~`T-A2b`~~ | ~~Ten live agentic report calls~~ — **run 2026-08-13** | **The guardrail question is closed: 0 refusals in 10 calls**, against 4 in 5 before the fix, with no `guardrail` row in `agent_actions` at all. The acceptance line is not met — 5 documents in 10 — and the misses found two defects **both still present on `origin/main` at the time**: the terminal status write ran on the turn's dead context (fixed here), and a report can be handed a later report's document in a shared thread — **closed 2026-08-25 in `7809106`**: the document id now travels with the completion instead of being re-derived by a one-sided query. This row said "open" until 2026-09-03. [`api-reports.md`](api-reports.md) §7a |
 | `T-R4` | Three unautomatable applications of the deck renderer | Opening the generated `.pptx` in PowerPoint, Keynote and Google Slides. No test can do this |
 | `T-18` | The final eval run → [`eval-sprint1.md`](eval-sprint1.md), compared against baseline | **Run 2026-08-13 in the prescribed order — 87.5% (35/40) against a 100% baseline — but on a tree 45 commits stale**, so the number describes the agent *before* the quality track and `T-Q1`'s fifteen new cases. It is not the sprint's closing figure and the row stays open; what it does carry forward is two defects re-verified against `origin/main` (§the file). **The real closing run is `T-Q1`'s, on the 55-case set** — one run, not two |
 | The prompt-contradiction fix (2026-08-09) | `report-directive-is-not-an-injection` passing on both models | The guardrail slice is ~$0.42 on haiku (8 cases, measured 2026-08-08); the full set is ~$2.10. The fix removes the chart guidelines from a turn whose deliverable is a file, which is a mechanism with an argument behind it and **no number** — the deterministic half is tested, and whether the case now passes is exactly what a golden set exists to answer ([`delivery-log.md`](delivery-log.md) Phase 2g) |

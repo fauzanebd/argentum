@@ -895,7 +895,20 @@ will simply not find. **Do not write a migration to strip it** — conventions �
 says why: nothing records which rows were touched, so the strip would also take
 the name from an agent an administrator ticked by hand.
 
-### `T-D13` Sharing — 2d → **1.75d**
+### `T-D13` Sharing — 2d → **1.75d** · **gated live 2026-09-03, and the gate found a P1 the ticket did not ask about**
+
+> **Every arm the ticket specifies passed** — a forged token, a revoked token,
+> injected query-string filters and `refresh=1` all behaved
+> ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1s).
+>
+> **What it did not specify, and what the sitting found: the share payload
+> carried the panel SQL.** The route has no session behind it and was returning
+> the whole stored `Dashboard`, so an unauthenticated visitor received
+> `SELECT … FROM dim_customers` for every panel, plus `source_id` and
+> `company_id`. Fixed with `Dashboard.PublicCopy()`; the authenticated route is
+> unchanged. The ticket's threat model was **the token** — forgery, expiry,
+> revocation, parameter tampering — and it never asked what a *valid* visitor is
+> handed.
 
 *(**058**.)*
 
@@ -1049,9 +1062,48 @@ archived list still renders.
 > `T-H5`** — but that position is not a decision until the owner takes it, and
 > `T-H5` is 1.0d that becomes 0 the moment they do.
 
-### `T-D16` Drop the Metabase columns — 0.5d
+### `T-D16` Drop the Metabase columns — 0.5d · **half built and gated 2026-09-03; the table's drop is owed one release later**
 
-*(**059**.)*
+*(**059** as filed; landed as **073**, and the second half is **074**.)*
+
+> **Status, 2026-09-03.** `metabase_database_id` and its partial unique index are
+> dropped by `073_drop_metabase_database_id`, gated up/down/up against the real
+> control database (column and index 0/0 → 1/1 → 0/0, `db_connections` intact at
+> 5 rows), and a **previous-release binary boots and serves 200 against the new
+> schema** — the ordering claim measured rather than asserted.
+>
+> **The ticket is one migration, and it had to become two.** `saved_dashboards`
+> is still read by the release this lands in: the archived-list handler, its two
+> routes, and the thread-delete cascade on both `/api` and `/v1`. Those readers
+> are removed in the *same* commit as `073`, which is exactly why the table
+> cannot go with it — `workspace-context.md` §6 is that during a rolling deploy
+> the new schema meets the old binary. Proven rather than reasoned: with the
+> table dropped inside a transaction, the statement `SavedDashboardRepo.ListByCompany`
+> runs returns `ERROR: relation "saved_dashboards" does not exist`. So the drop
+> is **`074_drop_saved_dashboards`, to be landed one release after this one**:
+>
+> ```sql
+> -- 074_drop_saved_dashboards.up.sql
+> DROP TABLE IF EXISTS saved_dashboards;
+> -- down: recreate per 006_saved_dashboards.up.sql (schema round trips, data does not)
+> ```
+>
+> It is deliberately **not** in `migrations/control/` yet, because `cmd/api`
+> applies whatever is in that directory on boot — a migration written early is a
+> migration applied early.
+>
+> **Finding: this ticket's cutover gate names an instrument that cannot answer
+> it.** The Cutover section below gates N+2 on *"a recorded check that no
+> `/metabase/*` request was served in the preceding 30 days… `internal/apiobs`
+> records request rows and is where that number comes from."* It does not.
+> `apiobs` is installed as `v1.Use(middleware.RecordAPIRequests(…))`
+> (`cmd/api/router.go:271`) and instruments the `/v1` group only, while the proxy
+> was `r.Any("/metabase/*path")` on the **root** router — so its traffic was
+> never eligible for a row. `api_request_stats` is also empty in this deployment:
+> **0 rows, ever.** The evidence this cutover was gated on does not exist and
+> cannot be reconstructed after the fact. It is moot here only because T-D15
+> already deleted the proxy route, which is a different argument from the one the
+> ticket makes.
 
 `ALTER TABLE db_connections DROP COLUMN metabase_database_id` plus its unique
 index, and drop `saved_dashboards`. The column is introduced at

@@ -249,6 +249,17 @@ track: when a ticket lands, its paragraph comes out.
 > the record and what the lexer still cannot see are in
 > [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §16.
 >
+> **Step 2 — a real parse — is open, and the cgo decision was taken on
+> 2026-09-03: not now.** The repo owner reviewed the three routes (pg_query_go
+> with cgo, a pure-Go Postgres parser, or leaving it) and chose to leave it. What
+> changed the calculus is that the lexer got materially better the same day
+> without a parser: `T-H12`'s column half added `insideFunctionCall`, which fixed
+> a class of misread this ticket's own §"the gate found the case that argues for
+> step 2" did not know about — `FROM` inside a function's argument list read as a
+> table clause. The parser is still the right long-term shape and still the way
+> the `WITH gone AS (DELETE … RETURNING *)` case gets caught by structure rather
+> than by vocabulary.
+>
 > **Step 2 — a real parse — is open, and it is the expensive half.**
 > `pg_query_go` is cgo: it touches `apps/backend/Dockerfile.api` and
 > cross-compilation in the release build, which is the repo owner's call rather
@@ -590,7 +601,51 @@ until their tickets work end to end.
 
 ## Track D — What enterprise buyers ask for by name (3.5d) · **`T-H12` built and gated live 2026-08-22 — its column half enforces less than its title claims; `T-H13` built; `T-H14` half built and that half gated live**
 
-### `T-H12` Table and column allowlist per connection — 1.5d · **built 2026-08-21; gated live 2026-08-22 — the table half holds, the column half is weaker than the title**
+### `T-H12` Table and column allowlist per connection — 1.5d · **built 2026-08-21; the column half enforced and gated 2026-09-03**
+
+> **Status, 2026-09-03 — the column half now enforces what the title claims.**
+> The owner's decision on the 08-22 finding was *enforce*, not *rename*. A
+> caller who named a column read straight through; it no longer does.
+>
+> **How it works, and why it is a second walk.** The table half anchors on two
+> positions — after FROM, after JOIN. A column has no position, so
+> `internal/sqlguard/columns.go` inverts the question and asks of every token
+> whether there is any reason it is *not* a column reference. Misclassifying an
+> identifier as a column costs a visible refusal the tenant can fix;
+> failing to notice one costs a silent read of a restricted column, so every
+> judgement is made toward over-collecting. Qualified references resolve through
+> the FROM clause's alias map; a bare column with more than one table in play is
+> refused with *"qualify every column"* rather than attributed by guess; a column
+> read through a subquery or CTE is refused because the lexer cannot see into the
+> projection.
+>
+> **The soundness argument is short.** To read a column you must name it — in
+> which case this sees the name — or star it, in which case the pre-existing star
+> rule already refuses you.
+>
+> **It costs nothing for tenants who did not ask for it.** None of the column
+> walk is consulted unless a *referenced* table carries a column rule.
+>
+> **Gate, 2026-09-03: 15 arms, 15 passed, $0.00** — allowlist read out of the
+> real `db_connections` row, statements through the same `ValidateReferences`
+> `run_sql` calls, and the permitted query executed against the real demo
+> warehouse (30 rows, `"Samsung Galaxy S24"`). Refused: the named column, and the
+> same column in WHERE, ORDER BY, inside an aggregate, through an alias, across a
+> join, and laundered through a subquery. Still allowed: the allowed columns, the
+> `count(1)` repair the star refusal advises, and every table in the source with
+> no column rule.
+>
+> **Finding, and it is older than this work: a `FROM` inside a function's
+> argument list was being read as a table clause.** `extract(year FROM
+> created_at)` reported `created_at` as a **table** and `substring(name FROM 1
+> FOR 3)` reported `1`, so on any table-restricted source those two ordinary
+> shapes were refused with *"table `created_at` is not readable by this agent"* —
+> naming something the tenant never restricted, with no rewrite that fixes it.
+> Present since the table half shipped on 2026-08-21; the 08-22 gate missed it
+> because none of its thirteen refusal shapes used a function that spells a
+> clause keyword. Fixed by `insideFunctionCall`, and it was found by the
+> false-positive half of the new tests rather than by the security half — the
+> arms that assert ordinary analytical SQL still runs.
 
 > **Status, 2026-08-21: built.** `domain.Allowlist` on `db_connections`
 > (migration `068`, JSONB, empty = unrestricted). `get_schema` filters tables,
@@ -668,7 +723,52 @@ remembering to look.
 > [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §14,
 > so raising the bar is a decision rather than a discovery.
 
-### `T-H14` Key management — 1.5d · **half built 2026-08-21 — the keyring, not the envelope**
+### `T-H14` Key management — 1.5d · **keyring built 2026-08-21; rotation coverage completed and gated 2026-09-03; the envelope half is blocked on a KMS decision**
+
+> **Status, 2026-09-03 — `cmd/rekey` now covers every sealed column, and the
+> gap it closed was worse than "mechanical".**
+>
+> The 08-21 entry filed the missing tables as remaining work that was
+> *"mechanical"*, and printed a NOTE on every run so a rotation nobody had
+> finished would not look finished. **The NOTE was not the thing an operator
+> follows.** The procedure's step 4 says `-check` *"is the gate for step 5"* —
+> the step that deletes the old key — and step 4 is an **exit code**. Measured
+> on 2026-09-03 with three secrets deliberately left on a retired key: the old
+> tool printed `rotation complete for db_connections` and **exited 0**. An
+> operator following the written procedure exactly would have removed a key
+> that three tables still needed, and those secrets would have been
+> unrecoverable.
+>
+> **Now nine columns across nine tables**, listed in `sealedColumns`:
+> `db_connections`, `company_llm_credentials`, the Discord / Lark / Slack
+> credential tables, `mcp_servers`, `company_actions`, `http_endpoints` and
+> `embed_keys`. It reads and writes the control database directly rather than
+> through the domain repositories — deliberately, because every one of those
+> repositories is company-scoped on purpose and adding eight cross-tenant
+> `ListAll`s to satisfy an offline operator command would put a cross-tenant
+> read on eight interfaces the request path can also reach.
+>
+> **Gate, 2026-09-03, $0.00.** Three tables seeded with blobs sealed under a
+> generated retired key: `-check` found all three and **exited 1** where the old
+> binary exited 0 on the same database; `-apply` re-sealed 3 and skipped 0;
+> `-check` returned 8/8 on the primary; and the arm that matters — each
+> re-sealed value opened **with the retired key removed from the environment**
+> and returned its original plaintext. Seeded rows deleted; the control database
+> is back to its five real connections.
+>
+> **Finding: three of the nine tables are not keyed by `id`.** The channel
+> credential tables are keyed by `company_id` — one credential set per tenant —
+> and the first run of the loop failed with `column "id" does not exist`. Cheap
+> to learn by running it, invisible to a reading of the migrations.
+>
+> **Still not built: envelope encryption with per-tenant data keys**, and it is
+> blocked rather than unscheduled. It needs a company id at every call site —
+> `Encrypt(string)` has no tenant in its signature and ten packages call it —
+> **plus a decision about which KMS, which is an operator's call and was not
+> taken.** The keyring and now the full rotation sweep are the prerequisites
+> either way: a per-tenant data key is one that must be findable by id and
+> re-sealable under a new master, and as of today every place this product
+> stores a sealed byte is on that path.
 
 > **Status, 2026-08-21: the rotation half is built and the envelope half is
 > not.** Read the split as the ticket's, not as a shortfall discovered late.

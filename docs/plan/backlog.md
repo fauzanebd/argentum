@@ -397,7 +397,7 @@ target market than WhatsApp or Lark.
 **Trigger:** inbound demand, or a market where Telegram business use dominates.
 **Estimate:** 2d.
 
-### Frontend test framework
+### ~~Frontend test framework~~ — **shipped 2026-09-03** (vitest + jsdom + Testing Library in `apps/dashboard`, in `pnpm lint` and `make test-web`; standing it up found three pre-existing type errors that meant `main` had not typechecked since `T-D15`)
 **Why deferred:** Backend tests protect correctness; the dashboard is thin and
 visually verifiable, and `tsc -b` already catches the common class of breakage.
 **Trigger:** the first FE regression that reaches a user.

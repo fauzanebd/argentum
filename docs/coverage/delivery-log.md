@@ -4770,6 +4770,131 @@ degradation path that reported the absence of something it had never looked
 for.** All four are invisible to a green test suite, and all four were found by
 running the thing.
 
+## Phase 3s — Four gaps closed, and three green commands that had not been green (2026-09-03)
+
+A pass over what the plan and coverage files said was still owed. Four items
+built and gated, four decided-and-recorded rather than built, and the pattern
+this log keeps finding held again: **every one of the four builds was gated by
+running it, and every one of the four found something the ticket did not
+predict.**
+
+**1. `T-H12`'s column half enforces what its title claims.** The 08-22 gate
+found that a caller who *named* a column read straight through a "table **and
+column** allowlist"; only `*` was refused. `internal/sqlguard/columns.go` now
+walks the token stream asking the inverted question — is there any reason this
+identifier is *not* a column — resolves qualified references through the FROM
+clause's alias map, and refuses rather than guesses when a bare column cannot be
+attributed or is read through a subquery. The soundness argument is one
+sentence: to read a column you must name it, or star it, and the star was
+already refused. **15 of 15 arms, $0.00**, with the allowlist read out of the
+real `db_connections` row and the permitted query executed against the real demo
+warehouse.
+
+**And the finding is older than the feature.** The false-positive half of the
+new tests — the arms that assert ordinary analytical SQL still runs — caught the
+table half reading `extract(year FROM created_at)` as a reference to a table
+called `created_at`, and `substring(name FROM 1 FOR 3)` as one to a table called
+`1`. On any table-restricted source those two shapes were refused with *"table
+`created_at` is not readable by this agent"*, naming something the tenant never
+restricted. Live since 2026-08-21; the 08-22 gate missed it because none of its
+thirteen refusal shapes used a function that spells a clause keyword.
+
+**2. `cmd/rekey` covers every sealed column, and the gap it closed was not
+"mechanical".** The 08-21 entry filed the eight uncovered tables as remaining
+work and printed a NOTE on every run. **The NOTE is not what an operator
+follows.** The rotation procedure's step 4 says `-check` *"is the gate for step
+5"* — the step that deletes the old key — and step 4 is an exit code. Measured
+with three secrets deliberately left on a retired key: the old binary printed
+`rotation complete for db_connections` and **exited 0**. Following the written
+procedure exactly would have destroyed them. Nine columns across nine tables
+now, gated end to end: `-check` exits 1 where the old one exited 0, `-apply`
+re-seals, and each value opens with the retired key removed from the
+environment. Finding: three of the nine tables are keyed by `company_id` rather
+than `id`, learned by the loop failing with `column "id" does not exist`.
+
+**3. `T-D16` is half landed, and the half it is not is the interesting one.**
+Migration `073` drops `metabase_database_id` and its index — gated up/down/up
+against the real control database, with a previous-release binary serving 200 on
+the new schema. The table `saved_dashboards` could not go with it: its readers
+are removed in the *same* commit, so during that release's rolling deploy the
+new schema meets a binary that still reads it. Proven rather than reasoned — the
+statement `SavedDashboardRepo.ListByCompany` runs returns `ERROR: relation
+"saved_dashboards" does not exist`. `074` is written into the ticket and
+deliberately not in `migrations/control/`, because a migration written early is
+a migration applied early. **Finding: this ticket's cutover gate names an
+instrument that cannot answer it** — it gates the cutover on `apiobs` showing no
+`/metabase/*` traffic, but `apiobs` is installed on the `v1` group only while
+the proxy was on the root router, and `api_request_stats` holds **0 rows, ever**.
+
+**4. The workspace has a frontend test runner, and standing it up found that
+`main` had not typechecked since `T-D15`.** Vitest + jsdom + Testing Library in
+`apps/dashboard`, inside `pnpm lint` so it cannot rot. Eleven tests, three files
+— `T-U2`'s reduced-motion gating re-homed from the throwaway script the Sprint 3
+log records, the dashboard/video timing agreement asserted rather than
+commented, and `lib/contrast` pinned to the palette script's own figures. Three
+pre-existing errors were in the way, none of which any command in this repo was
+running: an undefined `isDashboard` left by `a82cf8b`, `@hookform/resolvers`
+floated to a 3.10.0 whose types are written against zod v4 while the app is on
+zod 3, and an implicit `any` in `packages/motion` under its own `strict`.
+**`pnpm -r lint` is green across all nine workspace projects for the first
+time.**
+
+**And one that blocked everything else for a while:** `pnpm install` itself
+exited non-zero. `pnpm-workspace.yaml` pinned `onlyBuiltDependencies: [esbuild]`,
+a key pnpm 11 no longer honours, so every build script was skipped and the
+install failed — and because each `pnpm --filter … <script>` runs a
+dependency-status check first, *every* frontend command in the repo failed with
+it. The config looked like it said the right thing.
+
+**What was decided rather than built.** The owner took four decisions this
+sitting: no model spend, so every paid gate stays open and unrun; `T-H4` step 2
+stays open with the cgo dependency recorded as the blocker; the light chart
+ramp's 3:1 debt stays a recorded warning, now **sized** — 3:1 caps a series at
+L\* 61.7 and eight series 5 apart need 35 L\*, so all eight move, brand red
+included, and every delivered PDF re-renders; and `write:visualizations` is
+re-pointed rather than retired. That last one was already true in code — what
+had rotted was the sentence an admin reads while ticking the box, which still
+said the scope wrote to Metabase a fortnight after Metabase was deleted.
+
+**5. The stack-only gates were run the same day, and the bucket paid twice.**
+Seven owed gates across two batches, **$0.00 and no model** — `run_sql` was
+reached through the MCP server and the dashboards were built by calling
+`create_dashboard` over it, which is also the first live exercise of the
+`write:visualizations` scope since T-D11 re-pointed it. `T-H2`, `T-H7`, `T-H10`
+and `T-H4`'s postgres arm all passed (§1r); `T-D6`/`T-D7`, `T-D8` and `T-D13`
+all passed (§1s). `T-D8` is a count now rather than arithmetic: **20 concurrent
+cold opens produce 3 query-log rows, one per panel**, where 60 would mean
+nothing collapsed — and the first attempt at it measured the *cache* instead,
+because the create's own `dryRun` had already warmed every panel.
+
+**And the two findings neither ticket asked for.** `T-H7`'s protection is
+conditional on a log level and this repo's `.env` ships `LOG_LEVEL=debug`, so in
+the configuration a developer copies, every literal a model puts in a `WHERE`
+clause is written to the log in full — a control whose effectiveness lives in a
+variable nobody has been asked to decide. And a **P1**: `/share/dashboard/:token`
+takes no session and was returning the whole stored dashboard, so anyone holding
+a public link received the panel SQL, the `source_id` and the `company_id`. That
+contradicts `T-H7` and `T-H12` at once — one keeps statements out of an
+operator's log, the other keeps excluded table names away from the agent, and a
+share link published both. Fixed with `Dashboard.PublicCopy()`, re-checked over
+the wire, authenticated route untouched. `T-D13`'s threat model was the *token*;
+it never asked what a valid visitor is handed.
+
+**A note on how that P1 was proven, because it nearly was not.** Three unit
+tests pin the redaction, one of them serialising the whole payload and grepping
+it. **All three pass with the service wiring removed.** Only the live re-fetch
+says the route calls it — §1g's "the tickets passing is not the sitting passing",
+in a second costume.
+
+**The pattern, again.** 3n found a comment describing a property the code did
+not have; 3q a field every layer agreed about and nothing filled in; 3r a
+degradation path that reported the absence of something it never looked for.
+This is the fifth: **four commands that were documented as the gate, and were
+not run.** `rekey -check`'s exit code, `pnpm -r lint`, the cutover's traffic
+check, and a suite of unit tests that pass whether or not the code under them is
+called. All four were green or absent rather than failing, which is why nobody
+noticed.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
