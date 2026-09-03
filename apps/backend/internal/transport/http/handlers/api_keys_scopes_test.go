@@ -69,3 +69,29 @@ func TestScopesEndpointDescribesEveryScope(t *testing.T) {
 		}
 	}
 }
+
+// A description can be non-empty and wrong, and one was for a fortnight.
+//
+// `write:visualizations` told every admin who ticked it *"Create a Metabase
+// chart or dashboard. It writes to Metabase"* — a sentence that survived T-D15
+// deleting Metabase and T-D11 re-pointing the scope at `create_dashboard`. The
+// two tests above both passed throughout: the map had a key and the endpoint
+// served a string, and neither asks whether the string is true.
+//
+// Naming a system the product does not run is the one wrongness a test can
+// check without duplicating the map into an assertion. It is narrow on purpose
+// — the general problem is unautomatable — and it is the exact shape that
+// happened.
+func TestNoScopeDescriptionNamesADecommissionedSystem(t *testing.T) {
+	// Systems this product used to run and no longer does. Add to this list
+	// when the next one is removed; the strings are what an admin would read.
+	decommissioned := []string{"Metabase", "metabase"}
+	for s, desc := range scopeDescription {
+		for _, name := range decommissioned {
+			if strings.Contains(desc, name) {
+				t.Errorf("scope %q is described to a tenant as %q, which names %s — this deployment does not run it",
+					s, desc, name)
+			}
+		}
+	}
+}

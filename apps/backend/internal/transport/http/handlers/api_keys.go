@@ -98,11 +98,15 @@ var scopeDescription = map[domain.Scope]string{
 	// The one that reads the warehouse itself rather than anything Argentum
 	// recorded about it, which is why the sentence says so: a key holding this
 	// can run any SELECT the connection permits, over every table it can see.
-	domain.ScopeReadData:            "Query the workspace's connected databases over MCP: list the sources, read a table's schema, and run read-only SQL against any table the connection can see.",
-	domain.ScopeWriteChat:           "Ask the agent a question. This spends the workspace's credits.",
-	domain.ScopeWriteActions:        "Execute an action on the workspace's behalf.",
-	domain.ScopeWriteReports:        "Generate a report. Rendering a supplied spec is free; asking the agent to write one spends credits.",
-	domain.ScopeWriteVisualizations: "Create a Metabase chart or dashboard. It writes to Metabase, never to the workspace's own systems.",
+	domain.ScopeReadData:     "Query the workspace's connected databases over MCP: list the sources, read a table's schema, and run read-only SQL against any table the connection can see.",
+	domain.ScopeWriteChat:    "Ask the agent a question. This spends the workspace's credits.",
+	domain.ScopeWriteActions: "Execute an action on the workspace's behalf.",
+	domain.ScopeWriteReports: "Generate a report. Rendering a supplied spec is free; asking the agent to write one spends credits.",
+	// Metabase is named nowhere in this sentence because the product no longer
+	// runs it (T-D15). This string outlived the decommission by a fortnight and
+	// was the sentence an admin read while ticking the box — see
+	// TestNoScopeDescriptionNamesADecommissionedSystem.
+	domain.ScopeWriteVisualizations: "Create a dashboard in this workspace. It writes only inside Argentum, never to the workspace's own systems.",
 }
 
 func (h *APIKeysHandler) scopes(c *gin.Context) {

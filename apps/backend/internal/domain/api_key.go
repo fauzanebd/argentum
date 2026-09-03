@@ -47,9 +47,19 @@ const (
 	// thereby trusted with the second — which is the acceptance criterion T-14
 	// states in as many words.
 	ScopeReadData Scope = "read:data"
-	// ScopeWriteVisualizations — create a Metabase card or dashboard (T-14).
-	// The only MCP tool that writes anything, and it writes to Metabase rather
-	// than to a tenant's own system, which is why it is not write:actions.
+	// ScopeWriteVisualizations — create a dashboard (T-14, re-pointed by T-D11).
+	// The only MCP tool that writes anything.
+	//
+	// **The name outlived what it was named for, deliberately.** It gated
+	// `create_visualization` against Metabase until T-D11 deleted that tool with
+	// the system behind it; the scope now gates `create_dashboard`, which writes
+	// a native dashboard row this product serves itself. A scope is a permission
+	// name rather than a tool name, and retiring this one would have cost every
+	// integrator holding a key a rotation to buy nothing — the capability is
+	// unchanged and still exactly one tool wide (internal/mcpserver/server.go).
+	//
+	// It is not write:actions because it writes only inside Argentum: a
+	// dashboard nobody was depending on yet, never a tenant's own system.
 	ScopeWriteVisualizations Scope = "write:visualizations"
 	// ScopeReadDocuments — list generated documents and re-presign their
 	// download URLs (T-A2). Read-only over the tenant's own output.

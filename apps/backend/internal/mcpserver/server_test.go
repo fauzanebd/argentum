@@ -146,7 +146,7 @@ func TestNoArgumentsBecomesAnEmptyObject(t *testing.T) {
 func TestTheSurfaceExcludesEverythingThatWrites(t *testing.T) {
 	for _, name := range []string{"generate_document", "schedule_task", "propose_action", "create_agent"} {
 		if _, ok := ScopeFor(name); ok {
-			t.Errorf("%q is exposed over MCP; the surface is reads plus the two Metabase writes", name)
+			t.Errorf("%q is exposed over MCP; the surface is the reads plus create_dashboard", name)
 		}
 	}
 	for _, name := range []string{"run_sql", "get_schema", "list_sources", "list_metrics", "query_metric"} {
@@ -336,5 +336,38 @@ func TestHealthNeedsNoKey(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
+	}
+}
+
+// A scope that gates no exposed tool grants nothing, and nothing says so.
+//
+// `write:visualizations` came within one deletion of that state: T-D11 removed
+// `create_visualization`, and the scope was re-pointed at `create_dashboard`
+// rather than retired precisely because it still had a tool behind it (T-D11's
+// owner decision, 2026-09-03). If the surface ever loses that tool, the honest
+// move is to retire the scope and rotate the keys — not to keep serving a
+// checkbox that grants a capability nobody can reach.
+//
+// So this asserts the join in the direction that rots silently: every scope
+// this package hands out must be reachable through at least one exposed tool.
+func TestEveryExposedScopeHasAToolBehindIt(t *testing.T) {
+	behind := map[domain.Scope][]string{}
+	for _, name := range ExposedTools() {
+		s, ok := ScopeFor(name)
+		if !ok {
+			t.Fatalf("%q is in ExposedTools but ScopeFor does not know it", name)
+		}
+		behind[s] = append(behind[s], name)
+	}
+	// Named explicitly rather than derived, because the point is that this
+	// scope in particular outlived the tool it was created for.
+	if len(behind[domain.ScopeWriteVisualizations]) == 0 {
+		t.Errorf("scope %q gates no exposed tool; it grants nothing and should be retired rather than served",
+			domain.ScopeWriteVisualizations)
+	}
+	for s, tools := range behind {
+		if !s.Valid() {
+			t.Errorf("tools %v are gated by %q, which is not a scope this system issues", tools, s)
+		}
 	}
 }
