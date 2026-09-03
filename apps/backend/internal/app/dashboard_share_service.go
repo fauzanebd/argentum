@@ -223,7 +223,10 @@ func (s *DashboardShareService) Open(ctx context.Context, token, password string
 		// counter did not.
 		logrus.WithError(err).WithField("share_id", sh.ID).Debug("dashboard share view counter not updated")
 	}
-	return &OpenedShare{Share: sh, Dashboard: d, Result: res}, nil
+	// The visitor gets the redacted dashboard, never the stored one: the panel
+	// SQL, the source and the company id are ours, and this route has no
+	// session behind it. See Dashboard.PublicCopy.
+	return &OpenedShare{Share: sh, Dashboard: d.PublicCopy(), Result: res}, nil
 }
 
 // spend enforces MaxRefreshPerHour with a Redis counter on a rolling hour.
