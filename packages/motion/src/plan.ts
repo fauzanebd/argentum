@@ -40,6 +40,18 @@ export const KIND = {
 } as const;
 
 /**
+ * isPortrait is the question a layout asks before it stacks what it would set
+ * in a row. Asked of the frame, not of the metrics: on the 4:5 surface the safe
+ * zones take enough height that the measure is still wider than the body, so
+ * `content_width < body_height` — the obvious predicate — is false on the one
+ * surface it exists for. `canvas.Surface.Portrait()` in Go makes the same
+ * choice for the same reason.
+ */
+export function isPortrait(plan: Plan): boolean {
+  return plan.height > plan.width;
+}
+
+/**
  * The scenes, paired with the frame each one starts at.
  *
  * Derived rather than carried in the plan: the plan already states each scene's

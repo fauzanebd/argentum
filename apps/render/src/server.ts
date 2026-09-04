@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { pipeline } from "node:stream/promises";
@@ -7,12 +8,13 @@ import { partition, validate } from "@argentum/motion";
 import type { Plan } from "@argentum/motion";
 
 import { JobStore } from "./jobs";
+import { checkOutput, parseJobPath, parseOutput } from "./output";
 import { serveUrl } from "./render";
 
 /**
  * The render service.
  *
- * No framework: five routes, one of which streams a file. A router would be a
+ * No framework: six routes, two of which stream a file. A router would be a
  * dependency to keep current on a service whose whole security posture is that
  * it has almost nothing in it.
  *
@@ -74,9 +76,10 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return startRender(req, res);
   }
 
-  const job = path.match(/^\/v1\/jobs\/([0-9a-f-]{36})(\/result)?$/);
+  const job = parseJobPath(path);
   if (job) {
-    const [, id, result] = job;
+    const { id, result, page } = job;
+    if (req.method === "GET" && result && page !== undefined) return sendPage(res, id, page);
     if (req.method === "GET" && result) return sendResult(res, id);
     if (req.method === "GET") return sendStatus(res, id);
     if (req.method === "DELETE") {
@@ -95,7 +98,7 @@ async function startRender(req: IncomingMessage, res: ServerResponse): Promise<v
     return send(res, 400, { error: `invalid body: ${String(err)}` });
   }
 
-  const plan = (body as { plan?: Plan })?.plan;
+  const { plan, output: rawOutput } = (body as { plan?: Plan; output?: unknown }) ?? {};
   if (!plan) return send(res, 400, { error: "no `plan` in the body" });
 
   // Validated before a browser is started, not inside the render. The caller
@@ -105,6 +108,14 @@ async function startRender(req: IncomingMessage, res: ServerResponse): Promise<v
   const problem = validate(plan);
   if (problem) return send(res, 400, { error: problem });
 
+  // The output is checked against the plan the same way (T-G5): a still plan
+  // rendered as a video and a video plan rendered as stills are both wrong
+  // artifacts that take a minute to notice.
+  const output = parseOutput(rawOutput);
+  if (output !== "video" && output !== "stills") return send(res, 400, { error: output });
+  const mismatch = checkOutput(plan, output);
+  if (mismatch) return send(res, 400, { error: mismatch });
+
   const { unknown } = partition(plan);
   if (unknown.length > 0) {
     // Not a refusal. A newer backend sending a beat this bundle cannot draw
@@ -113,8 +124,8 @@ async function startRender(req: IncomingMessage, res: ServerResponse): Promise<v
     log("unknown scene kinds", { kinds: unknown });
   }
 
-  const job = jobs.start(plan);
-  log("accepted", { id: job.id, frames: plan.total_frames, scenes: plan.scenes.length });
+  const job = jobs.start(plan, output);
+  log("accepted", { id: job.id, output, frames: plan.total_frames, scenes: plan.scenes.length });
   send(res, 202, { job_id: job.id, unknown_kinds: unknown });
 }
 
@@ -123,11 +134,15 @@ function sendStatus(res: ServerResponse, id: string): void {
   if (!job) return send(res, 404, { error: "no such job" });
   send(res, 200, {
     id: job.id,
+    output: job.output,
     state: job.state,
     progress: Number(job.progress.toFixed(4)),
     error: job.error,
     size_bytes: job.sizeBytes,
     frames: job.frames,
+    // Absent on a video job rather than 0, so a status shape written against
+    // the video never sees a field it has to explain.
+    ...(job.pages !== undefined ? { pages: job.pages } : {}),
     render_seconds: job.renderSeconds,
   });
 }
@@ -141,7 +156,18 @@ async function sendResult(res: ServerResponse, id: string): Promise<void> {
     // integrator fixes their spec or opens a ticket.
     return send(res, job.clientError ? 400 : 500, { error: job.error });
   }
-  if (job.state !== "done" || !job.outputPath) {
+  if (job.state !== "done") {
+    return send(res, 409, { error: `job is ${job.state}`, progress: job.progress });
+  }
+  if (job.output === "stills") {
+    // The result of a stills job is N files, and this route answers with one.
+    // A 409 rather than a zip: decision 5, and the sentence says where to go.
+    return send(res, 409, {
+      error: "a stills job has pages; fetch /result/:page",
+      pages: job.pages,
+    });
+  }
+  if (!job.outputPath) {
     return send(res, 409, { error: `job is ${job.state}`, progress: job.progress });
   }
 
@@ -150,6 +176,35 @@ async function sendResult(res: ServerResponse, id: string): Promise<void> {
     "content-length": String(job.sizeBytes ?? 0),
   });
   await pipeline(createReadStream(job.outputPath), res);
+}
+
+/**
+ * sendPage streams one page of a done stills job. Out of range is a 404 like a
+ * missing job: page 0 and page N+1 are things that do not exist, not
+ * conflicts. A video job has no pages, so the same answer.
+ */
+async function sendPage(res: ServerResponse, id: string, page: number): Promise<void> {
+  const job = jobs.get(id);
+  if (!job) return send(res, 404, { error: "no such job" });
+  if (job.state === "failed" || job.state === "cancelled") {
+    return send(res, job.clientError ? 400 : 500, { error: job.error });
+  }
+  if (job.state !== "done") {
+    return send(res, 409, { error: `job is ${job.state}`, progress: job.progress });
+  }
+  const path = jobs.pagePath(id, page);
+  if (!path) {
+    return send(res, 404, {
+      error: job.output === "stills" ? `no page ${page}; this job has ${job.pages}` : "a video job has no pages",
+    });
+  }
+
+  const info = await stat(path);
+  res.writeHead(200, {
+    "content-type": "image/jpeg",
+    "content-length": String(info.size),
+  });
+  await pipeline(createReadStream(path), res);
 }
 
 /**

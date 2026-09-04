@@ -3,12 +3,15 @@ import {
   AbsoluteFill,
   continueRender,
   delayRender,
+  getRemotionEnvironment,
   Sequence,
   staticFile,
 } from "remotion";
 
+import { STILL_FRAME } from "./anim";
 import { FONT } from "./chrome";
-import { timeline, validate } from "./plan";
+import { StillFrame } from "./frame";
+import { isPortrait, timeline, validate } from "./plan";
 import type { Plan } from "./plan";
 import { SceneView } from "./scenes/index";
 import { TOKEN_COLOR } from "./tokens.generated";
@@ -21,6 +24,14 @@ import { TOKEN_COLOR } from "./tokens.generated";
  * scene is on screen, and a renderer that adjusted those would be the second
  * place a duration is decided — which is the failure this whole package's shape
  * exists to prevent.
+ *
+ * A still plan (`plan.still`, T-G4) is the same scenes with the time axis
+ * removed: each is one frame long, and each is drawn at STILL_FRAME so the
+ * frame is the *end* of its entrance rather than the start. The scene
+ * components do not know: they ask `useSceneFrame()` where they used to ask
+ * `useCurrentFrame()`, and the StillFrame context answers with the fixed one —
+ * see frame.ts for why that is not Remotion's `<Freeze>`. The same component
+ * draws the video and the slide.
  */
 export const Report: React.FC<{ plan: Plan }> = ({ plan }) => {
   useFonts();
@@ -52,22 +63,59 @@ export const Report: React.FC<{ plan: Plan }> = ({ plan }) => {
     );
   }
 
+  const portrait = isPortrait(plan);
   return (
     <AbsoluteFill style={{ backgroundColor: plan.brand.background }}>
-      {timeline(plan).map(({ scene, from }, i) => (
-        <Sequence
-          key={`${i}-${scene.kind}`}
-          from={from}
-          durationInFrames={Math.max(1, scene.frames)}
-          name={`${i + 1} ${scene.kind}`}
-        >
+      {timeline(plan).map(({ scene, from }, i) => {
+        const view = (
           <SceneView
             scene={scene}
             brand={plan.brand}
             metrics={plan.metrics}
+            portrait={portrait}
           />
-        </Sequence>
-      ))}
+        );
+        return (
+          <Sequence
+            key={`${i}-${scene.kind}`}
+            from={from}
+            durationInFrames={Math.max(1, scene.frames)}
+            name={`${i + 1} ${scene.kind}`}
+          >
+            {plan.still ? (
+              <StillFrame.Provider value={STILL_FRAME}>{view}</StillFrame.Provider>
+            ) : (
+              view
+            )}
+          </Sequence>
+        );
+      })}
+      {plan.still && getRemotionEnvironment().isStudio ? (
+        <SafeZones plan={plan} />
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+
+/**
+ * SafeZones is the studio-only overlay of the bands Instagram's own UI covers
+ * on a 4:5 post — roughly the top 120 px (the account name) and the bottom 150
+ * px (caption and actions). It draws in Remotion Studio and nowhere else: a
+ * render never sees it, because `getRemotionEnvironment().isStudio` is false
+ * under `@remotion/renderer`. The bands are expressed as a fraction of the
+ * frame rather than as 120 and 150 so a square or a story surface (T-G9) gets a
+ * proportionate ring rather than a wrong one.
+ */
+const SafeZones: React.FC<{ plan: Plan }> = ({ plan }) => {
+  const top = Math.round(plan.height * (120 / 1350));
+  const bottom = Math.round(plan.height * (150 / 1350));
+  // motion-color-ok: a translucent hatch for the studio's eyes only, never in
+  // a delivered frame.
+  const band = "repeating-linear-gradient(135deg, rgba(255,0,0,0.18) 0 8px, transparent 8px 16px)";
+  return (
+    <AbsoluteFill style={{ pointerEvents: "none" }}>
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: top, background: band }} />
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: bottom, background: band }} />
     </AbsoluteFill>
   );
 };

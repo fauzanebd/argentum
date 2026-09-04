@@ -31,8 +31,10 @@ git diff --exit-code packages/api-types   # must be committed, not left dirty
 
 Changed anything in `packages/`:
 ```bash
-pnpm --filter dashboard build && pnpm --filter widget build
+pnpm --filter dashboard build && pnpm --filter @argentum/widget-app build
 ```
+(`--filter widget` matches no workspace project and pnpm exits 0 on an empty
+match, which is how this line built nothing from `T-V1` until 2026-09-04.)
 A `packages/` change that only builds one consumer is not verified.
 
 If the universal minimum fails, nothing below matters. Fix it first.

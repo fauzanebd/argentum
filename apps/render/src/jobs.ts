@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
+import { join } from "node:path";
 
-import { PlanError, render } from "./render";
+import { pageName } from "./output";
+import type { Output } from "./output";
+import { PlanError, render, renderStills } from "./render";
 import type { Plan } from "@argentum/motion";
 
 /**
@@ -20,6 +23,8 @@ export type JobState = "queued" | "rendering" | "done" | "failed" | "cancelled";
 
 export type Job = {
   id: string;
+  /** What was asked for: one MP4, or one JPEG a scene (T-G5). */
+  output: Output;
   state: JobState;
   progress: number;
   createdAt: number;
@@ -27,9 +32,12 @@ export type Job = {
   error?: string;
   /** True when the failure is the caller's plan rather than our renderer. */
   clientError?: boolean;
+  /** The MP4, for a video job. A stills job has a directory instead — see pagePath. */
   outputPath?: string;
   sizeBytes?: number;
   frames?: number;
+  /** The page count of a done stills job; absent on a video job. */
+  pages?: number;
   renderSeconds?: number;
 };
 
@@ -46,7 +54,13 @@ export const JOB_TTL_MS = 15 * 60 * 1000;
  */
 export const JOB_TIMEOUT_MS = 10 * 60 * 1000;
 
-type Entry = { job: Job; cleanup?: () => Promise<void>; abort: AbortController };
+type Entry = {
+  job: Job;
+  cleanup?: () => Promise<void>;
+  abort: AbortController;
+  /** The pages' directory, for a done stills job. */
+  dir?: string;
+};
 
 export class JobStore {
   private readonly jobs = new Map<string, Entry>();
@@ -55,11 +69,12 @@ export class JobStore {
   /** Only one render runs at a time; the rest wait in this chain. */
   private tail: Promise<unknown> = Promise.resolve();
 
-  start(plan: Plan): Job {
+  start(plan: Plan, output: Output = "video"): Job {
     const id = randomUUID();
     const abort = new AbortController();
     const job: Job = {
       id,
+      output,
       state: "queued",
       progress: 0,
       createdAt: Date.now(),
@@ -81,24 +96,42 @@ export class JobStore {
     const timer = setTimeout(() => entry.abort.abort(), JOB_TIMEOUT_MS);
 
     try {
-      const result = await render({
-        plan,
-        signal: entry.abort.signal,
-        onProgress: (p) => {
-          entry.job.progress = p;
-        },
-      });
-      const info = await stat(result.outputPath);
-      entry.cleanup = result.cleanup;
-      Object.assign(entry.job, {
-        state: "done" satisfies JobState,
-        progress: 1,
-        finishedAt: Date.now(),
-        outputPath: result.outputPath,
-        sizeBytes: info.size,
-        frames: result.frames,
-        renderSeconds: result.seconds,
-      });
+      const onProgress = (p: number) => {
+        entry.job.progress = p;
+      };
+      if (entry.job.output === "stills") {
+        const result = await renderStills({ plan, signal: entry.abort.signal, onProgress });
+        entry.cleanup = result.cleanup;
+        entry.dir = result.dir;
+        // The total across the pages, so the poll answers "how big is what I
+        // am about to collect" for a carousel as it does for a video.
+        let sizeBytes = 0;
+        for (let page = 1; page <= result.pages; page++) {
+          sizeBytes += (await stat(join(result.dir, pageName(page)))).size;
+        }
+        Object.assign(entry.job, {
+          state: "done" satisfies JobState,
+          progress: 1,
+          finishedAt: Date.now(),
+          sizeBytes,
+          frames: result.pages,
+          pages: result.pages,
+          renderSeconds: result.seconds,
+        });
+      } else {
+        const result = await render({ plan, signal: entry.abort.signal, onProgress });
+        const info = await stat(result.outputPath);
+        entry.cleanup = result.cleanup;
+        Object.assign(entry.job, {
+          state: "done" satisfies JobState,
+          progress: 1,
+          finishedAt: Date.now(),
+          outputPath: result.outputPath,
+          sizeBytes: info.size,
+          frames: result.frames,
+          renderSeconds: result.seconds,
+        });
+      }
     } catch (err) {
       const aborted = entry.abort.signal.aborted;
       Object.assign(entry.job, {
@@ -118,6 +151,22 @@ export class JobStore {
 
   get(id: string): Job | undefined {
     return this.jobs.get(id)?.job;
+  }
+
+  /**
+   * pagePath is the file for one page of a done stills job, or null when the
+   * job is not a stills job, is not done, or has no such page. The range check
+   * lives here rather than in the route so the file system is never asked
+   * about a path a caller made up.
+   */
+  pagePath(id: string, page: number): string | null {
+    const entry = this.jobs.get(id);
+    if (!entry || entry.job.output !== "stills" || entry.job.state !== "done" || !entry.dir) {
+      return null;
+    }
+    const pages = entry.job.pages ?? 0;
+    if (!Number.isInteger(page) || page < 1 || page > pages) return null;
+    return join(entry.dir, pageName(page));
   }
 
   async drop(id: string): Promise<boolean> {

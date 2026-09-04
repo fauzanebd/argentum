@@ -28,6 +28,20 @@ export const EXIT = 8;
 export const STAGGER = 4;
 
 /**
+ * STILL_FRAME is the frame a still plan is drawn at (T-G4).
+ *
+ * A still plan's scenes are one frame long, and frame 0 of every scene is its
+ * entrance at zero opacity — the contact-sheet-of-blank-rectangles failure
+ * apps/render's fixture CLI already works around by picking a mid-scene frame.
+ * A carousel has no mid-scene, so Report freezes each scene at this frame
+ * instead: past the longest staggered entrance in the package, which is a
+ * twelve-row table (`enter(frame, 2 + r)`) or a five-line statement, plus the
+ * entrance itself. Nothing in this package animates past frame 60, and the
+ * helpers in this file clamp, so a larger number would draw the same pixels.
+ */
+export const STILL_FRAME = ENTER + STAGGER * 12;
+
+/**
  * enter is the 0→1 progress of an entrance that began `delay` frames into the
  * scene.
  */

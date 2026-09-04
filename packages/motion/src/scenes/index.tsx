@@ -1,8 +1,9 @@
 import React from "react";
-import { Img, useCurrentFrame, useVideoConfig } from "remotion";
+import { Img, useVideoConfig } from "remotion";
 
 import { enter, reveal, rise, STAGGER } from "../anim";
 import { Body, Footer, Frame, Lines, TitleBand } from "../chrome";
+import { useSceneFrame } from "../frame";
 import { KIND } from "../plan";
 import type { Brand, Metrics, Scene } from "../plan";
 
@@ -15,7 +16,13 @@ import type { Brand, Metrics, Scene } from "../plan";
  * rather than crashing on the first field it has never seen.
  */
 
-type Props = { scene: Scene; brand: Brand; metrics: Metrics };
+/**
+ * `portrait` is Report's answer to plan.isPortrait, passed down rather than
+ * re-derived because a scene holds metrics and not the frame. It changes
+ * *arrangement* only — a row becomes a column — never a size or a position,
+ * which stay the plan's.
+ */
+type Props = { scene: Scene; brand: Brand; metrics: Metrics; portrait?: boolean };
 
 export const SceneView: React.FC<Props> = (props) => {
   switch (props.scene.kind) {
@@ -45,7 +52,7 @@ export const SceneView: React.FC<Props> = (props) => {
 
 /** The dark scenes: cover, divider, closing. */
 const Cover: React.FC<Props> = ({ scene, brand, metrics }) => {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   return (
     <Frame brand={brand} metrics={metrics} dark>
       <div
@@ -102,7 +109,7 @@ const Cover: React.FC<Props> = ({ scene, brand, metrics }) => {
 };
 
 const Closing: React.FC<Props> = ({ scene, brand, metrics }) => {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   return (
     <Frame brand={brand} metrics={metrics} dark>
       <div
@@ -142,7 +149,7 @@ const Closing: React.FC<Props> = ({ scene, brand, metrics }) => {
 };
 
 const Divider: React.FC<Props> = ({ scene, brand, metrics }) => {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   const p = enter(frame);
   return (
     <Frame brand={brand} metrics={metrics} dark>
@@ -177,7 +184,7 @@ const Divider: React.FC<Props> = ({ scene, brand, metrics }) => {
 
 /** The light scenes. */
 const Statement: React.FC<Props> = ({ scene, brand, metrics }) => {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   return (
     <Frame brand={brand} metrics={metrics}>
       <TitleBand
@@ -204,7 +211,7 @@ const Statement: React.FC<Props> = ({ scene, brand, metrics }) => {
 };
 
 const Quote: React.FC<Props> = ({ scene, brand, metrics }) => {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   const p = enter(frame);
   const tone = brand.tones?.[scene.tone ?? "info"] ?? brand.tones?.info;
   return (
@@ -252,9 +259,22 @@ const Quote: React.FC<Props> = ({ scene, brand, metrics }) => {
   );
 };
 
-const KPIRow: React.FC<Props> = ({ scene, brand, metrics }) => {
-  const frame = useCurrentFrame();
+/**
+ * KPIRow is a row of cards on the wide surface and a column of them on a
+ * portrait one (T-G4).
+ *
+ * The column is not the row rotated. A wide card stacks label, value and delta
+ * because it is narrow and tall; four of those stacked on the 4:5 surface run
+ * to ~1250 px against an 874 px body. So a portrait card is one line shorter:
+ * the delta sits beside the value rather than under it, and the four cards the
+ * surface allows (`canvas.Portrait.MaxKPICards`) come to ~850 px at the
+ * display size, inside the body with the spacing the plan measured. The value
+ * keeps the display size on both — a big number is the point of the card.
+ */
+const KPIRow: React.FC<Props> = ({ scene, brand, metrics, portrait }) => {
+  const frame = useSceneFrame();
   const cards = scene.kpis ?? [];
+  const gap = portrait ? metrics.spacing_sm : metrics.spacing_md;
   return (
     <Frame brand={brand} metrics={metrics}>
       <TitleBand
@@ -264,18 +284,40 @@ const KPIRow: React.FC<Props> = ({ scene, brand, metrics }) => {
         frame={frame}
       />
       <Body metrics={metrics}>
-        <div style={{ display: "flex", gap: metrics.spacing_md }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: portrait ? "column" : "row",
+            gap,
+          }}
+        >
           {cards.map((card, i) => {
             const p = enter(frame, i * STAGGER);
+            const delta = card.delta ? (
+              <div
+                style={{
+                  fontSize: metrics.type.caption,
+                  fontWeight: 700,
+                  marginTop: portrait ? 0 : metrics.spacing_sm,
+                  color: card.good ? brand.positive : brand.destructive,
+                  whiteSpace: "pre",
+                }}
+              >
+                {/* ↑ and ↓ rather than ▲ and ▼: Space Grotesk has the
+                    arrows and not the triangles, and a missing glyph
+                    renders as nothing at all. The deck learned this. */}
+                {card.rising ? "↑" : "↓"} {card.delta}
+              </div>
+            ) : null;
             return (
               <div
                 key={card.label}
                 style={{
-                  flex: 1,
+                  flex: portrait ? "none" : 1,
                   backgroundColor: brand.surface,
                   border: `1px solid ${brand.border}`,
                   borderRadius: metrics.radius,
-                  padding: metrics.spacing_md,
+                  padding: portrait ? metrics.spacing_sm : metrics.spacing_md,
                   opacity: p,
                   transform: `translateY(${rise(p)}px)`,
                 }}
@@ -291,31 +333,25 @@ const KPIRow: React.FC<Props> = ({ scene, brand, metrics }) => {
                 </div>
                 <div
                   style={{
-                    fontSize: metrics.type.display,
-                    fontWeight: 700,
-                    color: brand.foreground,
+                    display: "flex",
+                    alignItems: "baseline",
+                    gap: metrics.spacing_md,
                     marginTop: metrics.spacing_sm,
-                    whiteSpace: "pre",
                   }}
                 >
-                  {card.value}
-                </div>
-                {card.delta ? (
                   <div
                     style={{
-                      fontSize: metrics.type.caption,
+                      fontSize: metrics.type.display,
                       fontWeight: 700,
-                      marginTop: metrics.spacing_sm,
-                      color: card.good ? brand.positive : brand.destructive,
+                      color: brand.foreground,
                       whiteSpace: "pre",
                     }}
                   >
-                    {/* ↑ and ↓ rather than ▲ and ▼: Space Grotesk has the
-                        arrows and not the triangles, and a missing glyph
-                        renders as nothing at all. The deck learned this. */}
-                    {card.rising ? "↑" : "↓"} {card.delta}
+                    {card.value}
                   </div>
-                ) : null}
+                  {portrait ? delta : null}
+                </div>
+                {portrait ? null : delta}
               </div>
             );
           })}
@@ -332,7 +368,7 @@ const KPIRow: React.FC<Props> = ({ scene, brand, metrics }) => {
  * decision 6).
  */
 const ChartScene: React.FC<Props> = ({ scene, brand, metrics }) => {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   const { fps } = useVideoConfig();
   const chart = scene.chart;
   const p = chart?.reveal === "none" ? 1 : reveal(frame, fps);
@@ -389,7 +425,7 @@ const ChartScene: React.FC<Props> = ({ scene, brand, metrics }) => {
 };
 
 const TableScene: React.FC<Props> = ({ scene, brand, metrics }) => {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   const table = scene.table!;
   const align = (a: string) =>
     a === "r" ? "right" : a === "ctr" ? "center" : "left";
@@ -483,7 +519,7 @@ const TableScene: React.FC<Props> = ({ scene, brand, metrics }) => {
 
 /** A key_value block: the invoice header, the parameters, the fact list. */
 const Facts: React.FC<Props> = ({ scene, brand, metrics }) => {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   return (
     <Frame brand={brand} metrics={metrics}>
       <TitleBand
@@ -531,7 +567,11 @@ const Facts: React.FC<Props> = ({ scene, brand, metrics }) => {
   );
 };
 
-/** The strip of prepared-for / prepared-by / generated facts on a dark scene. */
+/**
+ * The strip of prepared-for / prepared-by / generated facts on a dark scene.
+ * It wraps: three facts across 1648 px is one line, and across 921 px it is
+ * two, which is the one place the portrait surface changes a dark scene.
+ */
 const FactStrip: React.FC<{
   facts: Scene["facts"];
   brand: Brand;
@@ -548,6 +588,7 @@ const FactStrip: React.FC<{
         right: metrics.margin_x,
         bottom: metrics.margin_bottom,
         display: "flex",
+        flexWrap: "wrap",
         gap: metrics.spacing_lg,
         opacity: enter(frame, STAGGER * 4),
       }}
