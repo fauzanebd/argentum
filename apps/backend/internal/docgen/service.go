@@ -19,6 +19,7 @@
 package docgen
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -172,10 +173,20 @@ func (s *Service) Limits() spec.Limits { return s.limits }
 // and returning nil here keeps the caller from having to ask what format it
 // holds before it can validate.
 func (s *Service) CheckVideoLimits(doc *spec.Document) error {
-	if s == nil || doc == nil || !domain.DocumentFormat(spec.FormatOf(doc)).Async() {
+	if s == nil || doc == nil {
 		return nil
 	}
-	return videoplan.CheckLimits(doc, videoplan.Options{Limits: s.videoLimits})
+	switch domain.DocumentFormat(spec.FormatOf(doc)) {
+	case domain.DocumentFormatMP4:
+		return videoplan.CheckLimits(doc, videoplan.Options{Limits: s.videoLimits})
+	case domain.DocumentFormatCarousel:
+		// The carousel's own caps (T-G6): the slide band rather than scenes
+		// and running time. Same door, same reason — an eleven-slide spec is
+		// refused in milliseconds where the model can still shorten it, not in
+		// a worker a minute later.
+		return videoplan.CheckCarouselLimits(doc, videoplan.Options{Limits: s.videoLimits})
+	}
+	return nil
 }
 
 // PresignTTL is how long a download URL this service issues stays valid.
@@ -231,6 +242,32 @@ type Result struct {
 	// DownloadURL is presigned and expires after PresignTTL.
 	DownloadURL string
 	ExpiresAt   time.Time
+	// Carousel is the manifest of a carousel — caption, hashtags, one alt text
+	// per slide — and nil for every other format (T-G6). The announcement that
+	// posts the slides into the thread is written from it.
+	Carousel *CarouselManifest
+}
+
+// CarouselManifest is what travels with a carousel's pages: everything a
+// publisher needs beside the images. It is stored beside them as
+// `carousel.json` and inside the zip, so the download is self-describing.
+type CarouselManifest struct {
+	Caption  string   `json:"caption,omitempty"`
+	Hashtags []string `json:"hashtags,omitempty"`
+	// Alts is one alt text per page, in page order, from the plan's scenes.
+	Alts  []string `json:"alts"`
+	Pages int      `json:"pages"`
+}
+
+// rendered is what one format's renderer hands back: the document's bytes,
+// the seconds it cost elsewhere, and — for a carousel — the pages that are
+// stored beside the document rather than inside it.
+type rendered struct {
+	data    []byte
+	seconds float64
+	pages   [][]byte
+	// manifest is non-nil only for a carousel.
+	manifest *CarouselManifest
 }
 
 // Generate renders, uploads, persists and meters one document.
@@ -269,10 +306,11 @@ func (s *Service) Generate(ctx context.Context, in Input) (*Result, error) {
 	}
 
 	format := domain.DocumentFormat(in.Spec.Format)
-	data, renderSeconds, err := s.render(ctx, in.Spec, in.CompanyID, in.OnProgress)
+	out, err := s.render(ctx, in.Spec, in.CompanyID, in.OnProgress)
 	if err != nil {
 		return nil, err
 	}
+	data, renderSeconds := out.data, out.seconds
 
 	docID := uuid.New().String()
 	storageKey := s.storageKey(in.CompanyID, in.ThreadID, docID, format)
@@ -280,6 +318,25 @@ func (s *Service) Generate(ctx context.Context, in Input) (*Result, error) {
 
 	if _, err := s.storage.UploadKey(ctx, storageKey, bytes.NewReader(data), format.ContentType()); err != nil {
 		return nil, fmt.Errorf("upload document: %w", err)
+	}
+	// A carousel's pages and manifest sit under the document's own prefix
+	// (T-G6), before the row exists, for the reason the zip does: a page that
+	// fails to upload leaves no row promising a slide that is not there. Keys
+	// under the prefix rather than a second scheme — PlanKey's argument — so a
+	// deletion sweep written against `documents/{company}/` covers them.
+	for i, page := range out.pages {
+		if _, err := s.storage.UploadKey(ctx, PageKey(storageKey, i+1), bytes.NewReader(page), "image/jpeg"); err != nil {
+			return nil, fmt.Errorf("upload page %d: %w", i+1, err)
+		}
+	}
+	if out.manifest != nil {
+		body, err := json.Marshal(out.manifest)
+		if err != nil {
+			return nil, fmt.Errorf("marshal manifest: %w", err)
+		}
+		if _, err := s.storage.UploadKey(ctx, ManifestKey(storageKey), bytes.NewReader(body), "application/json"); err != nil {
+			return nil, fmt.Errorf("upload manifest: %w", err)
+		}
 	}
 
 	source := in.Source
@@ -297,6 +354,7 @@ func (s *Service) Generate(ctx context.Context, in Input) (*Result, error) {
 		SizeBytes:  int64(len(data)),
 		Source:     source,
 		APIKeyID:   in.APIKeyID,
+		PageCount:  len(out.pages),
 	}
 	if err := s.repo.Insert(ctx, doc); err != nil {
 		return nil, fmt.Errorf("persist document: %w", err)
@@ -333,7 +391,7 @@ func (s *Service) Generate(ctx context.Context, in Input) (*Result, error) {
 		"size":        doc.SizeBytes,
 	}).Info("Generated document")
 
-	return &Result{Document: doc, Data: data, DownloadURL: signed, ExpiresAt: expiresAt}, nil
+	return &Result{Document: doc, Data: data, DownloadURL: signed, ExpiresAt: expiresAt, Carousel: out.manifest}, nil
 }
 
 // Presign issues a fresh download URL for an existing document.
@@ -406,6 +464,39 @@ func (s *Service) storageKey(companyID, threadID, docID string, format domain.Do
 // exists.
 func PlanKey(storageKey string) string {
 	return strings.TrimSuffix(storageKey, path.Ext(storageKey)) + ".plan.json"
+}
+
+// PageKey is where page n of a carousel lives: under the document's own key
+// with the extension replaced by a directory, `…/{id}/01.jpg`, 1-based and
+// two digits wide so a listing sorts in page order (T-G6).
+func PageKey(storageKey string, page int) string {
+	return strings.TrimSuffix(storageKey, path.Ext(storageKey)) + fmt.Sprintf("/%02d.jpg", page)
+}
+
+// ManifestKey is where a carousel's manifest lives, beside its pages.
+func ManifestKey(storageKey string) string {
+	return strings.TrimSuffix(storageKey, path.Ext(storageKey)) + "/carousel.json"
+}
+
+// LoadPage reads one page of a carousel.
+//
+// Returns domain.ErrNotFound for a document that is not a carousel, a page
+// under 1 or over the count — the same answer as a missing document, because
+// to the route that serves it those are the same thing: nothing at this path.
+// The count is the row's, not the bucket's, so a made-up page number never
+// reaches storage.
+func (s *Service) LoadPage(ctx context.Context, doc *domain.Document, page int) ([]byte, error) {
+	if s == nil || doc == nil || doc.Format != domain.DocumentFormatCarousel {
+		return nil, domain.ErrNotFound
+	}
+	if page < 1 || page > doc.PageCount {
+		return nil, domain.ErrNotFound
+	}
+	body, err := s.storage.DownloadKey(ctx, PageKey(doc.StorageKey, page))
+	if err != nil {
+		return nil, fmt.Errorf("read page %d: %w", page, err)
+	}
+	return body, nil
 }
 
 // storePlan writes the video plan beside a document, when it has one.
@@ -487,24 +578,146 @@ func (s *Service) LoadPlan(ctx context.Context, doc *domain.Document) ([]byte, e
 // call the service, hand back bytes. Everything after this line — the storage
 // key, the row, the presign, the metering — is the code that already runs for
 // the other four, which is the whole reason there is one `Generate`.
-func (s *Service) render(ctx context.Context, doc *spec.Document, companyID string, onProgress func(float64)) ([]byte, float64, error) {
+func (s *Service) render(ctx context.Context, doc *spec.Document, companyID string, onProgress func(float64)) (*rendered, error) {
 	switch doc.Format {
 	case "pdf":
 		data, err := pdf.Render(doc, s.pdfOptions(ctx, companyID))
-		return data, 0, err
+		return &rendered{data: data}, err
 	case "pptx":
 		data, err := pptx.Render(doc, s.pptxOptions(ctx, companyID))
-		return data, 0, err
+		return &rendered{data: data}, err
 	case "xlsx":
 		data, err := document.RenderXLSX(document.FromReportSpec(doc))
-		return data, 0, err
+		return &rendered{data: data}, err
 	case "csv":
 		data, err := document.RenderCSV(document.FromReportSpec(doc))
-		return data, 0, err
+		return &rendered{data: data}, err
 	case "mp4":
-		return s.renderVideo(ctx, doc, companyID, onProgress)
+		data, seconds, err := s.renderVideo(ctx, doc, companyID, onProgress)
+		return &rendered{data: data, seconds: seconds}, err
+	case "carousel":
+		return s.renderCarousel(ctx, doc, companyID, onProgress)
 	}
-	return nil, 0, fmt.Errorf("unsupported format %q", doc.Format)
+	return nil, fmt.Errorf("unsupported format %q", doc.Format)
+}
+
+// renderCarousel is renderVideo with the time axis removed (T-G6): the same
+// brand, currency and locale, the plan built by videoplan.BuildCarousel on the
+// portrait surface, the pages drawn by the render service one still at a
+// time, and the zip assembled here — Go has archive/zip and the render service
+// deliberately has nothing (decision 5).
+//
+// The zip is the document; the pages are stored beside it by Generate. Both
+// exist because they answer different readers: the zip is what a person
+// downloads and forwards, the pages are what the dashboard shows inline and
+// what a publisher (T-G8) uploads one at a time.
+func (s *Service) renderCarousel(ctx context.Context, doc *spec.Document, companyID string, onProgress func(float64)) (*rendered, error) {
+	if !s.VideoAvailable() {
+		return nil, video.ErrNotConfigured
+	}
+	cfg := s.brandFor(ctx, companyID)
+	plan, err := videoplan.BuildCarousel(doc, videoplan.Options{
+		Brand:    cfg.Video(),
+		Currency: s.currencyFor(ctx, companyID),
+		Locale:   cfg.Locale,
+		Limits:   s.videoLimits,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", video.ErrPlanRejected, err)
+	}
+	res, err := s.video.RenderStills(ctx, plan, onProgress)
+	if err != nil {
+		return nil, err
+	}
+	if len(res.Pages) != len(plan.Scenes) {
+		// The service drew a different number of slides from the plan it was
+		// sent. Nothing downstream can label such a set — the alt texts are
+		// per scene — so it is a service failure, not a page-count surprise.
+		return nil, fmt.Errorf("%w: the render service returned %d pages for %d slides",
+			video.ErrUnavailable, len(res.Pages), len(plan.Scenes))
+	}
+
+	manifest := &CarouselManifest{Alts: make([]string, len(plan.Scenes)), Pages: len(res.Pages)}
+	if doc.Social != nil {
+		manifest.Caption = doc.Social.Caption
+		manifest.Hashtags = doc.Social.Hashtags
+	}
+	for i, sc := range plan.Scenes {
+		manifest.Alts[i] = sc.Alt
+	}
+	data, err := zipCarousel(res.Pages, manifest)
+	if err != nil {
+		return nil, fmt.Errorf("zip carousel: %w", err)
+	}
+	return &rendered{data: data, seconds: res.Seconds, pages: res.Pages, manifest: manifest}, nil
+}
+
+// zipCarousel packs the pages, the caption and the manifest into the download.
+//
+// The caption is a plain text file as well as a manifest field so a person
+// who unzips on a phone can copy it without reading JSON: the way most owners
+// post today is by hand, from the phone, and the zip is for them.
+func zipCarousel(pages [][]byte, m *CarouselManifest) ([]byte, error) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for i, page := range pages {
+		w, err := zw.Create(fmt.Sprintf("%02d.jpg", i+1))
+		if err != nil {
+			return nil, err
+		}
+		if _, err := w.Write(page); err != nil {
+			return nil, err
+		}
+	}
+	if caption := CaptionText(m); caption != "" {
+		w, err := zw.Create("caption.txt")
+		if err != nil {
+			return nil, err
+		}
+		if _, err := w.Write([]byte(caption)); err != nil {
+			return nil, err
+		}
+	}
+	body, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	w, err := zw.Create("carousel.json")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(body); err != nil {
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// CaptionText is the caption as it would be pasted into the post: the text,
+// a blank line, then the hashtags with their "#", which the spec stores
+// without so it is never doubled.
+func CaptionText(m *CarouselManifest) string {
+	if m == nil {
+		return ""
+	}
+	parts := []string{}
+	if strings.TrimSpace(m.Caption) != "" {
+		parts = append(parts, strings.TrimSpace(m.Caption))
+	}
+	if len(m.Hashtags) > 0 {
+		tags := make([]string, 0, len(m.Hashtags))
+		for _, h := range m.Hashtags {
+			if h = strings.TrimLeft(strings.TrimSpace(h), "#"); h != "" {
+				tags = append(tags, "#"+h)
+			}
+		}
+		if len(tags) > 0 {
+			parts = append(parts, strings.Join(tags, " "))
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // renderVideo projects the spec onto a plan and has the render service draw it.

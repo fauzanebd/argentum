@@ -30,7 +30,7 @@ func NewDocumentRepo(db *sql.DB) *DocumentRepo { return &DocumentRepo{db: db} }
 const documentColumns = `
 	id, company_id, COALESCE(thread_id::text, ''), COALESCE(message_id::text, ''),
 	format, filename, storage_key, size_bytes, source,
-	COALESCE(api_key_id::text, ''), created_at`
+	COALESCE(api_key_id::text, ''), created_at, page_count`
 
 // maxDocumentPage bounds a page. A caller asking for 10 000 rows gets 200,
 // silently: the cursor is what makes the rest reachable, and refusing the
@@ -46,7 +46,7 @@ func scanDocument(s interface{ Scan(...any) error }) (*domain.Document, error) {
 	if err := s.Scan(
 		&d.ID, &d.CompanyID, &d.ThreadID, &d.MessageID,
 		&format, &d.Filename, &d.StorageKey, &d.SizeBytes, &source,
-		&d.APIKeyID, &d.CreatedAt,
+		&d.APIKeyID, &d.CreatedAt, &d.PageCount,
 	); err != nil {
 		return nil, err
 	}
@@ -60,18 +60,18 @@ func scanDocument(s interface{ Scan(...any) error }) (*domain.Document, error) {
 // deterministic key before persisting metadata).
 func (r *DocumentRepo) Insert(ctx context.Context, d *domain.Document) error {
 	const q = `
-		INSERT INTO documents (id, company_id, thread_id, message_id, format, filename, storage_key, size_bytes, source, api_key_id)
+		INSERT INTO documents (id, company_id, thread_id, message_id, format, filename, storage_key, size_bytes, source, api_key_id, page_count)
 		VALUES (
 			COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()),
 			$2, NULLIF($3, '')::uuid, NULLIF($4, '')::uuid, $5, $6, $7, $8,
-			COALESCE(NULLIF($9, ''), 'agent'), NULLIF($10, '')::uuid
+			COALESCE(NULLIF($9, ''), 'agent'), NULLIF($10, '')::uuid, $11
 		)
 		RETURNING id, created_at
 	`
 	return r.db.QueryRowContext(ctx, q,
 		d.ID, d.CompanyID, d.ThreadID, d.MessageID,
 		string(d.Format), d.Filename, d.StorageKey, d.SizeBytes,
-		string(d.Source), d.APIKeyID,
+		string(d.Source), d.APIKeyID, d.PageCount,
 	).Scan(&d.ID, &d.CreatedAt)
 }
 

@@ -18,11 +18,19 @@ const (
 	// takes minutes rather than milliseconds, which is why every door that
 	// serves it is asynchronous.
 	DocumentFormatMP4 DocumentFormat = "mp4"
+	// DocumentFormatCarousel is the same report spec as two to ten portrait
+	// slides for a social feed (T-G6): the video with the time axis removed,
+	// drawn by the same render service one still at a time. The document is
+	// the zip of the pages plus the caption; the pages are stored beside it and
+	// served one at a time by an authenticated route, because an image in a
+	// persisted message cannot be re-signed on click the way a link can
+	// (decision 6). Async for the same reason mp4 is.
+	DocumentFormatCarousel DocumentFormat = "carousel"
 )
 
 func (f DocumentFormat) Valid() bool {
 	switch f {
-	case DocumentFormatPDF, DocumentFormatXLSX, DocumentFormatCSV, DocumentFormatPPTX, DocumentFormatMP4:
+	case DocumentFormatPDF, DocumentFormatXLSX, DocumentFormatCSV, DocumentFormatPPTX, DocumentFormatMP4, DocumentFormatCarousel:
 		return true
 	}
 	return false
@@ -30,8 +38,18 @@ func (f DocumentFormat) Valid() bool {
 
 // Async reports whether producing this format is too slow to hold a request
 // open for. One predicate rather than `format == mp4` at four call sites: the
-// next slow format must not have to find them all.
-func (f DocumentFormat) Async() bool { return f == DocumentFormatMP4 }
+// next slow format must not have to find them all — and the carousel did not.
+func (f DocumentFormat) Async() bool {
+	return f == DocumentFormatMP4 || f == DocumentFormatCarousel
+}
+
+// Rendered reports whether this format is drawn by the render service rather
+// than in this process. Both async formats are; the predicate is separate from
+// Async because the two questions — "can a request wait for it" and "does it
+// need `apps/render`" — happen to agree today and are not the same question.
+func (f DocumentFormat) Rendered() bool {
+	return f == DocumentFormatMP4 || f == DocumentFormatCarousel
+}
 
 func (f DocumentFormat) Extension() string {
 	switch f {
@@ -45,6 +63,8 @@ func (f DocumentFormat) Extension() string {
 		return "pptx"
 	case DocumentFormatMP4:
 		return "mp4"
+	case DocumentFormatCarousel:
+		return "zip"
 	}
 	return ""
 }
@@ -61,6 +81,8 @@ func (f DocumentFormat) ContentType() string {
 		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 	case DocumentFormatMP4:
 		return "video/mp4"
+	case DocumentFormatCarousel:
+		return "application/zip"
 	}
 	return "application/octet-stream"
 }
@@ -106,6 +128,11 @@ type Document struct {
 	// only thing that knows, and a boolean in Postgres saying otherwise is a
 	// second answer that can drift from the bucket.
 	HasPlan bool `json:"has_plan,omitempty"`
+	// PageCount is how many slides a carousel has, zero for every other format
+	// (T-G6). Unlike HasPlan it **is** a column: it is fixed when the pages are
+	// written and never drifts, and the list endpoint needs it without N
+	// object-store reads to say "7 slides" on a row.
+	PageCount int `json:"page_count,omitempty"`
 }
 
 // DocumentFilter narrows a company-scoped document listing. A zero value

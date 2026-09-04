@@ -155,6 +155,15 @@ There is no create or update route. A dashboard is authored by the agent through
 
 ---
 
+### Documents
+
+Generated documents, for the dashboard (the integrator surface is `/v1/documents`).
+
+| Method | Path | Role | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/documents` | member | The newest 50 for the company, each with a presigned `download_url` minted per read; `page_count` on a `carousel` row |
+| `GET` | `/api/documents/:id/pages/:page` | member | One slide of a carousel as `image/jpeg`, `Cache-Control: private, max-age=3600`. `404` for another company's id, a page under 1 or over `page_count`, or a document with no pages. The dashboard fetches these through its API client rather than an `<img src>`, because a persisted message never carries a presigned image URL (T-G6) |
+
 ### Jobs *(only when WhatsApp integration enabled)*
 
 | Method | Path | Description |

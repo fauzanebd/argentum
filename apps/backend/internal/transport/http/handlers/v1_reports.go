@@ -183,15 +183,15 @@ func (h *V1ReportsHandler) render(c *gin.Context) {
 	// refused rather than honoured four minutes later, because a caller who
 	// asked for bytes and got a 202 with a JSON body has to write the
 	// collection path anyway. Better to be told so in milliseconds.
-	if domain.DocumentFormat(spec.FormatOf(&doc)).Async() {
+	if format := domain.DocumentFormat(spec.FormatOf(&doc)); format.Async() {
 		if h.gen != nil && !h.gen.VideoAvailable() {
 			apierr.AbortParam(c, apierr.TypeInvalidRequest, "format_unavailable",
-				"Video rendering is not configured on this deployment. Every other format is available.", "format")
+				"Video and carousel rendering is not configured on this deployment. Every other format is available.", "format")
 			return
 		}
-		if wantsBytes(c, domain.DocumentFormatMP4) {
+		if wantsBytes(c, format) {
 			apierr.Abort(c, apierr.TypeInvalidRequest, "async_format",
-				"A video is rendered asynchronously and cannot be returned inline. Send `Accept: application/json`; "+
+				"A "+string(format)+" is rendered asynchronously and cannot be returned inline. Send `Accept: application/json`; "+
 					"this answers 202 with a report id, collectable from GET /v1/reports/:id, "+
 					"GET /v1/reports/:id/events, or a `callback_url`.")
 			return
@@ -534,7 +534,7 @@ func (h *V1ReportsHandler) createReport(c *gin.Context) {
 	}
 	if !format.Valid() {
 		apierr.AbortParam(c, apierr.TypeInvalidRequest, "invalid_format",
-			"`format` must be one of pdf, pptx, xlsx, csv, mp4.", "format")
+			"`format` must be one of pdf, pptx, xlsx, csv, mp4, carousel.", "format")
 		return
 	}
 	// **The agentic door does not do video, and says so** (T-V3).
@@ -551,9 +551,9 @@ func (h *V1ReportsHandler) createReport(c *gin.Context) {
 	// where to go.
 	if format.Async() {
 		apierr.AbortParam(c, apierr.TypeInvalidRequest, "format_not_supported_here",
-			"A video cannot be produced by the agentic door, because the render outlives the turn "+
+			"A "+string(format)+" cannot be produced by the agentic door, because the render outlives the turn "+
 				"and this report would complete before the file existed. Send the spec to "+
-				"POST /v1/reports/render with `format: \"mp4\"`, or ask for a pdf or pptx here.", "format")
+				"POST /v1/reports/render with `format: \""+string(format)+"\"`, or ask for a pdf or pptx here.", "format")
 		return
 	}
 	if req.UserRef == "" && req.ThreadID == "" {

@@ -71,11 +71,12 @@ func (t *GenerateDocumentTool) videoAvailable() bool {
 }
 
 // formats is the enum the model sees, narrowed to what this process can
-// actually produce.
+// actually produce. The carousel rides the video's condition (T-G6): the same
+// render service draws both, and the same queue finishes both after the turn.
 func (t *GenerateDocumentTool) formats() []interface{} {
 	out := []interface{}{"pdf", "pptx", "xlsx", "csv"}
 	if t.videoAvailable() {
-		out = append(out, "mp4")
+		out = append(out, "mp4", "carousel")
 	}
 	return out
 }
@@ -86,7 +87,8 @@ func (t *GenerateDocumentTool) Description() string {
 	video := ""
 	if t.videoAvailable() {
 		video = `
-- "mp4"  a silent narrated-on-screen video of the same report, 1080p. Choose it only when the user asks for a video, or for something they will watch without you in the room — a weekly summary sent to a group chat, an update for people who will not open a PDF. It takes several minutes and costs far more than a PDF, so it is never the default for "make me a report", and it is refused for a document that is a record rather than an argument: an invoice, an agreement or a data export must be a PDF. This tool returns as soon as the render starts; the video is posted into this conversation when it is done, so tell the user it is being made and do not claim it is ready.`
+- "mp4"  a silent narrated-on-screen video of the same report, 1080p. Choose it only when the user asks for a video, or for something they will watch without you in the room — a weekly summary sent to a group chat, an update for people who will not open a PDF. It takes several minutes and costs far more than a PDF, so it is never the default for "make me a report", and it is refused for a document that is a record rather than an argument: an invoice, an agreement or a data export must be a PDF. This tool returns as soon as the render starts; the video is posted into this conversation when it is done, so tell the user it is being made and do not claim it is ready.
+- "carousel" when the user asks for a social post, a carousel, or slides for Instagram: 2–10 portrait image slides built from the figures you have just verified, plus a caption. Same content.sections as a report — a cover, a kpi_row, a chart, a short table, a callout each become one slide, so keep it to the sections that carry the story; more than ten slides is refused with the count. Give the post text in "social": {"caption": "...", "hashtags": ["tag", ...]} — never invent a number for the caption. It is posted into this conversation as images when it is done, so tell the user it is being made and do not claim it is ready.`
 	}
 	return strings.TrimSpace(`
 Generate a downloadable document (PDF, PPTX, XLSX, CSV` + videoInEnum(t.videoAvailable()) + `) from a structured spec and return a presigned download URL. Generic-purpose: use for invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports, slide decks — anything the user wants to download as a file.
@@ -154,7 +156,7 @@ Returns JSON with download_url (presigned, expires after ~1 hour). Embed the URL
 // deployment can produce, in the same breath as the enum that enforces it.
 func videoInEnum(ok bool) string {
 	if ok {
-		return ", or MP4"
+		return ", MP4, or an Instagram carousel"
 	}
 	return ""
 }
@@ -163,9 +165,14 @@ func (t *GenerateDocumentTool) Parameters() map[string]interfaces.ParameterSpec 
 	return map[string]interfaces.ParameterSpec{
 		"format": {
 			Type:        "string",
-			Description: "Output format. Use pptx for anything that will be presented; mp4 only when the recipient will watch it without you there.",
+			Description: "Output format. Use pptx for anything that will be presented; mp4 only when the recipient will watch it without you there; carousel for a social post with image slides.",
 			Required:    true,
 			Enum:        t.formats(),
+		},
+		"social": {
+			Type:        "object",
+			Description: "For format carousel only: {caption: string (≤2200 chars, the post text — figures in it must come from queries you ran), hashtags: [string] (≤30, without the #)}.",
+			Required:    false,
 		},
 		"filename": {
 			Type:        "string",
@@ -254,7 +261,7 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 	// hands the job to the queue and answers immediately; the worker posts the
 	// finished file into this thread.
 	if domain.DocumentFormat(input.Format).Async() {
-		return t.enqueueVideo(ctx, input, companyID, threadID)
+		return t.enqueueRender(ctx, input, companyID, threadID)
 	}
 
 	res, err := t.docs.Generate(ctx, docgen.Input{
@@ -290,17 +297,21 @@ func (t *GenerateDocumentTool) Execute(ctx context.Context, args string) (string
 	return string(out), nil
 }
 
-// enqueueVideo validates the spec, hands the render to the queue and tells the
-// model what to say.
+// enqueueRender validates the spec, hands the render to the queue and tells
+// the model what to say. It is the door for both formats the render service
+// draws — the video (T-V3) and the carousel (T-G6) — because everything about
+// leaving the turn is the same for the two.
 //
 // Everything that can refuse this spec runs **here**, in the turn, where the
 // model can still repair it: a spec refused by the worker four minutes later
 // is a refusal nobody is left to act on, and the user has already been told a
 // video is coming. That is the same reason `CheckNarrative` is an error rather
-// than a warning.
-func (t *GenerateDocumentTool) enqueueVideo(ctx context.Context, input spec.Document, companyID, threadID string) (string, error) {
+// than a warning — and why the slide band is checked here too: an
+// eleven-slide carousel is the model's spec to shorten, now.
+func (t *GenerateDocumentTool) enqueueRender(ctx context.Context, input spec.Document, companyID, threadID string) (string, error) {
+	noun := renderNoun(domain.DocumentFormat(input.Format))
 	if !t.videoAvailable() {
-		return "", fmt.Errorf("video rendering is not available on this deployment; produce this report as a pdf or a pptx instead")
+		return "", fmt.Errorf("%s rendering is not available on this deployment; produce this report as a pdf or a pptx instead", noun)
 	}
 	input.Normalize()
 	if err := input.Validate(); err != nil {
@@ -309,20 +320,32 @@ func (t *GenerateDocumentTool) enqueueVideo(ctx context.Context, input spec.Docu
 	if err := spec.CheckNarrative(&input); err != nil {
 		return "", err
 	}
+	if err := t.docs.CheckVideoLimits(&input); err != nil {
+		return "", err
+	}
 	if _, err := t.renders.EnqueueReportRender(ctx, queue.ReportRenderPayload{
 		CompanyID: companyID,
 		ThreadID:  threadID,
 		AgentID:   agentscope.AgentID(ctx),
 		Spec:      input,
 	}); err != nil {
-		return "", fmt.Errorf("the video could not be queued: %w", err)
+		return "", fmt.Errorf("the %s could not be queued: %w", noun, err)
 	}
 
 	out, _ := json.Marshal(map[string]interface{}{
 		"status": "rendering",
-		"format": "mp4",
-		"note": "The video is being rendered and will be posted into this conversation when it is done, in a few minutes. " +
-			"Tell the user that in your reply — do not say it is ready, do not offer a link, and do not call this tool again for the same video.",
+		"format": input.Format,
+		"note": "The " + noun + " is being rendered and will be posted into this conversation when it is done, in a few minutes. " +
+			"Tell the user that in your reply — do not say it is ready, do not offer a link, and do not call this tool again for the same " + noun + ".",
 	})
 	return string(out), nil
+}
+
+// renderNoun is the word the model and the user read for a format the render
+// service draws.
+func renderNoun(f domain.DocumentFormat) string {
+	if f == domain.DocumentFormatCarousel {
+		return "carousel"
+	}
+	return "video"
 }

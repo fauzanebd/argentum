@@ -114,7 +114,31 @@ type Document struct {
 
 	Meta    Meta    `json:"meta,omitzero"`
 	Content Content `json:"content"`
+
+	// Social is what travels with the slides of a carousel (T-G6): the caption
+	// and the hashtags. It is the one piece of a carousel the model writes
+	// rather than the renderer, because a caption is prose about the figures
+	// and the figures are the model's. Ignored by every other format.
+	Social *Social `json:"social,omitempty"`
 }
+
+// Social is a post's text, bounded by the platform it is written for.
+//
+// The caps are Instagram's — 2 200 characters of caption, 30 hashtags — and a
+// spec over either is refused rather than truncated, for the reason the slide
+// band is: which sentence to cut is the model's decision about its own
+// argument, and a caption that ends mid-word on the phone is worse than a
+// refusal in the turn.
+type Social struct {
+	Caption  string   `json:"caption,omitempty"`
+	Hashtags []string `json:"hashtags,omitempty"`
+}
+
+// The platform's caps on a post's text.
+const (
+	MaxCaptionChars = 2200
+	MaxHashtags     = 30
+)
 
 // Meta is what lands in the PDF's info dictionary. A document that leaves the
 // building with an empty Title in its properties is one a records system

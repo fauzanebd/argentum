@@ -345,6 +345,7 @@ class ReportSpec(TypedDict, total=False):
     generated_at: str
     meta: ReportSpecMeta
     content: ReportSpecContent
+    social: ReportSpecSocial
 
 
 class ReportSpecAxis(TypedDict, total=False):
@@ -452,6 +453,17 @@ class ReportSpecSheet(TypedDict, total=False):
     name: str
     columns: List[ReportSpecColumn]
     rows: List[List[ReportSpecCell]]
+
+
+class ReportSpecSocial(TypedDict, total=False):
+    """The post's text, for `format: carousel` and ignored by every other
+    format. Bounded by the platform it is written for and refused rather
+    than truncated over the bound: a caption of at most 2 200 characters and
+    at most 30 hashtags, given without the `#` (the renderer writes it
+    once). Both land in the zip's `caption.txt` and in `carousel.json`.
+    """
+    caption: str
+    hashtags: List[str]
 
 
 class ReportSpecTable(TypedDict, total=False):
@@ -583,7 +595,7 @@ ChatEventMessage = Message
 
 ChatEvent = Union[ChatEventStarted, ChatEventDelta, ChatEventThinking, ChatEventTool, ChatEventMessage, ChatEventError, ChatEventFinal]
 
-DocumentFormat = Literal["pdf", "pptx", "xlsx", "csv", "mp4"]
+DocumentFormat = Literal["pdf", "pptx", "xlsx", "csv", "mp4", "carousel"]
 
 ReportEventReport = Report
 
@@ -637,6 +649,7 @@ __all__ = [
     "ReportSpecSection",
     "ReportSpecSeries",
     "ReportSpecSheet",
+    "ReportSpecSocial",
     "ReportSpecTable",
     "Scope",
     "Thread",

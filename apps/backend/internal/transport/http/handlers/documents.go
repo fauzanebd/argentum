@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -34,6 +37,7 @@ func NewDocumentsHandler(docs domain.DocumentRepository, gen *docgen.Service) *D
 
 func (h *DocumentsHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/documents", h.list)
+	rg.GET("/documents/:id/pages/:page", h.page)
 }
 
 type dashboardDocument struct {
@@ -54,6 +58,10 @@ type dashboardDocument struct {
 	// authoritative answer — the plan is there or it is not — is given by the
 	// share route when somebody actually presses the button.
 	Shareable bool `json:"shareable"`
+	// PageCount is a carousel's slide count, absent for every other format
+	// (T-G6). The pages themselves are one `GET /api/documents/:id/pages/:n`
+	// each, through the same session as the list.
+	PageCount int `json:"page_count,omitempty"`
 }
 
 func (h *DocumentsHandler) list(c *gin.Context) {
@@ -67,7 +75,7 @@ func (h *DocumentsHandler) list(c *gin.Context) {
 		row := dashboardDocument{
 			ID: d.ID, Filename: d.Filename, Format: string(d.Format),
 			SizeBytes: d.SizeBytes, Source: string(d.Source), ThreadID: d.ThreadID,
-			CreatedAt: d.CreatedAt,
+			CreatedAt: d.CreatedAt, PageCount: d.PageCount,
 			Shareable: d.Format == domain.DocumentFormatMP4 ||
 				d.Format == domain.DocumentFormatPDF ||
 				d.Format == domain.DocumentFormatPPTX,
@@ -83,4 +91,51 @@ func (h *DocumentsHandler) list(c *gin.Context) {
 		out = append(out, row)
 	}
 	c.JSON(http.StatusOK, gin.H{"documents": out})
+}
+
+// page is `GET /api/documents/:id/pages/:page`: one slide of a carousel, as
+// JPEG, to the session that asked (T-G6, decision 6).
+//
+// An image in a persisted message cannot carry a presigned URL — the presign
+// TTL is an hour and an `<img>` cannot be re-signed on click the way a link
+// can — so the dashboard fetches pages through its API client, with the
+// bearer header an `<img src>` cannot send, and this route serves them. It is
+// company-scoped by the query (GetForCompany), so another tenant's id is a
+// not-found rather than a comparison somebody has to remember; a page past the
+// count is a not-found for the same reason a missing document is.
+func (h *DocumentsHandler) page(c *gin.Context) {
+	ctx := c.Request.Context()
+	doc, err := h.docs.GetForCompany(ctx, companyID(c), c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+	page, err := strconv.Atoi(c.Param("page"))
+	if err != nil || page < 1 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no such page"})
+		return
+	}
+	if h.gen == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "document contents are not available on this deployment"})
+		return
+	}
+	body, err := h.gen.LoadPage(ctx, doc, page)
+	if errors.Is(err, domain.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no such page"})
+		return
+	}
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id":  doc.CompanyID,
+			"document_id": doc.ID,
+			"page":        page,
+		}).Error("carousel page read failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "page could not be read"})
+		return
+	}
+	// Private: the page is one tenant's figures, and a shared cache must not
+	// serve it to the next session. An hour matches the presign TTL, so a
+	// reload inside the hour costs nothing and a reload after it is one read.
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.Data(http.StatusOK, "image/jpeg", body)
 }

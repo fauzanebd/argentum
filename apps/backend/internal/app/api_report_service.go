@@ -340,13 +340,65 @@ func (s *APIReportService) runThreadRender(ctx context.Context, p queue.ReportRe
 		logrus.WithError(err).WithFields(logrus.Fields{
 			"company_id": p.CompanyID,
 			"thread_id":  p.ThreadID,
-		}).Warn("threaded video render failed")
-		s.announce(ctx, p, renderFailureMessage(err))
+			"format":     spec.Format,
+		}).Warn("threaded render failed")
+		s.announceWith(ctx, p, renderFailureMessage(err), map[string]interface{}{"format": spec.Format})
 		return nil
 	}
-	s.announce(ctx, p, fmt.Sprintf("Your video is ready: [%s](%s). The link expires in about an hour; ask again and I will produce a fresh one.",
-		res.Document.Filename, res.DownloadURL))
+	if res.Document.Format == domain.DocumentFormatCarousel {
+		s.announceWith(ctx, p, carouselMessage(res), map[string]interface{}{
+			"format":      string(domain.DocumentFormatCarousel),
+			"document_id": res.Document.ID,
+			"page_count":  res.Document.PageCount,
+		})
+		return nil
+	}
+	s.announceWith(ctx, p, fmt.Sprintf("Your video is ready: [%s](%s). The link expires in about an hour; ask again and I will produce a fresh one.",
+		res.Document.Filename, res.DownloadURL), map[string]interface{}{"format": string(res.Document.Format)})
 	return nil
+}
+
+// carouselMessage is the assistant message a finished carousel becomes (T-G6):
+// the caption in a fenced block so it copies clean, the hashtags, one image
+// per slide, and the zip.
+//
+// **The images point at our own authenticated route, never at a presigned
+// URL** (decision 6). This message is persisted, and a presigned image URL in
+// it is a row of broken images on tomorrow's reload; the dashboard's markdown
+// renderer fetches `/api/documents/:id/pages/:n` through its API client, with
+// the bearer header an `<img src>` cannot send. The zip link is presigned, as
+// every other document's is — the rule is only that an *image* in persisted
+// content is never presigned.
+func carouselMessage(res *docgen.Result) string {
+	var b strings.Builder
+	n := res.Document.PageCount
+	fmt.Fprintf(&b, "Your carousel is ready — %d slides.\n\n", n)
+	if caption := docgen.CaptionText(res.Carousel); caption != "" {
+		b.WriteString("**Caption**\n\n```text\n")
+		b.WriteString(caption)
+		b.WriteString("\n```\n\n")
+	}
+	for i := 1; i <= n; i++ {
+		alt := ""
+		if res.Carousel != nil && i-1 < len(res.Carousel.Alts) {
+			alt = res.Carousel.Alts[i-1]
+		}
+		fmt.Fprintf(&b, "![%s](/api/documents/%s/pages/%d)\n", altLabel(i, alt), res.Document.ID, i)
+	}
+	fmt.Fprintf(&b, "\n[Download all slides (%s)](%s) — the link expires in about an hour; ask again and I will produce a fresh one.",
+		res.Document.Filename, res.DownloadURL)
+	return b.String()
+}
+
+// altLabel is the markdown alt for slide i: "Slide 3 — <alt>", with the
+// characters that would end the alt early removed. The alt is also what the
+// renderer shows while the image loads and if it cannot.
+func altLabel(i int, alt string) string {
+	alt = strings.NewReplacer("[", "(", "]", ")", "\n", " ").Replace(strings.TrimSpace(alt))
+	if alt == "" {
+		return fmt.Sprintf("Slide %d", i)
+	}
+	return fmt.Sprintf("Slide %d — %s", i, alt)
 }
 
 // announce writes one assistant message and publishes it.
@@ -356,16 +408,27 @@ func (s *APIReportService) runThreadRender(ctx context.Context, p queue.ReportRe
 // the second true. A publish failure is logged and swallowed — the message is
 // in the thread either way.
 func (s *APIReportService) announce(ctx context.Context, p queue.ReportRenderPayload, content string) {
+	s.announceWith(ctx, p, content, nil)
+}
+
+// announceWith is announce with extra metadata on the message — the format,
+// and for a carousel the document id and page count, so a client can find the
+// slides without parsing the prose (T-G6). `kind` is always render_result.
+func (s *APIReportService) announceWith(ctx context.Context, p queue.ReportRenderPayload, content string, extra map[string]interface{}) {
 	if s.announcer == nil {
 		logrus.WithField("thread_id", p.ThreadID).
-			Warn("no thread announcer: a rendered video will not be announced in its thread")
+			Warn("no thread announcer: a rendered document will not be announced in its thread")
 		return
+	}
+	metadata := map[string]interface{}{"kind": "render_result"}
+	for k, v := range extra {
+		metadata[k] = v
 	}
 	msg := &domain.Message{
 		ThreadID: p.ThreadID,
 		Role:     domain.MessageRoleAssistant,
 		Content:  content,
-		Metadata: map[string]interface{}{"kind": "render_result"},
+		Metadata: metadata,
 	}
 	if err := s.announcer.Append(ctx, msg); err != nil {
 		logrus.WithError(err).WithField("thread_id", p.ThreadID).
@@ -433,9 +496,11 @@ func renderFailureMessage(err error) string {
 	case errors.Is(err, video.ErrPlanRejected):
 		// The renderer's own words: they name the cap and the observed value,
 		// which is the whole reason those messages are written the way they are.
-		return "This spec cannot be rendered as a video: " + unwrapMessage(err)
+		// "rendered" rather than "rendered as a video" since T-G6: the same
+		// sentinel covers a carousel, and the reason names the format itself.
+		return "This spec cannot be rendered: " + unwrapMessage(err)
 	case errors.Is(err, video.ErrUnavailable):
-		return "The video render service did not answer. Nothing was billed for the render; try again."
+		return "The render service did not answer. Nothing was billed for the render; try again."
 	}
 	return "The document could not be rendered from this spec."
 }

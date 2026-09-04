@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useIsAdmin } from "@/store/auth";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { CarouselImage } from "@/features/chat/carousel-image";
 
 /**
  * Documents, and the links that play them (T-V4).
@@ -25,6 +26,8 @@ type Document = {
   created_at: string;
   download_url?: string;
   shareable: boolean;
+  /** A carousel's slide count; absent for every other format (T-G6). */
+  page_count?: number;
 };
 
 type Share = {
@@ -75,12 +78,27 @@ export function DocumentsPage() {
         {data.map((doc) => (
           <div key={doc.id} className="p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate font-medium">{doc.filename}</p>
-                <p className="text-xs text-muted-foreground">
-                  {doc.format.toUpperCase()} · {formatBytes(doc.size_bytes)} ·{" "}
-                  {new Date(doc.created_at).toLocaleString()}
-                </p>
+              <div className="flex min-w-0 items-center gap-3">
+                {doc.format === "carousel" && doc.page_count ? (
+                  // The first slide, through the same authenticated loader the
+                  // chat uses — never a presigned image (T-G6).
+                  <CarouselImage
+                    documentId={doc.id}
+                    page={1}
+                    alt={`${doc.filename}, slide 1`}
+                    className="w-12 rounded-md border border-border"
+                  />
+                ) : null}
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{doc.filename}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {doc.format.toUpperCase()}
+                    {doc.format === "carousel" && doc.page_count
+                      ? ` · ${doc.page_count} slides`
+                      : ""}{" "}
+                    · {formatBytes(doc.size_bytes)} · {new Date(doc.created_at).toLocaleString()}
+                  </p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {doc.download_url ? (

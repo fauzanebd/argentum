@@ -653,9 +653,19 @@ export interface components {
          *     record such as an invoice cannot be scanned in a video. A deployment
          *     with no render service refuses it with `format_unavailable` and serves
          *     every other format as before.
+         *
+         *     `carousel` is the same report spec as two to ten 1080×1350 JPEG slides
+         *     for a social feed, drawn by the same render service, and it follows
+         *     every rule above: asynchronous, an argument about data rather than a
+         *     record, refused where there is no render service. The document is a
+         *     zip of the pages, a `caption.txt` and a `carousel.json` manifest
+         *     (caption, hashtags, one alt text per slide); the spec may carry
+         *     `social.caption` (≤ 2 200 characters) and `social.hashtags` (≤ 30).
+         *     A spec whose sections make fewer than two or more than ten slides is
+         *     refused with the count, not truncated.
          * @enum {string}
          */
-        DocumentFormat: "pdf" | "pptx" | "xlsx" | "csv" | "mp4";
+        DocumentFormat: "pdf" | "pptx" | "xlsx" | "csv" | "mp4" | "carousel";
         /** @description One generated file. */
         Document: {
             /** Format: uuid */
@@ -1035,6 +1045,18 @@ export interface components {
             generated_at?: string;
             meta?: components["schemas"]["ReportSpecMeta"];
             content: components["schemas"]["ReportSpecContent"];
+            social?: components["schemas"]["ReportSpecSocial"];
+        };
+        /**
+         * @description The post's text, for `format: carousel` and ignored by every other
+         *     format. Bounded by the platform it is written for and refused rather
+         *     than truncated over the bound: a caption of at most 2 200 characters
+         *     and at most 30 hashtags, given without the `#` (the renderer writes it
+         *     once). Both land in the zip's `caption.txt` and in `carousel.json`.
+         */
+        ReportSpecSocial: {
+            caption?: string;
+            hashtags?: string[];
         };
         /**
          * @description What lands in the PDF's info dictionary. A document that leaves the

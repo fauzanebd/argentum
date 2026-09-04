@@ -3,6 +3,7 @@ package spec
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // knownSections is the closed set. Listing it in the error message matters
@@ -21,6 +22,19 @@ func (d *Document) Normalize() {
 	d.Format = strings.ToLower(strings.TrimSpace(d.Format))
 	d.Locale = strings.ToLower(strings.TrimSpace(d.Locale))
 	d.Currency = strings.ToUpper(strings.TrimSpace(d.Currency))
+	if d.Social != nil {
+		// "#promo", " promo " and "promo" are one hashtag. The renderer writes
+		// the "#" once, on the way out, so it is never doubled.
+		d.Social.Caption = strings.TrimSpace(d.Social.Caption)
+		tags := d.Social.Hashtags[:0]
+		for _, h := range d.Social.Hashtags {
+			h = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(h), "#"))
+			if h != "" {
+				tags = append(tags, h)
+			}
+		}
+		d.Social.Hashtags = tags
+	}
 	for i := range d.Content.Sections {
 		s := &d.Content.Sections[i]
 		s.Type = strings.ToLower(strings.TrimSpace(s.Type))
@@ -38,9 +52,18 @@ func (d *Document) Normalize() {
 // Validate gives early, actionable errors before a renderer is reached.
 func (d *Document) Validate() error {
 	switch d.Format {
-	case "pdf", "xlsx", "csv", "pptx", "mp4":
+	case "pdf", "xlsx", "csv", "pptx", "mp4", "carousel":
 	default:
-		return fmt.Errorf("format must be one of pdf|xlsx|csv|pptx|mp4 (got %q)", d.Format)
+		return fmt.Errorf("format must be one of pdf|xlsx|csv|pptx|mp4|carousel (got %q)", d.Format)
+	}
+
+	if d.Social != nil {
+		if n := utf8.RuneCountInString(d.Social.Caption); n > MaxCaptionChars {
+			return fmt.Errorf("social.caption is %d characters and the cap is %d — shorten it", n, MaxCaptionChars)
+		}
+		if n := len(d.Social.Hashtags); n > MaxHashtags {
+			return fmt.Errorf("social.hashtags has %d entries and the cap is %d — keep the ones that matter", n, MaxHashtags)
+		}
 	}
 
 	switch d.Format {
@@ -63,9 +86,9 @@ func (d *Document) Validate() error {
 		if len(d.Content.Sections) == 0 && d.Content.Table == nil {
 			return fmt.Errorf("%s requires content.sections or content.table", d.Format)
 		}
-	case "mp4":
+	case "mp4", "carousel":
 		if len(d.Content.Sections) == 0 && d.Content.Table == nil {
-			return fmt.Errorf("mp4 requires content.sections or content.table")
+			return fmt.Errorf("%s requires content.sections or content.table", d.Format)
 		}
 		// The one format that refuses a document it could render.
 		//
@@ -77,10 +100,14 @@ func (d *Document) Validate() error {
 		// uses for the mirror-image judgement, so the two cannot disagree about
 		// which documents are making an argument.
 		if !Analytical(d) {
-			return fmt.Errorf("mp4 is for reports that make an argument about data, and this document has neither a " +
-				"\"kpi_row\" nor a \"chart\" in it: a record — an invoice, an agreement, a data export — is worse as a " +
-				"video than as a PDF, because the reader cannot scan it or find one line. Render this as \"pdf\", or add " +
-				"the figures the video would be about")
+			medium := "video"
+			if d.Format == "carousel" {
+				medium = "carousel"
+			}
+			return fmt.Errorf("%s is for reports that make an argument about data, and this document has neither a "+
+				"\"kpi_row\" nor a \"chart\" in it: a record — an invoice, an agreement, a data export — is worse as a "+
+				"%s than as a PDF, because the reader cannot scan it or find one line. Render this as \"pdf\", or add "+
+				"the figures the %s would be about", d.Format, medium, medium)
 		}
 	}
 

@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "@/components/ui/code-block";
+import { CarouselImage, hasPageImage, pageFrom } from "./carousel-image";
 
 // recharts is ~390 kB and most turns never draw a chart, so the panel renderer
 // arrives with the first dashboard link rather than with the app.
@@ -98,14 +99,30 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
               </a>
             );
           },
+          // A carousel's slides (T-G6): a same-origin page image is fetched
+          // through the API client, because the route is authenticated and
+          // an <img src> cannot send the bearer. Any other image is what
+          // markdown makes of it.
+          img: ({ src, alt }) => {
+            const page = pageFrom(src);
+            if (page) {
+              return <CarouselImage documentId={page.documentId} page={page.page} alt={alt ?? ""} />;
+            }
+            return <img src={src} alt={alt ?? ""} className="max-w-full rounded-md" />;
+          },
           // A paragraph holding an embed becomes a <div>, and only that one.
           // `<p>` may contain phrasing content and nothing else, so the tag has
           // to give way to the panels rather than the panels to the tag —
           // and a div carrying the same spacing keeps prose that shares the
           // paragraph ("Here it is: <link> — note the window") reading as it
           // did. Every other paragraph in every other message is untouched.
+          //
+          // A paragraph of slides becomes the strip: a horizontal, snapping
+          // row at 4:5, which is the swipe the reader will have on the phone.
           p: ({ node, children }) =>
-            hasDashboardLink(node) ? (
+            hasPageImage(node) ? (
+              <div className="my-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2">{children}</div>
+            ) : hasDashboardLink(node) ? (
               <div className="my-1.5">{children}</div>
             ) : (
               <p>{children}</p>

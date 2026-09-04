@@ -59,6 +59,13 @@ type Result struct {
 	Seconds float64
 }
 
+// StillsResult is one finished carousel: the pages, in order, as JPEG bytes
+// (T-G6). Seconds is the same wall clock the video reports.
+type StillsResult struct {
+	Pages   [][]byte
+	Seconds float64
+}
+
 // Options configures a Client.
 type Options struct {
 	// BaseURL of the render service, e.g. http://argentum-render:8090. Empty
@@ -135,7 +142,7 @@ func (c *Client) Render(ctx context.Context, plan *videoplan.Plan, onProgress fu
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	jobID, err := c.submit(ctx, plan)
+	jobID, err := c.submit(ctx, plan, "video")
 	if err != nil {
 		return nil, err
 	}
@@ -189,6 +196,79 @@ func (c *Client) Render(ctx context.Context, plan *videoplan.Plan, onProgress fu
 	}
 }
 
+// RenderStills submits a still plan and collects its pages one at a time
+// (T-G6).
+//
+// It is Render with the result fetched N times: the same submit, the same
+// poll, the same drop on every exit, and `GET /v1/jobs/:id/result/:page` for
+// each of the pages the status reports. The service builds no zip (decision
+// 5); the caller does, from these bytes, with Go's archive/zip.
+func (c *Client) RenderStills(ctx context.Context, plan *videoplan.Plan, onProgress func(float64)) (*StillsResult, error) {
+	if c == nil {
+		return nil, ErrNotConfigured
+	}
+	if plan == nil {
+		return nil, fmt.Errorf("%w: no plan", ErrPlanRejected)
+	}
+	if !plan.Still {
+		// The service would refuse this with a 400 anyway; refusing here keeps
+		// the round trip and says why in the caller's own vocabulary.
+		return nil, fmt.Errorf("%w: a carousel needs a still plan", ErrPlanRejected)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	jobID, err := c.submit(ctx, plan, "stills")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		dropCtx, dropCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer dropCancel()
+		_ = c.drop(dropCtx, jobID)
+	}()
+
+	ticker := time.NewTicker(c.pollEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("%w: no result within %s", ErrUnavailable, c.timeout)
+		case <-ticker.C:
+		}
+
+		st, err := c.status(ctx, jobID)
+		if err != nil {
+			return nil, err
+		}
+		switch st.State {
+		case "done":
+			if st.Pages <= 0 {
+				return nil, fmt.Errorf("%w: the render service reported a finished stills job with no pages", ErrUnavailable)
+			}
+			pages := make([][]byte, 0, st.Pages)
+			for page := 1; page <= st.Pages; page++ {
+				data, err := c.fetchPage(ctx, jobID, page)
+				if err != nil {
+					return nil, err
+				}
+				pages = append(pages, data)
+			}
+			return &StillsResult{Pages: pages, Seconds: st.RenderSeconds}, nil
+		case "failed", "cancelled":
+			if st.ClientError {
+				return nil, fmt.Errorf("%w: %s", ErrPlanRejected, st.Error)
+			}
+			return nil, fmt.Errorf("%w: %s", ErrUnavailable, st.Error)
+		default:
+			if onProgress != nil && st.Progress > 0 && st.Progress < 1 {
+				onProgress(st.Progress)
+			}
+		}
+	}
+}
+
 type startResponse struct {
 	JobID        string   `json:"job_id"`
 	UnknownKinds []string `json:"unknown_kinds"`
@@ -201,6 +281,8 @@ type statusResponse struct {
 	Error         string  `json:"error"`
 	Frames        int     `json:"frames"`
 	RenderSeconds float64 `json:"render_seconds"`
+	// Pages is the page count of a done stills job; absent on a video job.
+	Pages int `json:"pages"`
 	// ClientError is not on the wire. The status route reports a failure
 	// without saying whose it was — only `/result` does, by its status code —
 	// so a failed job is resolved with one extra call rather than by parsing
@@ -208,8 +290,11 @@ type statusResponse struct {
 	ClientError bool `json:"-"`
 }
 
-func (c *Client) submit(ctx context.Context, plan *videoplan.Plan) (string, error) {
-	body, err := json.Marshal(map[string]any{"plan": plan})
+// submit starts a job. output is "video" or "stills" — the service refuses a
+// plan built for the other one, so the choice is made here, once, by the
+// method that knows which result it is going to collect.
+func (c *Client) submit(ctx context.Context, plan *videoplan.Plan, output string) (string, error) {
+	body, err := json.Marshal(map[string]any{"plan": plan, "output": output})
 	if err != nil {
 		return "", fmt.Errorf("%w: marshal plan: %v", ErrPlanRejected, err)
 	}
@@ -301,6 +386,30 @@ func (c *Client) fetch(ctx context.Context, jobID string) ([]byte, error) {
 	}
 	if len(data) == 0 {
 		return nil, fmt.Errorf("%w: the render service returned an empty file", ErrUnavailable)
+	}
+	return data, nil
+}
+
+// fetchPage reads one page of a done stills job.
+func (c *Client) fetchPage(ctx context.Context, jobID string, page int) ([]byte, error) {
+	req, err := c.request(ctx, http.MethodGet, fmt.Sprintf("/v1/jobs/%s/result/%d", jobID, page), nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: page %d answered %d", ErrUnavailable, page, res.StatusCode)
+	}
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("%w: reading page %d: %v", ErrUnavailable, page, err)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("%w: page %d is empty", ErrUnavailable, page)
 	}
 	return data, nil
 }

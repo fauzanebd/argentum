@@ -390,6 +390,10 @@ var apiPolicy = middleware.RolePolicy{
 	// asked for, and hiding the record of what was generated from the people
 	// who generated it buys nothing. Sharing one is admin, below.
 	"GET /api/documents": domain.RoleMember,
+	// A carousel's slides (T-G6). Member, like the list: the pages are the
+	// document the staff asked for, served to the session rather than as a
+	// presigned image URL that a persisted message would outlive.
+	"GET /api/documents/:id/pages/:page": domain.RoleMember,
 
 	"GET /api/documents/:id/shares":             domain.RoleAdmin,
 	"POST /api/documents/:id/shares":            domain.RoleAdmin,
