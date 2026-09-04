@@ -335,6 +335,16 @@ and nothing else needed changing.
   distinct type for exactly that: the difference between an integrator fixing
   their spec and an integrator opening a ticket.
 
+### 4a. The stills mode (T-G5, 2026-09-04)
+
+The same route, job store and browser draw a carousel: `POST /v1/render`
+takes `output: "stills"` against a plan with `still: true`, the result is
+`GET /v1/jobs/:id/result/:page` one JPEG at a time, and the bare `/result`
+answers 409 on a stills job. No zip in this service — Go assembles the
+download. The door refuses a plan built for the other output before a browser
+starts. Written up, with the live transcript, in
+[`social-carousel.md`](social-carousel.md) §4.
+
 ### 5. Deployment
 
 `Dockerfile` is Node 22 on bookworm-slim with ffmpeg and Chromium's shared

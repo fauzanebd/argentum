@@ -64,7 +64,8 @@ docs/
 ├── research/
 │   ├── 01-product-overview.md    Product + capability inventory
 │   ├── 02-architecture.md        System map, data flow, invariants
-│   └── 03-gap-analysis.md        Gaps, risks, and the agent-native thesis
+│   ├── 03-gap-analysis.md        Gaps, risks, and the agent-native thesis
+│   └── 04-social-carousel.md     Social-media carousels: what exists, gaps, build
 ├── coverage/
 │   ├── feature-coverage.md       Feature status matrix
 │   ├── test-coverage.md          Measured test state + CI gaps
@@ -102,6 +103,7 @@ docs/
 │   ├── launch-hygiene.md         T-18 what shipped, what the landing page may claim
 │   ├── slack-channel.md          The Slack channel, threading, dedupe, watcher delivery
 │   ├── report-video.md           T-V1→T-V3 the spec as a video, and the service that draws it
+│   ├── social-carousel.md        T-G1→T-G6 the spec as portrait slides, built 09-03→09-04
 │   ├── docs-site.md              The published quickstart, spec and collection
 │   ├── gelael-pilot.md           The first integration outside this repo, and what it found
 │   ├── embed-auth.md             T-19 embed keys, HMAC identity, session tokens
@@ -119,6 +121,7 @@ docs/
 │   │                             T-Q10/T-U13 suggested next steps; T-D22/T-D23 revising a dashboard
 │   ├── 06-pdf-knowledge-roadmap.md        T-P1→T-P13 a PDF the agent can query, not quote
 │   ├── 07-agentic-skills-roadmap.md       T-K1→T-K10 a procedure the tenant writes down (built 08-22→08-27)
+│   ├── 08-social-carousel-roadmap.md      T-G1→T-G10 Instagram carousels from the video pipeline (planned 09-03)
 │   └── backlog.md                Deferred work with rationale
 └── agents/
     ├── workspace-context.md      Repo map, invariants, danger zones
