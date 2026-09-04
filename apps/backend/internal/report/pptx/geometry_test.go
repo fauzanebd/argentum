@@ -19,10 +19,10 @@ import (
 // package. A comment saying "these match" would not have caught it.
 
 func TestSlideAndCanvasAgree(t *testing.T) {
-	if got, want := float64(slideWidthEMU)/emuPerMM, canvas.WidthMM; math.Abs(got-want) > 1e-12 {
+	if got, want := float64(slideWidthEMU)/emuPerMM, canvas.Wide.WidthMM; math.Abs(got-want) > 1e-12 {
 		t.Errorf("slide is %.10fmm wide, canvas is %.10fmm", got, want)
 	}
-	if got, want := slideHeightMM, canvas.HeightMM; math.Abs(got-want) > 1e-12 {
+	if got, want := slideHeightMM, canvas.Wide.HeightMM; math.Abs(got-want) > 1e-12 {
 		t.Errorf("slide is %.10fmm tall, canvas is %.10fmm", got, want)
 	}
 }
@@ -35,10 +35,10 @@ func TestTwoPixelsPerPoint(t *testing.T) {
 	if got := canvas.PxPerPt; math.Abs(got-2.0) > 1e-9 {
 		t.Errorf("px per point is %.12f, want exactly 2", got)
 	}
-	if got := 1080.0 / canvas.PxPerMM; math.Abs(got-canvas.HeightMM) > 1e-9 {
-		t.Errorf("1080px is %.6fmm, but the surface is %.6fmm tall — the frame is not 16:9 against it", got, canvas.HeightMM)
+	if got := 1080.0 / canvas.PxPerMM; math.Abs(got-canvas.Wide.HeightMM) > 1e-9 {
+		t.Errorf("1080px is %.6fmm, but the surface is %.6fmm tall — the frame is not 16:9 against it", got, canvas.Wide.HeightMM)
 	}
-	if got := canvas.PtPx(canvas.Type.H1); got != 58 {
+	if got := canvas.PtPx(canvas.Wide.Type.H1); got != 58 {
 		t.Errorf("H1 is %dpx, want 58", got)
 	}
 }

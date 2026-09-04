@@ -474,9 +474,17 @@ export const ScopeWriteReports = "write:reports";
  */
 export const ScopeReadData = "read:data";
 /**
- * ScopeWriteVisualizations — create a Metabase card or dashboard (T-14).
- * The only MCP tool that writes anything, and it writes to Metabase rather
- * than to a tenant's own system, which is why it is not write:actions.
+ * ScopeWriteVisualizations — create a dashboard (T-14, re-pointed by T-D11).
+ * The only MCP tool that writes anything.
+ * **The name outlived what it was named for, deliberately.** It gated
+ * `create_visualization` against Metabase until T-D11 deleted that tool with
+ * the system behind it; the scope now gates `create_dashboard`, which writes
+ * a native dashboard row this product serves itself. A scope is a permission
+ * name rather than a tool name, and retiring this one would have cost every
+ * integrator holding a key a rotation to buy nothing — the capability is
+ * unchanged and still exactly one tool wide (internal/mcpserver/server.go).
+ * It is not write:actions because it writes only inside Argentum: a
+ * dashboard nobody was depending on yet, never a tenant's own system.
  */
 export const ScopeWriteVisualizations = "write:visualizations";
 /**
@@ -1121,7 +1129,17 @@ export const DocumentFormatPPTX = "pptx";
  * serves it is asynchronous.
  */
 export const DocumentFormatMP4 = "mp4";
-export type DocumentFormat = typeof DocumentFormatPDF | typeof DocumentFormatXLSX | typeof DocumentFormatCSV | typeof DocumentFormatPPTX | typeof DocumentFormatMP4;
+/**
+ * DocumentFormatCarousel is the same report spec as two to ten portrait
+ * slides for a social feed (T-G6): the video with the time axis removed,
+ * drawn by the same render service one still at a time. The document is
+ * the zip of the pages plus the caption; the pages are stored beside it and
+ * served one at a time by an authenticated route, because an image in a
+ * persisted message cannot be re-signed on click the way a link can
+ * (decision 6). Async for the same reason mp4 is.
+ */
+export const DocumentFormatCarousel = "carousel";
+export type DocumentFormat = typeof DocumentFormatPDF | typeof DocumentFormatXLSX | typeof DocumentFormatCSV | typeof DocumentFormatPPTX | typeof DocumentFormatMP4 | typeof DocumentFormatCarousel;
 /**
  * DocumentSource is which door produced a document.
  */
@@ -1173,6 +1191,13 @@ export interface Document {
    * second answer that can drift from the bucket.
    */
   has_plan?: boolean;
+  /**
+   * PageCount is how many slides a carousel has, zero for every other format
+   * (T-G6). Unlike HasPlan it **is** a column: it is fixed when the pages are
+   * written and never drifts, and the list endpoint needs it without N
+   * object-store reads to say "7 slides" on a row.
+   */
+  page_count?: number /* int */;
 }
 /**
  * DocumentFilter narrows a company-scoped document listing. A zero value
@@ -1947,29 +1972,6 @@ export const ShareMaxDays = 90;
  * needs a duration rather than in every place that quotes the limit.
  */
 export type Share = typeof ShareDefaultDays | typeof ShareMaxDays;
-
-//////////
-// source: saved_dashboard.go
-
-/**
- * SavedDashboard is a persisted Metabase dashboard created by the agent.
- * Deprecated in place: it is a pointer at an object in another system, which is
- * why nothing here can say when the dashboard last ran, who read the tenant's
- * warehouse, or how to revoke the link it hands out. Dashboard (dashboard.go) is
- * the native replacement; these rows stay readable through the deprecation
- * window and the table goes in T-D16. Nothing converts between the two — a
- * Metabase card's definition lives in Metabase, not in this database.
- */
-export interface SavedDashboard {
-  id: string;
-  company_id: string;
-  thread_id: string;
-  metabase_dashboard_id: number /* int */;
-  name: string;
-  public_url: string;
-  created_at: string;
-  updated_at: string;
-}
 
 //////////
 // source: scheduled_task.go

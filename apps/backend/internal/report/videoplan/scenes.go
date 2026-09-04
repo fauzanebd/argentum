@@ -61,8 +61,8 @@ func (b *builder) Cover(sec spec.Section) {
 	b.scenes = append(b.scenes, Scene{
 		Kind:     KindCover,
 		Frames:   frames(CoverSeconds),
-		Title:    b.lines(title, measure.Bold, canvas.Type.Display, canvas.ContentWidth(), maxTitleLines),
-		Subtitle: b.lines(sec.Subtitle, measure.Regular, canvas.Type.H2, canvas.ContentWidth(), 2),
+		Title:    b.lines(title, measure.Bold, b.s.Type.Display, b.s.ContentWidth(), maxTitleLines),
+		Subtitle: b.lines(sec.Subtitle, measure.Regular, b.s.Type.H2, b.s.ContentWidth(), 2),
 		Period:   strings.TrimSpace(sec.Period),
 		Facts:    facts,
 	})
@@ -73,7 +73,7 @@ func (b *builder) Divider(title string) {
 	b.scenes = append(b.scenes, Scene{
 		Kind:   KindSection,
 		Frames: frames(DividerSeconds),
-		Title:  b.lines(title, measure.Bold, canvas.Type.Display, canvas.ContentWidth(), maxTitleLines),
+		Title:  b.lines(title, measure.Bold, b.s.Type.Display, b.s.ContentWidth(), maxTitleLines),
 	})
 }
 
@@ -88,7 +88,7 @@ func (b *builder) Closing() {
 	b.scenes = append(b.scenes, Scene{
 		Kind:   KindClosing,
 		Frames: frames(ClosingSeconds),
-		Title:  b.lines(b.title, measure.Bold, canvas.Type.Display, canvas.ContentWidth(), maxTitleLines),
+		Title:  b.lines(b.title, measure.Bold, b.s.Type.Display, b.s.ContentWidth(), maxTitleLines),
 		Facts:  facts,
 	})
 }
@@ -120,7 +120,7 @@ func (b *builder) appendNotes(i int, text string) {
 // carries it. The whole run's prose is attached to the first scene of the run,
 // because the run is one idea still being made.
 func (b *builder) Prose(title string, sections []spec.Section) {
-	titleLines := b.lines(title, measure.Bold, canvas.Type.H1, canvas.ContentWidth(), maxTitleLines)
+	titleLines := b.lines(title, measure.Bold, b.s.Type.H1, b.s.ContentWidth(), maxTitleLines)
 	first := len(b.scenes)
 	var notes []string
 
@@ -132,12 +132,12 @@ func (b *builder) Prose(title string, sections []spec.Section) {
 			if heading == "" && text == "" {
 				continue
 			}
-			lines := b.lines(text, measure.Regular, canvas.Type.H2, canvas.ContentWidth(), maxQuoteLines)
+			lines := b.lines(text, measure.Regular, b.s.Type.H2, b.s.ContentWidth(), maxQuoteLines)
 			b.scenes = append(b.scenes, Scene{
 				Kind:     KindQuote,
 				Frames:   readingFrames(heading, strings.Join(lines, " ")),
 				Title:    titleLines,
-				Subtitle: b.lines(heading, measure.Bold, canvas.Type.H1, canvas.ContentWidth(), 1),
+				Subtitle: b.lines(heading, measure.Bold, b.s.Type.H1, b.s.ContentWidth(), b.quoteHeadingLines()),
 				Lines:    lines,
 				Tone:     tone(sec.Tone),
 			})
@@ -156,9 +156,9 @@ func (b *builder) Prose(title string, sections []spec.Section) {
 			}
 			lead := flow.LeadSentences(text, func(candidate string) bool {
 				return canvas.LinesIn(candidate, theme.FontBody, measure.Regular,
-					canvas.Type.H2, canvas.ContentWidth()) <= maxStatementLines
+					b.s.Type.H2, b.s.ContentWidth()) <= maxStatementLines
 			})
-			lines := b.lines(lead, measure.Regular, canvas.Type.H2, canvas.ContentWidth(), maxStatementLines)
+			lines := b.lines(lead, measure.Regular, b.s.Type.H2, b.s.ContentWidth(), maxStatementLines)
 			if len(lines) == 0 {
 				continue
 			}
@@ -178,16 +178,16 @@ func (b *builder) Prose(title string, sections []spec.Section) {
 }
 
 // Facts is a key_value block, packed by measured height and continued when it
-// does not fit — canvas.FactRowHeight, the same packing the deck uses.
+// does not fit — Surface.FactRowHeight, the same packing the deck uses.
 func (b *builder) Facts(title string, sec spec.Section) {
-	titleLines := b.lines(title, measure.Bold, canvas.Type.H1, canvas.ContentWidth(), maxTitleLines)
+	titleLines := b.lines(title, measure.Bold, b.s.Type.H1, b.s.ContentWidth(), maxTitleLines)
 
 	rows := make([]Fact, 0, len(sec.Items))
 	for _, item := range sec.Items {
 		rows = append(rows, b.fact(item.KeyText(), canvas.CellText(item.ValueCell(), format.KindText, b.fmt)))
 	}
 
-	avail := canvas.BodyHeight()
+	avail := b.s.BodyHeight()
 	used := 0.0
 	var page []Fact
 	continued := false
@@ -205,7 +205,7 @@ func (b *builder) Facts(title string, sec spec.Section) {
 		page, used, continued = nil, 0, true
 	}
 	for _, row := range rows {
-		h := canvas.FactRowHeight(strings.Join(row.Value, " "))
+		h := b.s.FactRowHeight(strings.Join(row.Value, " "))
 		if used+h > avail && len(page) > 0 {
 			flush()
 		}
@@ -215,12 +215,13 @@ func (b *builder) Facts(title string, sec spec.Section) {
 	flush()
 }
 
-// KPI is a kpi_row, at most four cards wide — the deck's cap, for the deck's
-// reason: a fifth card is narrower than the number on it.
+// KPI is a kpi_row, capped at the surface's card count — four on the wide
+// surface, the deck's cap for the deck's reason: a fifth card is narrower than
+// the number on it.
 func (b *builder) KPI(title string, sec spec.Section) {
 	items := sec.Items
-	if len(items) > 4 {
-		items = items[:4]
+	if n := b.s.MaxKPICards; n > 0 && len(items) > n {
+		items = items[:n]
 	}
 	if len(items) == 0 {
 		return
@@ -251,7 +252,7 @@ func (b *builder) KPI(title string, sec spec.Section) {
 	b.scenes = append(b.scenes, Scene{
 		Kind:   KindKPI,
 		Frames: kpiFrames(cards),
-		Title:  b.lines(title, measure.Bold, canvas.Type.H1, canvas.ContentWidth(), maxTitleLines),
+		Title:  b.lines(title, measure.Bold, b.s.Type.H1, b.s.ContentWidth(), maxTitleLines),
 		KPIs:   cards,
 	})
 }
@@ -263,8 +264,8 @@ func (b *builder) KPI(title string, sec spec.Section) {
 // the video adds is a mask over it (locked decision 6) — the pixels are never
 // redrawn.
 func (b *builder) Chart(title string, sec spec.Section) error {
-	width := canvas.ContentWidth()
-	height := math.Min(canvas.MaxChartHeight(), width*canvas.ChartAspect)
+	width := b.s.ContentWidth()
+	height := math.Min(b.s.MaxChartHeight(), width*canvas.ChartAspect)
 
 	res, err := chart.Render(sec.Chart, chart.Options{
 		WidthMM:  width,
@@ -279,12 +280,12 @@ func (b *builder) Chart(title string, sec spec.Section) error {
 	if res.Note != "" {
 		caption = strings.TrimSpace(caption + " " + res.Note)
 	}
-	captionLines := b.lines(caption, measure.Regular, canvas.Type.Caption, canvas.ContentWidth(), 2)
+	captionLines := b.lines(caption, measure.Regular, b.s.Type.Caption, b.s.ContentWidth(), 2)
 
 	b.scenes = append(b.scenes, Scene{
 		Kind:    KindChart,
 		Frames:  chartFrames(title, captionLines),
-		Title:   b.lines(title, measure.Bold, canvas.Type.H1, canvas.ContentWidth(), maxTitleLines),
+		Title:   b.lines(title, measure.Bold, b.s.Type.H1, b.s.ContentWidth(), maxTitleLines),
 		Caption: captionLines,
 		Chart: &Chart{
 			DataURI: pngDataURI(res.PNG),
@@ -302,9 +303,9 @@ func (b *builder) Table(title string, t *spec.Table) error {
 	if t == nil || len(t.Columns) == 0 {
 		return nil
 	}
-	m := canvas.BuildTable(t, b.fmt)
-	titleLines := b.lines(title, measure.Bold, canvas.Type.H1, canvas.ContentWidth(), maxTitleLines)
-	captionLines := b.lines(m.Caption, measure.Regular, canvas.Type.Caption, canvas.ContentWidth(), 2)
+	m := b.s.BuildTable(t, b.fmt)
+	titleLines := b.lines(title, measure.Bold, b.s.Type.H1, b.s.ContentWidth(), maxTitleLines)
+	captionLines := b.lines(m.Caption, measure.Regular, b.s.Type.Caption, b.s.ContentWidth(), 2)
 
 	widths := make([]int, len(m.Widths))
 	for i, w := range m.Widths {
@@ -345,13 +346,27 @@ func (b *builder) Table(title string, t *spec.Table) error {
 	return nil
 }
 
+// quoteHeadingLines is a callout heading's budget: one line on the wide
+// surface, where a 291mm measure holds any heading a model writes and a second
+// line would push the quote's own text down for four seconds; two on a
+// portrait one, where the measure is 162mm and "WhatsApp tumbuh paling cepat"
+// at H1 does not fit on it — and the surface has the height to spare. The
+// predicate is the one T-G4 stacks KPI cards on: a surface taller than it is
+// wide lays out down the page.
+func (b *builder) quoteHeadingLines() int {
+	if b.s.Portrait() {
+		return 2
+	}
+	return 1
+}
+
 // fact wraps a value to its column, so the renderer draws lines rather than
 // breaking an address wherever the box happens to end.
 func (b *builder) fact(label, value string) Fact {
-	width := canvas.ContentWidth() * (1 - canvas.FactLabelShare)
+	width := b.s.ContentWidth() * (1 - canvas.FactLabelShare)
 	return Fact{
 		Label: strings.TrimSpace(label),
-		Value: b.lines(value, measure.Bold, canvas.Type.Body, width, canvas.MaxFactLines),
+		Value: b.lines(value, measure.Bold, b.s.Type.Body, width, canvas.MaxFactLines),
 	}
 }
 

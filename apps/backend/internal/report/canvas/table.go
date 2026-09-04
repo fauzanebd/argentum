@@ -74,6 +74,11 @@ type TableModel struct {
 	Size    float64 // points
 	RowH    float64 // millimetres
 	HeaderH float64
+
+	// surface is the one the widths were solved against. RowsPerSurface needs
+	// its body height, and a model asked how many rows fit on a surface other
+	// than the one it was measured for would be answering a different table.
+	surface Surface
 }
 
 // Alignment values, as the renderers write them.
@@ -83,11 +88,13 @@ const (
 	AlignRight  = "r"
 )
 
-// RowsPerSurface is how many body rows fit under the header in the body area.
+// RowsPerSurface is how many body rows fit under the header in the body area
+// of the surface the model was built for.
 func (m *TableModel) RowsPerSurface() int {
-	avail := BodyHeight() - m.HeaderH
+	s := m.surface.Or(Wide)
+	avail := s.BodyHeight() - m.HeaderH
 	if m.Caption != "" {
-		avail -= TextHeight(m.Caption, theme.FontBody, measure.Regular, Type.Caption, ContentWidth()) + theme.Spacing.SM
+		avail -= TextHeight(m.Caption, theme.FontBody, measure.Regular, s.Type.Caption, s.ContentWidth()) + theme.Spacing.SM
 	}
 	// The total row has to fit beside the rows it totals.
 	if len(m.Total) > 0 {
@@ -97,12 +104,13 @@ func (m *TableModel) RowsPerSurface() int {
 	return max(1, min(n, MaxRowsPerSurface))
 }
 
-// BuildTable resolves columns, formats every cell and measures the result.
+// BuildTable resolves columns, formats every cell and measures the result
+// against this surface.
 //
 // It is the surface's counterpart to the PDF's assignWidths, and the two agree
 // by sharing internal/report/layout rather than by both being careful.
-func BuildTable(t *spec.Table, base format.Options) *TableModel {
-	size := TableTextSize(len(t.Columns))
+func (s Surface) BuildTable(t *spec.Table, base format.Options) *TableModel {
+	size := s.TableTextSize(len(t.Columns))
 
 	kinds := make([]format.Kind, len(t.Columns))
 	aligns := make([]string, len(t.Columns))
@@ -154,7 +162,7 @@ func BuildTable(t *spec.Table, base format.Options) *TableModel {
 		total = formatRow(t.TotalRow, kinds, opts)
 	}
 
-	widths := columnWidths(header, body, total, kinds, t.Columns, size)
+	widths := s.columnWidths(header, body, total, kinds, t.Columns, size)
 
 	// Truncation happens after the widths are known: a cell is only too long
 	// once there is a column width to be too long for.
@@ -176,6 +184,7 @@ func BuildTable(t *spec.Table, base format.Options) *TableModel {
 		Rows:    body,
 		Total:   total,
 		Size:    size,
+		surface: s,
 	}
 	m.HeaderH = RowHeight(size, maxLinesIn([][]string{header}, widths, size, measure.Bold))
 	// A body row is as tall as the tallest cell anywhere in the table rather
@@ -189,14 +198,14 @@ func BuildTable(t *spec.Table, base format.Options) *TableModel {
 // TableTextSize steps the type down as a table gets wider. Eight columns of
 // 18pt across 291mm is 36mm a column, which is not enough for a rupiah figure,
 // so the alternative to stepping down is truncating every number in the table.
-func TableTextSize(cols int) float64 {
+func (s Surface) TableTextSize(cols int) float64 {
 	switch {
 	case cols <= 4:
-		return Type.Body
+		return s.Type.Body
 	case cols <= 6:
-		return math.Round((Type.Body+Type.Caption)/2*2) / 2
+		return math.Round((s.Type.Body+s.Type.Caption)/2*2) / 2
 	default:
-		return Type.Caption
+		return s.Type.Caption
 	}
 }
 
@@ -250,17 +259,18 @@ func flatten(rows [][]string, extra []string) [][]string {
 // The rigid/flexible distinction is the PDF's, for the PDF's reasons: numbers
 // and dates either fit on one line or wrap into nonsense, and a token with no
 // space in it does not narrow, it truncates.
-func columnWidths(header []string, body [][]string, total []string, kinds []format.Kind, cols []spec.Column, size float64) []float64 {
+func (s Surface) columnWidths(header []string, body [][]string, total []string, kinds []format.Kind, cols []spec.Column, size float64) []float64 {
 	n := len(header)
 	natural := make([]float64, n)
 	rigid := make([]bool, n)
-	maxWidth := ContentWidth() * MaxColShare
+	contentW := s.ContentWidth()
+	maxWidth := contentW * MaxColShare
 
 	for i := range n {
 		rigid[i] = kinds[i].Numeric() || kinds[i] == format.KindDate || cols[i].WidthWeight > 0
 
 		if cols[i].WidthWeight > 0 {
-			natural[i] = math.Min(cols[i].WidthWeight*ContentWidth()/float64(n), maxWidth)
+			natural[i] = math.Min(cols[i].WidthWeight*contentW/float64(n), maxWidth)
 			continue
 		}
 
@@ -300,8 +310,8 @@ func columnWidths(header []string, body [][]string, total []string, kinds []form
 		natural[i] = math.Min(w, maxWidth)
 	}
 
-	weights := layout.Allocate(natural, rigid, ContentWidth(), MinColWidth)
-	return layout.Scale(weights, ContentWidth(), MinColWidth)
+	weights := layout.Allocate(natural, rigid, contentW, MinColWidth)
+	return layout.Scale(weights, contentW, MinColWidth)
 }
 
 func fitRow(cells []string, widths []float64, size float64) []string {

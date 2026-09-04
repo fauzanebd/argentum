@@ -227,7 +227,7 @@ const (
 	factLabelShare = canvas.FactLabelShare
 )
 
-func factRowHeight(row [2]string) float64 { return canvas.FactRowHeight(row[1]) }
+func factRowHeight(row [2]string) float64 { return surface.FactRowHeight(row[1]) }
 
 // Prose turns a run of paragraphs and callouts into slides.
 //

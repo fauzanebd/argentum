@@ -1,0 +1,240 @@
+{
+  "version": 1,
+  "width": 1080,
+  "height": 1350,
+  "fps": 1,
+  "total_frames": 7,
+  "still": true,
+  "locale": "id",
+  "title": "Penjualan Agustus per Kanal",
+  "metrics": {
+    "margin_x": 79,
+    "margin_top": 125,
+    "margin_bottom": 153,
+    "content_width": 921,
+    "body_top": 283,
+    "body_height": 874,
+    "title_band": 125,
+    "footer_band": 40,
+    "footer_top": 1157,
+    "title_rule_width": 193,
+    "title_rule_thickness": 9,
+    "radius": 12,
+    "spacing_sm": 23,
+    "spacing_md": 34,
+    "spacing_lg": 57,
+    "leading": 1.45,
+    "type": {
+      "display": 86,
+      "h1": 58,
+      "h2": 47,
+      "body": 36,
+      "caption": 29
+    }
+  },
+  "brand": {
+    "name": "",
+    "primary": "#F25C5C",
+    "primary_on_dark": "#F25C5C",
+    "foreground": "#1F2124",
+    "background": "#FAFAFB",
+    "muted": "#62656B",
+    "border": "#ECEDEF",
+    "dark": "#1F2124",
+    "on_dark": "#FAFAFB",
+    "surface": "#FFFFFF",
+    "surface_subtle": "#F1F2F3",
+    "positive": "#189A4D",
+    "destructive": "#E3474C",
+    "tones": {
+      "good": {
+        "accent": "#189A4D",
+        "fill": "#EDF7F1"
+      },
+      "info": {
+        "accent": "#1C3A62",
+        "fill": "#EDEFF2"
+      },
+      "warn": {
+        "accent": "#EF720C",
+        "fill": "#FEF4EC"
+      }
+    },
+    "credit": "Dibuat dengan Argentum"
+  },
+  "scenes": [
+    {
+      "kind": "cover",
+      "frames": 1,
+      "title": [
+        "Penjualan Agustus",
+        "per Kanal"
+      ],
+      "subtitle": [
+        "Tiga angka yang perlu Anda tahu",
+        "bulan ini"
+      ],
+      "period": "AGUSTUS 2026",
+      "facts": [
+        {
+          "label": "Disiapkan oleh",
+          "value": [
+            "Toko Contoh"
+          ]
+        },
+        {
+          "label": "Dibuat",
+          "value": [
+            "1 September 2026 02:00"
+          ]
+        }
+      ],
+      "alt": "Penjualan Agustus per Kanal. Tiga angka yang perlu Anda tahu bulan ini. AGUSTUS 2026. Disiapkan oleh: Toko Contoh. Dibuat: 1 September 2026 02:00"
+    },
+    {
+      "kind": "section",
+      "frames": 1,
+      "title": [
+        "Sorotan"
+      ],
+      "alt": "Sorotan"
+    },
+    {
+      "kind": "kpi",
+      "frames": 1,
+      "title": [
+        "Sorotan"
+      ],
+      "kpis": [
+        {
+          "label": "Total Pendapatan",
+          "value": "Rp 412 Juta",
+          "delta": "+9,8%",
+          "rising": true,
+          "good": true
+        },
+        {
+          "label": "Jumlah Pesanan",
+          "value": "5.124",
+          "delta": "+6,2%",
+          "rising": true,
+          "good": true
+        },
+        {
+          "label": "Nilai Pesanan Rata-rata",
+          "value": "Rp 80.475",
+          "delta": "+3,4%",
+          "rising": true,
+          "good": true
+        }
+      ],
+      "alt": "Sorotan. Total Pendapatan: Rp 412 Juta (+9,8%). Jumlah Pesanan: 5.124 (+6,2%). Nilai Pesanan Rata-rata: Rp 80.475 (+3,4%)"
+    },
+    {
+      "kind": "chart",
+      "frames": 1,
+      "title": [
+        "Pendapatan per kanal"
+      ],
+      "chart": {
+        "data_uri": "sha256:c318f5bb3dbe93ffaff405717e49cfb70b5b3d3e3ffa232821874a9e631271a7",
+        "width": 921,
+        "height": 359,
+        "reveal": "wipe"
+      },
+      "caption": [
+        "Pendapatan Agustus 2026 per kanal penjualan."
+      ],
+      "alt": "Pendapatan per kanal. Pendapatan Agustus 2026 per kanal penjualan."
+    },
+    {
+      "kind": "table",
+      "frames": 1,
+      "title": [
+        "Sorotan"
+      ],
+      "table": {
+        "header": [
+          "Kanal",
+          "Pesanan",
+          "Pertumbuhan"
+        ],
+        "aligns": [
+          "l",
+          "r",
+          "r"
+        ],
+        "widths": [
+          445,
+          191,
+          286
+        ],
+        "rows": [
+          [
+            "Marketplace",
+            "2.210",
+            "12,1%"
+          ],
+          [
+            "Toko Online",
+            "1.502",
+            "8,4%"
+          ],
+          [
+            "WhatsApp",
+            "861",
+            "15,9%"
+          ],
+          [
+            "Toko Fisik",
+            "551",
+            "-2,3%"
+          ]
+        ],
+        "font_size": 36,
+        "row_height": 73,
+        "header_height": 73
+      },
+      "caption": [
+        "Pesanan dan pertumbuhan per kanal dibanding Juli"
+      ],
+      "alt": "Sorotan. Kanal, Pesanan, Pertumbuhan. Pesanan dan pertumbuhan per kanal dibanding Juli"
+    },
+    {
+      "kind": "quote",
+      "frames": 1,
+      "title": [
+        "Sorotan"
+      ],
+      "subtitle": [
+        "WhatsApp tumbuh paling",
+        "cepat"
+      ],
+      "lines": [
+        "Pesanan lewat WhatsApp naik 15,9%",
+        "setelah katalog baru dibagikan ke",
+        "grup pelanggan."
+      ],
+      "tone": "good",
+      "notes": "WhatsApp tumbuh paling cepat — Pesanan lewat WhatsApp naik 15,9% setelah katalog baru dibagikan ke grup pelanggan.\n\nSumber: Sumber: tabel fact_sales, status = 'completed', 1–31 Agustus 2026.",
+      "alt": "Sorotan. WhatsApp tumbuh paling cepat. Pesanan lewat WhatsApp naik 15,9% setelah katalog baru dibagikan ke grup pelanggan."
+    },
+    {
+      "kind": "closing",
+      "frames": 1,
+      "title": [
+        "Penjualan Agustus",
+        "per Kanal"
+      ],
+      "facts": [
+        {
+          "label": "Dibuat",
+          "value": [
+            "1 September 2026 02:00"
+          ]
+        }
+      ],
+      "alt": "Penjualan Agustus per Kanal. Dibuat: 1 September 2026 02:00"
+    }
+  ]
+}

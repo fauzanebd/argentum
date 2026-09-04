@@ -32,7 +32,7 @@ func (b *builder) Table(title string, t *spec.Table) error {
 	if t == nil || len(t.Columns) == 0 {
 		return nil
 	}
-	m := canvas.BuildTable(t, b.r.fmt)
+	m := surface.BuildTable(t, b.r.fmt)
 
 	rows := m.RowsPerSurface()
 	pages := chunk(m.Rows, rows)

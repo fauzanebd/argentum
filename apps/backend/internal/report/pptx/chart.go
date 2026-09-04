@@ -19,7 +19,7 @@ type chartModel struct {
 
 // maxChartHeight is the tallest a chart may be drawn on a slide: the body area
 // less the caption line under it. Shared with the video renderer since T-V1.
-func maxChartHeight() float64 { return canvas.MaxChartHeight() }
+func maxChartHeight() float64 { return surface.MaxChartHeight() }
 
 // chart draws the chart at slide scale and puts it on a slide of its own.
 //

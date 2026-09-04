@@ -1,4 +1,5 @@
-// Package canvas is the 16:9 surface and the type scale that goes on it.
+// Package canvas is the surface a slide or a frame is drawn on, and the type
+// scale that goes on it.
 //
 // It was the deck renderer's geometry.go until the video renderer needed the
 // same numbers (T-V1). The extraction is the same move T-R4 made with measure,
@@ -14,6 +15,19 @@
 // a slide fits in a frame, a 29pt slide title is a 58px frame title, and the two
 // renderers cannot disagree about wrapping without one of them ignoring this
 // package.
+//
+// **A surface is a value, and this package ships one of them.** Until T-G2 the
+// 16:9 geometry was a set of package constants, which was right for as long as
+// there was one surface. A portrait carousel (T-G3) is the same measuring code
+// against a second geometry, and the plan's own comment says why that cannot be
+// a second set of constants: a plan measured for one width is not a plan for
+// any other, because its line breaks were decided against that width. So the
+// geometry is a Surface, Wide is the 16:9 instance, and everything that used to
+// read a constant now reads a field of the surface it was handed. What does
+// **not** vary by surface — the pixel density, the leading, the substitution
+// margin, the table's cell padding — stays a package constant, so a reader can
+// tell at the declaration which numbers a second surface may choose and which
+// it may not.
 //
 // Everything here is derived from the design tokens or from the slide size, and
 // nothing here is a token: a 16:9 surface has no counterpart on the dashboard,
@@ -40,86 +54,216 @@ import (
 // package, and it changed all five deck fixtures — between 29 and 375 bytes each
 // — while every test still passed. The lesson is the one this tree keeps
 // learning: a number copied into a second place stops tracking the first.
+//
+// These are unexported since T-G2: they are Wide's numbers, and a caller that
+// wants them reads them off Wide so that a second surface cannot be built from
+// the first one's constants by accident.
 const (
-	WidthMM  = 12192000.0 / 36000.0 // 338.6667
-	HeightMM = 6858000.0 / 36000.0  // 190.5
+	wideWidthMM  = 12192000.0 / 36000.0 // 338.6667
+	wideHeightMM = 6858000.0 / 36000.0  // 190.5
 )
 
-// PxPerMM maps the surface onto a 1920×1080 frame. See the package comment for
-// why this works out to exactly 2 px per point.
-const PxPerMM = 1920.0 / WidthMM
+// PxPerMM maps a surface onto its frame. See the package comment for why this
+// works out to exactly 2 px per point.
+//
+// **It is a package constant, not a Surface field, on purpose.** Every surface
+// this package will ever ship is drawn at the same density — the 16:9 frame is
+// 1920 px across 338.667 mm, and a portrait frame keeps the same 2 px/pt so
+// that a type size measured in points lands on the same whole pixel on both.
+// T-G3 chooses the portrait width *from* this constant (1080 px ÷ PxPerMM =
+// 190.5 mm, which is the wide surface's height), so a surface that carried its
+// own density would be a surface that could quietly stop agreeing with the
+// others about what a point is.
+const PxPerMM = 1920.0 / wideWidthMM
 
 // PxPerPt is the same factor expressed the way a caller usually wants it: a
 // point size in, a CSS pixel size out.
 const PxPerPt = PxPerMM * measure.MMPerPoint
 
-// Margins, in millimetres. Wider than the page's because the surface is wider:
-// the measure a reader's eye tracks is the same either way, and a line of text
-// running the full 339mm is unreadable at any size.
-const (
-	MarginX      = 24.0
-	MarginTop    = 17.0
-	MarginBottom = 12.0
+// Surface is one drawing surface: its size, its margins, its bands and the type
+// scale set on it. Every number a renderer positions against or wraps against
+// comes from one of these, and the plan a Surface measures records which one
+// (Plan.Width/Height), because the line breaks in it are only right for it.
+//
+// Fields are exported because two renderers read them, not because anything
+// outside this package should construct one: the instances are declared here,
+// where the numbers are argued for.
+type Surface struct {
+	// WidthMM and HeightMM are the surface in millimetres; PxW and PxH are the
+	// same surface in whole CSS pixels, at PxPerMM. Both are carried rather
+	// than one derived from the other so a test can assert they agree.
+	WidthMM, HeightMM float64
+	PxW, PxH          int
 
-	// FooterBand is the strip at the foot of every content slide carrying the
+	// Margins, in millimetres.
+	MarginX, MarginTop, MarginBottom float64
+
+	// FooterBand is the strip at the foot of every content surface carrying the
 	// confidentiality label and the slide number. The video has no slide
 	// numbers but keeps the band, because the alternative is content sitting
 	// 7mm lower in one renderer than the other.
-	FooterBand = 7.0
+	FooterBand float64
 
 	// TitleBand is the height reserved for a title. Two lines of H1 plus its
 	// leading; a third line is truncated rather than allowed to push the
 	// content down, because a title that long is the problem, not the layout.
-	TitleBand = 22.0
+	TitleBand float64
 
 	// TitleRuleWidth and TitleRuleThickness are the short brand-coloured rule
 	// under a title — the same device the PDF's level-1 headings use, at
 	// surface scale.
-	TitleRuleWidth     = 34.0
-	TitleRuleThickness = 1.6
-)
+	TitleRuleWidth, TitleRuleThickness float64
 
-// Scale lifts the print type scale onto the surface.
-//
-// It is one number rather than a second scale in tokens.json, because this is
-// the same design system seen from further away — decoupling the two would let
-// a body-size change land in the report and not in the deck or the video built
-// from the same spec.
-//
-// 1.8 comes from the measure: the content width is 290.7mm against A4's 174mm,
-// a ratio of 1.67, rounded up because a slide is read across a room and a page
-// is read at arm's length.
-const Scale = 1.8
+	// Scale lifts the print type scale onto this surface. See Wide for why it
+	// is one number and not a second scale in tokens.json.
+	Scale float64
 
-// Type is the print type scale at surface scale, in points.
-var Type = theme.TypeScaleTokens{
-	Display: ScalePt(theme.TypeScale.Display), // 43.5 — cover and divider titles
-	H1:      ScalePt(theme.TypeScale.H1),      // 29   — slide titles
-	H2:      ScalePt(theme.TypeScale.H2),      // 23.5 — leads, KPI values, table captions
-	Body:    ScalePt(theme.TypeScale.Body),    // 18   — bullets and table cells
-	Caption: ScalePt(theme.TypeScale.Caption), // 14.5 — footers, labels, chart captions
+	// Type is the print type scale at Scale, in points, rounded to the half
+	// point by ScalePt. Filled by typeScale from Scale; the two are carried
+	// together because Type is what every call site reads and Scale is what
+	// the argument for it is made in.
+	Type theme.TypeScaleTokens
+
+	// MaxKPICards is how many cards a kpi_row keeps on this surface. Wide's
+	// cap is the deck's — a fifth card across 291mm is narrower than the
+	// number on it — and a surface that stacks its cards (T-G4) is bounded by
+	// height instead, which is a different number for a different reason.
+	MaxKPICards int
 }
 
-// ScalePt rounds to the nearest half point. OOXML carries hundredths of a
-// point, so any value would encode; halves keep the scale legible in the XML,
-// keep two sizes from differing by a tenth of a point nobody can see, and — at
-// 2 px per point — keep every video type size on a whole pixel.
-func ScalePt(pt float64) float64 {
-	return math.Round(pt*Scale*2) / 2
+// Wide is the 16:9 surface: the PowerPoint slide and the 1920×1080 video frame.
+//
+// Margins are wider than the page's because the surface is wider: the measure a
+// reader's eye tracks is the same either way, and a line of text running the
+// full 339mm is unreadable at any size.
+//
+// Scale is one number rather than a second scale in tokens.json, because this
+// is the same design system seen from further away — decoupling the two would
+// let a body-size change land in the report and not in the deck or the video
+// built from the same spec. 1.8 comes from the measure: the content width is
+// 290.7mm against A4's 174mm, a ratio of 1.67, rounded up because a slide is
+// read across a room and a page is read at arm's length.
+var Wide = Surface{
+	WidthMM:  wideWidthMM,
+	HeightMM: wideHeightMM,
+	PxW:      1920,
+	PxH:      1080,
+
+	MarginX:      24.0,
+	MarginTop:    17.0,
+	MarginBottom: 12.0,
+
+	FooterBand: 7.0,
+	TitleBand:  22.0,
+
+	TitleRuleWidth:     34.0,
+	TitleRuleThickness: 1.6,
+
+	Scale: 1.8,
+	Type:  typeScale(1.8), // Display 43, H1 29, H2 23.5, Body 18, Caption 14.5
+
+	MaxKPICards: 4,
 }
+
+// Portrait is the 4:5 social surface: a 1080×1350 frame, which is the tallest
+// ratio Instagram accepts for a carousel and the one every slide of one is
+// drawn on (T-G3, decision 3).
+//
+// **The width is the wide surface's height, by construction.** At PxPerMM,
+// 1080 px is 190.5 mm — exactly Wide.HeightMM — so a portrait frame is drawn at
+// the same 2 px/pt as a landscape one and the same 18pt body is the same 36px
+// body on both. Scale is Wide's for the same reason: the research asks for H1
+// ≥ 56 px and body ≥ 34 px at 1080 wide, and 1.8 already gives 58 and 36, so
+// a second scale would be a second type size to keep in step for nothing.
+//
+// The margins are the safe zones, not taste. Instagram's UI covers roughly the
+// top 120 px and the bottom 150 px of a 4:5 post (username above, caption and
+// actions below), so MarginTop is 22 mm (≈125 px) and MarginBottom 27 mm
+// (≈153 px), and a title band or footer inside those would be drawn under the
+// app's chrome. MarginX is 14 mm rather than Wide's 24: the measure is
+// 162.5 mm on a surface read at arm's length, and Wide's margin exists for a
+// 339 mm line read across a room.
+var Portrait = Surface{
+	WidthMM:  1080.0 / PxPerMM, // 190.5
+	HeightMM: 1350.0 / PxPerMM, // 238.125
+	PxW:      1080,
+	PxH:      1350,
+
+	MarginX:      14.0,
+	MarginTop:    22.0,
+	MarginBottom: 27.0,
+
+	FooterBand: 7.0,
+	TitleBand:  22.0,
+
+	TitleRuleWidth:     34.0,
+	TitleRuleThickness: 1.6,
+
+	Scale: 1.8,
+	Type:  typeScale(1.8),
+
+	// Four stacked cards are ~120 mm of a 154 mm body; a fifth would either
+	// not fit or push the title off the safe zone.
+	MaxKPICards: 4,
+}
+
+// typeScale is the print type scale at the given scale, in points.
+func typeScale(scale float64) theme.TypeScaleTokens {
+	return theme.TypeScaleTokens{
+		Display: scalePt(theme.TypeScale.Display, scale), // cover and divider titles
+		H1:      scalePt(theme.TypeScale.H1, scale),      // slide titles
+		H2:      scalePt(theme.TypeScale.H2, scale),      // leads, KPI values, table captions
+		Body:    scalePt(theme.TypeScale.Body, scale),    // bullets and table cells
+		Caption: scalePt(theme.TypeScale.Caption, scale), // footers, labels, chart captions
+	}
+}
+
+// ScalePt lifts a print point size onto this surface and rounds to the nearest
+// half point. OOXML carries hundredths of a point, so any value would encode;
+// halves keep the scale legible in the XML, keep two sizes from differing by a
+// tenth of a point nobody can see, and — at 2 px per point — keep every video
+// type size on a whole pixel.
+func (s Surface) ScalePt(pt float64) float64 { return scalePt(pt, s.Scale) }
+
+func scalePt(pt, scale float64) float64 {
+	return math.Round(pt*scale*2) / 2
+}
+
+// IsZero reports whether s is the zero value, which every caller treats as
+// "the wide surface" so that an Options struct that predates surfaces keeps
+// meaning what it meant.
+func (s Surface) IsZero() bool { return s.WidthMM == 0 }
+
+// Or returns s, or fallback when s is the zero value.
+func (s Surface) Or(fallback Surface) Surface {
+	if s.IsZero() {
+		return fallback
+	}
+	return s
+}
+
+// Portrait reports whether the surface is taller than it is wide, which is
+// the question a layout asks before it stacks what it would otherwise set in
+// a row. It is asked of the frame and not of the body: on the 4:5 surface the
+// safe zones take enough height that the measure (162.5mm) is still wider than
+// the body (154mm), so "content width < body height" — the obvious predicate —
+// answers no on the one surface it exists for.
+func (s Surface) Portrait() bool { return s.HeightMM > s.WidthMM }
 
 // ContentWidth is the usable width between the left and right margins.
-func ContentWidth() float64 { return WidthMM - 2*MarginX }
+func (s Surface) ContentWidth() float64 { return s.WidthMM - 2*s.MarginX }
 
 // BodyTop is the top of a content surface's body area: under the title band and
 // the rule beneath it.
-func BodyTop() float64 { return MarginTop + TitleBand + theme.Spacing.MD }
+func (s Surface) BodyTop() float64 { return s.MarginTop + s.TitleBand + theme.Spacing.MD }
 
 // BodyHeight is what is left for content once the title and footer are taken.
-func BodyHeight() float64 { return HeightMM - BodyTop() - MarginBottom - FooterBand }
+func (s Surface) BodyHeight() float64 {
+	return s.HeightMM - s.BodyTop() - s.MarginBottom - s.FooterBand
+}
 
 // FooterTop is the baseline strip of a content surface.
-func FooterTop() float64 { return HeightMM - MarginBottom - FooterBand }
+func (s Surface) FooterTop() float64 { return s.HeightMM - s.MarginBottom - s.FooterBand }
 
 // BodyLeading is the multiple of the font height a line of copy occupies.
 // Looser than the PDF's 1.32: this surface is read at distance and from an
@@ -146,6 +290,10 @@ const SubstitutionMargin = 0.94
 
 // LinesIn is how many lines s will take in a box of the given width, measured
 // against the embedded face and discounted for a substituted one.
+//
+// LinesIn, Wrap, TextHeight and FitLines take a width and read no surface:
+// which box a string is measured against is the caller's decision, and the
+// measurement itself is the same on every surface.
 func LinesIn(s string, family string, style measure.Style, sizePt, widthMM float64) int {
 	if s == "" {
 		return 0
@@ -185,7 +333,7 @@ const MaxFactLines = 3
 // measure.
 const FactLabelShare = 0.34
 
-// FactRowHeight is the height one label/value row occupies.
+// FactRowHeight is the height one label/value row occupies on this surface.
 //
 // The value may wrap and it has to: the first thing a key_value block carries
 // in practice is a billing address, and "Meridian Logistics Pte Ltd, 8 Marina
@@ -194,10 +342,10 @@ const FactLabelShare = 0.34
 // fixed rows-per-surface, and both renderers pack it the same way — a fact
 // block that splits after row seven in the deck and after row nine in the video
 // is the same document disagreeing with itself.
-func FactRowHeight(value string) float64 {
-	valueW := ContentWidth() * (1 - FactLabelShare)
-	lines := max(1, min(LinesIn(value, theme.FontBody, measure.Bold, Type.Body, valueW), MaxFactLines))
-	return float64(lines)*measure.LineHeightMM(Type.Body)*BodyLeading + theme.Spacing.SM
+func (s Surface) FactRowHeight(value string) float64 {
+	valueW := s.ContentWidth() * (1 - FactLabelShare)
+	lines := max(1, min(LinesIn(value, theme.FontBody, measure.Bold, s.Type.Body, valueW), MaxFactLines))
+	return float64(lines)*measure.LineHeightMM(s.Type.Body)*BodyLeading + theme.Spacing.SM
 }
 
 // ChartAspect is the height a chart takes as a fraction of its width when the
@@ -207,13 +355,14 @@ func FactRowHeight(value string) float64 {
 // shallow in the report is the same figure telling two stories.
 const ChartAspect = 0.39
 
-// MaxChartHeight is the tallest a chart may be drawn: the body area less the
-// caption line under it.
-func MaxChartHeight() float64 {
-	return BodyHeight() - measure.LineHeightMM(Type.Caption)*BodyLeading - theme.Spacing.MD
+// MaxChartHeight is the tallest a chart may be drawn on this surface: the body
+// area less the caption line under it.
+func (s Surface) MaxChartHeight() float64 {
+	return s.BodyHeight() - measure.LineHeightMM(s.Type.Caption)*BodyLeading - theme.Spacing.MD
 }
 
-// Px converts a millimetre measurement on this surface to whole CSS pixels.
+// Px converts a millimetre measurement to whole CSS pixels. Package-level
+// because the density is: see PxPerMM.
 func Px(mm float64) int { return int(math.Round(mm * PxPerMM)) }
 
 // PtPx converts a point size to whole CSS pixels.

@@ -54,6 +54,14 @@ type Limits struct {
 	// MaxPlanBytes bounds the marshalled plan, which is dominated by chart
 	// images and the logo.
 	MaxPlanBytes int
+
+	// MinSlides and MaxSlides bound a carousel (T-G3). They are Instagram's —
+	// a carousel is two to ten children — and a spec outside the band is
+	// refused rather than truncated, because which slide to drop is the
+	// model's decision about its own argument, not this package's. A video
+	// ignores them; a carousel ignores MaxScenes and MaxTotalFrames.
+	MinSlides int
+	MaxSlides int
 }
 
 // DefaultLimits is what an unset Limits resolves to.
@@ -61,6 +69,8 @@ var DefaultLimits = Limits{
 	MaxScenes:      60,
 	MaxTotalFrames: 18_000,
 	MaxPlanBytes:   25 << 20,
+	MinSlides:      2,
+	MaxSlides:      10,
 }
 
 // Normalize replaces non-positive fields with the defaults, matching how every
@@ -76,6 +86,12 @@ func (l Limits) Normalize() Limits {
 	}
 	if l.MaxPlanBytes <= 0 {
 		l.MaxPlanBytes = DefaultLimits.MaxPlanBytes
+	}
+	if l.MinSlides <= 0 {
+		l.MinSlides = DefaultLimits.MinSlides
+	}
+	if l.MaxSlides <= 0 {
+		l.MaxSlides = DefaultLimits.MaxSlides
 	}
 	return l
 }
@@ -94,6 +110,12 @@ type Options struct {
 	// Now is the fallback generated-at when the spec omits one. Zero means
 	// time.Now(); tests set it to keep plans stable.
 	Now time.Time
+
+	// Surface is the geometry every line is measured against and every scene
+	// is positioned on. The zero value is canvas.Wide — the 1920×1080 frame —
+	// so a caller that predates surfaces (T-G2) builds the plan it always did.
+	// T-G3 hands canvas.Portrait here for a carousel.
+	Surface canvas.Surface
 
 	Limits Limits
 }
@@ -136,6 +158,44 @@ func CheckLimits(doc *spec.Document, opts Options) error {
 // see the package's locked decision 9 — so this is where determinism is proven
 // instead.
 func Build(doc *spec.Document, opts Options) (*Plan, error) {
+	return project(doc, opts, false)
+}
+
+// BuildCarousel projects a document onto a carousel: a still plan on the
+// portrait surface, one frame a scene, two to ten scenes, every scene carrying
+// its alt text (T-G3).
+//
+// It is Build with the time axis removed. The walk, the chart images, the logo,
+// the line breaking and the table solver are the video's, against
+// canvas.Portrait instead of canvas.Wide; what changes is that no scene has a
+// duration — timing.go is never consulted — and that the count is bounded by
+// Limits.MinSlides/MaxSlides rather than by scenes and running time. A caller
+// that sets Options.Surface chooses a different still surface (T-G9's square
+// and story); the zero value is Portrait here where it is Wide for a video.
+func BuildCarousel(doc *spec.Document, opts Options) (*Plan, error) {
+	opts.Surface = opts.Surface.Or(canvas.Portrait)
+	return project(doc, opts, true)
+}
+
+// CheckCarouselLimits is CheckLimits for a carousel: the same precheck
+// BuildCarousel runs, stopped before anything is drawn, so the `/v1` door and
+// the tool can refuse an eleven-slide spec in milliseconds with the sentence
+// the worker would have used a minute later.
+func CheckCarouselLimits(doc *spec.Document, opts Options) error {
+	if doc == nil {
+		return fmt.Errorf("videoplan: nil spec")
+	}
+	opts.Surface = opts.Surface.Or(canvas.Portrait)
+	b, err := newBuilder(doc, opts)
+	if err != nil {
+		return err
+	}
+	b.still = true
+	return b.precheck()
+}
+
+// project is Build and BuildCarousel's shared body.
+func project(doc *spec.Document, opts Options, still bool) (*Plan, error) {
 	if doc == nil {
 		return nil, fmt.Errorf("videoplan: nil spec")
 	}
@@ -143,6 +203,7 @@ func Build(doc *spec.Document, opts Options) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	b.still = still
 	if err := b.precheck(); err != nil {
 		return nil, err
 	}
@@ -156,6 +217,12 @@ type builder struct {
 	doc  *spec.Document
 	opts Options
 
+	// still is a carousel: every scene is one frame and the slide band, not
+	// the running time, is the limit. Read in precheck and finish only — the
+	// sinks compute frames as they always did and finish overwrites them,
+	// which keeps the eight sink methods identical for both outputs.
+	still bool
+
 	fmt    format.Options
 	words  labels.Set
 	title  string
@@ -165,12 +232,16 @@ type builder struct {
 
 	logoAspect float64
 
+	// s is the surface, resolved once from opts so no scene can be measured
+	// against a different one from its neighbours.
+	s canvas.Surface
+
 	sections []spec.Section
 	scenes   []Scene
 }
 
 func newBuilder(doc *spec.Document, opts Options) (*builder, error) {
-	b := &builder{doc: doc, opts: opts, limits: opts.Limits.Normalize()}
+	b := &builder{doc: doc, opts: opts, limits: opts.Limits.Normalize(), s: opts.Surface.Or(canvas.Wide)}
 
 	currency := doc.Currency
 	if currency == "" {
@@ -239,7 +310,47 @@ func newBuilder(doc *spec.Document, opts Options) (*builder, error) {
 // but by then the charts have been drawn, which is the cost this avoids paying
 // for the specs that were never going to work.
 func (b *builder) precheck() error {
-	scenes, seconds := 0, 0.0
+	scenes, seconds := b.estimate()
+	if b.still {
+		return b.checkSlides(scenes, true)
+	}
+
+	if scenes > b.limits.MaxScenes {
+		return fmt.Errorf("videoplan: this document needs at least %d scenes and the limit is %d: "+
+			"a video is a summary, not a transcript — reduce it to the sections that carry the argument",
+			scenes, b.limits.MaxScenes)
+	}
+	if f := frames(seconds); f > b.limits.MaxTotalFrames {
+		return fmt.Errorf("videoplan: this document runs to at least %s and the limit is %s: "+
+			"a video is a summary, not a transcript — shorten the prose or split it into two reports",
+			duration(f), duration(b.limits.MaxTotalFrames))
+	}
+	return nil
+}
+
+// checkSlides refuses a carousel outside the slide band with the sentence the
+// model can act on. lowerBound says the count is precheck's estimate rather
+// than the finished plan's: a table that pages adds slides, so an estimate
+// over the ceiling is certainly over it, while an estimate under the floor is
+// exact — nothing counted under the floor can page into more.
+func (b *builder) checkSlides(n int, lowerBound bool) error {
+	switch {
+	case n > b.limits.MaxSlides:
+		qualifier := ""
+		if lowerBound {
+			qualifier = "at least "
+		}
+		return fmt.Errorf("videoplan: a carousel is %d–%d slides; this spec makes %s%d — merge or drop sections",
+			b.limits.MinSlides, b.limits.MaxSlides, qualifier, n)
+	case n < b.limits.MinSlides:
+		return fmt.Errorf("videoplan: a carousel is %d–%d slides; this spec makes %d — add a section",
+			b.limits.MinSlides, b.limits.MaxSlides, n)
+	}
+	return nil
+}
+
+// estimate is the lower bound on scenes and seconds precheck reasons from.
+func (b *builder) estimate() (scenes int, seconds float64) {
 	if b.doc.Cover() != nil {
 		scenes, seconds = scenes+1, seconds+CoverSeconds
 	}
@@ -260,23 +371,15 @@ func (b *builder) precheck() error {
 		}
 	}
 	scenes, seconds = scenes+1, seconds+ClosingSeconds // the closing scene
-
-	if scenes > b.limits.MaxScenes {
-		return fmt.Errorf("videoplan: this document needs at least %d scenes and the limit is %d: "+
-			"a video is a summary, not a transcript — reduce it to the sections that carry the argument",
-			scenes, b.limits.MaxScenes)
-	}
-	if f := frames(seconds); f > b.limits.MaxTotalFrames {
-		return fmt.Errorf("videoplan: this document runs to at least %s and the limit is %s: "+
-			"a video is a summary, not a transcript — shorten the prose or split it into two reports",
-			duration(f), duration(b.limits.MaxTotalFrames))
-	}
-	return nil
+	return scenes, seconds
 }
 
 func (b *builder) finish() (*Plan, error) {
 	if len(b.scenes) == 0 {
 		return nil, fmt.Errorf("videoplan: nothing to render")
+	}
+	if b.still {
+		return b.finishStill()
 	}
 	if len(b.scenes) > b.limits.MaxScenes {
 		return nil, fmt.Errorf("videoplan: %d scenes, over the limit of %d",
@@ -294,15 +397,42 @@ func (b *builder) finish() (*Plan, error) {
 
 	return &Plan{
 		Version:     Version,
-		Width:       1920,
-		Height:      1080,
+		Width:       b.s.PxW,
+		Height:      b.s.PxH,
 		FPS:         FPS,
 		TotalFrames: total,
 		Locale:      string(b.fmt.Locale),
 		Title:       b.title,
-		Metrics:     metrics(),
+		Metrics:     metrics(b.s),
 		Brand:       b.brand(),
 		Scenes:      b.scenes,
+	}, nil
+}
+
+// finishStill is finish for a carousel: the exact slide count against the
+// band, one frame a scene, fps 1, and the alt text every still needs.
+func (b *builder) finishStill() (*Plan, error) {
+	if err := b.checkSlides(len(b.scenes), false); err != nil {
+		return nil, err
+	}
+	scenes := make([]Scene, len(b.scenes))
+	for i, s := range b.scenes {
+		s.Frames = 1
+		s.Alt = altText(s, b.words)
+		scenes[i] = s
+	}
+	return &Plan{
+		Version:     Version,
+		Width:       b.s.PxW,
+		Height:      b.s.PxH,
+		FPS:         1,
+		TotalFrames: len(scenes),
+		Still:       true,
+		Locale:      string(b.fmt.Locale),
+		Title:       b.title,
+		Metrics:     metrics(b.s),
+		Brand:       b.brand(),
+		Scenes:      scenes,
 	}, nil
 }
 
@@ -341,22 +471,24 @@ func duration(f int) string {
 	return fmt.Sprintf("%d:%02d", secs/60, secs%60)
 }
 
-func metrics() Metrics {
+// metrics is the surface in CSS pixels, exactly as the scenes were measured
+// against it.
+func metrics(s canvas.Surface) Metrics {
 	return Metrics{
-		MarginX:      canvas.Px(canvas.MarginX),
-		MarginTop:    canvas.Px(canvas.MarginTop),
-		MarginBottom: canvas.Px(canvas.MarginBottom),
+		MarginX:      canvas.Px(s.MarginX),
+		MarginTop:    canvas.Px(s.MarginTop),
+		MarginBottom: canvas.Px(s.MarginBottom),
 
-		ContentWidth: canvas.Px(canvas.ContentWidth()),
-		BodyTop:      canvas.Px(canvas.BodyTop()),
-		BodyHeight:   canvas.Px(canvas.BodyHeight()),
+		ContentWidth: canvas.Px(s.ContentWidth()),
+		BodyTop:      canvas.Px(s.BodyTop()),
+		BodyHeight:   canvas.Px(s.BodyHeight()),
 
-		TitleBand:  canvas.Px(canvas.TitleBand),
-		FooterBand: canvas.Px(canvas.FooterBand),
-		FooterTop:  canvas.Px(canvas.FooterTop()),
+		TitleBand:  canvas.Px(s.TitleBand),
+		FooterBand: canvas.Px(s.FooterBand),
+		FooterTop:  canvas.Px(s.FooterTop()),
 
-		TitleRuleWidth:     canvas.Px(canvas.TitleRuleWidth),
-		TitleRuleThickness: canvas.Px(canvas.TitleRuleThickness),
+		TitleRuleWidth:     canvas.Px(s.TitleRuleWidth),
+		TitleRuleThickness: canvas.Px(s.TitleRuleThickness),
 
 		Radius:    canvas.Px(theme.RadiusBase),
 		SpacingSM: canvas.Px(theme.Spacing.SM),
@@ -365,11 +497,11 @@ func metrics() Metrics {
 
 		Leading: canvas.BodyLeading,
 		Type: TypeScale{
-			Display: canvas.PtPx(canvas.Type.Display),
-			H1:      canvas.PtPx(canvas.Type.H1),
-			H2:      canvas.PtPx(canvas.Type.H2),
-			Body:    canvas.PtPx(canvas.Type.Body),
-			Caption: canvas.PtPx(canvas.Type.Caption),
+			Display: canvas.PtPx(s.Type.Display),
+			H1:      canvas.PtPx(s.Type.H1),
+			H2:      canvas.PtPx(s.Type.H2),
+			Body:    canvas.PtPx(s.Type.Body),
+			Caption: canvas.PtPx(s.Type.Caption),
 		},
 	}
 }

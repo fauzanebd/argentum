@@ -87,6 +87,16 @@ export interface Plan {
    */
   total_frames: number /* int */;
   /**
+   * Still marks a plan whose scenes are frames rather than beats: fps 1, one
+   * frame a scene, and every entrance drawn at its end state (T-G3). A
+   * carousel is such a plan. The renderer freezes each scene at the end of
+   * its entrance instead of animating it, and refuses a stills request
+   * against a plan without this flag — a plan built for one output is not a
+   * plan for the other. Additive, so Version stays 1: an older renderer
+   * ignores it and draws the video the plan also describes.
+   */
+  still?: boolean;
+  /**
    * Locale is "id" or "en". The renderer uses it for the document language
    * and for nothing else — every word it would otherwise affect is already
    * resolved.
@@ -269,6 +279,16 @@ export interface Scene {
    * renderer draws the marker; this says whether to.
    */
   continued?: boolean;
+  /**
+   * Alt is the scene described in words, for a still that will be published
+   * as an image: Instagram takes alt text per child, and a screen reader is
+   * the only reader a slide has once it is a JPEG. Built from the scene's own
+   * final strings — the title, then the cards, the facts or the caption — so
+   * it says what the slide says in the language the slide says it, and the
+   * model is never asked to write it. Capped at 1000 characters, the
+   * platform's limit. Empty on a video plan.
+   */
+  alt?: string;
 }
 /**
  * Fact is a label and a value, both final.

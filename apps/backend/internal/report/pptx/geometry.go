@@ -18,6 +18,12 @@ import (
 // The delegations are deliberate rather than lazy. Renaming ~80 call sites to
 // canvas.X would have made the T-V1 diff unreviewable against a renderer whose
 // only guarantee is that its bytes did not change.
+//
+// Since T-G2 the surface is a value, canvas.Wide, and this renderer names it
+// exactly once — here. A deck is a 16:9 artifact by format (OOXML's widescreen
+// slide is the surface), so the choice is not a parameter of the renderer the
+// way it is of the video builder, and every call site below keeps reading the
+// local name it always did.
 
 // EMU is the English Metric Unit, OOXML's length. 914400 to the inch, which
 // makes exactly 36000 to the millimetre — chosen by the format precisely so
@@ -41,35 +47,40 @@ const (
 // asserted to match by a comment.
 var slideHeightMM = float64(slideHeightEMU) / emuPerMM // 190.5
 
-// Margins and bands, from the shared surface.
-const (
-	marginX      = canvas.MarginX
-	marginTop    = canvas.MarginTop
-	marginBottom = canvas.MarginBottom
+// surface is the one surface a deck is drawn on.
+var surface = canvas.Wide
 
-	footerBand = canvas.FooterBand
-	titleBand  = canvas.TitleBand
+// Margins and bands, from the shared surface. Variables rather than constants
+// since T-G2, because a Surface field is not a constant expression; nothing
+// here was ever used where a constant is required.
+var (
+	marginX      = surface.MarginX
+	marginTop    = surface.MarginTop
+	marginBottom = surface.MarginBottom
 
-	titleRuleWidth     = canvas.TitleRuleWidth
-	titleRuleThickness = canvas.TitleRuleThickness
+	footerBand = surface.FooterBand
+	titleBand  = surface.TitleBand
+
+	titleRuleWidth     = surface.TitleRuleWidth
+	titleRuleThickness = surface.TitleRuleThickness
 )
 
 // deckType is the shared type scale under the name this renderer has always
 // used for it.
-var deckType = canvas.Type
+var deckType = surface.Type
 
 // contentWidth is the usable width between the left and right margins.
-func contentWidth() float64 { return canvas.ContentWidth() }
+func contentWidth() float64 { return surface.ContentWidth() }
 
 // bodyTop is the top of a content slide's body area: under the title band and
 // the rule beneath it.
-func bodyTop() float64 { return canvas.BodyTop() }
+func bodyTop() float64 { return surface.BodyTop() }
 
 // bodyHeight is what is left for content once the title and footer are taken.
-func bodyHeight() float64 { return canvas.BodyHeight() }
+func bodyHeight() float64 { return surface.BodyHeight() }
 
 // footerTop is the baseline strip of a content slide.
-func footerTop() float64 { return canvas.FooterTop() }
+func footerTop() float64 { return surface.FooterTop() }
 
 // bodyLeading is the multiple of the font height a line of slide copy occupies.
 const bodyLeading = canvas.BodyLeading
