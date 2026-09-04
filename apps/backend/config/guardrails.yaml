@@ -29,8 +29,13 @@ rules:
       # Analytics / BI terminology
       # EN: data, analytics, analysis, metric, KPI, report, dashboard, chart, graph, visualization, trend, insight, statistic
       # ID: data, analitik, analisis, metrik, laporan, dasbor, grafik, tren, wawasan, statistik
+      # Content built from the data (T-G1): a carousel is a generate_document
+      # format, and asking for one reads the tenant's figures the way asking for
+      # a chart does. "instagram" is deliberately NOT here — a regex match admits
+      # a message without consulting the classifier, and "an Instagram caption
+      # about the weather" reads nothing of theirs. That one is the classifier's.
       - type: regex
-        pattern: "(?i)\\b(data|analytics|analitik|analysis|analisis|metric|metrik|kpi|kpis|report|laporan|dashboard|dasbor|chart|graph|grafik|visualization|visualisasi|trend|tren|insight|wawasan|statistic|statistik)s?\\b"
+        pattern: "(?i)\\b(data|analytics|analitik|analysis|analisis|metric|metrik|kpi|kpis|report|laporan|dashboard|dasbor|chart|graph|grafik|visualization|visualisasi|trend|tren|insight|wawasan|statistic|statistik|carousel|karusel)s?\\b"
       # Business entities
       # EN: … growth, churn, retention… (standalone “margin” lives in BI-only patterns below — the `(…)s?\b` suffix falsely matches CSS “margins”.)
       # ID: penjualan, pendapatan, pemasukan, pesanan, pelanggan, transaksi, faktur, produk, pembelian, pembayaran, keuntungan, laba, rugi, biaya, pengeluaran, pengguna, konversi, bisnis, usaha, kinerja, pertumbuhan, pemasaran, iklan, kampanye, promosi, gudang, pengiriman, diskon, langganan
@@ -95,6 +100,12 @@ rules:
       # model that has to hold a list of twelve exclusions has stopped applying
       # a rule and started matching vibes.
       #
+      # 2026-09-03 (T-G1): one clause added to the TRUE list. A carousel or a
+      # deck of last month's numbers reads the data as surely as a chart of it,
+      # and the prompt had no example of a produce-from-our-figures request —
+      # so the Marketing template's own starter question walked into a refusal.
+      # One clause, not a list; the paragraph above says why.
+      #
       # The first line below is load-bearing for the tests: stubLLM in
       # internal/guardrails/golden_test.go routes the topic verdict by matching
       # "belongs to a business analytics assistant". Reword it there too, or
@@ -105,7 +116,7 @@ rules:
 
           The test is whose data answers it. If answering means reading THIS organization's own business data — or is small talk with the assistant itself — the answer is TRUE. Otherwise FALSE.
 
-          TRUE: metrics, KPIs, sales, revenue, orders, customers, inventory, finance, ops; reports, dashboards, charts of their data; a short SQL or schema question about their own warehouse; a brief follow-up to a previous answer ("why?", "break that down", "ok"); a greeting, thanks, or asking what this assistant can do.
+          TRUE: metrics, KPIs, sales, revenue, orders, customers, inventory, finance, ops; reports, dashboards, charts of their data; a social post, slide deck, video or report built from their figures; a short SQL or schema question about their own warehouse; a brief follow-up to a previous answer ("why?", "break that down", "ok"); a greeting, thanks, or asking what this assistant can do.
 
           FALSE: everything else. Two families are the ones people get wrong:
           1. Teaching or debugging code — algorithms, syntax, frameworks, CSS or layout, git, terminals, CS homework — even when the words "table", "list" or "dashboard" appear.

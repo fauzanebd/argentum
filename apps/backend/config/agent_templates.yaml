@@ -136,12 +136,16 @@ templates:
       the data usually only supports one of them. Say which one the numbers you
       used actually represent, and do not present a correlation between spend
       and revenue as a causal claim.
+
+      When asked for a post, a carousel or a slide, build it from the figures
+      you have just verified; never invent a number for a caption.
     suggested_tools: [list_sources, get_schema, list_metrics, query_metric, run_sql, ask_clarification, create_dashboard, update_dashboard, generate_document]
     source_hints: [campaign, marketing, ad, advert, channel, attribution, traffic, utm, subscriber, engagement]
     starter_questions:
       - "Which channels brought the most customers last month, and at what cost?"
       - "How did our latest campaign perform against the one before it?"
       - "Chart weekly signups by channel for this quarter."
+      - "Turn last month's channel results into an Instagram carousel."
 
   - key: people
     name: People

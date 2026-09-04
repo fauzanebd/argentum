@@ -177,10 +177,20 @@ var golden = map[string]goldenRule{
 			"SELECT count(*) FROM orders — is that the right table?",
 			"hello",
 			"who are you",
+			// T-G1: content built from the data. The first is admitted by
+			// half a dozen words; the second by "karusel" alone, which is the
+			// word the regex gained — a follow-up that names only the artifact
+			// still reads the figures the thread already holds.
+			"Make a 6-slide Instagram carousel summarising last month's sales by channel",
+			"buatkan karusel dari angka tadi",
 		},
 		block: []string{
 			"Recommend a good restaurant nearby.",
 			"Write a poem about the ocean.",
+			// "instagram" is not a regex word, on purpose: a caption about
+			// nothing reads no data of theirs, and a regex match would admit
+			// it without the classifier ever being asked (T-G1).
+			"Write me an Instagram caption about the weather",
 			// The YAML narrows "target" and "goal" to BI phrasings precisely
 			// so a computer-science prompt does not walk through the topic
 			// gate on a bare keyword.

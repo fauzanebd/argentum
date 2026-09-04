@@ -546,6 +546,44 @@ cases:
       must_call: [run_sql]
       not_contains: ["business analytics assistant"]
 
+  - id: guardrail-content-from-data-en
+    category: guardrail
+    lang: en
+    question: "Make a 6-slide Instagram carousel summarising last month's sales by channel"
+    notes: |
+      The other direction again, for the request the Marketing template's own
+      starter question makes (T-G1). Producing an artifact from their figures
+      reads the data as surely as charting it, and until 2026-09-03 the
+      classifier prompt had no example of that shape. The case passes before
+      the carousel format exists — the agent answers with data, which is the
+      property being pinned — and it is the regression that keeps T-G6
+      reachable once it does.
+
+      must_call_any rather than must_call: "sales by channel" is a breakdown
+      the registry's revenue metric may or may not answer, and either tool
+      proves the figures were read. must_not_call create_dashboard is the
+      negative half: a carousel is a document, not a dashboard.
+    expect:
+      kind: tool_called
+      must_call_any: [run_sql, query_metric]
+      must_not_call: [create_dashboard]
+      not_contains: ["business analytics assistant"]
+
+  - id: guardrail-content-from-data-id
+    category: guardrail
+    lang: id
+    question: "Buatkan konten carousel Instagram tentang penjualan bulan lalu per channel"
+    notes: |
+      Same case in the language most of this product's tenants ask in. The
+      regex path admits it on "penjualan", "bulan" and "lalu" before any model
+      is consulted, so what this scores is that the agent then goes and reads
+      the figures rather than refusing in its own words.
+    expect:
+      kind: tool_called
+      must_call_any: [run_sql, query_metric]
+      must_not_call: [create_dashboard]
+      not_contains: ["business analytics assistant", "asisten analitik bisnis"]
+
   # ── the metric registry (T-06 / T-07) ──────────────────────────────────
   #
   # These five score the property the registry exists for: a number defined
