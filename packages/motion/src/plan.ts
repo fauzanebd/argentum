@@ -37,6 +37,8 @@ export const KIND = {
   table: "table",
   chart: "chart",
   closing: "closing",
+  hero: "hero",
+  promo: "promo",
 } as const;
 
 /**

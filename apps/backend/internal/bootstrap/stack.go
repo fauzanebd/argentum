@@ -54,6 +54,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
+	"github.com/fauzanebd/argentum/internal/postimage"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/theme"
 	"github.com/fauzanebd/argentum/internal/skill"
@@ -173,8 +174,11 @@ type Stack struct {
 	// the deployment has no object storage, which is the same condition that
 	// leaves generate_document unregistered — the worker's async render task
 	// checks it for exactly that reason.
-	Docs      *docgen.Service
-	Documents domain.DocumentRepository
+	Docs *docgen.Service
+	// PostImages is the tenant's picture library (T-G12). Nil without object
+	// storage, which every reader treats as "there are no pictures".
+	PostImages *postimage.Service
+	Documents  domain.DocumentRepository
 
 	// DocumentParse reads an uploaded PDF into per-page artifacts (T-P2). Nil
 	// on a deployment with no object storage or no parser configured, and the
@@ -407,6 +411,11 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// off, which is the only difference between the two.
 		s.Docs = docgen.New(storageSvc, documentRepo, s.Companies, brandingSvc, s.UsageSvc, presignTTL).
 			WithVideo(cfg.VideoClient(), cfg.VideoLimits())
+		// The tenant's picture library (T-G12), on the bucket the logos and
+		// the documents already share. Inside this branch for the parse
+		// pipeline's reason: a library with no object store has nothing to
+		// hold, and the promo card degrades to type without one.
+		s.PostImages = postimage.NewService(pgctl.NewPostImageRepo(controlDB), storageSvc)
 		// The parse pipeline (T-P2). Inside the storage branch because both
 		// halves of it are objects: the PDF it reads and the per-page artifacts
 		// it writes. A parser configured without storage would have nothing to
@@ -595,6 +604,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		),
 		Scheduled: s.ScheduledSvc,
 		Docs:      s.Docs,
+		Images:    s.postImageResolver(),
 		Metrics:   s.Metrics,
 		// The workspace's own procedures (T-K4). The same repository the index
 		// is composed from, so what `load_skill` opens is what the model was
@@ -1164,4 +1174,18 @@ func documentLinkerOrNil(d *docgen.Service) actions.DocumentLinker {
 		return nil
 	}
 	return d
+}
+
+// postImageResolver hands the tool the picture library, or a true nil.
+//
+// A typed nil pointer inside a non-nil interface is not nil, and the registry
+// tests `d.Images != nil` — so returning `s.PostImages` directly would make a
+// deployment with no object storage register a resolver that dereferences
+// nothing on every promo card. The same trap `cmd/api` avoids with the
+// branding store, written out here because it has bitten this codebase once.
+func (s *Stack) postImageResolver() tools.ImageResolver {
+	if s.PostImages == nil {
+		return nil
+	}
+	return s.PostImages
 }

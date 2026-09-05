@@ -47,6 +47,14 @@ const (
 	KindTable     = "table"
 	KindChart     = "chart"
 	KindClosing   = "closing"
+	// KindHero is one statement on the whole frame (T-G11): kicker, headline,
+	// supporting line, no title band and no footer. The scene carries
+	// Subtitle as the kicker and Lines as the supporting copy.
+	KindHero = "hero"
+	// KindPromo is a retail promotion card (T-G12): a product photograph, a
+	// badge, the product's name, the old price struck through and the new
+	// price. The one scene whose arrangement is the deliverable.
+	KindPromo = "promo"
 )
 
 // Chart reveal styles. How the mask over the chart image moves — never a
@@ -190,6 +198,14 @@ type Brand struct {
 	LogoDataURI string  `json:"logo_data_uri,omitempty"`
 	LogoAspect  float64 `json:"logo_aspect,omitempty"`
 
+	// Promo is the palette a promotion card is drawn with (T-G12), derived in
+	// Go from the accent above and carried here for the reason every other
+	// colour in this struct is: `make motion-guards` forbids the renderer
+	// from naming a colour of its own, and a promo card needs five it cannot
+	// otherwise get. Nil for every plan with no promo scene in it, so no
+	// existing golden moves.
+	Promo *PromoBrand `json:"promo,omitempty"`
+
 	// Credit is the "Made with Argentum" line, or empty when the tenant has
 	// switched it off. Confidentiality and FooterNote are theirs.
 	Credit          string `json:"credit,omitempty"`
@@ -211,6 +227,39 @@ type Tone struct {
 // union, for the same reason spec.Section does: the shapes are small, the
 // dispatch is one switch, and a renderer that reads a field another kind wrote
 // draws nothing rather than failing.
+// PromoBrand is the promotion card's palette (T-G12).
+//
+// Five colours, all functions of the tenant's accent, so a shop with a green
+// brand gets a green promotion rather than Argentum's red with their logo on
+// it. They are computed here rather than in the renderer because a hex
+// literal in `packages/motion` is a failing build, and because a derived
+// colour is a rendering decision that belongs beside the one it derives from.
+type PromoBrand struct {
+	// Ground and Ray are the two wedges of the sunburst behind everything: the
+	// accent, and the accent lifted towards white. The difference is small on
+	// purpose — a high-contrast sunburst competes with the product.
+	Ground string `json:"ground"`
+	Ray    string `json:"ray"`
+	// Burst is the star behind the photograph, a shade darker than the ground
+	// so the product reads against it.
+	Burst string `json:"burst"`
+	// Badge is the sticker the promotion's name sits on, and PriceBlock the
+	// panel under the new price. Both are the strongest colour on the card,
+	// which is why they are the same one.
+	Badge      string `json:"badge"`
+	PriceBlock string `json:"price_block"`
+}
+
+// Image is a picture inlined into the plan: the renderer has no network, so
+// every image it draws arrives as a data URI (T-G12). Aspect is width over
+// height, so a layout can reserve the right box before the image loads.
+type Image struct {
+	DataURI string  `json:"data_uri"`
+	Aspect  float64 `json:"aspect,omitempty"`
+	// Alt describes the picture, and it is the picture's half of Scene.Alt.
+	Alt string `json:"alt,omitempty"`
+}
+
 type Scene struct {
 	Kind string `json:"kind"`
 
@@ -238,6 +287,15 @@ type Scene struct {
 
 	// Tone is a quote scene's callout tone: info, warn or good.
 	Tone string `json:"tone,omitempty"`
+
+	// Badge, Price, Was, Unit and Image are the promotion card's slots
+	// (T-G12). Price and Was are already formatted in the document's locale
+	// and currency, like every other figure that reaches the renderer.
+	Badge string `json:"badge,omitempty"`
+	Price string `json:"price,omitempty"`
+	Was   string `json:"was,omitempty"`
+	Unit  string `json:"unit,omitempty"`
+	Image *Image `json:"image,omitempty"`
 
 	// Caption sits under a table or a chart, pre-wrapped.
 	Caption []string `json:"caption,omitempty"`

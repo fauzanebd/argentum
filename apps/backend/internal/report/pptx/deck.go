@@ -1,6 +1,7 @@
 package pptx
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/fauzanebd/argentum/internal/report/canvas"
@@ -104,6 +105,77 @@ func (r *renderer) buildSlides() error {
 // Divider opens a level-1 section with a slide of its own.
 func (b *builder) Divider(title string) {
 	b.slides = append(b.slides, slide{kind: kindDivider, title: title})
+}
+
+// Promo is a promotion card (T-G12), which a deck cannot draw and does not
+// need to: the slot layout is the whole point of the type, and a deck has no
+// photograph, no sunburst and no shelf-edge price panel.
+//
+// What it does have is the words, and they are all here — the badge, the
+// product, both prices and the unit — as a divider carrying one line. A
+// promotion in a board pack is a fact about a promotion, and this is that
+// fact rather than a slide that failed to be a poster.
+func (b *builder) Promo(sec spec.Section) {
+	name := strings.TrimSpace(sec.Title)
+	if name == "" {
+		return
+	}
+	b.slides = append(b.slides, slide{kind: kindDivider, title: name, subtitle: promoLine(sec)})
+	if note := strings.TrimSpace(sec.Text); note != "" {
+		b.appendNotes(len(b.slides)-1, note)
+	}
+}
+
+// promoLine is the promotion as one sentence: the badge, both prices and the
+// unit, in the order a shopper reads them off the card.
+//
+// It is deliberately unformatted arithmetic-free text. The deck has no
+// currency machinery of its own — the videoplan projection does the
+// formatting for the surface that draws prices — so this states the figures
+// as the spec gave them rather than inventing a second rendering of a price
+// that could disagree with the poster's.
+func promoLine(sec spec.Section) string {
+	parts := []string{}
+	if badge := strings.TrimSpace(sec.Badge); badge != "" {
+		parts = append(parts, badge)
+	}
+	if sec.Was != nil {
+		parts = append(parts, fmt.Sprintf("was %v", sec.Was.V))
+	}
+	if sec.Price != nil {
+		now := fmt.Sprintf("now %v", sec.Price.V)
+		if unit := strings.TrimSpace(sec.Unit); unit != "" {
+			now += " " + unit
+		}
+		parts = append(parts, now)
+	}
+	return strings.Join(parts, "  ·  ")
+}
+
+// Hero is one statement on a whole slide (T-G11).
+//
+// The deck has no hero layout and does not need one: a divider is already a
+// title alone on the dark ground, which is what a hero is minus the kicker.
+// So a hero becomes a divider carrying its supporting line as the subtitle,
+// and the kicker goes into the notes rather than being dropped — a deck is
+// read by a presenter, and the kicker is the thing they say first.
+//
+// This is a deliberate degradation rather than a gap: a spec written for a
+// social image and also asked for as a deck renders as a slide that says the
+// same words, instead of failing or vanishing.
+func (b *builder) Hero(sec spec.Section) {
+	headline := firstNonEmpty(strings.TrimSpace(sec.Title), strings.TrimSpace(sec.Text))
+	body := strings.TrimSpace(sec.Text)
+	if headline == body {
+		body = ""
+	}
+	if headline == "" && body == "" {
+		return
+	}
+	b.slides = append(b.slides, slide{kind: kindDivider, title: headline, subtitle: body})
+	if kicker := strings.TrimSpace(sec.Subtitle); kicker != "" {
+		b.appendNotes(len(b.slides)-1, kicker)
+	}
 }
 
 // AttachSource puts a footnote into the previous slide's notes.

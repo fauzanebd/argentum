@@ -207,6 +207,74 @@ var Portrait = Surface{
 	MaxKPICards: 4,
 }
 
+// Square is the 1:1 social surface: a 1080×1080 frame (T-G11).
+//
+// The width, the scale and the margins are Portrait's, because they are the
+// same frame seen at a different height: 1080 px wide at the same 2 px/pt, the
+// same safe zones taken out of the top and the bottom, the same measure. What
+// changes is what is left in between — 106.5 mm of body against Portrait's
+// 154 — and the one number that has to follow it is the card cap. Four stacked
+// cards need ~120 mm and there are 106.5, so a square surface keeps three and
+// the builder pages the fourth exactly as it pages a long table.
+var Square = Surface{
+	WidthMM:  1080.0 / PxPerMM, // 190.5
+	HeightMM: 1080.0 / PxPerMM, // 190.5
+	PxW:      1080,
+	PxH:      1080,
+
+	MarginX:      14.0,
+	MarginTop:    22.0,
+	MarginBottom: 27.0,
+
+	FooterBand: 7.0,
+	TitleBand:  22.0,
+
+	TitleRuleWidth:     34.0,
+	TitleRuleThickness: 1.6,
+
+	Scale: 1.8,
+	Type:  typeScale(1.8),
+
+	MaxKPICards: 3,
+}
+
+// Story is the 9:16 surface: a 1080×1920 frame, the full-screen format
+// (T-G11).
+//
+// **Its margins are not Portrait's, and that is the whole reason it is a
+// surface rather than a height.** A story is drawn under the app's own
+// chrome: the account row and the close control take roughly the top 250 px,
+// and the reply bar, the sticker row and the swipe-up affordance take roughly
+// the bottom 340 px. So MarginTop is 44 mm (≈250 px) and MarginBottom 60 mm
+// (≈340 px) — twice and better than twice Portrait's — and a title band or a
+// footer inside either would be drawn under a control the reader cannot move.
+//
+// What is left is still the tallest body of any surface here, 199.7 mm against
+// Portrait's 154, which is why the card cap stays at four rather than rising:
+// more than four figures on one frame is a table, and that is true at any
+// height.
+var Story = Surface{
+	WidthMM:  1080.0 / PxPerMM, // 190.5
+	HeightMM: 1920.0 / PxPerMM, // 338.667
+	PxW:      1080,
+	PxH:      1920,
+
+	MarginX:      14.0,
+	MarginTop:    44.0,
+	MarginBottom: 60.0,
+
+	FooterBand: 7.0,
+	TitleBand:  22.0,
+
+	TitleRuleWidth:     34.0,
+	TitleRuleThickness: 1.6,
+
+	Scale: 1.8,
+	Type:  typeScale(1.8),
+
+	MaxKPICards: 4,
+}
+
 // typeScale is the print type scale at the given scale, in points.
 func typeScale(scale float64) theme.TypeScaleTokens {
 	return theme.TypeScaleTokens{

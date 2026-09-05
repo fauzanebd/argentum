@@ -44,6 +44,22 @@ func (r *renderer) renderSection(sec spec.Section, next *spec.Section) error {
 		r.renderKPIRow(sec)
 	case spec.SectionCallout:
 		r.renderCallout(sec)
+	case spec.SectionPromo:
+		// A page cannot draw a promotion card either, and here the
+		// degradation is a KPI row rather than a callout: two prices side by
+		// side is exactly what a KPI row is for, and it is the one shape on a
+		// page that puts two figures next to each other and expects the
+		// reader to compare them (T-G12).
+		r.renderKPIRow(promoAsKPIRow(sec))
+	case spec.SectionHero:
+		// A page has no hero: the format's whole grammar is a heading with
+		// content under it, and a headline filling A4 is a poster (T-G11).
+		// The callout is the prominent block this renderer does have — an
+		// accent rule, a title and a line of body — so a hero written for a
+		// social image and also asked for as a PDF says the same words in the
+		// same order. The alternative is the `default` below, which fails the
+		// whole document over a section type the model was invited to write.
+		r.renderCallout(heroAsCallout(sec))
 	case spec.SectionTable:
 		return r.renderTable(sec.Table())
 	case spec.SectionChart:
@@ -424,6 +440,42 @@ func toneColor(tone string) theme.Color {
 // radius, so the corners are square and the box earns its shape from the
 // 2-unit accent bar on its left instead. RadiusBase stays in the theme for the
 // deck renderer (T-R4), where OOXML does have a corner radius.
+// promoAsKPIRow is the promotion a page can draw: the price before and the
+// price now, as two cards under the product's name.
+//
+// The labels are deliberately plain rather than the badge's words. "CRAZY
+// DEAL" is a shelf-edge device and reads as noise in a document; what a
+// reader of a PDF needs is which figure is which.
+func promoAsKPIRow(sec spec.Section) spec.Section {
+	items := make([]spec.Item, 0, 2)
+	if sec.Was != nil {
+		items = append(items, spec.Item{Label: "Before", Value: sec.Was})
+	}
+	if sec.Price != nil {
+		label := "Now"
+		if unit := strings.TrimSpace(sec.Unit); unit != "" {
+			label += " " + unit
+		}
+		items = append(items, spec.Item{Label: label, Value: sec.Price})
+	}
+	return spec.Section{Type: spec.SectionKPIRow, Title: strings.TrimSpace(sec.Title), Items: items}
+}
+
+// heroAsCallout is the hero a page can draw: the headline as the callout's
+// title, the supporting line as its body, and the kicker prefixed to the
+// title because a callout has nowhere else to put it.
+func heroAsCallout(sec spec.Section) spec.Section {
+	headline := strings.TrimSpace(sec.Title)
+	body := strings.TrimSpace(sec.Text)
+	if headline == "" {
+		headline, body = body, ""
+	}
+	if kicker := strings.TrimSpace(sec.Subtitle); kicker != "" && headline != "" {
+		headline = kicker + " — " + headline
+	}
+	return spec.Section{Type: spec.SectionCallout, Title: headline, Text: body, Tone: sec.Tone}
+}
+
 func (r *renderer) renderCallout(sec spec.Section) {
 	const accentUnits = 2
 	bodyUnits := theme.GridCols - accentUnits

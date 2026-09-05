@@ -34,10 +34,30 @@ func altText(s Scene, words labels.Set) string {
 		}
 	}
 
+	// A promotion's badge is the first thing on the card and the first thing
+	// its description should say (T-G12).
+	if s.Badge != "" {
+		add(s.Badge)
+	}
 	add(s.Title...)
 	add(s.Subtitle...)
 	if s.Period != "" {
 		add(s.Period)
+	}
+	// The prices, labelled. They are the content of a promotion card, and a
+	// description of one that omits them describes a photograph.
+	if s.Price != "" {
+		if s.Was != "" {
+			add(words.WasPrice+":", s.Was)
+		}
+		now := words.NowPrice + ": " + s.Price
+		if s.Unit != "" {
+			now += " " + s.Unit
+		}
+		add(now)
+	}
+	if s.Image != nil && s.Image.Alt != "" {
+		add(s.Image.Alt)
 	}
 	add(s.Lines...)
 

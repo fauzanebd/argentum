@@ -26,6 +26,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/report/spec"
+	"github.com/fauzanebd/argentum/internal/report/videoplan"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
@@ -124,6 +125,16 @@ type ReportRenderPayload struct {
 	// a chat reply uses. Nil means the thread is the only destination — a job
 	// from `/v1`, or one queued before this field existed.
 	Target *tenantctx.ReplyTarget `json:"target,omitempty"`
+	// Images are the pictures a promo card draws, resolved in the turn and
+	// carried as bytes (T-G12).
+	//
+	// **The bytes and not the ids**, which is a real cost — a payload with a
+	// photograph in it is a megabyte in Redis — and it is paid for a
+	// property: the worker renders exactly the picture the turn resolved and
+	// reported. Carrying ids would mean re-reading the library minutes later,
+	// where a rename or a delete makes the card disagree with what the user
+	// was told, and where there is nobody left to tell.
+	Images map[string]videoplan.PromoImage `json:"images,omitempty"`
 }
 
 // WebhookDeliverPayload names the delivery row. Only the id: the URL, the

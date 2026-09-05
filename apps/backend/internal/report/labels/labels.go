@@ -41,6 +41,14 @@ type Set struct {
 	// co-signature.
 	Credit string
 
+	// WasPrice and NowPrice label a promotion's two prices in a slide's alt
+	// text (T-G12). The card itself needs no words — a struck-through figure
+	// beside a larger one is understood without them — but the alt text is
+	// prose, and "Rp 5.980. Rp 3.370" read aloud says nothing about which is
+	// which.
+	WasPrice string
+	NowPrice string
+
 	// CellsTruncated is appended to a table's caption when the table was too
 	// wide for the page and cells were cut to fit.
 	//
@@ -63,6 +71,8 @@ func For(loc format.Locale) Set {
 			Continued:   "(lanjutan)",
 			Source:      "Sumber",
 			Credit:      "Dibuat dengan Argentum",
+			WasPrice:    "Harga sebelumnya",
+			NowPrice:    "Sekarang",
 
 			CellsTruncated: "Tabel ini terlalu lebar untuk halaman; sel yang " +
 				"diakhiri … dipotong. Kurangi jumlah kolom untuk melihat angka lengkapnya.",
@@ -76,6 +86,8 @@ func For(loc format.Locale) Set {
 		Continued:   "(cont.)",
 		Source:      "Source",
 		Credit:      "Made with Argentum",
+		WasPrice:    "Was",
+		NowPrice:    "Now",
 
 		CellsTruncated: "This table is wider than the page; cells ending in … " +
 			"were cut. Use fewer columns to see the full figures.",

@@ -226,6 +226,18 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/reports/branding":       domain.RoleAdmin,
 	"PUT /api/reports/branding":       domain.RoleAdmin,
 	"POST /api/reports/branding/logo": domain.RoleAdmin,
+	// The picture library (T-G12). Uploading and deleting are company-level
+	// acts for branding's reason — a photograph here leaves the building on a
+	// public post — while listing and reading are not, because a member
+	// composing a post has to see what is available.
+	"POST /api/post-images":       domain.RoleAdmin,
+	"DELETE /api/post-images/:id": domain.RoleAdmin,
+	// Reading is a member's, because a member composing a post has to see
+	// what is available and a library nobody can look at is a library nobody
+	// uses. The content route is authenticated and company-scoped, so an id
+	// alone is not a credential.
+	"GET /api/post-images":             domain.RoleMember,
+	"GET /api/post-images/:id/content": domain.RoleMember,
 	// The preview renders a fixed sample with caller-supplied branding: no
 	// tenant data, but a full PDF render per call, which is a cost a member
 	// should not be able to spend in a loop.

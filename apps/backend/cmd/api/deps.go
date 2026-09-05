@@ -20,6 +20,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metrics"
+	"github.com/fauzanebd/argentum/internal/postimage"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/slack"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
@@ -79,7 +80,11 @@ type apiDeps struct {
 	larkSvc      *app.LarkService
 	slackSvc     *app.SlackService
 	brandingSvc  *branding.Service
-	apiKeySvc    *app.APIKeyService
+	// postImages is the tenant's picture library (T-G12). Nil on a deployment
+	// with no object storage, which the handler and the tool both read as
+	// "there are no pictures" rather than as a failure.
+	postImages *postimage.Service
+	apiKeySvc  *app.APIKeyService
 	// The browser-visible credential (T-19). It mints the short-lived sessions
 	// `/api/embed` runs on; the dashboard routes beside it are how an admin
 	// creates one and states which sites may use it. Separate service from

@@ -14,6 +14,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/spec"
+	"github.com/fauzanebd/argentum/internal/report/videoplan"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
@@ -37,6 +38,22 @@ type GenerateDocumentTool struct {
 	// service is configured, which is why the format enum is narrowed on both
 	// conditions rather than on one.
 	renders VideoEnqueuer
+	// images resolves the pictures a promo card names (T-G12). Nil on a
+	// deployment with no library, which makes every promo card render as type
+	// on a sunburst — the same degradation an unresolvable name gets.
+	images ImageResolver
+}
+
+// ImageResolver is the slice of the picture library this tool needs: turn
+// what the model wrote into one of the tenant's images, or nothing.
+//
+// Declared at the consumer and returning no error, because a picture that
+// cannot be found is not a failed turn. The card renders without it and the
+// tool result says which name missed, so the model can tell the user to
+// upload one — which is a sentence they can act on, unlike a refused report.
+type ImageResolver interface {
+	Resolve(ctx context.Context, companyID, ref string) *domain.PostImage
+	Bytes(ctx context.Context, companyID, id string) (*domain.PostImage, []byte, error)
 }
 
 // VideoEnqueuer is the slice of the queue this tool needs. Declared at the
@@ -64,6 +81,73 @@ func (t *GenerateDocumentTool) WithVideoQueue(q VideoEnqueuer) *GenerateDocument
 	return t
 }
 
+// WithImages lets a promo card carry a photograph (T-G12). Separate from the
+// constructor for WithVideoQueue's reason: not every process that builds this
+// tool has a picture library.
+func (t *GenerateDocumentTool) WithImages(r ImageResolver) *GenerateDocumentTool {
+	t.images = r
+	return t
+}
+
+// resolveImages turns every promo section's image reference into bytes, in
+// the turn.
+//
+// **At the door and not in the worker**, which is where the rest of a
+// carousel's refusals live and for the same reason: the model can still act
+// on what happens here. A name that misses comes back in `missing`, the tool
+// result names it, and the reply can ask for an upload. Four minutes later,
+// in a worker, nobody is left to tell.
+//
+// The spec is mutated to carry the resolved id, so the queued job is
+// self-contained: the worker never re-resolves a name and cannot pick a
+// different picture from the one the turn reported.
+func (t *GenerateDocumentTool) resolveImages(ctx context.Context, doc *spec.Document, companyID string) (found map[string]videoplan.PromoImage, used, missing []string) {
+	if t.images == nil {
+		for i := range doc.Content.Sections {
+			if ref := strings.TrimSpace(doc.Content.Sections[i].Image); ref != "" {
+				missing = append(missing, ref)
+			}
+		}
+		return nil, nil, missing
+	}
+	found = map[string]videoplan.PromoImage{}
+	for i := range doc.Content.Sections {
+		sec := &doc.Content.Sections[i]
+		if sec.Type != spec.SectionPromo {
+			continue
+		}
+		ref := strings.TrimSpace(sec.Image)
+		if ref == "" {
+			ref = strings.TrimSpace(sec.ImageID)
+		}
+		if ref == "" {
+			continue
+		}
+		img := t.images.Resolve(ctx, companyID, ref)
+		if img == nil {
+			missing = append(missing, ref)
+			continue
+		}
+		if _, ok := found[img.ID]; !ok {
+			_, body, err := t.images.Bytes(ctx, companyID, img.ID)
+			if err != nil {
+				// The row exists and its object does not. Treated as a miss
+				// rather than as an error, because the card still draws and a
+				// promotion is not worth failing a turn over.
+				missing = append(missing, ref)
+				continue
+			}
+			found[img.ID] = videoplan.PromoImage{PNG: body, Aspect: img.Aspect(), Alt: img.Alt}
+		}
+		sec.ImageID = img.ID
+		used = append(used, img.Name)
+	}
+	if len(found) == 0 {
+		found = nil
+	}
+	return found, used, missing
+}
+
 // videoAvailable reports whether this process can finish an mp4: a render
 // service to draw it and a queue to hand it to.
 func (t *GenerateDocumentTool) videoAvailable() bool {
@@ -88,7 +172,7 @@ func (t *GenerateDocumentTool) Description() string {
 	if t.videoAvailable() {
 		video = `
 - "mp4"  a silent narrated-on-screen video of the same report, 1080p. Choose it only when the user asks for a video, or for something they will watch without you in the room — a weekly summary sent to a group chat, an update for people who will not open a PDF. It takes several minutes and costs far more than a PDF, so it is never the default for "make me a report", and it is refused for a document that is a record rather than an argument: an invoice, an agreement or a data export must be a PDF. This tool returns as soon as the render starts; the video is posted into this conversation when it is done, so tell the user it is being made and do not claim it is ready.
-- "carousel" when the user asks for a social post, a carousel, or slides for Instagram: 2–10 portrait image slides built from the figures you have just verified, plus a caption. Same content.sections as a report — a cover, a kpi_row, a chart, a short table, a callout each become one slide, so keep it to the sections that carry the story; more than ten slides is refused with the count. Give the post text in "social": {"caption": "...", "hashtags": ["tag", ...], "size": "portrait|square|story|landscape"} — never invent a number for the caption. It is posted into this conversation as images when it is done, so tell the user it is being made and do not claim it is ready.`
+- "carousel" when the user asks for a social post, an image, a carousel, or slides for Instagram: 1–10 image slides built from the figures you have just verified, plus a caption. **One slide is a normal answer** — a promotion, a launch or a single figure is one image, so use one "promo" section (a product with a price) or one "hero" section (anything else) and stop; do not pad a one-image request to fill a carousel. Otherwise the same content.sections as a report — a cover, a kpi_row, a chart, a short table, a callout each become one slide, so keep it to the sections that carry the story; more than ten slides is refused with the count. Give the post text in "social": {"caption": "...", "hashtags": ["tag", ...], "size": "portrait|square|story|landscape"} — never invent a number for the caption. It is posted into this conversation as images when it is done, so tell the user it is being made and do not claim it is ready.`
 	}
 	return strings.TrimSpace(`
 Generate a downloadable document (PDF, PPTX, XLSX, CSV` + videoInEnum(t.videoAvailable()) + `) from a structured spec and return a presigned download URL. Generic-purpose: use for invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports, slide decks — anything the user wants to download as a file.
@@ -121,6 +205,8 @@ content.sections is an ordered list. Each section has a "type":
 - "table"      {columns:[...], rows:[[...]], total_row:[...], caption} → ruled table with zebra bands
 - "chart"      {chart:{...}, caption}        → a chart image. See CHARTS below.
 - "callout"    {tone: info|warn|good, title, text} → tinted box for a caveat or a headline finding. One or two per report; a page of callouts emphasises nothing.
+- "hero"       {subtitle, title, text}       → one statement filling the frame: a small kicker (subtitle), a large headline (title) and one supporting line (text). For format carousel, and for the posts that are an announcement rather than an analysis — "Diskon 20%", "Kopi Susu Gula Aren, Rp 22.000". A price, a discount or a date in it must be one you read out of the data, exactly like a kpi_row's. Skip it in a pdf or a pptx unless the document really opens on a statement.
+- "promo"      {badge, title, image, was, price, unit, text} → a retail promotion card: a badge ("CRAZY DEAL"), the product's name (title), the product's photograph (image), the old price struck through (was) and the new price (price), per unit ("/100 gram"). "was" and "price" are cells like a table's — {"v": 3370, "fmt": "currency"} — and **both must be figures you read from a query in this turn**; a promotion is a public claim about what something costs, so never estimate one, never round one, and never write a discount you have not computed from two real prices. "image" is the name of a picture this workspace has uploaded — write what you are looking for ("jeruk cara cara") and the tool resolves it; if nothing matches, the card is drawn without a photograph and the result tells you which name missed, so say so in your reply. One promo section is a whole post: use format carousel with just this and stop.
 - "key_value"  {items:[{k,v}, ...]}          → label/value rows (invoice and agreement headers)
 - "footnote"   {text}                        → small muted source/methodology line
 - "page_break" {}                            → start a new page
@@ -171,7 +257,7 @@ func (t *GenerateDocumentTool) Parameters() map[string]interfaces.ParameterSpec 
 		},
 		"social": {
 			Type:        "object",
-			Description: "For format carousel only: {caption: string (≤2200 chars, the post text — figures in it must come from queries you ran), hashtags: [string] (≤30, without the #)}.",
+			Description: `For format carousel only: {caption: string (≤2200 chars, the post text — figures in it must come from queries you ran), hashtags: [string] (≤30, without the #), size: one of "portrait" (1080x1350, the default feed post), "square" (1080x1080), "story" (1080x1920, full screen), "landscape" (1920x1080)}. Set size only when the user asks for a shape — "buat versi story", "yang kotak" — otherwise omit it.`,
 			Required:    false,
 		},
 		"filename": {
@@ -323,11 +409,15 @@ func (t *GenerateDocumentTool) enqueueRender(ctx context.Context, input spec.Doc
 	if err := t.docs.CheckVideoLimits(&input); err != nil {
 		return "", err
 	}
+	// Resolved here so the queued spec carries ids rather than names, and so
+	// the model is told now if a picture is missing (T-G12).
+	images, used, missing := t.resolveImages(ctx, &input, companyID)
 	payload := queue.ReportRenderPayload{
 		CompanyID: companyID,
 		ThreadID:  threadID,
 		AgentID:   agentscope.AgentID(ctx),
 		Spec:      input,
+		Images:    images,
 	}
 	// The person who asked is on a channel, and the result must reach it
 	// (T-G6, finding 6). The turn's own reply carries the refs; a job that
@@ -339,12 +429,25 @@ func (t *GenerateDocumentTool) enqueueRender(ctx context.Context, input spec.Doc
 		return "", fmt.Errorf("the %s could not be queued: %w", noun, err)
 	}
 
-	out, _ := json.Marshal(map[string]interface{}{
+	result := map[string]interface{}{
 		"status": "rendering",
 		"format": input.Format,
 		"note": "The " + noun + " is being rendered and will be posted into this conversation when it is done, in a few minutes. " +
 			"Tell the user that in your reply — do not say it is ready, do not offer a link, and do not call this tool again for the same " + noun + ".",
-	})
+	}
+	if len(used) > 0 {
+		result["images_used"] = used
+	}
+	if len(missing) > 0 {
+		// Named, and with the remedy, because this is the one thing about a
+		// queued render the model can still do something about: it is drawing
+		// a promotion with no photograph on it, and the person reading the
+		// reply is the person who can upload one.
+		result["images_not_found"] = missing
+		result["images_note"] = "No image in this workspace is named that, so the card is being drawn without a photograph. " +
+			"Tell the user which name was not found and that an admin can upload it under Settings → Images with that exact name."
+	}
+	out, _ := json.Marshal(result)
 	return string(out), nil
 }
 

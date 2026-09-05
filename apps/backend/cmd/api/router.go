@@ -72,6 +72,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewConfigHandler(cfg).Register(authed)
 	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).Register(authed.Group("/users"))
 	handlers.NewReportsHandler(d.brandingSvc, d.companyRepo).Register(authed)
+	handlers.NewPostImagesHandler(d.postImages).Register(authed)
 	handlers.NewDocumentsHandler(d.documentRepo, d.docGen).Register(authed)
 	// Uploaded documents (T-P1) — the input side, against the generated
 	// documents above. Registered unconditionally: a nil service answers 503,

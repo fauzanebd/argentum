@@ -202,7 +202,7 @@ func TestCheckVideoLimitsRoutesACarouselToTheSlideBand(t *testing.T) {
 			spec.Section{Type: spec.SectionHeading, Level: 1, Text: fmt.Sprintf("Bagian %d", i)})
 	}
 	err := svc.CheckVideoLimits(long)
-	if err == nil || !strings.Contains(err.Error(), "a carousel is 2–10 slides") {
+	if err == nil || !strings.Contains(err.Error(), "a carousel is 1–10 slides") {
 		t.Fatalf("CheckVideoLimits = %v, want the slide-band refusal", err)
 	}
 	if err := svc.CheckVideoLimits(carouselSpec()); err != nil {

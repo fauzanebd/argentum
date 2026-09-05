@@ -214,6 +214,12 @@ type Input struct {
 	// that already asks for small tables, and a turn refused by a row cap the
 	// agent cannot see is a turn that fails with nothing to act on.
 	EnforceLimits bool
+	// Images are the tenant's uploaded pictures, resolved by the caller and
+	// keyed by image id (T-G12). The door resolves them — in the turn, where
+	// the model can be told a picture was not found — and the bytes travel
+	// from there, because this service has no picture library of its own and
+	// the worker that renders is a process away from the turn that asked.
+	Images map[string]videoplan.PromoImage
 	// OnProgress reports 0..1 while a format that is rendered elsewhere is
 	// being rendered (T-V3). Nil for every in-process format, because a PDF
 	// finishes before a progress event would arrive. It is called from the
@@ -306,7 +312,7 @@ func (s *Service) Generate(ctx context.Context, in Input) (*Result, error) {
 	}
 
 	format := domain.DocumentFormat(in.Spec.Format)
-	out, err := s.render(ctx, in.Spec, in.CompanyID, in.OnProgress)
+	out, err := s.render(ctx, in.Spec, in.CompanyID, in.Images, in.OnProgress)
 	if err != nil {
 		return nil, err
 	}
@@ -600,7 +606,7 @@ func (s *Service) LoadPlan(ctx context.Context, doc *domain.Document) ([]byte, e
 // call the service, hand back bytes. Everything after this line — the storage
 // key, the row, the presign, the metering — is the code that already runs for
 // the other four, which is the whole reason there is one `Generate`.
-func (s *Service) render(ctx context.Context, doc *spec.Document, companyID string, onProgress func(float64)) (*rendered, error) {
+func (s *Service) render(ctx context.Context, doc *spec.Document, companyID string, images map[string]videoplan.PromoImage, onProgress func(float64)) (*rendered, error) {
 	switch doc.Format {
 	case "pdf":
 		data, err := pdf.Render(doc, s.pdfOptions(ctx, companyID))
@@ -618,7 +624,7 @@ func (s *Service) render(ctx context.Context, doc *spec.Document, companyID stri
 		data, seconds, err := s.renderVideo(ctx, doc, companyID, onProgress)
 		return &rendered{data: data, seconds: seconds}, err
 	case "carousel":
-		return s.renderCarousel(ctx, doc, companyID, onProgress)
+		return s.renderCarousel(ctx, doc, companyID, images, onProgress)
 	}
 	return nil, fmt.Errorf("unsupported format %q", doc.Format)
 }
@@ -633,7 +639,7 @@ func (s *Service) render(ctx context.Context, doc *spec.Document, companyID stri
 // exist because they answer different readers: the zip is what a person
 // downloads and forwards, the pages are what the dashboard shows inline and
 // what a publisher (T-G8) uploads one at a time.
-func (s *Service) renderCarousel(ctx context.Context, doc *spec.Document, companyID string, onProgress func(float64)) (*rendered, error) {
+func (s *Service) renderCarousel(ctx context.Context, doc *spec.Document, companyID string, images map[string]videoplan.PromoImage, onProgress func(float64)) (*rendered, error) {
 	if !s.VideoAvailable() {
 		return nil, video.ErrNotConfigured
 	}
@@ -643,6 +649,7 @@ func (s *Service) renderCarousel(ctx context.Context, doc *spec.Document, compan
 		Currency: s.currencyFor(ctx, companyID),
 		Locale:   cfg.Locale,
 		Limits:   s.videoLimits,
+		Images:   images,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", video.ErrPlanRejected, err)

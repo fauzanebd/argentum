@@ -1,0 +1,11 @@
+-- Drops the record of every picture a tenant uploaded for a post (T-G12).
+--
+-- The objects stay, for 059's reason and with the same honesty: this file
+-- cannot reach the bucket, so reversing leaves the images orphaned under
+-- `post-images/<company>/<id>.png` with nothing pointing at them. A
+-- deployment reversing this on purpose should empty that prefix itself.
+--
+-- What a rollback costs beyond the rows: a promo card whose spec names an
+-- image id renders without a photograph rather than failing, which is the
+-- same behaviour as an image that was deleted.
+DROP TABLE IF EXISTS post_images;

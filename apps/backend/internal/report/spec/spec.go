@@ -35,6 +35,33 @@ const (
 	SectionKPIRow    = "kpi_row"
 	SectionTable     = "table"
 	SectionCallout   = "callout"
+	// SectionHero is one statement filling a frame (T-G11): a headline at
+	// display size, an optional kicker above it and one supporting line
+	// below, on the dark ground, with no title band and no generated-at
+	// footer. It is what a promotion or a launch actually is — "Diskon 20%",
+	// "Kopi Susu Gula Aren, Rp 22.000" — and the shape every other section
+	// type here refuses to be, because they are all built to sit under a
+	// heading inside a report.
+	//
+	// It draws nothing it is not given. The figure in a hero is the model's
+	// to have queried, exactly as a KPI card's is; this type adds a layout,
+	// never a claim.
+	SectionHero = "hero"
+	// SectionPromo is a retail promotion card (T-G12): a product photograph
+	// the tenant supplied, a badge, the product's name, the old price struck
+	// through, the new price, and the unit it is per.
+	//
+	// It is the one section type whose *layout* is the deliverable. Every
+	// other type here describes content and lets the surface arrange it; a
+	// promo card is a shape people recognise from a shelf-edge label, and the
+	// arrangement is the thing being asked for.
+	//
+	// **Both prices are the tenant's data.** `was` and `price` are cells like
+	// any table's, formatted by the same currency machinery, and the model is
+	// told in as many words that it must have read them out of a query. A
+	// promotion whose discount is invented is the worst output this product
+	// could produce: it is a public, quotable claim about what something costs.
+	SectionPromo     = "promo"
 	SectionKeyValue  = "key_value"
 	SectionChart     = "chart"
 	SectionFootnote  = "footnote"
@@ -132,6 +159,42 @@ type Document struct {
 type Social struct {
 	Caption  string   `json:"caption,omitempty"`
 	Hashtags []string `json:"hashtags,omitempty"`
+	// Size is the frame the slides are drawn on (T-G11): one of the four
+	// names below, empty meaning portrait.
+	//
+	// It is a name rather than a width and a height because a surface is not
+	// a rectangle — it is margins, a type scale, safe zones and a card cap,
+	// each argued for against a frame somebody has looked at. A caller who
+	// could ask for 1000×1400 would get a layout nobody has ever seen, and
+	// the first person to see it would be the tenant's audience.
+	Size string `json:"size,omitempty"`
+}
+
+// The frames a carousel or a single image can be drawn on (T-G11). Portrait
+// is the default and what every slide before this constant existed was drawn
+// on, so an absent size renders exactly as it did.
+const (
+	SizePortrait  = "portrait"  // 1080×1350, 4:5 — the feed default
+	SizeSquare    = "square"    // 1080×1080, 1:1
+	SizeStory     = "story"     // 1080×1920, 9:16 — full screen, deep safe zones
+	SizeLandscape = "landscape" // 1920×1080, 16:9 — the video frame, held still
+)
+
+// Sizes is the four names in the order a chooser should offer them.
+var Sizes = []string{SizePortrait, SizeSquare, SizeStory, SizeLandscape}
+
+// ValidSize reports whether s names a frame. Empty is valid and means
+// portrait.
+func ValidSize(s string) bool {
+	if s == "" {
+		return true
+	}
+	for _, v := range Sizes {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // The platform's caps on a post's text.
@@ -185,6 +248,20 @@ type Section struct {
 	Rows     [][]Cell `json:"rows,omitempty"`
 	TotalRow []Cell   `json:"total_row,omitempty"`
 	Caption  string   `json:"caption,omitempty"`
+
+	// promo (T-G12). Title is the product name and Text an optional line
+	// under the price; both are shared with the types above.
+	//
+	// Image names one of the tenant's uploaded images. The model writes what
+	// it is looking for — "jeruk cara cara" — and the door resolves it to an
+	// id against that company's own library, because the alternative is
+	// putting every image a tenant owns into every turn's prompt.
+	Badge   string `json:"badge,omitempty"`
+	Image   string `json:"image,omitempty"`
+	ImageID string `json:"image_id,omitempty"`
+	Was     *Cell  `json:"was,omitempty"`
+	Price   *Cell  `json:"price,omitempty"`
+	Unit    string `json:"unit,omitempty"`
 
 	// spacer (v1)
 	Size float64 `json:"size,omitempty"`

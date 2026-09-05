@@ -1,8 +1,8 @@
 import React from "react";
-import { Img, useVideoConfig } from "remotion";
+import { AbsoluteFill, Img, useVideoConfig } from "remotion";
 
 import { enter, reveal, rise, STAGGER } from "../anim";
-import { Body, Footer, Frame, Lines, TitleBand } from "../chrome";
+import { Body, FONT, Footer, Frame, Lines, TitleBand } from "../chrome";
 import { useSceneFrame } from "../frame";
 import { KIND } from "../plan";
 import type { Brand, Metrics, Scene } from "../plan";
@@ -32,6 +32,10 @@ export const SceneView: React.FC<Props> = (props) => {
       return <Closing {...props} />;
     case KIND.section:
       return <Divider {...props} />;
+    case KIND.hero:
+      return <Hero {...props} />;
+    case KIND.promo:
+      return <Promo {...props} />;
     case KIND.statement:
       return <Statement {...props} />;
     case KIND.quote:
@@ -144,6 +148,305 @@ const Closing: React.FC<Props> = ({ scene, brand, metrics }) => {
         frame={frame}
         onDark
       />
+    </Frame>
+  );
+};
+
+/**
+ * starPoints is the burst behind the product: a polygon alternating between
+ * two radii, as a `clip-path` percentage list.
+ *
+ * Geometry rather than an asset, for the same reason the sunburst is a
+ * gradient: an SVG or a PNG here would be a file that has to be shipped,
+ * scaled and colour-matched to a tenant's accent, and this is eleven lines
+ * that do all three.
+ */
+function starPoints(spikes: number, outer: number, inner: number): string {
+  // motion-color-ok: these are clip-path coordinates, not a figure. The guard
+  // forbids `toFixed` because a component that reformats a number produces a
+  // video whose figures disagree with the PDF beside it; a polygon vertex is
+  // read by the compositor and never by a person, and rounding it to two
+  // decimals is what keeps the path string short rather than what decides
+  // what it says.
+  const pts: string[] = [];
+  for (let i = 0; i < spikes * 2; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = (Math.PI * i) / spikes - Math.PI / 2;
+    pts.push(`${(50 + r * Math.cos(a)).toFixed(2)}% ${(50 + r * Math.sin(a)).toFixed(2)}%`);
+  }
+  return `polygon(${pts.join(", ")})`;
+}
+
+/**
+ * Promo is a retail promotion card (T-G12): a badge, a product photograph,
+ * the product's name, the price before struck through and the price now.
+ *
+ * **It is the only scene here that draws its own ground**, and the reason is
+ * what the card is: a sunburst is full-bleed by definition, and every other
+ * scene's ground is a flat colour that the frame's own padding sits on. The
+ * safe zones still bind the *content* — the padded layer below is the same
+ * one `Frame` applies — so nothing readable moves under the app's chrome.
+ *
+ * Every colour is `brand.promo`, derived in Go from the tenant's accent. A
+ * hex literal in this package is a failing build (`make motion-guards`), and
+ * that guard is why a promotion for a shop with a green brand is green rather
+ * than red with their logo in the corner.
+ */
+const Promo: React.FC<Props> = ({ scene, brand, metrics }) => {
+  const frame = useSceneFrame();
+  const p = enter(frame);
+  const promo = brand.promo;
+  // A plan from a backend that does not know promotions still draws: the
+  // ground falls back to the flat brand colours, which is the same
+  // "render minus the beats this bundle does not know" rule the switch above
+  // keeps.
+  const ground = promo?.ground ?? brand.primary;
+  const ray = promo?.ray ?? brand.primary;
+  const burst = promo?.burst ?? brand.primary;
+  const badgeFill = promo?.badge ?? brand.dark;
+  const priceFill = promo?.price_block ?? brand.dark;
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: ground, fontFamily: FONT }}>
+      {/* The rays. `from 0deg at 50% 42%` puts the vanishing point behind the
+          product rather than at the centre of the frame, so the wedges spread
+          from the thing being sold. */}
+      <AbsoluteFill
+        style={{
+          background: `repeating-conic-gradient(from 0deg at 50% 42%, ${ground} 0deg 14deg, ${ray} 14deg 28deg)`,
+          opacity: p,
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          paddingLeft: metrics.margin_x,
+          paddingRight: metrics.margin_x,
+          paddingTop: metrics.margin_top,
+          paddingBottom: metrics.margin_bottom,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+        }}
+      >
+        {scene.badge ? (
+          <div
+            style={{
+              backgroundColor: badgeFill,
+              color: brand.on_dark,
+              fontSize: metrics.type.h2,
+              fontWeight: 700,
+              letterSpacing: 3,
+              padding: `${metrics.spacing_sm}px ${metrics.spacing_md}px`,
+              borderRadius: metrics.radius,
+              transform: `rotate(-3deg) scale(${0.9 + 0.1 * p})`,
+              opacity: p,
+              whiteSpace: "pre",
+            }}
+          >
+            {scene.badge}
+          </div>
+        ) : null}
+
+        {/* The photograph, and the star behind it. `flex: 1` gives the product
+            every pixel the badge and the price block do not want, which is
+            what makes one template work on a 1:1 card and a 9:16 story. */}
+        <div
+          style={{
+            flex: 1,
+            // `min-height: 0` and not tidiness: a flex item's default
+            // `min-height: auto` refuses to shrink below its content, so the
+            // photograph pushed the product's name and the price panel off
+            // the bottom of the card on every surface shorter than a story.
+            // The first render of this component showed a promotion whose
+            // price was not on it.
+            minHeight: 0,
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+            marginTop: metrics.spacing_md,
+            marginBottom: metrics.spacing_md,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              width: "92%",
+              height: "92%",
+              backgroundColor: burst,
+              clipPath: starPoints(16, 50, 40),
+              transform: `rotate(${-8 + 8 * p}deg) scale(${0.85 + 0.15 * p})`,
+              opacity: p,
+            }}
+          />
+          {scene.image ? (
+            <Img
+              src={scene.image.data_uri}
+              style={{
+                position: "relative",
+                maxWidth: "82%",
+                maxHeight: "100%",
+                objectFit: "contain",
+                opacity: p,
+                transform: `scale(${0.94 + 0.06 * p})`,
+              }}
+            />
+          ) : null}
+        </div>
+
+        <Lines
+          lines={scene.title}
+          size={metrics.type.h1}
+          leading={metrics.leading}
+          color={brand.on_dark}
+          weight={700}
+          frame={frame}
+          delay={STAGGER}
+          align="center"
+        />
+
+        {/* The prices. The one before is struck through and small; the one now
+            is the largest thing on the card, on the panel that makes it read
+            as a label rather than as a caption. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            gap: metrics.spacing_md,
+            marginTop: metrics.spacing_sm,
+            opacity: enter(frame, STAGGER * 2),
+          }}
+        >
+          {scene.was ? (
+            <span
+              style={{
+                fontSize: metrics.type.h2,
+                fontWeight: 700,
+                color: brand.on_dark,
+                textDecoration: "line-through",
+                whiteSpace: "pre",
+                paddingBottom: metrics.spacing_sm,
+              }}
+            >
+              {scene.was}
+            </span>
+          ) : null}
+          <span
+            style={{
+              backgroundColor: priceFill,
+              color: brand.on_dark,
+              fontSize: metrics.type.display,
+              fontWeight: 700,
+              lineHeight: 1.1,
+              padding: `${metrics.spacing_sm}px ${metrics.spacing_md}px`,
+              borderRadius: metrics.radius,
+              whiteSpace: "pre",
+            }}
+          >
+            {scene.price}
+          </span>
+          {scene.unit ? (
+            <span
+              style={{
+                fontSize: metrics.type.caption,
+                fontWeight: 700,
+                color: brand.on_dark,
+                whiteSpace: "pre",
+                paddingBottom: metrics.spacing_sm,
+              }}
+            >
+              {scene.unit}
+            </span>
+          ) : null}
+        </div>
+
+        <Lines
+          lines={scene.lines}
+          size={metrics.type.caption}
+          leading={metrics.leading}
+          color={brand.on_dark}
+          frame={frame}
+          delay={STAGGER * 3}
+          align="center"
+        />
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+
+/**
+ * Hero is one statement on the whole frame (T-G11): the kicker, the headline
+ * at display size, and one supporting line.
+ *
+ * It is a divider that carries copy, and the differences from one are the
+ * point. There is no title band, because the headline *is* the title and a
+ * band would set it at h1 in a fixed-height strip. There is no footer, so a
+ * promotion does not carry the timestamp a report wants. The kicker sits
+ * above the rule in the brand's on-dark accent, which is the same device the
+ * cover uses for its period label — a hero is a cover for a post.
+ *
+ * Every size, colour and gap is the plan's, like every other component here.
+ */
+const Hero: React.FC<Props> = ({ scene, brand, metrics }) => {
+  const frame = useSceneFrame();
+  const p = enter(frame);
+  return (
+    <Frame brand={brand} metrics={metrics} dark>
+      <div
+        style={{
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+        }}
+      >
+        {scene.subtitle && scene.subtitle.length > 0 ? (
+          <div
+            style={{
+              fontSize: metrics.type.caption,
+              letterSpacing: 2,
+              color: brand.primary_on_dark,
+              opacity: p,
+              marginBottom: metrics.spacing_sm,
+              whiteSpace: "pre",
+            }}
+          >
+            {scene.subtitle.join(" ")}
+          </div>
+        ) : null}
+        <div
+          style={{
+            width: metrics.title_rule_width * p,
+            height: metrics.title_rule_thickness,
+            backgroundColor: brand.primary_on_dark,
+            marginBottom: metrics.spacing_md,
+          }}
+        />
+        <Lines
+          lines={scene.title}
+          size={metrics.type.display}
+          leading={metrics.leading}
+          color={brand.on_dark}
+          weight={700}
+          frame={frame}
+          delay={STAGGER}
+          stagger
+        />
+        {scene.lines && scene.lines.length > 0 ? (
+          <>
+            <div style={{ height: metrics.spacing_md }} />
+            <Lines
+              lines={scene.lines}
+              size={metrics.type.h2}
+              leading={metrics.leading}
+              color={brand.on_dark}
+              frame={frame}
+              delay={STAGGER * 3}
+            />
+          </>
+        ) : null}
+      </div>
     </Frame>
   );
 };

@@ -55,9 +55,21 @@ export const KindTable = "table";
 export const KindChart = "chart";
 export const KindClosing = "closing";
 /**
+ * KindHero is one statement on the whole frame (T-G11): kicker, headline,
+ * supporting line, no title band and no footer. The scene carries
+ * Subtitle as the kicker and Lines as the supporting copy.
+ */
+export const KindHero = "hero";
+/**
+ * KindPromo is a retail promotion card (T-G12): a product photograph, a
+ * badge, the product's name, the old price struck through and the new
+ * price. The one scene whose arrangement is the deliverable.
+ */
+export const KindPromo = "promo";
+/**
  * Scene kinds. These are the values a renderer switches on to pick a component.
  */
-export type Kind = typeof KindCover | typeof KindSection | typeof KindStatement | typeof KindQuote | typeof KindKPI | typeof KindTable | typeof KindChart | typeof KindClosing;
+export type Kind = typeof KindCover | typeof KindSection | typeof KindStatement | typeof KindQuote | typeof KindKPI | typeof KindTable | typeof KindChart | typeof KindClosing | typeof KindHero | typeof KindPromo;
 export const RevealNone = "none";
 export const RevealWipe = "wipe";
 export const RevealGrow = "grow";
@@ -209,6 +221,15 @@ export interface Brand {
   logo_data_uri?: string;
   logo_aspect?: number /* float64 */;
   /**
+   * Promo is the palette a promotion card is drawn with (T-G12), derived in
+   * Go from the accent above and carried here for the reason every other
+   * colour in this struct is: `make motion-guards` forbids the renderer
+   * from naming a colour of its own, and a promo card needs five it cannot
+   * otherwise get. Nil for every plan with no promo scene in it, so no
+   * existing golden moves.
+   */
+  promo?: PromoBrand;
+  /**
    * Credit is the "Made with Argentum" line, or empty when the tenant has
    * switched it off. Confidentiality and FooterNote are theirs.
    */
@@ -231,7 +252,47 @@ export interface Tone {
  * union, for the same reason spec.Section does: the shapes are small, the
  * dispatch is one switch, and a renderer that reads a field another kind wrote
  * draws nothing rather than failing.
+ * PromoBrand is the promotion card's palette (T-G12).
+ * Five colours, all functions of the tenant's accent, so a shop with a green
+ * brand gets a green promotion rather than Argentum's red with their logo on
+ * it. They are computed here rather than in the renderer because a hex
+ * literal in `packages/motion` is a failing build, and because a derived
+ * colour is a rendering decision that belongs beside the one it derives from.
  */
+export interface PromoBrand {
+  /**
+   * Ground and Ray are the two wedges of the sunburst behind everything: the
+   * accent, and the accent lifted towards white. The difference is small on
+   * purpose — a high-contrast sunburst competes with the product.
+   */
+  ground: string;
+  ray: string;
+  /**
+   * Burst is the star behind the photograph, a shade darker than the ground
+   * so the product reads against it.
+   */
+  burst: string;
+  /**
+   * Badge is the sticker the promotion's name sits on, and PriceBlock the
+   * panel under the new price. Both are the strongest colour on the card,
+   * which is why they are the same one.
+   */
+  badge: string;
+  price_block: string;
+}
+/**
+ * Image is a picture inlined into the plan: the renderer has no network, so
+ * every image it draws arrives as a data URI (T-G12). Aspect is width over
+ * height, so a layout can reserve the right box before the image loads.
+ */
+export interface Image {
+  data_uri: string;
+  aspect?: number /* float64 */;
+  /**
+   * Alt describes the picture, and it is the picture's half of Scene.Alt.
+   */
+  alt?: string;
+}
 export interface Scene {
   kind: string;
   /**
@@ -264,6 +325,16 @@ export interface Scene {
    * Tone is a quote scene's callout tone: info, warn or good.
    */
   tone?: string;
+  /**
+   * Badge, Price, Was, Unit and Image are the promotion card's slots
+   * (T-G12). Price and Was are already formatted in the document's locale
+   * and currency, like every other figure that reaches the renderer.
+   */
+  badge?: string;
+  price?: string;
+  was?: string;
+  unit?: string;
+  image?: Image;
   /**
    * Caption sits under a table or a chart, pre-wrapped.
    */

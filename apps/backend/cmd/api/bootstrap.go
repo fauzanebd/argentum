@@ -30,6 +30,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metrics"
 	"github.com/fauzanebd/argentum/internal/migrate"
+	"github.com/fauzanebd/argentum/internal/postimage"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/skill"
@@ -291,7 +292,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// builds — without MINIO_ENDPOINT the service still answers, minus the
 	// logo: a tenant can set a colour and a footer line on a deployment with
 	// no object storage at all.
-	var logoStore branding.ObjectStore
+	// Held as the concrete storage service rather than as branding's narrow
+	// interface, because two packages want two different slices of it: the
+	// logo needs upload and download, and the picture library needs to remove
+	// a key as well (T-G12).
+	var logoStore *storage.StorageService
 	if cfg.MinIOEndpoint != "" {
 		st, err := storage.NewStorageService(&storage.MinIOConfig{
 			Endpoint:        cfg.MinIOEndpoint,
@@ -307,7 +312,22 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 			deps.storageSvc = st
 		}
 	}
-	deps.brandingSvc = branding.NewService(companyRepo, logoStore, companyRepo)
+	// Nil has to be passed as a nil *interface*, not as a typed nil pointer:
+	// `branding.Service` tests `s.store == nil`, and a nil *StorageService in
+	// an interface is not nil.
+	var brandingStore branding.ObjectStore
+	if logoStore != nil {
+		brandingStore = logoStore
+	}
+	deps.brandingSvc = branding.NewService(companyRepo, brandingStore, companyRepo)
+
+	// The tenant's picture library (T-G12), on the same bucket and the same
+	// condition as the logo above: a deployment with no object storage has no
+	// library, `Available()` is false, and the promo card renders as type on a
+	// sunburst rather than failing.
+	if logoStore != nil {
+		deps.postImages = postimage.NewService(pgctl.NewPostImageRepo(controlDB), logoStore)
+	}
 
 	// The `/v1` report surface (T-A2). Same constructor the worker's stack
 	// uses for the agent's generate_document, with the untrusted-spec caps

@@ -11,6 +11,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/report/canvas"
 	"github.com/fauzanebd/argentum/internal/report/spec"
+	"github.com/fauzanebd/argentum/internal/report/theme"
 )
 
 // The carousel fixture is this package's own rather than one of the PDF's,
@@ -193,36 +194,73 @@ func TestTooManySlidesAreRefusedBeforeAnythingIsBuilt(t *testing.T) {
 	if err == nil {
 		t.Fatal("a thirteen-beat report was accepted as a carousel")
 	}
-	for _, want := range []string{"a carousel is 2–10 slides", "at least 13", "merge or drop sections"} {
+	for _, want := range []string{"a carousel is 1–10 slides", "at least 13", "merge or drop sections"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal %q does not say %q", err, want)
 		}
 	}
-	if _, err := BuildCarousel(doc, Options{Now: fixtureNow}); err == nil || !strings.Contains(err.Error(), "a carousel is 2–10 slides") {
+	if _, err := BuildCarousel(doc, Options{Now: fixtureNow}); err == nil || !strings.Contains(err.Error(), "a carousel is 1–10 slides") {
 		t.Errorf("BuildCarousel: %v, want the slide-band refusal", err)
 	}
 }
 
-// TestOneSlideIsRefused: a spec whose only section titles nothing produces the
-// closing slide alone, and a one-slide carousel is not a carousel.
-func TestOneSlideIsRefused(t *testing.T) {
+// TestOneSlideIsAllowed: the floor is 1 since T-G11, and the reason is the
+// commonest marketing post there is — a promotion or a launch is one image.
+// A floor of 2 answered "add a section" to a spec that was already what the
+// user asked for.
+//
+// The spec here is one hero and nothing else: the single image a discount
+// post is. It produces exactly one page, so nothing downstream has to treat
+// it specially — the pages, the manifest and the announcement are per page.
+func TestOneSlideIsAllowed(t *testing.T) {
 	doc := &spec.Document{
-		Title: "Nothing here",
+		Title:  "Diskon akhir pekan",
+		Social: &spec.Social{Caption: "Diskon 20% sampai Minggu."},
 		Content: spec.Content{Sections: []spec.Section{
-			{Type: spec.SectionHeading, Level: 2, Text: "A sub-heading with nothing under it"},
+			{Type: spec.SectionHero, Subtitle: "PROMO AKHIR PEKAN", Title: "Diskon 20%",
+				Text: "Semua kopi susu, Jumat sampai Minggu."},
 		}},
 	}
 	doc.Normalize()
 
-	err := CheckCarouselLimits(doc, Options{Now: fixtureNow})
-	if err == nil {
-		t.Fatal("a one-slide spec was accepted as a carousel")
+	if err := CheckCarouselLimits(doc, Options{Now: fixtureNow}); err != nil {
+		t.Fatalf("the door refused a one-slide spec: %v", err)
 	}
-	if !strings.Contains(err.Error(), "this spec makes 1") {
-		t.Errorf("refusal %q does not state the count", err)
+	p, err := BuildCarousel(doc, Options{Now: fixtureNow})
+	if err != nil {
+		t.Fatalf("BuildCarousel: %v", err)
 	}
+	if len(p.Scenes) != 1 {
+		t.Fatalf("a lone hero made %d slides, want 1", len(p.Scenes))
+	}
+	if p.Scenes[0].Kind != KindHero {
+		t.Errorf("slide 1 is %q, want %q", p.Scenes[0].Kind, KindHero)
+	}
+	if p.TotalFrames != 1 {
+		t.Errorf("total_frames = %d, want 1", p.TotalFrames)
+	}
+	// The alt text is what a screen reader and a publisher read, and a hero's
+	// is the only description of a slide that is otherwise all type.
+	for _, want := range []string{"Diskon 20%", "PROMO AKHIR PEKAN", "Semua kopi susu"} {
+		if !strings.Contains(p.Scenes[0].Alt, want) {
+			t.Errorf("alt %q omits %q", p.Scenes[0].Alt, want)
+		}
+	}
+}
+
+// A spec that makes no slide at all is still refused: the floor moved to one,
+// not to zero.
+func TestNoSlidesIsStillRefused(t *testing.T) {
+	doc := &spec.Document{
+		Title: "Nothing here",
+		Content: spec.Content{Sections: []spec.Section{
+			{Type: spec.SectionHero},
+		}},
+	}
+	doc.Normalize()
+
 	if _, err := BuildCarousel(doc, Options{Now: fixtureNow}); err == nil {
-		t.Error("BuildCarousel accepted a one-slide spec")
+		t.Error("a spec with nothing to draw became a carousel")
 	}
 }
 
@@ -239,7 +277,7 @@ func TestATableThatPagesPastTheBandIsRefusedAtFinish(t *testing.T) {
 	if err == nil {
 		t.Fatal("a 200-row table became a carousel")
 	}
-	if !strings.Contains(err.Error(), "a carousel is 2–10 slides; this spec makes ") || strings.Contains(err.Error(), "at least") {
+	if !strings.Contains(err.Error(), "a carousel is 1–10 slides; this spec makes ") || strings.Contains(err.Error(), "at least") {
 		t.Errorf("finish refusal %q should state the exact count", err)
 	}
 }
@@ -254,8 +292,8 @@ func TestTheSlideBandIsConfigurable(t *testing.T) {
 	if _, err := BuildCarousel(doc, Options{Now: fixtureNow, Limits: Limits{MinSlides: 20}}); err == nil {
 		t.Error("MinSlides 20 accepted a seven-slide carousel")
 	}
-	if l := (Limits{}).Normalize(); l.MinSlides != 2 || l.MaxSlides != 10 {
-		t.Errorf("zero limits normalise to %d–%d, want 2–10", l.MinSlides, l.MaxSlides)
+	if l := (Limits{}).Normalize(); l.MinSlides != 1 || l.MaxSlides != 10 {
+		t.Errorf("zero limits normalise to %d–%d, want 1–10", l.MinSlides, l.MaxSlides)
 	}
 }
 
@@ -296,4 +334,291 @@ func TestWriteCarouselPlan(t *testing.T) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 	t.Logf("wrote %s (%d bytes)", path, len(out))
+}
+
+// The size named in the spec chooses the frame the slides are drawn on
+// (T-G11), and the plan carries that frame — which is what makes the line
+// breaks in it right, because they were measured against it.
+func TestTheSocialSizeChoosesTheSurface(t *testing.T) {
+	cases := []struct {
+		size string
+		w, h int
+	}{
+		{"", 1080, 1350}, // omitted is portrait, which is what every carousel before T-G11 was
+		{spec.SizePortrait, 1080, 1350},
+		{spec.SizeSquare, 1080, 1080},
+		{spec.SizeStory, 1080, 1920},
+		{spec.SizeLandscape, 1920, 1080},
+	}
+	for _, tc := range cases {
+		t.Run(firstNonEmptyName(tc.size), func(t *testing.T) {
+			doc := loadCarouselFixture(t)
+			if doc.Social == nil {
+				doc.Social = &spec.Social{}
+			}
+			doc.Social.Size = tc.size
+			p, err := BuildCarousel(doc, Options{Now: fixtureNow})
+			if err != nil {
+				t.Fatalf("BuildCarousel: %v", err)
+			}
+			if p.Width != tc.w || p.Height != tc.h {
+				t.Errorf("plan is %dx%d, want %dx%d", p.Width, p.Height, tc.w, tc.h)
+			}
+			if p.Metrics.MarginX == 0 {
+				t.Error("the plan carries no metrics for its surface")
+			}
+		})
+	}
+}
+
+// The door and the worker must agree about the frame, because the door's job
+// is to refuse in the turn what the worker would refuse minutes later. A
+// surface with a shorter body pages a table into more slides, so a size that
+// the precheck ignored could pass the door and fail the render.
+func TestTheDoorChecksTheSizeItWillBeBuiltOn(t *testing.T) {
+	doc := loadCarouselFixture(t)
+	if doc.Social == nil {
+		doc.Social = &spec.Social{}
+	}
+	doc.Social.Size = spec.SizeSquare
+
+	doorErr := CheckCarouselLimits(doc, Options{Now: fixtureNow, Limits: Limits{MaxSlides: 3}})
+	_, buildErr := BuildCarousel(doc, Options{Now: fixtureNow, Limits: Limits{MaxSlides: 3}})
+	if doorErr == nil || buildErr == nil {
+		t.Fatalf("door = %v, build = %v; both must refuse", doorErr, buildErr)
+	}
+	// And the surface actually reached the builder: a square body is 106mm
+	// against portrait's 154, so the same fixture makes at least as many
+	// slides on it.
+	square, err := BuildCarousel(doc, Options{Now: fixtureNow})
+	if err != nil {
+		t.Fatalf("square: %v", err)
+	}
+	doc.Social.Size = spec.SizePortrait
+	portrait, err := BuildCarousel(doc, Options{Now: fixtureNow})
+	if err != nil {
+		t.Fatalf("portrait: %v", err)
+	}
+	if len(square.Scenes) < len(portrait.Scenes) {
+		t.Errorf("square made %d slides and portrait %d; the shorter body cannot make fewer",
+			len(square.Scenes), len(portrait.Scenes))
+	}
+}
+
+// A hero is one statement on the frame: kicker, headline, supporting line,
+// and none of a report's furniture (T-G11).
+func TestAHeroIsItsOwnBeatWithNoTitle(t *testing.T) {
+	doc := &spec.Document{
+		Title: "Promo",
+		Content: spec.Content{Sections: []spec.Section{
+			{Type: spec.SectionHeading, Level: 1, Text: "Penawaran"},
+			{Type: spec.SectionHero, Subtitle: "PROMO AKHIR PEKAN", Title: "Diskon 20%",
+				Text: "Semua kopi susu, Jumat sampai Minggu."},
+			{Type: spec.SectionParagraph, Text: "Berlaku di semua cabang."},
+		}},
+	}
+	doc.Normalize()
+
+	p, err := BuildCarousel(doc, Options{Now: fixtureNow})
+	if err != nil {
+		t.Fatalf("BuildCarousel: %v", err)
+	}
+	var hero *Scene
+	for i := range p.Scenes {
+		if p.Scenes[i].Kind == KindHero {
+			hero = &p.Scenes[i]
+		}
+	}
+	if hero == nil {
+		t.Fatalf("no hero scene in %d slides", len(p.Scenes))
+	}
+	// The headline is the title, and the heading above it does not travel:
+	// a hero under a section heading would put two voices on one frame.
+	if strings.Join(hero.Title, " ") != "Diskon 20%" {
+		t.Errorf("headline = %q, want the hero's own title", hero.Title)
+	}
+	if strings.Join(hero.Subtitle, " ") != "PROMO AKHIR PEKAN" {
+		t.Errorf("kicker = %q", hero.Subtitle)
+	}
+	if len(hero.Lines) == 0 || !strings.Contains(strings.Join(hero.Lines, " "), "kopi susu") {
+		t.Errorf("supporting line = %q", hero.Lines)
+	}
+	// A hero carries no table, chart, KPI or facts: it is type on a ground.
+	if hero.Table != nil || hero.Chart != nil || len(hero.KPIs) > 0 || len(hero.Facts) > 0 {
+		t.Error("a hero carries report furniture")
+	}
+	// The heading before it still made its own divider, and the paragraph
+	// after it still made its own statement: a hero interrupts nothing.
+	if len(p.Scenes) < 4 {
+		t.Errorf("%d slides; the heading, hero, paragraph and closing should all be there", len(p.Scenes))
+	}
+}
+
+// One field is a headline, not a headline repeated as its own supporting line.
+func TestAHeroWithOneFieldSaysItOnce(t *testing.T) {
+	doc := &spec.Document{
+		Title: "Promo",
+		Content: spec.Content{Sections: []spec.Section{
+			{Type: spec.SectionHero, Text: "Diskon 20% akhir pekan ini"},
+			{Type: spec.SectionParagraph, Text: "Berlaku di semua cabang."},
+		}},
+	}
+	doc.Normalize()
+	p, err := BuildCarousel(doc, Options{Now: fixtureNow})
+	if err != nil {
+		t.Fatalf("BuildCarousel: %v", err)
+	}
+	h := p.Scenes[0]
+	if h.Kind != KindHero {
+		t.Fatalf("slide 1 is %q", h.Kind)
+	}
+	if strings.Join(h.Title, " ") != "Diskon 20% akhir pekan ini" {
+		t.Errorf("headline = %q", h.Title)
+	}
+	if len(h.Lines) != 0 {
+		t.Errorf("the same sentence was drawn twice: %q", h.Lines)
+	}
+}
+
+// The video draws a hero too — it is a section type, not a carousel feature —
+// and it gets a duration like every other scene rather than a zero-length beat.
+func TestAHeroInAVideoHasADuration(t *testing.T) {
+	doc := &spec.Document{
+		Title: "Promo",
+		Content: spec.Content{Sections: []spec.Section{
+			{Type: spec.SectionHero, Title: "Diskon 20%", Text: "Semua kopi susu."},
+			{Type: spec.SectionParagraph, Text: "Berlaku di semua cabang bulan ini, termasuk gerai baru."},
+		}},
+	}
+	doc.Normalize()
+	p, err := Build(doc, Options{Now: fixtureNow})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if p.Scenes[0].Kind != KindHero || p.Scenes[0].Frames < 1 {
+		t.Errorf("scene 1 = %q at %d frames", p.Scenes[0].Kind, p.Scenes[0].Frames)
+	}
+}
+
+func firstNonEmptyName(s string) string {
+	if s == "" {
+		return "omitted"
+	}
+	return s
+}
+
+// A promotion card is a whole post: one section, one slide, both prices
+// formatted, and the photograph inlined (T-G12).
+func TestAPromoCardIsAWholePost(t *testing.T) {
+	doc := &spec.Document{
+		Format: "carousel", Title: "Promo",
+		Social: &spec.Social{Caption: "Diskon jeruk."},
+		Content: spec.Content{Sections: []spec.Section{{
+			Type: spec.SectionPromo, Badge: "CRAZY DEAL", Title: "Jeruk Sunkist Cara Cara",
+			ImageID: "img-1", Was: &spec.Cell{V: 5980, Fmt: "currency"},
+			Price: &spec.Cell{V: 3370, Fmt: "currency"}, Unit: "/100 gram",
+			Text: "Berlaku akhir pekan.",
+		}}},
+	}
+	doc.Normalize()
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	p, err := BuildCarousel(doc, Options{Now: fixtureNow, Currency: "IDR",
+		Images: map[string]PromoImage{"img-1": {PNG: []byte("PNGBYTES"), Aspect: 1.5, Alt: "Jeruk dibelah"}}})
+	if err != nil {
+		t.Fatalf("BuildCarousel: %v", err)
+	}
+	if len(p.Scenes) != 1 || p.Scenes[0].Kind != KindPromo {
+		t.Fatalf("%d slides, first %q", len(p.Scenes), p.Scenes[0].Kind)
+	}
+	sc := p.Scenes[0]
+
+	// **Never compacted.** A KPI card says "Rp 3,86 Miliar" because the exact
+	// figure is in the table it summarises; a promotion card is the exact
+	// figure, and "Rp 3,4 Ribu" is not a price anybody can pay.
+	if sc.Price != "Rp 3.370" || sc.Was != "Rp 5.980" {
+		t.Errorf("prices = %q / %q, want the exact figures", sc.Price, sc.Was)
+	}
+	if sc.Badge != "CRAZY DEAL" || sc.Unit != "/100 gram" {
+		t.Errorf("badge=%q unit=%q", sc.Badge, sc.Unit)
+	}
+	if sc.Image == nil || !strings.HasPrefix(sc.Image.DataURI, "data:image/png;base64,") {
+		t.Fatalf("image = %+v, want an inlined data URI", sc.Image)
+	}
+	if sc.Image.Aspect != 1.5 {
+		t.Errorf("aspect = %v, want 1.5", sc.Image.Aspect)
+	}
+	// The palette rides only on plans that need it.
+	if p.Brand.Promo == nil || p.Brand.Promo.Ground == "" {
+		t.Error("no promo palette on a plan with a promo card")
+	}
+	// The alt text is the card's content, and for a promotion that is the
+	// prices: a description that omits them describes a photograph.
+	for _, want := range []string{"CRAZY DEAL", "Jeruk Sunkist Cara Cara", "Rp 5.980", "Rp 3.370", "/100 gram", "Jeruk dibelah"} {
+		if !strings.Contains(sc.Alt, want) {
+			t.Errorf("alt %q omits %q", sc.Alt, want)
+		}
+	}
+}
+
+// An unresolved photograph is a card without one, never a failed render.
+func TestAPromoWithNoImageStillDraws(t *testing.T) {
+	doc := &spec.Document{
+		Format: "carousel", Title: "Promo",
+		Content: spec.Content{Sections: []spec.Section{{
+			Type: spec.SectionPromo, Title: "Jeruk", Price: &spec.Cell{V: 3370, Fmt: "currency"},
+		}}},
+	}
+	doc.Normalize()
+	p, err := BuildCarousel(doc, Options{Now: fixtureNow, Currency: "IDR"})
+	if err != nil {
+		t.Fatalf("BuildCarousel: %v", err)
+	}
+	if p.Scenes[0].Image != nil {
+		t.Error("an image appeared from nowhere")
+	}
+	if p.Scenes[0].Price == "" {
+		t.Error("the price is what the card is for and it is missing")
+	}
+}
+
+// The palette is a function of the tenant's accent, so a shop with a green
+// brand gets a green promotion rather than ours with their logo on it.
+func TestThePromoPaletteFollowsTheTenantsAccent(t *testing.T) {
+	green := theme.Color{R: 0x18, G: 0x9A, B: 0x4D}
+	doc := &spec.Document{
+		Format: "carousel", Title: "Promo",
+		Content: spec.Content{Sections: []spec.Section{{
+			Type: spec.SectionPromo, Title: "Jeruk", Price: &spec.Cell{V: 100, Fmt: "currency"},
+		}}},
+	}
+	doc.Normalize()
+	p, err := BuildCarousel(doc, Options{Now: fixtureNow, Brand: BrandInput{Primary: &green}})
+	if err != nil {
+		t.Fatalf("BuildCarousel: %v", err)
+	}
+	if p.Brand.Promo.Ground != green.Hex() {
+		t.Errorf("ground = %q, want the tenant's accent %q", p.Brand.Promo.Ground, green.Hex())
+	}
+	// Five distinct roles, and the two loudest are deliberately the same
+	// colour: a shopper's eye travels from the badge to the price.
+	if p.Brand.Promo.Badge != p.Brand.Promo.PriceBlock {
+		t.Error("the badge and the price panel are different colours")
+	}
+	if p.Brand.Promo.Ray == p.Brand.Promo.Ground || p.Brand.Promo.Burst == p.Brand.Promo.Ground {
+		t.Error("the sunburst has no contrast against its own ground")
+	}
+}
+
+// No promo, no palette: every plan built before T-G12 carries the same brand
+// block it did, which is what keeps the goldens byte-identical.
+func TestAPlanWithNoPromoCarriesNoPromoPalette(t *testing.T) {
+	p, err := BuildCarousel(loadCarouselFixture(t), Options{Now: fixtureNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Brand.Promo != nil {
+		t.Errorf("promo palette on a plan with no promo card: %+v", p.Brand.Promo)
+	}
 }

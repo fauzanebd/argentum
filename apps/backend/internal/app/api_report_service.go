@@ -363,6 +363,7 @@ func (s *APIReportService) runThreadRender(ctx context.Context, p queue.ReportRe
 		CompanyID:  p.CompanyID,
 		ThreadID:   p.ThreadID,
 		Source:     domain.DocumentSourceAgent,
+		Images:     p.Images,
 		OnProgress: s.threadProgress(p.ThreadID),
 	})
 	if err != nil {

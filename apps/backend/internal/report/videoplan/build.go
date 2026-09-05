@@ -37,6 +37,22 @@ type BrandInput struct {
 	FooterNote      string
 }
 
+// PromoImage is a picture the tenant uploaded, resolved by the caller and
+// handed to the projection ready to draw (T-G12).
+//
+// The bytes travel rather than a key or a URL, for the reason every image in
+// a plan does: the render service has no network and no credentials. Resolving
+// which image is *whose* happens far from here — in the tool, against the
+// company's own library — so this package never sees a tenant boundary it
+// could get wrong.
+type PromoImage struct {
+	PNG []byte
+	// Aspect is width over height. Zero is treated as square.
+	Aspect float64
+	// Alt describes the picture for the slide's alt text.
+	Alt string
+}
+
 // Limits bounds what a spec may turn into.
 //
 // They are checked before anything is built, and the reason is sharper here
@@ -55,11 +71,18 @@ type Limits struct {
 	// images and the logo.
 	MaxPlanBytes int
 
-	// MinSlides and MaxSlides bound a carousel (T-G3). They are Instagram's —
-	// a carousel is two to ten children — and a spec outside the band is
-	// refused rather than truncated, because which slide to drop is the
-	// model's decision about its own argument, not this package's. A video
-	// ignores them; a carousel ignores MaxScenes and MaxTotalFrames.
+	// MinSlides and MaxSlides bound a carousel (T-G3). The ceiling is
+	// Instagram's — a carousel is at most ten children — and a spec outside
+	// the band is refused rather than truncated, because which slide to drop
+	// is the model's decision about its own argument, not this package's. A
+	// video ignores them; a carousel ignores MaxScenes and MaxTotalFrames.
+	//
+	// **The floor is 1 since T-G11, and it was 2 before.** A promotion, a
+	// launch or a single figure is one image, and a floor of two made the
+	// commonest marketing post the one shape this pipeline refused — it would
+	// answer "add a section" to a spec that was already exactly what the user
+	// asked for. Nothing downstream ever needed two: the pages, the manifest,
+	// the zip and the announcement are all written per page.
 	MinSlides int
 	MaxSlides int
 }
@@ -69,7 +92,7 @@ var DefaultLimits = Limits{
 	MaxScenes:      60,
 	MaxTotalFrames: 18_000,
 	MaxPlanBytes:   25 << 20,
-	MinSlides:      2,
+	MinSlides:      1,
 	MaxSlides:      10,
 }
 
@@ -106,6 +129,12 @@ type Options struct {
 
 	// Locale overrides the locale derived from the currency.
 	Locale string
+
+	// Images are the tenant's uploaded pictures, by image id, for the promo
+	// cards in this spec (T-G12). Empty is ordinary: every spec without a
+	// promo section, and a promo whose image could not be resolved, which
+	// draws the card without a photograph rather than failing.
+	Images map[string]PromoImage
 
 	// Now is the fallback generated-at when the spec omits one. Zero means
 	// time.Now(); tests set it to keep plans stable.
@@ -173,8 +202,35 @@ func Build(doc *spec.Document, opts Options) (*Plan, error) {
 // that sets Options.Surface chooses a different still surface (T-G9's square
 // and story); the zero value is Portrait here where it is Wide for a video.
 func BuildCarousel(doc *spec.Document, opts Options) (*Plan, error) {
-	opts.Surface = opts.Surface.Or(canvas.Portrait)
+	opts.Surface = opts.Surface.Or(SurfaceFor(doc))
 	return project(doc, opts, true)
+}
+
+// SurfaceFor is the frame a spec's slides are drawn on: the size named in its
+// social block, or Portrait when it names none (T-G11).
+//
+// An unknown name resolves to Portrait rather than failing, and the refusal
+// that matters happens earlier — `spec.Validate` rejects a size that is not
+// one of the four, in the turn, where the model can still fix it. By the time
+// a plan is being built the spec has been validated, so this function's job
+// is to be total rather than to be a second gate with its own opinion.
+func SurfaceFor(doc *spec.Document) canvas.Surface {
+	if doc == nil || doc.Social == nil {
+		return canvas.Portrait
+	}
+	switch doc.Social.Size {
+	case spec.SizeSquare:
+		return canvas.Square
+	case spec.SizeStory:
+		return canvas.Story
+	case spec.SizeLandscape:
+		// The video's own frame, held still. A 16:9 surface for a feed post is
+		// the one size here that was already drawn, measured and golden-tested
+		// before this ticket, so it costs a case rather than a surface.
+		return canvas.Wide
+	default:
+		return canvas.Portrait
+	}
 }
 
 // CheckCarouselLimits is CheckLimits for a carousel: the same precheck
@@ -185,7 +241,7 @@ func CheckCarouselLimits(doc *spec.Document, opts Options) error {
 	if doc == nil {
 		return fmt.Errorf("videoplan: nil spec")
 	}
-	opts.Surface = opts.Surface.Or(canvas.Portrait)
+	opts.Surface = opts.Surface.Or(SurfaceFor(doc))
 	b, err := newBuilder(doc, opts)
 	if err != nil {
 		return err
@@ -364,7 +420,7 @@ func (b *builder) estimate() (scenes int, seconds float64) {
 			}
 		case spec.SectionParagraph:
 			scenes, seconds = scenes+1, seconds+clamp(readSeconds(sec.Text))
-		case spec.SectionCallout:
+		case spec.SectionCallout, spec.SectionHero, spec.SectionPromo:
 			scenes, seconds = scenes+1, seconds+clamp(readSeconds(sec.Title, sec.Text))
 		default:
 			scenes, seconds = scenes+1, seconds+MinSceneSeconds
@@ -412,6 +468,11 @@ func (b *builder) finish() (*Plan, error) {
 // finishStill is finish for a carousel: the exact slide count against the
 // band, one frame a scene, fps 1, and the alt text every still needs.
 func (b *builder) finishStill() (*Plan, error) {
+	b.trimClosing()
+	if len(b.scenes) == 0 {
+		return nil, fmt.Errorf("videoplan: this spec makes no slide with anything on it — " +
+			"every section in it is empty")
+	}
 	if err := b.checkSlides(len(b.scenes), false); err != nil {
 		return nil, err
 	}
@@ -434,6 +495,29 @@ func (b *builder) finishStill() (*Plan, error) {
 		Brand:       b.brand(),
 		Scenes:      scenes,
 	}, nil
+}
+
+// trimClosing drops the sign-off card from a carousel that would otherwise be
+// a single image, and from one that is nothing else (T-G11).
+//
+// The closing scene is a report's outro: the brand and the generated-at
+// timestamp on the dark ground. On a seven-slide carousel that is a
+// conventional last card and it stays. On a **one-image post** — a
+// promotion, a launch, one figure — it is half the post, and it made the
+// commonest marketing request impossible to satisfy: the spec said one image
+// and the pipeline produced two, the second of them a timestamp.
+//
+// A plan whose only scene is the closing card is not a post at all. It is
+// left empty here and refused by the caller, because "your carousel is ready"
+// followed by a single card saying when it was made is worse than the
+// refusal that names what was wrong with the spec.
+func (b *builder) trimClosing() {
+	switch {
+	case len(b.scenes) == 1 && b.scenes[0].Kind == KindClosing:
+		b.scenes = nil
+	case len(b.scenes) == 2 && b.scenes[1].Kind == KindClosing:
+		b.scenes = b.scenes[:1]
+	}
 }
 
 // tones is the callout palette, resolved once per plan.
@@ -514,6 +598,43 @@ func (b *builder) accent() theme.Color {
 	return theme.ColorPrimary
 }
 
+// hasPromo reports whether any scene is a promotion card.
+func (b *builder) hasPromo() bool {
+	for _, s := range b.scenes {
+		if s.Kind == KindPromo {
+			return true
+		}
+	}
+	return false
+}
+
+// promoBrand derives the promotion card's five colours from the tenant's
+// accent (T-G12).
+//
+// Every one is a function of the same colour, so a shop with a green brand
+// gets a green promotion rather than Argentum's red wearing their logo. The
+// ratios are the argument:
+//
+//   - The sunburst's two wedges differ by 12% towards white. Enough to read as
+//     rays under a photograph, not enough to compete with one — the reference
+//     posters this was drawn against all use a low-contrast ground for
+//     exactly that reason.
+//   - The star behind the product is 14% towards black, so the product's
+//     edges have something to sit against whatever colour the accent is.
+//   - The badge and the price panel are the same colour, 28% towards black:
+//     the two loudest things on the card should not be two different reds,
+//     and a shopper's eye is meant to travel from one to the other.
+func promoBrand(accent theme.Color) *PromoBrand {
+	strong := accent.Mix(theme.ColorForeground, 0.28)
+	return &PromoBrand{
+		Ground:     accent.Hex(),
+		Ray:        accent.Tint(0.12).Hex(),
+		Burst:      accent.Mix(theme.ColorForeground, 0.14).Hex(),
+		Badge:      strong.Hex(),
+		PriceBlock: strong.Hex(),
+	}
+}
+
 func (b *builder) brand() Brand {
 	credit := ""
 	if !b.opts.Brand.HideCredit {
@@ -541,6 +662,12 @@ func (b *builder) brand() Brand {
 		Credit:          credit,
 		Confidentiality: b.confid,
 		FooterNote:      strings.TrimSpace(b.opts.Brand.FooterNote),
+	}
+	// The promotion palette rides only on the plans that need it, so a report,
+	// a deck and every carousel built before T-G12 carry the byte-identical
+	// brand block they did before.
+	if b.hasPromo() {
+		out.Promo = promoBrand(b.accent())
 	}
 	if b.logoAspect > 0 {
 		out.LogoDataURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(b.opts.Brand.LogoPNG)

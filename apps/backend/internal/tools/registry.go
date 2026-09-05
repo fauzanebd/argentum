@@ -95,6 +95,12 @@ type RegistryDeps struct {
 	// affects its *vocabulary*, and a format the model is offered but nothing
 	// can produce is a promise to a customer rather than an error to an admin.
 	Renders VideoEnqueuer
+
+	// Images is the tenant's picture library, for the photograph on a promo
+	// card (T-G12). Nil is ordinary — a deployment with no object storage has
+	// no library — and the card draws without a photograph rather than the
+	// tool refusing a format.
+	Images ImageResolver
 	// Documents backs search_documents (T-P9): the prose of the PDFs a tenant
 	// uploaded. Nil is legal and is what the API's name-only build passes — the
 	// tool still registers, so it appears in the agent allowlist and the
@@ -168,7 +174,11 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		NewLoadSkillTool(d.Skills),
 	}
 	if d.Docs != nil {
-		ts = append(ts, NewGenerateDocumentTool(d.Docs).WithVideoQueue(d.Renders))
+		gen := NewGenerateDocumentTool(d.Docs).WithVideoQueue(d.Renders)
+		if d.Images != nil {
+			gen = gen.WithImages(d.Images)
+		}
+		ts = append(ts, gen)
 	}
 	return ts
 }

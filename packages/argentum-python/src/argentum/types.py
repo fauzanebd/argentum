@@ -415,7 +415,7 @@ class ReportSpecSection(TypedDict, total=False):
 
     Always present: type.
     """
-    type: Literal["cover", "heading", "paragraph", "kpi_row", "table", "callout", "key_value", "chart", "footnote", "page_break", "spacer"]
+    type: Literal["cover", "heading", "paragraph", "kpi_row", "table", "callout", "key_value", "chart", "footnote", "page_break", "spacer", "hero", "promo"]
     subtitle: str
     period: str
     prepared_for: str
@@ -435,6 +435,18 @@ class ReportSpecSection(TypedDict, total=False):
     # A v1 spacer's height in millimetres.
     size: float
     chart: ReportSpecChart
+    # A `promo` card's sticker — "CRAZY DEAL", "PROMO AKHIR PEKAN".
+    badge: str
+    # A `promo` card's photograph, named.
+    image: str
+    # The resolved image, written back onto the spec when the render is queued so the worker draws exac…
+    image_id: str
+    # A `promo` card's price before the promotion, drawn struck through.
+    was: ReportSpecCell
+    # A `promo` card's price now, and the largest thing on the card.
+    price: ReportSpecCell
+    # What the price is per: "/100 gram", "per kg".
+    unit: str
 
 
 class ReportSpecSeries(TypedDict, total=False):
@@ -456,14 +468,24 @@ class ReportSpecSheet(TypedDict, total=False):
 
 
 class ReportSpecSocial(TypedDict, total=False):
-    """The post's text, for `format: carousel` and ignored by every other
-    format. Bounded by the platform it is written for and refused rather
-    than truncated over the bound: a caption of at most 2 200 characters and
-    at most 30 hashtags, given without the `#` (the renderer writes it
-    once). Both land in the zip's `caption.txt` and in `carousel.json`.
+    """The post's text and shape, for `format: carousel` and ignored by every
+    other format. Bounded by the platform it is written for and refused
+    rather than truncated over the bound: a caption of at most 2 200
+    characters and at most 30 hashtags, given without the `#` (the renderer
+    writes it once). Both land in the zip's `caption.txt` and in
+    `carousel.json`.
+
+    `size` is a name and never a width and a height. A surface is margins, a
+    type scale, safe zones and a card cap, each measured against a frame
+    somebody has looked at; an arbitrary rectangle would be a layout whose
+    first viewer is the audience. `story` is not `portrait` made taller —
+    the app's own controls cover roughly the top 250 px and the bottom 340
+    px, so its safe zones are twice as deep.
     """
     caption: str
     hashtags: List[str]
+    # The frame the slides are drawn on.
+    size: Literal["portrait", "square", "story", "landscape"]
 
 
 class ReportSpecTable(TypedDict, total=False):

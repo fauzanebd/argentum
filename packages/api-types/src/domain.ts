@@ -1834,6 +1834,54 @@ export interface AllowedPhoneNumber {
 }
 
 //////////
+// source: post_image.go
+
+/**
+ * PostImage is a picture a tenant uploaded for the agent to draw into a post
+ * (T-G12): a product photograph on a promotion card.
+ * It is not a `SourceDocument` and not a `Document`. Those two are files to be
+ * *read* and files that were *generated*; this is a file to be *drawn*, with
+ * no pipeline behind it and nothing to extract from it. What it has instead is
+ * a name, because the name is how the model asks for it.
+ */
+export interface PostImage {
+  id: string;
+  company_id: string;
+  /**
+   * Name is what the tenant calls it and what the model asks for. Unique per
+   * company, case-insensitively.
+   */
+  name: string;
+  /**
+   * Alt describes the picture for somebody who cannot see it. It travels
+   * onto the slide's alt text, which is what a screen reader and a
+   * publishing tool read.
+   */
+  alt?: string;
+  width: number /* int */;
+  height: number /* int */;
+  byte_size: number /* int64 */;
+  uploaded_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+/**
+ * MaxPostImageNameChars is the name the model types to ask for it. Bounded
+ * for the reason a skill's name is (T-K1): it is a string a model has to
+ * reproduce, and a name nobody can retype is a picture nobody can use.
+ */
+export const MaxPostImageNameChars = 80;
+/**
+ * MaxPostImageAltChars is one or two sentences, the length alt text is
+ * useful at.
+ */
+export const MaxPostImageAltChars = 300;
+/**
+ * Bounds on a post image's metadata. The bytes are bounded by the service.
+ */
+export type MaxPostImage = typeof MaxPostImageNameChars | typeof MaxPostImageAltChars;
+
+//////////
 // source: query_example.go
 
 /**

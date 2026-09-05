@@ -32,6 +32,46 @@ func Analytical(d *Document) bool {
 	return false
 }
 
+// HasHero reports whether a document opens on a statement (T-G11).
+//
+// It exists for one judgement: whether a **carousel** is allowed. `Analytical`
+// asks "is this an argument about data" and proxies it with a KPI row or a
+// chart, which is right for the question it was written for — keeping a record
+// out of a medium that cannot be scanned. But a promotion and a launch are
+// neither an argument nor a record, and a post that says "Diskon 20%" has no
+// KPI row in it and should not be made to carry one: padding a one-image
+// announcement with a card the user did not ask for is the failure, not the
+// fix.
+//
+// It does not weaken the test it widens. An invoice, an agreement and a data
+// export are key/value blocks and tables; none of them has ever contained a
+// hero, and a model that wrote one into an invoice would have written an
+// invoice with a headline on it, which is a different document.
+func HasHero(d *Document) bool {
+	for _, s := range d.Content.Sections {
+		if s.Type == SectionHero {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAnnouncement reports whether a document says something rather than
+// argues something: a hero, or a promotion card (T-G12).
+//
+// This is the predicate the carousel gate actually asks. A promo carries a
+// price the agent read from the tenant's data, which is a figure in exactly
+// the sense a KPI card is one — it is simply drawn as a shelf-edge label
+// instead of a card, and no invoice has ever carried one.
+func HasAnnouncement(d *Document) bool {
+	for _, s := range d.Content.Sections {
+		if s.Type == SectionHero || s.Type == SectionPromo {
+			return true
+		}
+	}
+	return false
+}
+
 // NarrativeChars totals the interpretation in a document.
 //
 // Only `paragraph` and `callout` count. A `heading` is a label, a `footnote` is

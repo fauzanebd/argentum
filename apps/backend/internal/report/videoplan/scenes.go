@@ -68,6 +68,104 @@ func (b *builder) Cover(sec spec.Section) {
 	})
 }
 
+// maxHeroLines is a hero's supporting copy. Three lines of H2 under a display
+// headline is the most a frame holds before the headline stops being the
+// thing you read first, which is the only job a hero has.
+const maxHeroLines = 3
+
+// Hero is one statement on the whole frame (T-G11).
+//
+// The headline is set at Display — the cover's size, not a title's — because
+// a hero has no title band to sit under and nothing else on the frame to
+// compete with. Everything is optional except that *something* is there: a
+// hero with neither headline nor supporting copy is dropped rather than
+// emitted as an empty dark frame, which is the one outcome worse than a
+// missing slide.
+func (b *builder) Hero(sec spec.Section) {
+	headline := firstNonEmpty(strings.TrimSpace(sec.Title), strings.TrimSpace(sec.Text))
+	body := strings.TrimSpace(sec.Text)
+	if headline == body {
+		// One field filled: it is the headline, and there is no supporting
+		// line. Better one big true sentence than the same sentence twice.
+		body = ""
+	}
+	if headline == "" && body == "" {
+		return
+	}
+	titleLines := b.lines(headline, measure.Bold, b.s.Type.Display, b.s.ContentWidth(), maxTitleLines)
+	lines := b.lines(body, measure.Regular, b.s.Type.H2, b.s.ContentWidth(), maxHeroLines)
+	if len(titleLines) == 0 && len(lines) == 0 {
+		return
+	}
+	b.scenes = append(b.scenes, Scene{
+		Kind:     KindHero,
+		Frames:   readingFrames(headline, body),
+		Title:    titleLines,
+		Subtitle: b.lines(sec.Subtitle, measure.Bold, b.s.Type.Caption, b.s.ContentWidth(), 1),
+		Lines:    lines,
+	})
+}
+
+// maxPromoNameLines is a product's name on a promotion card. Two lines of
+// display type is already most of the card; a third means the name is a
+// description and belongs in the supporting line.
+const maxPromoNameLines = 2
+
+// Promo is a retail promotion card (T-G12).
+//
+// **The prices are formatted, never compacted.** A KPI card says "Rp 3,86
+// Miliar" because the exact figure lives in the table it summarises; a
+// promotion card *is* the exact figure, and "Rp 3,4 Ribu" on a shelf-edge
+// label is not a price anybody can pay. So the format options are the
+// document's own with Compact explicitly off, which is the one place in this
+// package that overrides it downwards.
+func (b *builder) Promo(sec spec.Section) {
+	name := strings.TrimSpace(sec.Title)
+	if name == "" || sec.Price == nil {
+		// Refused by spec.Validate long before here; dropped rather than
+		// drawn as a card with an empty price panel.
+		return
+	}
+	priceFmt := b.fmt
+	priceFmt.Compact = false
+
+	scene := Scene{
+		Kind:   KindPromo,
+		Frames: readingFrames(name, sec.Text),
+		Badge:  strings.TrimSpace(sec.Badge),
+		Title:  b.lines(name, measure.Bold, b.s.Type.H1, b.s.ContentWidth(), maxPromoNameLines),
+		Lines:  b.lines(sec.Text, measure.Regular, b.s.Type.Caption, b.s.ContentWidth(), 2),
+		Price:  canvas.CellText(*sec.Price, format.KindCurrency, priceFmt),
+		Unit:   strings.TrimSpace(sec.Unit),
+	}
+	if sec.Was != nil {
+		scene.Was = canvas.CellText(*sec.Was, format.KindCurrency, priceFmt)
+	}
+	if img := b.promoImage(sec); img != nil {
+		scene.Image = img
+	}
+	b.scenes = append(b.scenes, scene)
+}
+
+// promoImage inlines the photograph the tenant supplied, if the caller
+// resolved one. The plan carries the bytes because the render service has no
+// network: same rule as the logo and the chart images.
+func (b *builder) promoImage(sec spec.Section) *Image {
+	img, ok := b.opts.Images[sec.ImageID]
+	if !ok || len(img.PNG) == 0 {
+		return nil
+	}
+	aspect := img.Aspect
+	if aspect <= 0 {
+		aspect = 1
+	}
+	return &Image{
+		DataURI: "data:image/png;base64," + base64.StdEncoding.EncodeToString(img.PNG),
+		Aspect:  math.Round(aspect*1000) / 1000,
+		Alt:     strings.TrimSpace(img.Alt),
+	}
+}
+
 // Divider opens a level-1 section.
 func (b *builder) Divider(title string) {
 	b.scenes = append(b.scenes, Scene{

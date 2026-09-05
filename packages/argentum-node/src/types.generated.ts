@@ -654,15 +654,22 @@ export interface components {
          *     with no render service refuses it with `format_unavailable` and serves
          *     every other format as before.
          *
-         *     `carousel` is the same report spec as two to ten 1080×1350 JPEG slides
-         *     for a social feed, drawn by the same render service, and it follows
-         *     every rule above: asynchronous, an argument about data rather than a
-         *     record, refused where there is no render service. The document is a
-         *     zip of the pages, a `caption.txt` and a `carousel.json` manifest
-         *     (caption, hashtags, one alt text per slide); the spec may carry
-         *     `social.caption` (≤ 2 200 characters) and `social.hashtags` (≤ 30).
-         *     A spec whose sections make fewer than two or more than ten slides is
-         *     refused with the count, not truncated.
+         *     `carousel` is the same report spec as one to ten JPEG slides for a
+         *     social feed, drawn by the same render service, and it follows every
+         *     rule above: asynchronous, refused where there is no render service.
+         *     The document is a zip of the pages, a `caption.txt` and a
+         *     `carousel.json` manifest (caption, hashtags, one alt text per slide);
+         *     the spec may carry `social.caption` (≤ 2 200 characters),
+         *     `social.hashtags` (≤ 30) and `social.size`. A spec whose sections make
+         *     more than ten slides is refused with the count, not truncated.
+         *
+         *     **One slide is a whole post.** A promotion or a launch is one image:
+         *     one `promo` section for a product with a price, or one `hero` section
+         *     for anything else, and nothing else. Such a post is an announcement rather than an
+         *     argument, so it is the one carousel exempt from the "argument about
+         *     data rather than a record" rule above: a `hero` satisfies it where a
+         *     `kpi_row` or a `chart` otherwise would. An invoice still cannot be a
+         *     carousel, because a record carries neither.
          * @enum {string}
          */
         DocumentFormat: "pdf" | "pptx" | "xlsx" | "csv" | "mp4" | "carousel";
@@ -1048,15 +1055,31 @@ export interface components {
             social?: components["schemas"]["ReportSpecSocial"];
         };
         /**
-         * @description The post's text, for `format: carousel` and ignored by every other
-         *     format. Bounded by the platform it is written for and refused rather
-         *     than truncated over the bound: a caption of at most 2 200 characters
-         *     and at most 30 hashtags, given without the `#` (the renderer writes it
-         *     once). Both land in the zip's `caption.txt` and in `carousel.json`.
+         * @description The post's text and shape, for `format: carousel` and ignored by every
+         *     other format. Bounded by the platform it is written for and refused
+         *     rather than truncated over the bound: a caption of at most 2 200
+         *     characters and at most 30 hashtags, given without the `#` (the
+         *     renderer writes it once). Both land in the zip's `caption.txt` and in
+         *     `carousel.json`.
+         *
+         *     `size` is a name and never a width and a height. A surface is margins,
+         *     a type scale, safe zones and a card cap, each measured against a frame
+         *     somebody has looked at; an arbitrary rectangle would be a layout whose
+         *     first viewer is the audience. `story` is not `portrait` made taller —
+         *     the app's own controls cover roughly the top 250 px and the bottom
+         *     340 px, so its safe zones are twice as deep.
          */
         ReportSpecSocial: {
             caption?: string;
             hashtags?: string[];
+            /**
+             * @description The frame the slides are drawn on. `portrait` 1080×1350 (4:5, the
+             *     feed default), `square` 1080×1080, `story` 1080×1920 (9:16, full
+             *     screen), `landscape` 1920×1080 (16:9). Omitted means `portrait`.
+             * @default portrait
+             * @enum {string}
+             */
+            size: "portrait" | "square" | "story" | "landscape";
         };
         /**
          * @description What lands in the PDF's info dictionary. A document that leaves the
@@ -1080,7 +1103,7 @@ export interface components {
          */
         ReportSpecSection: {
             /** @enum {string} */
-            type: "cover" | "heading" | "paragraph" | "kpi_row" | "table" | "callout" | "key_value" | "chart" | "footnote" | "page_break" | "spacer";
+            type: "cover" | "heading" | "paragraph" | "kpi_row" | "table" | "callout" | "key_value" | "chart" | "footnote" | "page_break" | "spacer" | "hero" | "promo";
             subtitle?: string;
             period?: string;
             prepared_for?: string;
@@ -1103,6 +1126,38 @@ export interface components {
             /** @description A v1 spacer's height in millimetres. */
             size?: number;
             chart?: components["schemas"]["ReportSpecChart"];
+            /**
+             * @description A `promo` card's sticker — "CRAZY DEAL", "PROMO AKHIR PEKAN". The
+             *     loudest words on the card and the first its alt text says.
+             */
+            badge?: string;
+            /**
+             * @description A `promo` card's photograph, named. It is the name of an image this
+             *     workspace has uploaded (`POST /api/post-images`), resolved when the
+             *     render is queued. A name that matches nothing draws the card
+             *     without a photograph rather than failing, and the tool result says
+             *     which name missed.
+             */
+            image?: string;
+            /**
+             * @description The resolved image, written back onto the spec when the render is
+             *     queued so the worker draws exactly the picture the caller was told
+             *     about. Accepted on input as an alternative to `image`.
+             */
+            image_id?: string;
+            /**
+             * @description A `promo` card's price before the promotion, drawn struck through.
+             *     Optional: a launch has no previous price.
+             */
+            was?: components["schemas"]["ReportSpecCell"];
+            /**
+             * @description A `promo` card's price now, and the largest thing on the card.
+             *     Required for the type. Both prices are drawn exactly as given and
+             *     never compacted — "Rp 3,4 Ribu" is not a price anybody can pay.
+             */
+            price?: components["schemas"]["ReportSpecCell"];
+            /** @description What the price is per: "/100 gram", "per kg". */
+            unit?: string;
         };
         /**
          * @description A row of a `key_value` block or a card in a `kpi_row`. Both vocabularies

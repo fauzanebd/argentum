@@ -61,6 +61,17 @@ type Sink interface {
 	// belong to the beat the run starts.
 	Prose(title string, sections []spec.Section)
 
+	// Hero is one statement filling a beat (T-G11): a headline, an optional
+	// kicker above it and one supporting line below. It takes no title,
+	// because a hero *is* the title — a heading above it would be a second
+	// voice on a frame whose whole design is one.
+	Hero(sec spec.Section)
+
+	// Promo is a retail promotion card (T-G12): a product, a photograph and
+	// two prices. Like Hero it takes no title — the product's name is the
+	// card's own — and for the same reason it is a beat rather than prose.
+	Promo(sec spec.Section)
+
 	// Facts is a key_value block: an invoice header, a set of parameters.
 	Facts(title string, sec spec.Section)
 
@@ -161,6 +172,26 @@ func (w *walker) beat(sec spec.Section) error {
 			return nil
 		}
 		w.pendingProse = append(w.pendingProse, sec)
+		return nil
+
+	case spec.SectionPromo:
+		w.flushProse()
+		w.pending = ""
+		w.sink.Promo(sec)
+		w.emitted = true
+		return nil
+
+	case spec.SectionHero:
+		// A beat of its own, like a KPI row and unlike a callout: a hero fills
+		// the frame, so merging it into a run of prose would put a headline
+		// under a heading and two ideas on one surface.
+		w.flushProse()
+		// It consumes a pending level-2 heading without using it, for the
+		// reason Hero takes no title: leaving it would title the *next* beat
+		// with a heading written for this one.
+		w.pending = ""
+		w.sink.Hero(sec)
+		w.emitted = true
 		return nil
 
 	case spec.SectionKeyValue:

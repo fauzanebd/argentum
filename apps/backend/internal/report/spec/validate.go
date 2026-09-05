@@ -12,7 +12,7 @@ import (
 var knownSections = []string{
 	SectionCover, SectionHeading, SectionParagraph, SectionKPIRow,
 	SectionTable, SectionChart, SectionCallout, SectionKeyValue,
-	SectionFootnote, SectionPageBreak, SectionSpacer,
+	SectionFootnote, SectionPageBreak, SectionSpacer, SectionHero, SectionPromo,
 }
 
 // Normalize lower-cases and trims the free-text discriminators before
@@ -26,6 +26,7 @@ func (d *Document) Normalize() {
 		// "#promo", " promo " and "promo" are one hashtag. The renderer writes
 		// the "#" once, on the way out, so it is never doubled.
 		d.Social.Caption = strings.TrimSpace(d.Social.Caption)
+		d.Social.Size = strings.ToLower(strings.TrimSpace(d.Social.Size))
 		tags := d.Social.Hashtags[:0]
 		for _, h := range d.Social.Hashtags {
 			h = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(h), "#"))
@@ -60,6 +61,10 @@ func (d *Document) Validate() error {
 	if d.Social != nil {
 		if n := utf8.RuneCountInString(d.Social.Caption); n > MaxCaptionChars {
 			return fmt.Errorf("social.caption is %d characters and the cap is %d — shorten it", n, MaxCaptionChars)
+		}
+		if !ValidSize(d.Social.Size) {
+			return fmt.Errorf("social.size is %q; it is one of %s (or omitted, which is portrait)",
+				d.Social.Size, strings.Join(Sizes, ", "))
 		}
 		if n := len(d.Social.Hashtags); n > MaxHashtags {
 			return fmt.Errorf("social.hashtags has %d entries and the cap is %d — keep the ones that matter", n, MaxHashtags)
@@ -99,15 +104,24 @@ func (d *Document) Validate() error {
 		// find the total. `Analytical` is the same predicate `CheckNarrative`
 		// uses for the mirror-image judgement, so the two cannot disagree about
 		// which documents are making an argument.
-		if !Analytical(d) {
+		// A carousel is also allowed to be an announcement (T-G11). A
+		// promotion or a launch is a statement, not an analysis: it has no KPI
+		// row and no chart, and requiring one would make the model pad the
+		// commonest social post there is with a card nobody asked for. A hero
+		// is the section that says so, and no record has ever carried one.
+		// The video keeps the narrower test — a promo clip is a format
+		// decision nobody has asked for, and this is not the ticket to take it.
+		if !Analytical(d) && !(d.Format == "carousel" && HasAnnouncement(d)) {
 			medium := "video"
+			addendum := ""
 			if d.Format == "carousel" {
 				medium = "carousel"
+				addendum = ", or a \"hero\" section if this post is an announcement rather than an analysis"
 			}
 			return fmt.Errorf("%s is for reports that make an argument about data, and this document has neither a "+
 				"\"kpi_row\" nor a \"chart\" in it: a record — an invoice, an agreement, a data export — is worse as a "+
 				"%s than as a PDF, because the reader cannot scan it or find one line. Render this as \"pdf\", or add "+
-				"the figures the %s would be about", d.Format, medium, medium)
+				"the figures the %s would be about%s", d.Format, medium, medium, addendum)
 		}
 	}
 
@@ -145,6 +159,24 @@ func (s Section) validate() error {
 	case SectionParagraph, SectionFootnote:
 		if strings.TrimSpace(s.Text) == "" {
 			return fmt.Errorf("%s requires text", s.Type)
+		}
+	case SectionPromo:
+		// A promo card without a price is a picture of a product, and every
+		// other type here draws one better. The name is what the reader is
+		// being sold, so it is required too.
+		if strings.TrimSpace(s.Title) == "" {
+			return fmt.Errorf("promo requires title (the product's name)")
+		}
+		if s.Price == nil {
+			return fmt.Errorf("promo requires price (the price now); add \"was\" for the price before, and both must be figures you read from the data")
+		}
+	case SectionHero:
+		// A hero with no words is a dark rectangle. It is refused here rather
+		// than dropped by the builder, because the builder drops it silently
+		// and a post that quietly lost its only slide is worse than a spec
+		// the model is told to fix.
+		if strings.TrimSpace(s.Title) == "" && strings.TrimSpace(s.Text) == "" {
+			return fmt.Errorf("hero requires title (the headline) or text")
 		}
 	case SectionCallout:
 		if strings.TrimSpace(s.Text) == "" && strings.TrimSpace(s.Title) == "" {
