@@ -20,8 +20,13 @@ func TestShippedSkillsLoadAndPassTheTenantRules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the shipped skills do not load: %v", err)
 	}
-	if len(skills) != 2 {
-		t.Fatalf("loaded %d shipped skills, want 2 — the set is deliberately small, so a third is a decision and not a drive-by", len(skills))
+	// Three since 2026-09-04: the social-post procedure the carousel roadmap
+	// (§6) held back until `format: "carousel"` existed for it to open for.
+	// The set is deliberately small, so a fourth is a decision and not a
+	// drive-by — and the decision has to answer the rule §5a of
+	// coverage/skills.md keeps: it must not restate a guideline.
+	if len(skills) != 3 {
+		t.Fatalf("loaded %d shipped skills, want 3 — the set is deliberately small, so a fourth is a decision and not a drive-by", len(skills))
 	}
 	for _, s := range skills {
 		if !s.IsBuiltin() {
@@ -47,16 +52,17 @@ func TestShippedSkillsCostALineEach(t *testing.T) {
 	if len(dropped) != 0 {
 		t.Errorf("the shipped set does not fit its own default index bound: dropped %v", dropped)
 	}
-	// Two lines and a header. If this number moves, the always-on cost of
+	// Three lines and a header. If this number moves, the always-on cost of
 	// shipping skills moved with it.
-	if n := strings.Count(index, "\n- "); n != 2 {
-		t.Errorf("index carries %d shipped lines, want 2", n)
+	if n := strings.Count(index, "\n- "); n != 3 {
+		t.Errorf("index carries %d shipped lines, want 3", n)
 	}
-	// Measured 691 characters on 2026-08-29 — header plus two lines. The bound
-	// is the measurement with a little headroom, not a guess: what it is here
-	// to catch is a third shipped skill or a `when_to_use` that grew into a
-	// paragraph, both of which are always-on cost paid by every tenant on
-	// every turn.
+	// Measured 691 characters on 2026-08-29 — header plus two lines — and
+	// **877 on 2026-09-04**, when the social-post procedure became the third.
+	// The bound is the measurement with a little headroom, not a guess: what
+	// it is here to catch is a fourth shipped skill or a `when_to_use` that
+	// grew into a paragraph, both of which are always-on cost paid by every
+	// tenant on every turn.
 	//
 	// **Counted in runes, and the correction is the point.** This read `len()`
 	// and recorded 701, which is the same block in bytes — the two shipped
@@ -66,8 +72,8 @@ func TestShippedSkillsCostALineEach(t *testing.T) {
 	// `GET /api/skills` (691) disagreed with the number the docs quoted. A bound
 	// in the wrong unit is not a bound, which is this feature's own lesson at
 	// one remove.
-	if n := utf8.RuneCountInString(index); n > 900 {
-		t.Errorf("the shipped index block is %d runes, against 691 measured when it was written; it rides every turn", n)
+	if n := utf8.RuneCountInString(index); n > 950 {
+		t.Errorf("the shipped index block is %d runes, against 877 measured with three skills; it rides every turn", n)
 	}
 }
 
