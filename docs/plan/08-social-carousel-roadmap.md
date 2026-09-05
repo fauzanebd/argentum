@@ -56,6 +56,7 @@ It is **not** four things a reader might assume:
 | --- | --- |
 | A new agent tool | `generate_document` is already 20.5% of the fixed prompt (`07-agentic-skills-roadmap.md` §2b). A carousel is a format of the tool that exists, exactly as `mp4` was (`tools/generate_document.go:75`) |
 | A second rendering pipeline | `flow` → `videoplan` → `@argentum/motion` → `apps/render` already turns a spec into framed, branded surfaces with every image inlined as a data URI. `renderStill()` is already called in `apps/render/src/fixture.ts:57` |
+| A post that is not about figures | **Half wrong, corrected 2026-09-04 by `T-G11`.** A promotion and a launch are announcements, not arguments, and phase 1 refused them at three separate gates. What stays true is the sentence's spirit — a figure in a promo is still one the agent queried — and what changed is that a post may now be *one* image whose content is a statement. `coverage/social-carousel.md` §8 |
 | AI-generated imagery | There is no outbound image path in this codebase; the only multimodal call is inbound OCR, off by default, with a package comment about why (`internal/dococr/dococr.go:3-9`). Slides are typographic and data-driven in every ticket below; `T-G10` is the flagged option and it is last |
 | A tool that posts to Instagram | Posting changes something outside Argentum, which is the definition of an *action* (`internal/actions/action.go:1-13`): proposed by the agent, approved by a human, executed once. `T-G8` and `T-G9` are action kinds |
 
@@ -554,7 +555,7 @@ Any WebP/PNG output. Instagram takes JPEG; the others (`T-G9`) also take JPEG.
 
 ### Track C — The artifact in the conversation (3.5d)
 
-#### `T-G6` `format: "carousel"` — queue, store, announce, and the pages route · **built 2026-09-04, unit-gated; live turn owed**
+#### `T-G6` `format: "carousel"` — queue, store, announce, and the pages route · **built 2026-09-04, unit-gated; live turn owed. Channel delivery (finding 6) decided and built 2026-09-04 — `coverage/social-carousel.md` §7**
 **Repo:** BE + FE · **Size:** 3.0d · **Deps:** `T-G3`, `T-G5` · **Priority:** P0
 **Migration:** `074_document_pages` — claimed 2026-09-04 (`073` was still the newest)
 
@@ -669,7 +670,7 @@ image tomorrow (Decision 6).
 - [ ] A member of another company gets 404 from every `/pages/:n` of that document
 - [ ] `/pages/6` answers 404
 - [ ] The same request with no `RENDER_BASE_URL` set does not offer `carousel` in the tool's enum, and a spec naming it is refused with the pdf/pptx sentence (`generate_document.go:303`)
-- [ ] A WhatsApp-bound thread receives the caption and the zip link, and no `![` text
+- [ ] A WhatsApp-bound thread receives the caption and the zip link, and no `![` text — *unreachable by the 2026-09-04 build (finding 6); reachable since the same day's delivery seam, which also sends one signed link per slide. Owed on a real handset, `coverage/live-gate-backlog.md` §3*
 - [ ] `go test ./internal/docgen/... ./internal/app/...` green; `make types`, `make openapi` diffs committed
 
 ##### Gate
@@ -876,6 +877,46 @@ phone in under a minute, which is how most of them post today.
 | #3 | `T-G8` | 2.5 | publishing from the product at all |
 | #4 | `T-G7` | 0.5 | slides on the approval card — cut only if `T-G8` is cut |
 
+**`T-G11` was built 2026-09-04, after phase 1 and outside this table.** The
+owner asked what a discount or a product launch looks like, and phase 1's
+answer was "a report about data with at least two slides" — so a hero section,
+four named sizes, a slide floor of 1 and an announcement route through the
+`Analytical` gate. It is not a cut and not a phase: it is the scope §1 drew
+being wrong about one thing, which is that **a post is not always an
+argument**. `coverage/social-carousel.md` §8.
+
+**`T-G12` was built the same day**, and it is the answer to *"what does a
+discount or a product launch look like"*: a `promo` section — badge, product,
+photograph, old price struck through, new price, unit — plus the tenant's own
+picture library (`post_images`, `075`), the photograph resolved by name at the
+door. `coverage/social-carousel.md` §9.
+
+#### `T-G13` Style-matching a reference poster — *filed, not built*
+**Repo:** BE · **Size:** 3.0d · **Deps:** `T-G12` · **Priority:** P3
+
+The other half of the 2026-09-04 request. A tenant uploads a poster they like
+and the layout, palette and type treatment of the next promotion follow it.
+
+**Why it is not `T-G12`.** It needs a multimodal call to read the reference,
+and what comes back is a *layout*, which is the one thing this pipeline has
+never let a model choose: every surface here is measured in Go so the browser
+cannot break a line somewhere the measurement did not. A layout inferred per
+turn is a layout nobody has validated, unpredictable between two runs of the
+same request, and unmeasurable by any golden this repo has.
+
+**What would make it tractable**, and the ticket should be re-written around
+this rather than around "match the image": read the reference for a small,
+closed set of *parameters* — accent colour, badge shape, whether the price sits
+left or right, photograph-dominant or type-dominant — and feed those to the
+template `T-G12` already draws. That is a vision call returning six fields
+against a layout that was measured, rather than a layout from a model.
+
+**Do not build until a tenant has used `T-G12` in earnest and named what they
+could not get from it.** The odds are that a second typeface and two more badge
+shapes close most of the gap for a tenth of the cost.
+
+---
+
 **Do `T-G1` first even if nothing else is scheduled.** It is half a day, it
 makes today's agent answer the question with data instead of refusing, and it
 is the one ticket whose absence a demo would hide.
@@ -890,6 +931,9 @@ most", "Indonesian, informal" — a tenant writes that once as a **skill** with
 arrives only on those turns (`coverage/skills.md` §2). `T-K8` shipped two
 built-in skills; a third — *"How we write a post"* — is a Markdown file in
 `config/skills/`, and it should wait until `T-G6` exists to be opened for.
+**Shipped 2026-09-04 as `config/skills/social-post.md`**, the day after
+`T-G6`; `coverage/social-carousel.md` §6 records what it says and what it
+costs.
 
 **Delivery to a group.** `send_message` already attaches a document as a link
 (`send_message.go:36`); a carousel's zip goes to an allowlisted WhatsApp

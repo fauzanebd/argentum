@@ -609,6 +609,14 @@ the channel config, and it costs a newcomer twenty minutes.
 - ~~**Channel delivery above a size threshold.**~~ **Done, same day** — see §8
   below, and note what it turned out to be: the threshold does not exist,
   because the upload path never did.
+- ~~**The link never reached a channel.**~~ Not listed here when this was
+  written, and true from this ticket until 2026-09-04: `runThreadRender` wrote
+  the announcement to the thread and published it on the dashboard bus, and a
+  WhatsApp, Discord, Lark or Slack user who asked for a video was told it was
+  coming and never received it. Found by the carousel track as its finding 6,
+  decided as *every render result*, and closed by a reply target that travels
+  with the job — [`social-carousel.md`](social-carousel.md) §7. The mp4's
+  message reaches the channel unchanged; WhatsApp gets it with links flattened.
 - **The dashboard does not render a video inline.** A document is a markdown
   link today, whatever its format. Nothing broke — there is no exhaustive
   switch over `DocumentFormat` in the dashboard, which is also why widening the

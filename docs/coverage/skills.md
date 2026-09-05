@@ -192,6 +192,17 @@ the procedure's steps in order.
 The index cost is pinned by a test at the measured figure: **701 characters for
 the header and two lines**, which is what the shipped set adds to every turn.
 
+**A third file, 2026-09-04: `social-post.md`.** The carousel roadmap
+(`08-social-carousel-roadmap.md` §6) named it and held it back until
+`format: "carousel"` existed to open for; it shipped the day after `T-G6`. It
+passes the rule that kept the set at two — it is a method for *some* turns
+(one finding a post, query before caption, the period on the cover, a hook
+that survives the fold), and the zero-row test still finds no restatement in
+it. The always-on index is now **877 runes** for the header and three lines,
+against 691 for two; the test's bound moved from 900 to 950 to keep its
+headroom, and the number a fourth file has to argue against is 877.
+[`social-carousel.md`](social-carousel.md) §6.
+
 ## 5b. `T-K9` — the category, and what it measured (2026-08-25)
 
 **Five cases, scored on kimi-k2.6: 4/5 for $0.044.** Read as named results
