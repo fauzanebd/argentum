@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
-
-import { api } from "@/lib/api";
+import { useObjectUrl } from "@/hooks/use-object-url";
 
 /**
  * A carousel slide inside a message (T-G6, decision 6).
@@ -9,8 +7,8 @@ import { api } from "@/lib/api";
  * is an hour and an `<img>` cannot be re-signed on click the way a link can —
  * so the slide is `/api/documents/:id/pages/:n`, an authenticated route. A
  * bare `<img src>` cannot send the bearer header the API wants, so the bytes
- * are fetched through the same axios client every other request uses and
- * shown from an object URL, revoked on unmount. The alt is what the reader
+ * are fetched through `useObjectUrl` — shared with the picture library, which
+ * shows authenticated images for the same reason. The alt is what the reader
  * gets while it loads and if it cannot.
  */
 
@@ -43,29 +41,7 @@ export function CarouselImage({
   /** Sizing: the strip's card by default; the documents list passes a thumbnail. */
   className?: string;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let objectUrl: string | null = null;
-    let cancelled = false;
-    setUrl(null);
-    setFailed(false);
-    api
-      .get<Blob>(`/documents/${documentId}/pages/${page}`, { responseType: "blob" })
-      .then((res) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(res.data);
-        setUrl(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [documentId, page]);
+  const { url, failed } = useObjectUrl(`/documents/${documentId}/pages/${page}`);
 
   return (
     <figure

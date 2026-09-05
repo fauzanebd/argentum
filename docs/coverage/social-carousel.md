@@ -349,6 +349,35 @@ and the layout is inferred from it — needs a multimodal call whose output is
 not predictable between runs. It is a ticket in `plan/08` rather than a
 half-built path here.
 
+### The screen, built 2026-09-05
+
+The API shipped a day before the screen did, which meant an admin could only
+add a photograph with `curl` — the feature existed and its intended user could
+not reach it. **Settings → Images** is the library: a file picker, a name, a
+description, and a grid of what the workspace has.
+
+**The name field is the important control on that screen, not the file
+picker.** It is what the model asks for, so an image nobody names is an image
+the agent cannot use — and the filename is prefilled as a suggestion, because
+making somebody retype "jeruk cara cara" is how a library ends up full of
+`IMG_2831`.
+
+**A member sees the library and cannot change it**, which is the rule this
+codebase settled on 2026-08-04: a disabled control tells a member who to ask,
+where a hidden one tells them the feature does not exist. The tab is therefore
+not admin-gated where Reports beside it is, because the read is
+member-readable on purpose — somebody composing a post has to see what they
+can ask for by name.
+
+`useObjectUrl` came out of `CarouselImage` when this screen needed the same
+three lines: both show an image behind a bearer token that is deliberately not
+presigned, and two implementations of that is two places to forget the revoke.
+
+Six tests, on the two things the screen exists to get right rather than on the
+markup: the name is required and suggested, the upload is one multipart form,
+and a member gets the list with every mutating control disabled and a sentence
+saying who to ask.
+
 **What is owed:** the same live turn every carousel gate owes, now with an
 upload in front of it; `075_post_images` up/down/up against the control
 database; and the guardrail clause, which this ticket makes more pressing —

@@ -10,6 +10,7 @@ import { PhonesTab } from "./phones-tab";
 import { IntegrationsTab } from "./integrations-tab";
 import { TeamTab } from "./team-tab";
 import { ReportsTab } from "./reports-tab";
+import { ImagesTab } from "./images-tab";
 import { APIKeysTab } from "./api-keys-tab";
 import { EmbedTab } from "./embed-tab";
 import { AboutTab } from "./about-tab";
@@ -41,6 +42,10 @@ export function SettingsPage() {
     { id: "phones", label: "Phone numbers" },
     { id: "integrations", label: "Integrations" },
     ...(isAdmin ? [{ id: "reports", label: "Reports" }] : []),
+    // Visible to members, unlike Reports beside it: the GET is member-readable
+    // on purpose, because somebody composing a post has to see what they can
+    // ask for by name. The writes inside are disabled rather than hidden.
+    { id: "images", label: "Images" },
     // Admin-only on every route including the read, like MCP servers: the list
     // is a map of where this workspace's events go.
     ...(isAdmin ? [{ id: "webhooks", label: "Webhooks" }] : []),
@@ -127,6 +132,9 @@ export function SettingsPage() {
             <AdminGate>
               <IntegrationsTab />
             </AdminGate>
+          </Tabs.Content>
+          <Tabs.Content value="images">
+            <ImagesTab />
           </Tabs.Content>
           {isAdmin && (
             <Tabs.Content value="reports">
