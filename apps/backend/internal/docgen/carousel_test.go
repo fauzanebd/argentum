@@ -243,3 +243,35 @@ func keys(m map[string]string) []string {
 	}
 	return out
 }
+
+// PresignPage is the channel's way to a slide (T-G6, finding 6): a signed URL
+// per page on the same TTL as the document's own link, bounded by the row
+// exactly as LoadPage is.
+func TestPresignPageIsBoundedByTheRow(t *testing.T) {
+	store, docs := newFakeStore(), &fakeDocs{}
+	svc := carouselService(t, store, docs)
+	res, err := svc.Generate(context.Background(), Input{Spec: carouselSpec(), CompanyID: "co-1", ThreadID: "th-1"})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	u, err := svc.PresignPage(context.Background(), res.Document, 2)
+	if err != nil {
+		t.Fatalf("PresignPage(2): %v", err)
+	}
+	if !strings.Contains(u, PageKey(res.Document.StorageKey, 2)) {
+		t.Errorf("PresignPage(2) = %q, want the page's own key signed", u)
+	}
+	if !strings.Contains(u, "exp="+svc.PresignTTL().String()) {
+		t.Errorf("PresignPage(2) = %q, want the document's TTL", u)
+	}
+	for _, page := range []int{0, 6, -1} {
+		if _, err := svc.PresignPage(context.Background(), res.Document, page); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("PresignPage(%d) = %v, want ErrNotFound", page, err)
+		}
+	}
+	pdf := &domain.Document{Format: domain.DocumentFormatPDF, StorageKey: "documents/co-1/th-1/x.pdf"}
+	if _, err := svc.PresignPage(context.Background(), pdf, 1); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("PresignPage on a pdf = %v, want ErrNotFound", err)
+	}
+}

@@ -119,3 +119,14 @@ func TestExplicitEmptyIsIndistinguishableFromUnset(t *testing.T) {
 		t.Errorf("UserID = %q, want \"\"", got)
 	}
 }
+
+func TestReplyTargetRoundTrips(t *testing.T) {
+	if _, ok := ReplyTargetFrom(context.Background()); ok {
+		t.Fatal("a bare context reports a reply target")
+	}
+	want := ReplyTarget{Channel: "whatsapp", PhoneNumber: "+628123"}
+	got, ok := ReplyTargetFrom(WithReplyTarget(context.Background(), want))
+	if !ok || got != want {
+		t.Errorf("got %+v ok=%v, want %+v", got, ok, want)
+	}
+}

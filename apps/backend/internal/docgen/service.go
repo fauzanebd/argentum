@@ -499,6 +499,28 @@ func (s *Service) LoadPage(ctx context.Context, doc *domain.Document, page int) 
 	return body, nil
 }
 
+// PresignPage issues a download URL for one page of a carousel, valid for
+// PresignTTL — the same clock as the document's own link (T-G6, finding 6).
+//
+// This is for a channel, not the dashboard. The dashboard reads pages through
+// its authenticated route so a persisted message never carries a link that
+// expires; a phone has no session to present, so it gets what the zip link
+// already is: a signed URL that works for an hour. The same page bounds as
+// LoadPage, and the same refusal for anything that is not a carousel.
+func (s *Service) PresignPage(ctx context.Context, doc *domain.Document, page int) (string, error) {
+	if s == nil || doc == nil || doc.Format != domain.DocumentFormatCarousel {
+		return "", domain.ErrNotFound
+	}
+	if page < 1 || page > doc.PageCount {
+		return "", domain.ErrNotFound
+	}
+	signed, err := s.storage.PresignKey(ctx, PageKey(doc.StorageKey, page), s.presignTTL)
+	if err != nil {
+		return "", fmt.Errorf("presign page %d: %w", page, err)
+	}
+	return signed, nil
+}
+
 // storePlan writes the video plan beside a document, when it has one.
 //
 // Three things decide whether it does, and all three are refusals rather than

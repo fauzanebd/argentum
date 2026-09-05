@@ -26,6 +26,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/report/spec"
+	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
 // Task type constants. These are the values asynq uses to dispatch tasks
@@ -116,6 +117,13 @@ type ReportRenderPayload struct {
 	// worth measuring.
 	Trace      map[string]string `json:"trace,omitempty"`
 	EnqueuedAt time.Time         `json:"enqueued_at,omitzero"`
+	// Target is where the turn that asked for this render was replying to
+	// (T-G6, finding 6): the channel and its refs, copied from the turn's
+	// context by the tool that enqueued the job. The worker delivers the
+	// result there beside writing it to the thread, through the same providers
+	// a chat reply uses. Nil means the thread is the only destination — a job
+	// from `/v1`, or one queued before this field existed.
+	Target *tenantctx.ReplyTarget `json:"target,omitempty"`
 }
 
 // WebhookDeliverPayload names the delivery row. Only the id: the URL, the
@@ -215,6 +223,22 @@ type ChatRunPayload struct {
 	// zero time.Time would otherwise be written as `"0001-01-01T00:00:00Z"`
 	// into every payload queued by a process that did not set it.
 	EnqueuedAt time.Time `json:"enqueued_at,omitzero"`
+}
+
+// ReplyTarget is where this turn's reply goes, in the shape a hand-off can
+// carry. It is the fields completeWith's switch reads, and nothing else — a
+// job that answers the turn later needs exactly what the turn needed.
+func (p ChatRunPayload) ReplyTarget() tenantctx.ReplyTarget {
+	return tenantctx.ReplyTarget{
+		Channel:          string(p.Channel),
+		PhoneNumber:      p.PhoneNumber,
+		DiscordChannelID: p.DiscordChannelID,
+		DiscordUserID:    p.DiscordUserID,
+		LarkChatID:       p.LarkChatID,
+		LarkMessageID:    p.LarkMessageID,
+		SlackChannelID:   p.SlackChannelID,
+		SlackThreadTS:    p.SlackThreadTS,
+	}
 }
 
 // ScheduledRunPayload is the body of a `scheduled:run` task. Only the

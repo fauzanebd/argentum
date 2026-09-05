@@ -195,3 +195,27 @@ func hasFormat(t *GenerateDocumentTool, want string) bool {
 	}
 	return false
 }
+
+// The target travels (T-G6, finding 6). A render answers minutes after the
+// turn that asked, and the turn's phone number or channel id is on the turn's
+// payload and nowhere a later job can read it — so the tool copies it from
+// the context the runner set, and a context without one queues a job whose
+// only destination is the thread.
+func TestTheQueuedRenderCarriesTheReplyTarget(t *testing.T) {
+	tool, q := videoTool(t)
+	target := tenantctx.ReplyTarget{Channel: "whatsapp", PhoneNumber: "+628123"}
+
+	if _, err := tool.Execute(tenantctx.WithReplyTarget(videoTurnCtx(), target), videoArgs); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if q.jobs[0].Target == nil || *q.jobs[0].Target != target {
+		t.Errorf("target = %+v, want %+v", q.jobs[0].Target, target)
+	}
+
+	if _, err := tool.Execute(videoTurnCtx(), videoArgs); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if q.jobs[1].Target != nil {
+		t.Errorf("a turn with no reply target queued one: %+v", q.jobs[1].Target)
+	}
+}

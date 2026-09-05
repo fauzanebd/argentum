@@ -108,3 +108,39 @@ func RequestID(ctx context.Context) string {
 	v, _ := ctx.Value(requestKey{}).(string)
 	return v
 }
+
+type replyTargetKey struct{}
+
+// ReplyTarget is where a turn's reply goes: the channel it arrived on and the
+// refs that channel needs to send something back. Plain strings for the
+// reason `actor` is — this package is a leaf.
+//
+// It exists so that work a turn hands off can still answer the person who
+// asked (T-G6, finding 6). A render that finishes minutes after its turn has
+// no `ChatRunPayload` to read the phone number or channel id from, and the
+// thread row cannot supply every one of them — a Discord thread is keyed by
+// user, not channel. So the queue consumer puts the target on the turn's
+// context, and a tool that enqueues a job copies it into the job.
+type ReplyTarget struct {
+	Channel          string `json:"channel"`
+	PhoneNumber      string `json:"phone_number,omitempty"`
+	DiscordChannelID string `json:"discord_channel_id,omitempty"`
+	DiscordUserID    string `json:"discord_user_id,omitempty"`
+	LarkChatID       string `json:"lark_chat_id,omitempty"`
+	LarkMessageID    string `json:"lark_message_id,omitempty"`
+	SlackChannelID   string `json:"slack_channel_id,omitempty"`
+	SlackThreadTS    string `json:"slack_thread_ts,omitempty"`
+}
+
+// WithReplyTarget returns ctx annotated with where this turn's reply goes.
+func WithReplyTarget(ctx context.Context, t ReplyTarget) context.Context {
+	return context.WithValue(ctx, replyTargetKey{}, t)
+}
+
+// ReplyTargetFrom extracts the turn's reply target. ok is false when none was
+// set, which is every caller that is not the queue consumer — an HTTP handler
+// rendering inline, a test — and means "there is nowhere but the thread".
+func ReplyTargetFrom(ctx context.Context) (t ReplyTarget, ok bool) {
+	t, ok = ctx.Value(replyTargetKey{}).(ReplyTarget)
+	return t, ok
+}

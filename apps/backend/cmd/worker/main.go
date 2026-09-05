@@ -149,6 +149,12 @@ func main() {
 	// disabled, which deliver() treats as "skipped" rather than dialling a nil
 	// client.
 	stack.Watchers.WithDelivery(waProvider, larkProv, slackProv, bus)
+	// A render result reaches the channel that asked for it through the same
+	// four providers (T-G6, finding 6). Before this line the mp4 and the
+	// carousel were written to the thread and published on the dashboard bus
+	// only, so a WhatsApp user who asked for a video was told it was coming
+	// and never received it.
+	reportSvc.WithChannelDelivery(waProvider, larkProv, slackProv, bus)
 
 	// --- asynq.Server ---
 	srv := asynq.NewServer(stack.AsynqOpt, asynq.Config{

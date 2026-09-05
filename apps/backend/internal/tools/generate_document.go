@@ -88,7 +88,7 @@ func (t *GenerateDocumentTool) Description() string {
 	if t.videoAvailable() {
 		video = `
 - "mp4"  a silent narrated-on-screen video of the same report, 1080p. Choose it only when the user asks for a video, or for something they will watch without you in the room — a weekly summary sent to a group chat, an update for people who will not open a PDF. It takes several minutes and costs far more than a PDF, so it is never the default for "make me a report", and it is refused for a document that is a record rather than an argument: an invoice, an agreement or a data export must be a PDF. This tool returns as soon as the render starts; the video is posted into this conversation when it is done, so tell the user it is being made and do not claim it is ready.
-- "carousel" when the user asks for a social post, a carousel, or slides for Instagram: 2–10 portrait image slides built from the figures you have just verified, plus a caption. Same content.sections as a report — a cover, a kpi_row, a chart, a short table, a callout each become one slide, so keep it to the sections that carry the story; more than ten slides is refused with the count. Give the post text in "social": {"caption": "...", "hashtags": ["tag", ...]} — never invent a number for the caption. It is posted into this conversation as images when it is done, so tell the user it is being made and do not claim it is ready.`
+- "carousel" when the user asks for a social post, a carousel, or slides for Instagram: 2–10 portrait image slides built from the figures you have just verified, plus a caption. Same content.sections as a report — a cover, a kpi_row, a chart, a short table, a callout each become one slide, so keep it to the sections that carry the story; more than ten slides is refused with the count. Give the post text in "social": {"caption": "...", "hashtags": ["tag", ...], "size": "portrait|square|story|landscape"} — never invent a number for the caption. It is posted into this conversation as images when it is done, so tell the user it is being made and do not claim it is ready.`
 	}
 	return strings.TrimSpace(`
 Generate a downloadable document (PDF, PPTX, XLSX, CSV` + videoInEnum(t.videoAvailable()) + `) from a structured spec and return a presigned download URL. Generic-purpose: use for invoices, agreements, terms & conditions, research summaries, data exports, ad-hoc reports, slide decks — anything the user wants to download as a file.
@@ -323,12 +323,19 @@ func (t *GenerateDocumentTool) enqueueRender(ctx context.Context, input spec.Doc
 	if err := t.docs.CheckVideoLimits(&input); err != nil {
 		return "", err
 	}
-	if _, err := t.renders.EnqueueReportRender(ctx, queue.ReportRenderPayload{
+	payload := queue.ReportRenderPayload{
 		CompanyID: companyID,
 		ThreadID:  threadID,
 		AgentID:   agentscope.AgentID(ctx),
 		Spec:      input,
-	}); err != nil {
+	}
+	// The person who asked is on a channel, and the result must reach it
+	// (T-G6, finding 6). The turn's own reply carries the refs; a job that
+	// answers minutes later has to carry them too, because nothing else will.
+	if target, ok := tenantctx.ReplyTargetFrom(ctx); ok {
+		payload.Target = &target
+	}
+	if _, err := t.renders.EnqueueReportRender(ctx, payload); err != nil {
 		return "", fmt.Errorf("the %s could not be queued: %w", noun, err)
 	}
 

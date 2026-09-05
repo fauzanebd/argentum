@@ -12,11 +12,14 @@ import (
 	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/video"
+	"github.com/fauzanebd/argentum/internal/slack"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 	"github.com/fauzanebd/argentum/internal/tracing"
 	"github.com/fauzanebd/argentum/internal/webhookout"
+	"github.com/fauzanebd/argentum/internal/whatsapp"
 )
 
 // EventReportCompleted is the callback event name. One constant, because it
@@ -42,6 +45,14 @@ type APIReportService struct {
 	progress ReportProgressBus
 	// announcer puts a threaded render's result back in its conversation.
 	announcer ThreadAnnouncer
+	// The outbound providers a result is delivered through when the thread
+	// lives on a channel (T-G6, finding 6). The same four the chat runner and
+	// the watcher service hold; any may be nil, which skips that channel with
+	// a log line rather than dialling nothing.
+	wa    whatsapp.Provider
+	lark  lark.Provider
+	slack slack.Provider
+	bus   EventBus
 }
 
 // ReportProgressBus is the slice of the event bus a render job needs.
@@ -293,6 +304,24 @@ func (s *APIReportService) WithThreadAnnouncer(a ThreadAnnouncer) *APIReportServ
 	return s
 }
 
+// WithChannelDelivery installs the providers a threaded render's result is
+// sent through when the turn that asked came in on a channel (T-G6,
+// finding 6).
+//
+// Before this seam existed a render result was written to the thread and
+// published on the dashboard bus, and that was all: a WhatsApp user who asked
+// for a video was told "it is being rendered and will be posted into this
+// conversation" and then nothing reached the phone, because the only process
+// that delivers to a phone does so inside a turn and the turn was over. The
+// decision was "every render result, or none"; this is every.
+func (s *APIReportService) WithChannelDelivery(wa whatsapp.Provider, larkProv lark.Provider, slackProv slack.Provider, bus EventBus) *APIReportService {
+	s.wa = wa
+	s.lark = larkProv
+	s.slack = slackProv
+	s.bus = bus
+	return s
+}
+
 // runThreadRender renders a video the agent asked for and announces it.
 //
 // The turn that asked is over. `generate_document` answered "it is rendering"
@@ -346,7 +375,7 @@ func (s *APIReportService) runThreadRender(ctx context.Context, p queue.ReportRe
 		return nil
 	}
 	if res.Document.Format == domain.DocumentFormatCarousel {
-		s.announceWith(ctx, p, carouselMessage(res), map[string]interface{}{
+		s.announceTo(ctx, p, carouselMessage(res), carouselChannelMessage(res, s.presignPages(ctx, p, res.Document)), map[string]interface{}{
 			"format":      string(domain.DocumentFormatCarousel),
 			"document_id": res.Document.ID,
 			"page_count":  res.Document.PageCount,
@@ -414,12 +443,29 @@ func (s *APIReportService) announce(ctx context.Context, p queue.ReportRenderPay
 // announceWith is announce with extra metadata on the message — the format,
 // and for a carousel the document id and page count, so a client can find the
 // slides without parsing the prose (T-G6). `kind` is always render_result.
+// The channel gets the same text the thread does.
 func (s *APIReportService) announceWith(ctx context.Context, p queue.ReportRenderPayload, content string, extra map[string]interface{}) {
+	s.announceTo(ctx, p, content, content, extra)
+}
+
+// announceTo writes `content` to the thread and sends `channelContent` to the
+// channel the turn came in on, when it came in on one (T-G6, finding 6).
+//
+// Two texts because the two readers differ: the thread's message carries
+// inline slides on the authenticated page route, which a phone cannot fetch,
+// and a phone gets signed links instead. For the mp4 and every failure the
+// two are the same string.
+//
+// The thread first, then the channel. The row is the record; a delivery
+// that fails is logged and the message is still in the thread, which is the
+// same order a chat turn keeps.
+func (s *APIReportService) announceTo(ctx context.Context, p queue.ReportRenderPayload, content, channelContent string, extra map[string]interface{}) {
 	if s.announcer == nil {
 		logrus.WithField("thread_id", p.ThreadID).
 			Warn("no thread announcer: a rendered document will not be announced in its thread")
 		return
 	}
+	defer s.deliver(ctx, p, channelContent)
 	metadata := map[string]interface{}{"kind": "render_result"}
 	for k, v := range extra {
 		metadata[k] = v
@@ -444,6 +490,143 @@ func (s *APIReportService) announceWith(ctx context.Context, p queue.ReportRende
 		logrus.WithError(err).WithField("thread_id", p.ThreadID).
 			Warn("rendered video written but not published; it appears on the next load")
 	}
+}
+
+// deliver sends a render result to the channel the turn arrived on, through
+// the provider that channel's replies use (T-G6, finding 6). It is the
+// channel half of ChatRunner.completeWith, for a message that arrives after
+// the turn: WhatsApp with its links flattened, Discord over the outbound bus,
+// Lark as a reply to the message that asked (a new message in the chat when
+// there is none), Slack into the thread.
+//
+// No target, or a dashboard, API or widget target, sends nothing — the
+// thread message and the `final` event already reached those. A target
+// naming a channel whose provider is not installed is logged at Warn, because
+// that is a deployment that told a user a file was coming and cannot deliver
+// it, and the log line is the only place that shows.
+func (s *APIReportService) deliver(ctx context.Context, p queue.ReportRenderPayload, content string) {
+	t := p.Target
+	if t == nil || content == "" {
+		return
+	}
+	fields := logrus.Fields{"thread_id": p.ThreadID, "company_id": p.CompanyID, "channel": t.Channel}
+	var err error
+	switch domain.Channel(t.Channel) {
+	case domain.ChannelWhatsApp:
+		if s.wa == nil || t.PhoneNumber == "" {
+			logrus.WithFields(fields).Warn("render result not delivered: no whatsapp provider or phone number")
+			return
+		}
+		err = s.wa.SendMessage(t.PhoneNumber, stripMarkdownLinks(content))
+	case domain.ChannelDiscord:
+		if s.bus == nil || t.DiscordChannelID == "" {
+			logrus.WithFields(fields).Warn("render result not delivered: no outbound bus or discord channel")
+			return
+		}
+		err = s.bus.PublishOutbound(OutboundEvent{
+			Channel:    string(domain.ChannelDiscord),
+			CompanyID:  p.CompanyID,
+			ChannelRef: t.DiscordChannelID,
+			UserRef:    t.DiscordUserID,
+			Content:    content,
+		})
+	case domain.ChannelLark:
+		switch {
+		case s.lark == nil:
+			logrus.WithFields(fields).Warn("render result not delivered: no lark provider")
+			return
+		case t.LarkMessageID != "":
+			err = s.lark.Reply(ctx, p.CompanyID, t.LarkMessageID, content)
+		case t.LarkChatID != "":
+			err = s.lark.Send(ctx, p.CompanyID, t.LarkChatID, content)
+		default:
+			logrus.WithFields(fields).Warn("render result not delivered: no lark message or chat id")
+			return
+		}
+	case domain.ChannelSlack:
+		if s.slack == nil || t.SlackChannelID == "" {
+			logrus.WithFields(fields).Warn("render result not delivered: no slack provider or channel")
+			return
+		}
+		err = s.slack.Reply(ctx, p.CompanyID, t.SlackChannelID, t.SlackThreadTS, content)
+	default:
+		// dashboard, api, widget, or a channel this worker does not know: the
+		// thread message is the delivery, exactly as completeWith treats them.
+		return
+	}
+	if err != nil {
+		logrus.WithError(err).WithFields(fields).Error("render result not delivered to its channel")
+		return
+	}
+	logrus.WithFields(fields).Info("render result delivered to its channel")
+}
+
+// presignPages returns one signed URL per page of a carousel, for the channel
+// message. Empty when there is no channel to send to — the dashboard reads
+// pages through its own route and a signed URL would be paid for and unread
+// — and a page whose URL cannot be signed is left out and logged, so the
+// message that reaches the phone is shorter rather than absent.
+func (s *APIReportService) presignPages(ctx context.Context, p queue.ReportRenderPayload, doc *domain.Document) []string {
+	if s.gen == nil || doc == nil || !deliversToChannel(p.Target) {
+		return nil
+	}
+	urls := make([]string, 0, doc.PageCount)
+	for i := 1; i <= doc.PageCount; i++ {
+		u, err := s.gen.PresignPage(ctx, doc, i)
+		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{"document_id": doc.ID, "page": i}).
+				Warn("carousel page not presigned for channel delivery")
+			continue
+		}
+		urls = append(urls, u)
+	}
+	return urls
+}
+
+// deliversToChannel reports whether a target names somewhere other than the
+// thread itself.
+func deliversToChannel(t *tenantctx.ReplyTarget) bool {
+	if t == nil {
+		return false
+	}
+	switch domain.Channel(t.Channel) {
+	case domain.ChannelWhatsApp, domain.ChannelDiscord, domain.ChannelLark, domain.ChannelSlack:
+		return true
+	}
+	return false
+}
+
+// carouselChannelMessage is the carousel as a channel reads it (T-G6,
+// finding 6): the caption as plain text — a fence is three backticks on a
+// phone — one signed link per slide, and the zip. No `![`: an inline image
+// on the authenticated page route is a broken path off the dashboard, which
+// is the roadmap's own acceptance line for a WhatsApp-bound thread.
+//
+// Links are markdown, as a chat reply's are. The WhatsApp path flattens them
+// to "text: url", Slack rewrites them to mrkdwn, Discord renders them, and
+// Lark shows them as the turn's own replies show them.
+func carouselChannelMessage(res *docgen.Result, pages []string) string {
+	var b strings.Builder
+	n := res.Document.PageCount
+	fmt.Fprintf(&b, "Your carousel is ready — %d slides.\n\n", n)
+	if caption := docgen.CaptionText(res.Carousel); caption != "" {
+		b.WriteString("Caption:\n")
+		b.WriteString(caption)
+		b.WriteString("\n\n")
+	}
+	for i, u := range pages {
+		alt := ""
+		if res.Carousel != nil && i < len(res.Carousel.Alts) {
+			alt = res.Carousel.Alts[i]
+		}
+		fmt.Fprintf(&b, "[%s](%s)\n", altLabel(i+1, alt), u)
+	}
+	if len(pages) > 0 {
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "[Download all slides (%s)](%s) — the links expire in about an hour; ask again and I will produce fresh ones.",
+		res.Document.Filename, res.DownloadURL)
+	return b.String()
 }
 
 // threadProgress reports a threaded render's progress on the thread's own

@@ -717,6 +717,10 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	kind, ref := actorOf(p)
 	ctx = tenantctx.WithActor(ctx, kind, ref)
 	ctx = tenantctx.WithChannel(ctx, string(p.Channel))
+	// Where the reply goes, for work this turn hands off and cannot wait for
+	// (T-G6, finding 6). A render that finishes after the turn has no payload
+	// to read the phone number from; the tool that enqueues it reads this.
+	ctx = tenantctx.WithReplyTarget(ctx, p.ReplyTarget())
 	ctx = tenantctx.WithMessageID(ctx, p.UserMsgID)
 	if p.RequestID != "" {
 		ctx = tenantctx.WithRequestID(ctx, p.RequestID)
