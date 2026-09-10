@@ -563,13 +563,19 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.suggestionSvc = app.NewSuggestionService(
 		pgctl.NewSuggestionPickRepo(controlDB), deps.msgRepo)
 
-	// The query cookbook (T-Q8). The API owns the admin surface — status,
-	// harvest, forget — while the turn-time retrieval lives in the worker's
-	// stack. Both read the same table; only the harvester writes it.
+	// The query cookbook (T-Q8, T-Q15). The API owns the admin surface —
+	// status, harvest, sweep, forget — while the turn-time retrieval lives in
+	// the worker's stack. Both read the same table; the harvester writes it and
+	// the sweep retires from it.
+	//
+	// WithSweep takes the tenant pool because the drift check asks each source
+	// what tables it has now. It is the same pool `run_sql` uses, and the same
+	// connection: an admin pressing Sweep costs one introspection per source,
+	// not one per example.
 	deps.cookbookSvc = app.NewCookbookService(
 		pgctl.NewQueryExampleRepo(controlDB), pgctl.NewCookbookCandidateRepo(controlDB),
 		feedbackRepo, deps.embedCache,
-	)
+	).WithSweep(deps.tenant)
 
 	// Retention and erasure (T-H6). The API half: the settings write, the
 	// erasure route, the export and the record. The nightly purge that uses the

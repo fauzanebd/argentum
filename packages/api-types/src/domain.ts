@@ -1917,6 +1917,54 @@ export interface QueryExample {
   uses: number /* int */;
   last_used_at?: string;
   created_at: string;
+  /**
+   * ArchivedAt retires an example from retrieval without deleting it
+   * (T-Q15). Nil is the ordinary state.
+   * Archived rather than deleted for a reason the recovery path makes
+   * obvious: the two things that retire an example — the warehouse moved, or
+   * it never matched anything — are both reversible, and `origin_message_id`
+   * is unique, so a deleted example cannot be re-learned by the harvester
+   * without the original turn still being there. Clearing this column is a
+   * full recovery; a DELETE is not.
+   */
+  archived_at?: string;
+  /**
+   * ArchiveReason is why, in one machine-readable word. Empty while live.
+   */
+  archive_reason?: string;
+}
+/**
+ * ArchiveReasonSchemaDrift is a table the example queries that the source
+ * no longer has. The example is not stale, it is *wrong* — it would fail if
+ * the model imitated it.
+ */
+export const ArchiveReasonSchemaDrift = "schema_drift";
+/**
+ * ArchiveReasonUnused is an example old enough to have had its chance and
+ * never once retrieved.
+ * `uses = 0` is read here as absence of evidence, not as a bad score, which
+ * is why it is paired with an age bound and never used to *rank*. An
+ * example nobody has had occasion to need is not a bad example, and a quiet
+ * tenant must not have their cookbook emptied for being quiet.
+ */
+export const ArchiveReasonUnused = "unused";
+/**
+ * Why an example was retired. Two causes, and they want opposite responses
+ * from whoever reads the number: one says the warehouse moved underneath the
+ * cookbook, the other says the example was never earning its place.
+ */
+export type ArchiveReason = typeof ArchiveReasonSchemaDrift | typeof ArchiveReasonUnused;
+/**
+ * QueryExampleRef is the little of an example a sweep needs: which one, which
+ * warehouse, and the SQL to read table names out of.
+ * Deliberately not the whole row. The embedding is 1,536 float32s and a sweep
+ * has no use for it; reading a tenant's entire cookbook to check table names
+ * would pull about 6 KB per example for the 800 characters it actually reads.
+ */
+export interface QueryExampleRef {
+  ID: number /* int64 */;
+  SourceID: string;
+  SQL: string;
 }
 /**
  * QueryExampleHit is one retrieved example and how close it was.

@@ -339,7 +339,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	s.Cookbook = app.NewCookbookService(
 		s.QueryExamples, pgctl.NewCookbookCandidateRepo(controlDB),
 		s.MessageFeedback, s.EmbedCache,
-	)
+	).WithSweep(s.TenantPool)
 
 	// What an uploaded document says (T-P8/T-P9). Beside the cookbook and for
 	// the same reason: both halves of retrieval need the embedding cache above,

@@ -12,10 +12,15 @@ import (
 
 // CookbookHandler exposes the per-tenant query cookbook (T-Q8).
 //
-// Three routes, and no CRUD: an example is *learned* from a turn that
-// happened, never authored. A hand-written example would be a query nobody has
-// run against data nobody has checked, presented to the agent with the same
+// Four routes, and no CRUD: an example is *learned* from a turn that happened,
+// never authored. A hand-written example would be a query nobody has run
+// against data nobody has checked, presented to the agent with the same
 // authority as one that demonstrably answered a real question.
+//
+// Two of the four write, and they are opposites — `harvest` learns, `sweep`
+// forgets (T-Q15). Both are on a cron already; both are exposed here because
+// an admin who has just renamed a table should not have to wait until 03:41 to
+// find out what it cost them.
 type CookbookHandler struct {
 	svc *app.CookbookService
 }
@@ -27,6 +32,7 @@ func NewCookbookHandler(svc *app.CookbookService) *CookbookHandler {
 func (h *CookbookHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/cookbook", h.status)
 	rg.POST("/cookbook/harvest", h.harvest)
+	rg.POST("/cookbook/sweep", h.sweep)
 	rg.DELETE("/cookbook", h.forget)
 }
 
@@ -36,7 +42,39 @@ func (h *CookbookHandler) status(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"examples": n})
+	// The archived count beside the live one, because "the cookbook shrank" is
+	// a question somebody will ask and the answer is not visible from a single
+	// number that went down.
+	archived, err := h.svc.CountArchived(c.Request.Context(), companyID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"examples": n, "archived": archived})
+}
+
+// sweep retires what the cookbook should no longer teach, on demand (T-Q15).
+//
+// Synchronous like the harvest, and cheaper: no embedding calls at all. What it
+// costs is one schema introspection per source, which is the same query
+// `get_schema` makes on an ordinary turn and is usually already warm in that
+// tool's cache.
+func (h *CookbookHandler) sweep(c *gin.Context) {
+	unusedAfter := app.SweepUnusedAfter
+	if d := c.Query("unused_after_days"); d != "" {
+		days, err := strconv.Atoi(d)
+		if err != nil || days < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unused_after_days must be a non-negative integer"})
+			return
+		}
+		unusedAfter = time.Duration(days) * 24 * time.Hour
+	}
+	res, err := h.svc.Sweep(c.Request.Context(), companyID(c), unusedAfter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 // harvest runs the mining pass on demand.

@@ -323,6 +323,7 @@ var apiPolicy = middleware.RolePolicy{
 	// tenant's data.
 	"GET /api/cookbook":          domain.RoleAdmin,
 	"POST /api/cookbook/harvest": domain.RoleAdmin,
+	"POST /api/cookbook/sweep":   domain.RoleAdmin,
 	"DELETE /api/cookbook":       domain.RoleAdmin,
 
 	// Uploaded documents (T-P1). Reading the list is a member's — seeing what

@@ -40,6 +40,10 @@ type CookbookService struct {
 	candidates domain.CookbookCandidateSource
 	feedback   domain.MessageFeedbackRepository
 	embed      EmbeddingResolver
+	// pool opens a tenant's warehouse, for the sweep's drift check only
+	// (T-Q15). Nil on a deployment that wired no pool, which costs the drift
+	// half and keeps the rest.
+	pool CookbookConnResolver
 }
 
 // EmbeddingResolver is the half of llmtenant.EmbeddingCache this service
@@ -275,10 +279,19 @@ func (s *CookbookService) Forget(ctx context.Context, companyID string) (int, er
 	return n, err
 }
 
-// Count is how many examples a tenant has.
+// Count is how many examples a tenant has that a turn could be shown.
+// Archived ones are not among them (T-Q15).
 func (s *CookbookService) Count(ctx context.Context, companyID string) (int, error) {
 	if s.examples == nil {
 		return 0, nil
 	}
 	return s.examples.CountByCompany(ctx, companyID)
+}
+
+// CountArchived is the retired half, for the admin surface.
+func (s *CookbookService) CountArchived(ctx context.Context, companyID string) (int, error) {
+	if s.examples == nil {
+		return 0, nil
+	}
+	return s.examples.CountArchivedByCompany(ctx, companyID)
 }

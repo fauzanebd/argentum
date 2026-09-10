@@ -38,6 +38,49 @@ type QueryExample struct {
 	Uses       int        `json:"uses"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
+
+	// ArchivedAt retires an example from retrieval without deleting it
+	// (T-Q15). Nil is the ordinary state.
+	//
+	// Archived rather than deleted for a reason the recovery path makes
+	// obvious: the two things that retire an example — the warehouse moved, or
+	// it never matched anything — are both reversible, and `origin_message_id`
+	// is unique, so a deleted example cannot be re-learned by the harvester
+	// without the original turn still being there. Clearing this column is a
+	// full recovery; a DELETE is not.
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
+	// ArchiveReason is why, in one machine-readable word. Empty while live.
+	ArchiveReason string `json:"archive_reason,omitempty"`
+}
+
+// Why an example was retired. Two causes, and they want opposite responses
+// from whoever reads the number: one says the warehouse moved underneath the
+// cookbook, the other says the example was never earning its place.
+const (
+	// ArchiveReasonSchemaDrift is a table the example queries that the source
+	// no longer has. The example is not stale, it is *wrong* — it would fail if
+	// the model imitated it.
+	ArchiveReasonSchemaDrift = "schema_drift"
+	// ArchiveReasonUnused is an example old enough to have had its chance and
+	// never once retrieved.
+	//
+	// `uses = 0` is read here as absence of evidence, not as a bad score, which
+	// is why it is paired with an age bound and never used to *rank*. An
+	// example nobody has had occasion to need is not a bad example, and a quiet
+	// tenant must not have their cookbook emptied for being quiet.
+	ArchiveReasonUnused = "unused"
+)
+
+// QueryExampleRef is the little of an example a sweep needs: which one, which
+// warehouse, and the SQL to read table names out of.
+//
+// Deliberately not the whole row. The embedding is 1,536 float32s and a sweep
+// has no use for it; reading a tenant's entire cookbook to check table names
+// would pull about 6 KB per example for the 800 characters it actually reads.
+type QueryExampleRef struct {
+	ID       int64
+	SourceID string
+	SQL      string
 }
 
 // QueryExampleHit is one retrieved example and how close it was.
@@ -68,18 +111,56 @@ type QueryExampleRepository interface {
 	TopK(ctx context.Context, companyID string, sourceIDs []string, queryVec []float32, k int) ([]QueryExampleHit, error)
 	// CountByCompany is how the turn-time path skips the work silently for a
 	// tenant with no cookbook, which is every tenant until the harvester runs.
+	// Counts live examples only: a tenant whose whole cookbook has been
+	// archived has no cookbook, and paying for an embedding call to retrieve
+	// from it would be the same defect as paying for one before the first
+	// harvest.
 	CountByCompany(ctx context.Context, companyID string) (int, error)
-	// MarkUsed records that these examples were retrieved. Bookkeeping for
-	// whoever prunes the cookbook later; nothing reads it at turn time.
+	// CountArchivedByCompany is the same number for the retired half, for the
+	// admin surface. Separate rather than a filter argument because every
+	// caller of CountByCompany means "is there a cookbook", and one that meant
+	// "how big is the table" would be a different question wearing its name.
+	CountArchivedByCompany(ctx context.Context, companyID string) (int, error)
+	// MarkUsed records that these examples were retrieved. Written on every
+	// retrieval; read by the sweep (T-Q15) and by nothing on the turn path.
 	MarkUsed(ctx context.Context, ids []int64, at time.Time) error
+	// LiveRefs lists the examples still eligible for retrieval, for the sweep
+	// to check against the warehouse they query (T-Q15). Archived rows are
+	// excluded: a sweep that re-examined its own archive would spend an
+	// introspection per run discovering the same drift forever.
+	LiveRefs(ctx context.Context, companyID string) ([]QueryExampleRef, error)
+	// Archive retires examples by id, recording why. Returns how many rows it
+	// changed — which is not always len(ids), because a concurrent sweep or an
+	// admin may have archived some already, and the count is what gets logged.
+	Archive(ctx context.Context, ids []int64, reason string, at time.Time) (int, error)
+	// ArchiveUnused retires every live example for one company that has never
+	// been retrieved and was created before createdBefore.
+	//
+	// A statement rather than a read-then-write, because the alternative is
+	// pulling every row of a cookbook to compare two integers the database
+	// already has indexed. The age bound is the caller's policy, not this
+	// method's.
+	ArchiveUnused(ctx context.Context, companyID string, createdBefore, at time.Time) (int, error)
+	// CompaniesWithExamples lists the tenants that have a live cookbook, for
+	// the sweep's deployment-wide tick (T-Q15).
+	//
+	// Not CompaniesWithActivity, which is the harvester's list: that one asks
+	// who ran a query lately, and the tenant this job most needs to reach is
+	// the one who did not — a quiet quarter is exactly when a warehouse gets
+	// migrated underneath a cookbook nobody is watching.
+	CompaniesWithExamples(ctx context.Context) ([]string, error)
 	// ExistingOrigins reports which of the given origin message ids the
 	// cookbook already holds, so a harvest run does not re-embed what it
 	// already learned. Batched, because the alternative is one round trip per
 	// candidate.
 	ExistingOrigins(ctx context.Context, companyID string, messageIDs []string) (map[string]bool, error)
-	// DeleteByCompany empties a tenant's cookbook. The escape hatch for a
-	// tenant whose schema changed underneath it, where every example is now
-	// wrong and the fastest fix is to forget and re-harvest.
+	// DeleteByCompany empties a tenant's cookbook, archived rows included.
+	//
+	// This used to be the *only* answer to a schema that moved, which is what
+	// T-Q15 is about: it is all-or-nothing, swung by hand, for a condition that
+	// is almost never all-or-nothing. The sweep now handles the ordinary case
+	// one example at a time and reversibly. What is left for this is the real
+	// escape hatch — a tenant who wants the cookbook gone.
 	DeleteByCompany(ctx context.Context, companyID string) (int, error)
 }
 

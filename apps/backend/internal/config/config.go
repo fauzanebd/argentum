@@ -227,6 +227,22 @@ type Config struct {
 	// examples. Empty disables the harvest without disabling retrieval, so a
 	// deployment can stop learning and keep using what it has already learned.
 	CookbookHarvestCron string
+	// CookbookSweepCron is when the worker retires what the cookbook should no
+	// longer teach (T-Q15). Empty disables the sweep, which leaves retrieval
+	// reading everything ever harvested — the behaviour the product had before
+	// this existed, and a defensible choice for a deployment whose warehouses
+	// never change.
+	//
+	// Daily rather than hourly, unlike the harvest: this one opens a connection
+	// to every tenant's warehouse and introspects it, so its cost scales with
+	// the fleet rather than with the conversation.
+	CookbookSweepCron string
+	// CookbookUnusedAfterDays is how long an example gets to prove itself
+	// before never having been retrieved counts against it. Zero switches the
+	// age half off and leaves the drift half running, which is the setting for
+	// a deployment that would rather keep a useless example than lose a
+	// seasonal one.
+	CookbookUnusedAfterDays int
 
 	// RetentionPurgeCron is when the worker enforces each tenant's message
 	// retention window (T-H6). Nightly and off-peak by default: the purge is a
@@ -641,7 +657,12 @@ func Load() (*Config, error) {
 		SkillIndexMax:        getEnvAsInt("SKILL_INDEX_MAX", skill.DefaultIndexMaxLines),
 		SkillIndexMaxChars:   getEnvAsInt("SKILL_INDEX_MAX_CHARS", skill.DefaultIndexMaxChars),
 		CookbookHarvestCron:  getEnv("COOKBOOK_HARVEST_CRON", "17 * * * *"),
-		RetentionPurgeCron:   getEnv("RETENTION_PURGE_CRON", "41 3 * * *"),
+		// Off-peak and after the retention purge, on the same argument: this is
+		// the second job that reads every tenant's rows on a schedule, and two
+		// of them racing at the same minute is a self-inflicted load spike.
+		CookbookSweepCron:       getEnv("COOKBOOK_SWEEP_CRON", "41 3 * * *"),
+		CookbookUnusedAfterDays: getEnvAsInt("COOKBOOK_UNUSED_AFTER_DAYS", 90),
+		RetentionPurgeCron:      getEnv("RETENTION_PURGE_CRON", "41 3 * * *"),
 
 		MetricZeroCoverageProbe: getEnv("METRIC_ZERO_COVERAGE_PROBE", "true") == "true",
 

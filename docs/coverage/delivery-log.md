@@ -5059,6 +5059,97 @@ bundle **33.3 KB of 80 — unchanged**, because a generated type erases to
 nothing. Owed: the browser arm, which is the only one that proves the greeting
 from outside ([`live-gate-backlog.md`](live-gate-backlog.md) §1a).
 
+## Phase 3v — The cookbook learns to forget, and a confession in a schema comment (2026-09-10)
+
+Research into how Nous Research's Hermes Agent closes its learning loop
+([`../research/05-hermes-self-learning.md`](../research/05-hermes-self-learning.md))
+was meant to answer a question about *autonomy*. What it actually surfaced was
+that this product's own learning loop has no reverse gear, and that we wrote
+that down ourselves eleven months ago and never read it back.
+
+Migration `055`, in its own comment: *"`uses INTEGER`, and `last_used_at`. An
+example that keeps being retrieved is one that keeps matching real questions;
+one that never surfaces is a candidate for pruning. **Neither is read by the
+retrieval path** — this is bookkeeping for whoever tunes the cookbook later."*
+`query_example.go:73` repeats it on the interface. Nobody became that person.
+`MarkUsed` has written both columns on every retrieval since `T-Q8` shipped and
+`TopK` read neither.
+
+### The half that produces wrong answers is not the half the comment worried about
+
+Age is the visible problem and the smaller one. `source_id` cascades, so
+deleting a warehouse takes its examples with it — but **renaming a table inside
+a live warehouse does not**. The example keeps ranking by cosine distance and a
+turn is handed a worked query that would now fail, on the one surface in this
+product whose entire purpose is *imitate this*.
+
+`055` had exactly one answer to that, and its comment names it: `DeleteByCompany`,
+"the escape hatch for a tenant whose schema changed underneath it, where every
+example is now wrong and the fastest fix is to forget and re-harvest." An
+all-or-nothing hammer, swung by hand, for a condition that is almost never
+all-or-nothing.
+
+### Borrowed shape, and only the half that survives the threat model
+
+Hermes's curator archives rather than deletes, exempts what a human pinned, and
+reads a zero use count as absence of evidence rather than as a low score. Its
+autonomous *writer* — a background fork that writes skills from full tool output
+with no fence and no human — does not survive multi-tenancy, and §10 of the
+research says why at length. Its curation policy does, because it only ever
+removes. `T-Q15` takes the second and not the first.
+
+The asymmetry between the two rules is the design. **Drift is a fact and
+archives on it**; a table the source does not have is not a judgement call.
+**Age is a policy and only ever archives what has never been retrieved**,
+bounded at ninety days and never used to rank.
+
+### Every uncertainty resolves to "keep", and each one is counted
+
+The thing at stake is an example a tenant paid an embedding call to learn, which
+cannot be recovered without the original turn still existing. So: a source that
+will not open archives nothing; a source reporting *zero* tables archives
+nothing, because a permissions change and an emptied warehouse are
+indistinguishable from here and one is far more common; SQL the lexer flags
+`Uncertain` is kept. `public.fact_sales` and `fact_sales` match in both
+directions — the qualifier mismatch is the loudest possible way to get this
+wrong, because it would archive every example against a source in one sweep.
+
+Each case is a counter on the result rather than a silent skip. `skipped_unreadable`
+is an instrument: if it climbs, the sweep has gone blind rather than found
+nothing, and from the outside those are identical.
+
+### What was deliberately not built, and it is the interesting one
+
+**Ranking by recency or use count.** Both numbers are now available and neither
+is used. `T-Q8`'s live gate has still never been run, so this product has never
+observed a single example being retrieved — and blending a decay term into
+cosine distance would change retrieval quality in a direction nothing here can
+measure. Archiving is a decision with a reason attached and a column to read it
+out of; a re-weighting is a number nobody can audit. Worth re-taking once the
+retrieval half has been seen working.
+
+### A new standing cost, stated plainly
+
+The sweep is **the first job in this product that opens a tenant's warehouse on
+a schedule with no turn behind it.** The harvest reads the control database
+only; the retention purge reads the control database only. This one introspects
+every tenant's source once a day. That is a new failure mode as well as a new
+cost, and it is why the unreachable-source path is a counted no-op rather than
+an error.
+
+`.env.example` gained the whole cookbook block on the way past — all four
+variables, including the two `T-Q8` added and never documented. Same species as
+the two variables §1q found this file had lost.
+
+### Gate
+
+`go build`, `go vet`, `go test -race ./...` — 66 packages, 0 failures. Eight new
+tests in `internal/app`, one per fail-safe plus the two rules and the
+one-introspection-per-source bound. `make types` regenerated `domain.ts` for the
+two new fields. Owed: `076` up/down/up, a sweep against a genuinely renamed
+table, and the reversibility arm — archiving is only safer than deleting if the
+way back works ([`live-gate-backlog.md`](live-gate-backlog.md) §1a).
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

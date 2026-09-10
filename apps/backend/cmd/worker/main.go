@@ -174,6 +174,7 @@ func main() {
 	mux.HandleFunc(queue.TypeBusinessInfer, makeBusinessInferHandler(stack.Inference))
 	mux.HandleFunc(queue.TypeWatcherEval, makeWatcherEvalHandler(stack.Watchers))
 	mux.HandleFunc(queue.TypeCookbookHarvest, makeCookbookHarvestHandler(stack.Cookbook))
+	mux.HandleFunc(queue.TypeCookbookSweep, makeCookbookSweepHandler(stack.Cookbook, cfg.CookbookUnusedAfterDays))
 	mux.HandleFunc(queue.TypeDocumentParse, makeDocumentParseHandler(stack.DocumentParse))
 	mux.HandleFunc(queue.TypeRetentionPurge, makeRetentionPurgeHandler(stack.Retention))
 
@@ -241,6 +242,34 @@ func main() {
 		}
 	} else {
 		logrus.Info("cookbook harvest disabled (COOKBOOK_HARVEST_CRON empty)")
+	}
+
+	// --- Cookbook sweep (T-Q15) ---
+	// The harvest's opposite number, on its own scheduler entry and its own
+	// cron because the two have nothing in common but a table. The harvest is
+	// hourly, incremental and reads the control database; the sweep is daily
+	// and opens a connection to every tenant's warehouse, so its cost is the
+	// size of the fleet rather than the volume of conversation.
+	//
+	// Empty disables it, which leaves retrieval reading everything ever
+	// harvested — what the product did before T-Q15, and a defensible setting
+	// for a deployment whose schemas do not move.
+	if cfg.CookbookSweepCron != "" {
+		sweeper := asynq.NewScheduler(stack.AsynqOpt, nil)
+		if _, err := sweeper.Register(cfg.CookbookSweepCron,
+			asynq.NewTask(queue.TypeCookbookSweep, nil)); err != nil {
+			logrus.WithError(err).Error("cookbook sweep: bad cron; the sweep will not run")
+		} else if err := sweeper.Start(); err != nil {
+			logrus.WithError(err).Error("cookbook sweep: scheduler failed to start")
+		} else {
+			defer sweeper.Shutdown()
+			logrus.WithFields(logrus.Fields{
+				"cron":              cfg.CookbookSweepCron,
+				"unused_after_days": cfg.CookbookUnusedAfterDays,
+			}).Info("cookbook sweep scheduled")
+		}
+	} else {
+		logrus.Info("cookbook sweep disabled (COOKBOOK_SWEEP_CRON empty)")
 	}
 
 	// --- Retention purge (T-H6) ---
@@ -471,6 +500,41 @@ func makeWatcherEvalHandler(svc *app.WatcherService) asynq.HandlerFunc {
 // the agent can do — the cookbook is an improvement on today's prompt, never a
 // prerequisite for it — and letting asynq retry a deployment-wide scan on a
 // backoff would put the whole fleet's embedding spend behind one bad tenant.
+// makeCookbookSweepHandler retires what the cookbook should no longer teach
+// (T-Q15).
+//
+// Errors are swallowed to nil for the harvest's reason and one of its own. A
+// sweep that fails changes nothing — every example it would have archived is
+// still there and still being offered, which is the state the product was in
+// yesterday. Retrying on asynq's backoff would re-open a connection to every
+// tenant's warehouse on a tight loop, and the failure this job is most likely
+// to hit is precisely a warehouse that is refusing connections.
+func makeCookbookSweepHandler(svc *app.CookbookService, unusedAfterDays int) asynq.HandlerFunc {
+	return func(ctx context.Context, _ *asynq.Task) error {
+		if svc == nil {
+			return nil
+		}
+		results := svc.SweepAll(ctx, time.Duration(unusedAfterDays)*24*time.Hour)
+		var drift, unused, blind, unreachable int
+		for _, r := range results {
+			drift += r.ArchivedDrift
+			unused += r.ArchivedUnused
+			blind += r.SkippedUnreadable
+			unreachable += r.UnreachableSources
+		}
+		if drift+unused+unreachable > 0 {
+			logrus.WithFields(logrus.Fields{
+				"companies":           len(results),
+				"archived_drift":      drift,
+				"archived_unused":     unused,
+				"skipped_unreadable":  blind,
+				"unreachable_sources": unreachable,
+			}).Info("cookbook sweep complete")
+		}
+		return nil
+	}
+}
+
 // makeRetentionPurgeHandler enforces every tenant's retention window (T-H6).
 //
 // No payload and no per-tenant scheduling, like the harvest above: the service

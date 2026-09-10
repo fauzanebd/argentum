@@ -765,3 +765,102 @@ from a pre-HEAD binary and served one of these turns. It was caught only because
 `pgrep -f 'bin/worker'` does not find a `go run` worker; `ps ax | grep -E
 'exe/worker|bin/worker'` does. **Kill every worker before a gate, and count the
 `turn completed` lines against the turns you sent.**
+
+---
+
+## 15. `T-Q15` — the cookbook learns to forget (built 2026-09-10)
+
+`T-Q8` gave the agent a memory and no way to lose one. This is the other half,
+built after the Hermes research
+([`../research/05-hermes-self-learning.md`](../research/05-hermes-self-learning.md))
+made the omission impossible to keep not noticing.
+
+### 15.1 The gap was written down in the schema and never read
+
+Migration `055`, in its own comment:
+
+> `uses INTEGER`, and `last_used_at`. An example that keeps being retrieved is
+> one that keeps matching real questions; one that never surfaces is a candidate
+> for pruning. **Neither is read by the retrieval path** — this is bookkeeping
+> for whoever tunes the cookbook later.
+
+`query_example.go:73` says it again on the interface. Nobody became that person.
+`MarkUsed` has written both columns on every retrieval since T-Q8 shipped;
+`TopK` was `ORDER BY embedding <=> $2 LIMIT $3` and read neither. The bookkeeping
+existed, the policy did not, and the gap survived because a cookbook that never
+forgets looks exactly like one that has nothing to forget.
+
+### 15.2 Drift, not age, is the half that produces wrong answers
+
+`source_id` is `ON DELETE CASCADE`, so deleting a warehouse takes its examples
+with it — a case `055` handled. Renaming a table *inside* a live warehouse is
+not that case. The example keeps ranking by cosine distance, and a turn is
+handed a worked query that would now fail, on the one surface in this product
+whose entire purpose is *imitate this*.
+
+`055`'s only answer was `DeleteByCompany` — its comment: "the escape hatch for a
+tenant whose schema changed underneath it, where every example is now wrong and
+the fastest fix is to forget and re-harvest." An all-or-nothing hammer, swung by
+hand, for a condition that is almost never all-or-nothing. It survives as the
+escape hatch it should have been; the ordinary case is now one example at a
+time and reversible.
+
+### 15.3 What was built
+
+| Piece | Where | What it decides |
+| --- | --- | --- |
+| `archived_at`, `archive_reason`, partial index | `076_query_example_archive` | Retirement is a column, not a `DELETE`. The index is `WHERE archived_at IS NULL`, which is the predicate every turn now filters on |
+| `Sweep` / `SweepAll` | `internal/app/cookbook_sweep.go` | The two rules and every fail-safe below |
+| `LiveRefs`, `Archive`, `ArchiveUnused`, `CompaniesWithExamples`, `CountArchivedByCompany` | `query_example_repo.go` | The reads and writes, none of which delete |
+| `COOKBOOK_SWEEP_CRON`, `COOKBOOK_UNUSED_AFTER_DAYS` | `config.go`, `cmd/worker/main.go` | Daily, off-peak; either half switchable off |
+| `POST /api/cookbook/sweep` | `handlers/cookbook.go`, `policy.go` | Admin. For somebody who has just renamed a table and would rather not wait until 03:41 |
+
+**The asymmetry between the two rules is the design.** Drift is a *fact* and
+archives on it — a table the source does not have is not a judgement call. Age
+is a *policy* and only ever archives what has never been retrieved, bounded at
+ninety days, and never used to rank. `uses = 0` is read as absence of evidence,
+not as a low score, which is the distinction Hermes's curator makes and the one
+that stops a quiet tenant having their cookbook emptied for being quiet.
+
+### 15.4 Every uncertainty resolves to "keep", and each one is counted
+
+This is the whole safety argument, because the thing at stake is an example a
+tenant paid an embedding call to learn and cannot get back without the original
+turn still existing.
+
+| Case | Behaviour | Why |
+| --- | --- | --- |
+| Source will not open | Keep everything, `unreachable_sources++` | A warehouse that is down has not dropped a table. Treating "we could not ask" as "it is gone" empties a cookbook during an outage |
+| Source reports **zero** tables | Keep everything, `unreachable_sources++` | A permissions change and an emptied warehouse are indistinguishable from here, and one of the two is far more common |
+| `sqlguard` reports `Uncertain` | Keep, `skipped_unreadable++` | The lexer says when it cannot attribute a name; guessing here costs the example |
+| `public.fact_sales` vs `fact_sales` | Match, both directions | The loudest possible way to get this wrong: a qualifier mismatch archives *every* example against that source in one sweep |
+
+`skipped_unreadable` is an instrument, not a footnote. If it climbs, the sweep
+has gone blind rather than found nothing, and the two are otherwise identical
+from the outside.
+
+### 15.5 What was deliberately not built
+
+**Ranking by recency or use count.** Both numbers are now available and neither
+is used. Blending a decay term into cosine distance changes retrieval quality in
+a direction nothing here can measure — `T-Q8`'s own live gate has still never
+been run, so the product has never observed a single example being retrieved.
+Archiving is a decision with a reason attached and a column to read it out of; a
+re-weighting is a number nobody can audit. That trade is worth re-taking once
+the retrieval half has been seen working.
+
+### 15.6 Gate
+
+`go build`, `go vet`, `go test -race ./...` clean. Eight new tests in
+`internal/app`, one per row of §15.4 plus the two rules and the
+one-introspection-per-source bound. What is owed is the half that needs a
+database: `076` up/down/up, and a sweep against a source with a genuinely
+renamed table. Both filed in
+[`live-gate-backlog.md`](live-gate-backlog.md) §1a.
+
+**And the sweep is the first job in this product that opens a tenant's warehouse
+on a schedule with no turn behind it.** The harvest reads the control database
+only; retention purges the control database only. This one introspects every
+tenant's source once a day, which is a new standing cost and a new failure mode
+— and the reason the unreachable-source path is a counted no-op rather than an
+error.

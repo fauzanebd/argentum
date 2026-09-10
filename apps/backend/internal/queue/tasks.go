@@ -45,6 +45,11 @@ const (
 	// keeps working as companies are added and one that has to be told about
 	// each of them.
 	TypeCookbookHarvest = "cookbook:harvest"
+	// TypeCookbookSweep retires examples the cookbook should no longer teach
+	// (T-Q15): the ones querying a table their source no longer has, and the
+	// ones old enough to have had their chance and never been retrieved.
+	// Payloadless and deployment-wide for the same reason as the harvest.
+	TypeCookbookSweep = "cookbook:sweep"
 	// TypeDocumentParse reads an uploaded PDF into pages, tables and text
 	// (T-P1 enqueues it; T-P2 handles it). Enqueued only where a parser is
 	// configured — a deployment with none leaves its documents 'uploaded',

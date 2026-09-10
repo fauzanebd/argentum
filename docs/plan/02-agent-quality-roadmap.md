@@ -1006,3 +1006,91 @@ tree* got better or worse; against an unpinned model it cannot answer that at al
 One re-run of any three cases, showing the resolved identifier in the report.
 **~$0.02.** No rule-1 implication: this changes what a report records, not what
 reaches a user.
+
+---
+
+## `T-Q15` The cookbook learns to forget — 1.0d · **built 2026-09-10, unit-gated**
+**Repo:** BE · **Deps:** `T-Q8` · **Priority:** P1
+**Migration:** `076_query_example_archive`
+
+### Why
+
+`T-Q8` gave the agent a memory and no way to lose one.
+
+Migration `055` wrote `uses` and `last_used_at` and said so in its own comment:
+*"An example that keeps being retrieved is one that keeps matching real
+questions; one that never surfaces is a candidate for pruning. Neither is read
+by the retrieval path — this is bookkeeping for whoever tunes the cookbook
+later."* Nobody became that person. `MarkUsed` has been writing both columns on
+every retrieval since the day it shipped and `TopK` reads neither, so an example
+harvested in March ranks against one harvested yesterday on cosine distance
+alone, forever. `query_example.go`'s interface comment repeats the confession.
+
+**Age is the smaller half. Drift is the one that produces wrong answers.**
+`source_id` cascades, so deleting a warehouse takes its examples with it — but
+renaming a table *inside* a live warehouse does not. The example keeps ranking,
+and a turn is handed a worked query that would now fail, on the one surface
+whose entire purpose is *imitate this*. `055`'s only answer to that was
+`DeleteByCompany`, which its own comment calls "the escape hatch for a tenant
+whose schema changed underneath it, where every example is now wrong and the
+fastest fix is to forget and re-harvest": an all-or-nothing hammer, swung by
+hand, for a condition that is almost never all-or-nothing.
+
+The shape of the fix is borrowed, and the source is recorded in
+[`../research/05-hermes-self-learning.md`](../research/05-hermes-self-learning.md)
+§10 — Hermes Agent's decay policy, which archives rather than deletes, exempts
+what a human pinned, and reads a zero use count as absence of evidence rather
+than as a low score. Their autonomous *writer* does not survive this product's
+threat model; their curation policy does, because it only ever removes.
+
+### Do
+
+- `076`: `archived_at TIMESTAMPTZ`, `archive_reason TEXT`, and a partial index
+  on `(company_id, source_id) WHERE archived_at IS NULL` — retrieval filters on
+  it every turn, so the live half of a cookbook is scanned rather than the whole
+  table.
+- **Nothing deletes.** Archiving is reversible by clearing one column, and
+  `ExistingOrigins` keeps seeing archived rows, so a sweep and a harvest cannot
+  take turns undoing each other on a schedule.
+- `CookbookService.Sweep`, on `internal/sqlguard.ReferencedTables` — the lexer
+  `T-H4` step 1 promoted and `T-H12` taught to read past a function's argument
+  list — against each source's live `ExtractSchema`. One introspection per
+  *source*, not per example: `LiveRefs` comes back ordered by source.
+- Two rules, and the asymmetry is the design. **Drift is a fact and archives on
+  it**; a table the source does not have is not a judgement call. **Age is a
+  policy and only ever archives what has never been used**, paired with a
+  ninety-day bound and never used to rank.
+- Every uncertainty resolves to *keep*: SQL the lexer flags `Uncertain`, a
+  source that will not open, a source that reports zero tables. Each is counted
+  in the result so a sweep going blind is visible rather than silent.
+- `COOKBOOK_SWEEP_CRON` (daily, off-peak, beside the retention purge and not on
+  its minute) and `COOKBOOK_UNUSED_AFTER_DAYS`. Both empty/zero switch their
+  half off. `POST /api/cookbook/sweep` for the admin who has just renamed a
+  table and would rather not wait until 03:41.
+
+### Acceptance
+
+- [x] An example querying a dropped table is archived; the one beside it against a live table is not
+- [x] A source that will not open archives nothing, and says how many it could not reach
+- [x] A source reporting zero tables archives nothing — a permissions change and an emptied warehouse are indistinguishable from here
+- [x] SQL the lexer cannot attribute to tables is kept and counted
+- [x] `public.fact_sales` and `fact_sales` match in both directions
+- [x] The age half runs with no warehouse wired at all
+- [ ] `076` up, down and up again against the real control database
+- [ ] A live sweep against a source with a genuinely renamed table
+
+### Gate
+
+```bash
+cd apps/backend && go test -race ./internal/app/... ./internal/adapters/postgres/...
+# live: migrate up/down/up; rename a table in the demo warehouse, sweep, and
+# read the archive_reason back out
+```
+
+### Out of scope
+
+**Ranking by recency or use count.** Both are available and neither is used,
+deliberately: blending a decay term into cosine distance changes retrieval
+quality in a direction nothing here can measure until `T-Q8`'s own live gate has
+been run. Archiving is a decision with a reason attached; a re-weighting is a
+number nobody can audit.

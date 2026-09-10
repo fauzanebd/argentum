@@ -40,6 +40,14 @@ type fakeExamples struct {
 	existing  map[string]bool
 	upsertErr error
 	originErr error
+
+	// The sweep's half (T-Q15).
+	companies   []string
+	refs        []domain.QueryExampleRef
+	refsErr     error
+	archived    map[int64]string
+	unusedCalls []time.Time
+	unusedCount int
 }
 
 func (f *fakeExamples) Upsert(_ context.Context, e *domain.QueryExample) error {
@@ -70,6 +78,31 @@ func (f *fakeExamples) DeleteByCompany(context.Context, string) (int, error) {
 	n := len(f.saved)
 	f.saved = nil
 	return n, nil
+}
+func (f *fakeExamples) CompaniesWithExamples(context.Context) ([]string, error) {
+	return f.companies, nil
+}
+func (f *fakeExamples) CountArchivedByCompany(context.Context, string) (int, error) {
+	return len(f.archived), nil
+}
+func (f *fakeExamples) LiveRefs(context.Context, string) ([]domain.QueryExampleRef, error) {
+	if f.refsErr != nil {
+		return nil, f.refsErr
+	}
+	return f.refs, nil
+}
+func (f *fakeExamples) Archive(_ context.Context, ids []int64, reason string, _ time.Time) (int, error) {
+	if f.archived == nil {
+		f.archived = map[int64]string{}
+	}
+	for _, id := range ids {
+		f.archived[id] = reason
+	}
+	return len(ids), nil
+}
+func (f *fakeExamples) ArchiveUnused(_ context.Context, _ string, createdBefore, _ time.Time) (int, error) {
+	f.unusedCalls = append(f.unusedCalls, createdBefore)
+	return f.unusedCount, nil
 }
 
 type fakeCandidates struct {
