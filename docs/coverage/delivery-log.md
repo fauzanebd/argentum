@@ -5565,9 +5565,27 @@ identifier, `videoplan.ts` for `Scene`'s recovered JSDoc — the second time in
 two entries that a change whose whole content is a comment moved the generated
 TypeScript. `actionlint` clean on all three workflow files.
 
-**Owed:** a green run. The ordering fix cannot be verified from here — the only
-place a GitHub Actions job runs is GitHub Actions, and the previous eleven
-attempts are the argument for saying so out loud rather than assuming.
+~~**Owed:** a green run.~~ **Run 34510973617 on `107bfb3` — green, and the two
+steps that mattered are the proof rather than the conclusion line:**
+
+```
+Vet:             success
+Test:            success      ← skipped on the previous eleven
+Build binaries:  success      ← skipped on the previous eleven
+Lint:            success
+```
+
+Every job green: Backend, Web, Security scanning, Design tokens, API types, API
+examples, Deck compatibility. **The first fully green pipeline since
+2026-08-21**, and the first time in three weeks that CI has run this repo's test
+suite at all.
+
+The Backend job's Node 20 annotation is also gone. Three jobs still carry it —
+`Web`, `API examples`, `Design tokens` — naming exactly the two actions held
+back on purpose plus one not previously counted: `actions/setup-node@v4` and
+**`pnpm/action-setup@v4`**. That they appear together is the argument for
+bumping them together rather than one at a time, and the green run above is the
+verification loop that was missing when the decision to hold was taken.
 
 ## Feature velocity, measured
 

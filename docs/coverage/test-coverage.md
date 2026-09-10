@@ -389,6 +389,10 @@ Both now run in CI via the `web` job.
 > [`delivery-log.md`](delivery-log.md) Phase 3y, and two of them were not style
 > at all.
 >
+> **Confirmed green 2026-09-11** on run 34510973617: `Vet / Test / Build
+> binaries / Lint` all success, where the previous eleven runs read
+> `Test: skipped`. First fully green pipeline since 2026-08-21.
+>
 > **What this costs the numbers above:** every "✅ checked" claim on this page
 > between 2026-08-21 and 2026-09-11 was a claim about a step that did not
 > execute. The local gate did run — every delivery-log entry in that window
