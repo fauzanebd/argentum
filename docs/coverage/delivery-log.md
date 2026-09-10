@@ -5552,10 +5552,25 @@ Bumped together because they are the same interaction: `pnpm/action-setup` runs
 first and puts pnpm on PATH, `setup-node` then resolves `cache: pnpm` through
 it. Splitting them would test half a change.
 
-The risk is stated rather than dissolved: **if the pnpm cache breaks, the Web
-and API-examples jobs go red and the fix is to drop `cache: pnpm`, not to
-revert the bump.** That is a fact CI produces in one run and this machine cannot
-produce at all.
+**Run 34512222379: green, every job, and zero Node 20 annotations anywhere** —
+Backend, Web, API examples and Design tokens all clean where four of them
+carried the notice an hour earlier.
+
+**And `cache: pnpm` was never at risk.** The Web job's log settles the question
+the hedging was about:
+
+```
+[command] …/setup-pnpm/node_modules/.bin/bin/pnpm store path --silent
+Cache hit for: node-cache-Linux-x64-pnpm-f3e4c4a6…
+Cache restored successfully
+```
+
+So `setup-node@v7` resolves an **explicit** `cache: pnpm` exactly as v4 did;
+v6's *"limit automatic caching to npm"* constrains the default and nothing else,
+which was the likely reading all along. Writing it down because the next person
+to bump this action will find the same release note and hesitate over the same
+sentence, and the answer is now measured rather than inferred: **explicit
+`cache: pnpm` survives, provided `pnpm/action-setup` still runs first.**
 
 ### Gate
 
