@@ -163,6 +163,7 @@ Generated documents, for the dashboard (the integrator surface is `/v1/documents
 | --- | --- | --- | --- |
 | `GET` | `/api/documents` | member | The newest 50 for the company, each with a presigned `download_url` minted per read; `page_count` on a `carousel` row |
 | `GET` | `/api/documents/:id/pages/:page` | member | One slide of a carousel as `image/jpeg`, `Cache-Control: private, max-age=3600`. `404` for another company's id, a page under 1 or over `page_count`, or a document with no pages. The dashboard fetches these through its API client rather than an `<img src>`, because a persisted message never carries a presigned image URL (T-G6) |
+| `GET` | `/api/documents/:id/carousel` | member | The manifest beside the slides (T-G7): `caption` assembled as it would be pasted — text, blank line, hashtags — plus `text`, `hashtags`, one `alts` entry per page, and `pages`. Same `Cache-Control` and same tenant boundary as the page route. `404` for another company's id and for any format that is not `carousel`, which is how the approval card decides a proposal is about a post in one request rather than two |
 
 ### Jobs *(only when WhatsApp integration enabled)*
 

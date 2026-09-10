@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Download, Link2, Trash2 } from "lucide-react";
+import { Check, Copy, Download, Images, Link2, Trash2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useIsAdmin } from "@/store/auth";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { CarouselImage } from "@/features/chat/carousel-image";
+import { useCarousel } from "./use-carousel";
+import { Caption, SlideStrip } from "./slide-strip";
 
 /**
  * Documents, and the links that play them (T-V4).
@@ -119,9 +121,25 @@ export function DocumentsPage() {
                     Share
                   </Button>
                 ) : null}
+                {/* A carousel is not `shareable` — share tokens play a deck,
+                    and there is no deck here — so it needs its own toggle
+                    rather than a second use of the Share button (T-G7). */}
+                {doc.format === "carousel" && doc.page_count ? (
+                  <Button
+                    variant="outline"
+                    aria-expanded={open === slidesKey(doc.id)}
+                    onClick={() =>
+                      setOpen(open === slidesKey(doc.id) ? null : slidesKey(doc.id))
+                    }
+                  >
+                    <Images className="mr-2 h-4 w-4" />
+                    {open === slidesKey(doc.id) ? "Hide slides" : "Slides"}
+                  </Button>
+                ) : null}
               </div>
             </div>
             {open === doc.id ? <SharePanel documentId={doc.id} /> : null}
+            {open === slidesKey(doc.id) ? <SlidesPanel documentId={doc.id} /> : null}
           </div>
         ))}
       </div>
@@ -269,6 +287,39 @@ function SharePanel({ documentId }: { documentId: string }) {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The expand state key for a carousel's slides.
+ *
+ *  One row can open two different panels and `open` holds a single id, so the
+ *  slides get a namespaced key rather than a second piece of state — which also
+ *  keeps the existing rule that opening one panel closes every other. */
+const slidesKey = (id: string) => `slides:${id}`;
+
+/** Every slide and the caption, under the row (T-G7).
+ *
+ *  The caption is the reason this panel exists: the pages have been visible in
+ *  the thread since T-G6, but the words were only ever sent to a channel, so
+ *  somebody posting by hand from the dashboard had to retype them. */
+function SlidesPanel({ documentId }: { documentId: string }) {
+  const { data, isLoading, isError } = useCarousel(documentId);
+
+  if (isLoading) {
+    return <div className="mt-3 h-24 animate-pulse rounded-md bg-muted" aria-hidden />;
+  }
+  if (isError || !data) {
+    return (
+      <p className="mt-3 text-xs text-muted-foreground">
+        The slides for this post could not be read.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3 space-y-2">
+      <SlideStrip documentId={documentId} pages={data.pages} alts={data.alts} />
+      <Caption caption={data.caption} />
     </div>
   );
 }

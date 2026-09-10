@@ -38,6 +38,7 @@ func NewDocumentsHandler(docs domain.DocumentRepository, gen *docgen.Service) *D
 func (h *DocumentsHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/documents", h.list)
 	rg.GET("/documents/:id/pages/:page", h.page)
+	rg.GET("/documents/:id/carousel", h.carousel)
 }
 
 type dashboardDocument struct {
@@ -138,4 +139,61 @@ func (h *DocumentsHandler) page(c *gin.Context) {
 	// reload inside the hour costs nothing and a reload after it is one read.
 	c.Header("Cache-Control", "private, max-age=3600")
 	c.Data(http.StatusOK, "image/jpeg", body)
+}
+
+// carouselResponse is what the approval card and the documents row need to show
+// a post before it is published (T-G7): the slides are N page requests, so this
+// carries the words instead — the caption exactly as it would be pasted, its
+// parts kept separate for a UI that wants to style them, and one alt per page.
+type carouselResponse struct {
+	// Caption is CaptionText's output: the text, a blank line, the hashtags.
+	// Precomputed here rather than joined in the browser so "Copy caption"
+	// copies the same string a channel was sent, rather than a second
+	// assembly of it that can drift.
+	Caption  string   `json:"caption"`
+	Text     string   `json:"text,omitempty"`
+	Hashtags []string `json:"hashtags,omitempty"`
+	Alts     []string `json:"alts,omitempty"`
+	Pages    int      `json:"pages"`
+}
+
+// carousel is `GET /api/documents/:id/carousel`: the manifest beside the pages.
+//
+// Company-scoped by the query for h.page's reason. A document that is not a
+// carousel is a not-found rather than an empty body, because the caller asking
+// for one has already decided from the row's format that this is a post.
+func (h *DocumentsHandler) carousel(c *gin.Context) {
+	ctx := c.Request.Context()
+	doc, err := h.docs.GetForCompany(ctx, companyID(c), c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+	if h.gen == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "document contents are not available on this deployment"})
+		return
+	}
+	m, err := h.gen.LoadManifest(ctx, doc)
+	if errors.Is(err, domain.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "this document is not a carousel"})
+		return
+	}
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id":  doc.CompanyID,
+			"document_id": doc.ID,
+		}).Error("carousel manifest read failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "manifest could not be read"})
+		return
+	}
+	// Private for the page route's reason: a caption is the tenant's copy, and
+	// a shared cache must not hand it to the next session.
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.JSON(http.StatusOK, carouselResponse{
+		Caption:  docgen.CaptionText(m),
+		Text:     m.Caption,
+		Hashtags: m.Hashtags,
+		Alts:     m.Alts,
+		Pages:    m.Pages,
+	})
 }

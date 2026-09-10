@@ -384,3 +384,54 @@ database; and the guardrail clause, which this ticket makes more pressing —
 *"buatkan promo diskon"* is further from *"a social post built from their
 figures"* than a carousel was.
 
+
+## 10. `T-G7` — the approval card shows the post, 2026-09-10
+
+The last of phase 1's neighbours, and the one the cut order put fourth. `T-G8`
+will put *"Publish a 6-slide carousel to @toko_contoh"* on an approval card, and
+a human approving a post has to see the post.
+
+**The ticket says FE and it could not be.** `T-G6` stored the slides and the
+manifest together, and the pages had a route from the day they were written —
+`GET /api/documents/:id/pages/:n`. The manifest did not. `CarouselManifest` was
+a Go type read by the code that wrote the announcement and by nothing else, so
+the caption existed, travelled to WhatsApp, and was unreachable from the
+dashboard. A card cannot render a caption the API never serves.
+
+So the ticket grew a backend half: `docgen.Service.LoadManifest`, and
+`GET /api/documents/:id/carousel` returning `caption`, `text`, `hashtags`,
+`alts` and `pages`. `caption` is `CaptionText`'s output — text, blank line,
+hashtags — assembled server-side rather than in the browser, so "Copy caption"
+copies the string a channel was actually sent instead of a second assembly of
+the same parts that can drift from it.
+
+**The route doubles as the format check.** It answers 404 for every format that
+is not `carousel`, which is what lets the approval card decide *"this proposal
+is about a post"* in one request rather than two. That is also how the ticket's
+second acceptance line is met: a card for any other action kind asks for nothing
+and renders exactly as it did.
+
+Same tenant boundary as the page route — `GetForCompany`, so another company's
+id is a not-found rather than a comparison somebody has to remember — and the
+same `Cache-Control: private`, because a caption is the tenant's copy.
+
+**On the dashboard**, `SlideStrip` and `Caption` are now components rather than
+a className on a markdown paragraph override, which is all the strip was: the
+chat could draw one and nothing else could. The card renders them above the
+decision, not inside it, because `DecisionCard`'s `note` is a `<p>` and a strip
+is flow content that may not sit in one. The documents page gets its own toggle
+— a carousel is not `shareable`, since share tokens play a deck and there is no
+deck here — and that is where "Copy caption" lives.
+
+Deliberately not editable, per `T-10`: a proposal is approved or refused, not
+amended.
+
+**Gate.** `go test ./internal/transport/http/handlers/` — the caption assembles
+with no doubled `#`, a pdf and a missing document are both 404, and another
+tenant's carousel is 404. `vitest src/features/actions/approval-card.test.tsx` —
+three slides with their alts and the caption above the Approve button, no
+request at all for an `http_action`, and a plain card when the manifest 404s.
+`pnpm --filter dashboard build && lint` clean.
+
+**Owed:** the live turn, with a real carousel behind a real proposal —
+[`live-gate-backlog.md`](live-gate-backlog.md) §2.

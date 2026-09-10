@@ -687,9 +687,30 @@ without a spec.
 
 ---
 
-#### `T-G7` The approval card and the documents page show what will be posted
-**Repo:** FE · **Size:** 0.5d · **Deps:** `T-G6` · **Priority:** P1
+#### ~~`T-G7` The approval card and the documents page show what will be posted~~ — **built 2026-09-10**
+**Repo:** FE **+ BE** · **Size:** 0.5d · **Deps:** `T-G6` · **Priority:** P1
 **Migration:** none
+
+> **Status, 2026-09-10. The ticket says FE and it could not be.** `T-G6` stored
+> the manifest beside the pages, but `CarouselManifest` was a Go type read by
+> the code that wrote the channel announcement and by nothing else — so the
+> caption existed, went to WhatsApp, and had no route. A card cannot render a
+> caption the API never serves. Added: `docgen.Service.LoadManifest` and
+> `GET /api/documents/:id/carousel`, member-classified, same tenant boundary and
+> same `Cache-Control: private` as the page route.
+>
+> The route **doubles as the format check** — 404 for every format that is not
+> `carousel` — which is how the card decides a proposal is about a post in one
+> request, and how the second acceptance line is met: any other action kind asks
+> for nothing and renders exactly as before. On the dashboard, `SlideStrip` and
+> `Caption` are components now rather than a className on a markdown paragraph
+> override, which is all the strip had ever been.
+>
+> Gated: three Go tests (assembly with no doubled `#`, both 404s, cross-tenant)
+> and three vitest cases (slides and caption above Approve, no request for an
+> `http_action`, plain card on a 404). The live turn is owed
+> ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §2,
+> [`../coverage/social-carousel.md`](../coverage/social-carousel.md) §10).
 
 ##### Why
 `T-G8` will put "Publish a 6-slide carousel to @toko_contoh" on an approval

@@ -13,6 +13,8 @@ import { DecisionCard } from "@/components/ui/decision-card";
 import { useAuthStore } from "@/store/auth";
 import { useComposerStore } from "@/store/composer";
 import { useDecideAction, usePendingActions } from "./use-actions";
+import { useCarousel } from "@/features/documents/use-carousel";
+import { Caption, SlideStrip } from "@/features/documents/slide-strip";
 
 /** describe is the sentence the approver reads. It comes from the backend, which
  *  builds it with the action's own Describe — the same code that knows what
@@ -27,6 +29,46 @@ import { useDecideAction, usePendingActions } from "./use-actions";
  *  the backend's sentence. */
 function describe(inv: ActionInvocation): string {
   return inv.description || inv.action_kind;
+}
+
+/** The document a proposal is about, if it names one (T-G7).
+ *
+ *  `params_redacted` is whatever the action kind put there, so this reads one
+ *  key defensively rather than typing the union: a kind that carries no
+ *  document — every kind that exists today except a publish — yields null and
+ *  the card is untouched. A uuid shape is required because the value goes into
+ *  a request path. */
+const UUID = /^[0-9a-fA-F-]{36}$/;
+
+function documentIdOf(inv: ActionInvocation): string | null {
+  const params = inv.params_redacted;
+  if (!params || typeof params !== "object") return null;
+  const id = (params as Record<string, unknown>).document_id;
+  return typeof id === "string" && UUID.test(id) ? id : null;
+}
+
+/** The post itself, above the buttons that authorise it (T-G7).
+ *
+ *  A human approving "publish a 6-slide carousel" must see the six slides and
+ *  the caption, not a sentence counting them — the difference between an
+ *  approval and a rubber stamp. Nothing renders until the manifest resolves,
+ *  and a document that is not a carousel 404s and renders nothing at all, so a
+ *  card for any other action kind is exactly what it was.
+ *
+ *  Deliberately read-only: the caption is not editable here, because T-10's
+ *  model is that a proposal is approved or refused rather than amended. */
+function PostPreview({ documentId }: { documentId: string }) {
+  const { data } = useCarousel(documentId);
+  if (!data || data.pages < 1) return null;
+  return (
+    <div className="space-y-2 rounded-md border border-border p-2">
+      <p className="text-xs font-medium text-muted-foreground">
+        {data.pages} slide{data.pages === 1 ? "" : "s"} to be posted
+      </p>
+      <SlideStrip documentId={documentId} pages={data.pages} alts={data.alts} />
+      <Caption caption={data.caption} />
+    </div>
+  );
 }
 
 /** ApprovalCard is the inline propose→approve→reject control the agent's
@@ -56,6 +98,7 @@ export function ApprovalCard({ invocation }: { invocation: ActionInvocation }) {
   const me = useAuthStore((s) => s.user);
   const [error, setError] = useState<string | null>(null);
   const settled = invocation.status !== "proposed";
+  const docId = documentIdOf(invocation);
   // can_decide comes from the backend, which computes it from the same
   // allowed_roles the decide endpoint enforces — a role check written here
   // would be a second copy of a per-company rule, and it would be wrong for
@@ -112,6 +155,11 @@ export function ApprovalCard({ invocation }: { invocation: ActionInvocation }) {
           </span>
         </p>
       )}
+
+      {/* Above the card, not inside it: DecisionCard's `note` renders in a <p>,
+          and a slide strip is flow content that may not sit in one. It reads in
+          the right order anyway — what will be posted, then the choice. */}
+      {docId && <PostPreview documentId={docId} />}
 
       <DecisionCard
         aria-label="Action approval"

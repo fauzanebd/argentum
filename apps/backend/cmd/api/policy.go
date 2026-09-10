@@ -406,6 +406,13 @@ var apiPolicy = middleware.RolePolicy{
 	// document the staff asked for, served to the session rather than as a
 	// presigned image URL that a persisted message would outlive.
 	"GET /api/documents/:id/pages/:page": domain.RoleMember,
+	// The caption beside those slides (T-G7). Member for the same reason and
+	// with one more: this is what the approval card reads to show a post before
+	// somebody authorises it, and whether a member may *decide* an action is
+	// already settled per company per kind by `company_actions.allowed_roles`.
+	// Making the preview admin-only would leave a member who is allowed to
+	// approve a post approving it blind.
+	"GET /api/documents/:id/carousel": domain.RoleMember,
 
 	"GET /api/documents/:id/shares":             domain.RoleAdmin,
 	"POST /api/documents/:id/shares":            domain.RoleAdmin,

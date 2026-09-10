@@ -505,6 +505,29 @@ func (s *Service) LoadPage(ctx context.Context, doc *domain.Document, page int) 
 	return body, nil
 }
 
+// LoadManifest reads a carousel's manifest — the caption, the hashtags and the
+// per-page alt text (T-G7).
+//
+// The pages were readable from the moment T-G6 stored them; the words beside
+// them were not, which is why the approval card could show a post and not the
+// text of it. Same refusals as LoadPage, and for the same reason: a document
+// that is not a carousel has nothing at this path, so it is a not-found rather
+// than an empty manifest a caller has to tell apart from a caption nobody wrote.
+func (s *Service) LoadManifest(ctx context.Context, doc *domain.Document) (*CarouselManifest, error) {
+	if s == nil || doc == nil || doc.Format != domain.DocumentFormatCarousel {
+		return nil, domain.ErrNotFound
+	}
+	body, err := s.storage.DownloadKey(ctx, ManifestKey(doc.StorageKey))
+	if err != nil {
+		return nil, fmt.Errorf("read carousel manifest: %w", err)
+	}
+	var m CarouselManifest
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, fmt.Errorf("parse carousel manifest: %w", err)
+	}
+	return &m, nil
+}
+
 // PresignPage issues a download URL for one page of a carousel, valid for
 // PresignTTL — the same clock as the document's own link (T-G6, finding 6).
 //
