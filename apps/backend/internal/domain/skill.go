@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-// A skill is a tenant-authored, named procedure with a stated trigger (T-K1).
+// A Skill is a tenant-authored, named procedure with a stated trigger (T-K1).
 //
 // Four fields carry the design. `Name` and `WhenToUse` are the only parts that
 // travel in the system prompt — one index line per skill, every turn (T-K3).

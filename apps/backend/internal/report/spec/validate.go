@@ -111,7 +111,14 @@ func (d *Document) Validate() error {
 		// is the section that says so, and no record has ever carried one.
 		// The video keeps the narrower test — a promo clip is a format
 		// decision nobody has asked for, and this is not the ticket to take it.
-		if !Analytical(d) && !(d.Format == "carousel" && HasAnnouncement(d)) {
+		//
+		// Named rather than inlined into the condition below, which is not a
+		// style preference: every way of writing this test as one expression
+		// puts a compound inside a negation, and staticcheck's QF1001 rewrites
+		// it — in whichever direction it is currently not in. A named predicate
+		// says what the concept is and ends the argument.
+		announcement := d.Format == "carousel" && HasAnnouncement(d)
+		if !Analytical(d) && !announcement {
 			medium := "video"
 			addendum := ""
 			if d.Format == "carousel" {

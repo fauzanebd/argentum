@@ -112,11 +112,11 @@ func TestRenderStillsRefusesAVideoPlan(t *testing.T) {
 // caller retries rather than being told its spec is wrong.
 func TestADoneStillsJobWithNoPagesIsUnavailable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost:
+		switch r.Method {
+		case http.MethodPost:
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"job_id":"33333333-3333-3333-3333-333333333333"}`))
-		case r.Method == http.MethodGet:
+		case http.MethodGet:
 			_, _ = w.Write([]byte(`{"state":"done","progress":1,"pages":0}`))
 		default:
 			_, _ = w.Write([]byte(`{}`))

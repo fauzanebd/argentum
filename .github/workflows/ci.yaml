@@ -33,7 +33,7 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       types: ${{ steps.filter.outputs.types }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -119,10 +119,10 @@ jobs:
       run:
         working-directory: apps/backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: apps/backend/go.sum
@@ -132,17 +132,6 @@ jobs:
 
       - name: Vet
         run: go vet ./...
-
-      # golangci-lint also runs govet, so the step above is strictly redundant.
-      # It stays because it is two seconds and it fails with a plain compiler
-      # message; a vet finding should not arrive dressed as a lint finding.
-      # The config is apps/backend/.golangci.yml — five linters plus a gofmt
-      # check, deliberately narrow (T-02).
-      - name: Lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: v2.12
-          working-directory: apps/backend
 
       - name: Test
         run: go test -race -count=1 ./...
@@ -154,6 +143,32 @@ jobs:
           go build -o /tmp/api     ./cmd/api
           go build -o /tmp/worker  ./cmd/worker
           go build -o /tmp/discord ./cmd/discord
+
+      # Lint runs LAST, and the ordering is the whole point.
+      #
+      # It used to sit between Vet and Test. A step that fails skips every step
+      # after it, so from 2026-08-21 — when a `switch` this repo could have
+      # written either way tripped QF1002 — the backend job never once ran
+      # `go test -race` or built a binary. Three weeks of red builds whose
+      # actual content was "two style findings", with the test gate and the
+      # cmd/discord compile check silently not running behind them, and the
+      # summary line at the top of the job still said what a reader expects it
+      # to say: Backend, failure.
+      #
+      # Correctness gates first, taste last. A style finding still fails the
+      # build — it is below, not removed — but it can no longer decide whether
+      # the tests ran.
+      #
+      # golangci-lint also runs govet, so the Vet step above is strictly
+      # redundant. It stays because it is two seconds and it fails with a plain
+      # compiler message; a vet finding should not arrive dressed as a lint
+      # finding. The config is apps/backend/.golangci.yml — five linters plus a
+      # gofmt check, deliberately narrow (T-02).
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          working-directory: apps/backend
 
   # T-H13. Before this job the pipeline ran `go vet`, `golangci-lint` and
   # `go test -race` and nothing that knew what a CVE is. Three scanners, each
@@ -170,7 +185,7 @@ jobs:
     steps:
       # Full history: the secret scan reads commits, not just the tree, and a
       # shallow clone would pass a repository whose key is one commit back.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -198,7 +213,7 @@ jobs:
 
       - name: Setup Go
         if: needs.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: apps/backend/go.sum
@@ -239,7 +254,7 @@ jobs:
     if: needs.changes.outputs.tokens == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The generators have no dependencies on purpose, so this job installs
       # nothing: node runs them, and Go is here only for the gofmt check inside
@@ -248,7 +263,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: apps/backend/go.sum
@@ -291,7 +306,7 @@ jobs:
     if: needs.changes.outputs.types == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Both toolchains: node runs the generator, Go parses the structs. No
       # pnpm install — the generator has no dependencies, deliberately, so this
@@ -300,7 +315,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: apps/backend/go.sum
@@ -329,9 +344,9 @@ jobs:
       run:
         working-directory: apps/backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: apps/backend/go.sum
@@ -356,7 +371,7 @@ jobs:
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
         with:
@@ -425,9 +440,9 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: apps/backend/go.sum
@@ -534,7 +549,7 @@ jobs:
           - image: argentum-discord
             dockerfile: Dockerfile.discord
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # GHCR_TOKEN, not PAT: publishing images and minting release tags are
       # separate jobs and now hold separate credentials, so one expiring stops

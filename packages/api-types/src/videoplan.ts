@@ -247,11 +247,6 @@ export interface Tone {
   fill: string;
 }
 /**
- * Scene is one beat of the video.
- * Every payload field for every kind lives on this one struct rather than in a
- * union, for the same reason spec.Section does: the shapes are small, the
- * dispatch is one switch, and a renderer that reads a field another kind wrote
- * draws nothing rather than failing.
  * PromoBrand is the promotion card's palette (T-G12).
  * Five colours, all functions of the tenant's accent, so a shop with a green
  * brand gets a green promotion rather than Argentum's red with their logo on
@@ -293,6 +288,13 @@ export interface Image {
    */
   alt?: string;
 }
+/**
+ * Scene is one beat of the video.
+ * Every payload field for every kind lives on this one struct rather than in a
+ * union, for the same reason spec.Section does: the shapes are small, the
+ * dispatch is one switch, and a renderer that reads a field another kind wrote
+ * draws nothing rather than failing.
+ */
 export interface Scene {
   kind: string;
   /**

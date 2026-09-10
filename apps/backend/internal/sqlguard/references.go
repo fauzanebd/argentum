@@ -450,8 +450,8 @@ func splitSQLWords(sql string) []string {
 	}
 	for i := 0; i < len(sql); i++ {
 		ch := sql[i]
-		switch {
-		case ch == '"' || ch == '`' || ch == '[':
+		switch ch {
+		case '"', '`', '[':
 			// A quoted identifier is one token including its quotes, so a name
 			// with a space in it does not become two words — which would make
 			// `FROM "my table"` read as a table called `"my` .
@@ -464,9 +464,10 @@ func splitSQLWords(sql string) []string {
 			// TestTheTwoNormalisersAgree in internal/tools, which exists
 			// because the two sides of this comparison live in two packages.
 			closing := byte('"')
-			if ch == '`' {
+			switch ch {
+			case '`':
 				closing = '`'
-			} else if ch == '[' {
+			case '[':
 				closing = ']'
 			}
 			j := i + 1
@@ -480,9 +481,9 @@ func splitSQLWords(sql string) []string {
 				cur.WriteString(sql[i:])
 				i = len(sql)
 			}
-		case ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r':
+		case ' ', '\t', '\n', '\r':
 			flush()
-		case ch == '(' || ch == ')' || ch == ',' || ch == ';' || ch == '*':
+		case '(', ')', ',', ';', '*':
 			flush()
 			out = append(out, string(ch))
 		default:

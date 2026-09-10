@@ -373,11 +373,33 @@ Both now run in CI via the `web` job.
 
 ## CI gate — what is actually checked
 
+> **Correction, 2026-09-11: the row below was true of the file and false of the
+> pipeline for three weeks.** The `backend` job ran its steps in the order
+> vet → lint → test → build, and a failing step skips every step after it. Lint
+> went red on 2026-08-21 on two `switch` statements staticcheck wanted written
+> as tagged switches, and **from that commit until 2026-09-11 the backend job
+> never once ran `go test -race` or built a binary.** Eleven commits, every one
+> reported as `Backend: failure`, none of them reporting a test result because
+> no test ran. Two runs in the window are green and are not exceptions: they are
+> docs-only commits where `dorny/paths-filter` skipped the backend job entirely.
+>
+> Fixed by ordering rather than by exemption: **Lint now runs last.** A style
+> finding still fails the build; it can no longer decide whether the tests ran.
+> The eight findings themselves are in
+> [`delivery-log.md`](delivery-log.md) Phase 3y, and two of them were not style
+> at all.
+>
+> **What this costs the numbers above:** every "✅ checked" claim on this page
+> between 2026-08-21 and 2026-09-11 was a claim about a step that did not
+> execute. The local gate did run — every delivery-log entry in that window
+> records `go test -race ./...` passing on this machine — so the tree was never
+> unverified, only unverified *by CI*.
+
 `.github/workflows/ci.yaml`, after `T-00b` and `T-02`:
 
 | Job | Fires on | Runs |
 | --- | -------- | ---- |
-| `backend` | `apps/backend/**`, or any tag push | `go vet ./...`, **`golangci-lint run`**, `go test -race -count=1 ./...`, build api + worker + discord |
+| `backend` | `apps/backend/**`, or any tag push | `go vet ./...`, `go test -race -count=1 ./...`, build api + worker + discord, then **`golangci-lint run`** last (see the correction above) |
 | `tokens` | `packages/design-tokens/**`, either generated output, `Makefile` | `make tokens`, `make palette`, then `git diff --exit-code` on the generated files |
 | `deck` | `apps/backend/internal/report/**` | Converts every fixture deck through headless LibreOffice |
 | `web` | `apps/{dashboard,landing,widget}/**`, `packages/**` | `pnpm -r build`, `pnpm -r lint` (dashboard: `tsc` + eslint) |

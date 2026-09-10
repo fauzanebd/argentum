@@ -5308,7 +5308,10 @@ wrong, which is the one failure a drift gate is structurally unable to have an
 opinion about.
 
 **No tool in this repo can see the misplacement**, and it is worth being precise
-about why:
+about why — *corrected the same day by Phase 3y, which found staticcheck saying
+exactly this about two other declarations into a lint step nobody was reading.
+What survives of the paragraph below is the package-clause case; the
+exported-type case was a finding this repo already owned*:
 the file compiles, `gofmt` has no opinion about where a comment sits, and
 staticcheck's ST1000 asks whether a package comment *exists* — one did. The
 check that found it was `go doc`, run once against a package created the day
@@ -5378,6 +5381,176 @@ sitting. What is **held for the owner** is the twelve merged remote branches
 but `origin/pre-monorepo` and `origin/bigref` read as deliberate markers of a
 boundary this repo crossed, and deleting a remote branch is not a thing to
 infer.
+
+## Phase 3y — The lint step that had been switching off the test step (2026-09-11)
+
+CI reported the previous commit as `Backend: failure`. The eight findings behind
+it are twenty minutes of work. **What they had been doing for three weeks is the
+entry.**
+
+### A failing step skips the steps after it
+
+The backend job ran vet → **lint** → test → build. On **2026-08-21**, `efd1c84`
+added `internal/sqlguard/references.go` with two `switch { case ch == … }`
+statements, staticcheck's `QF1002`/`QF1003` asked for tagged switches, and the
+Lint step went red.
+
+Every backend run from that commit to this one shows:
+
+```
+Vet:             success
+Lint:            failure
+Test:            skipped
+Build binaries:  skipped
+```
+
+**Eleven commits, none of which ran `go test -race` in CI and none of which
+built a binary** — including `cmd/discord`, whose build step exists in this
+workflow for one stated reason: *"a compile error in the Discord gateway could
+reach main undetected."* Three weeks in which the thing that step was written to
+prevent was structurally possible again, and the job summary said the same word
+it says for a real test failure.
+
+**The tree was never actually unverified**, and that is the uncomfortable half.
+Every delivery-log entry in the window records `go test -race ./...` passing
+locally, because that is the habit this repo has. So the local gate covered for
+the broken one, which is exactly why nobody looked: the builds were red, the
+work was fine, and red became the colour the badge is.
+
+**Fixed by ordering, not by exemption.** Lint now runs last. A style finding
+still fails the build — it is below the tests, not removed from them — but it
+can no longer decide whether the tests ran. Correctness gates first, taste last.
+
+### Two of the eight were not style
+
+**`videoplan.Scene` had no doc comment and `PromoBrand` had two.** `T-G12`
+inserted `PromoBrand` between `Scene`'s six-line docblock and `type Scene
+struct`, so the comment explaining why every payload field for every kind lives
+on one struct became the second half of `PromoBrand`'s. Caught here as
+`ST1021: comment on exported type PromoBrand should be of the form
+"PromoBrand ..."`.
+
+**`ErrSharePassword` carried three lines about `ErrShareGone`** — a variable
+this file does not declare, explaining why the dashboard share deliberately
+reuses the report player's. Caught as `ST1022`.
+
+**And `Scene`'s had crossed the wire too.** `make types` regenerated
+`packages/api-types/src/videoplan.ts` off the fix: `Scene` — the type
+`packages/motion` draws every frame from — had **no JSDoc at all**, and
+`PromoBrand` carried its two paragraphs about why every payload field lives on
+one struct. That is the second independent instance in one day of a misfiled Go
+doc comment being republished, faithfully, to the TypeScript side. The generator
+has no way to know a comment is on the wrong declaration; it only knows what it
+was handed.
+
+**Both are the defect Phase 3x found in `embedwire` the same morning**, and
+together they correct that entry's conclusion. 3x said no tool in this repo
+could see a misfiled comment, and that `go doc` was a habit rather than a CI
+job. Half right: **staticcheck catches exactly this on an exported type or var**,
+and ST1021/ST1022 had been reporting these two since they landed with `T-D13`
+and `T-G12` in early September — into a step that had already been red since
+August, where a new finding is indistinguishable from the old one.
+
+**That is the compounding cost of a red gate**, and it is worse than the three
+weeks of skipped tests: once a check fails, everything it says afterwards is
+invisible, including things it is saying for the first time. The lint step was
+not silent. It was unread.
+
+`embedwire`'s own case would still have escaped, because its misfiled comment
+landed on the *package* clause, which ST1021/ST1022 do not cover — ST1000 asks
+only whether a package comment exists, and one did.
+
+So the honest rule is narrower and better than 3x's: **a misfiled doc comment on
+an exported type or var is a lint finding this repo already owns and only had to
+read; on a package clause it is not, and that is the case `go doc` is for.**
+
+### And one piece of dead code the decommission left
+
+`unused: func swapHostPort is unused` in `internal/eval/tenant.go`. Its own
+docblock says what it was for: *"Metabase and this process reach the demo
+database by different names."* `T-D15` removed Metabase. The function, its
+comment and its `net/url` import went with it — a lint finding that is really a
+decommission that stopped one file short.
+
+### The other five
+
+`QF1002`/`QF1003` in `sqlguard` (the original break) became tagged switches,
+including an if/else-if on the backtick and bracket delimiters that is now a
+`switch ch` of its own.
+`QF1002` in `stills_test.go` became `switch r.Method`. `ST1021` on
+`domain.Skill` wanted the identifier's own spelling: *"A skill is…"* → *"A Skill
+is…"*.
+
+`QF1001` in `report/spec/validate.go` is the one worth a sentence, because it
+does not have a fixed point. `!Analytical(d) && !(carousel && announcement)`
+trips De Morgan; rewriting it as `!(Analytical(d) || (carousel && announcement))`
+trips De Morgan **in the other direction**. Both spellings put a compound inside
+a negation. Resolved by naming the concept — `announcement := …` on its own line,
+then `!Analytical(d) && !announcement` — which is what the condition meant and
+is the shorter read besides.
+
+### Three layers of the same guard, and none of them was on
+
+The lint step is the third thing that was supposed to catch this, and the other
+two are worth naming because both already existed:
+
+1. **`make check`** is `vet lint test build` — "everything CI runs, locally".
+   Every gate this session ran was `go build && go vet && go test -race`, which
+   is `make check` **minus the lint**. It was never a decision; `golangci-lint`
+   simply was not installed on this machine, and `make lint-go` fails loudly
+   when it is missing, so running the steps by hand quietly skipped it. It is
+   installed now, at the same v2.12.2 the action pins.
+2. **`.githooks/pre-push`** runs `make lint-go` on any push touching
+   `apps/backend/**/*.go`, and its own comment says why: *"a lint failure found
+   after the push costs a round trip through the runner plus a follow-up commit
+   for something `make lint-go` answers in four seconds."* It is enabled per
+   clone with `make hooks`. **`core.hooksPath` was unset in this clone**, so the
+   hook has never run. Enabled now.
+
+A guard that has to be switched on is a guard that is off. Recording it rather
+than redesigning it: the hook is opt-in on purpose, since a repo cannot force a
+hook onto a clone, and `make hooks` is one line in a README somebody has to
+read.
+
+### The Node 20 notice in the same log
+
+`actions/checkout@v4`, `actions/setup-go@v5` and `golangci/golangci-lint-action@v8`
+target Node 20, which GitHub is deprecating; the runner is already forcing them
+onto Node 24, so nothing is broken today. Bumped to `v5`, `v6` and `v9` — the
+first major of each that ships a Node 24 runtime — across all three workflow
+files.
+
+**`actions/setup-node@v4` and `actions/setup-python@v5` were deliberately left.**
+`setup-node@v6`'s stated breaking change is *"limit automatic caching to npm"*,
+and two jobs here pass `cache: pnpm`. The reading that it only affects the
+*default* is probably right and it is not verifiable from this machine, and a
+guess about a caching change is how a green pipeline turns red for a reason
+nobody can reproduce locally. Their jobs will keep printing the notice until
+somebody runs it.
+
+### Gate
+
+`golangci-lint run ./...` — **0 issues**, reproduced locally on the same
+v2.12.2 the action installs, which this machine had never had until today.
+`go build`, `go vet`, `go test -race` — **all 90 packages, 0 failures**, but it
+took four attempts and the reason is worth a line for whoever runs it next:
+`go test -race ./...` across the whole tree was **killed three times for memory**
+on this box (2 CPUs, 7.4 GiB, sharing the machine with a k3s server and a
+mysqld). A killed run and a failed run look identical in a log until you read
+the exit line. Finished by running the tail of the tree at `-p 1` and
+`internal/report/videoplan` — 208s alone, 466s under contention — on its own; the `sqlguard`, `spec` and `eval` edits are the only three that change
+code rather than comments, and `sqlguard`'s tagged switch is covered by
+`TestTheTwoNormalisersAgree`, which exists because the two sides of that
+comparison live in two packages.
+
+`make types --check` failed and was regenerated: `domain.ts` for the `Skill`
+identifier, `videoplan.ts` for `Scene`'s recovered JSDoc — the second time in
+two entries that a change whose whole content is a comment moved the generated
+TypeScript. `actionlint` clean on all three workflow files.
+
+**Owed:** a green run. The ordering fix cannot be verified from here — the only
+place a GitHub Actions job runs is GitHub Actions, and the previous eleven
+attempts are the argument for saying so out loud rather than assuming.
 
 ## Feature velocity, measured
 

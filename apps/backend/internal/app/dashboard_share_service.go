@@ -150,10 +150,11 @@ func (s *DashboardShareService) Revoke(ctx context.Context, companyID, shareID s
 	return s.shares.Revoke(ctx, companyID, shareID)
 }
 
-// ErrShareGone is deliberately the report player's, not a second one: the two
-// surfaces answer a bad token identically, and one variable makes that a fact
-// rather than a coincidence two handlers have to keep agreeing on.
-//
+// This file declares no ErrShareGone. It uses the report player's
+// (report_share_service.go), deliberately and not by accident: the two surfaces
+// answer a bad token identically, and one variable makes that a fact rather
+// than a coincidence two handlers have to keep agreeing on.
+
 // ErrSharePassword is returned when a link needs a password and the one
 // supplied was absent or wrong.
 //

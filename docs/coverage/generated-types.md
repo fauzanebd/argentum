@@ -336,15 +336,24 @@ output matched it, and there is no drift. A drift gate cannot have an opinion
 about its input — which is the same boundary the section above records from the
 other direction, where the compiler caught what the generator could not.
 
-**Nothing else caught it either**, and the reason is worth writing down so
-nobody files a linter ticket for it: the file compiles, `gofmt` has no opinion
-about where a comment sits, and staticcheck's `ST1000` asks only whether a
-package comment *exists* — one did. The check that found it was `go doc`, run
+**Nothing else caught it either** — but only because it was the *package*
+clause. Written here first as "no linter can see this", and corrected within the
+day: staticcheck's `ST1021`/`ST1022` catch a misfiled doc comment on an exported
+**type or var** precisely, and were already reporting two other instances of it
+in this tree (`videoplan.PromoBrand`, `app.ErrSharePassword`) into a lint step
+that had been red since August and unread since
+([`delivery-log.md`](delivery-log.md) Phase 3y).
+
+What is genuinely uncovered is the package clause and nothing else: the file
+compiles, `gofmt` has no opinion about where a comment sits, and `ST1000` asks
+only whether a package comment *exists* — one did. The check that found it was `go doc`, run
 once against a package that was one day old.
 
-**The habit, not the rule:** read `go doc ./internal/...` on a package the first
-time you create one. It takes five seconds and it is the only view that shows
-what the generator is about to copy.
+**The rule, in two halves:** a misfiled doc comment on an exported type or var
+is a lint finding — run `make check`, which includes it, rather than the three
+commands by hand. On a **package clause** it is not, and there `go doc` is the
+only view that shows what the generator is about to copy. Read it once on a
+package the first time you create one; it takes five seconds.
 
 ## Limits
 

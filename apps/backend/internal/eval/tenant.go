@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -391,26 +390,6 @@ func ensurePeopleDatabase(demoDSN string) (string, error) {
 		return "", fmt.Errorf("seed %s: %w", secondSourceDB, err)
 	}
 	return peopleDSN, nil
-}
-
-// swapHostPort replaces host:port in a postgres URL, leaving credentials,
-// database and query string alone.
-//
-// Needed because Metabase and this process reach the demo database by
-// different names. The harness runs on the host and connects to
-// localhost:5433; Metabase runs inside compose and must be handed
-// postgres_demo:5432, or it rejects the registration with "check your host
-// settings" and every chart case fails on a tool that never worked.
-func swapHostPort(dsn, hostPort string) string {
-	if hostPort == "" {
-		return dsn
-	}
-	u, err := url.Parse(dsn)
-	if err != nil {
-		return dsn
-	}
-	u.Host = hostPort
-	return u.String()
 }
 
 // swapDatabase replaces the database name in a postgres URL.
