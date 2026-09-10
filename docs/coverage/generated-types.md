@@ -237,8 +237,47 @@ One generator limit surfaced doing it: **tygo renders `15 * time.Second` as
 worth knowing before adding a package whose types sit beside a duration
 constant.
 
-The current emitted set is `domain.ts`, `api.ts`, `events.ts`, `dashboard.ts`,
-`dashboardspec.ts`, `videoplan.ts` and `webhooks.ts`.
+The current emitted set is `domain.ts`, `api.ts`, `events.ts`, `embed.ts`,
+`dashboard.ts`, `dashboardspec.ts`, `doctable.ts`, `docparse.ts`, `videoplan.ts`
+and `webhooks.ts`.
+
+## The embed contract (2026-09-10), and what the last hand-written types cost
+
+`apps/widget` was never made a consumer of this package. It kept two
+hand-written interfaces for `/api/embed`, and the ticket's own thesis held
+exactly: **both were wrong, and neither failed anywhere.**
+
+- `WidgetConfig` described the inner object of a `{config, agents}` envelope, so
+  the widget read the tenant's greeting and starter prompts off the envelope and
+  got `undefined` for both — for a month, in front of every tenant who had
+  configured either.
+- `Message` described four fields of a row the route was serving whole, so
+  nobody had to look at the other six. Two of them were the agent's tool calls
+  and the tool-role rows carrying the truncated SQL, the `source_id` and the
+  table names of every turn.
+
+Both are in [`widget.md`](widget.md) §6 with the fix. What belongs *here* is
+what it says about this ticket:
+
+**"Extend it when X lands" is not a mechanism.** The backlog row asking for
+these types was written when `T-02b` shipped and named its own trigger —
+`T-19`/`T-20` adding embed types. They landed 2026-08-09. The row was still
+open on 2026-09-10, and nothing in between could have said so, because the cost
+of not doing it is a hand-written type that compiles.
+
+**The surface got a package, and that closed the last bullet under Limits for
+one route group.** `internal/transport/http/embedwire` is generated to
+`src/embed.ts`, and the handlers now return its structs rather than `gin.H` —
+so on this surface the chain really is *route → Go struct → TypeScript*, and a
+handler that returns something else does not compile. The other forty `/api`
+envelopes are unchanged.
+
+**And a mechanical finding worth writing down: tygo keys `packages:` by import
+path.** Two entries naming the same Go package silently produce one file — no
+warning, no error, exit 0, and the second `output_path` simply never appears.
+Found by writing that exact config and getting no file. It means *"generate a
+second view of one package"* is not a thing this generator can do, and a surface
+that wants its own output file needs its own Go package.
 
 ## Limits
 
@@ -257,3 +296,6 @@ The current emitted set is `domain.ts`, `api.ts`, `events.ts`, `dashboard.ts`,
   Go struct → TypeScript, not route → TypeScript. A handler that returns a
   different struct than the dashboard expects is still a runtime surprise;
   `/v1` has that covered by `T-A4`'s schema-parity test, and `/api` does not.
+  **This limit cost a month of every tenant's widget configuration** before
+  2026-09-10 — see above. It is now closed for `/api/embed`, whose handlers
+  return the generated structs, and open for the other forty routes.

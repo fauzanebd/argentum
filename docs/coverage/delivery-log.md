@@ -4973,6 +4973,92 @@ failure in the sitting. `pnpm -r build` and `pnpm -r lint` clean; dashboard test
 watcher path, and `npm publish` plus the cold-integration timing
 ([`live-gate-backlog.md`](live-gate-backlog.md) §1a, §2, §5).
 
+## Phase 3u — The backlog row nobody re-read, and the two P1s behind it (2026-09-10)
+
+The roadmap sweep earlier the same day found no unblocked build work left: every
+track built, the remainder owner-blocked, policy-blocked, or a live gate this
+machine cannot run. What it did **not** read was `plan/backlog.md`'s hygiene
+table, where two triggers had fired and nobody had noticed.
+
+One of them was *"Generated TS types for the `/api/embed` contract — extend
+`T-02b` when `T-19`/`T-20` add embed types."* They landed on 2026-08-09. The row
+was estimated at **0.5h**. It was not 0.5h, because `apps/widget` — the one app
+in this repo never made a consumer of `@argentum/api-types` — had two
+hand-written interfaces for that surface and **both were wrong**.
+
+### The tenant's greeting has never reached anybody (P1)
+
+`GET /api/embed/config` answers `{config, agents}`. The widget's hand-written
+`WidgetConfig` described the *inner* object, so `config.greeting` and
+`config.suggested_prompts` were read off the envelope, where neither exists.
+Both fall back cleanly — `greeting || "Ask me about your data."`,
+`prompts ?? []` — which is exactly what an unconfigured tenant is supposed to
+see. **So every tenant who filled in Settings → Widget got the product behaving
+as though they had not, from the day `T-23` shipped.**
+
+Nothing could have said so. The Go test asserts `body["config"]["greeting"]` and
+passes. §4a's `omitempty` fix hardened the inner object's contract one level
+below where the client was reading. The Settings preview is drawn from the form,
+never from the route, so the one screen an admin would check does not go through
+this path. And the live gate of 2026-08-10 **did** run an arm for this and wrote
+"T-23's config reaching a live session with no redeploy" — it read the response
+body and never looked at the panel. That row is corrected in
+[`live-gate-backlog.md`](live-gate-backlog.md) §1a.
+
+### The widget transcript was serving the query log (P1)
+
+`/threads/current` and `/threads/:id/messages` returned `[]*domain.Message`:
+every row, every column. That includes the tool-role rows `T-Q6` writes as the
+agent's memory, whose content is the truncated SQL, the `source_id` and the
+tables each turn touched, plus `tool_calls`, `metadata` and the token counts on
+the assistant row. A visitor of a tenant's website — no account here, a page we
+do not control — could read all of it out of a network tab. The widget renders
+`role` and `content` and filters to user/assistant, which is why nobody saw it.
+
+**This is `T-D13` again, six days later.** There a public share link served the
+panel SQL; here a widget transcript served the query log. Both routes were
+carefully reviewed for *who may call them* and neither for *what a valid caller
+is handed*. Fixed the same way: a projection (`embedwire.Transcript`) that keeps
+four fields and two roles. Proven failing first — the test printed the `SELECT`,
+`fact_sales`, `dim_date` and `src-9f1` straight out of the response body.
+
+### The finding: tygo keys its config by import path
+
+The types were going to be a second entry for `handlers`, beside the dashboard's
+`wire.go`. tygo emitted **nothing** for it — no file, no warning, exit 0 — and
+`api.ts` came out unchanged. Two entries naming one Go package silently collapse
+to one. So a surface that wants its own generated file needs its own Go package,
+and `internal/transport/http/embedwire` is now that package. The argument for
+the boundary was already there and this only made it mandatory: the dashboard's
+wire types answer to staff and these answer to a stranger, and
+`domain.WidgetConfig`'s test — *would we print this in the tenant's page
+source?* — is better held by a compiler than by a comment between two structs.
+
+### The pattern, continued
+
+3s was four commands documented as the gate and never run. 3t was an artifact
+documented as shippable and never shipped. This is **a contract documented on
+one side and never compared to the other**: the server was right every time,
+every server-side test passed, and the client had been reading a different
+document for a month. The three are the same shape at three distances — the
+gate, the artifact, and now the interface between two halves that each pass
+alone.
+
+Two wire changes, both narrowing: `is_new` on the thread is gone (nothing ever
+set it true, nothing ever read it) and an empty `messages` is `[]` rather than
+`null` — §4a's own rule, applied to the surface §4a left alone.
+
+### Gate
+
+`go build`, `go vet`, `go test -race ./...` — 66 packages, 0 failures. Four new
+tests in `handlers`: the leak proven failing first, the transcript row's whole
+key set (so a field added to `domain.Message` cannot arrive here for free), the
+empty transcript as an array, and the config envelope with `agents` beside
+`config`. `pnpm -r lint` and `pnpm -r build` clean, dashboard tests 20, the app
+bundle **33.3 KB of 80 — unchanged**, because a generated type erases to
+nothing. Owed: the browser arm, which is the only one that proves the greeting
+from outside ([`live-gate-backlog.md`](live-gate-backlog.md) §1a).
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

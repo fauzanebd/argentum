@@ -10,6 +10,7 @@
     "./videoplan": "./src/videoplan.ts",
     "./dashboard-spec": "./src/dashboardspec.ts",
     "./dashboard": "./src/dashboard.ts",
+    "./embed": "./src/embed.ts",
     "./doctable": "./src/doctable.ts",
     "./docparse": "./src/docparse.ts"
   },

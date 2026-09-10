@@ -203,6 +203,12 @@ launcher and position.
 Config reaches a deployed widget without a redeploy, because `GET
 /api/embed/config` is a live read.
 
+> **It reached the route and stopped there, from 2026-08-10 to 2026-09-10.**
+> The sentence above was true and the feature was not: the widget read the
+> envelope as though it were the config, so `greeting` and `suggested_prompts`
+> were `undefined` on every load and every tenant got Argentum's fallback string
+> and no starter buttons. §6 has it.
+
 ### 4a. A test caught `omitempty` eating the contract
 
 `suggested_prompts` was `json:"...,omitempty"`, so a tenant with no prompts sent
@@ -331,3 +337,117 @@ pleased with.** Both defects this phase produced were found by tests — `T-19`'
 a table-driven test already covered. The gate earned its place on the
 migrations, the audit rows and the two-visitor isolation, none of which any test
 could reach.
+
+---
+
+## 6. 2026-09-10 — the last hand-written types, and the two defects behind them
+
+`apps/widget` was the one app in this repo that had never been made a consumer
+of `@argentum/api-types`. It hand-wrote two interfaces for the `/api/embed`
+surface, and **both of them were wrong** — which is the T-02b argument arriving
+three weeks late, in the app it had never been applied to.
+
+The trigger was a backlog row, not a bug report: *"Generated TS types for the
+`/api/embed` contract — extend `T-02b` when `T-19`/`T-20` add embed types"*
+([`../plan/backlog.md`](../plan/backlog.md) §Hygiene). `T-19` and `T-20` added
+them on 2026-08-09. Nobody extended it, and nothing failed, because a
+hand-written type that disagrees with its server compiles perfectly.
+
+### 6a. The tenant's greeting never reached anybody (P1 for T-23)
+
+`GET /api/embed/config` answers `{config: {…}, agents: […]}`. The widget's
+hand-written `WidgetConfig` described the **inner** object, and
+`client.config()` was typed as returning it — so `config.greeting` and
+`config.suggested_prompts` read off the envelope, where neither exists.
+
+The failure is silent in both directions. `greeting || "Ask me about your data."`
+falls back to Argentum's own string, which is exactly what an unconfigured
+tenant is supposed to see; `suggested_prompts ?? []` renders no buttons, which
+is exactly what a tenant with no prompts is supposed to get. **Every tenant who
+filled in Settings → Widget saw the product behave as though they had not.**
+
+Three separate things guaranteed nobody would notice:
+
+1. The Go test asserted `body["config"]["greeting"]` — the server was right.
+2. §4a's `omitempty` fix made the *inner* object's contract airtight, one level
+   below where the client was reading.
+3. The preview in Settings is drawn from the form (§4), never from the route, so
+   the one screen an admin would check it on does not go through this path.
+
+Fixed at the type: `config()` returns the generated `ConfigResponse` and the
+caller reads `.config`. A hand-written type could express the bug; the generated
+one cannot compile it.
+
+### 6b. The transcript carried the agent's working memory (P1)
+
+`GET /api/embed/threads/current` and `GET /api/embed/threads/:id/messages`
+returned `[]*domain.Message` — every row of the thread with every column. That
+includes the **tool-role rows `T-Q6` writes as the agent's memory**, whose
+content is `app.EncodeDigests(...)`: the truncated SQL, the `source_id`, and the
+table names each turn touched. Plus `tool_calls`, `metadata`, `tokens_in` and
+`tokens_out` on the assistant row.
+
+So a visitor of a tenant's website — no Argentum account, a page we do not
+control — could open a network tab and read the tenant's warehouse vocabulary
+and query log. The widget renders only `role`, `content` and the user/assistant
+filter, which is why it was invisible for a month.
+
+**This is `T-D13`'s finding in a second costume.** There, a public share link
+served the panel SQL and the fix was `Dashboard.PublicCopy()`; here a widget
+transcript served the query log and the fix is `embedwire.Transcript`. Both
+routes were reviewed for *who may call them* — the token, the `embed_user_ref`
+scoping — and neither was reviewed for *what a valid caller is handed*. That
+question has now been asked twice and answered the same way twice, which is an
+argument for asking it of every remaining public-facing read.
+
+The role filter is the load-bearing half, not the column list: a tool row's
+whole *content* is the digest, so dropping `metadata` and keeping the row would
+have published the SQL anyway.
+
+### 6c. `internal/transport/http/embedwire`
+
+The wire types are their own Go package rather than a second file beside the
+dashboard's `handlers/wire.go`, for one argued reason and one mechanical one:
+
+- **Argued:** the two surfaces answer to different readers and only one of them
+  is a member of staff. `domain.WidgetConfig`'s test — *would we print this in
+  the tenant's page source?* — now applies to a package boundary the compiler
+  can see, instead of to a comment between two structs.
+- **Mechanical, and it settled it either way:** tygo keys `packages:` by import
+  path, so two entries naming `handlers` silently generate one file and drop the
+  other. This was found by writing the entry and getting no output and no error.
+
+Generated to `packages/api-types/src/embed.ts`, exported as
+`@argentum/api-types/embed`, deliberately **not** barrelled — `Message`,
+`Thread` and `Agent` are three names `domain` already owns, the same collision
+rule `webhooks`, `videoplan` and `doctable` are kept out of the barrel for.
+
+### 6d. Two wire changes, both narrowing
+
+- **`is_new` on the thread is gone.** Nothing ever set it to `true`, and no
+  client ever read it. `is_new_thread` on the send receipt, which is the real
+  signal, is untouched.
+- **`messages` is `[]` rather than `null` when empty** — §4a's rule, applied to
+  the surface §4a's own fix left alone.
+
+The header title also stopped branching on `config?.greeting`. Because the
+greeting is defaulted server-side, that condition read `false` for every tenant
+before 6a's fix and would read `true` for every tenant after it; neither is a
+decision anybody made, so the title is the product's name and the comment says
+why.
+
+### 6e. Gate
+
+`go build`, `go vet`, `go test -race ./...` clean. Four new tests in
+`handlers`: the leak, proven failing first (it printed the `SELECT`, the table
+names and the `source_id` in the response body); the transcript row's **whole**
+key set, so a field added to `domain.Message` cannot arrive here for free; the
+empty transcript as an array; and the config envelope with `agents` beside
+`config` rather than inside it. `pnpm -r lint` and `pnpm -r build` clean,
+dashboard tests 20; the app bundle is **33.3 KB of 80, unchanged** — a generated
+type erases to nothing.
+
+**Owed:** a live turn through a deployed widget with a configured greeting and
+starter prompts, which is the one arm that proves 6a from the outside rather
+than from a test. Filed in
+[`live-gate-backlog.md`](live-gate-backlog.md) §1a.

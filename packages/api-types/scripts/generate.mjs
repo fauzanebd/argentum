@@ -46,9 +46,10 @@ const backend = resolve(pkgRoot, "../../apps/backend");
 const check = process.argv.includes("--check");
 
 /** The files tygo writes, in the order the barrel re-exports them. */
-const GENERATED = ["domain.ts", "events.ts", "api.ts", "dashboardspec.ts", "dashboard.ts", "doctable.ts", "docparse.ts", "videoplan.ts", "webhooks.ts"];
+const GENERATED = ["domain.ts", "events.ts", "api.ts", "embed.ts", "dashboardspec.ts", "dashboard.ts", "doctable.ts", "docparse.ts", "videoplan.ts", "webhooks.ts"];
 
-/** Everything but the webhook envelopes and the video plan — see tygo.yaml. */
+/** Everything but the webhook envelopes, the video plan and the embed contract
+ *  — see tygo.yaml. */
 const BARRELLED = ["domain.ts", "events.ts", "api.ts"];
 
 const BARREL = `/* eslint-disable */
@@ -69,6 +70,11 @@ const BARREL = `/* eslint-disable */
 // absent for exactly that reason: \`Table\`, \`Column\`, \`Row\`, \`Cell\` and
 // \`Page\` are the five most collision-prone names in a dashboard. Import them
 // from "@argentum/api-types/doctable" and "@argentum/api-types/docparse".
+//
+// The widget's \`/api/embed\` contract (internal/transport/http/embedwire) is
+// absent for both reasons at once: no dashboard screen reads it, and its
+// \`Message\`, \`Thread\` and \`Agent\` are three names \`domain\` already owns
+// here. Import them from "@argentum/api-types/embed".
 
 ${BARRELLED.map((f) => `export * from "./${f.replace(/\.ts$/, ".js")}";`).join("\n")}
 `;

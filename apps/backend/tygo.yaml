@@ -162,6 +162,29 @@ packages:
         Skill,
       } from "./domain.js";
 
+  # The widget's `/api/embed` contract (T-19, T-20, T-23). Its own Go package
+  # rather than a second entry for `handlers` above, and the generator is half
+  # the reason: tygo keys this list by import path, so two entries naming one
+  # package silently produce one file. The other half is in the package's own
+  # comment — these shapes go to a browser on a page we do not control, and the
+  # dashboard's types should not be reachable from the widget's by accident.
+  - path: "github.com/fauzanebd/argentum/internal/transport/http/embedwire"
+    output_path: "../../packages/api-types/src/embed.ts"
+    enum_style: "union"
+    type_mappings:
+      domain.WidgetConfig: "WidgetConfig"
+      domain.MessageRole: "MessageRole"
+    frontmatter: |
+      /* eslint-disable */
+      // The widget's `/api/embed` contract, from
+      // apps/backend/internal/transport/http/embedwire.
+      //
+      // Not barrelled and not in `./index`: `apps/widget` is the consumer, the
+      // dashboard is not, and a shape a visitor of somebody else's website may
+      // read should be imported by the name of the door it comes through.
+      // Import from "@argentum/api-types/embed".
+      import type { MessageRole, WidgetConfig } from "./domain.js";
+
   # What was extracted from an uploaded PDF (T-P4/T-P7): the typed columns, the
   # rows, the page rectangles and the arithmetic verdict. Generated rather than
   # hand-written because the review surface renders every field of it, and a

@@ -11,6 +11,7 @@
     "size": "node scripts/size.mjs"
   },
   "dependencies": {
+    "@argentum/api-types": "workspace:*",
     "dompurify": "^3.2.3",
     "marked": "^15.0.6",
     "preact": "^10.25.4",

@@ -616,9 +616,9 @@ BYO-LLM already cover the usual "our data can't leave" objection.
 | Down migrations for 001–014 | Q-7 | 1d | Folded into T-18 if time allows; otherwise the first failed production migration |
 | WebSocket auth without a query-param token | S-4 | 1d | A security review, or moving to a subprotocol-based scheme |
 | Prune stale feature branches (7 merged branches still on origin) | — | 0.5h | Folded into `T-00b`; otherwise any time |
-| Build orchestrator (Turborepo / Nx) with remote caching | — | 1d | `packages/` exceeds ~4 members, or CI wall-clock becomes annoying. `pnpm -r` + the Makefile is enough below that. |
-| Generated TS types for the `/api/embed` contract | — | 0.5h | `T-02b` covers the dashboard API; extend it when `T-19`/`T-20` add embed types |
-| Frontend tests for `packages/chat-ui` | — | 1d | Shared by dashboard **and** widget after `T-21`, so a regression there breaks two consumers — the strongest case for the first Vitest setup |
+| Build orchestrator (Turborepo / Nx) with remote caching | — | 1d | **Trigger fired, unclaimed.** `packages/` is at 8 (`api-types`, `argentum-node`, `argentum-python`, `design-tokens`, `motion`, `openapi-tools`, `widget`, `widget-react`) against the ~4 named here, noted 2026-09-10. The second half of the condition has not: `pnpm -r build` is ~30s and CI wall-clock is not yet annoying, so this is a decision rather than a queue. |
+| ~~Generated TS types for the `/api/embed` contract~~ | — | ~~0.5h~~ **0.5d** | **Done 2026-09-10.** The trigger fired on 2026-08-09 and the row sat open for a month, which is the finding. It was not 0.5h: the hand-written types were hiding two P1s — the tenant's greeting never reaching the widget, and the transcript route serving the agent's tool digests to a visitor. `coverage/widget.md` §6, `coverage/generated-types.md` |
+| ~~Frontend tests for `packages/chat-ui`~~ | — | 1d | **Moot.** `T-21` did not extract the package (`00-sprint-overview.md` §9e), so there is no shared surface to test, and the Vitest setup this row argued for shipped anyway on 2026-09-03 in `apps/dashboard`. |
 | Self-host Space Grotesk in the dashboard instead of the Google Fonts CDN | — | 0.5h | `T-R1` vendors the TTFs for the backend anyway, so the files are already in the repo — the dashboard is then one `@font-face` block away from dropping a third-party request |
 | Error tracking (Sentry) both repos | O-4 | 0.5d | First user-reported bug you cannot reproduce |
 | Onboarding checklist incl. "enable table embeddings" | P-4 | 1.5d | Signup-to-first-answer conversion looking bad |

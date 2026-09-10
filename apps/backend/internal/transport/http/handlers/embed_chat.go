@@ -8,6 +8,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/transport/http/embedwire"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 )
 
@@ -63,34 +64,16 @@ func (h *EmbedChatHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/threads/:id/messages", h.listMessages)
 }
 
-// embedThreadResponse is the thread as the widget sees it. Deliberately not
-// domain.ConversationThread: that struct carries every channel's routing keys,
-// and a widget has no business learning that this workspace also answers in a
-// Slack channel with a particular id.
-type embedThreadResponse struct {
-	ID       string            `json:"id"`
-	Title    string            `json:"title,omitempty"`
-	AgentID  string            `json:"agent_id,omitempty"`
-	IsNew    bool              `json:"is_new"`
-	Messages []*domain.Message `json:"messages,omitempty"`
-}
-
-type embedSendReq struct {
-	Message  string `json:"message" binding:"required"`
-	ThreadID string `json:"thread_id,omitempty"`
-	AgentID  string `json:"agent_id,omitempty"`
-}
-
 // send starts one turn. The identity comes off the session token, never off
 // the body — a browser that could name its own `user_ref` could name anybody's.
 func (h *EmbedChatHandler) send(c *gin.Context) {
 	if h.chat == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "chat is not configured on this deployment"})
+		c.JSON(http.StatusServiceUnavailable, embedwire.ErrorResponse{Error: "chat is not configured on this deployment"})
 		return
 	}
-	var req embedSendReq
+	var req embedwire.SendRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
+		c.JSON(http.StatusBadRequest, embedwire.ErrorResponse{Error: "message is required"})
 		return
 	}
 
@@ -108,11 +91,11 @@ func (h *EmbedChatHandler) send(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{
-		"task_id":       res.TaskID,
-		"thread_id":     res.Thread.ID,
-		"is_new_thread": res.IsNewThread,
-		"user_msg_id":   res.UserMsgID,
+	c.JSON(http.StatusAccepted, embedwire.SendResponse{
+		TaskID:      res.TaskID,
+		ThreadID:    res.Thread.ID,
+		IsNewThread: res.IsNewThread,
+		UserMsgID:   res.UserMsgID,
 	})
 }
 
@@ -127,17 +110,17 @@ func (h *EmbedChatHandler) send(c *gin.Context) {
 func embedChatFail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, domain.ErrInsufficientCredits):
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditsExhaustedMessage})
+		c.JSON(http.StatusPaymentRequired, embedwire.ErrorResponse{Error: app.CreditsExhaustedMessage})
 	case errors.Is(err, domain.ErrNotFound):
 		// Covers both an agent this workspace cannot use and a thread that is
 		// not this visitor's. One answer for both, deliberately.
-		c.JSON(http.StatusNotFound, gin.H{"error": "no such conversation"})
+		c.JSON(http.StatusNotFound, embedwire.ErrorResponse{Error: "no such conversation"})
 	case errors.Is(err, app.ErrAgentChange):
-		c.JSON(http.StatusConflict, gin.H{"error": "that conversation runs as a different agent"})
+		c.JSON(http.StatusConflict, embedwire.ErrorResponse{Error: "that conversation runs as a different agent"})
 	case errors.Is(err, domain.ErrInvalidInput):
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, embedwire.ErrorResponse{Error: err.Error()})
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not start that turn"})
+		c.JSON(http.StatusInternalServerError, embedwire.ErrorResponse{Error: "could not start that turn"})
 	}
 }
 
@@ -150,7 +133,7 @@ func embedChatFail(c *gin.Context, err error) {
 func (h *EmbedChatHandler) currentThread(c *gin.Context) {
 	ref := middleware.EmbedUserRef(c)
 	if ref == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid embed session"})
+		c.JSON(http.StatusUnauthorized, embedwire.ErrorResponse{Error: "invalid embed session"})
 		return
 	}
 	thread, err := h.threads.LatestForEmbedUser(c.Request.Context(), companyID(c), ref)
@@ -158,21 +141,21 @@ func (h *EmbedChatHandler) currentThread(c *gin.Context) {
 		// Not a 404: "you have no conversation yet" is the ordinary state of a
 		// visitor who has never typed anything, and an error would make the
 		// widget's empty state look like a failure.
-		c.JSON(http.StatusOK, gin.H{"thread": nil})
+		c.JSON(http.StatusOK, embedwire.CurrentThreadResponse{})
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read that conversation"})
+		c.JSON(http.StatusInternalServerError, embedwire.ErrorResponse{Error: "could not read that conversation"})
 		return
 	}
 
-	out := embedThreadResponse{ID: thread.ID, Title: thread.Title, AgentID: thread.AgentID}
+	out := embedwire.Thread{ID: thread.ID, Title: thread.Title, AgentID: thread.AgentID}
 	if h.messages != nil {
 		if msgs, err := h.messages.ListByThread(c.Request.Context(), thread.ID, embedHistoryLimit, 0); err == nil {
-			out.Messages = msgs
+			out.Messages = embedwire.Transcript(msgs)
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"thread": out})
+	c.JSON(http.StatusOK, embedwire.CurrentThreadResponse{Thread: &out})
 }
 
 // embedHistoryLimit bounds a transcript read. Generous enough that a returning
@@ -188,10 +171,10 @@ func (h *EmbedChatHandler) listMessages(c *gin.Context) {
 	}
 	msgs, err := h.messages.ListByThread(c.Request.Context(), thread.ID, embedHistoryLimit, 0)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read that conversation"})
+		c.JSON(http.StatusInternalServerError, embedwire.ErrorResponse{Error: "could not read that conversation"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"messages": msgs})
+	c.JSON(http.StatusOK, embedwire.MessagesResponse{Messages: embedwire.Transcript(msgs)})
 }
 
 // ownThread loads the thread named in the path and proves it belongs to this
@@ -208,7 +191,7 @@ func (h *EmbedChatHandler) ownThread(c *gin.Context) (*domain.ConversationThread
 	if err != nil || thread == nil ||
 		thread.Channel != domain.ChannelWidget ||
 		ref == "" || thread.EmbedUserRef != ref {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no such conversation"})
+		c.JSON(http.StatusNotFound, embedwire.ErrorResponse{Error: "no such conversation"})
 		return nil, false
 	}
 	return thread, true
@@ -231,21 +214,18 @@ func (h *EmbedChatHandler) getConfig(c *gin.Context) {
 		// render, and a tenant whose settings row is briefly unreadable should
 		// get Argentum's defaults rather than an empty panel.
 	}
-	out := gin.H{"config": cfg.WithDefaults()}
+	out := embedwire.ConfigResponse{Config: cfg.WithDefaults()}
 
 	if h.agents != nil {
 		if list, err := h.agents.List(c.Request.Context(), companyID(c)); err == nil {
-			agents := make([]gin.H, 0, len(list))
 			for _, a := range list {
 				if !a.Enabled {
 					continue
 				}
-				// Name and id only. A persona is the tenant's prompt
-				// engineering and their tool allowlist is a map of what the
-				// agent can reach; neither belongs in a browser.
-				agents = append(agents, gin.H{"id": a.ID, "name": a.Name, "is_default": a.IsDefault})
+				// Name and id only — see embedwire.Agent, which is where that rule
+				// now lives and where a browser-visible field gets argued for.
+				out.Agents = append(out.Agents, embedwire.Agent{ID: a.ID, Name: a.Name, IsDefault: a.IsDefault})
 			}
-			out["agents"] = agents
 		}
 	}
 	c.JSON(http.StatusOK, out)

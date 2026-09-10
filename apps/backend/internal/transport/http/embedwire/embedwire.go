@@ -1,0 +1,201 @@
+// Package embedwire is the widget's `/api/embed` contract: every shape that
+// crosses between a tenant's own website and Argentum (T-19, T-20, T-23).
+//
+// **A package rather than a second file in `handlers`**, where the dashboard's
+// `wire.go` lives, because the two answer to different readers and only one of
+// them is a member of staff. Everything here is served to a browser on a page
+// Argentum does not control, to a person who has no account with us — so the
+// test for a field is `domain.WidgetConfig`'s test applied to the whole
+// surface: **would we print it in the tenant's page source?** A boundary the
+// compiler can see makes that a question somebody has to answer; a comment
+// between two structs in one file does not.
+//
+// The generator settled it either way: tygo keys its config by import path, so
+// two entries naming `handlers` silently produce one file. The dashboard's
+// types and the widget's could not have been generated separately from the
+// same package even if the argument above had gone the other way.
+//
+// It exists for the reason `handlers/wire.go` exists — a response assembled as
+// a `gin.H` generates no TypeScript, so `apps/widget` was hand-writing
+// interfaces for shapes no Go declaration described (T-02b's defect, in the one
+// app that was never made a consumer of the generated package). Two things were
+// hiding behind that:
+//
+//  1. **The config envelope.** The route answers `{config, agents}` and the
+//     widget's hand-written type described the *inner* object, so it read
+//     `greeting` and `suggested_prompts` off the envelope and got `undefined`
+//     for both. Every tenant who configured a greeting or a starter prompt in
+//     Settings → Widget (T-23) had it silently dropped.
+//  2. **The transcript.** `messages` was `[]*domain.Message` — every column of
+//     every row, including the tool-role rows T-Q6 writes as the agent's
+//     memory. A tool digest carries the truncated SQL, the `source_id` and the
+//     tables a turn touched (`app.BuildToolDigest`), so the route published the
+//     tenant's warehouse vocabulary to anyone who opened a network tab.
+//     `Message` here is the projection, and it is T-D13's `PublicCopy` in this
+//     surface's own shape.
+//
+// The rule this package is here to hold: **the widget's type is generated from
+// these structs**, so a field added here reaches the browser and a field not
+// here cannot. Adding one is the decision `handlers.EmbedChatHandler`'s comment
+// describes — not a convenience.
+
+// ConfigResponse is the body of `GET /api/embed/config`: what the widget
+// renders itself with before anybody has typed.
+//
+// Config is nested rather than flattened because `agents` is not configuration
+// — it is the live roster, read from a different place and absent on a
+// deployment with no roster lister wired.
+package embedwire
+
+import (
+	"time"
+
+	"github.com/fauzanebd/argentum/internal/domain"
+)
+
+type ConfigResponse struct {
+	Config domain.WidgetConfig `json:"config"`
+	Agents []Agent             `json:"agents,omitempty"`
+}
+
+// Agent is one entry in the widget's picker.
+//
+// Name and id only. A persona is the tenant's prompt engineering and an
+// agent's tool allowlist is a map of what it can reach; neither belongs in a
+// browser on somebody else's page.
+type Agent struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	IsDefault bool   `json:"is_default"`
+}
+
+// Message is one turn as a visitor may read it: who said it, what they
+// said, and when.
+//
+// Deliberately **not** `domain.Message`. That struct carries `tool_calls`,
+// `metadata` and the token counts, and the thread it belongs to carries
+// tool-role rows whose whole content is the agent's working memory. None of it
+// is the conversation; all of it is the work behind the conversation, and a
+// visitor of a tenant's website is entitled to the first and not the second.
+//
+// `thread_id` is absent for a smaller reason and a real one: the widget already
+// knows which thread it asked about, and a transcript that repeats the id on
+// every row is a hundred copies of a value the caller supplied.
+type Message struct {
+	ID      string             `json:"id"`
+	Role    domain.MessageRole `json:"role"`
+	Content string             `json:"content"`
+	// CreatedAt is what the widget would group by if it ever draws a date
+	// separator. It is the only field here that is not on screen today.
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Transcript projects a thread's rows onto what a visitor may read.
+//
+// The role filter is the load-bearing half, not the column list: a tool row's
+// *content* is the digest, so dropping `metadata` while keeping the row would
+// publish the SQL anyway. User and assistant are the two roles a person said or
+// was told; `tool` is memory and `system` is prompt, and neither has ever been
+// rendered by any client of this route.
+//
+// Never nil. An empty transcript is `[]`, for the reason `suggested_prompts`
+// carries no `omitempty` (T-23 §4a): a client reading `.length` off a missing
+// key gets a TypeError instead of zero.
+func Transcript(msgs []*domain.Message) []Message {
+	out := make([]Message, 0, len(msgs))
+	for _, m := range msgs {
+		if m == nil || (m.Role != domain.MessageRoleUser && m.Role != domain.MessageRoleAssistant) {
+			continue
+		}
+		out = append(out, Message{
+			ID:        m.ID,
+			Role:      m.Role,
+			Content:   m.Content,
+			CreatedAt: m.CreatedAt,
+		})
+	}
+	return out
+}
+
+// Thread is the conversation the widget resumes into.
+//
+// Deliberately not `domain.ConversationThread`: that struct carries every
+// channel's routing keys, and a widget has no business learning that this
+// workspace also answers in a Slack channel with a particular id.
+type Thread struct {
+	ID      string `json:"id"`
+	Title   string `json:"title,omitempty"`
+	AgentID string `json:"agent_id,omitempty"`
+	// Messages is omitted rather than empty when there are none, because a
+	// thread with no transcript and a thread whose transcript failed to load
+	// are the same thing to a widget that renders `messages ?? []`.
+	Messages []Message `json:"messages,omitempty"`
+}
+
+// CurrentThreadResponse is the body of `GET /api/embed/threads/current`.
+// A null thread is the ordinary state of a visitor who has never typed
+// anything, not an error.
+type CurrentThreadResponse struct {
+	Thread *Thread `json:"thread"`
+}
+
+// MessagesResponse is the body of `GET /api/embed/threads/:id/messages`.
+type MessagesResponse struct {
+	Messages []Message `json:"messages"`
+}
+
+// SendRequest is the body of `POST /api/embed/chat`.
+//
+// There is no `user_ref` on it and there must never be: the identity comes off
+// the session token, and a browser that could name its own would name anybody's.
+type SendRequest struct {
+	Message  string `json:"message" binding:"required"`
+	ThreadID string `json:"thread_id,omitempty"`
+	AgentID  string `json:"agent_id,omitempty"`
+}
+
+// SendResponse is what a started turn answers with. The turn itself
+// arrives on the WebSocket; this is the receipt.
+type SendResponse struct {
+	TaskID   string `json:"task_id"`
+	ThreadID string `json:"thread_id"`
+	// IsNewThread tells the widget whether to keep the thread id it had. The
+	// thread-level `is_new` this response used to sit beside was dropped when
+	// the surface became typed: nothing ever set it to true.
+	IsNewThread bool `json:"is_new_thread"`
+	// UserMsgID is the id the visitor's own message was stored under, so a
+	// client can reconcile the optimistic bubble it already drew.
+	UserMsgID string `json:"user_msg_id,omitempty"`
+}
+
+// SessionRequest is the identity assertion a tenant's backend signs
+// (T-19). It is the one shape here a *server* sends rather than receives, which
+// is why the widget's own client never constructs one — the host page does.
+type SessionRequest struct {
+	ClientKey string `json:"client_key" binding:"required"`
+	UserRef   string `json:"user_ref" binding:"required"`
+	// Exp is the unix timestamp the tenant's backend signed over.
+	Exp int64 `json:"exp" binding:"required"`
+	// Signature is hex `HMAC-SHA256(secret, "<user_ref>:<exp>")`.
+	Signature string `json:"signature" binding:"required"`
+}
+
+// SessionResponse is a minted session.
+type SessionResponse struct {
+	Token string `json:"token"`
+	// ExpiresAt lets the host page schedule its own re-sign instead of waiting
+	// for the first 401. A widget that only learns its session died by being
+	// refused shows the user an error it could have avoided.
+	ExpiresAt string `json:"expires_at"`
+	// ExpiresInSeconds is the same fact for a client that would rather not
+	// parse a timestamp, and it is immune to a host whose clock is wrong.
+	ExpiresInSeconds int `json:"expires_in_seconds"`
+}
+
+// ErrorResponse is every refusal on this surface. One field, and the
+// sentence in it is written for a visitor of somebody else's website: they
+// cannot top up an account they do not have, so a code or a stack trace tells
+// them nothing they can act on.
+type ErrorResponse struct {
+	Error string `json:"error"`
+}

@@ -321,3 +321,210 @@ func TestEmbedSendWithoutAQueueIsUnavailable(t *testing.T) {
 		t.Errorf("status = %d, want 503", w.Code)
 	}
 }
+
+// A visitor of a tenant's website reads their own conversation. They do not
+// read the *work* behind it.
+//
+// `ListByThread` returns every row of a thread with every column: the tool-role
+// rows T-Q6 writes as the agent's memory, and the `tool_calls`, `metadata` and
+// token counts on the assistant row. A tool digest carries the truncated SQL,
+// the `source_id` and the table names the turn touched (app.BuildToolDigest),
+// so handing the raw slice to a browser on a page we do not control publishes
+// the tenant's warehouse vocabulary to anyone who opens a network tab.
+//
+// This is T-D13's finding in a second costume — there a public share link
+// served the panel SQL, here a widget transcript serves the query log — and the
+// same answer applies: the route projects, and what it projects is what the
+// widget's generated type describes.
+func TestEmbedTranscriptCarriesNoToolWork(t *testing.T) {
+	const sql = "SELECT sum(f.sales_amount) FROM fact_sales f JOIN dim_date d ON f.date_id = d.date_id"
+	thread := &domain.ConversationThread{
+		ID: "th-mine", CompanyID: "co-1", Channel: domain.ChannelWidget, EmbedUserRef: "emp_812",
+	}
+	msgs := &embedMessagesStub{msgs: []*domain.Message{
+		{ID: "m-1", ThreadID: "th-mine", Role: domain.MessageRoleUser, Content: "revenue last month?"},
+		{
+			ID: "m-2", ThreadID: "th-mine", Role: domain.MessageRoleTool,
+			Content:  `[{"tool":"run_sql","query":"` + sql + `","source_id":"src-9f1","rows":1}]`,
+			Metadata: map[string]interface{}{"kind": "tool_digest", "tool_calls": 1},
+		},
+		{
+			ID: "m-3", ThreadID: "th-mine", Role: domain.MessageRoleAssistant,
+			Content:   "Revenue last month was Rp3.8B.",
+			ToolCalls: map[string]interface{}{"run_sql": map[string]interface{}{"sql": sql}},
+			Metadata:  map[string]interface{}{"source_id": "src-9f1"},
+			TokensIn:  4211, TokensOut: 87,
+		},
+	}}
+	threads := &embedThreadsStub{
+		byID:   map[string]*domain.ConversationThread{"th-mine": thread},
+		latest: thread,
+	}
+	r := embedRouter(NewEmbedChatHandler(nil, threads, msgs, nil), "co-1", "emp_812")
+
+	// Both read routes, because they assemble the transcript separately and a
+	// projection applied to one of them is the defect this test is about.
+	for _, path := range []string{"/api/embed/threads/current", "/api/embed/threads/th-mine/messages"} {
+		t.Run(path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body.String())
+			}
+			body := w.Body.String()
+			for _, forbidden := range []string{
+				"SELECT sum", "fact_sales", "dim_date", // the warehouse's vocabulary
+				"src-9f1",     // which source answered
+				"tool_digest", // that a memory row exists at all
+				`"tool_calls"`, `"metadata"`, `"tokens_in"`, `"tokens_out"`,
+			} {
+				if strings.Contains(body, forbidden) {
+					t.Errorf("transcript carries %q, which a visitor of a tenant's website has no business reading:\n%s",
+						forbidden, body)
+				}
+			}
+			// And the assistant's answer, which is the whole point, is still there.
+			if !strings.Contains(body, "Revenue last month was") {
+				t.Errorf("the answer itself is missing from %s", body)
+			}
+		})
+	}
+}
+
+// The shape of one transcript row, pinned key by key.
+//
+// `embedwire.Message` is a projection of `domain.Message`, and the failure mode
+// of a projection is that somebody adds a field to the source and it arrives
+// here for free. That is exactly how `tool_calls` and the token counts reached
+// a visitor's browser in the first place, so the assertion is the *whole* key
+// set rather than a list of the ones we currently mind.
+func TestEmbedTranscriptRowCarriesFourFields(t *testing.T) {
+	thread := &domain.ConversationThread{
+		ID: "th-mine", CompanyID: "co-1", Channel: domain.ChannelWidget, EmbedUserRef: "emp_812",
+	}
+	msgs := &embedMessagesStub{msgs: []*domain.Message{
+		{ID: "m-1", ThreadID: "th-mine", Role: domain.MessageRoleUser, Content: "revenue?", TokensIn: 12},
+	}}
+	r := embedRouter(NewEmbedChatHandler(nil,
+		&embedThreadsStub{byID: map[string]*domain.ConversationThread{"th-mine": thread}},
+		msgs, nil), "co-1", "emp_812")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/embed/threads/th-mine/messages", nil))
+
+	var body struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, w.Body.String())
+	}
+	if len(body.Messages) != 1 {
+		t.Fatalf("got %d messages, want 1 (%s)", len(body.Messages), w.Body.String())
+	}
+	want := map[string]bool{"id": true, "role": true, "content": true, "created_at": true}
+	for k := range body.Messages[0] {
+		if !want[k] {
+			t.Errorf("transcript row carries %q — a field reached the widget without anybody deciding it should", k)
+		}
+		delete(want, k)
+	}
+	for k := range want {
+		t.Errorf("transcript row is missing %q", k)
+	}
+}
+
+// An empty transcript is `[]`, never `null`.
+//
+// The same rule `suggested_prompts` carries (T-23 §4a) and the same reason: a
+// client reading `.length` off a missing or null key gets a TypeError instead
+// of zero. It is asserted here because the transcript is now a projection, and
+// a projection of nothing is the case a `make([]T, 0)` gets forgotten in.
+func TestEmbedEmptyTranscriptIsAnArray(t *testing.T) {
+	thread := &domain.ConversationThread{
+		ID: "th-mine", CompanyID: "co-1", Channel: domain.ChannelWidget, EmbedUserRef: "emp_812",
+	}
+	// Nothing but the agent's own memory: every row is filtered out, which is
+	// the case a nil slice would survive.
+	msgs := &embedMessagesStub{msgs: []*domain.Message{
+		{ID: "m-1", Role: domain.MessageRoleTool, Content: `[{"tool":"run_sql"}]`},
+	}}
+	r := embedRouter(NewEmbedChatHandler(nil,
+		&embedThreadsStub{byID: map[string]*domain.ConversationThread{"th-mine": thread}},
+		msgs, nil), "co-1", "emp_812")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/embed/threads/th-mine/messages", nil))
+	if got := w.Body.String(); got != `{"messages":[]}` {
+		t.Errorf("body = %s, want an empty array", got)
+	}
+}
+
+// `GET /config` answers an envelope, and `agents` is a sibling of `config`.
+//
+// This is the shape the widget's generated type describes, and it is the one
+// the widget read wrongly for a month: `greeting` and `suggested_prompts` are
+// one level down, and a client that reads them off the top gets `undefined` for
+// both without failing anywhere. Pinned here because the defect was invisible
+// on both sides — the server was right, the client was wrong, and nothing
+// compared them.
+func TestEmbedConfigIsAnEnvelopeWithAgentsBesideIt(t *testing.T) {
+	h := NewEmbedChatHandler(nil, &embedThreadsStub{}, &embedMessagesStub{}, &embedRosterStub{
+		agents: []*domain.Agent{
+			{ID: "ag-1", Name: "Support", Enabled: true, IsDefault: true},
+			{ID: "ag-2", Name: "Draft", Enabled: false},
+		},
+	})
+	r := embedRouter(h.WithConfig(&embedConfigStub{cfg: &domain.WidgetConfig{
+		Greeting:         "Tanya soal stok",
+		SuggestedPrompts: []string{"Stok hari ini"},
+	}}), "co-1", "emp_812")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/embed/config", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", w.Code, w.Body.String())
+	}
+
+	var body struct {
+		Config struct {
+			Greeting         string   `json:"greeting"`
+			SuggestedPrompts []string `json:"suggested_prompts"`
+		} `json:"config"`
+		Agents []struct {
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			IsDefault bool   `json:"is_default"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, w.Body.String())
+	}
+	if body.Config.Greeting != "Tanya soal stok" {
+		t.Errorf("greeting = %q, want the tenant's own — it is one level down, under `config`", body.Config.Greeting)
+	}
+	if len(body.Config.SuggestedPrompts) != 1 {
+		t.Errorf("suggested_prompts = %v, want the tenant's one", body.Config.SuggestedPrompts)
+	}
+	// A disabled agent is not offered, and the roster is a sibling of the
+	// config rather than a field of it.
+	if len(body.Agents) != 1 || body.Agents[0].ID != "ag-1" || !body.Agents[0].IsDefault {
+		t.Errorf("agents = %+v, want only the enabled one, beside `config`", body.Agents)
+	}
+}
+
+// embedConfigStub answers one tenant's stored widget configuration.
+type embedConfigStub struct{ cfg *domain.WidgetConfig }
+
+func (s *embedConfigStub) GetWidgetConfig(context.Context, string) (*domain.WidgetConfig, error) {
+	return s.cfg, nil
+}
+func (s *embedConfigStub) SaveWidgetConfig(context.Context, string, *domain.WidgetConfig) error {
+	panic("unexpected SaveWidgetConfig — a read route must not write")
+}
+
+// embedRosterStub is the roster the picker is built from.
+type embedRosterStub struct{ agents []*domain.Agent }
+
+func (s *embedRosterStub) List(context.Context, string) ([]*domain.Agent, error) {
+	return s.agents, nil
+}

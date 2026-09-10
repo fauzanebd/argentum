@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/transport/http/embedwire"
 )
 
 // EmbedSessionHandler is the public door of T-19: a tenant's page presents
@@ -38,26 +39,6 @@ func (h *EmbedSessionHandler) Register(rg *gin.RouterGroup) {
 	rg.POST("/session/refresh", h.mint)
 }
 
-type embedSessionReq struct {
-	ClientKey string `json:"client_key" binding:"required"`
-	UserRef   string `json:"user_ref" binding:"required"`
-	// Exp is the unix timestamp the tenant's backend signed over.
-	Exp int64 `json:"exp" binding:"required"`
-	// Signature is hex `HMAC-SHA256(secret, "<user_ref>:<exp>")`.
-	Signature string `json:"signature" binding:"required"`
-}
-
-type embedSessionResp struct {
-	Token string `json:"token"`
-	// ExpiresAt lets the host page schedule its own re-sign instead of waiting
-	// for the first 401. A widget that only learns its session died by being
-	// refused shows the user an error it could have avoided.
-	ExpiresAt string `json:"expires_at"`
-	// ExpiresInSeconds is the same fact for a client that would rather not
-	// parse a timestamp, and it is immune to a host whose clock is wrong.
-	ExpiresInSeconds int `json:"expires_in_seconds"`
-}
-
 // mint answers a session request. Three outcomes and three statuses:
 //
 //	401 — the key is unknown, revoked or disabled, or the identity material
@@ -69,13 +50,13 @@ type embedSessionResp struct {
 //	200 — a token.
 func (h *EmbedSessionHandler) mint(c *gin.Context) {
 	if h.svc == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "embedding is not configured on this deployment"})
+		c.JSON(http.StatusServiceUnavailable, embedwire.ErrorResponse{Error: "embedding is not configured on this deployment"})
 		return
 	}
 
-	var req embedSessionReq
+	var req embedwire.SessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "client_key, user_ref, exp and signature are all required"})
+		c.JSON(http.StatusBadRequest, embedwire.ErrorResponse{Error: "client_key, user_ref, exp and signature are all required"})
 		return
 	}
 
@@ -91,20 +72,20 @@ func (h *EmbedSessionHandler) mint(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, app.ErrEmbedOriginNotAllowed):
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "This page's origin is not allowed for that embed key. Add it in Settings → Embed.",
+			c.JSON(http.StatusForbidden, embedwire.ErrorResponse{
+				Error: "This page's origin is not allowed for that embed key. Add it in Settings → Embed.",
 			})
 		case errors.Is(err, app.ErrEmbedKeyUnusable), errors.Is(err, app.ErrEmbedIdentityRejected):
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "That embed session request was rejected.",
+			c.JSON(http.StatusUnauthorized, embedwire.ErrorResponse{
+				Error: "That embed session request was rejected.",
 			})
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not issue an embed session."})
+			c.JSON(http.StatusInternalServerError, embedwire.ErrorResponse{Error: "Could not issue an embed session."})
 		}
 		return
 	}
 
-	c.JSON(http.StatusOK, embedSessionResp{
+	c.JSON(http.StatusOK, embedwire.SessionResponse{
 		Token:            sess.Token,
 		ExpiresAt:        sess.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
 		ExpiresInSeconds: int(h.svc.SessionTTL().Seconds()),

@@ -16,6 +16,11 @@
 // absent for exactly that reason: `Table`, `Column`, `Row`, `Cell` and
 // `Page` are the five most collision-prone names in a dashboard. Import them
 // from "@argentum/api-types/doctable" and "@argentum/api-types/docparse".
+//
+// The widget's `/api/embed` contract (internal/transport/http/embedwire) is
+// absent for both reasons at once: no dashboard screen reads it, and its
+// `Message`, `Thread` and `Agent` are three names `domain` already owns
+// here. Import them from "@argentum/api-types/embed".
 
 export * from "./domain.js";
 export * from "./events.js";

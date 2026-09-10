@@ -9,20 +9,41 @@
 //
 // So the frame cannot mint, cannot re-sign, and cannot outlive its token by
 // itself. When one expires it says so and waits.
+//
+// **Every shape below is generated from the Go that serves it**
+// (`internal/transport/http/embedwire`, via `make types`). It was hand-written
+// until 2026-09-10, and both of the interfaces that used to sit here were
+// wrong: `WidgetConfig` described the *inner* object of a `{config, agents}`
+// envelope, so the tenant's greeting and starter prompts read `undefined` on
+// every load since T-23 shipped; and `Message` described four fields of a row
+// the route was serving whole, including the agent's tool digests. A generated
+// type would have refused to compile against the first and made the second
+// visible. That is the whole argument for T-02b, arriving late in the one app
+// that was never made a consumer of it.
 
-export interface Message {
-  id?: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  created_at?: string;
-}
+export type {
+  Agent,
+  ConfigResponse,
+  CurrentThreadResponse,
+  ErrorResponse,
+  Message,
+  MessagesResponse,
+  SendResponse,
+  Thread,
+} from "@argentum/api-types/embed";
 
-export interface WidgetConfig {
-  greeting: string;
-  suggested_prompts: string[];
-  locale: string;
-  agents?: { id: string; name: string; is_default: boolean }[];
-}
+// The tenant's own appearance and content (T-23). It lives in `domain` rather
+// than in the embed contract because Settings → Widget writes the same struct
+// the widget reads, and two generated copies of one shape is the defect this
+// file just stopped committing.
+export type { WidgetConfig } from "@argentum/api-types";
+
+import type {
+  ConfigResponse,
+  CurrentThreadResponse,
+  ErrorResponse,
+  SendResponse,
+} from "@argentum/api-types/embed";
 
 /** Thrown when the session cannot be minted or has expired. The app turns this
  *  into a `token_expired` event for the host rather than retrying: only the
@@ -66,16 +87,21 @@ export class EmbedClient {
     return (await res.json()) as T;
   }
 
-  config(): Promise<WidgetConfig> {
-    return this.call<WidgetConfig>("/config");
+  /** The tenant's appearance and content, and the roster the picker offers.
+   *
+   *  Returns the envelope, not the config: `agents` is the live roster and sits
+   *  beside `config` rather than inside it. The caller reads `.config`, which is
+   *  the line this method existed for three weeks without. */
+  config(): Promise<ConfigResponse> {
+    return this.call<ConfigResponse>("/config");
   }
 
-  currentThread(): Promise<{ thread: { id: string; title?: string; messages?: Message[] } | null }> {
-    return this.call("/threads/current");
+  currentThread(): Promise<CurrentThreadResponse> {
+    return this.call<CurrentThreadResponse>("/threads/current");
   }
 
   send(message: string, threadID?: string, agentID?: string) {
-    return this.call<{ thread_id: string; task_id: string; is_new_thread: boolean }>("/chat", {
+    return this.call<SendResponse>("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -103,7 +129,7 @@ export class EmbedClient {
 /** Pull a human-readable reason out of a refusal, falling back to the status. */
 async function message(res: Response): Promise<string> {
   try {
-    const body = (await res.json()) as { error?: string };
+    const body = (await res.json()) as Partial<ErrorResponse>;
     if (body?.error) return body.error;
   } catch {
     // not JSON

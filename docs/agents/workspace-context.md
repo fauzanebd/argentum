@@ -41,6 +41,15 @@ pipeline.
 - **`packages/api-types` is generated, never hand-edited.** If a TS type disagrees
   with its Go struct, that is now a CI failure rather than a runtime surprise.
   Regenerate with `make types`.
+- **A TypeScript interface describing a Go response is a defect, not a shortcut.**
+  The guarantee above only covers apps that *consume* the generated package.
+  `apps/widget` did not until 2026-09-10, and both interfaces it had written by
+  hand were wrong — one of them silently, in front of every tenant, for a month
+  ([`../coverage/widget.md`](../coverage/widget.md) §6). If a route answers a
+  shape no Go struct describes, declare the struct; `gin.H` generates nothing.
+  Note that tygo keys its config by import path, so a surface that needs its own
+  output file needs its own Go package (`internal/transport/http/embedwire` is
+  the worked example).
 - **Deploys are still independent.** Cloudflare Pages builds each frontend from
   its own root directory; the backend still ships as tagged GHCR images. One repo
   does not mean one release.

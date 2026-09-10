@@ -293,6 +293,9 @@ importers:
 
   apps/widget:
     dependencies:
+      '@argentum/api-types':
+        specifier: workspace:*
+        version: link:../../packages/api-types
       '@argentum/widget':
         specifier: workspace:*
         version: link:../../packages/widget

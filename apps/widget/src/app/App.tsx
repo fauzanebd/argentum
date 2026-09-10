@@ -101,8 +101,11 @@ export function App() {
 
     client
       .config()
-      .then((c) => live && setConfig(c))
-      .catch(() => live && setConfig({ greeting: "", suggested_prompts: [], locale: "en" }));
+      // `.config`, not the response: the route answers `{config, agents}`, and
+      // reading the envelope as though it were the config is what dropped every
+      // tenant's greeting and starter prompts between T-23 and 2026-09-10.
+      .then((r) => live && setConfig(r.config))
+      .catch(() => live && setConfig({ suggested_prompts: [] }));
 
     client
       .currentThread()
@@ -243,7 +246,12 @@ export function App() {
   return (
     <div class="wrap">
       <header class="head">
-        <span class="title">{config?.greeting ? "Ask" : "Argentum"}</span>
+        {/* The product's name, not the tenant's: `WidgetConfig` carries no
+            title, and the greeting this once branched on is defaulted
+            server-side — so the condition that used to be here read false for
+            every tenant before the envelope fix and would read true for every
+            tenant after it. Neither is a decision anybody made. */}
+        <span class="title">Argentum</span>
         <button
           class="icon"
           aria-label="Close chat"
