@@ -122,7 +122,14 @@ func (e *Enqueuer) EnqueueReportRender(ctx context.Context, p ReportRenderPayloa
 // needs, and what a fixed interval would fail to give it. The Deliverer stops
 // calling the row pending at the same count, so the log agrees with the queue.
 func (e *Enqueuer) EnqueueWebhookDelivery(ctx context.Context, deliveryID string) error {
-	body, err := json.Marshal(WebhookDeliverPayload{DeliveryID: deliveryID})
+	// Stamped here rather than by the callers, exactly as EnqueueChatRun does it
+	// (T-17b): the fan-out publishes three event kinds from three services, and
+	// a carrier threaded through each of them is three places to forget.
+	body, err := json.Marshal(WebhookDeliverPayload{
+		DeliveryID: deliveryID,
+		Trace:      tracing.Inject(ctx),
+		EnqueuedAt: time.Now(),
+	})
 	if err != nil {
 		return fmt.Errorf("marshal webhook payload: %w", err)
 	}

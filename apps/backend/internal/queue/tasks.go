@@ -68,6 +68,14 @@ type WatcherEvalPayload struct {
 // schema is read at run time through the cache the agent's get_schema fills, and
 // a payload carrying a copy of it would be a second answer to "what tables are
 // there" — the thing the fingerprint check depends on there being one of.
+//
+// **It carries no trace carrier, and that is T-17b's second half stopping at a
+// wall rather than an oversight.** asynq derives a `Unique` task's dedup key as
+// `md5(payload)` (`internal/base.UniqueKey`), so a `traceparent` — which is
+// per-call by construction — would give every enqueue a different key and
+// silently retire the `Unique(2*time.Minute)` window below. The window is the
+// thing keeping a tenant clicking through onboarding from queuing the same
+// inference three times, so it outranks the join. See EnqueueBusinessInference.
 type BusinessInferPayload struct {
 	CompanyID    string `json:"company_id"`
 	ConnectionID string `json:"connection_id"`
@@ -83,6 +91,12 @@ type BusinessInferPayload struct {
 // so a retry after a redeploy parses the document as it is now rather than as it
 // was when somebody pressed upload — and the bytes it needs are in object
 // storage, where a queue payload has no business carrying a copy of them.
+//
+// No trace carrier, for BusinessInferPayload's reason and with more at stake:
+// this task's `Unique(time.Hour)` window is what stops a re-parse pressed twice
+// from paying for OCR twice (T-P3), and a per-call `traceparent` in the payload
+// would dissolve it. A trace join is worth a great deal less than not billing a
+// tenant twice for the same scan.
 type DocumentParsePayload struct {
 	DocumentID string `json:"document_id"`
 }
@@ -142,6 +156,16 @@ type ReportRenderPayload struct {
 // would be a second copy able to disagree with the log a tenant reads.
 type WebhookDeliverPayload struct {
 	DeliveryID string `json:"delivery_id"`
+	// Trace and EnqueuedAt are ChatRunPayload's (T-17b, second half). This task
+	// is the one place a tenant's own system is on the far end, so "did we send
+	// it late or did they answer slowly" is a question somebody eventually asks
+	// with a support ticket attached — and the retry budget below means the
+	// interesting number is how long the row waited, not how long the POST took.
+	//
+	// Safe to carry here where the two deduplicated tasks above cannot: this
+	// enqueue has no `asynq.Unique`, so a per-call carrier changes no dedup key.
+	Trace      map[string]string `json:"trace,omitempty"`
+	EnqueuedAt time.Time         `json:"enqueued_at,omitzero"`
 }
 
 // ChatRunPayload carries everything the worker needs to process one chat

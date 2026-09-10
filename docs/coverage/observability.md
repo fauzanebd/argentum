@@ -364,3 +364,56 @@ queue depends on, and it is the one nothing checked.
 - **Queue depth is API-only.** The poller runs where `/metrics` is served, which
   is right for today's deployment and would need revisiting if the worker ever
   exposed an endpoint of its own.
+
+## 10b. `T-17b`'s second half — the other five tasks, 2026-09-10
+
+§10 closed the chat turn and the report render. The ticket's own last bullet
+named three more — `report:render` (taken in §10), `webhook:deliver`,
+`business:infer` — as *"the same shape and cheap to include once the carrier
+helper exists"*. Two of the three are neither.
+
+**What shipped.** `webhook:deliver` carries `trace` and `enqueued_at`, stamped
+inside `EnqueueWebhookDelivery` for the reason `EnqueueChatRun` stamps its own —
+three services publish the three event kinds, and a carrier threaded through
+each of them is three places to forget. The worker joins it in
+`makeWebhookDeliverHandler` rather than inside `Deliver`, which is a departure
+from `chat_runner.go:818` and a deliberate one: `Deliver` takes a delivery id
+and loads the row itself, so the handler is the only place still holding the
+carrier and the enqueue time.
+
+**And the two unattended paths join without a payload change.**
+`watcher:eval` and `scheduled:run` are produced by asynq's periodic scheduler
+from a cron entry, where there is no ambient context to inject from and so no
+parent to join. Their handlers open a **root** span instead, and that is enough
+for the ticket's acceptance: `HandleFire` enqueues the explaining `chat:run`
+through `EnqueueChatRun`, which stamps whatever span is in `ctx` — so the tick,
+the turn and the delivery are one trace rather than three.
+
+### The finding: a trace carrier and a dedup window cannot share a payload
+
+`business:infer` and `document:parse` are **deliberately not stamped**, and the
+reason is not effort.
+
+asynq derives a unique task's dedup key as `md5(payload)`
+(`internal/base.UniqueKey`). A `traceparent` is per-call by construction, so
+adding one to either payload gives every enqueue a distinct key and silently
+retires the `Unique` window — without touching the line that declares it, and
+with no failure anywhere to notice. For `business:infer` that window is what
+keeps a tenant clicking through onboarding from queuing the same inference three
+times. For `document:parse` it is what stops a re-parse pressed twice from
+paying for OCR twice (`T-P3`), which is real money against a real ledger.
+
+A trace join is worth less than either. Both payloads carry the reason in a
+comment, and `TestADeduplicatedTaskIsNotSplitByItsTrace` fails the moment
+somebody "finishes the second half" by stamping them the way `webhook:deliver`
+is stamped — which is the only way this decision survives the next person to
+read the ticket and not this file.
+
+The alternative — carrying the trace beside the payload rather than in it — is
+the second envelope the ticket forbids by name, and it would put the carrier
+somewhere asynq does not persist.
+
+**Gate.** `go test ./internal/queue/...` covers the stamp, the join and the
+dedup guard. The waterfall showing a watcher fire as one trace from tick to
+delivery needs a collector and is owed —
+[`live-gate-backlog.md`](live-gate-backlog.md) §1a.

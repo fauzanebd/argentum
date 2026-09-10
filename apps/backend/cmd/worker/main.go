@@ -373,6 +373,15 @@ func makeWebhookDeliverHandler(d *webhookout.Deliverer) asynq.HandlerFunc {
 		if p.DeliveryID == "" {
 			return asynq.SkipRetry
 		}
+		// Joined here rather than inside Deliver, which is where chat_runner.go
+		// and api_report_service.go do it (T-17b). Those two receive the whole
+		// payload and can name the turn on the span; Deliver receives an id and
+		// loads the row itself, so the handler is the only place that still has
+		// the carrier and the enqueue time to hand.
+		ctx = tracing.Extract(ctx, p.Trace)
+		ctx, span := tracing.Step(ctx, "webhook.deliver")
+		defer span.End()
+		tracing.QueueWait(span, p.EnqueuedAt)
 		return d.Deliver(ctx, p.DeliveryID)
 	}
 }
@@ -438,6 +447,15 @@ func makeWatcherEvalHandler(svc *app.WatcherService) asynq.HandlerFunc {
 		if p.WatcherID == "" || svc == nil {
 			return asynq.SkipRetry
 		}
+		// A root span, not an extracted one (T-17b). This task is produced by
+		// asynq's periodic scheduler, which builds the payload from a cron entry
+		// with no ambient context to inject from — so there is no parent to join
+		// and nothing to put in a carrier. Opening the root here is what makes
+		// the rest of the fire one trace: HandleFire enqueues the explaining
+		// chat:run through EnqueueChatRun, which stamps whatever span is in ctx,
+		// so the turn and its delivery hang off this tick instead of floating.
+		ctx, span := tracing.Step(ctx, "watcher.eval")
+		defer span.End()
 		return svc.HandleFire(ctx, p.WatcherID)
 	}
 }
@@ -561,6 +579,11 @@ func makeScheduledRunHandler(svc *app.ScheduledTaskService) asynq.HandlerFunc {
 		if p.TaskID == "" {
 			return asynq.SkipRetry
 		}
+		// Root span for makeWatcherEvalHandler's reason: a cron tick has no
+		// caller to inherit from, and the chat:run this fire enqueues picks the
+		// span up from ctx on its way through EnqueueChatRun.
+		ctx, span := tracing.Step(ctx, "scheduled.run")
+		defer span.End()
 		return svc.HandleFire(ctx, p.TaskID)
 	}
 }

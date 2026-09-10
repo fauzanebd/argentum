@@ -170,6 +170,91 @@ func TestAnExplicitStampIsNotOverwritten(t *testing.T) {
 	}
 }
 
+// The second half of T-17b: webhook:deliver joins the trace too.
+//
+// It is the one task whose far end belongs to somebody else, so "we were slow"
+// and "they were slow" are a support conversation rather than a curiosity, and
+// the retry budget means the number worth reading is the wait rather than the
+// POST.
+func TestWebhookDeliveryCarriesTheTrace(t *testing.T) {
+	withRecordingTracer(t)
+	e, opt := enqueuerOn(t)
+
+	ctx, span := tracing.Tracer().Start(context.Background(), "watcher.breached")
+	defer span.End()
+
+	if err := e.EnqueueWebhookDelivery(ctx, "del-1"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	body := onlyPending(t, opt)
+	carrier, ok := body["trace"].(map[string]any)
+	if !ok {
+		t.Fatalf("the queued delivery carries no trace; the attempt would start its own: %v", body)
+	}
+	tp, _ := carrier["traceparent"].(string)
+	if !contains(tp, span.SpanContext().TraceID().String()) {
+		t.Errorf("traceparent = %q, want the enqueuing trace %s", tp, span.SpanContext().TraceID())
+	}
+	if _, ok := body["enqueued_at"].(string); !ok {
+		t.Error("no enqueued_at; the trace would join the two processes without saying how long the row waited")
+	}
+}
+
+// The decision the two Unique-guarded payloads are documented with, kept honest.
+//
+// asynq derives a unique task's dedup key as md5 of the payload
+// (internal/base.UniqueKey), so adding a per-call traceparent to
+// BusinessInferPayload or DocumentParsePayload would give every enqueue a
+// distinct key and retire the window without touching the line that declares
+// it. For document:parse that window is what stops a re-parse from paying for
+// OCR twice. This test fails the moment somebody finishes "the second half" by
+// stamping these two the way webhook:deliver is stamped above.
+func TestADeduplicatedTaskIsNotSplitByItsTrace(t *testing.T) {
+	withRecordingTracer(t)
+	e, opt := enqueuerOn(t)
+
+	// Two different traces, one logical job — a tenant clicking Re-scan twice,
+	// where each click arrives on its own request span.
+	for _, name := range []string{"http.request.first", "http.request.second"} {
+		ctx, span := tracing.Tracer().Start(context.Background(), name)
+		if err := e.EnqueueBusinessInference(ctx, "co-1", "conn-1", false); err != nil {
+			t.Fatalf("enqueue %s: %v", name, err)
+		}
+		span.End()
+	}
+
+	insp := asynq.NewInspector(opt)
+	t.Cleanup(func() { _ = insp.Close() })
+	pending, err := insp.ListPendingTasks("default")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("queued %d business:infer tasks, want 1 — the dedup window is keyed on the payload, "+
+			"so something in it now varies per call", len(pending))
+	}
+}
+
+// onlyPending reads back the single task on the default queue, for the enqueue
+// methods that return no id to look one up by.
+func onlyPending(t *testing.T, opt asynq.RedisConnOpt) map[string]any {
+	t.Helper()
+	insp := asynq.NewInspector(opt)
+	t.Cleanup(func() { _ = insp.Close() })
+	pending, err := insp.ListPendingTasks("default")
+	if err != nil {
+		t.Fatalf("list pending: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending = %d tasks, want exactly 1", len(pending))
+	}
+	var out map[string]any
+	if err := json.Unmarshal(pending[0].Payload, &out); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	return out
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
