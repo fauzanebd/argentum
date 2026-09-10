@@ -5537,13 +5537,25 @@ onto Node 24, so nothing is broken today. Bumped to `v5`, `v6` and `v9` — the
 first major of each that ships a Node 24 runtime — across all three workflow
 files.
 
-**`actions/setup-node@v4` and `actions/setup-python@v5` were deliberately left.**
-`setup-node@v6`'s stated breaking change is *"limit automatic caching to npm"*,
-and two jobs here pass `cache: pnpm`. The reading that it only affects the
-*default* is probably right and it is not verifiable from this machine, and a
-guess about a caching change is how a green pipeline turns red for a reason
-nobody can reproduce locally. Their jobs will keep printing the notice until
-somebody runs it.
+**`actions/setup-node@v4` and `actions/setup-python@v5` were deliberately left
+at first**, because `setup-node@v6`'s stated breaking change is *"limit
+automatic caching to npm"* and two jobs here pass `cache: pnpm`. The reading
+that it only affects the *default* is probably right, was not verifiable from
+this machine, and a guess about a caching change is how a green pipeline turns
+red for a reason nobody can reproduce locally.
+
+**Then the green run made it verifiable, and they went too.** With CI passing,
+the loop the decision lacked is four minutes long — so `setup-node` v4→v7,
+`setup-python` v5→v7 and **`pnpm/action-setup` v4→v6**, which the annotation on
+the green run named beside `setup-node` and which nothing had counted before.
+Bumped together because they are the same interaction: `pnpm/action-setup` runs
+first and puts pnpm on PATH, `setup-node` then resolves `cache: pnpm` through
+it. Splitting them would test half a change.
+
+The risk is stated rather than dissolved: **if the pnpm cache breaks, the Web
+and API-examples jobs go red and the fix is to drop `cache: pnpm`, not to
+revert the bump.** That is a fact CI produces in one run and this machine cannot
+produce at all.
 
 ### Gate
 

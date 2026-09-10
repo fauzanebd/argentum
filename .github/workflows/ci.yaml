@@ -259,7 +259,7 @@ jobs:
       # The generators have no dependencies on purpose, so this job installs
       # nothing: node runs them, and Go is here only for the gofmt check inside
       # `make tokens`.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -311,7 +311,7 @@ jobs:
       # Both toolchains: node runs the generator, Go parses the structs. No
       # pnpm install — the generator has no dependencies, deliberately, so this
       # job cannot be broken by a lockfile.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -373,11 +373,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -447,16 +447,16 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: apps/backend/go.sum
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
