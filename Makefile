@@ -67,14 +67,27 @@ build: ## Build every binary and every workspace package
 	cd $(BACKEND) && go build ./...
 	pnpm -r build
 
+# GOLANGCI resolves the binary from PATH, then from GOPATH/bin.
+#
+# The fallback is not belt-and-braces: `go install` puts it in GOPATH/bin, which
+# is the way a Go developer most often gets this tool and is NOT on PATH by
+# default. .githooks/pre-push calls this target from git's own environment, so on
+# 2026-09-11 the hook fired correctly, failed to find a golangci-lint that was
+# installed, and blocked a push it should have passed. A guard that reports a
+# missing tool it could have found is a guard people disable.
+GOLANGCI := $(shell command -v golangci-lint 2>/dev/null || \
+	(command -v go >/dev/null 2>&1 && ls $$(go env GOPATH)/bin/golangci-lint 2>/dev/null))
+
 .PHONY: lint-go
 lint-go: ## golangci-lint the backend (config: apps/backend/.golangci.yml)
-	@command -v golangci-lint >/dev/null 2>&1 || { \
-		echo "golangci-lint is not installed — CI runs it, or:"; \
-		echo "  brew install golangci-lint    # or see https://golangci-lint.run/welcome/install/"; \
+	@test -n "$(GOLANGCI)" || { \
+		echo "golangci-lint is not installed. CI pins the version, so match it:"; \
+		echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2"; \
+		echo "  # or: brew install golangci-lint — https://golangci-lint.run/welcome/install/"; \
+		echo "Looked on PATH and in $$(go env GOPATH 2>/dev/null)/bin."; \
 		exit 1; \
 	}
-	cd $(BACKEND) && golangci-lint run ./...
+	cd $(BACKEND) && $(GOLANGCI) run ./...
 
 .PHONY: lint-web
 lint-web: ## Lint every workspace app (dashboard=tsc + eslint + vitest, landing=tsc --noEmit)

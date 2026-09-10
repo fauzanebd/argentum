@@ -5507,10 +5507,27 @@ two are worth naming because both already existed:
    clone with `make hooks`. **`core.hooksPath` was unset in this clone**, so the
    hook has never run. Enabled now.
 
-A guard that has to be switched on is a guard that is off. Recording it rather
-than redesigning it: the hook is opt-in on purpose, since a repo cannot force a
-hook onto a clone, and `make hooks` is one line in a README somebody has to
-read.
+A guard that has to be switched on is a guard that is off. Recording rather than
+redesigning the opt-in half: a repo cannot force a hook onto a clone, and
+`make hooks` is one line in a README somebody has to read.
+
+**Then enabling it found the third layer's own bug, on the first push.** The
+hook fired exactly as designed, ran `make lint-go`, and reported *"golangci-lint
+is not installed"* — about a golangci-lint that was installed. `make lint-go`
+looked only on `PATH`, and `go install` puts the binary in `$(go env
+GOPATH)/bin`, which is not on `PATH` by default and is the way a Go developer
+most often gets this tool. So the push was blocked by a missing-tool message
+naming a tool that was present.
+
+`GOLANGCI` now resolves from `PATH` **then** `GOPATH/bin`, and the failure
+message names both places it looked and gives the pinned `go install` line
+rather than a `brew` command that is wrong on this machine. Both branches were
+exercised — the resolved one runs and prints `0 issues`, and a bogus `GOPATH`
+still exits 1 with the message.
+
+**A guard that reports a missing tool it could have found is a guard people
+disable**, which would have made this the fourth layer to switch itself off in
+the same afternoon.
 
 ### The Node 20 notice in the same log
 
