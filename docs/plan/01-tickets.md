@@ -2885,8 +2885,30 @@ trace waterfall for a tool-calling turn showing LLM vs SQL time split.
 
 ---
 
-## T-17b · The trace stops at the queue
+## ~~T-17b · The trace stops at the queue~~ — **built; first half 2026-08-09, second half 2026-09-10**
 **Repo:** BE · **Size:** 0.5d · **Deps:** T-17 · **Priority:** P2
+
+> **Status, 2026-09-10.** The first half shipped with `T-17`'s §1a gate and was
+> re-read on a live waterfall: one trace across `cmd/api` and `cmd/worker`, with
+> **934 ms** in the queue ([`../coverage/observability.md`](../coverage/observability.md) §10a).
+> The second half is now built too — `webhook:deliver` carries the carrier, and
+> `watcher:eval` / `scheduled:run` open a **root** span rather than extracting
+> one, because a periodic task is built from a cron entry with no ambient
+> context to inject from. That root is enough for the acceptance line: the
+> `chat:run` those fires enqueue picks the span up from `ctx` in
+> `EnqueueChatRun`, so a watcher fire is one trace from tick to delivery.
+>
+> **Two of the five named tasks are deliberately not stamped, and it is not
+> effort.** asynq derives a `Unique` task's dedup key as `md5(payload)`, so a
+> per-call `traceparent` in `business:infer` or `document:parse` retires the
+> dedup window without touching the line that declares it — and for
+> `document:parse` that window is what stops a re-parse from paying for OCR
+> twice. `TestADeduplicatedTaskIsNotSplitByItsTrace` fails the moment somebody
+> finishes the ticket by stamping them anyway
+> ([`../coverage/observability.md`](../coverage/observability.md) §10b).
+>
+> Owed: a collector waterfall for the watcher path
+> ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1a).
 
 **Found by `T-17`'s own gate, 2026-08-08.** The waterfall that closed `T-17`
 came from `cmd/eval`, which enqueues nothing — one process, one trace. On the
@@ -3277,8 +3299,30 @@ close. Plus the actual gzipped bundle sizes from the build output.
 
 ---
 
-## T-22 · Distribution and integration docs
-**Partially built 2026-08-10.** Done: the integration guide, the security model, the CSP block, the troubleshooting table ([`../../apps/backend/docs/embed/README.md`](../../apps/backend/docs/embed/README.md)) and the vanilla example with its signing server. **Not done:** the npm packages, the versioned CDN path, changesets, and the react/vue/nextjs examples — `dist/` is static and deployable, which is what the pilot needs; publishing is what the next tenant needs.
+## ~~T-22 · Distribution and integration docs~~ — **built 2026-08-10 and 2026-09-10; publishing itself is owed**
+**Built 2026-08-10:** the integration guide, the security model, the CSP block, the troubleshooting table ([`../../apps/backend/docs/embed/README.md`](../../apps/backend/docs/embed/README.md)) and the vanilla example with its signing server.
+
+> **Status, 2026-09-10.** The rest is built. The loader moved out of
+> `apps/widget` into **`packages/widget`** — the ticket's own option, and what a
+> publish boundary requires — and `apps/widget` now imports the postMessage
+> vocabulary from it rather than keeping a second copy. `@argentum/widget` ships
+> ESM, CJS, the CDN IIFE and types; `@argentum/widget-react` wraps it as
+> `<ArgentumWidget />`. Changesets is wired, which needed a root `package.json`
+> the repo did not have; it exists for this and nothing else. React, Vue and
+> Next.js examples join the vanilla one, each standalone on `^0.1.0` rather than
+> `workspace:*`. Docs gained the Go/Python/PHP signing handlers, the npm path,
+> the versioned-CDN policy and thread ownership as a rule.
+>
+> **Building it found two defects in the published path, neither theoretical.**
+> A single Vite lib build made the CDN global a namespace object, so
+> `Argentum.init(…)` — the call in every documented script tag — became
+> undefined; the CDN file is built from `loader.ts` now for that reason. And two
+> module-scope DOM reads crashed the loader on import during a Next.js server
+> render. Both fixed ([`../coverage/widget.md`](../coverage/widget.md) §3a).
+>
+> **Owed:** `npm publish` itself, and the ticket's own gate — a cold integration
+> from the published docs, timed
+> ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §5).
 **Repo:** WID · **Size:** 2d · **Deps:** T-21 · **Priority:** P1 (of this phase)
 
 The ticket that decides whether anyone actually integrates it.

@@ -4895,6 +4895,84 @@ check, and a suite of unit tests that pass whether or not the code under them is
 called. All four were green or absent rather than failing, which is why nobody
 noticed.
 
+## Phase 3t — The three tickets that were left, and three defects in a path nobody had run (2026-09-10)
+
+The roadmap sweep that opened this sitting found the plan almost entirely built:
+of everything still open, only three items were both unblocked and code. The
+rest was owner-blocked (a key-management choice, a release boundary), policy-
+blocked (four social tickets gated on a tenant asking by name), or not code at
+all — twenty-three live gates waiting on a cluster, a browser, a handset or a
+few dollars of model spend.
+
+**`T-G7` — the approval card shows the post.** Filed as FE, and it could not be.
+`T-G6` wrote the manifest beside the slides, but `CarouselManifest` was a Go type
+read by the announcement builder and by nothing else — so the caption existed,
+was sent to WhatsApp, and had no route. A card cannot render a caption the API
+does not serve. `LoadManifest` and `GET /api/documents/:id/carousel` close that,
+and the route doubles as the format check: 404 for anything that is not a
+carousel, which is how the card decides a proposal is about a post in one
+request and how a card for any other kind stays byte-identical.
+
+**`T-17b`'s second half.** The ticket file said "nothing built"; the first half
+had shipped a month earlier and been read on a live waterfall. What was actually
+left were the other five task types.
+
+**`T-22` — the widget packages.** The loader left `apps/widget` for
+`packages/widget` and publishes as two packages, with changesets, three new
+examples and the docs the ticket lists.
+
+### The finding: a trace carrier and a dedup window cannot share a payload
+
+asynq derives a `Unique` task's dedup key as `md5(payload)`. A `traceparent` is
+per-call by construction, so "finishing" `T-17b` by stamping `business:infer` and
+`document:parse` the way `webhook:deliver` is stamped would retire both dedup
+windows — **without touching the line that declares them, and with nothing
+anywhere failing**. For `document:parse` that window is what stops a re-parse
+from paying for OCR twice, against a real ledger.
+
+Both payloads carry the reason, and `TestADeduplicatedTaskIsNotSplitByItsTrace`
+fails if somebody does it anyway. That test is the only part of this decision
+that survives the next person to read the ticket and not the comment.
+
+The two cron paths needed no payload change at all: a periodic task is built
+from a cron entry with no ambient context, so their handlers open a **root**
+span, and the `chat:run` they enqueue inherits it through `EnqueueChatRun`.
+
+### Three defects in the published path, none theoretical
+
+Nothing about `T-22`'s npm path had ever been executed. Building it broke twice
+and left a third trap behind:
+
+1. **The CDN global stopped being the api.** One Vite lib build with
+   `formats: ["es","cjs","iife"]` from an entry with named exports makes the
+   IIFE wrapper emit `var Argentum = { default, MARKER, … }` — so
+   `Argentum.init(…)`, the call in every script tag this product has documented,
+   is `undefined`. The loader's own `window.Argentum = api` does not save it:
+   the wrapper's `var Argentum` **is** `window.Argentum`, assigned last. The CDN
+   file is built from `loader.ts` now, which has one runtime export.
+2. **The loader crashed on import during a server render.** Two module-scope DOM
+   reads throw in Next.js at import time. Found by writing the Next example the
+   ticket asks for — which is the argument for the ticket asking for it.
+3. **The vanilla example pointed at a path that no longer existed.** Moving the
+   loader orphaned `../../dist/argentum-widget.js`, and nothing builds or lints
+   an HTML file, so nothing would have said so.
+
+**The pattern, continued.** 3s was four commands documented as the gate and never
+run. This is the same shape one layer out: **an artifact documented as shippable
+and never shipped.** `dist/` was static and deployable, the README said so, and
+the moment anybody executed the npm half of it, two of the three ways in were
+broken.
+
+### Gate
+
+`go build`, `go vet`, `go test -race ./...` — 66 packages, 0 failures. The route
+classification guard caught the new endpoint as unclassified and was the only
+failure in the sitting. `pnpm -r build` and `pnpm -r lint` clean; dashboard tests
+20, up from 17; both bundle budgets green (loader 1.9 KB of 15, app 33.3 KB of
+80). Owed: the live turn behind a real proposal, a collector waterfall for the
+watcher path, and `npm publish` plus the cold-integration timing
+([`live-gate-backlog.md`](live-gate-backlog.md) §1a, §2, §5).
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

@@ -15,16 +15,20 @@ pipeline.
 │   ├── dashboard/        React 18 + Vite + TanStack — the customer web app
 │   ├── landing/          React 18 + Vite — marketing site
 │   ├── render/           Node 22 + Remotion + ffmpeg — a video plan in over HTTP, an MP4 out (T-V2)
-│   └── widget/           Preact — embeddable chat widget (created in T-21)
+│   └── widget/           Preact — the embeddable widget's iframe app (T-21); its loader is packages/widget (T-22)
 ├── packages/
 │   ├── api-types/        TS types generated from Go structs (T-02b)
 │   ├── argentum-node/    @argentum/sdk — the public API from Node (T-A4)
 │   ├── argentum-python/  argentum — the same, sync and async (T-A4)
 │   ├── openapi-tools/    Everything generated from openapi/v1.yaml (T-A4)
 │   ├── design-tokens/    One token source → dashboard CSS + Go report theme (T-R1); `make palette` gates the chart ramps
-│   └── motion/           The Remotion compositions a video plan is drawn with (T-V2)
+│   ├── motion/           The Remotion compositions a video plan is drawn with (T-V2)
+│   ├── widget/           @argentum/widget — the loader, and protocol.ts, the postMessage contract apps/widget imports (T-22)
+│   └── widget-react/     @argentum/widget-react — <ArgentumWidget />, a wrapper around the loader (T-22)
 ├── docs/                 This documentation — now tracked
 ├── .github/workflows/    One pipeline, path-filtered per app
+├── .changeset/           Versions for the two published npm packages, and nothing else (T-22)
+├── package.json          Workspace root. It exists for changesets; every other repo-wide command is a Makefile target
 ├── pnpm-workspace.yaml
 └── Makefile              Top-level entry points: make eval, make test, make dev
 ```
@@ -50,13 +54,22 @@ paths are namespaces, not filesystem paths, and nothing external imports this
 module. Changing it to match the directory would rewrite every import in the
 codebase for no benefit.
 
-### `apps/widget/` is a published artifact
+### `packages/widget*` are published artifacts
 
-It differs from the other three: its consumers are other companies' codebases, so
-a breaking change cannot be fixed by redeploying. It follows SemVer, ships
-immutable versioned CDN paths, and its `/api/embed` contract is versioned
-separately from the dashboard API. See `T-19`–`T-23` in
+They differ from every app here: their consumers are other companies' codebases,
+so a breaking change cannot be fixed by redeploying. They follow SemVer, ship
+immutable versioned CDN paths, and the `/api/embed` contract they speak is
+versioned separately from the dashboard API. See `T-19`–`T-23` in
 [`../plan/01-tickets.md`](../plan/01-tickets.md).
+
+Two rules follow, and both are easy to break by accident:
+
+- **A released version file is never rewritten.** If `1.2.3` is wrong, `1.2.4`
+  fixes it — somebody has `1.2.3` in a subresource-integrity attribute, and a
+  corrected file at the same URL breaks their page rather than ours.
+- **Version them with changesets, never with the release tag.** That tag
+  versions the deployed backend images; coupling the two would churn an
+  integrator's lockfile for a Go change. `.changeset/README.md` has the flow.
 
 ## Backend — where things live
 
