@@ -84,6 +84,12 @@ type QueryExampleRef struct {
 }
 
 // QueryExampleHit is one retrieved example and how close it was.
+//
+// **Do not serve this to a browser without flattening it.** The embedded
+// QueryExample is inlined by encoding/json and rendered as a *nested field* by
+// tygo, so `packages/api-types` describes a shape this type does not have. It
+// is harmless today because nothing outside the turn path reads one; see
+// coverage/generated-types.md §"Go struct embedding does not survive tygo".
 type QueryExampleHit struct {
 	QueryExample
 	Distance float32 `json:"distance"`

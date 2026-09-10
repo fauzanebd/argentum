@@ -1259,6 +1259,11 @@ export interface DocumentChunk {
 }
 /**
  * DocumentChunkHit is one retrieved chunk and why it was retrieved.
+ * **Do not serve this to a browser without flattening it.** The embedded
+ * DocumentChunk is inlined by encoding/json and rendered as a *nested field* by
+ * tygo, so `packages/api-types` describes a shape this type does not have. It
+ * is harmless today because nothing outside the turn path reads one; see
+ * coverage/generated-types.md §"Go struct embedding does not survive tygo".
  */
 export interface DocumentChunkHit {
   DocumentChunk: DocumentChunk;
@@ -1729,6 +1734,55 @@ export interface MessageFeedback {
   updated_at: string;
 }
 /**
+ * FeedbackWithContext is one verdict and enough of the turn to act on it.
+ * The bare verdict is unactionable and that is why nothing read it for a month
+ * (T-Q16): `MessageFeedback` carries a `message_id`, a `thread_id` and a
+ * reason, so a list of them says "somebody disliked 4f2a-… on 9b1c-…" and the
+ * only way to learn anything is to open each thread by hand.
+ * The excerpts are the whole point. Somebody triaging wrong answers is reading
+ * for a pattern — the same metric, the same table, the same misread question —
+ * and a pattern is visible across twenty rows on one screen and invisible
+ * across twenty tabs.
+ * **Not an embedded `MessageFeedback`, and that is load-bearing.** Go's
+ * encoding/json inlines an embedded struct's fields, so the wire is flat —
+ * but tygo renders embedding as a *named field*, and the generated TypeScript
+ * would have described `{ MessageFeedback: {...}, question, answer }` for a
+ * body that is `{ id, thread_id, ..., question, answer }`. A type that
+ * misdescribes its own wire is the defect this repo spent 2026-09-10 removing
+ * from the widget; spelling the fields out is the cost of not reintroducing it
+ * one layer down. See generated-types.md §Limits for the two latent cases.
+ */
+export interface FeedbackWithContext {
+  id: string;
+  company_id: string;
+  thread_id: string;
+  message_id: string;
+  rating: FeedbackRating;
+  reason?: string;
+  actor_kind: ActorKind;
+  actor_ref?: string;
+  created_at: string;
+  updated_at: string;
+  /**
+   * Question is the user message that provoked the answer, empty when the
+   * thread's shape does not resolve one. Not required: a verdict against an
+   * answer whose question cannot be found is still a verdict, and dropping
+   * the row would hide the complaint to protect the layout.
+   */
+  question?: string;
+  /**
+   * Answer is the assistant message the verdict is about.
+   */
+  answer?: string;
+}
+/**
+ * FeedbackExcerptChars bounds each of the two excerpts.
+ * Enough to recognise a question and to see the top of an answer — which is
+ * where a wrong number usually is, because the agent states the figure and then
+ * explains it. Whoever needs the rest has the thread link.
+ */
+export const FeedbackExcerptChars = 600;
+/**
  * FeedbackSummary is the roll-up for one tenant over a window: how many
  * answers were rated, and how many of them were wrong.
  * The denominator is deliberately the number of *rated* answers rather than
@@ -1968,6 +2022,11 @@ export interface QueryExampleRef {
 }
 /**
  * QueryExampleHit is one retrieved example and how close it was.
+ * **Do not serve this to a browser without flattening it.** The embedded
+ * QueryExample is inlined by encoding/json and rendered as a *nested field* by
+ * tygo, so `packages/api-types` describes a shape this type does not have. It
+ * is harmless today because nothing outside the turn path reads one; see
+ * coverage/generated-types.md §"Go struct embedding does not survive tygo".
  */
 export interface QueryExampleHit {
   QueryExample: QueryExample;

@@ -132,6 +132,9 @@ func (f fakeVerdicts) GetByMessage(context.Context, string, string) ([]*domain.M
 func (f fakeVerdicts) ListByCompany(context.Context, string, bool, int, int) ([]*domain.MessageFeedback, error) {
 	return nil, nil
 }
+func (f fakeVerdicts) ListWithContext(context.Context, string, bool, int, int) ([]*domain.FeedbackWithContext, error) {
+	return nil, nil
+}
 func (f fakeVerdicts) Summarize(context.Context, string, time.Time, time.Time) (domain.FeedbackSummary, error) {
 	return domain.FeedbackSummary{}, nil
 }

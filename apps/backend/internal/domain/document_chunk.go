@@ -42,6 +42,12 @@ type DocumentChunk struct {
 }
 
 // DocumentChunkHit is one retrieved chunk and why it was retrieved.
+//
+// **Do not serve this to a browser without flattening it.** The embedded
+// DocumentChunk is inlined by encoding/json and rendered as a *nested field* by
+// tygo, so `packages/api-types` describes a shape this type does not have. It
+// is harmless today because nothing outside the turn path reads one; see
+// coverage/generated-types.md §"Go struct embedding does not survive tygo".
 type DocumentChunkHit struct {
 	DocumentChunk
 	// Filename and DocumentTitle come from the join, because a citation names

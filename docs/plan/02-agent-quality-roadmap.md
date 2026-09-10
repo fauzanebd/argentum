@@ -1094,3 +1094,83 @@ deliberately: blending a decay term into cosine distance changes retrieval
 quality in a direction nothing here can measure until `T-Q8`'s own live gate has
 been run. Archiving is a decision with a reason attached; a re-weighting is a
 number nobody can audit.
+
+---
+
+## `T-Q16` The verdict gets a reader — 0.5d · **built 2026-09-10, unit-gated**
+**Repo:** BE + FE · **Deps:** `T-Q2` · **Priority:** P1
+**Migration:** none
+
+### Why
+
+`T-Q2` built the thumbs, the table, three admin routes and a computed down
+rate. It did not build a screen. So from the day it shipped, the entire
+lifecycle of a thumbs-down was: stored, used to exclude one turn from `T-Q8`'s
+harvest, and **never seen by a human again**. `GET /api/feedback` and
+`GET /api/feedback/summary` had no caller anywhere in `apps/dashboard` — the
+only two `feedback` references in the app were the widget that *writes* a
+rating and the chat page that mounts it.
+
+That is the same shape as the embed defect found the same morning — a contract
+with one side implemented — and it costs more here, because the signal being
+dropped is the only one a tenant gives us that an answer was wrong.
+
+**The bare verdict could not have been read anyway.** `MessageFeedback` carries
+a `message_id`, a `thread_id`, a rating and a reason, so a list of them says
+"somebody disliked 4f2a-… on 9b1c-…" and the only way to learn anything is to
+open every thread by hand. Whoever triages wrong answers is reading for a
+pattern — the same metric, the same table, the same misread question — and a
+pattern lives across rows.
+
+### Do
+
+- `MessageFeedbackRepository.ListWithContext`: `ListByCompany` plus the answer
+  and the question each verdict is about. The answer is a join on
+  `message_feedback.message_id`; the **question has to be resolved**, because
+  nothing stores a link from an answer back to what was asked — a `LEFT JOIN
+  LATERAL` for the last user message in the thread at or before the answer,
+  which is `CookbookCandidateRepo.Candidates`' join run backwards.
+- Excerpts cut in SQL at `FeedbackExcerptChars`. The answer is the one column
+  here that can be tens of kilobytes and a screen showing 600 characters has no
+  reason to move the rest.
+- `FeedbackListResponse` and `FeedbackSummaryResponse` in `handlers/wire.go`,
+  generated to `@argentum/api-types` — a separate method rather than a flag,
+  because the caller asking *whether* a verdict exists should not pay for the
+  caller that wants to read it.
+- `/quality`: the three numbers, a marked-wrong / everything-rated toggle, and
+  one row per verdict carrying the reason, both excerpts, the witness kind and a
+  link into the thread.
+
+### Acceptance
+
+- [x] A member is told why the page is empty rather than shown four empty panels — both routes are `RoleAdmin`
+- [x] "Nothing marked wrong" and "nothing rated at all" are different sentences
+- [x] No percentage is shown when nothing has been rated; `0%` would claim a clean record the product has not earned
+- [x] A verdict with no written reason still appears
+- [x] Every row links to its thread
+- [ ] One live turn: rate an answer down with a reason, and find it on `/quality` with the right question beside it
+
+### Gate
+
+```bash
+cd apps/backend && go test -race ./internal/app/... ./internal/transport/...
+cd apps/dashboard && npx vitest run src/features/quality
+```
+
+### The finding it produced
+
+**Go struct embedding does not survive tygo.** `FeedbackWithContext` embedded
+`MessageFeedback`; `encoding/json` inlines that and tygo renders it as a nested
+field, so the generated TypeScript described `{ MessageFeedback: {…} }` for a
+flat body. Caught by `tsc` — eight `TS2339`s — the first time a browser tried to
+read one. Fixed by not embedding, and the two latent cases
+(`QueryExampleHit`, `DocumentChunkHit`) now carry a warning comment.
+[`../coverage/generated-types.md`](../coverage/generated-types.md).
+
+### Out of scope
+
+**Acting on a verdict.** No re-ask, no draft-a-correction, no negative-feedback
+harvest. Reading the signal is a prerequisite for deciding what to do with it,
+and what to do with it is the trust question the Hermes research
+([`../research/05-hermes-self-learning.md`](../research/05-hermes-self-learning.md)
+§10) says to answer deliberately rather than by reflex.

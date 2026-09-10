@@ -137,6 +137,20 @@ func (s *FeedbackService) Recent(ctx context.Context, companyID string, onlyNega
 	return s.repo.ListByCompany(ctx, companyID, onlyNegative, limit, offset)
 }
 
+// RecentWithContext is Recent with the question and the answer attached
+// (T-Q16).
+//
+// It exists because Recent's own output could not be acted on. A verdict names
+// a message id and a thread id; the list of them was served by an admin route
+// from the day T-Q2 shipped and read by nothing, because the only way to learn
+// anything from it was to open every thread by hand. Whoever is triaging wrong
+// answers is reading for a pattern, and a pattern lives across rows.
+func (s *FeedbackService) RecentWithContext(
+	ctx context.Context, companyID string, onlyNegative bool, limit, offset int,
+) ([]*domain.FeedbackWithContext, error) {
+	return s.repo.ListWithContext(ctx, companyID, onlyNegative, limit, offset)
+}
+
 // Summary rolls up a window. An empty window is not an error and not a gap: it
 // means nobody rated anything, which FeedbackSummary.Rated says plainly.
 func (s *FeedbackService) Summary(ctx context.Context, companyID string, from, to time.Time) (domain.FeedbackSummary, error) {

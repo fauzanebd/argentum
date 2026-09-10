@@ -14,6 +14,7 @@ import { OnboardingPage } from "@/features/onboarding/onboarding-page";
 import { ChatPage } from "@/features/chat/chat-page";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { UsagePage } from "@/features/usage/usage-page";
+import { QualityPage } from "@/features/quality/quality-page";
 import { ScheduledTasksPage } from "@/features/scheduled-tasks/scheduled-tasks-page";
 import { WatchersPage } from "@/features/watchers/watchers-page";
 import { SharePage } from "@/features/share/share-page";
@@ -129,6 +130,15 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
+// Answer quality (T-Q16). Beside /usage rather than inside /settings: it is a
+// thing you read, not a thing you configure, and it is the only screen in the
+// product that answers "what is the agent getting wrong".
+const qualityRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/quality",
+  component: QualityPage,
+});
+
 const usageRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/usage",
@@ -200,6 +210,7 @@ export const routeTree = rootRoute.addChildren([
       chatThreadRoute,
       settingsRoute,
       usageRoute,
+      qualityRoute,
       scheduledTasksRoute,
       watchersRoute,
       documentsRoute,

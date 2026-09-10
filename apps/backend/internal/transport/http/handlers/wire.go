@@ -397,3 +397,33 @@ type WebhooksResponse struct {
 	SignatureHeader  string `json:"signature_header"`
 	SignatureMessage string `json:"signature_message"`
 }
+
+// FeedbackListResponse is the body of `GET /api/feedback` (T-Q2, T-Q16).
+//
+// Declared here rather than left as a `gin.H` for the reason at the top of this
+// file, and with a sharper edge than most: this route was built with T-Q2,
+// serves the one signal a tenant gives us that an answer was wrong, and had **no
+// reader anywhere in the product** for a month. A response nothing can be
+// written against is a response nothing gets written against.
+type FeedbackListResponse struct {
+	Feedback []*domain.FeedbackWithContext `json:"feedback"`
+	// OnlyNegative echoes what the list was filtered to, because the route
+	// defaults it to true and a client that did not ask should not have to
+	// assume. The positives are the majority and say nothing actionable.
+	OnlyNegative bool `json:"only_negative"`
+}
+
+// FeedbackSummaryResponse is the body of `GET /api/feedback/summary`.
+//
+// DownRate is computed server-side and sent, rather than left to each client to
+// divide, so the dashboard and any future consumer cannot disagree about the
+// denominator: it is over *rated* answers, never over turns. A down rate over
+// turns would fall every time somebody asked a question and said nothing, which
+// is most of them, and would improve on its own as usage grew.
+type FeedbackSummaryResponse struct {
+	Rated int `json:"rated"`
+	Up    int `json:"up"`
+	Down  int `json:"down"`
+	// DownRate is 0..1 over Rated, and 0 when nothing has been rated.
+	DownRate float64 `json:"down_rate"`
+}

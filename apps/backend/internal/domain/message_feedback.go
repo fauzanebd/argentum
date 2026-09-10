@@ -63,6 +63,56 @@ type MessageFeedback struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// FeedbackWithContext is one verdict and enough of the turn to act on it.
+//
+// The bare verdict is unactionable and that is why nothing read it for a month
+// (T-Q16): `MessageFeedback` carries a `message_id`, a `thread_id` and a
+// reason, so a list of them says "somebody disliked 4f2a-… on 9b1c-…" and the
+// only way to learn anything is to open each thread by hand.
+//
+// The excerpts are the whole point. Somebody triaging wrong answers is reading
+// for a pattern — the same metric, the same table, the same misread question —
+// and a pattern is visible across twenty rows on one screen and invisible
+// across twenty tabs.
+// **Not an embedded `MessageFeedback`, and that is load-bearing.** Go's
+// encoding/json inlines an embedded struct's fields, so the wire is flat —
+// but tygo renders embedding as a *named field*, and the generated TypeScript
+// would have described `{ MessageFeedback: {...}, question, answer }` for a
+// body that is `{ id, thread_id, ..., question, answer }`. A type that
+// misdescribes its own wire is the defect this repo spent 2026-09-10 removing
+// from the widget; spelling the fields out is the cost of not reintroducing it
+// one layer down. See generated-types.md §Limits for the two latent cases.
+type FeedbackWithContext struct {
+	ID        string `json:"id"`
+	CompanyID string `json:"company_id"`
+	ThreadID  string `json:"thread_id"`
+	MessageID string `json:"message_id"`
+
+	Rating FeedbackRating `json:"rating"`
+	Reason string         `json:"reason,omitempty"`
+
+	ActorKind ActorKind `json:"actor_kind"`
+	ActorRef  string    `json:"actor_ref,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// Question is the user message that provoked the answer, empty when the
+	// thread's shape does not resolve one. Not required: a verdict against an
+	// answer whose question cannot be found is still a verdict, and dropping
+	// the row would hide the complaint to protect the layout.
+	Question string `json:"question,omitempty"`
+	// Answer is the assistant message the verdict is about.
+	Answer string `json:"answer,omitempty"`
+}
+
+// FeedbackExcerptChars bounds each of the two excerpts.
+//
+// Enough to recognise a question and to see the top of an answer — which is
+// where a wrong number usually is, because the agent states the figure and then
+// explains it. Whoever needs the rest has the thread link.
+const FeedbackExcerptChars = 600
+
 // Normalize trims the reason to the cap and squares up whitespace. Returns
 // true when the reason was shortened, so the caller can say so rather than
 // silently keeping half a sentence.
@@ -111,6 +161,14 @@ type MessageFeedbackRepository interface {
 	// optionally only the negative ones — which is the list anyone tuning the
 	// agent actually opens.
 	ListByCompany(ctx context.Context, companyID string, onlyNegative bool, limit, offset int) ([]*MessageFeedback, error)
+	// ListWithContext is ListByCompany plus the question and the answer each
+	// verdict is about (T-Q16).
+	//
+	// A separate method rather than a flag on the one above, because the two
+	// have different costs: this one joins `messages` twice per row and the
+	// other reads one table. The caller that wants to know whether a verdict
+	// exists should not pay for the caller that wants to read it.
+	ListWithContext(ctx context.Context, companyID string, onlyNegative bool, limit, offset int) ([]*FeedbackWithContext, error)
 	// Summarize rolls up a window for the dashboard.
 	Summarize(ctx context.Context, companyID string, from, to time.Time) (FeedbackSummary, error)
 	// NegativeMessageIDs returns the ids, within the given set, that somebody

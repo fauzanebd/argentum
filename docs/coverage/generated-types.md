@@ -279,6 +279,38 @@ Found by writing that exact config and getting no file. It means *"generate a
 second view of one package"* is not a thing this generator can do, and a surface
 that wants its own output file needs its own Go package.
 
+## Go struct embedding does not survive tygo (2026-09-10)
+
+`encoding/json` **inlines** an embedded struct's fields; tygo renders embedding
+as a **named field**. So a Go type like
+
+```go
+type FeedbackWithContext struct {
+    MessageFeedback           // flat on the wire
+    Question string `json:"question,omitempty"`
+}
+```
+
+generates `{ MessageFeedback: MessageFeedback; question?: string }` for a body
+that is actually `{ id, thread_id, rating, …, question }`. **The generated type
+misdescribes its own wire** — the exact defect this ticket exists to prevent,
+arriving from the generator instead of from a hand-written file.
+
+Found by the TypeScript compiler the first time a browser tried to read one
+(`T-Q16`), which is the system working: eight `TS2339`s naming eight fields that
+the type said were one level down. Fixed by not embedding — `FeedbackWithContext`
+spells its ten fields out, with a comment on the type saying why.
+
+**Two latent cases remain and are deliberately left alone:** `QueryExampleHit`
+(embeds `QueryExample`) and the document-chunk hit (embeds `DocumentChunk`).
+Both generate the same wrong shape and neither is read by any browser — they are
+turn-time types that happen to live in `internal/domain`. Un-embedding them would
+ripple through every Go caller relying on field promotion, for no consumer.
+What they get instead is a warning comment where the next person will hit it.
+
+**The rule:** a type that crosses the wire does not embed. Inside the process,
+embed freely.
+
 ## Limits
 
 - **`/api` envelopes are still untyped.** Forty responses are `gin.H`
@@ -290,6 +322,9 @@ that wants its own output file needs its own Go package.
   inbound webhook envelopes from Meta and Twilio; no browser will ever receive
   one, so they are generated to `src/webhooks.ts` and kept out of the barrel
   rather than pretended into the dashboard's contract.
+- **Embedded structs generate a shape the JSON does not have.** See above.
+  `QueryExampleHit` and the document-chunk hit are wrong in the committed output
+  today; neither has a consumer, and both carry a comment saying so.
 - **The four `*Filter` structs are noise.** See above — visible noise, not
   misleading noise.
 - **Nothing checks that a *handler* returns what its type says.** The chain is

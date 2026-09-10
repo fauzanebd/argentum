@@ -85,12 +85,18 @@ func (h *FeedbackHandler) recent(c *gin.Context) {
 	// actionable; somebody opening this list is looking for what went wrong.
 	onlyNegative := c.DefaultQuery("only_negative", "true") != "false"
 
-	out, err := h.svc.Recent(c.Request.Context(), companyID(c), onlyNegative, limit, offset)
+	out, err := h.svc.RecentWithContext(c.Request.Context(), companyID(c), onlyNegative, limit, offset)
 	if err != nil {
 		feedbackFail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"feedback": out, "only_negative": onlyNegative})
+	// Never null. An empty list is `[]`, for T-23 §4a's reason: a client
+	// reading `.length` off a missing key gets a TypeError instead of zero, and
+	// "nobody has complained yet" is the ordinary state of this screen.
+	if out == nil {
+		out = []*domain.FeedbackWithContext{}
+	}
+	c.JSON(http.StatusOK, FeedbackListResponse{Feedback: out, OnlyNegative: onlyNegative})
 }
 
 func (h *FeedbackHandler) summary(c *gin.Context) {
@@ -119,11 +125,11 @@ func (h *FeedbackHandler) summary(c *gin.Context) {
 	// down_rate is computed rather than stored so the dashboard and any future
 	// consumer cannot disagree about the denominator — it is over *rated*
 	// answers, not over turns. See domain.FeedbackSummary.
-	c.JSON(http.StatusOK, gin.H{
-		"rated":     out.Rated,
-		"up":        out.Up,
-		"down":      out.Down,
-		"down_rate": out.DownRate(),
+	c.JSON(http.StatusOK, FeedbackSummaryResponse{
+		Rated:    out.Rated,
+		Up:       out.Up,
+		Down:     out.Down,
+		DownRate: out.DownRate(),
 	})
 }
 

@@ -154,3 +154,70 @@ func (r *MessageFeedbackRepo) NegativeMessageIDs(ctx context.Context, companyID 
 	}
 	return out, rows.Err()
 }
+
+// ListWithContext is ListByCompany with the turn attached (T-Q16).
+//
+// Two joins per row, and only one of them is trivial. The answer is
+// `message_feedback.message_id` and always exists; the *question* has to be
+// resolved, because nothing stores a link from an answer back to what was
+// asked. The lateral below is `CookbookCandidateRepo.Candidates`' join run
+// backwards: last user message in the same thread at or before the answer.
+//
+// LEFT JOIN rather than inner on both. A verdict whose question cannot be
+// resolved is still a verdict, and dropping the row would hide a complaint to
+// protect the layout — which is the failure this whole surface exists to end.
+func (r *MessageFeedbackRepo) ListWithContext(
+	ctx context.Context, companyID string, onlyNegative bool, limit, offset int,
+) ([]*domain.FeedbackWithContext, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	where := `WHERE f.company_id = $1`
+	if onlyNegative {
+		where += ` AND f.rating = -1`
+	}
+	// The excerpts are cut in SQL rather than in Go: the answer is the one
+	// column here that can be tens of kilobytes, and a screen showing 600
+	// characters of it has no reason to move the rest across the wire.
+	q := `
+		SELECT f.id, f.company_id, f.thread_id, f.message_id, f.rating,
+		       COALESCE(f.reason, ''), f.actor_kind, COALESCE(f.actor_ref, ''),
+		       f.created_at, f.updated_at,
+		       COALESCE(LEFT(q.content, $4), ''),
+		       COALESCE(LEFT(a.content, $4), '')
+		FROM message_feedback f
+		LEFT JOIN messages a ON a.id = f.message_id
+		LEFT JOIN LATERAL (
+		    SELECT u.content FROM messages u
+		    WHERE u.thread_id = f.thread_id
+		      AND u.role = 'user'
+		      AND u.created_at <= a.created_at
+		    ORDER BY u.created_at DESC, u.id DESC
+		    LIMIT 1
+		) q ON TRUE ` + where + `
+		ORDER BY f.created_at DESC
+		LIMIT $2 OFFSET $3`
+
+	rows, err := r.db.QueryContext(ctx, q, companyID, limit, offset, domain.FeedbackExcerptChars)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []*domain.FeedbackWithContext
+	for rows.Next() {
+		e := &domain.FeedbackWithContext{}
+		if err := rows.Scan(
+			&e.ID, &e.CompanyID, &e.ThreadID, &e.MessageID, &e.Rating,
+			&e.Reason, &e.ActorKind, &e.ActorRef, &e.CreatedAt, &e.UpdatedAt,
+			&e.Question, &e.Answer,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}

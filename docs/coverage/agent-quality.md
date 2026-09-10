@@ -864,3 +864,87 @@ only; retention purges the control database only. This one introspects every
 tenant's source once a day, which is a new standing cost and a new failure mode
 — and the reason the unreachable-source path is a counted no-op rather than an
 error.
+
+
+---
+
+## 16. `T-Q16` — the verdict gets a reader (built 2026-09-10)
+
+`T-Q2` is recorded in §10 above as "the door, not the storage". It turns out
+there was a third thing it was not: **a reader.**
+
+### 16.1 The signal was collected, stored, and shown to nobody
+
+`GET /api/feedback` and `GET /api/feedback/summary` shipped with `T-Q2`, are
+`RoleAdmin` in `policy.go`, and had **no caller anywhere in `apps/dashboard`**.
+The only two `feedback` references in the whole app were `message-feedback.tsx`,
+which writes a rating, and `chat-page.tsx`, which mounts it.
+
+So the full lifecycle of a thumbs-down was: stored in `message_feedback`, read
+once by `T-Q8`'s harvester to *exclude* that turn from the cookbook, and never
+seen by a human. The one signal a tenant gives us that an answer was wrong went
+into a table with a route nobody called.
+
+`recent`'s own handler comment says what it was for — *"somebody opening this
+list is looking for what went wrong"* — and nobody could open it.
+
+### 16.2 It could not have been read even if somebody had opened it
+
+`MessageFeedback` carries `message_id`, `thread_id`, `rating`, `reason` and the
+actor. No question, no answer. A list of those rows says "somebody disliked
+4f2a-… on 9b1c-…", and the only way to learn anything from twenty of them is to
+open twenty threads.
+
+That is why the route was widened rather than just consumed. `ListWithContext`
+attaches both excerpts, and the *question* is the interesting half: nothing in
+this schema links an answer back to what was asked, so it is resolved with a
+`LEFT JOIN LATERAL` for the last user message in the thread at or before the
+answer — `CookbookCandidateRepo.Candidates`' join run backwards. `LEFT` on both,
+because a verdict whose question cannot be resolved is still a verdict and
+dropping the row would hide a complaint to protect the layout.
+
+### 16.3 What the screen refuses to imply
+
+Three of the five tests are about the page telling the truth when it has nothing
+to show, which is the same failure one level up from §16.1.
+
+| Case | What it says | Why not the obvious thing |
+| --- | --- | --- |
+| Member opens it | "Ratings are visible to admins" | Both routes are `RoleAdmin`, so a member gets *no data*. Four empty panels would read as "nobody has ever complained" |
+| Nothing marked wrong | "Nothing has been marked wrong yet" | Distinct from the next row. Only one of the two is good news |
+| Nothing rated at all | "Nothing has been rated yet" | The product has not earned a clean record; it has not been graded |
+| Nothing rated, down rate | `—`, not `0%` | `0%` is a claim. The rate is over *rated* answers, and with none there is no rate |
+
+The empty state reads the server's `only_negative` echo rather than the toggle's
+local state — which is what that field is on the response for, and the component
+got it wrong until a test said so.
+
+### 16.4 The finding: Go struct embedding does not survive tygo
+
+`FeedbackWithContext` embedded `MessageFeedback`. `encoding/json` inlines an
+embedded struct; **tygo renders it as a named field**. The generated TypeScript
+therefore described `{ MessageFeedback: {…}, question, answer }` for a body that
+is flat — a generated type that misdescribes its own wire, which is the precise
+defect `T-02b` exists to prevent, arriving from the generator rather than from a
+hand-written file.
+
+`tsc` caught it: eight `TS2339`s naming eight fields the type had put one level
+down. Fixed by not embedding. `QueryExampleHit` and `DocumentChunkHit` are wrong
+in the same way in the committed output today, are read by no browser, and now
+carry a comment saying so. The rule is in
+[`generated-types.md`](generated-types.md): **a type that crosses the wire does
+not embed.**
+
+### 16.5 Gate
+
+`go build`, `go vet`, `go test -race ./...` clean; five new dashboard tests,
+`pnpm -r lint` and `build` clean. Owed: one live turn — rate an answer down with
+a reason and find it on `/quality` with the right question beside it. It is the
+lateral join that wants a real thread, because the fake resolves no question at
+all and that is exactly the arm it cannot exercise.
+
+**Deliberately not built: acting on a verdict.** No re-ask, no
+draft-a-correction, no negative harvest. Reading the signal is the prerequisite
+for deciding what to do with it, and what to do with it is the trust question
+[`../research/05-hermes-self-learning.md`](../research/05-hermes-self-learning.md)
+§10 says to answer deliberately rather than by reflex.

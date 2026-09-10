@@ -44,6 +44,21 @@ func (r *fbRepo) ListByCompany(context.Context, string, bool, int, int) ([]*doma
 	return r.saved, nil
 }
 
+// The enriched read (T-Q16). The fake resolves no thread, which is the case
+// the real query LEFT JOINs for: a verdict whose question cannot be found is
+// still a verdict.
+func (r *fbRepo) ListWithContext(context.Context, string, bool, int, int) ([]*domain.FeedbackWithContext, error) {
+	out := make([]*domain.FeedbackWithContext, 0, len(r.saved))
+	for _, f := range r.saved {
+		out = append(out, &domain.FeedbackWithContext{
+			ID: f.ID, CompanyID: f.CompanyID, ThreadID: f.ThreadID, MessageID: f.MessageID,
+			Rating: f.Rating, Reason: f.Reason, ActorKind: f.ActorKind, ActorRef: f.ActorRef,
+			CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
+		})
+	}
+	return out, nil
+}
+
 func (r *fbRepo) Summarize(context.Context, string, time.Time, time.Time) (domain.FeedbackSummary, error) {
 	return domain.FeedbackSummary{Rated: len(r.saved)}, nil
 }

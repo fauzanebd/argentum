@@ -5150,6 +5150,90 @@ two new fields. Owed: `076` up/down/up, a sweep against a genuinely renamed
 table, and the reversibility arm — archiving is only safer than deleting if the
 way back works ([`live-gate-backlog.md`](live-gate-backlog.md) §1a).
 
+## Phase 3w — The verdict gets a reader, and the generator tells its own lie (2026-09-10)
+
+Looking for what was actually left rather than what could be invented turned up
+one thing: **`GET /api/feedback` had no caller anywhere in the product.**
+
+`T-Q2` built the thumbs, the table, three admin routes and a computed down rate,
+and did not build a screen. The only two `feedback` references in
+`apps/dashboard` were the widget that writes a rating and the chat page that
+mounts it. So the entire lifecycle of a thumbs-down was: stored, read once by
+`T-Q8`'s harvester to *exclude* that turn from the cookbook, and never seen by a
+human. The handler's own comment says what the route was for — *"somebody
+opening this list is looking for what went wrong"* — and nobody could open it.
+
+Same shape as the morning's embed defect, one surface further out: a contract
+with one side implemented. It costs more here, because the signal being dropped
+is the only one a tenant gives us that an answer was wrong.
+
+### The route could not have been read even if somebody had opened it
+
+A verdict carries a `message_id`, a `thread_id`, a rating and a reason. No
+question, no answer. Twenty of those rows say "somebody disliked 4f2a-… on
+9b1c-…", and the only way to learn anything is to open twenty threads — so the
+route was widened rather than merely consumed.
+
+The *question* is the interesting half: nothing in this schema links an answer
+back to what was asked. It is resolved with a `LEFT JOIN LATERAL` for the last
+user message in the thread at or before the answer, which is
+`CookbookCandidateRepo.Candidates`' join run backwards. `LEFT` on both sides,
+because a verdict whose question cannot be resolved is still a verdict and
+dropping the row would hide a complaint to protect the layout.
+
+### The finding: Go struct embedding does not survive tygo
+
+`FeedbackWithContext` embedded `MessageFeedback`. `encoding/json` **inlines** an
+embedded struct; tygo renders it as a **named field**. The generated TypeScript
+therefore described `{ MessageFeedback: {…}, question, answer }` for a body that
+is flat — **a generated type that misdescribes its own wire**, which is the
+precise defect `T-02b` exists to prevent, arriving this time from the generator
+rather than from a hand-written file.
+
+`tsc` caught it the first moment a browser tried to read one: eight `TS2339`s
+naming eight fields the type had put one level down. That is the system working
+— and it is the second time in one day that the generated-types chain has been
+the thing that found a defect, after eleven months in which its whole value was
+theoretical.
+
+`QueryExampleHit` and `DocumentChunkHit` are wrong in exactly the same way in
+the committed output today. Both are read by no browser, un-embedding them would
+ripple through every Go caller relying on field promotion, and neither is worth
+that for zero consumers — so they carry a comment where the next person will hit
+it, and the rule went in `generated-types.md`: **a type that crosses the wire
+does not embed.**
+
+### Three of five tests are about refusing to imply something
+
+The page must not say the product is fine when it does not know. A member sees
+"ratings are visible to admins" rather than four empty panels that read as
+nobody-ever-complained. "Nothing marked wrong" and "nothing rated at all" are
+different sentences and only one is good news. With nothing rated the down rate
+is `—`, not `0%`, because `0%` is a claim the product has not earned.
+
+And the empty state reads the server's `only_negative` echo rather than the
+toggle's local state — which is what that field is on the response for, and the
+component got it wrong until a test said so.
+
+### Deliberately not built
+
+**Acting on a verdict.** No re-ask, no draft-a-correction, no negative harvest.
+Reading the signal is the prerequisite for deciding what to do with it, and what
+to do with it is the trust question the Hermes research
+([`../research/05-hermes-self-learning.md`](../research/05-hermes-self-learning.md)
+§10) says to answer deliberately rather than by reflex. The product now shows a
+human what it got wrong; whether anything automatic should follow is a decision,
+not a next step.
+
+### Gate
+
+`go build`, `go vet`, `go test -race ./...` — 66 packages, 0 failures. Five new
+dashboard tests (25 total, up from 20). `pnpm -r lint` and `build` clean,
+`make types --check` current. Owed: one live turn — rate an answer down and find
+it on `/quality` with the right question beside it, which is the one arm no fake
+can have, because the fake exists to exercise the path where no question
+resolves ([`live-gate-backlog.md`](live-gate-backlog.md) §1a).
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

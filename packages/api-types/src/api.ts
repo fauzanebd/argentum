@@ -14,6 +14,7 @@ import type {
   MCPServer,
   MCPTransport,
   MetricDefinition,
+  FeedbackWithContext,
   MetricGrain,
   MetricUnit,
   Skill,
@@ -440,4 +441,38 @@ export interface WebhooksResponse {
   disable_after: number /* int */;
   signature_header: string;
   signature_message: string;
+}
+/**
+ * FeedbackListResponse is the body of `GET /api/feedback` (T-Q2, T-Q16).
+ * Declared here rather than left as a `gin.H` for the reason at the top of this
+ * file, and with a sharper edge than most: this route was built with T-Q2,
+ * serves the one signal a tenant gives us that an answer was wrong, and had **no
+ * reader anywhere in the product** for a month. A response nothing can be
+ * written against is a response nothing gets written against.
+ */
+export interface FeedbackListResponse {
+  feedback: (FeedbackWithContext | undefined)[];
+  /**
+   * OnlyNegative echoes what the list was filtered to, because the route
+   * defaults it to true and a client that did not ask should not have to
+   * assume. The positives are the majority and say nothing actionable.
+   */
+  only_negative: boolean;
+}
+/**
+ * FeedbackSummaryResponse is the body of `GET /api/feedback/summary`.
+ * DownRate is computed server-side and sent, rather than left to each client to
+ * divide, so the dashboard and any future consumer cannot disagree about the
+ * denominator: it is over *rated* answers, never over turns. A down rate over
+ * turns would fall every time somebody asked a question and said nothing, which
+ * is most of them, and would improve on its own as usage grew.
+ */
+export interface FeedbackSummaryResponse {
+  rated: number /* int */;
+  up: number /* int */;
+  down: number /* int */;
+  /**
+   * DownRate is 0..1 over Rated, and 0 when nothing has been rated.
+   */
+  down_rate: number /* float64 */;
 }

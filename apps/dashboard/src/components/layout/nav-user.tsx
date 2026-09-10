@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Settings, CircleDollarSign, Sun, Moon } from "lucide-react";
+import { CircleDollarSign, Gauge, LogOut, Moon, Settings, Sun } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -128,6 +128,15 @@ export function NavUser() {
               <DropdownMenuItem onClick={() => navigate({ to: "/usage" })}>
                 <CircleDollarSign className="size-4" />
                 Usage
+              </DropdownMenuItem>
+              {/* Not admin-gated in the menu, deliberately. The page tells a
+                  member why it is empty and points them at the thumbs, which is
+                  the control they *do* have — hiding the entry would make the
+                  feature look absent rather than restricted, which is the
+                  decision T-09/T-11 already took for watcher controls. */}
+              <DropdownMenuItem onClick={() => navigate({ to: "/quality" })}>
+                <Gauge className="size-4" />
+                Answer quality
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate({ to: "/settings" })}>
                 <Settings className="size-4" />

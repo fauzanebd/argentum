@@ -141,6 +141,7 @@ packages:
       domain.MetricDefinition: "MetricDefinition"
       domain.MetricGrain: "MetricGrain"
       domain.MetricUnit: "MetricUnit"
+      domain.FeedbackWithContext: "FeedbackWithContext"
     frontmatter: |
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
@@ -157,6 +158,7 @@ packages:
         MCPServer,
         MCPTransport,
         MetricDefinition,
+        FeedbackWithContext,
         MetricGrain,
         MetricUnit,
         Skill,
