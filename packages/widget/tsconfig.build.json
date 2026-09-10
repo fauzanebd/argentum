@@ -1,0 +1,15 @@
+{
+  // Declarations only. Vite emits the JavaScript in three formats; tsc's job
+  // here is the `.d.ts` beside them, which is the half a bundler consumer
+  // actually reads.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}

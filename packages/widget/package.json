@@ -1,0 +1,48 @@
+{
+  "name": "@argentum/widget",
+  "version": "0.1.0",
+  "description": "The Argentum chat widget loader \u2014 a script tag or an npm import, one signed visitor either way.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/argentum-widget.js",
+  "jsdelivr": "./dist/argentum-widget.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./argentum-widget.js": "./dist/argentum-widget.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": [
+    "./dist/argentum-widget.js"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "keywords": [
+    "argentum",
+    "widget",
+    "embed",
+    "chat",
+    "analytics"
+  ],
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "vite build && vite build --config vite.cdn.config.ts && tsc -p tsconfig.build.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "size": "node scripts/size.mjs"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.3",
+    "vite": "^5.4.11"
+  }
+}

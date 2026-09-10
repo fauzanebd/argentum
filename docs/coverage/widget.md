@@ -106,11 +106,81 @@ one the pilot had to implement by hand.
 `apps/widget/examples/vanilla/` is a working page plus a thirty-line signing
 server.
 
-**Not done from this ticket:** the npm packages (`@argentum/widget`,
-`@argentum/widget-react`), the versioned CDN path, changesets, and the react /
-vue / nextjs examples. `dist/` is static and deployable anywhere today, which is
-what the Gelael integration needs; publishing is what the *next* tenant needs.
-It is the cheapest remaining piece of the phase and it is called out in §5.
+**The publishing half landed 2026-09-10** — see §3a. Until then `dist/` was
+static and deployable anywhere, which is what the Gelael integration needed;
+publishing is what the *next* tenant needs.
+
+## 3a. T-22 — the packages, 2026-09-10
+
+**The loader moved.** `src/loader.ts` and `src/protocol.ts` left `apps/widget`
+for `packages/widget`, which the ticket permits (*"move the loader source under
+`packages/` if that keeps the publish boundary cleaner"*) and which the
+publish boundary requires: a package a tenant installs cannot live inside a
+private app. `apps/widget` keeps the iframe app and now imports `MARKER` and
+`isWidgetMessage` from `@argentum/widget` instead of holding a second copy of
+the postMessage vocabulary — one definition, two consumers, a version between
+them. The 15 KB budget moved with the source; a budget checked somewhere other
+than where the file is produced stops being checked the first time the two are
+built apart.
+
+| Package | Outputs |
+| --- | --- |
+| `@argentum/widget` | ESM, CJS, the CDN IIFE, and `.d.ts`. Exports the loader api, `InitOptions`, `WidgetTheme`, `EventName`, plus `MARKER`/`isWidgetMessage` for a host running its own `message` listener. `protocol.ts`'s full vocabulary is **not** exported — it is a contract between two halves that always ship together, and exporting it would be a promise not to change it. |
+| `@argentum/widget-react` | ESM, CJS, `.d.ts`. `<ArgentumWidget />`, with React and the loader both external. |
+
+### Two defects the packaging itself produced
+
+Neither is theoretical; both were built, observed, and fixed.
+
+**1. The CDN global stopped being the api.** Built as one Vite lib with
+`formats: ["es","cjs","iife"]` from `index.ts`, rollup's IIFE wrapper emits
+`var Argentum = { default, MARKER, isWidgetMessage, … }` — so `Argentum.init(…)`,
+the call in every script tag this product has ever documented, becomes
+*undefined is not a function*. The loader's own `window.Argentum = api` does not
+rescue it: the wrapper's `var Argentum` **is** `window.Argentum`, and it is
+assigned last. Fixed by building the CDN file from `loader.ts`, which has
+exactly one runtime export, in `vite.cdn.config.ts` — the comment there is the
+record. The npm entry keeps its named exports, which is what a bundler wants.
+
+**2. The loader crashed on import during a server render.** Two module-scope
+DOM reads — `document.currentScript` and `window.Argentum = api` — are fine in a
+script tag and are a throw at import time in Next.js, where there is no
+`document`. Both are guarded now. This is the class of bug the workspace
+exclusion on `apps/widget/examples/**` exists to catch, and it was caught by
+writing the Next.js example the ticket asks for.
+
+### The rest
+
+- **Examples**: `vanilla/` (unchanged), plus `react/`, `vue/` and `nextjs/`,
+  each under fifty lines of app code with its own signing endpoint, each
+  depending on `@argentum/widget` at `^0.1.0` rather than `workspace:*` so they
+  install exactly as a customer's project would. Next signs in a route handler
+  rather than a sidecar server, which is the reason it is worth having beside
+  the React one.
+- **All three pass `appBase` explicitly.** Once the loader is bundled by *any*
+  bundler there is no `document.currentScript`, so this is not a Next-only rule
+  as the ticket implies — it is the rule for every non-script-tag path, and the
+  published README leads with it.
+- **Changesets**, which needed a root `package.json` the repo did not have. It
+  exists for this and nothing else; every other repo-wide command is still a
+  Makefile target. Both packages are `access: restricted`; every application and
+  internal package is in `ignore`, because the widget's version is a promise to
+  somebody else's lockfile and the backend tag is not.
+- **Docs**: signing snippets in Go, Node, Python and PHP, each the whole handler
+  rather than the interesting line; the npm path and why `appBase` becomes
+  required; the versioned-CDN policy (`v1` moves, `v1.2.3` never does, a
+  published file is never rewritten because somebody has it in an SRI
+  attribute); two new troubleshooting rows for the two failures above; and
+  **thread ownership as a rule**, which is the pilot's finding written down —
+  the embed session scopes every read to its `user_ref`, a workspace-scoped
+  `/v1` key does not, and the two surfaces look symmetrical while only one of
+  them is checking.
+
+**Gate.** `pnpm -r build` and `pnpm -r lint` clean across the workspace; both
+budgets green (loader 1.9 KB of 15, app 33.3 KB of 80); `pnpm changeset status`
+lists exactly the two packages. **Not run:** an actual `npm publish`, and the
+ticket's own gate — integrating into a throwaway Vite app from the published
+docs and timing it. Both need a registry and a person; they are §5's.
 
 ## 4. T-23 — configuration
 

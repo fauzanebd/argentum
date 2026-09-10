@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { EmbedClient, SessionExpired, type Message, type WidgetConfig } from "./api";
 import { renderMarkdown } from "./markdown";
-import { MARKER, isWidgetMessage, type WidgetTheme } from "../protocol";
+import { MARKER, isWidgetMessage, type WidgetTheme } from "@argentum/widget";
 
 // The app inside the iframe (T-21).
 //

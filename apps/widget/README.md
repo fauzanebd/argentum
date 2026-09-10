@@ -2,14 +2,23 @@
 
 Argentum's chat, embeddable in a tenant's own site (T-21).
 
-Two build outputs from one source, and the split is the design:
+**The loader moved out on 2026-09-10 (T-22).** It is published as
+[`@argentum/widget`](../../packages/widget/) now, because a package a tenant
+installs cannot live inside a private app — and the two halves are built and
+versioned separately as a result. What is left here is the app that runs inside
+the iframe.
 
-| Output | What it is | Budget |
+| Output | Where it is built | Budget |
 | ------ | ---------- | ------ |
-| `dist/argentum-widget.js` | The **loader**. An IIFE with no framework that a tenant drops in a script tag. Opens an iframe, draws a launcher, bridges `postMessage`. Exposes `window.Argentum`. | ≤15 KB gzipped |
-| `dist/app/` | The **app** that runs inside that iframe. Preact + `marked` + `dompurify`. | ≤80 KB gzipped |
+| `dist/app/` | Here. The **app** inside the iframe: Preact + `marked` + `dompurify`. | ≤80 KB gzipped |
+| `argentum-widget.js` | [`packages/widget`](../../packages/widget/) — the **loader** a tenant drops in a script tag or imports. | ≤15 KB gzipped |
 
-Measured on the last build: **loader 1.8 KB**, **app 31.8 KB**. Gated in Chrome
+They still have to agree, and the thing they agree on is `protocol.ts`, which
+went with the loader: this app imports `MARKER` and `isWidgetMessage` from
+`@argentum/widget` rather than keeping a second copy of the postMessage
+vocabulary. One definition, two consumers, and a version number between them.
+
+Measured on the last build: **loader 1.9 KB**, **app 33.3 KB**. Gated in Chrome
 on 2026-08-10 against a live stack — a question typed into the panel, the answer
 streaming back over the WebSocket. That sitting found four defects nothing else
 had: see `docs/coverage/widget.md` §5a, and the two config files here, whose
@@ -18,10 +27,12 @@ the check, and it exits non-zero on a breach — the budget is the feature, sinc
 a widget that slows the host page is one the customer's frontend team removes.
 
 ```bash
-pnpm build      # both outputs
-pnpm size       # the budget check
+pnpm build      # the iframe app
+pnpm size       # its budget check
 pnpm lint       # tsc --noEmit
-pnpm dev        # the iframe app on its own, for styling
+pnpm dev        # the app on its own, for styling
+
+pnpm --filter @argentum/widget build   # the loader, next door
 ```
 
 ## Two build decisions that look arbitrary and are not
@@ -61,10 +72,16 @@ without an allowlisted origin.
 
 ## Deploying it
 
-`dist/` is static. Copy it anywhere — a CDN, a Pages project, an object store —
-and point the tenant's script tag at `dist/argentum-widget.js`. The loader finds
-the iframe app relative to its own URL, so both halves move together and there
-is no second URL to configure.
+`dist/app/` is static; so is the loader's `dist/argentum-widget.js`. Serve them
+under one path — `/widget/v1/` — and the script tag needs no second URL, because
+the loader finds the app relative to its own `src`.
+
+A tenant who imports the package instead has no script tag to infer from and
+must pass `appBase`. That is the one behavioural difference between the two
+paths, and it is why the published README leads with it.
+
+The versioned-path rules — `v1` moves, `v1.2.3` never does — are in the
+integration guide below.
 
 Integration guide, security model and CSP requirements:
 [`apps/backend/docs/embed/`](../backend/docs/embed/README.md).

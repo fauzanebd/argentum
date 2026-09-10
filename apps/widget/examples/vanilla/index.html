@@ -16,8 +16,11 @@
       <code>/identity</code>, which your own server signs.
     </p>
 
-    <!-- The loader. In production this is the versioned CDN path. -->
-    <script src="../../dist/argentum-widget.js"></script>
+    <!-- The loader. In production this is the versioned CDN path
+         (https://cdn.example.com/widget/v1/argentum-widget.js); here it is the
+         local build, which lives in packages/widget since T-22 moved it there
+         to be published. -->
+    <script src="../../../../packages/widget/dist/argentum-widget.js"></script>
     <script>
       // Ask your own backend who this visitor is. It answers with the public
       // client key and a signature over `<ref>:<exp>` — never with the secret.
@@ -31,6 +34,11 @@
           clientKey: identity.clientKey,
           apiBase: identity.apiBase,
           user: identity.user,
+          // Spelled out only because this repository builds the two halves into
+          // two directories. Deployed, they sit under one path — /widget/v1/ —
+          // and the loader finds the app relative to its own src with no second
+          // URL to configure, which is the whole point of the script-tag path.
+          appBase: "../../dist/app/",
           launcher: "bubble",
           position: "bottom-right",
           theme: { primary: "#e11d48", radius: 12, mode: "auto" },

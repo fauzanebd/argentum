@@ -63,8 +63,81 @@ a different separator or base64 all produce a `401` with no further explanation,
 which is deliberate: a mint that explained *why* a signature was wrong would be
 an oracle for the secret.
 
-The dashboard's Embed tab generates this snippet in Go, Node, Python and PHP,
-pre-filled with your own client key.
+The dashboard's Embed tab generates this snippet pre-filled with your own client
+key. The same endpoint in the other three languages — the whole handler each
+time, because the interesting line is worthless without the session check above
+it:
+
+```go
+// Go. Runs on YOUR server.
+func argentumIdentity(w http.ResponseWriter, r *http.Request) {
+	user, ok := sessionUser(r) // YOUR session, not a request parameter
+	if !ok {
+		http.Error(w, "sign in first", http.StatusUnauthorized)
+		return
+	}
+	exp := time.Now().Add(15 * time.Minute).Unix()
+
+	mac := hmac.New(sha256.New, []byte(os.Getenv("ARGENTUM_EMBED_SECRET")))
+	fmt.Fprintf(mac, "%s:%d", user.ID, exp)
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"clientKey": "argw_pub_…",
+		"apiBase":   "https://argentum.example.com",
+		"user": map[string]any{
+			"ref": user.ID, "name": user.Name, "exp": exp,
+			"sig": hex.EncodeToString(mac.Sum(nil)),
+		},
+	})
+}
+```
+
+```python
+# Python (Flask). Runs on YOUR server.
+import hmac, hashlib, os, time
+
+@app.get("/argentum-identity")
+@login_required
+def argentum_identity():
+    user_ref = str(current_user.id)          # YOUR id for this person
+    exp = int(time.time()) + 900             # 15 minutes; 24h is the max
+
+    sig = hmac.new(
+        os.environ["ARGENTUM_EMBED_SECRET"].encode(),
+        f"{user_ref}:{exp}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    return {
+        "clientKey": "argw_pub_…",
+        "apiBase": "https://argentum.example.com",
+        "user": {"ref": user_ref, "name": current_user.name, "exp": exp, "sig": sig},
+    }
+```
+
+```php
+<?php
+// PHP. Runs on YOUR server.
+session_start();
+if (empty($_SESSION['user_id'])) {
+    http_response_code(401);
+    exit('sign in first');
+}
+
+$userRef = (string) $_SESSION['user_id'];   // YOUR id for this person
+$exp     = time() + 900;                    // 15 minutes; 24h is the max
+$sig     = hash_hmac('sha256', "$userRef:$exp", getenv('ARGENTUM_EMBED_SECRET'));
+
+header('Content-Type: application/json');
+echo json_encode([
+    'clientKey' => 'argw_pub_…',
+    'apiBase'   => 'https://argentum.example.com',
+    'user'      => ['ref' => $userRef, 'name' => $_SESSION['name'], 'exp' => $exp, 'sig' => $sig],
+]);
+```
+
+Every one of them hashes `<user_ref>:<exp>` and hex-encodes it. If you are
+porting to a language not listed, that sentence is the whole specification.
 
 **Three rules for this endpoint**, and each one is a real incident somewhere:
 
@@ -101,6 +174,51 @@ pre-filled with your own client key.
 That is the integration. A working copy is in
 [`../../../apps/widget/examples/vanilla/`](../../../apps/widget/examples/vanilla/),
 signing server included, in about thirty lines.
+
+## 3b. Or from npm
+
+If your site already has a build, the same loader is a package:
+
+```bash
+npm install @argentum/widget          # or @argentum/widget-react
+```
+
+```js
+import Argentum from "@argentum/widget";
+
+Argentum.init({ clientKey, apiBase, appBase, user });
+```
+
+**`appBase` becomes required.** The script tag works out where the iframe app
+lives from its own `src`; an import has no script tag to read. Leave it out and
+`init()` throws saying so, rather than opening a frame pointed at nothing.
+
+React has a wrapper — `<ArgentumWidget {...options} onTokenExpired={resign} />`
+from `@argentum/widget-react`, which handles the re-sign and the unmount for
+you. Runnable examples for React, Vue and Next.js are beside the vanilla one in
+[`../../../apps/widget/examples/`](../../../apps/widget/examples/).
+
+## Versions, and which URL to point at
+
+The two packages are versioned with SemVer, independently of the Argentum
+backend release tag. **The compatibility promise is against the `/api/embed`
+contract**, not against your deployment's version: a `1.x` loader works with any
+backend that still serves `/api/embed`, which is the thing that would get a
+major bump if it changed.
+
+| URL | Moves | Use it when |
+| --- | --- | --- |
+| `/widget/v1/argentum-widget.js` | Tracks the latest `1.x` | Almost always. You get fixes without redeploying. |
+| `/widget/v1.2.3/argentum-widget.js` | Never | Your CSP pins a hash, or your change process requires a fixed artifact. |
+
+**A published version file is never rewritten.** If `1.2.3` is wrong, `1.2.4`
+fixes it and `1.2.3` stays exactly as it was — somebody has it in a
+subresource-integrity attribute, and a "fixed" file under the same URL breaks
+their page instead of ours. The `v1` alias is the only path that moves.
+
+Both packages keep a `CHANGELOG.md` written from the changeset that shipped
+each release, so an upgrade is a diff you can read rather than a version bump
+you hope about.
 
 ---
 
@@ -139,6 +257,34 @@ stream, and the widget's own configuration. Every read is scoped to the
 another's conversation by guessing an id. Revoking a key in the dashboard stops
 new sessions immediately; the ones already issued expire within the quarter hour.
 
+## Who owns a thread
+
+**The widget checks this for you. A `/v1` integration does not.**
+
+An embed session is minted for one `user_ref`, and every read through
+`/api/embed` is scoped to it — so a visitor cannot open another visitor's
+conversation by guessing an id, and you did not have to write anything for that
+to be true.
+
+A `/v1` API key is scoped to the **workspace**, not to a person. If you build
+your own per-user surface on it, the key can read every thread in the company,
+and nothing warns you when you serve the wrong one:
+
+```js
+// YOUR server, on /v1. The check is yours to make.
+const thread = await argentum.threads.get(threadId);
+if (thread.user_ref !== session.user.id) {
+  return res.status(404).end();   // 404, not 403 — see below
+}
+```
+
+Answer a mismatch with `404` rather than `403`: a `403` confirms the thread
+exists, which is half of what somebody enumerating ids is after.
+
+This is written down because the Gelael pilot hit it. Reading both surfaces, it
+is not obvious that one of them is checking and the other is handing you the
+whole workspace — the two look symmetrical and are not.
+
 ## Content Security Policy
 
 If your site sends CSP headers — and it should — the widget needs three entries.
@@ -163,6 +309,8 @@ arrives, which reads as "the agent is slow" rather than as a policy error.
 | `401` from `/api/embed/session` | The signature, the deadline, or the key. Check the signed string is `<ref>:<exp>` with no spaces; check your server's clock; check the key is not revoked or paused. |
 | `401` seconds after it worked | Normal — the session expired. Handle `token_expired` and re-sign. |
 | Blank iframe | CSP `frame-src`, or `appBase` pointing at somewhere the app is not served from. |
+| `Argentum: appBase is required when the loader is inlined` | You imported the package instead of using a script tag. There is no `document.currentScript` inside a bundle, so the app URL cannot be inferred — pass `appBase`. |
+| `Argentum.init is not a function` from a script tag | The page loaded an ESM/CJS build instead of `argentum-widget.js`. Only that file defines the global. |
 | The chat sends but nothing comes back | CSP `connect-src` is missing `wss:`, or a proxy is closing idle WebSocket connections. |
 | The answer arrives all at once, seconds late | A reverse proxy is buffering the stream. Nginx buffers by default: `proxy_buffering off` for the API, or `X-Accel-Buffering: no`. |
 | The transcript differs from what the user watched appear | The client kept the streamed deltas instead of the `final` message. `final` carries the answer of record. |

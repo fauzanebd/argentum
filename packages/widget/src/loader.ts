@@ -11,8 +11,9 @@
 // is most of this file.
 
 import { MARKER, isWidgetMessage, type WidgetMessage, type WidgetTheme } from "./protocol";
+export type { WidgetTheme };
 
-interface InitOptions {
+export interface InitOptions {
   clientKey: string;
   user: { ref: string; name?: string; exp: number; sig: string };
   /** The Argentum API. Required — a self-hosted deployment is the common case
@@ -29,8 +30,8 @@ interface InitOptions {
   locale?: string;
 }
 
-type EventName = "ready" | "open" | "close" | "message" | "error" | "token_expired";
-type Handler = (detail?: unknown) => void;
+export type EventName = "ready" | "open" | "close" | "message" | "error" | "token_expired";
+export type Handler = (detail?: unknown) => void;
 
 const PANEL_WIDTH = 400;
 const PANEL_HEIGHT = 620;
@@ -48,8 +49,18 @@ const handlers: Record<string, Handler[]> = {};
 
 /** The origin the iframe will run on, derived from where this script came
  *  from. `document.currentScript` is read at module scope on purpose — it is
- *  null by the time any callback runs. */
-const scriptSrc = (document.currentScript as HTMLScriptElement | null)?.src ?? "";
+ *  null by the time any callback runs.
+ *
+ *  Guarded for a server render (T-22): once this file is an npm package, a
+ *  Next.js app imports it during SSR where there is no `document`, and an
+ *  unguarded read is a crash at import time rather than a widget that does not
+ *  appear. There is no script tag on the server anyway, so "" is the honest
+ *  answer — and a bundled consumer has to pass `appBase` regardless, which is
+ *  what `appURL()` says when it is missing. */
+const scriptSrc =
+  typeof document === "undefined"
+    ? ""
+    : ((document.currentScript as HTMLScriptElement | null)?.src ?? "");
 
 function emit(name: EventName, detail?: unknown) {
   for (const h of handlers[name] ?? []) {
@@ -331,6 +342,10 @@ declare global {
   }
 }
 
-window.Argentum = api;
+// The script-tag path expects a global, and the bundled path costs nothing by
+// having one. Guarded for the same server render as `scriptSrc` above.
+if (typeof window !== "undefined") {
+  window.Argentum = api;
+}
 
 export default api;

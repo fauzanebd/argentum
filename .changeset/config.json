@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [],
+  "linked": [],
+  "access": "restricted",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [
+    "@argentum/widget-app",
+    "dashboard",
+    "landing",
+    "@argentum/render",
+    "@argentum/api-types",
+    "@argentum/motion",
+    "@argentum/design-tokens",
+    "@argentum/openapi-tools",
+    "@argentum/sdk"
+  ]
+}

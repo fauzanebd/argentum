@@ -1,0 +1,14 @@
+{
+  "name": "argentum-workspace",
+  "private": true,
+  "type": "module",
+  "description": "Workspace root. It exists for changesets and nothing else (T-22): the two npm packages under packages/widget* need versions that move independently of the backend image tag, and changesets needs somewhere to live. Every other repo-wide command is still a Makefile target.",
+  "scripts": {
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm -r --filter \"@argentum/widget\" --filter \"@argentum/widget-react\" build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.10"
+  }
+}

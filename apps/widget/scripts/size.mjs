@@ -1,17 +1,16 @@
-// The bundle budget, as a check rather than as a sentence in a ticket (T-21).
+// The iframe app's bundle budget, as a check rather than a sentence in a
+// ticket (T-21).
 //
-// A widget that slows the host page gets removed by the customer's own frontend
-// team, and the way a 15 KB loader becomes a 60 KB one is a dependency somebody
-// added on a Tuesday with no number in front of them. Run after a build; a
-// breach is a non-zero exit.
+// The loader's half of this file moved to `packages/widget` with the loader
+// itself (T-22); what is left is everything inside the iframe, which is fetched
+// before a visitor can type and is therefore the number that decides whether
+// the widget feels instant. Run after a build; a breach is a non-zero exit.
 
 import { gzipSync } from "node:zlib";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const LIMITS = {
-  // The script tag on the tenant's page. Framework-free by construction.
-  loader: 15 * 1024,
   // Everything inside the iframe: markup, styles and app, since they are all
   // fetched before a visitor can type.
   app: 80 * 1024,
@@ -21,16 +20,12 @@ function gzipped(path) {
   return gzipSync(readFileSync(path), { level: 9 }).length;
 }
 
-const loader = gzipped("dist/argentum-widget.js");
 const appDir = "dist/app";
 const app = readdirSync(appDir)
   .filter((f) => /\.(js|css|html)$/.test(f))
   .reduce((total, f) => total + gzipped(join(appDir, f)), 0);
 
-const rows = [
-  ["loader", loader, LIMITS.loader],
-  ["app", app, LIMITS.app],
-];
+const rows = [["app", app, LIMITS.app]];
 
 let failed = false;
 for (const [name, actual, limit] of rows) {
