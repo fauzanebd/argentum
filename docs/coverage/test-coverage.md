@@ -6,7 +6,46 @@ measurement). These are actual results, not estimates.
 
 ## Headline
 
-> **Current reading, 2026-08-19: 58 of 86 Go packages have tests.** The PDF
+> **Current reading, 2026-09-11: 66 of 90 Go packages have tests.** Measured
+> with the `go list` command at the bottom of this file, and corroborated by
+> the gate run the same morning without being asked to: `go test -race ./...`
+> printed **66 `ok` and 24 `no test files`**, which is the same two numbers
+> from a different instrument. The three weeks since the reading
+> below moved the denominator by four and the numerator by eight — so every new
+> package arrived with tests *and* at least four that had none gained them. The
+> ratio is 73%, against 67% on 2026-08-19 and 62% on 2026-08-08.
+>
+> **The 24 without tests, grouped by why**, because the count on its own has
+> never been the useful part:
+>
+> - **A network call or a process boundary** — `internal/adapters/db` and its
+>   three drivers, `internal/adapters/storage`, `internal/discord`,
+>   `internal/lark`, `internal/dococr`, `internal/llmtenant`,
+>   `internal/migrate`, `internal/transport/ws`.
+> - **A `main`** — `cmd/discord`, `cmd/worker`, `cmd/mcp`, `cmd/rekey`,
+>   `cmd/evaldocs`. (`cmd/api` is not among them: its policy table is tested,
+>   which is what `TestEveryAuthedRouteIsClassified` is.)
+> - **Generated, or a type declaration** — `openapi`, `pkg/models`,
+>   `scripts/encrypt_secret`, `internal/transport/http/apierr`.
+> - **Neither, and therefore the ones worth naming**:
+>   `internal/report/labels` (95 lines, pure, and the reason a document does not
+>   say "Prepared for" in one format and "Disiapkan untuk" in the other),
+>   `internal/report/flow` (340 lines), `internal/report/sample`.
+>
+> **`internal/transport/http/embedwire` has no test file and does not need one
+> counted against it.** Its projection is pinned from the outside by
+> `handlers/embed_chat_test.go`, which asserts the *whole* key set of a
+> transcript row rather than the fields we currently mind — written the day two
+> P1s got through it. That is the opposite of the `docchunk` case below, where
+> "exercised through `internal/app`" turned out to mean the caller was tested
+> and the package was not; the distinction is whether the outside test can see
+> the thing that would break.
+>
+> **This headline was itself three weeks stale when it was re-measured**, which
+> is the same species as the two coverage rows corrected the same morning
+> ([`delivery-log.md`](delivery-log.md) Phase 3x).
+
+> **Previous reading, 2026-08-19: 58 of 86 Go packages have tests.** The PDF
 > track added ten packages and six of them arrived with their own tests —
 > `internal/numparse`, `internal/doctable`, `internal/docwarehouse`,
 > `internal/evaldocs` and the two halves already there. The four without are the
@@ -547,6 +586,21 @@ grep -c "no test files" /tmp/test.txt   # untested packages
 grep -c "^ok"          /tmp/test.txt    # packages with passing tests
 go list ./... | wc -l                   # denominator
 ```
+
+The headline reading does not need the ten-minute race build. `go list` answers
+the same question from the file names, in about a second, and it is what the
+2026-09-11 reading used — worth knowing, because the cost of the command above
+is a fair guess at why this headline went three weeks without being re-taken
+while four readings in the eleven days before it were a day or two apart:
+
+```bash
+cd apps/backend
+go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -c .
+go list -f '{{if not (or .TestGoFiles .XTestGoFiles)}}{{.ImportPath}}{{end}}' ./... | grep .
+```
+
+It counts packages that *have* a test file, not packages whose tests pass — for
+that, the gate above is still the instrument.
 
 Or, from the repo root, the whole gate in one command:
 

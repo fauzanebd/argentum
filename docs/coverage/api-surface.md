@@ -35,7 +35,8 @@ are what this document is for.
 > above is the number to check it against.
 
 `Auth` column: `—` public, `JWT` any authenticated member, `JWT+` admin only,
-`HMAC` signature-verified webhook.
+`HMAC` signature-verified webhook, `Token` a shared secret that is neither a
+session nor an API key (`/metrics` is the only one).
 
 > **Updated after `T-04` (2026-07-28).** Every `⚠️ not admin-gated` marker below
 > is gone because the routes are gated now — and more of them than the ticket
@@ -51,8 +52,12 @@ are what this document is for.
 | ------ | ------------------------------- | ---- | -------------- |
 | GET    | `/health`                       | —    | `health.go`    |
 | GET    | `/ready`                        | —    | `health.go`    |
-| GET    | `/metrics`                      | —    | `health.go` ⚠️ **unauthenticated cost/token data** |
+| GET    | `/metrics`                      | Token | `health.go`. **No longer public** — `METRICS_TOKEN` set means the token or `401`; unset means loopback only and `404` to everyone else, decided from the socket's peer address rather than `c.ClientIP()`. Per-key labels only for an authorized scrape (T-17, T-A5) |
 | GET    | `/api/meta/supported-databases` | —    | `meta.go`      |
+
+`/metrics` is listed under *Public* because that is where it was written and
+where a reader will look for it. It has not been public since 2026-08-03 —
+three of the four rows in this table are.
 
 ## Auth
 
@@ -257,11 +262,27 @@ unmarshal into the same Go types. See
 
 ## Observations for the plan
 
-1. **Nine mutating endpoints handle credentials or tenant configuration and none
+1. ~~**Nine mutating endpoints handle credentials or tenant configuration and none
    are admin-gated** (marked ⚠️ above). Fixing this is a one-line-per-route change
-   once `AdminOnly()` is applied — see ticket `T-04`.
-2. **`/metrics` is public.** It exposes aggregate token counts and cost. Either
-   authenticate it or move it to an internal-only listener — ticket `T-05`.
+   once `AdminOnly()` is applied — see ticket `T-04`.~~ **Closed 2026-07-28 by
+   `T-04`**, which gated more of them than this observation named; the block at
+   the top of this file has said so since, and the `⚠️` markers it refers to are
+   gone from the tables. Struck through 2026-09-11 for the reason observation 2
+   was: a numbered finding left in the present tense reads as open, whatever the
+   prose above it says. The classification is `cmd/api/policy.go` and the test
+   is `TestEveryAuthedRouteIsClassified`, not this list.
+2. ~~**`/metrics` is public.** It exposes aggregate token counts and cost. Either
+   authenticate it or move it to an internal-only listener — ticket `T-05`.~~
+   **Closed 2026-08-03 by `T-17`'s auth half**, and gated live the same day: 401
+   without a credential, 401 on a wrong token, 200 and
+   `text/plain; version=0.0.4` with the right one
+   ([`observability.md`](observability.md) §8). The choice this observation
+   offered was taken as *both*: a token authenticates it, and with no token it
+   answers only to a loopback peer. `subtle.ConstantTimeCompare` on the
+   comparison, and an unparseable peer address closes rather than opens —
+   `cmd/api/health.go:62-113`. **The ⚠️ marker on the row above outlived the
+   fix by five weeks**, in a file whose own header says every such marker is
+   gone; it was removed 2026-09-11.
 3. ~~**No machine authentication exists.**~~ **Closed 2026-07-28 by `T-13`.**
    Every route above still requires a human-session JWT, and now refuses an API
    key outright. Machine callers use `/v1`, a sibling namespace authenticated by

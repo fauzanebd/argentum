@@ -12,14 +12,55 @@ import type { MessageRole, WidgetConfig } from "./domain.js";
 //////////
 // source: embedwire.go
 /*
-ConfigResponse is the body of `GET /api/embed/config`: what the widget
-renders itself with before anybody has typed.
+Package embedwire is the widget's `/api/embed` contract: every shape that
+crosses between a tenant's own website and Argentum (T-19, T-20, T-23).
 
-Config is nested rather than flattened because `agents` is not configuration
-— it is the live roster, read from a different place and absent on a
-deployment with no roster lister wired.
+**A package rather than a second file in `handlers`**, where the dashboard's
+`wire.go` lives, because the two answer to different readers and only one of
+them is a member of staff. Everything here is served to a browser on a page
+Argentum does not control, to a person who has no account with us — so the
+test for a field is `domain.WidgetConfig`'s test applied to the whole
+surface: **would we print it in the tenant's page source?** A boundary the
+compiler can see makes that a question somebody has to answer; a comment
+between two structs in one file does not.
+
+The generator settled it either way: tygo keys its config by import path, so
+two entries naming `handlers` silently produce one file. The dashboard's
+types and the widget's could not have been generated separately from the
+same package even if the argument above had gone the other way.
+
+It exists for the reason `handlers/wire.go` exists — a response assembled as
+a `gin.H` generates no TypeScript, so `apps/widget` was hand-writing
+interfaces for shapes no Go declaration described (T-02b's defect, in the one
+app that was never made a consumer of the generated package). Two things were
+hiding behind that:
+
+ 1. **The config envelope.** The route answers `{config, agents}` and the
+    widget's hand-written type described the *inner* object, so it read
+    `greeting` and `suggested_prompts` off the envelope and got `undefined`
+    for both. Every tenant who configured a greeting or a starter prompt in
+    Settings → Widget (T-23) had it silently dropped.
+ 2. **The transcript.** `messages` was `[]*domain.Message` — every column of
+    every row, including the tool-role rows T-Q6 writes as the agent's
+    memory. A tool digest carries the truncated SQL, the `source_id` and the
+    tables a turn touched (`app.BuildToolDigest`), so the route published the
+    tenant's warehouse vocabulary to anyone who opened a network tab.
+    `Message` here is the projection, and it is T-D13's `PublicCopy` in this
+    surface's own shape.
+
+The rule this package is here to hold: **the widget's type is generated from
+these structs**, so a field added here reaches the browser and a field not
+here cannot. Adding one is the decision `handlers.EmbedChatHandler`'s comment
+describes — not a convenience.
 */
 
+/**
+ * ConfigResponse is the body of `GET /api/embed/config`: what the widget
+ * renders itself with before anybody has typed.
+ * Config is nested rather than flattened because `agents` is not configuration
+ * — it is the live roster, read from a different place and absent on a
+ * deployment with no roster lister wired.
+ */
 export interface ConfigResponse {
   config: WidgetConfig;
   agents?: Agent[];

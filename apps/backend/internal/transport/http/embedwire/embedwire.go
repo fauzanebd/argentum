@@ -38,13 +38,6 @@
 // these structs**, so a field added here reaches the browser and a field not
 // here cannot. Adding one is the decision `handlers.EmbedChatHandler`'s comment
 // describes — not a convenience.
-
-// ConfigResponse is the body of `GET /api/embed/config`: what the widget
-// renders itself with before anybody has typed.
-//
-// Config is nested rather than flattened because `agents` is not configuration
-// — it is the live roster, read from a different place and absent on a
-// deployment with no roster lister wired.
 package embedwire
 
 import (
@@ -53,6 +46,12 @@ import (
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
+// ConfigResponse is the body of `GET /api/embed/config`: what the widget
+// renders itself with before anybody has typed.
+//
+// Config is nested rather than flattened because `agents` is not configuration
+// — it is the live roster, read from a different place and absent on a
+// deployment with no roster lister wired.
 type ConfigResponse struct {
 	Config domain.WidgetConfig `json:"config"`
 	Agents []Agent             `json:"agents,omitempty"`

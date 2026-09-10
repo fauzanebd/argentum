@@ -311,6 +311,41 @@ What they get instead is a warning comment where the next person will hit it.
 **The rule:** a type that crosses the wire does not embed. Inside the process,
 embed freely.
 
+## The generator copies a comment it cannot tell is misfiled (2026-09-11)
+
+tygo carries Go doc comments into the TypeScript. That is the feature — the
+reason a dashboard developer reads the same argument the backend author wrote
+— and it means a comment attached to the wrong declaration is republished,
+faithfully, to the other side of the wire.
+
+`embedwire.go` had its `package` clause **below** `ConfigResponse`'s doc
+comment. Go attaches a package comment to whatever comment group immediately
+precedes the clause, so:
+
+- `go doc` opened the package with two paragraphs about why `agents` is nested,
+- `ConfigResponse` was undocumented,
+- the forty lines above — the argument for the package existing at all,
+  including *"a field added here reaches the browser and a field not here
+  cannot"* — became an orphaned block attached to nothing, and
+- `packages/api-types/src/embed.ts` shipped all of that, in exactly that wrong
+  arrangement, to the file the widget imports.
+
+**`make types --check` was green throughout, and correctly.** It compares the
+committed output against what the current Go generates. The Go was wrong, the
+output matched it, and there is no drift. A drift gate cannot have an opinion
+about its input — which is the same boundary the section above records from the
+other direction, where the compiler caught what the generator could not.
+
+**Nothing else caught it either**, and the reason is worth writing down so
+nobody files a linter ticket for it: the file compiles, `gofmt` has no opinion
+about where a comment sits, and staticcheck's `ST1000` asks only whether a
+package comment *exists* — one did. The check that found it was `go doc`, run
+once against a package that was one day old.
+
+**The habit, not the rule:** read `go doc ./internal/...` on a package the first
+time you create one. It takes five seconds and it is the only view that shows
+what the generator is about to copy.
+
 ## Limits
 
 - **`/api` envelopes are still untyped.** Forty responses are `gin.H`

@@ -5234,6 +5234,151 @@ it on `/quality` with the right question beside it, which is the one arm no fake
 can have, because the fake exists to exercise the path where no question
 resolves ([`live-gate-backlog.md`](live-gate-backlog.md) §1a).
 
+## Phase 3x — Four documents that described a system that had moved (2026-09-11)
+
+No feature. The sweep that opened this sitting asked the only question left
+after 3t: *of everything still open, what needs neither the stack, nor a
+browser, nor a dollar?* The answer was seven items, four of them documents this
+repo relies on being true, and reading them against the code found every one
+wrong.
+
+**The point is not that four rows were stale.** It is that three of the four had
+been re-saved *since* the fact they got wrong changed — `api-surface.md` was
+edited the previous evening and still carried a ⚠️ that had been wrong for five
+weeks — so a file's timestamp says nothing about whether anybody read the line beneath
+the one they came to change.
+
+### The four
+
+**1. `feature-coverage.md` said `T-D13` "is not built".** It shipped and was
+gated live on 2026-09-03, eight days earlier, and the gate found a P1 the ticket
+never asked about. The row still read 🟡 with *"the legacy Metabase public URL
+is still the only shareable one"* — a sentence with two dead facts in it, since
+`T-D15` removed Metabase. Line 129 of the same file already contradicted the
+row. **A matrix row that under-claims is not harmless**: `backlog.md`'s own
+opening entry says staleness *"is the kind of thing that makes a backlog read as
+work remaining when it is not"*, and this is the coverage matrix doing it about
+a feature with an audit trail, a revoke button and a live gate behind it.
+
+**2. `api-surface.md` marked `/metrics` public**, with `⚠️ unauthenticated
+cost/token data` — in a file whose own header says *"every `⚠️ not admin-gated`
+marker below is gone"*. It has needed `METRICS_TOKEN` or a loopback peer since
+2026-08-03, gated live the same day. The row now carries a `Token` auth kind
+(new in the legend, one route), and the observation at the foot is struck
+through rather than deleted, with what actually closed it.
+
+Observation **1** in the same file went with it: *"nine mutating endpoints …
+none are admin-gated"*, closed by `T-04` on 2026-07-28 — two days after it was
+written — and left in the present tense for six weeks underneath a block
+explaining that it was fixed. A numbered finding reads as open whatever the
+prose above it says.
+
+**3. `test-coverage.md`'s headline was three weeks old** at 58 of 86 packages.
+Re-measured: **66 of 90** — 73%, against 67% then and 62% on 2026-08-08. The
+24 without tests are now grouped by *why* (a network call, a `main`, generated,
+or none of those), because the count alone has never been the useful part. Three
+are in the last group and worth naming: `internal/report/labels`,
+`internal/report/flow`, `internal/report/sample`.
+
+**Why that headline goes stale**, and it is fixable rather than a discipline
+problem: the reproduction command in the file is `go test -race ./...`, which
+takes ten minutes. `go list -f '{{if or .TestGoFiles .XTestGoFiles}}…'` answers
+the same question in about a second, and is now in the file beside it. A number
+nobody re-takes is usually a number that costs ten minutes to take.
+
+**4. `embedwire`'s package doc documented the wrong thing.** The `package`
+clause sat *below* `ConfigResponse`'s comment, so Go attached that comment to
+the package: `go doc` opened with two paragraphs about why `agents` is nested,
+`ConfigResponse` was undocumented, and the forty lines above — including *"the
+rule this package is here to hold: a field added here reaches the browser and a
+field not here cannot"* — were an orphaned block attached to nothing.
+
+**And it had already crossed the wire.** tygo copies Go doc comments into the
+generated TypeScript, so `packages/api-types/src/embed.ts` carried the same
+mistake: the file-level comment describing the whole widget contract was
+`ConfigResponse`'s two paragraphs about nesting, and `ConfigResponse` itself had
+no JSDoc at all. Fixing the Go moved 46 lines of the package's actual argument
+into the file the widget imports — the rule about which fields may reach a
+browser now sits at the top of the file that declares them, which is where it
+was written to be.
+
+`make types --check` was green the whole time, and correctly so: the committed
+output matched the input exactly. It is a **drift** gate, and the input was
+wrong, which is the one failure a drift gate is structurally unable to have an
+opinion about.
+
+**No tool in this repo can see the misplacement**, and it is worth being precise
+about why:
+the file compiles, `gofmt` has no opinion about where a comment sits, and
+staticcheck's ST1000 asks whether a package comment *exists* — one did. The
+check that found it was `go doc`, run once against a package created the day
+before. That is a habit, not a CI job, and pretending otherwise would be filing
+a ticket nobody can write.
+
+### And two things that were not documents
+
+**`DefaultPricing` contradicted the file it lives beside.** The comment read
+*"approximates GPT-4o"* while `modelPricing`, forty lines away, carries a real
+`gpt-4o` at $2.50/M in and $10/M out — half of `DefaultPricing`'s $5/$15. So it
+had not been that model's price for as long as the table had a row for it, and
+no deployment of this product runs GPT-4o anyway.
+
+What it actually is, and what the comment now says: **the rate an unpriced model
+falls back to, deliberately above every model this deployment runs** — 5.3x
+kimi-k2.6's input rate, 4x gpt-5's, and below only the Opus tier nothing here
+points at. Landing on it is a fault, not a default:
+`CREDITS_ENFORCEMENT_ENABLED` refuses turns with a 402 off these numbers, which
+is exactly what bit when kimi-k2.6 became the primary model with no entry and burned a tenant's grant four to five times too fast. The comment
+now says the fix for a wrong bill is always a new `modelPricing` row and never a
+change to these two figures: **lowering them would make an unpriced model read
+as cheap, and a metered call that reads as cheap is one nobody investigates.**
+No rate moved.
+
+**The dashboard stopped asking Google for its typeface.** The backlog estimated
+0.5h on the premise that `T-R1`'s vendored TTFs made it *"one `@font-face` block
+away"*. Both halves of that premise were wrong, and only doing it showed it:
+
+- The vendored faces are three **static** weights — 400, 500, 700 — and the
+  dashboard uses **600** in 37 places. CSS matches a request for 600 with no 600
+  face *upward*, so every `font-semibold` label in the product would have
+  quietly rendered bold. They are also 348 KB against 48 KB, because a `.ttf` is
+  what maroto needs and `.woff2` is what a browser wants.
+- Space Grotesk on Google Fonts is a **variable** font — all four weights were
+  already one file per unicode-range. So it is one `@font-face` per subset with
+  `font-weight: 300 700`, and the browser interpolates.
+
+A latin-only visitor now downloads 22 KB from our own origin instead of opening
+two connections to Google and disclosing their IP to a processor no tenant
+agreed to — the argument `T-H6` makes about every other one.
+
+**The trap inside it:** a CSS `@import` is only valid before any other rule, so
+`@import './tokens.generated.css'` had to move above the new `@font-face` block
+it used to sit behind. Left in place it is invalid and the entire token palette
+silently stops applying. Caught by checking the built bundle for `--font-display`
+rather than by trusting the diff.
+
+### Gate
+
+`go build`, `go vet`, `go test -race ./...` — **66 `ok`, 24 `no test files`,
+0 failures**, which is the headline this sitting re-measured arriving from a
+second instrument without being asked for. The two Go edits are comments; the
+gate ran anyway, because this repo has no comment-only exemption and should not
+grow one — and it was right not to, because **`make types --check` failed on the
+way past**: the embedwire fix moved 46 lines of doc comment into
+`packages/api-types/src/embed.ts`. Regenerated and committed.
+
+`pnpm --filter dashboard build` and `lint` clean, 25 tests. The font change was
+verified **in the emitted bundle**, not in the source: zero `fonts.googleapis`/`fonts.gstatic` references,
+all three subsets referenced, `--font-display` still resolving to
+`"Space Grotesk"`, and the files copied to `dist/fonts/`.
+
+Nothing here is owed a live gate — that is the whole selection criterion for the
+sitting. What is **held for the owner** is the twelve merged remote branches
+(the backlog said seven): all twelve are fully merged and nothing is unmerged,
+but `origin/pre-monorepo` and `origin/bigref` read as deliberate markers of a
+boundary this repo crossed, and deleting a remote branch is not a thing to
+infer.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

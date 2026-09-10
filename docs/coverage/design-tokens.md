@@ -94,6 +94,64 @@ Something in the local environment intercepts Chrome's traffic. The numeric tabl
 above is the substitute evidence, and it covers every variable rather than the
 two screens a screenshot pair would have shown.
 
+## The dashboard stopped asking Google for the typeface (2026-09-11)
+
+`apps/dashboard/src/index.css` opened with
+`@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk…')` until
+2026-09-11. Two costs, and the second is the one that matters: two DNS lookups
+and two TLS handshakes on the render-blocking path before a glyph, and a
+third-party disclosure of every visitor's IP to Google that no tenant agreed to
+— the same argument `T-H6` makes about every other processor this product hands
+data to.
+
+Now three `.woff2` in `apps/dashboard/public/fonts/` with the OFL beside them,
+one `@font-face` per unicode-range subset.
+
+**Two things the backlog row's "one `@font-face` block away" estimate had
+wrong**, both found by doing it:
+
+- **Not the vendored `.ttf`.** Reusing `internal/report/theme/fonts/` was the
+  whole premise of the row, and it would have shipped a visible regression:
+  those are three *static* weights — 400, 500, 700 — and the dashboard uses
+  **600** in 37 places (`font-semibold`). CSS weight matching sends a request
+  for 600 with no 600 face upward to 700, so every semibold label in the product
+  would have quietly become bold. They are also 348 KB against 48 KB: a `.ttf`
+  is what a PDF library needs, `.woff2` is what a browser wants.
+- **Space Grotesk on Google Fonts is a variable font.** All four weights were
+  already being served from *one* file per subset, `wght` 300–700. So it is one
+  `@font-face` per subset with `font-weight: 300 700`, not one per weight, and
+  the browser interpolates 500 and 600 rather than being handed them.
+
+A latin-only visitor now downloads **22 KB**; latin-ext (19 KB) and vietnamese
+(7 KB) are fetched only if a glyph in their range is used.
+
+**The reordering is load-bearing.** A CSS `@import` is only valid before any
+other rule, so `@import './tokens.generated.css'` had to move above the
+`@font-face` block it used to sit behind. Left where it was it is invalid, and
+the failure mode is the whole token palette silently not applying — the comment
+now at the top of the file says so, because nothing else would.
+
+**Verified in the build, not by reading**: `pnpm --filter dashboard build`
+emits a bundle with zero `fonts.googleapis`/`fonts.gstatic` references, all
+three subsets referenced from the emitted CSS, `--font-display` still resolving
+to `"Space Grotesk"` (so the `@import` survived the move), and the three files
+copied to `dist/fonts/`. Lint and the 25 dashboard tests pass.
+
+**Three copies of one typeface now**: `internal/report/theme/fonts` (TTF, for
+maroto), `packages/motion/public/fonts` (TTF, for Remotion) and this one (WOFF2,
+for the browser). That is not duplication to remove — three different renderers
+that cannot reach each other's file, each needing the format its own engine
+reads.
+
+**Still on the CDN, and deliberately left there: `apps/landing`.** Its
+`index.html` and the generated docs pages under `public/docs/` pull **Inter and
+JetBrains Mono** — a different pair of families, not Space Grotesk, so nothing
+vendored here would serve them. The privacy argument is the same one and the
+weight behind it is not: the landing site is a marketing page a stranger visits
+before they are anybody's tenant, where the dashboard is a product a tenant's
+staff sit inside all day. Filed as a fact rather than a ticket. The widget,
+`packages/motion` and `apps/render` reference no CDN font at all.
+
 ## Gate 4 — the fonts are embedded, and a missing face stops the build
 
 Space Grotesk (Regular / Medium / Bold) is vendored under

@@ -33,8 +33,32 @@ type Pricing struct {
 	VideoRenderCostPerSec float64
 }
 
-// DefaultPricing approximates GPT-4o + a small per-action operations charge.
+// DefaultPricing is the per-action price list, plus **the LLM rate a model
+// falls back to when `modelPricing` has no entry for it**.
+//
+// The two halves are not the same kind of number and the comment here used to
+// say they were — "approximates GPT-4o", which stopped being true in two
+// directions. `modelPricing` carries a real `gpt-4o` at $2.50/M in and $10/M
+// out, so this is not that model's price and has not been for as long as the
+// table has had a row for it; and no deployment of this product runs GPT-4o
+// anyway.
+//
+// **The LLM rates below are deliberately high, and landing on them is a fault
+// rather than a default.** They are above every model this deployment has been
+// pointed at — 5.3x kimi-k2.6's input rate, 4x gpt-5's — and below only the
+// Opus tier, which nothing here runs. `CREDITS_ENFORCEMENT_ENABLED`
+// refuses a turn with a 402 off these figures, so an unpriced model exhausts a
+// tenant's grant four to five times faster than the spend it represents —
+// which is what happened when kimi-k2.6 became the primary model with no row
+// (`llm_pricing.go`). The fix for a wrong bill is always a new entry in
+// `modelPricing`, never a change to these two numbers: lowering them would
+// make an unpriced model *cheap*, and a metered call that reads as cheap is one
+// nobody investigates.
+//
+// The per-action costs beneath them are the opposite — they are the real price
+// list, and nothing else supplies them.
 var DefaultPricing = Pricing{
+	// The fallback rate. See above before changing either.
 	LLMInputCostPer1K:  0.005,
 	LLMOutputCostPer1K: 0.015,
 	SQLQueryCost:       0.0005,
