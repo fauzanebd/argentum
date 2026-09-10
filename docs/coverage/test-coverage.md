@@ -47,7 +47,8 @@ measurement). These are actual results, not estimates.
 > `internal/tracing` and the rest are packages that did not exist when this file
 > was written. The dashboard and landing apps still have zero tests; `tsc -b` and
 > the lint job are what stand in for them, and the backlog's *Frontend test
-> framework* entry still has its trigger.
+> framework* entry still has its trigger. **(Superseded 2026-09-03 for the
+> dashboard — see the Frontend table below. Landing still has none.)**
 >
 > Everything below is the original measurement, kept because the risk ranking it
 > produced is what `T-02` was scoped against.

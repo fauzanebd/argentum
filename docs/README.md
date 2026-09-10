@@ -67,7 +67,8 @@ docs/
 │   ├── 01-product-overview.md    Product + capability inventory
 │   ├── 02-architecture.md        System map, data flow, invariants
 │   ├── 03-gap-analysis.md        Gaps, risks, and the agent-native thesis
-│   └── 04-social-carousel.md     Social-media carousels: what exists, gaps, build
+│   ├── 04-social-carousel.md     Social-media carousels: what exists, gaps, build
+│   └── 05-hermes-self-learning.md  How Hermes Agent closes the learning loop we leave open, and what it costs
 ├── coverage/
 │   ├── feature-coverage.md       Feature status matrix
 │   ├── test-coverage.md          Measured test state + CI gaps

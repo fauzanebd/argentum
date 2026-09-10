@@ -50,6 +50,13 @@ pipeline.
   Note that tygo keys its config by import path, so a surface that needs its own
   output file needs its own Go package (`internal/transport/http/embedwire` is
   the worked example).
+- **A type that crosses the wire does not embed another struct.** `encoding/json`
+  inlines an embedded struct's fields; tygo renders embedding as a *named
+  field*, so the generated TypeScript describes a shape the JSON does not have.
+  Spell the fields out. Inside the process, embed freely —
+  `QueryExampleHit` and `DocumentChunkHit` do, are wrong in the committed
+  output, and are safe only because no browser reads one
+  ([`../coverage/generated-types.md`](../coverage/generated-types.md)).
 - **Deploys are still independent.** Cloudflare Pages builds each frontend from
   its own root directory; the backend still ships as tagged GHCR images. One repo
   does not mean one release.

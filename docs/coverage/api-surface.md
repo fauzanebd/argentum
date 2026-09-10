@@ -11,9 +11,15 @@ four team routes. The rest of the gap is a hand-count that had drifted; the
 number above is left as written because the tables below, not the headline,
 are what this document is for.
 
+> **Re-counted 2026-09-10: `cmd/api/policy.go` now classifies 176.** The two
+> added that day are `POST /api/cookbook/sweep` (T-Q15) and
+> `GET /api/documents/:id/carousel` (T-G7); the gap between 143 and 176 is every
+> surface added since, and the paragraph below is unchanged because its point
+> was never the number.
+>
 > **Re-checked 2026-08-17, and the honest headline is that this file lags the
-> router by a long way.** `cmd/api/policy.go` classifies **143** authenticated
-> `/api` routes today, against the ~74 this document's tables cover — the gap is
+> router by a long way.** `cmd/api/policy.go` classified **143** authenticated
+> `/api` routes then, against the ~74 this document's tables cover — the gap is
 > every surface added after `T-R5`: metrics, watchers, actions, agents and
 > bindings, API keys, embed keys and sessions, MCP servers, the cookbook,
 > message feedback, company profile, documents and shares, Slack, and all of
