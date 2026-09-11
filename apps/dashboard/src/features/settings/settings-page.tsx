@@ -16,47 +16,17 @@ import { EmbedTab } from "./embed-tab";
 import { AboutTab } from "./about-tab";
 import { AdminGate } from "@/components/layout/admin-gate";
 import { useIsAdmin } from "@/store/auth";
+import { settingsTabs } from "./tabs";
 import { cn } from "@/lib/utils";
 
 export function SettingsPage() {
   const [tab, setTab] = useState("general");
   const isAdmin = useIsAdmin();
 
-  // Team, Reports and API keys are hidden rather than read-only: every route
-  // behind them is admin-only, including the GET, so a member would see an
-  // empty panel and a 403. The other panels have member-readable GETs, so they
-  // render disabled instead.
-  const tabs = [
-    { id: "general", label: "General" },
-    // Databases and MCP servers are both "a place an agent reads from", so they
-    // are one tab with the kind picked inside rather than two siblings that ask
-    // an admin to know which one they want before they can look.
-    { id: "data-sources", label: "Data sources" },
-    { id: "metrics", label: "Metrics" },
-    { id: "agents", label: "Agents" },
-    // Beside Agents rather than under it: a procedure belongs to the workspace
-    // and every agent is offered it unless an admin narrows one, so filing it
-    // inside the agent form would put a workspace-level thing behind whichever
-    // agent somebody happened to open.
-    { id: "skills", label: "Procedures" },
-    { id: "phones", label: "Phone numbers" },
-    { id: "integrations", label: "Integrations" },
-    ...(isAdmin ? [{ id: "reports", label: "Reports" }] : []),
-    // Visible to members, unlike Reports beside it: the GET is member-readable
-    // on purpose, because somebody composing a post has to see what they can
-    // ask for by name. The writes inside are disabled rather than hidden.
-    { id: "images", label: "Images" },
-    // Admin-only on every route including the read, like MCP servers: the list
-    // is a map of where this workspace's events go.
-    ...(isAdmin ? [{ id: "webhooks", label: "Webhooks" }] : []),
-    ...(isAdmin ? [{ id: "api-keys", label: "API keys" }] : []),
-    // Admin-only on every route including the read, like API keys and for one
-    // step more reason: an embed key decides which websites may tell us who a
-    // person is.
-    ...(isAdmin ? [{ id: "embed", label: "Embed" }] : []),
-    ...(isAdmin ? [{ id: "team", label: "Team" }] : []),
-    { id: "about", label: "About" },
-  ];
+  // Which tabs exist, and which a member is offered, live in `tabs.ts` — the
+  // rule is "a panel whose GET is admin-only is hidden rather than read-only",
+  // and it is pinned by a test there rather than by this comment.
+  const tabs = settingsTabs(isAdmin);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -117,12 +87,16 @@ export function SettingsPage() {
             </Tabs.Content>
           )}
           {/* Admin on every route including the read, like MCP servers: a
-              procedure is text the agents follow as an instruction. */}
-          <Tabs.Content value="skills">
-            <AdminGate>
+              procedure is text the agents follow as an instruction. Not
+              rendered for a member rather than wrapped in AdminGate, which is
+              what it was: the gate disables the form and cannot make
+              `GET /api/skills` return anything, so a member read this
+              workspace's procedures as "No procedures yet". */}
+          {isAdmin && (
+            <Tabs.Content value="skills">
               <SkillsTab />
-            </AdminGate>
-          </Tabs.Content>
+            </Tabs.Content>
+          )}
           <Tabs.Content value="phones">
             <AdminGate>
               <PhonesTab />

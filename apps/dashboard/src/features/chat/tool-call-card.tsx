@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Database,
   BarChart3,
+  BookText,
   CalendarClock,
   ChevronDown,
   ExternalLink,
@@ -23,6 +24,13 @@ const TOOL_META: Record<string, { icon: LucideIcon; label: string }> = {
   create_dashboard: { icon: ExternalLink, label: "Dashboard" },
   update_dashboard: { icon: PencilLine, label: "Dashboard edit" },
   schedule_task: { icon: CalendarClock, label: "Schedule task" },
+  // "Procedure" rather than "Skill": the word this product shows a tenant is
+  // the one on the settings tab they wrote it in, and `load_skill` is the
+  // internal name of the tool, not of the thing. Labelled at all because this
+  // chip is the only place a tenant ever learns that a procedure they wrote
+  // was used — Settings → Procedures can say what one costs on every turn and
+  // cannot say whether any turn opened it.
+  load_skill: { icon: BookText, label: "Procedure" },
 };
 
 /** MCP_PREFIX is the namespace the backend gives every tenant MCP tool
@@ -92,6 +100,7 @@ export function ToolCallCard({
   let scheduleTaskId: string | null = null;
   let scheduleName: string | null = null;
   let scheduleCronText: string | null = null;
+  let skillName: string | null = null;
 
   if (payload && typeof payload === "object") {
     const p = payload as Record<string, unknown>;
@@ -101,6 +110,16 @@ export function ToolCallCard({
     if (typeof p.sql === "string") sql = p.sql;
     if (typeof p.dashboard_url === "string") dashboardURL = p.dashboard_url;
     if (typeof p.url === "string") dashboardURL = p.url;
+
+    // The argument, which is the procedure's exact name. Only the `tool_call`
+    // event carries it: `load_skill` answers with a framed string rather than
+    // JSON, so the `tool_result` beside it unmarshals to an empty map
+    // (chat_runner.go) and that chip stays the bare label. Naming a procedure
+    // there would mean guessing which one, and the pair already reads as one
+    // action.
+    if (name === "load_skill" && typeof p.name === "string") {
+      skillName = p.name;
+    }
 
     if (name === "schedule_task") {
       if (typeof p.task_id === "string") scheduleTaskId = p.task_id;
@@ -136,7 +155,9 @@ export function ToolCallCard({
         ) : (
           <Icon className="h-3 w-3 shrink-0" />
         )}
-        <span className="truncate">{meta.label}</span>
+        <span className="truncate">
+          {skillName ? `${meta.label} · ${skillName}` : meta.label}
+        </span>
         {hasDetail && (
           <ChevronDown
             className={cn(

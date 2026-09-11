@@ -414,6 +414,31 @@ The caps travel with the list, so the live counters are the server's numbers.
 A hard-coded `60` in TypeScript is the copy that disagrees with `069`'s CHECK
 constraint the day somebody widens it.
 
+> **Corrected 2026-09-11 — the tab was offered to members, and the 403 read as
+> an empty workspace.** Every skills route is `RoleAdmin` in `cmd/api/policy.go`,
+> *including the GET*, and `settings-page.tsx` states the matching rule in a
+> comment: a panel whose read is admin-only is hidden rather than rendered
+> read-only, "so a member would see an empty panel and a 403". Procedures was
+> added below that comment and on the wrong side of it. `AdminGate` disables the
+> form and cannot make a list load, so a member clicking Procedures was told
+> **"No procedures yet"** — of a workspace that might have twenty. The tab is now
+> admin-only like Reports and API keys, and the rule moved out of the comment
+> into `settings/tabs.ts`, a pure function with a test that asserts the
+> admin-only set *whole* — the failure this catches is a tab added on the wrong
+> side of the condition, which a test naming only today's tabs would not catch.
+>
+> **And the chat timeline showed the wire name.** `load_skill` had no entry in
+> `tool-call-card.tsx`'s `TOOL_META`, so opening a procedure rendered a chip
+> reading `load_skill` — the only tool in the timeline showing its internal name.
+> It now reads **"Procedure · Weekly revenue by branch"**, taking the name from
+> the `tool_call` event's arguments. That chip is the only place a tenant can
+> learn a procedure they wrote was *used*: this screen can say what the index
+> costs on every turn and cannot say whether any turn opened one, which is what
+> §4a's `source_id` note and the audit row in §3 are both circling. The
+> `tool_result` chip beside it stays the bare label, because `load_skill`
+> answers with a framed string rather than JSON and `chat_runner.go`'s unmarshal
+> leaves an empty map — naming a procedure there would mean guessing which one.
+
 ## 5f. `T-K7` — draft a skill from a conversation (2026-08-27)
 
 "Start from a conversation" on the form: one light-LLM call over a thread's
@@ -698,7 +723,7 @@ in §6a. What is left is four things, and none of them is blocked on tooling.
 | --- | --- | --- |
 | A vector written by a **real embedding provider**, at save time and through the backfill | This deployment has no embedding credential: `EMBEDDING_API_KEY` is empty and OpenRouter serves no embeddings endpoint. §6a proved the ordering and the storage against hand-written vectors; the provider call is the half that stays owed | free, needs an OpenAI-compatible key |
 | `BackfillSoon` firing from a real overflowing turn, once and not twice inside the cooldown | Same credential. The trigger path is unit-tested; it has never run against a provider | free, same key |
-| The preview panes **in a browser** | The bytes are proven on the wire (§6a); nobody has looked at the rendering, the live counters going red, or the amber over-the-bound notice | free, needs a browser |
+| The preview panes **in a browser**, and now two more things while somebody is in there: the Procedures tab **absent** for a member, and the chat chip reading "Procedure · ‹name›" | The bytes are proven on the wire (§6a); nobody has looked at the rendering, the live counters going red, or the amber over-the-bound notice. The two 2026-09-11 fixes in §5e are unit-gated only — the tab list is asserted as a list of strings and the chip as rendered text, neither as a screen | free, needs a browser |
 | `skill-conflicts-with-metric` measuring precedence **at all** | It fails identically on both models before precedence is reached (§5b, §5b1). This is a case to rewrite, not an arm to run | — |
 
 **The rule-1 re-score is being paid rather than owed** — see §6b.

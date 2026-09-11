@@ -5678,6 +5678,64 @@ screenshot that started this suggests it may not be doing much work: step 3 at
 place the iteration cap lands. Settling that is a count off the completion
 lines of the same two eval runs, not a third one.
 
+## Phase 3aa — Two places the skills feature said the wrong word (2026-09-11)
+
+Started as a question with no ticket behind it: *how do our agent skills work
+from a user's perspective?* Reading the three surfaces end to end — Settings →
+Procedures, the Agents tab's binding checklist, the chat timeline — turned up two
+defects, both in the same shape. The feature works; what it *says* was wrong in
+two places, and each wrong word pointed at something the tenant could not
+otherwise find out.
+
+### A member was told the workspace had no procedures
+
+`cmd/api/policy.go` puts every skills route behind `RoleAdmin`, the GET
+included. `settings-page.tsx` opens with a comment stating exactly the right
+rule for that — Team, Reports and API keys are *hidden* rather than read-only,
+"so a member would see an empty panel and a 403" — and Procedures was added
+thirteen lines below it, unconditionally. `AdminGate` disables the form; it
+cannot make a list load. So the member got the read-only banner, the query
+403'd, and `SkillsTab` rendered its empty state: **"No procedures yet."**
+
+The rule was a comment and an inline conditional, and a tab was added on the
+wrong side of the conditional anyway. It is now `settings/tabs.ts` — a pure
+function, no component imports, so a test of it does not boot fifteen panels and
+their queries to read a list of strings. The test asserts the admin-only set
+**whole**, because the failure worth catching is the next tab added on the wrong
+side, and a test naming only today's tabs would not catch it.
+
+### `load_skill`, in a chat window, in front of a customer
+
+`TOOL_META` is a hand-maintained list, and everything absent from it falls
+through to the raw wire name. That fallback is right for a tool nobody has
+written copy for yet and wrong for this one: the chip read `load_skill`, the
+only tool in the timeline showing its internal name.
+
+**The reason it is worth more than a label fix** is that this chip is the only
+place a tenant ever learns a procedure they wrote was *used*. Settings →
+Procedures can say what the index costs on every turn — it does, down to the
+character, and names what got dropped — and it cannot say whether a single turn
+opened one. The chip now reads **"Procedure · Weekly revenue by branch"**, the
+name taken from the `tool_call` event's arguments.
+
+The `tool_result` chip beside it deliberately stays the bare **"Procedure"**.
+`load_skill` returns `skill.Frame`'s string rather than JSON, so
+`chat_runner.go`'s unmarshal leaves an empty map on that event: there is no name
+there, and a card that showed one would be guessing which procedure. The test
+pins that case too — the interesting assertion in the file is the one that the
+chip does *not* invent a name.
+
+### Gate
+
+Dashboard `tsc -b --noEmit && eslint . && vitest run` green: 0 errors, 8
+pre-existing warnings, **33 tests in 8 files**, up from 25 in 6. Both defects
+were proven failing first — the chip rendered `load_skill` into the assertion's
+error output, and `tabs.ts` did not exist.
+
+**What is not proven:** neither fix has been looked at in a browser. That is the
+same arm §7 of [`skills.md`](skills.md) already owes for the preview panes, and
+this adds two more things to look at while somebody is in there.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

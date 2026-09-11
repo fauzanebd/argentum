@@ -339,7 +339,7 @@ keep getting narrowed. Its shape:
 
 | App                   | Test files | Test runner | Type check | Lint         |
 | --------------------- | ---------- | ----------- | ---------- | ------------ |
-| `apps/dashboard`      | 0          | none installed | `tsc -b` via build | **`tsc -b --noEmit && eslint .`** |
+| `apps/dashboard`      | 8          | **vitest 3 + jsdom** | `tsc -b --noEmit` | **`tsc -b --noEmit && eslint . && vitest run`** |
 | `apps/landing`        | 0          | none installed | `tsc -b` via build | `tsc -b --noEmit` |
 
 > **Found during `T-00b`:** the dashboard's `lint` script called `eslint .`, but
@@ -369,6 +369,23 @@ keep getting narrowed. Its shape:
 >
 > `apps/landing` stays on the typecheck. It has no state, no hooks and no data
 > fetching, so a linter would be checking a static page's import order.
+
+> **Corrected 2026-09-11: this row read `0 | none installed` for eight days
+> after it stopped being true.** The note further up this page already said
+> "superseded 2026-09-03 for the dashboard — see the Frontend table below", and
+> the table below was never edited. vitest 3 has been installed since
+> 2026-09-03, `vitest run` is inside the `lint` script CI calls, and the suite
+> is **33 tests in 8 files** as of 2026-09-11 (up from 25 in 6, which is what
+> the last delivery-log entry to quote a number recorded).
+>
+> The default environment is node, not jsdom: a file that needs a DOM opts in
+> with `// @vitest-environment jsdom` on its first line, so a pure unit test of
+> a module like `lib/contrast.ts` does not pay for one. The config is its own
+> `vitest.config.ts` rather than a `test` block in `vite.config.ts`, because
+> that file shells out to `git describe` at module load — fine for a build,
+> wrong for a test run.
+>
+> **Landing's `0` is still accurate.**
 
 Both now run in CI via the `web` job.
 
