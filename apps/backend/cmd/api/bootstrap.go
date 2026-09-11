@@ -628,7 +628,12 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.watcherSvc = app.NewWatcherService(
 		pgctl.NewWatcherRepo(controlDB), deps.metricSvc, threadSvc, companyRepo, deps.enqueuer,
 		cfg.WatcherMaxPerCompany,
-	)
+	).
+		// The API validates a freshness watcher and runs its dry-run; it never
+		// fires one. Both halves are needed for the dry-run, which is the point
+		// of requiring it — it proves the probe works before the watcher is
+		// enabled, from the process the admin is talking to.
+		WithFreshness(connRepo, deps.freshnessSvc)
 
 	// http_action's egress (T-12b) reuses the MCP egress guard's rules — the same
 	// address pinning, the same private-range refusal — because "reach a tenant's

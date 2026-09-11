@@ -4,13 +4,13 @@ The plan is
 [`../plan/10-freshness-metrics-email-roadmap.md`](../plan/10-freshness-metrics-email-roadmap.md)
 Track A (`T-F1`→`T-F3`); the argument for building it is
 [`../research/07-feature-candidates.md`](../research/07-feature-candidates.md)
-§1a. **Two tickets of three are built.**
+§1a. **All three are built.**
 
 | Ticket | Status |
 | --- | --- |
 | `T-F1` A source can say when it was last loaded | **built 2026-09-11, unit-gated. Migration `079` written, not applied — §5** |
 | `T-F2` The turn knows, and the answer says so | **built 2026-09-11, unit-gated. `make eval` owed — §5** |
-| `T-F3` A watcher that fires on staleness | Not built |
+| `T-F3` A watcher that fires on staleness | **built 2026-09-11, unit-gated. Migration `080`, not applied — §5** |
 
 ---
 
@@ -176,6 +176,66 @@ stapled to it: the second half of a contradiction.
 package that imports all three and fails the moment a verdict is renamed without
 its readers.
 
+## 4a. `T-F3`, and the two things it refused to invent
+
+A watcher gained a `kind`: `metric` (every row before `080`, backfilled by the
+column default) or `freshness`, which names a **source** rather than a metric.
+`kind`, not a second table — everything a freshness watcher needs is already on
+`watchers` and already correct: the cron, the timezone, the cooldown, the
+dedicated thread, the channel list, the dry-run-before-enable rule and the event
+history. A second table would duplicate all of it to change the one column that
+differs.
+
+**It has no threshold of its own, and refusing to give it one is the decision
+the ticket turns on.** The thresholds live on the source, so *one* configuration
+decides both what an answer says about currency and when somebody gets told. Two
+places to set the same number is two numbers that will disagree, and the
+disagreement surfaces as an alert about data the product was happy to quote a
+minute earlier. The three condition fields a metric watcher uses are left at
+their zero values rather than given plausible defaults — a threshold of `1440`
+would read like a setting somebody chose, and the next person to touch this
+would wire it up in parallel.
+
+**No model turn, and no budget check.** A metric breach enqueues an agent turn
+because *"why did revenue drop"* is a question worth a model call. *"The sales
+source has not loaded since Tuesday"* is not a question; it is a fact with one
+action attached, so the sentence is composed in Go — immediate, free, and unable
+to come out hedged. And because it spends nothing, there is nothing for the
+credit check to refuse: **a tenant out of credits is still told their pipeline
+is broken**, which is the moment they most need to know.
+
+**A watcher on an unconfigured source is refused at save time.** Such a source
+reports `unknown` forever, so the watcher would tick on its cron and never
+breach — enabled, green, and structurally incapable of firing, which is the
+worst row this table can hold. The message names the fix rather than the fault.
+
+**`Unknown` does not breach**, which is decision 6 carried into the one place it
+costs something to hold: a probe that broke at 03:00 must not page anybody, and
+an alert that fires on its own instrument failing trains a team to mute it. It
+is counted separately from `quiet` on the fire metric, because a watcher whose
+probe is broken and one whose source is healthy both look silent and are very
+different problems.
+
+**The dry-run is honestly a different thing, and says so.** A metric watcher's
+replays five complete periods. A source's load time has exactly one value — now
+— and nothing records what it was yesterday, so this reports **one sample**: what
+the watcher would do if it fired this instant. It is still worth requiring,
+because it proves the probe works, and it **refuses on `unknown`** rather than
+passing — a dry-run that vouches for a blind watcher is the refused row arriving
+by the other door.
+
+**A watcher cannot change kind.** Its threshold, its window and its whole event
+history mean something else afterwards, and the dry-run that vouched for it
+vouched for the old subject. The service refuses it, the repository's `UPDATE`
+does not carry `kind` either, and the dashboard only offers the choice on
+create — three places agreeing rather than one enforcing.
+
+**The generated types caught the frontend half.** Making `metric_id` `omitempty`
+turned it optional in `@argentum/api-types`, and `tsc` immediately failed in
+three places where the dashboard assumed every watcher has a metric. That is the
+whole argument for `make types` in one build: the hand-written version of this
+type would have compiled and then rendered `undefined` in a row label.
+
 ## 5. What is owed
 
 **`079` has not been applied anywhere.** Three nullable columns, no backfill, no
@@ -200,9 +260,18 @@ unit-proven. The arm that would settle it is one source with a real expression,
 one query, and the block in the tool result — which needs `079` applied first,
 so it is the same arm.
 
-**`T-F3` is not built**, so nothing tells a tenant their source went stale
-unless somebody asks a question. That is the roadmap's cut #3 and it is
-deliberate ordering, not a gap discovered late.
+**`080` has not been applied either**, and unlike `079` it is not purely
+additive: it drops `NOT NULL` on `watchers.metric_id` and adds a CHECK
+constraint in its place. Dropping `NOT NULL` widens what the column accepts and
+invalidates nothing already in it, so the `up` is safe — but the `down`
+**deletes every freshness watcher**, because `metric_id` goes back to `NOT NULL`
+and a freshness watcher has none. The alternative, inventing a metric for it,
+would bring the row back as a *metric* watcher pointed at something nobody
+chose, on a cron, delivering to a channel. The file says so in its own comment.
+
+**No freshness watcher has ever fired.** The fire path, the cooldown, the
+`unknown` refusal and the dry-run are all unit-proven against a stubbed prober;
+none of it has run against a real source on a real cron.
 
 **The verdict is not recorded anywhere.** A turn that was dated logs one line at
 `Info` and writes no row. Deliberate — filing it through `recordBlockedTurn`

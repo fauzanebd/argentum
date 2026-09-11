@@ -6318,6 +6318,44 @@ is not built, and adding an unused target to an action tool puts a capability
 into every turn's prompt that nothing asks for. That is `T-14`'s `list_watchers`
 exactly, which the 2026-08-04 gate found advertised for a week.
 
+## Phase 3ai — Told before you ask, about the data that stopped arriving (2026-09-11)
+
+`T-F3`, the last of the four candidates. Record:
+[`freshness.md`](freshness.md) §4a.
+
+`T-F1` made an *answer* say how old its data is. This is the other half of the
+same fact: being told without asking. A watcher gained a `kind` — `metric`
+(every row before `080`) or `freshness`, which names a source.
+
+**Two things it refused to invent.** It has **no threshold of its own** — the
+source's is the only one, so one setting decides both when an answer gets dated
+and when somebody gets told, and the three condition fields a metric watcher
+uses are left at their zero values rather than given plausible-looking defaults
+that the next reader would wire up in parallel. And it fires **no model turn**:
+*"why did revenue drop"* is a question worth a model call, *"the sales source
+has not loaded since Tuesday"* is a fact with one action attached, so the
+sentence is composed in Go — immediate, free, and unable to come out hedged.
+
+**Because it spends nothing, it skips the credit check.** A tenant out of
+credits is still told their pipeline is broken, which is the moment they most
+need to know and is a bill they are not being charged.
+
+**Three refusals that all close the same hole.** A watcher on a source with no
+freshness query is refused at save time; the dry-run refuses on `unknown`
+rather than passing; and `unknown` never breaches. All three exist to stop one
+row: a watcher that is enabled, green, and structurally incapable of ever
+firing.
+
+**The generated types caught the frontend half.** Making `metric_id` `omitempty`
+turned it optional in `@argentum/api-types`, and `tsc` failed in three places
+where the dashboard assumed every watcher has a metric — a row label, a draft
+mapper and a form. That is `make types` earning its place in one build: the
+hand-written version would have compiled and rendered `undefined`.
+
+**Track F is now 6 of 7.** Only `T-F5` (metrics the product proposes) is
+unbuilt, and it is deliberately gated on a measurement rather than on effort —
+see Phase 3ag.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

@@ -21,7 +21,8 @@ type WatcherRepo struct{ db *sql.DB }
 
 func NewWatcherRepo(db *sql.DB) *WatcherRepo { return &WatcherRepo{db: db} }
 
-const watcherColumns = `id, company_id, metric_id, thread_id, name, window_grain, comparator,
+const watcherColumns = `id, company_id, COALESCE(kind, 'metric'),
+	COALESCE(metric_id::text, ''), COALESCE(source_id::text, ''), thread_id, name, window_grain, comparator,
 	threshold, COALESCE(compare_to, ''), cron_expression, timezone, channels, cooldown_minutes,
 	enabled, last_fired_at, last_dry_run_at, COALESCE(created_by::text, ''), created_at, updated_at`
 
@@ -29,16 +30,17 @@ func scanWatcher(row interface {
 	Scan(dest ...interface{}) error
 }) (*domain.Watcher, error) {
 	w := &domain.Watcher{}
-	var grain, comparator string
+	var grain, comparator, kind string
 	var channels []byte
 	var lastFired, lastDryRun sql.NullTime
 	if err := row.Scan(
-		&w.ID, &w.CompanyID, &w.MetricID, &w.ThreadID, &w.Name, &grain, &comparator,
+		&w.ID, &w.CompanyID, &kind, &w.MetricID, &w.SourceID, &w.ThreadID, &w.Name, &grain, &comparator,
 		&w.Threshold, &w.CompareTo, &w.CronExpression, &w.Timezone, &channels, &w.CooldownMinutes,
 		&w.Enabled, &lastFired, &lastDryRun, &w.CreatedBy, &w.CreatedAt, &w.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
+	w.Kind = domain.WatcherKind(kind).Normalized()
 	w.WindowGrain = domain.WatcherGrain(grain)
 	w.Comparator = domain.WatcherComparator(comparator)
 	if len(channels) > 0 {
@@ -67,14 +69,16 @@ func (r *WatcherRepo) Create(ctx context.Context, w *domain.Watcher) error {
 	}
 	const q = `
 		INSERT INTO watchers (
-			company_id, metric_id, thread_id, name, window_grain, comparator, threshold,
+			company_id, kind, metric_id, source_id, thread_id, name, window_grain, comparator, threshold,
 			compare_to, cron_expression, timezone, channels, cooldown_minutes, enabled, created_by
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), $9, $10, $11, $12, $13, NULLIF($14, '')::uuid
+			$1, $2, NULLIF($3, '')::uuid, NULLIF($4, '')::uuid, $5, $6, $7, $8, $9,
+			NULLIF($10, ''), $11, $12, $13, $14, $15, NULLIF($16, '')::uuid
 		)
 		RETURNING id, created_at, updated_at`
 	err = r.db.QueryRowContext(ctx, q,
-		w.CompanyID, w.MetricID, w.ThreadID, w.Name, string(w.WindowGrain), string(w.Comparator),
+		w.CompanyID, string(w.Kind.Normalized()), w.MetricID, w.SourceID,
+		w.ThreadID, w.Name, string(w.WindowGrain), string(w.Comparator),
 		w.Threshold, w.CompareTo, w.CronExpression, w.Timezone, channels, w.CooldownMinutes,
 		w.Enabled, w.CreatedBy,
 	).Scan(&w.ID, &w.CreatedAt, &w.UpdatedAt)
@@ -148,15 +152,21 @@ func (r *WatcherRepo) Update(ctx context.Context, w *domain.Watcher) error {
 	// clobber it.
 	const q = `
 		UPDATE watchers
-		   SET metric_id = $3, name = $4, window_grain = $5, comparator = $6, threshold = $7,
+		   SET metric_id = NULLIF($3, '')::uuid, name = $4, window_grain = $5, comparator = $6, threshold = $7,
 		       compare_to = NULLIF($8, ''), cron_expression = $9, timezone = $10, channels = $11,
-		       cooldown_minutes = $12, enabled = $13, last_dry_run_at = $14, updated_at = now()
+		       cooldown_minutes = $12, enabled = $13, last_dry_run_at = $14,
+		       source_id = NULLIF($15, '')::uuid, updated_at = now()
 		 WHERE company_id = $1 AND id = $2
 		RETURNING updated_at`
+	// kind is deliberately absent from the SET list. A watcher changing what it
+	// watches is a different watcher: its threshold, its window and its whole
+	// event history mean something else afterwards, and the dry-run that vouched
+	// for it vouched for the old subject. The service refuses the change; this
+	// query could not carry it even if it did not.
 	err = r.db.QueryRowContext(ctx, q,
 		w.CompanyID, w.ID, w.MetricID, w.Name, string(w.WindowGrain), string(w.Comparator),
 		w.Threshold, w.CompareTo, w.CronExpression, w.Timezone, channels, w.CooldownMinutes, w.Enabled,
-		w.LastDryRunAt,
+		w.LastDryRunAt, w.SourceID,
 	).Scan(&w.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ErrNotFound

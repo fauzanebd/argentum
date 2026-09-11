@@ -214,8 +214,16 @@ The migration round-trip is owed live —
 
 ---
 
-#### `T-F3` A watcher that fires on staleness itself
+#### `T-F3` A watcher that fires on staleness itself — **built 2026-09-11**
 **Repo:** BE + FE · **Size:** 1.0d · **Deps:** `T-F1` · **Migration:** `080`
+
+> **Built and unit-gated 2026-09-11**; the record is
+> [`../coverage/freshness.md`](../coverage/freshness.md) §4a. Two things the
+> ticket did not say: a freshness watcher **fires no model turn and skips the
+> budget check** (it spends nothing, so a tenant out of credits is still told
+> their pipeline broke), and its **dry-run is one sample rather than five
+> periods**, because a source's load time has one value and nothing records
+> yesterday's.
 
 ##### Do
 - A watcher `kind`: `metric` (every existing row, backfilled by the migration's
@@ -226,11 +234,21 @@ The migration round-trip is owed live —
   is against the threshold.
 
 ##### Acceptance
-- [ ] Existing watchers are `kind = metric` after `080` and behave identically
-- [ ] A freshness watcher breaches when the source passes `stale_after`
-- [ ] It does **not** breach on `Unknown` (decision 6 — a broken probe must not
-      page somebody at 03:00)
-- [ ] Cooldown suppression works the same as a metric watcher's
+- [x] Existing watchers are `kind = metric` after `080` and behave identically —
+      the column defaults, an empty `Kind` normalises to metric, and a client
+      written before this ticket sends no kind at all
+- [x] A freshness watcher breaches when the source passes `stale_after`
+- [x] It does **not** breach on `Unknown` (decision 6 — a broken probe must not
+      page somebody at 03:00), and it is counted apart from `quiet` so an
+      operator can tell a working watcher from a blind one
+- [x] Cooldown suppression works the same as a metric watcher's
+- [x] **Added:** a watcher on a source with no freshness query is refused at
+      save time, and the dry-run refuses on `Unknown` — the same row arriving by
+      two doors
+- [x] **Added:** a watcher cannot change kind, refused in three places that
+      agree (service, repository `UPDATE`, dashboard)
+- [ ] `080`'s round-trip — and unlike `079` this one is not purely additive:
+      the `down` **deletes every freshness watcher**, which the file states
 
 ##### Out of scope
 - Alerting on the freshness *trend*. A source getting slowly later is a real

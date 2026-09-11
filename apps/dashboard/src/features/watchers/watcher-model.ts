@@ -1,6 +1,7 @@
 import type {
   Watcher,
   WatcherChannel,
+  WatcherKind,
   WatcherComparator,
   WatcherGrain,
   Channel,
@@ -14,7 +15,13 @@ import type {
  * lockstep with WatcherInput's JSON tags.
  */
 export interface WatcherDraft {
-  metric_id: string;
+  /** What this watcher watches (T-F3). Absent is "metric", which is what every
+   *  body written before the freshness kind existed sends. */
+  kind?: WatcherKind;
+  /** The subject of a metric watcher; absent on a freshness one. */
+  metric_id?: string;
+  /** The subject of a freshness watcher; absent on a metric one. */
+  source_id?: string;
   name: string;
   window_grain: WatcherGrain;
   comparator: WatcherComparator;
@@ -55,7 +62,9 @@ export interface DryRunSample {
  */
 export function watcherToDraft(w: Watcher, enabled?: boolean): WatcherDraft {
   return {
+    kind: w.kind,
     metric_id: w.metric_id,
+    source_id: w.source_id,
     name: w.name,
     window_grain: w.window_grain,
     comparator: w.comparator,
@@ -180,4 +189,25 @@ function formatThreshold(n: number): string {
   // Group digits so a nine-digit revenue threshold is legible, but keep any
   // decimals a percentage threshold carries.
   return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+/**
+ * FreshnessSource is a data source a freshness watcher can watch (T-F3).
+ *
+ * Only sources with a freshness query configured qualify: the server refuses
+ * the rest with "set one in Settings → Data sources first", and offering them
+ * in the picker would be an invitation to hit that refusal.
+ */
+export interface FreshnessSource {
+  id: string;
+  label: string;
+}
+
+/** Narrows the connections list to the ones worth offering. */
+export function freshnessSources(
+  connections: { id: string; label?: string; db_type: string; freshness?: { sql?: string } }[],
+): FreshnessSource[] {
+  return connections
+    .filter((c) => !!c.freshness?.sql?.trim())
+    .map((c) => ({ id: c.id, label: c.label || c.db_type }));
 }

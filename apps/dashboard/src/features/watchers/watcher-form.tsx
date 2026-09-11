@@ -41,12 +41,14 @@ import {
   needsComparison,
   usesThreshold,
   type WatcherDraft,
+  type FreshnessSource,
 } from "./watcher-model";
 
 const CUSTOM_PRESET = "__custom__";
 
 function emptyDraft(metricID: string): WatcherDraft {
   return {
+    kind: "metric",
     metric_id: metricID,
     name: "",
     window_grain: "day",
@@ -62,7 +64,9 @@ function emptyDraft(metricID: string): WatcherDraft {
 
 function draftFrom(w: Watcher): WatcherDraft {
   return {
+    kind: w.kind,
     metric_id: w.metric_id,
+    source_id: w.source_id,
     name: w.name,
     window_grain: w.window_grain,
     comparator: w.comparator,
@@ -82,10 +86,15 @@ export function WatcherForm({
   comparators,
   channels,
   compareOptions,
+  sources,
   onDone,
 }: {
   editing: Watcher | null;
   metrics: MetricDefinition[];
+  /** Sources that have a freshness query configured (T-F3). Only these can be
+   *  watched — the server refuses the rest, and offering them here would be an
+   *  invitation to hit that refusal. */
+  sources: FreshnessSource[];
   grains: WatcherGrain[];
   comparators: WatcherComparator[];
   channels: Channel[];
@@ -122,8 +131,10 @@ export function WatcherForm({
     (ch) => ch.channel !== "dashboard" && !(ch.ref ?? "").trim(),
   );
 
+  const isFreshness = (draft.kind ?? "metric") === "freshness";
+
   const ready =
-    draft.metric_id !== "" &&
+    (isFreshness ? !!draft.source_id : !!draft.metric_id) &&
     draft.name.trim().length > 0 &&
     draft.cron_expression.trim().length > 0 &&
     draft.timezone.trim().length > 0 &&
@@ -214,6 +225,44 @@ export function WatcherForm({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* What this watcher watches (T-F3). Only offered on create: a watcher
+            cannot change kind — its threshold, its window and its whole event
+            history mean something else afterwards — and the server refuses it,
+            so showing the choice on an edit would offer a button that 400s. */}
+        {!editing && (
+          <div className="space-y-1.5">
+            <Label>Watch</Label>
+            <div className="flex items-center gap-1">
+              {(
+                [
+                  { id: "metric", label: "A number" },
+                  { id: "freshness", label: "Whether data is arriving" },
+                ] as const
+              ).map((k) => (
+                <button
+                  key={k.id}
+                  type="button"
+                  onClick={() => setDraft((d) => ({ ...d, kind: k.id }))}
+                  className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+                    (draft.kind ?? "metric") === k.id
+                      ? "bg-muted font-medium text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {k.label}
+                </button>
+              ))}
+            </div>
+            {isFreshness && (
+              <p className="text-xs text-muted-foreground">
+                Fires when a source stops loading. It uses the staleness threshold set on the
+                source itself, so there is nothing to choose here — one setting decides both
+                when an answer gets dated and when somebody gets told.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label>Name</Label>
@@ -223,9 +272,43 @@ export function WatcherForm({
               placeholder="Revenue drop"
             />
           </div>
+          {isFreshness ? (
+            <div className="space-y-1.5">
+              <Label>Source</Label>
+              <Select
+                value={draft.source_id ?? ""}
+                onValueChange={(v) => set("source_id", v)}
+                disabled={!!editing}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      sources.length ? "Choose a source" : "No source has a freshness query"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {sources.map((src) => (
+                    <SelectItem key={src.id} value={src.id}>
+                      {src.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {sources.length === 0 && (
+                // Said here rather than left as an empty dropdown: the reason a
+                // source is missing from this list is always the same one, and
+                // it is fixable in two clicks.
+                <p className="text-xs text-muted-foreground">
+                  A source can be watched once it has a freshness query. Set one in Settings →
+                  Data sources.
+                </p>
+              )}
+            </div>
+          ) : (
           <div className="space-y-1.5">
             <Label>Metric</Label>
-            <Select value={draft.metric_id} onValueChange={(v) => set("metric_id", v)}>
+            <Select value={draft.metric_id ?? ""} onValueChange={(v) => set("metric_id", v)}>
               <SelectTrigger>
                 <SelectValue placeholder="Choose a metric" />
               </SelectTrigger>
@@ -239,10 +322,17 @@ export function WatcherForm({
               </SelectContent>
             </Select>
           </div>
+          )}
         </div>
 
         {/* The condition: comparator, and a threshold unless the comparator is
-            no_data (which fires on the absence of a row, not a number). */}
+            no_data (which fires on the absence of a row, not a number).
+
+            A freshness watcher has none of this. Its threshold lives on the
+            source, and a window and comparator here would be three controls
+            that change nothing — worse than absent, because somebody would set
+            them and expect them to matter. */}
+        {!isFreshness && (
         <div className="grid grid-cols-3 gap-4">
           <div className="space-y-1.5">
             <Label>Window</Label>
@@ -292,8 +382,9 @@ export function WatcherForm({
             </div>
           )}
         </div>
+        )}
 
-        {needsComparison(draft.comparator) && (
+        {!isFreshness && needsComparison(draft.comparator) && (
           <div className="space-y-1.5">
             <Label>Compare to</Label>
             <Select value={draft.compare_to} onValueChange={(v) => set("compare_to", v)}>

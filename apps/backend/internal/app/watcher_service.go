@@ -25,6 +25,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/freshness"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/metric"
 	"github.com/fauzanebd/argentum/internal/metrics"
@@ -99,6 +100,10 @@ type WatcherService struct {
 	// chat product a tenant configures per company and this one is a single
 	// relay the *deployment* owns.
 	mail AlertMailer
+	// sources and fresh are what a freshness watcher needs (T-F3): the first
+	// validates the subject, the second probes it on a fire.
+	sources FreshnessWatchSubject
+	fresh   FreshnessProber
 
 	// budget refuses an unattended fire on an exhausted tenant, the same second
 	// integration point ScheduledTaskService needs and for the same reason: a
@@ -223,7 +228,12 @@ func (s *WatcherService) Repo() domain.WatcherRepository { return s.repo }
 
 // WatcherInput is the create/update shape shared by the handler.
 type WatcherInput struct {
-	MetricID        string                   `json:"metric_id"`
+	// Kind decides what this watcher watches (T-F3). Empty is "metric", which
+	// is what every request written before 080 sends.
+	Kind     domain.WatcherKind `json:"kind,omitempty"`
+	MetricID string             `json:"metric_id"`
+	// SourceID is the subject of a freshness watcher.
+	SourceID        string                   `json:"source_id,omitempty"`
 	Name            string                   `json:"name"`
 	WindowGrain     domain.WatcherGrain      `json:"window_grain"`
 	Comparator      domain.WatcherComparator `json:"comparator"`
@@ -300,6 +310,19 @@ func (s *WatcherService) Update(ctx context.Context, companyID, id string, in Wa
 	if err != nil {
 		return nil, err
 	}
+	// A watcher cannot change what *kind* of thing it watches (T-F3). Its
+	// threshold, its window and its whole event history mean something else
+	// afterwards, and the dry-run that vouched for it vouched for the old
+	// subject. Deleting and recreating is one extra click and leaves a record
+	// that says what happened; the repository's UPDATE does not carry `kind`
+	// either, so this refusal and that omission agree.
+	//
+	// An empty Kind on the request is the metric default, so a client written
+	// before 080 editing a metric watcher passes this unchanged.
+	if in.Kind.Normalized() != current.Kind.Normalized() {
+		return nil, fmt.Errorf("%w: a %s watcher cannot become a %s one — delete it and create the other",
+			domain.ErrInvalidInput, current.Kind.Normalized(), in.Kind.Normalized())
+	}
 	w, err := s.validated(ctx, companyID, in, current)
 	if err != nil {
 		return nil, err
@@ -353,6 +376,18 @@ func (s *WatcherService) validated(ctx context.Context, companyID string, in Wat
 		return nil, fmt.Errorf("%w: a company is required", domain.ErrInvalidInput)
 	case name == "":
 		return nil, fmt.Errorf("%w: a watcher needs a name", domain.ErrInvalidInput)
+	case !in.Kind.Valid():
+		return nil, fmt.Errorf("%w: kind must be metric or freshness", domain.ErrInvalidInput)
+	}
+	// A freshness watcher takes a different half of this struct, so it validates
+	// separately and returns early rather than threading `if kind ==` through
+	// every check below. The two share everything after the subject — cron,
+	// timezone, channels, cooldown — and that shared tail is deliberately one
+	// code path.
+	if in.Kind.Normalized() == domain.WatcherKindFreshness {
+		return s.validatedFreshness(ctx, companyID, name, in, current)
+	}
+	switch {
 	case in.MetricID == "":
 		return nil, fmt.Errorf("%w: a watcher needs a metric", domain.ErrInvalidInput)
 	case !in.WindowGrain.Valid():
@@ -401,6 +436,7 @@ func (s *WatcherService) validated(ctx context.Context, companyID string, in Wat
 
 	return &domain.Watcher{
 		CompanyID:       companyID,
+		Kind:            domain.WatcherKindMetric,
 		MetricID:        in.MetricID,
 		Name:            name,
 		WindowGrain:     in.WindowGrain,
@@ -418,7 +454,8 @@ func (s *WatcherService) validated(ctx context.Context, companyID string, in Wat
 // opposed to its name or delivery. A changed condition means the standing
 // dry-run no longer describes it.
 func conditionChanged(a, b *domain.Watcher) bool {
-	return a.MetricID != b.MetricID ||
+	return a.SourceID != b.SourceID ||
+		a.MetricID != b.MetricID ||
 		a.WindowGrain != b.WindowGrain ||
 		a.Comparator != b.Comparator ||
 		a.Threshold != b.Threshold ||
@@ -545,6 +582,9 @@ func (s *WatcherService) DryRun(ctx context.Context, companyID, id string) (*Dry
 	if err != nil {
 		return nil, err
 	}
+	if w.Kind.Normalized() == domain.WatcherKindFreshness {
+		return s.dryRunFreshness(ctx, w)
+	}
 	m, err := s.metrics.Get(ctx, companyID, w.MetricID)
 	if err != nil {
 		return nil, err
@@ -596,6 +636,9 @@ func (s *WatcherService) HandleFire(ctx context.Context, watcherID string) error
 	}
 	if !w.Enabled {
 		return nil
+	}
+	if w.Kind.Normalized() == domain.WatcherKindFreshness {
+		return s.handleFreshnessFire(ctx, w)
 	}
 	m, err := s.metrics.Get(ctx, w.CompanyID, w.MetricID)
 	if err != nil {
@@ -908,4 +951,317 @@ func startOfWeek(t time.Time, loc *time.Location) time.Time {
 func startOfMonth(t time.Time, loc *time.Location) time.Time {
 	y, m, _ := t.In(loc).Date()
 	return time.Date(y, m, 1, 0, 0, 0, 0, loc)
+}
+
+// --- freshness watchers (T-F3) ---
+
+// FreshnessWatchSubject is what a freshness watcher needs to know about the
+// source it watches: that it belongs to this company, and that somebody has
+// configured it to report at all.
+type FreshnessWatchSubject interface {
+	GetByID(ctx context.Context, id string) (*domain.DBConnection, error)
+}
+
+// WithFreshness gives the service the two things a freshness watcher needs: the
+// source lookup, for validation, and the prober, for the fire.
+//
+// Both are optional and both are checked at the point of use. The API's
+// instance gets the lookup so it can validate a create; the worker's gets both,
+// because it is the one that fires.
+func (s *WatcherService) WithFreshness(sources FreshnessWatchSubject, prober FreshnessProber) *WatcherService {
+	s.sources = sources
+	s.fresh = prober
+	return s
+}
+
+// validatedFreshness is validated()'s other half.
+//
+// **A freshness watcher has no threshold of its own**, and refusing to invent
+// one is the decision this function turns on. The thresholds live on the source
+// (`db_connections.freshness_stale_after_mins`), so one configuration decides
+// both what an *answer* says about currency and when somebody gets told. Two
+// places to set the same number is two numbers that will disagree, and the
+// disagreement surfaces as an alert about data the product was perfectly happy
+// to quote a minute earlier.
+func (s *WatcherService) validatedFreshness(ctx context.Context, companyID, name string, in WatcherInput, current *domain.Watcher) (*domain.Watcher, error) {
+	if strings.TrimSpace(in.SourceID) == "" {
+		return nil, fmt.Errorf("%w: a freshness watcher needs a source", domain.ErrInvalidInput)
+	}
+	if s.sources == nil {
+		return nil, fmt.Errorf("%w: freshness watchers are not configured on this deployment", domain.ErrInvalidInput)
+	}
+	src, err := s.sources.GetByID(ctx, in.SourceID)
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return nil, err
+	}
+	// Same answer for "no such source" and "somebody else's source", the rule
+	// the roster's reads established: distinguishing them is an existence oracle
+	// for another tenant's ids.
+	if src == nil || src.CompanyID != companyID {
+		return nil, fmt.Errorf("%w: no source with that id in this workspace", domain.ErrInvalidInput)
+	}
+	// **Refused at save time, not skipped at fire time.** A source with no
+	// expression reports `unknown` forever, so this watcher would tick on its
+	// cron and never breach — and a watcher that is enabled, green, and
+	// structurally incapable of firing is the worst row this table can hold. The
+	// message names the fix rather than the fault.
+	if !src.Freshness.Configured() || src.Freshness.StaleAfterMins <= 0 {
+		return nil, fmt.Errorf("%w: %q has no freshness query yet — set one in Settings → Data sources before watching it",
+			domain.ErrInvalidInput, sourceLabel(src))
+	}
+
+	tz, err := normalizeTimezone(in.Timezone)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCron(in.CronExpression, tz); err != nil {
+		return nil, err
+	}
+	if err := validateChannels(in.Channels); err != nil {
+		return nil, err
+	}
+	cooldown := 720
+	if in.CooldownMinutes != nil {
+		if *in.CooldownMinutes < 0 {
+			return nil, fmt.Errorf("%w: cooldown_minutes cannot be negative", domain.ErrInvalidInput)
+		}
+		cooldown = *in.CooldownMinutes
+	} else if current != nil {
+		cooldown = current.CooldownMinutes
+	}
+
+	return &domain.Watcher{
+		CompanyID: companyID,
+		Kind:      domain.WatcherKindFreshness,
+		SourceID:  in.SourceID,
+		Name:      name,
+		// The three condition fields a metric watcher uses are left at their
+		// zero values rather than given plausible-looking defaults. A threshold
+		// of 0 on a row nothing reads is harmless; a threshold of 1440 would
+		// read like a setting somebody chose, and the next person to touch this
+		// would wire it up in parallel with the source's.
+		WindowGrain:     domain.WatcherGrainDay,
+		Comparator:      domain.WatcherComparatorNoData,
+		CronExpression:  strings.TrimSpace(in.CronExpression),
+		Timezone:        tz,
+		Channels:        in.Channels,
+		CooldownMinutes: cooldown,
+	}, nil
+}
+
+// evaluateFreshness probes the source and decides whether to fire.
+//
+// **`Unknown` is not a breach**, which is decision 6 carried into the one place
+// it costs something to hold: a probe that broke at 03:00 must not page
+// somebody. It is the same rule the answer path follows — a broken probe says
+// nothing — and here the alternative is worse than a wrong caveat, because an
+// alert that fires on its own instrument failing trains a team to mute it.
+func (s *WatcherService) evaluateFreshness(ctx context.Context, w *domain.Watcher) (breachResult, freshness.Report) {
+	if s.fresh == nil {
+		return breachResult{}, freshness.Report{Verdict: freshness.Unknown}
+	}
+	rep := s.fresh.For(ctx, w.CompanyID, w.SourceID)
+	br := breachResult{breached: rep.Verdict == freshness.Stale}
+	if !rep.ObservedAt.IsZero() {
+		age := rep.Age.Hours()
+		br.metricValue = &age
+	}
+	br.noData = rep.Verdict == freshness.Unknown
+	return br, rep
+}
+
+// freshnessBriefing is what a breach says.
+//
+// It is composed here rather than run through a model, and that is the
+// difference from a metric watcher: a metric breach fires an agent turn because
+// "why did revenue drop" is a question worth spending a model call on. "The
+// sales source has not loaded since Tuesday" is not a question — it is a fact
+// with one action attached, and putting a model between the probe and the
+// on-call person adds latency, cost, and a chance of the sentence coming out
+// hedged.
+func freshnessBriefing(w *domain.Watcher, sourceName string, rep freshness.Report) string {
+	label := sourceName
+	if label == "" {
+		label = "a data source"
+	}
+	b := strings.Builder{}
+	fmt.Fprintf(&b, "%s has not refreshed.\n\n", label)
+	if !rep.ObservedAt.IsZero() {
+		fmt.Fprintf(&b, "Last load: %s (%s ago).\n",
+			rep.ObservedAt.UTC().Format("2006-01-02 15:04 UTC"), strings.TrimSpace(humanHours(rep.Age)))
+	}
+	b.WriteString("\nAnswers drawn from this source are being dated automatically, and a recent period that looks empty may simply not have loaded. Check the pipeline that writes it.")
+	return b.String()
+}
+
+// humanHours is freshness.humanAge's shape without exporting it — the package
+// keeps its renderer private on purpose, since the phrasing there belongs to a
+// sentence inside an answer rather than to every caller.
+func humanHours(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d hours", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%d days", int(d.Hours()/24))
+	}
+}
+
+func sourceLabel(c *domain.DBConnection) string {
+	if c == nil {
+		return ""
+	}
+	if strings.TrimSpace(c.Label) != "" {
+		return c.Label
+	}
+	return c.DBType
+}
+
+// handleFreshnessFire is HandleFire's other half (T-F3).
+//
+// It shares the shape of the metric path — evaluate, record the event, respect
+// the cooldown, deliver to every channel — and differs in exactly two places,
+// both deliberate:
+//
+//  1. **No model turn.** A metric breach enqueues an agent turn because "why
+//     did revenue drop" is a question worth a model call. "The sales source has
+//     not loaded since Tuesday" is not a question; it is a fact with one action
+//     attached. Composing the sentence here costs nothing, arrives immediately,
+//     and cannot come out hedged.
+//  2. **No budget check.** The check exists to refuse *spend* on an exhausted
+//     tenant, and this path spends nothing. Refusing it would mean a tenant who
+//     ran out of credits also stops being told their data pipeline is broken —
+//     which is the moment they most need to know, and is a bill they are not
+//     being charged for.
+func (s *WatcherService) handleFreshnessFire(ctx context.Context, w *domain.Watcher) error {
+	br, rep := s.evaluateFreshness(ctx, w)
+
+	event := &domain.WatcherEvent{
+		WatcherID:   w.ID,
+		CompanyID:   w.CompanyID,
+		MetricValue: br.metricValue,
+		Breached:    br.breached,
+	}
+
+	if !br.breached {
+		if err := s.repo.AppendEvent(ctx, event); err != nil {
+			return fmt.Errorf("record freshness watcher event: %w", err)
+		}
+		// `unknown` is counted apart from `fresh`, because a watcher whose probe
+		// is broken and a watcher whose source is healthy both look quiet, and
+		// they are very different problems. Without this an operator reading the
+		// counters cannot tell a working watcher from a blind one.
+		if br.noData {
+			metrics.Default().RecordWatcherFire("freshness_unknown")
+		} else {
+			metrics.Default().RecordWatcherFire("quiet")
+		}
+		return nil
+	}
+
+	if s.inCooldown(w) {
+		event.SuppressedReason = "cooldown"
+		if err := s.repo.AppendEvent(ctx, event); err != nil {
+			return fmt.Errorf("record suppressed freshness event: %w", err)
+		}
+		metrics.Default().RecordWatcherFire("suppressed")
+		return nil
+	}
+
+	tid := w.ThreadID
+	event.ThreadID = &tid
+	if err := s.repo.AppendEvent(ctx, event); err != nil {
+		return fmt.Errorf("record freshness watcher event: %w", err)
+	}
+	// Before delivery, like the metric path: a watcher that failed to deliver
+	// should still wait its cooldown, or a broken channel becomes a fire storm.
+	if err := s.repo.TouchFired(ctx, w.ID, s.now()); err != nil {
+		logrus.WithError(err).WithField("watcher_id", w.ID).Warn("freshness watcher: cooldown timestamp not recorded")
+	}
+
+	briefing := freshnessBriefing(w, s.sourceName(ctx, w), rep)
+	// Appended as a *user* message, which is the same call the metric path makes
+	// with its briefing, and for the same reason: it is the thing that provoked
+	// the conversation. The difference is that nothing answers it — there is no
+	// turn to enqueue — so the thread reads as a notice rather than as a
+	// question nobody replied to. An assistant message would claim the agent
+	// said something it did not.
+	if _, err := s.threads.AppendUserMessage(ctx, w.ThreadID, briefing); err != nil {
+		logrus.WithError(err).WithField("watcher_id", w.ID).Warn("freshness watcher: briefing not appended")
+	}
+
+	deliveries := s.deliver(ctx, w, briefing)
+	if err := s.repo.SetEventDelivery(ctx, event.ID, "", deliveries); err != nil {
+		logrus.WithError(err).WithField("event_id", event.ID).Warn("freshness watcher: delivery status not recorded")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"watcher_id": w.ID, "event_id": event.ID, "company_id": w.CompanyID, "source_id": w.SourceID,
+	}).Info("freshness watcher breached; source has not loaded")
+	metrics.Default().RecordWatcherFire("breached")
+
+	s.webhooks.Publish(ctx, w.CompanyID, domain.WebhookWatcherBreached,
+		newWatcherBreachedPayload(w, event, s.now()))
+	return nil
+}
+
+// sourceName is best-effort: a breach message that says "a data source" is
+// worse than one naming it and much better than no breach at all.
+func (s *WatcherService) sourceName(ctx context.Context, w *domain.Watcher) string {
+	if s.sources == nil {
+		return ""
+	}
+	src, err := s.sources.GetByID(ctx, w.SourceID)
+	if err != nil || src == nil || src.CompanyID != w.CompanyID {
+		return ""
+	}
+	return sourceLabel(src)
+}
+
+// dryRunFreshness is the dry-run a freshness watcher can actually do, and it is
+// honest about being a different thing from the metric one.
+//
+// **There is no history to replay.** A metric watcher's dry-run evaluates the
+// last five complete periods, because the metric's SQL can be run over any
+// window. A source's load time has exactly one value — now — and nothing in
+// this product records what it was yesterday. So this reports **one sample**:
+// what the watcher would do if it fired this instant.
+//
+// That is still worth requiring before enable, and for the reason the rule
+// exists: it proves the probe works. The two failures it catches are the two
+// that would otherwise be discovered at 03:00 — an expression that errors, and
+// a source somebody cleared the configuration off since the watcher was made.
+func (s *WatcherService) dryRunFreshness(ctx context.Context, w *domain.Watcher) (*DryRunResult, error) {
+	if s.fresh == nil {
+		return nil, fmt.Errorf("%w: freshness probing is not configured on this deployment", domain.ErrInvalidInput)
+	}
+	br, rep := s.evaluateFreshness(ctx, w)
+	// Refused rather than reported as a passing dry-run. `unknown` means the
+	// probe did not produce a timestamp, and a watcher enabled on the strength
+	// of that is a watcher that will never fire — the row this ticket's
+	// validation refuses to create in the first place, arriving by the other
+	// door.
+	if rep.Verdict == freshness.Unknown {
+		return nil, fmt.Errorf("%w: this source is not reporting a load time — check the freshness query in Settings → Data sources",
+			domain.ErrInvalidInput)
+	}
+	now := s.now()
+	out := &DryRunResult{
+		PeriodsEvaluated: 1,
+		Samples: []DryRunSample{{
+			From:     rep.ObservedAt,
+			To:       now,
+			Value:    br.metricValue,
+			Breached: br.breached,
+			NoData:   br.noData,
+		}},
+	}
+	if br.breached {
+		out.WouldHaveFired = 1
+	}
+	if err := s.repo.TouchDryRun(ctx, w.ID, now); err != nil {
+		return nil, fmt.Errorf("record dry-run: %w", err)
+	}
+	return out, nil
 }

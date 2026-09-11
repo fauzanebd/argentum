@@ -3016,6 +3016,24 @@ export const WatcherComparatorPctChangeLT = "pct_change_lt";
 export const WatcherComparatorNoData = "no_data";
 export type WatcherComparator = typeof WatcherComparatorGT | typeof WatcherComparatorLT | typeof WatcherComparatorPctChangeGT | typeof WatcherComparatorPctChangeLT | typeof WatcherComparatorNoData;
 /**
+ * WatcherKind is what a watcher watches (T-F3).
+ */
+/**
+ * WatcherKindMetric evaluates a defined metric against a threshold. T-08's
+ * original and only shape, and what an empty Kind means.
+ */
+export const WatcherKindMetric = "metric";
+/**
+ * WatcherKindFreshness watches whether a source is still loading.
+ * It has no threshold of its own: the thresholds live on the source
+ * (db_connections.freshness_*), so one configuration decides both what an
+ * *answer* says about currency and when somebody gets told. Two places to
+ * set the same number is two numbers that disagree, and the disagreement
+ * would surface as an alert about data the product was happy to quote.
+ */
+export const WatcherKindFreshness = "freshness";
+export type WatcherKind = typeof WatcherKindMetric | typeof WatcherKindFreshness;
+/**
  * WatcherChannel is one delivery destination for a watcher's fire.
  * Ref means whatever the channel keys delivery on: a WhatsApp phone number, a
  * Discord channel id, a Lark chat id. The dashboard channel has no ref — the
@@ -3046,7 +3064,21 @@ export interface WatcherDelivery {
 export interface Watcher {
   id: string;
   company_id: string;
-  metric_id: string;
+  /**
+   * Kind decides what gets evaluated (T-F3). Empty reads as WatcherKindMetric,
+   * which is every row written before migration 080.
+   */
+  kind?: WatcherKind;
+  /**
+   * MetricID is the subject of a metric watcher, and empty on a freshness one.
+   */
+  metric_id?: string;
+  /**
+   * SourceID is the subject of a freshness watcher, and empty on a metric one.
+   * The database enforces that exactly one of the two is set for a given kind
+   * (080's watchers_subject_matches_kind).
+   */
+  source_id?: string;
   /**
    * ThreadID is the dedicated thread each fire runs in, reused across fires so
    * the dashboard shows one conversation per watcher.

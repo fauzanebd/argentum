@@ -13,6 +13,7 @@ import type {
   WatchersResponse,
 } from "@argentum/api-types";
 import { WatcherForm } from "./watcher-form";
+import { freshnessSources } from "./watcher-model";
 import { WatcherRow } from "./watcher-row";
 import { WatcherEventsSheet } from "./watcher-events-sheet";
 import { useIsAdmin } from "@/store/auth";
@@ -32,6 +33,24 @@ export function WatchersPage() {
     queryFn: async () => (await api.get<MetricsResponse>("/metrics")).data,
   });
 
+  // The connections list, for the freshness watcher's source picker (T-F3).
+  // Shares the cache key with Settings → Data sources, so opening this page
+  // after configuring a source shows it without a second request.
+  const { data: connectionsData } = useQuery({
+    queryKey: ["connections"],
+    queryFn: async () =>
+      (
+        await api.get<{
+          connections: {
+            id: string;
+            label?: string;
+            db_type: string;
+            freshness?: { sql?: string };
+          }[];
+        }>("/connections")
+      ).data.connections,
+  });
+
   const watchers = ((data?.watchers ?? []) as (Watcher | undefined)[]).filter(
     (w): w is Watcher => !!w,
   );
@@ -46,15 +65,27 @@ export function WatchersPage() {
   const channels = (data?.channels ?? ["dashboard"]) as Channel[];
   const compareOptions = data?.compare_options ?? ["previous_period", "same_period_last_year"];
 
+  const sources = useMemo(
+    () => freshnessSources(connectionsData ?? []),
+    [connectionsData],
+  );
+
   const metrics: MetricDefinition[] = (metricsData?.metrics ?? []).filter(
     (m): m is MetricDefinition => !!m,
   );
   const metricLabel = useMemo(() => {
     const byId = new Map(metrics.map((m) => [m.id, m.label]));
-    return (id: string) => byId.get(id) ?? "the metric";
+    // A freshness watcher has no metric id at all (T-F3), which is a different
+    // thing from one whose metric was deleted — so it gets its own words rather
+    // than the fallback for a missing row.
+    return (id?: string) => (id ? (byId.get(id) ?? "the metric") : "data freshness");
   }, [metrics]);
 
-  const noMetrics = metrics.length === 0;
+  // A watcher needs *something* to watch, and since T-F3 a metric is not the
+  // only candidate: a source with a freshness query is one too. Gating the
+  // button on metrics alone would lock a tenant out of the feature they can
+  // actually use.
+  const nothingToWatch = metrics.length === 0 && sources.length === 0;
   // Every watcher write is admin-only in the route policy, so a member is
   // offered the page (the list is theirs to read) with the writes disabled.
   const isAdmin = useIsAdmin();
@@ -88,7 +119,7 @@ export function WatchersPage() {
           {!showForm && (
             <Button
               onClick={openCreate}
-              disabled={noMetrics || !isAdmin}
+              disabled={nothingToWatch || !isAdmin}
               title={isAdmin ? undefined : "Only admins can create watchers"}
               className="shrink-0"
             >
@@ -97,10 +128,11 @@ export function WatchersPage() {
           )}
         </div>
 
-        {noMetrics && !showForm && (
+        {nothingToWatch && !showForm && (
           <p className="text-sm text-muted-foreground">
-            Define a metric on Settings → Metrics before creating a watcher — a watcher needs an
-            authoritative number to watch.
+            A watcher needs something to watch. Define a metric on Settings → Metrics, or give a
+            source a freshness query on Settings → Data sources to be told when its data stops
+            arriving.
           </p>
         )}
 
@@ -108,6 +140,7 @@ export function WatchersPage() {
           <WatcherForm
             editing={editing}
             metrics={metrics}
+            sources={sources}
             grains={grains}
             comparators={comparators}
             channels={channels}

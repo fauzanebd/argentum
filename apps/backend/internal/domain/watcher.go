@@ -59,6 +59,40 @@ func (c WatcherComparator) NeedsComparison() bool {
 	return c == WatcherComparatorPctChangeGT || c == WatcherComparatorPctChangeLT
 }
 
+// WatcherKind is what a watcher watches (T-F3).
+type WatcherKind string
+
+const (
+	// WatcherKindMetric evaluates a defined metric against a threshold. T-08's
+	// original and only shape, and what an empty Kind means.
+	WatcherKindMetric WatcherKind = "metric"
+	// WatcherKindFreshness watches whether a source is still loading.
+	//
+	// It has no threshold of its own: the thresholds live on the source
+	// (db_connections.freshness_*), so one configuration decides both what an
+	// *answer* says about currency and when somebody gets told. Two places to
+	// set the same number is two numbers that disagree, and the disagreement
+	// would surface as an alert about data the product was happy to quote.
+	WatcherKindFreshness WatcherKind = "freshness"
+)
+
+// Normalized returns the kind an empty value means.
+func (k WatcherKind) Normalized() WatcherKind {
+	if k == "" {
+		return WatcherKindMetric
+	}
+	return k
+}
+
+// Valid reports whether this is a kind the fire path knows how to evaluate.
+func (k WatcherKind) Valid() bool {
+	switch k.Normalized() {
+	case WatcherKindMetric, WatcherKindFreshness:
+		return true
+	}
+	return false
+}
+
 // WatcherChannel is one delivery destination for a watcher's fire.
 //
 // Ref means whatever the channel keys delivery on: a WhatsApp phone number, a
@@ -85,7 +119,15 @@ type WatcherDelivery struct {
 type Watcher struct {
 	ID        string `json:"id"`
 	CompanyID string `json:"company_id"`
-	MetricID  string `json:"metric_id"`
+	// Kind decides what gets evaluated (T-F3). Empty reads as WatcherKindMetric,
+	// which is every row written before migration 080.
+	Kind WatcherKind `json:"kind,omitempty"`
+	// MetricID is the subject of a metric watcher, and empty on a freshness one.
+	MetricID string `json:"metric_id,omitempty"`
+	// SourceID is the subject of a freshness watcher, and empty on a metric one.
+	// The database enforces that exactly one of the two is set for a given kind
+	// (080's watchers_subject_matches_kind).
+	SourceID string `json:"source_id,omitempty"`
 	// ThreadID is the dedicated thread each fire runs in, reused across fires so
 	// the dashboard shows one conversation per watcher.
 	ThreadID        string            `json:"thread_id"`

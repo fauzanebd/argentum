@@ -507,9 +507,21 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// does. Delivery providers are installed by the worker (WithDelivery) — the
 	// eval harness that also builds this stack never delivers.
 	s.WatcherRepo = pgctl.NewWatcherRepo(controlDB)
+	// One prober for the whole worker (T-F1/T-F3): the tools and the freshness
+	// watchers read the same per-source cache, so a turn and a watcher tick in
+	// the same minute cost one probe between them rather than two.
+	freshnessSvc := app.NewFreshnessService(
+		s.Connections, s.Connections, s.TenantPool,
+		time.Duration(cfg.SourceFreshnessTTLSecs)*time.Second)
+
 	s.Watchers = app.NewWatcherService(
 		s.WatcherRepo, s.Metrics, s.ThreadSvc, s.Companies, s.scheduledEnq, cfg.WatcherMaxPerCompany,
-	).WithBudget(s.UsageSvc)
+	).WithBudget(s.UsageSvc).
+		// Freshness watchers (T-F3). The worker gets both halves because it is
+		// the one that fires: the source lookup names the source in the breach,
+		// and the prober is the evaluation. It shares the tools' prober, so a
+		// watcher and an answer read one cached verdict per source per TTL.
+		WithFreshness(s.Connections, freshnessSvc)
 
 	// The action framework (T-10/T-12a/T-12b). send_message and http_action are the
 	// registered kinds; propose_action resolves one at propose time, and the
@@ -592,9 +604,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// the API's: the cache is per process on purpose, and a verdict at most
 		// one TTL old in two processes is cheaper than a shared one and wrong in
 		// the same harmless direction.
-		Freshness: app.NewFreshnessService(
-			s.Connections, s.Connections, s.TenantPool,
-			time.Duration(cfg.SourceFreshnessTTLSecs)*time.Second),
+		Freshness: freshnessSvc,
 		// Native dashboards (T-D11). The worker builds the whole service rather
 		// than a saver, because create_dashboard now validates a spec and runs
 		// every panel before it stores one — the same code path the API resolves
