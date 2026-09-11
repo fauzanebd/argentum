@@ -9,6 +9,28 @@ backend, ~2.5 frontend** — across three tracks.
 X Y`, and `grep -rhoE "\b[A-Z]-[0-9]+\b"` finds bare findings under `B C E O P
 Q S`. `F` collides with neither.
 
+> **Status, 2026-09-11: six of seven built, all `make check` green, all
+> unit-gated.** `T-F1`, `T-F2`, `T-F3` (freshness), `T-F4` (coverage), `T-F6`,
+> `T-F7` (email). Records: [`../coverage/freshness.md`](../coverage/freshness.md),
+> [`../coverage/metric-coverage.md`](../coverage/metric-coverage.md),
+> [`../coverage/email.md`](../coverage/email.md).
+>
+> **`T-F5` is the one left, and it is held on a measurement rather than on
+> effort.** `T-F4`'s coverage query has never run against real data, and the
+> only evidence that exists points *against* building `T-F5`: Phase 3ae's 28
+> long turns ran `query_metric` 85 times against `run_sql` 19. Those turns were
+> selected for being long rather than sampled, so they say nothing about the
+> other 409 — but if coverage is genuinely high, `T-F5` is three days spent on a
+> problem this deployment does not have. **One read settles it**
+> ([`../coverage/metric-coverage.md`](../coverage/metric-coverage.md) §5), and
+> it should happen before the ticket does.
+>
+> **What is owed across the six: three migrations un-round-tripped (`079`,
+> `080`), one paired `make eval`, and one SMTP catcher.** None of the four needs
+> money; three need a database and one needs twenty minutes. They are in
+> [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §3d,
+> §7a and §1t.
+
 **One thing here is not like the others: `T-F1`+`T-F2` close a wrong-answer
 class.** Everything else on this roadmap adds a surface. A source that has not
 loaded produces an answer that is grounded, cited, non-fabricated and wrong —
