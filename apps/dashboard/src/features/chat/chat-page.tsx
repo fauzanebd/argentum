@@ -966,12 +966,15 @@ function PendingBubble({
   startedAt: number;
 }) {
   const elapsed = useElapsedSeconds(startedAt);
+  /* The step number without its ceiling, deliberately. "Step 3 of 8" reads as
+     a progress bar, and it is not one: 8 is a tuning constant (the tool-calling
+     cap in internal/agentbudget), most turns finish in three or four, and a
+     turn that ends at 5 has not stopped 62% of the way through anything. What
+     the reader needs is that work is still happening and how long it has taken,
+     which is this number and the elapsed figure beside it. The ceiling stays on
+     the `iteration` event for the logs, where it answers a real question. */
   const progress =
-    iteration && iteration.current > 1
-      ? iteration.max > 0
-        ? `Step ${iteration.current} of ${iteration.max}`
-        : `Step ${iteration.current}`
-      : "Working";
+    iteration && iteration.current > 1 ? `Step ${iteration.current}` : "Working";
 
   return (
     <div className="flex gap-3 items-start">

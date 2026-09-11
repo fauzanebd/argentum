@@ -279,6 +279,11 @@ type Config struct {
 	AgentMaxToolCalls   int // tool executions per turn
 	AgentMaxTurnTokens  int // cumulative provider-reported tokens per turn
 	AgentTurnBudgetSecs int // wall-clock ceiling per turn
+	// AgentBudgetWarnRatio is how far through the tightest of those four the
+	// model is handed one mid-turn checkpoint notice. 1 or more switches the
+	// notice off — it is a ratio that cannot be crossed — which is the knob to
+	// reach for if a provider ever reads the notice as an instruction to stop.
+	AgentBudgetWarnRatio float64
 
 	// Credit enforcement (T-03). Finding B-1: the balance was decremented and
 	// never read. CreditsEnforcementEnabled is the kill switch that restores
@@ -676,6 +681,12 @@ func Load() (*Config, error) {
 		AgentMaxToolCalls:   getEnvAsInt("AGENT_MAX_TOOL_CALLS", 12),
 		AgentMaxTurnTokens:  getEnvAsInt("AGENT_MAX_TURN_TOKENS", 200000),
 		AgentTurnBudgetSecs: getEnvAsInt("AGENT_TURN_BUDGET_SECS", 150),
+		// Zero, not the shipped ratio spelled a second time: agentbudget
+		// .Normalize fills an unset dimension from its own default, and a
+		// safety limit with two sources of truth is how it ends up being the
+		// wrong one — the same reason config/agents.yaml no longer names any
+		// of the four above.
+		AgentBudgetWarnRatio: getEnvAsFloat("AGENT_BUDGET_WARN_RATIO", 0),
 
 		// Credit enforcement
 		CreditsEnforcementEnabled:  getEnv("CREDITS_ENFORCEMENT_ENABLED", "true") == "true",

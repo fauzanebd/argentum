@@ -265,6 +265,7 @@ The twelve that came before:
 | `internal/app`                 | `metering_llm_test.go`                              | `MeteredLLM` streaming usage: metadata path, HTTP-tap fallback, and the unbilled-turn warning (`T-02c`) |
 | `internal/llmusage`            | `transport_test.go`                                 | SSE usage parsing and cache-token normalisation (`T-02c`) |
 | `internal/agentbudget`         | `budget_test.go`                                    | Budget dimensions, the refusal payload, sticky exhaustion, and what counts as evidence of retrieved data (`T-16`) |
+| `internal/agentbudget`         | `checkpoint_test.go`                                | The mid-turn checkpoint: one notice per turn on the crossing call, the tightest dimension named, no figure the grounding check would read as evidence, and a splice that leaves the tool's own bytes intact (`T-Q18`) |
 | `internal/guardrails`          | `fabrication_test.go`                               | What counts as a stated figure — both observed fabrications must trip it, refusals and years must not — and the replacement message's cause and language (`T-16`) |
 | `internal/tools`               | `run_sql_test.go`                                   | The zero-row and truncation notes on a `run_sql` payload (`T-16`) |
 | `internal/report/theme`        | `theme_test.go`                                     | The generated tokens match `tokens.json`, so a hand edit to `tokens_gen.go` fails `go test` before it reaches the `tokens` CI job (`T-R1`) |

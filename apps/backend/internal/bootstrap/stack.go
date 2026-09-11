@@ -634,6 +634,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		MaxToolCalls:  cfg.AgentMaxToolCalls,
 		MaxTokens:     cfg.AgentMaxTurnTokens,
 		Wall:          time.Duration(cfg.AgentTurnBudgetSecs) * time.Second,
+		WarnRatio:     cfg.AgentBudgetWarnRatio,
 	}.Normalize()
 	s.Tools = agentbudget.GuardAll(s.Tools)
 

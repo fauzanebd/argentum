@@ -2252,3 +2252,16 @@ on the body openai-go builds.
 | ------- | -------- | ------- |
 | `T-Q17` | One live turn on the deployed backend, and a `provider.ignore` field in the request it sends. `LLM_WIRE_TAP_DIR` is exactly the instrument: it captures what the provider receives, and `llmroute` sits above it in the chain on purpose | A deployment. The probe that proved the preference hand-wrote its own body, which is the one thing a capture would not be doing |
 | `T-Q17` | Four endpoints in the `kimi-k2.6` pool remain unmeasured — Fireworks errored once, and StreamLake, Novita and Phala were skipped as deranked upstream ([`provider-routing.md`](provider-routing.md) §2). Any of them could be a second `decart` | Nothing but a re-run. It is three curl calls and belongs in whichever week somebody next touches the model choice |
+
+## 7. Needs the paid eval set (added 2026-09-11)
+
+`T-Q18`'s remaining half, and the only half that is about the model rather than
+the code. The mid-turn checkpoint notice is unit-proven to be delivered — once
+per turn, on the call that crosses 0.7, naming the tightest dimension, without
+disturbing the bytes of the result it rides on. Whether a model *acts* on it is
+not a property of this repository.
+
+| Owed by | The gate | Blocker |
+| ------- | -------- | ------- |
+| `T-Q18` | Re-run the multi-source questions from the 2026-08-23 baseline with `AGENT_BUDGET_WARN_RATIO=0.7` and again at `1` (off). What should move: fewer turns ending in `iteration budget spent`, and no increase in turns that stop early with budget left — the second number is the one that would say the notice is being read as "wrap up" | Model spend. The comparison is only worth reading paired, so it is two runs of the set, not one |
+| `T-Q18` | The histogram the out-of-scope note asks for: the tracker's `reason` across the set (already on every exhausted turn's completion line), `iteration budget spent` versus `time budget spent`. It decides whether `MaxIterations: 8` is doing any work at all, or whether the 150s wall already binds first at production latency | The same two runs — it is a count off their completion lines, not a third run |

@@ -1011,3 +1011,94 @@ requests carrying `provider.ignore`, six healthy routings, six sets of
 structured tool calls. Owed: one live turn *through the deployed backend*, which
 is the only thing that can show the transport puts the field on the body
 openai-go builds rather than on one a probe hand-wrote.
+
+## 18. `T-Q18` — the budget says something while there is budget left (built 2026-09-11)
+
+Every mechanism in §9 speaks to the model **once**, at exhaustion, through a
+refusal. This section is about the consequence of that being the only message:
+by the time it arrives, every decision it could have changed has been taken.
+
+### 18.1 The cliff is not the cap
+
+Finding `Q-5` was recorded as a number being too small — three iterations, and a
+fabricated `$1,234,567.89` where the true figure was `3,863,405,700.00`. Eight
+fixed the observed case. What eight does not fix is the shape underneath it: a
+model that cannot see the budget plans as though it had none, spends its
+iterations on `get_schema` and probes, and discovers the ceiling at the moment
+it is refused the aggregation. **Twelve would move that moment, not remove it.**
+
+The same conclusion is sitting in somebody else's repository, reached from the
+other direction. Nous Research's Hermes Agent defaults `agent.max_turns` to
+`None` — unlimited, `sys.maxsize` — and the comment beside it says *"caps caused
+silent mid-task truncation"*. They kept every part of the machinery and switched
+it off: `IterationBudget` still counts, exhaustion still retains one toolless
+**grace call** (this repo's reserved final iteration, arrived at separately), and
+`budget_warning_ratio` still exists to warn the model mid-run.
+
+The defaults differ because the deployments do. A Hermes turn runs on the user's
+machine, on the user's keys, with a human holding Ctrl-C. An Argentum turn holds
+an SSE connection, spends an operator's credits, and is watched by nobody. Going
+unlimited here is not the same trade. **Warning the model is.**
+
+### 18.2 The notice is written to not be obeyed
+
+> You have used 6 of 8 tool-calling iterations. Spend what is left on the call
+> that actually answers the question, not on more exploration. Keep going: do
+> NOT stop, and do NOT write your final reply, solely because of this notice —
+> when the budget is actually spent you will be told so, and asked for your
+> final reply then.
+
+The last clause is the load-bearing one, and Hermes carries its own version of
+it (*"do not stop solely because of this warning"*) for the same reason. A
+notice that reads as *wrap up now* converts a turn that would have been
+truncated into one that is abandoned — worse, because the budget was never
+actually spent and the user gets less for the same money.
+
+0.7 is read off the arithmetic rather than chosen: iterations are the tightest
+of the four dimensions, `0.7 × 8 = 5.6`, so the notice lands after the sixth.
+Tools are refused from the eighth, which leaves the seventh — exactly one round
+in which to do what the notice asks. Earlier spends the warning on turns that
+were never going to need it.
+
+### 18.3 A budget warning that corrupts a figure would be a remarkable own goal
+
+Two constraints came out of writing it down, both of them about the notice
+riding on a tool result:
+
+**It is spliced into the JSON, not re-marshalled through it.** A round trip
+through `map[string]any` renders every integer as a float, and a turn whose
+order id came back as `1e+06` has been corrupted by its own budget warning.
+`WithCheckpoint` inserts one field after the opening brace and leaves every
+other byte as the tool wrote it.
+
+**No figure in it reaches 1000.** `search_documents` results are read for the
+figures a reply is then allowed to quote (`CollectNumbersInProse`), and that
+collection ignores anything under 1000 — which every iteration, tool-call and
+second count is, and which a token total is not. So the token dimension is the
+one described without numbers: *"most of this turn's token budget"*. Writing
+`140000 of 200000 tokens` would have handed the model two figures the
+fabrication guard would then accept as retrieved evidence, in a notice whose
+entire purpose is to prevent the failure that guard exists for.
+
+### 18.4 The denominator left the screen
+
+`Step 3 of 8` in the pending bubble was the screenshot that started this. It
+reads as a progress bar and is not one: 8 is a tuning constant, most turns
+finish in three or four, and a turn that ends at five has not stopped 62% of the
+way through anything. It now reads `Step 3`, beside the elapsed figure that
+§T-U3 already established as the part carrying the information.
+`max_iterations` stays on the `iteration` event for the logs, where "which
+dimension ended this turn" is a real question.
+
+### 18.5 Gate
+
+`go build`, `go vet`, `golangci-lint run ./...` (0 issues) and
+`go test -race ./internal/...` — 64 packages, clean. The dashboard's
+`tsc -b --noEmit && eslint . && vitest run` is green at 25 tests.
+
+**What none of it proves** is the only thing that matters: that a model reads
+the notice and runs the aggregation instead of another `get_schema`. The tests
+prove delivery — once per turn, on the right call, naming the right dimension,
+without corrupting the result it rides on. Behaviour needs the paid eval set,
+and it is filed in
+[`live-gate-backlog.md`](live-gate-backlog.md) §7.

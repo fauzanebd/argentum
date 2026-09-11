@@ -1251,3 +1251,93 @@ from a scraped string.
 cannot have: OpenRouter returns `provider` in the response body and openai-go's
 typed client drops it. It belongs in `internal/llmusage`'s transport, which is
 already parsing that body for token counts.
+
+## `T-Q18` The budget says something while there is budget left — 0.5d · **built 2026-09-11, unit-gated**
+**Repo:** BE + FE · **Deps:** `T-16` (the budget itself) · **Priority:** P1
+**Migration:** none
+
+### Why
+
+The question that opened this was a screenshot of the pending bubble —
+*"Step 3 of 8"* — and the honest version of it: **is a cap right at all?**
+
+Nous Research's Hermes Agent ships the opposite default. `agent.max_turns` is
+`None`, resolved to `sys.maxsize`, and the comment beside it in
+`hermes_cli/config_defaults.py` reads *"caps caused silent mid-task
+truncation"* — which is finding `Q-5` reached independently, by somebody else,
+from the other end. They did not delete the machinery: `IterationBudget` still
+counts, exhaustion still retains one toolless **grace call**, and
+`budget_warning_ratio` still exists to warn the model mid-run. All of it is
+switched off by default, because a Hermes turn runs on the user's own machine,
+on the user's own keys, with a human holding Ctrl-C.
+
+An Argentum turn holds an SSE connection, spends an operator's credits and is
+watched by nobody. **The cap stays.** What this repo was missing is the half
+Hermes keeps and defaults off, and the reason it matters is written in §9 of
+[`agent-quality.md`](../coverage/agent-quality.md): the budget speaks exactly
+once, at exhaustion, through a refusal. That is one message too late to change
+how the turn was spent. The model plans as though the budget were infinite,
+spends its iterations exploring, and learns the ceiling exists at the moment it
+is refused the query that would have answered the question. **Raising 8 to 12
+moves that cliff rather than removing it**, which is why this ticket does not
+touch the number.
+
+### Do
+
+- `Budget.WarnRatio`, default **0.7**, env `AGENT_BUDGET_WARN_RATIO`. Set to
+  `1` or more to switch the notice off — a ratio that cannot be crossed —
+  because `Normalize` fills a non-positive field from the shipped default and
+  "0 means off" would let a half-filled config disable it silently.
+- `Tracker.Checkpoint` — **one** notice per turn, attached to the result of the
+  call that crosses the ratio, naming whichever of the four dimensions is
+  furthest through its ceiling.
+- The wording ends in *"do NOT stop, and do NOT write your final reply, solely
+  because of this notice"*. Hermes carries the same clause for the same reason:
+  a notice that reads as "wrap up" trades a truncated answer for an abandoned
+  one, which is worse, because the budget was never actually spent.
+- `WithCheckpoint` splices the field into the tool's JSON rather than
+  re-marshalling it. A round trip through `map[string]any` renders every integer
+  as a float, and a turn whose order id came back as `1e+06` has been corrupted
+  by its own budget warning.
+- **No figure in the notice reaches 1000**, and the token dimension is therefore
+  described without numbers at all. The notice rides on a tool result, and for
+  `search_documents` that result is read for figures the reply may then quote
+  (`guardrails.CollectNumbersInProse`, cutoff `< 1000`). "140000 of 200000
+  tokens" would hand the model two numbers the fabrication guard would accept as
+  retrieved evidence.
+- Dashboard: `Step 3 of 8` → `Step 3`. The denominator is a tuning constant, not
+  a progress bar; most turns finish in three or four, and a turn that ends at
+  five has not stopped 62% of the way through anything. `max_iterations` stays
+  on the `iteration` event, where the logs can still read it.
+
+### Acceptance
+
+- [x] The notice fires once per turn, on the call that crosses the ratio
+- [x] It names the tightest dimension — tool calls, iterations, seconds, or tokens without figures
+- [x] It states no number `CollectNumbersInProse` would treat as evidence
+- [x] A failed call does not consume it; the next call that works carries it
+- [x] An exhausted turn gets the refusal and no notice — the two never arrive together
+- [x] `WithCheckpoint` leaves every other byte of the tool's output unchanged, including a 1000000 integer and a DECIMAL rendered as a string
+- [x] `WarnRatio >= 1` produces no notice even at the ceiling
+- [x] The pending bubble reads `Step 3`, and `Working` before the second iteration
+- [ ] **A live turn showing the notice changes what the model does next.** Every box above proves the notice is delivered, correctly, to the right call. None of them proves a model reads it and runs the aggregation instead of another `get_schema` — that is model behaviour, and it needs the paid eval set
+
+### Gate
+
+```bash
+cd apps/backend && go test -race ./internal/...
+```
+
+### Out of scope
+
+**Raising `MaxIterations`.** There is no evidence 8 is wrong, and changing it
+now would be guessing. What would settle it is a histogram of the tracker's
+`reason` across the eval set — the field already on every exhausted turn's
+completion line: how often `iteration budget spent` fires versus `time budget
+spent`. At the latency in the screenshot that opened this ticket — step 3 at 67s,
+roughly 22s a step — the 150s wall lands around step 7, which is the same place
+the iteration cap does. If that holds, the iteration cap is nearly decorative and
+the number does not matter.
+
+**A second notice.** One per turn: the second says nothing the first did not, and
+every notice is a paragraph of the context window spent on bookkeeping.

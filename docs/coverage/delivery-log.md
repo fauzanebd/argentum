@@ -5614,6 +5614,70 @@ back on purpose plus one not previously counted: `actions/setup-node@v4` and
 bumping them together rather than one at a time, and the green run above is the
 verification loop that was missing when the decision to hold was taken.
 
+## Phase 3z — The budget learns to speak before it is spent (2026-09-11)
+
+Started as a question about a spinner. The pending bubble said **"Step 3 of 8"**
+and the owner asked what it meant, then the better question: *is it better to
+not have max iterations?*
+
+### The answer was in somebody else's repository
+
+Nous Research's Hermes Agent ships `agent.max_turns: None` — unlimited — and the
+comment beside it reads *"caps caused silent mid-task truncation"*. That is
+finding `Q-5` written by strangers. It would be a comfortable citation for
+deleting the cap here, and it is the wrong one: Hermes runs on the user's
+machine, on the user's keys, with a human holding Ctrl-C. This backend holds an
+SSE connection and spends an operator's credits while nobody watches.
+
+What survives the difference is the part Hermes keeps and defaults off, and this
+repo never had: **`budget_warning_ratio`** — a one-shot notice to the model while
+there is still budget to spend differently. Until today `internal/agentbudget`
+spoke exactly once per turn, at exhaustion, through a refusal. Every decision
+that message could have changed had already been taken.
+
+### What shipped
+
+`Budget.WarnRatio` (0.7, `AGENT_BUDGET_WARN_RATIO`, `>= 1` to disable) and
+`Tracker.Checkpoint`: one notice, attached to the result of the call that
+crosses the ratio, naming whichever dimension is furthest through its ceiling.
+0.7 is arithmetic rather than taste — `0.7 × 8 = 5.6`, tools are refused from the
+eighth iteration, so the notice lands with exactly one usable round left.
+
+Two details are the whole of the care in it. The notice is **spliced** into the
+tool's JSON rather than re-marshalled through `map[string]any`, which would
+render an order id of `1000000` as `1e+06` — a budget warning corrupting the
+figure it exists to protect. And **no number in it reaches 1000**, because
+`CollectNumbersInProse` reads `search_documents` results for figures the reply
+may quote and ignores everything below that cutoff; the token dimension is
+therefore described as *"most of this turn's token budget"* with no digits at
+all.
+
+`Step 3 of 8` became `Step 3`. The denominator is a tuning constant wearing a
+progress bar's clothes.
+
+### Gate
+
+`golangci-lint run ./...` 0 issues, `go test -race ./internal/...` 64 packages
+clean, dashboard `tsc -b --noEmit && eslint . && vitest run` green at 25 tests.
+Nine unit assertions cover delivery — once per turn, right call, right
+dimension, no numeric leak, byte-preserving splice, survives a failed call,
+silent on an exhausted turn.
+
+**What is not proven, and is filed rather than claimed:** that a model reads the
+notice and runs the aggregation instead of another `get_schema`. That is
+behaviour, it needs the paid eval set, and it is
+[`live-gate-backlog.md`](live-gate-backlog.md) §7 — paired runs at 0.7 and off,
+because the number that would matter most is the one that says the notice is
+being read as "stop".
+
+### The question it left open, deliberately
+
+`MaxIterations: 8` was not touched. There is no evidence it is wrong, and the
+screenshot that started this suggests it may not be doing much work: step 3 at
+67s is roughly 22s a step, which puts the 150s wall at around step 7 — the same
+place the iteration cap lands. Settling that is a count off the completion
+lines of the same two eval runs, not a third one.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

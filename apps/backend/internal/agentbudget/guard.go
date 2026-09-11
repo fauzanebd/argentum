@@ -90,5 +90,21 @@ func (g *guarded) Execute(ctx context.Context, args string) (string, error) {
 		}).Warn("the same tool call failed the same way twice; ending the tool loop")
 		return refusal, nil
 	}
+
+	// The mid-turn checkpoint, last, and only on a call that produced a result
+	// to carry it: a failed call returns its error to the provider and the
+	// notice would ride out on nothing. It stays pending either way — the
+	// tracker hands it to the next call that works.
+	if err == nil {
+		if notice := tr.Checkpoint(ctx); notice != "" {
+			logrus.WithFields(logrus.Fields{
+				"company_id": tenantctx.CompanyID(ctx),
+				"thread_id":  tenantctx.ThreadID(ctx),
+				"tool":       name,
+				"notice":     notice,
+			}).Info("agent budget checkpoint; notice attached to tool result")
+			return WithCheckpoint(out, notice), nil
+		}
+	}
 	return out, err
 }

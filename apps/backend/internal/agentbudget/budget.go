@@ -61,18 +61,36 @@ type Budget struct {
 	MaxTokens int
 	// Wall caps elapsed time from the first tool call.
 	Wall time.Duration
+	// WarnRatio is the fraction of the tightest dimension at which the model
+	// is handed one checkpoint notice, mid-turn, on the result of the call
+	// that crossed it — see Tracker.Checkpoint.
+	//
+	// Non-positive takes the shipped default, like every field above it. To
+	// switch the notice off, set it to 1 or more: a ratio that cannot be
+	// crossed. That spelling is deliberate — the same half-filled-config rule
+	// applies here as everywhere else in this struct, and "0 means off" would
+	// make an unset field silently disable it.
+	WarnRatio float64
 }
 
 // Default is the shipped budget. Eight iterations replaces the 3-iteration
 // cap of finding Q-5; twelve tool calls allows a schema lookup, a probe and
 // an aggregation per source across a three-source tenant without the model
 // having to ration itself.
+//
+// The 0.7 warn ratio is read off the same arithmetic: iterations are the
+// tightest of the four, so the notice lands after the sixth (0.7 x 8 = 5.6),
+// which is the last moment it can still change how the turn ends — tools are
+// refused from the eighth, the seventh being the one round left to run the
+// call the notice asks for. Earlier would spend the warning on turns that were
+// never going to need it; later would arrive with nothing left to do about it.
 func Default() Budget {
 	return Budget{
 		MaxIterations: 8,
 		MaxToolCalls:  12,
 		MaxTokens:     200_000,
 		Wall:          150 * time.Second,
+		WarnRatio:     0.7,
 	}
 }
 
@@ -130,6 +148,9 @@ func (b Budget) Normalize() Budget {
 	}
 	if b.Wall <= 0 {
 		b.Wall = d.Wall
+	}
+	if b.WarnRatio <= 0 {
+		b.WarnRatio = d.WarnRatio
 	}
 	return b
 }
@@ -200,6 +221,10 @@ type Tracker struct {
 	// reply saying "Done" on such a turn is making the same unevidenced claim as
 	// one that called nothing at all.
 	succeeded []string
+	// warned records that the mid-turn checkpoint notice has been delivered.
+	// One per turn: the second one says nothing the first did not, and every
+	// notice is a paragraph of the context window spent on bookkeeping.
+	warned bool
 }
 
 // New returns a tracker for one turn. The wall clock starts now: a turn that
