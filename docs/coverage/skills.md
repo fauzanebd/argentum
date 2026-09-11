@@ -453,7 +453,7 @@ The service holds three narrow readers rather than two repositories, so the
 
 `internal/llmtap` writes the outbound inference request to a file — request line,
 headers with credentials redacted, body verbatim — from an `http.RoundTripper` in
-the chain `llmzdr` and `llmusage` already occupy. `LLM_WIRE_TAP_DIR` turns it on
+the chain `llmroute` and `llmusage` already occupy. `LLM_WIRE_TAP_DIR` turns it on
 and empty is off.
 
 **It exists because a capture proxy could not answer the question and three

@@ -952,7 +952,9 @@ matrix run (`T-Q5`) rather than as a single number.
   policy, and it belongs in the customer brief and in every questionnaire answer
   we give.
   - Half of that answer is now a switch: `LLM_ZDR=true` sends OpenRouter's
-    `provider.zdr` on every inference request (`internal/llmzdr`), which confines
+    `provider.zdr` on every inference request (`internal/llmroute`, called
+    `internal/llmzdr` until T-Q17 widened it to the whole `provider` object),
+    which confines
     routing to endpoints that retain nothing and may not train on the payload.
     It ships off, because turning it on is a model decision as much as a privacy
     one — a model with no ZDR endpoint 404s instead of falling back, and the

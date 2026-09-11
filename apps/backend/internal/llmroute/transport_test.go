@@ -1,4 +1,4 @@
-package llmzdr
+package llmroute
 
 import (
 	"bytes"
@@ -34,6 +34,13 @@ func (c *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}, nil
 }
 
+// zdrOnly and denyOnly are the two configurations with different failure
+// directions; production runs denyOnly, or both when LLM_ZDR is set.
+var (
+	zdrOnly  = Options{ZDR: true}
+	denyOnly = Options{Ignore: BrokenToolCallProviders}
+)
+
 func post(t *testing.T, url, contentType, body string) *http.Request {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader([]byte(body)))
@@ -44,10 +51,10 @@ func post(t *testing.T, url, contentType, body string) *http.Request {
 	return req
 }
 
-func roundTrip(t *testing.T, req *http.Request) *captureTransport {
+func roundTrip(t *testing.T, opts Options, req *http.Request) *captureTransport {
 	t.Helper()
 	rt := &captureTransport{}
-	resp, err := New(rt).RoundTrip(req)
+	resp, err := New(rt, opts).RoundTrip(req)
 	if err != nil {
 		t.Fatalf("round trip: %v", err)
 	}
@@ -58,7 +65,7 @@ func roundTrip(t *testing.T, req *http.Request) *captureTransport {
 func TestInjectsZDRPreference(t *testing.T) {
 	req := post(t, "https://openrouter.ai/api/v1/chat/completions", "application/json",
 		`{"model":"anthropic/claude-haiku-4.5","messages":[{"role":"user","content":"hi"}],"seed":9007199254740993}`)
-	rt := roundTrip(t, req)
+	rt := roundTrip(t, zdrOnly, req)
 
 	var got map[string]json.RawMessage
 	if err := json.Unmarshal(rt.body, &got); err != nil {
@@ -83,14 +90,40 @@ func TestInjectsZDRPreference(t *testing.T) {
 	}
 }
 
+// The deny-list is the half that is on by default, so this is the shape almost
+// every request in the product actually carries.
+func TestInjectsIgnoreList(t *testing.T) {
+	rt := roundTrip(t, denyOnly, post(t, "https://openrouter.ai/api/v1/chat/completions", "application/json",
+		`{"model":"moonshotai/kimi-k2.6","messages":[{"role":"user","content":"hi"}]}`))
+
+	var got struct {
+		Provider struct {
+			Ignore []string `json:"ignore"`
+			ZDR    *bool    `json:"zdr"`
+		} `json:"provider"`
+	}
+	if err := json.Unmarshal(rt.body, &got); err != nil {
+		t.Fatalf("decode rewritten body: %v", err)
+	}
+	if len(got.Provider.Ignore) != 1 || got.Provider.Ignore[0] != "decart" {
+		t.Errorf("provider.ignore = %v; want [decart]", got.Provider.Ignore)
+	}
+	// ZDR is a separate operator decision. A deployment that left it off must
+	// not have it switched on by the deny-list travelling in the same object.
+	if got.Provider.ZDR != nil {
+		t.Errorf("provider.zdr = %v; want absent when Options.ZDR is false", *got.Provider.ZDR)
+	}
+}
+
 func TestMergesWithExistingProviderPreferences(t *testing.T) {
 	req := post(t, "https://openrouter.ai/api/v1/chat/completions", "application/json",
 		`{"model":"m","provider":{"order":["anthropic"],"allow_fallbacks":false}}`)
-	rt := roundTrip(t, req)
+	rt := roundTrip(t, Options{ZDR: true, Ignore: BrokenToolCallProviders}, req)
 
 	var got struct {
 		Provider struct {
 			ZDR            bool     `json:"zdr"`
+			Ignore         []string `json:"ignore"`
 			Order          []string `json:"order"`
 			AllowFallbacks *bool    `json:"allow_fallbacks"`
 		} `json:"provider"`
@@ -101,6 +134,9 @@ func TestMergesWithExistingProviderPreferences(t *testing.T) {
 	if !got.Provider.ZDR {
 		t.Errorf("provider.zdr = false; want true")
 	}
+	if len(got.Provider.Ignore) != 1 || got.Provider.Ignore[0] != "decart" {
+		t.Errorf("provider.ignore = %v; want [decart]", got.Provider.Ignore)
+	}
 	if len(got.Provider.Order) != 1 || got.Provider.Order[0] != "anthropic" {
 		t.Errorf("provider.order = %v; want [anthropic] — existing routing preferences must survive", got.Provider.Order)
 	}
@@ -109,9 +145,36 @@ func TestMergesWithExistingProviderPreferences(t *testing.T) {
 	}
 }
 
+// A caller that had already excluded a provider meant it. Unioning rather than
+// replacing is the difference between narrowing routing and quietly re-opening
+// an endpoint somebody switched off.
+func TestUnionsWithAnExistingIgnoreList(t *testing.T) {
+	req := post(t, "https://openrouter.ai/api/v1/chat/completions", "application/json",
+		`{"model":"m","provider":{"ignore":["chutes","decart"]}}`)
+	rt := roundTrip(t, denyOnly, req)
+
+	var got struct {
+		Provider struct {
+			Ignore []string `json:"ignore"`
+		} `json:"provider"`
+	}
+	if err := json.Unmarshal(rt.body, &got); err != nil {
+		t.Fatalf("decode rewritten body: %v", err)
+	}
+	want := []string{"chutes", "decart"}
+	if len(got.Provider.Ignore) != len(want) {
+		t.Fatalf("provider.ignore = %v; want %v — caller's entries kept, ours deduplicated", got.Provider.Ignore, want)
+	}
+	for i, slug := range want {
+		if got.Provider.Ignore[i] != slug {
+			t.Errorf("provider.ignore[%d] = %q; want %q", i, got.Provider.Ignore[i], slug)
+		}
+	}
+}
+
 func TestGetBodyReplaysRewrittenBody(t *testing.T) {
 	req := post(t, "https://openrouter.ai/api/v1/chat/completions", "application/json", `{"model":"m"}`)
-	rt := roundTrip(t, req)
+	rt := roundTrip(t, denyOnly, req)
 
 	rc, err := rt.req.GetBody()
 	if err != nil {
@@ -123,7 +186,7 @@ func TestGetBodyReplaysRewrittenBody(t *testing.T) {
 		t.Fatalf("read replayed body: %v", err)
 	}
 	if !bytes.Equal(replayed, rt.body) {
-		t.Errorf("GetBody() = %s; want %s — a redirect or retry must resend the ZDR-flagged body", replayed, rt.body)
+		t.Errorf("GetBody() = %s; want %s — a redirect or retry must resend the routed body", replayed, rt.body)
 	}
 }
 
@@ -138,7 +201,7 @@ func TestPassesThroughRequestsItCannotOrMustNotRewrite(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rt := roundTrip(t, post(t, tt.url, tt.contentType, tt.body))
+			rt := roundTrip(t, Options{ZDR: true, Ignore: BrokenToolCallProviders}, post(t, tt.url, tt.contentType, tt.body))
 			if string(rt.body) != tt.body {
 				t.Errorf("body = %s; want %s unchanged", rt.body, tt.body)
 			}
@@ -146,23 +209,50 @@ func TestPassesThroughRequestsItCannotOrMustNotRewrite(t *testing.T) {
 	}
 }
 
+// An operator who cleared LLM_PROVIDER_IGNORE and left LLM_ZDR off wants no
+// `provider` object at all, not an empty one.
+func TestNoPreferencesRewritesNothing(t *testing.T) {
+	body := `{"model":"m"}`
+	rt := roundTrip(t, Options{}, post(t, "https://openrouter.ai/api/v1/chat/completions", "application/json", body))
+	if string(rt.body) != body {
+		t.Errorf("body = %s; want %s unchanged", rt.body, body)
+	}
+}
+
 func TestSubdomainAndTrailingSlashPathStillRewrite(t *testing.T) {
-	rt := roundTrip(t, post(t, "https://gateway.openrouter.ai/api/v1/chat/completions/", "application/json; charset=utf-8", `{"model":"m"}`))
+	rt := roundTrip(t, zdrOnly, post(t, "https://gateway.openrouter.ai/api/v1/chat/completions/", "application/json; charset=utf-8", `{"model":"m"}`))
 	if !bytes.Contains(rt.body, []byte(`"zdr":true`)) {
 		t.Errorf("body = %s; want provider.zdr injected", rt.body)
 	}
 }
 
-func TestUnparseableBodyFailsClosed(t *testing.T) {
+func TestUnparseableBodyFailsClosedForZDR(t *testing.T) {
 	for _, body := range []string{`{"model":`, `["not","an","object"]`, `null`} {
 		rt := &captureTransport{}
-		_, err := New(rt).RoundTrip(post(t, "https://openrouter.ai/api/v1/chat/completions", "application/json", body))
+		_, err := New(rt, zdrOnly).RoundTrip(post(t, "https://openrouter.ai/api/v1/chat/completions", "application/json", body))
 		if err == nil {
 			t.Errorf("body %s: RoundTrip returned nil error; want failure rather than an unprotected request", body)
 		}
 		if rt.req != nil {
 			t.Errorf("body %s: request reached the network without a ZDR flag", body)
 		}
+	}
+}
+
+// The opposite direction, and deliberately so: the deny-list is in front of
+// every request in the product, so a body it cannot parse must cost one
+// unrouted turn rather than the whole deployment. guardrails.CheckToolCallLeak
+// catches what gets through.
+func TestUnparseableBodyFailsOpenForTheDenyList(t *testing.T) {
+	const body = `{"model":`
+	rt := &captureTransport{}
+	resp, err := New(rt, denyOnly).RoundTrip(post(t, "https://openrouter.ai/api/v1/chat/completions", "application/json", body))
+	if err != nil {
+		t.Fatalf("round trip: %v; want the request sent unrouted rather than failed", err)
+	}
+	_ = resp.Body.Close()
+	if string(rt.body) != body {
+		t.Errorf("body = %s; want %s sent through untouched", rt.body, body)
 	}
 }
 

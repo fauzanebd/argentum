@@ -13,7 +13,7 @@
 // proxy. `docs/coverage/live-gate-backlog.md` §1p records the afternoon and
 // names this as the technique that should have been used instead.
 //
-// A transport has none of that surface. It sits in the same chain `llmzdr` and
+// A transport has none of that surface. It sits in the same chain `llmroute` and
 // `llmusage` already occupy, tees the request body before handing it to the
 // real transport, and touches the response not at all — so there is no network
 // hop to be wrong about the stream, and it works identically for whatever

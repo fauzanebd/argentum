@@ -113,6 +113,7 @@ docs/
 │   ├── widget.md                 T-20→T-23 the widget channel, client, docs and config
 │   ├── pdf-knowledge.md          T-P1→T-P13 a PDF that is a source, and its number
 │   ├── skills.md                 T-K1→T-K10 the procedures a tenant writes down, and the one line each costs
+│   ├── provider-routing.md       T-Q17 the OpenRouter endpoint that answered with a tool call, and the two halves of the fix
 │   └── live-gate-backlog.md      Every acceptance item owed that code cannot close
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals

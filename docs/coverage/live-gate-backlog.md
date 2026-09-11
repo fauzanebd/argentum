@@ -2241,3 +2241,14 @@ The two packaging defects the build itself found — the CDN global and the
 server-render crash — are fixed and recorded in
 [`widget.md`](widget.md) §3a. They are the reason to expect this gate to find
 more: nothing about the published path had ever been executed before 2026-09-10.
+
+## 6. Needs a deployment and a real thread (added 2026-09-11)
+
+`T-Q17`'s remaining half. The preference has been checked against the live
+OpenRouter API; what has not been checked is that this repo's transport puts it
+on the body openai-go builds.
+
+| Owed by | The gate | Blocker |
+| ------- | -------- | ------- |
+| `T-Q17` | One live turn on the deployed backend, and a `provider.ignore` field in the request it sends. `LLM_WIRE_TAP_DIR` is exactly the instrument: it captures what the provider receives, and `llmroute` sits above it in the chain on purpose | A deployment. The probe that proved the preference hand-wrote its own body, which is the one thing a capture would not be doing |
+| `T-Q17` | Four endpoints in the `kimi-k2.6` pool remain unmeasured — Fireworks errored once, and StreamLake, Novita and Phala were skipped as deranked upstream ([`provider-routing.md`](provider-routing.md) §2). Any of them could be a second `decart` | Nothing but a re-run. It is three curl calls and belongs in whichever week somebody next touches the model choice |

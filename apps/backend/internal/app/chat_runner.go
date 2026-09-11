@@ -942,6 +942,14 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// wrote in its place. Suggesting what to ask next on top of "I could not
 	// complete that" is the product being cheerful about its own failure (T-Q10).
 	agentWrote := response
+	// **First in the chain, ahead of the fabrication gate.** A reply carrying a
+	// leaked tool call is not an answer the agent got wrong — it is the model's
+	// reasoning, published because a provider never executed the call it asked
+	// for. Every gate below this one would be judging text the agent never meant
+	// as prose: the fabrication check would look for evidence behind figures
+	// nobody stated, and the redaction would tidy a paragraph that must not be
+	// sent at all.
+	response, leakedCalls := r.rejectToolCallLeak(ctx, p, response, tracker)
 	response = r.rejectFabrication(ctx, p, response, tracker)
 	// After the fabrication gate and before the redaction: this measures the
 	// text the agent actually produced, and a reply the gate has already
@@ -983,6 +991,11 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		"tool_calls": snap.ToolCalls,
 		"data_rows":  snap.DataRows,
 		"ungrounded": ungrounded,
+		// Beside the two counters below it and for the same reason: this is the
+		// turn shape that looked like an intermittent product bug for as long
+		// as nothing named it. Zero on every turn whose provider executed the
+		// calls it was given, which is what makes a 1 findable.
+		"toolcall_leak": leakedCalls,
 		// Beside `ungrounded` and for its reason (T-Q13): a turn is found by its
 		// completion line, and a rate nobody can filter for is a rate nobody
 		// reads. Zero on every honest turn, which is what makes a 1 findable.
@@ -1299,6 +1312,54 @@ func (r *ChatRunner) rescueEmptyReply(
 	}).Error("the turn produced an empty reply; replaced with a message that says what ran")
 	r.recordBlockedTurn(ctx, p, "empty_reply", "the turn finished with no reply text")
 	return replacement
+}
+
+// rejectToolCallLeak replaces a reply that is really an unexecuted tool call
+// (T-Q17), and returns how many distinct tools were named in it.
+//
+// The count is the point of the return value. llmroute keeps routing off the
+// endpoints measured to do this, but a deny-list is always one provider behind,
+// and the previous occurrence was invisible for as long as it took somebody to
+// screenshot a stalled answer. A number on the turn's completion line can be
+// filtered for.
+func (r *ChatRunner) rejectToolCallLeak(
+	ctx context.Context, p queue.ChatRunPayload, response string, tracker *agentbudget.Tracker,
+) (string, int) {
+	snap := tracker.Snapshot()
+	replacement, leaked := guardrails.CheckToolCallLeak(response, guardrails.TurnEvidence{
+		ToolCalls: snap.ToolCalls,
+		DataCalls: snap.DataCalls,
+		DataRows:  snap.DataRows,
+		Tools:     snap.Tools,
+	}, p.Message)
+	if !leaked {
+		return response, 0
+	}
+
+	names := guardrails.LeakedToolCallNames(response)
+	// An undecoded `<|tool_call_begin|>` names nothing, and the turn leaked
+	// anyway. Reporting 0 there would hide the occurrence from the only counter
+	// that can find it.
+	count := len(names)
+	if count == 0 {
+		count = 1
+	}
+	// The leaked text is logged in full, like the fabrication gate's: it is the
+	// only record of what the agent was trying to do when the turn stopped, and
+	// it is also the evidence for adding a slug to
+	// llmroute.BrokenToolCallProviders. The provider that served the request is
+	// what this line most wants and cannot have — OpenRouter returns it in the
+	// response body and agent-sdk-go's typed client drops it.
+	logrus.WithFields(logrus.Fields{
+		"company_id":    p.CompanyID,
+		"thread_id":     p.ThreadID,
+		"message_id":    p.UserMsgID,
+		"tool_calls":    snap.ToolCalls,
+		"leaked_tools":  strings.Join(names, ","),
+		"blocked_reply": response,
+	}).Error("the provider returned a tool call as text and never executed it; the turn stopped without an answer")
+	r.recordBlockedTurn(ctx, p, "toolcall_leak", "the provider returned a tool call as text instead of executing it")
+	return replacement, count
 }
 
 // actorOf decides who a turn is attributable to. A scheduled run is not the

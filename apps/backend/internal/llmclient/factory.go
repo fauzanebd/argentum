@@ -18,9 +18,9 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/llmroute"
 	"github.com/fauzanebd/argentum/internal/llmtap"
 	"github.com/fauzanebd/argentum/internal/llmusage"
-	"github.com/fauzanebd/argentum/internal/llmzdr"
 )
 
 // Spec is the minimum input Build needs to construct an LLM client. Used by
@@ -162,7 +162,7 @@ func zdrEnforceable(iface, baseURL string) bool {
 	case config.LLMInterfaceAnthropic, config.LLMInterfaceGemini:
 		return false
 	}
-	return llmzdr.TargetsOpenRouter(baseURL)
+	return llmroute.TargetsOpenRouter(baseURL)
 }
 
 // defaultOpenAIBaseURL mirrors agent-sdk-go's own default; installUsageTap has
@@ -192,16 +192,25 @@ func installUsageTap(c *openai.OpenAIClient, apiKey, baseURL string, zdr bool, w
 	if url == "" {
 		url = defaultOpenAIBaseURL
 	}
-	// The ZDR rewriter sits underneath the usage tap: it edits the request on
-	// the way out, the tap reads the response on the way back, and neither
+	// The routing rewriter sits underneath the usage tap: it edits the request
+	// on the way out, the tap reads the response on the way back, and neither
 	// needs to know about the other.
-	var base http.RoundTripper
-	if zdr {
-		base = llmzdr.New(nil)
-	}
-	// **The wire tap goes below the ZDR rewriter**, so what it captures is what
-	// the provider receives rather than what this process composed — the
-	// `provider.zdr` field included. Capturing above it would produce a file
+	//
+	// **The deny-list is unconditional and ZDR is not.** ZDR is an operator's
+	// choice about their own model's endpoint pool (config.LLMZDR says why).
+	// The deny-list is not a choice: every slug on it has been measured to end
+	// a turn without answering, so a deployment that opted out of it would be
+	// opting into the bug. It is applied for every tier and every tenant here,
+	// because this is the one function all of them build their client through —
+	// a per-tenant credential override must not be able to route a prompt back
+	// onto an endpoint that cannot call tools.
+	base := http.RoundTripper(llmroute.New(nil, llmroute.Options{
+		ZDR:    zdr,
+		Ignore: llmroute.BrokenToolCallProviders,
+	}))
+	// **The wire tap goes below the routing rewriter**, so what it captures is
+	// what the provider receives rather than what this process composed — the
+	// `provider` object included. Capturing above it would produce a file
 	// that differs from the wire in exactly the way T-K2 exists to rule out.
 	// New() returns `base` untouched when no directory is configured, which is
 	// every deployment outside a capture.

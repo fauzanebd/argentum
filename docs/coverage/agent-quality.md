@@ -948,3 +948,66 @@ draft-a-correction, no negative harvest. Reading the signal is the prerequisite
 for deciding what to do with it, and what to do with it is the trust question
 [`../research/05-hermes-self-learning.md`](../research/05-hermes-self-learning.md)
 §10 says to answer deliberately rather than by reflex.
+
+---
+
+## 17. `T-Q17` — the provider that answered with a tool call (built 2026-09-11)
+
+The full account, with the per-endpoint measurements and the re-measure
+procedure, is in
+[`provider-routing.md`](provider-routing.md). What belongs here is the shape of
+the failure, because it is a new one for this document.
+
+### 17.1 A turn can finish successfully and still answer nothing
+
+Every quality failure recorded above this section is the agent being *wrong*: a
+figure no tool returned (§9), a claim no action supports (§13), a blank where an
+answer should be (§11). This one is the agent being **absent**. The model
+decided correctly, said so in its own format, and an OpenRouter endpoint handed
+that sentence back as prose instead of as a tool call. agent-sdk-go saw an
+assistant message with no tool calls, concluded the model was finished, and
+broke the loop. The runner persisted the reasoning.
+
+Nothing in the post-turn chain had anything to say about it. `CheckFabrication`
+found no figure to judge. `CheckGrounding` had nothing to compare. `CheckEmptyReply`
+saw a non-empty string — a *long* one, in fluent Indonesian, ending in
+`functions.list_metrics:0{}`. The chain was built to ask whether an answer is
+supported, and never to ask whether the text is an answer at all.
+
+### 17.2 The fix is two halves, deliberately
+
+`llmroute` keeps traffic off the endpoint measured to do this. `CheckToolCallLeak`
+names the one that has not been measured yet — because a deny-list is always one
+provider behind, and the previous occurrence was invisible until somebody
+screenshotted it.
+
+That is also why the guard's return value is a *count* rather than a bool. Two
+occurrences in 58 turns is what §11 learned to measure; a rate nobody can filter
+for is a rate nobody reads. `toolcall_leak` is on the completion line beside
+`ungrounded` and `unevidenced`, and zero on every turn whose provider executed
+what it was given.
+
+### 17.3 What it cost to be careful
+
+The guard replaces the entire reply, so a false positive costs a user an answer
+they were entitled to. The pattern therefore requires a JSON argument object
+immediately after the call — `functions.get_schema:0{` — which prose does not
+produce by accident, and the tests spend more lines on the negatives than the
+positives: an answer naming `get_schema`, a `functions.md:12` reference, a SQL
+fence. It is tuned to miss rather than to over-catch, which is the lesson
+[`guardrail-overreach.md`](guardrail-overreach.md) already charged this repo for
+once.
+
+Trimming the leak and keeping the prose was considered and rejected. The prose
+is reasoning, not an answer; publishing it hands the user a confident paragraph
+about work that never happened — worse than the blank §11 catches, because a
+blank is obviously broken and this is not.
+
+### 17.4 Gate
+
+`go build`, `go vet` and `go test -race ./internal/llmroute/... ./internal/guardrails/... ./internal/app/...`
+clean. The deny-list was also checked against the live API — six unpinned
+requests carrying `provider.ignore`, six healthy routings, six sets of
+structured tool calls. Owed: one live turn *through the deployed backend*, which
+is the only thing that can show the transport puts the field on the body
+openai-go builds rather than on one a probe hand-wrote.

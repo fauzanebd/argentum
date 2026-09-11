@@ -1174,3 +1174,80 @@ harvest. Reading the signal is a prerequisite for deciding what to do with it,
 and what to do with it is the trust question the Hermes research
 ([`../research/05-hermes-self-learning.md`](../research/05-hermes-self-learning.md)
 §10) says to answer deliberately rather than by reflex.
+
+---
+
+## `T-Q17` The provider that answered with a tool call — 0.5d · **built 2026-09-11, unit-gated**
+**Repo:** BE · **Deps:** none · **Priority:** P0
+**Migration:** none
+
+### Why
+
+A user asked *"member dengan pembelanjaan paling banyak bulan ini"* and got the
+model's reasoning back, ending in
+`functions.list_metrics:0{}functions.get_schema:1{…}`. No error, no empty reply,
+no guardrail trip — a paragraph that stops mid-thought, with a thumbs-up under
+it. **No tool ran.**
+
+That tail is Kimi K2's native tool-call syntax in the assistant's text, where
+only structured `tool_calls` belong. agent-sdk-go then does the right thing with
+an assistant message carrying no tool calls — breaks the iteration loop — and
+the runner persists the reasoning as the answer.
+
+Probing all 21 endpoints for `moonshotai/kimi-k2.6` found exactly one doing it:
+`decart`, which advertises `"tools"` (so `require_parameters` will not filter
+it), behaves the same with `stream` off (so the blocking fallback does not
+rescue it), and is the cheapest completion price on the model (so default
+routing picks it often). One unpinned probe in four landed there — which is why
+this read as an intermittent product bug for as long as nothing named it.
+
+### Do
+
+- `internal/llmzdr` → **`internal/llmroute`**: the package now owns the whole
+  `provider` object rather than the ZDR flag alone, which is what that object
+  always was. `Options{ZDR, Ignore}`; both merge with a caller's existing
+  preferences rather than replacing them.
+- `BrokenToolCallProviders` — the measured deny-list, currently `["decart"]` —
+  applied **unconditionally** in `llmclient.installUsageTap`, the one function
+  every tier and every per-tenant override builds its client through. ZDR stays
+  opt-in; a measured defect is not an operator preference.
+- The two preferences **fail in opposite directions**: ZDR closed (an unproven
+  body must not reach a provider free to retain it), the deny-list open and
+  logged (it is in front of every request, and a JSON hiccup must not become an
+  outage).
+- `guardrails.CheckToolCallLeak` — first in the post-turn chain, ahead of the
+  fabrication gate, because every gate below would be judging text the agent
+  never meant as prose. Replaces the whole reply rather than trimming the leak.
+- A `toolcall_leak` audit row and a count on the turn's completion line.
+
+### Acceptance
+
+- [x] The captured Decart reply is caught and replaced; the reasoning does not survive into the replacement
+- [x] An Indonesian question gets an Indonesian replacement
+- [x] A leak after two successful tools names them, so the user knows what did run
+- [x] Six negative cases pass, including prose that names `get_schema` and a `functions.md:12` reference — the guard replaces whole replies, so it is tuned to miss
+- [x] An undecoded `<|tool_call_begin|>` counts as one rather than zero
+- [x] The deny-list unions with a caller's own `provider.ignore`; ZDR is not switched on by travelling in the same object
+- [x] The guard survives the eval harness's nil tracker and nil action repo
+- [x] `provider.ignore: ["decart"]` verified against the live OpenRouter API: six unpinned requests, all routed to a healthy endpoint, all returning structured `tool_calls`
+- [ ] One live turn *through the deployed backend*, confirming the transport puts the preference on the wire the SDK builds
+
+### Gate
+
+```bash
+cd apps/backend && go test -race ./internal/llmroute/... ./internal/guardrails/... ./internal/app/...
+```
+
+### Out of scope
+
+**Recovering the leaked call.** The name and the arguments are in the text, and
+parsing them back would turn a dead turn into a live one. It means executing a
+call no structured field authorised, assembled by regex out of model prose, at
+the moment the evidence says the provider is unpredictable — and `run_sql` is
+behind `sqlguard`, actions behind an approval, neither designed to be reached
+from a scraped string.
+
+**Logging which provider served the turn.** The field this guard most wants and
+cannot have: OpenRouter returns `provider` in the response body and openai-go's
+typed client drops it. It belongs in `internal/llmusage`'s transport, which is
+already parsing that body for token counts.
