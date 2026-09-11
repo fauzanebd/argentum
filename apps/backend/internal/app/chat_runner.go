@@ -736,7 +736,22 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	taints := taint.New()
 	ctx = taint.With(ctx, taints)
 
-	// Cheap small-talk short-circuit: skip the agent (and the light-LLM
+	// Which of the tenant's agents this turn runs as (T-S2). Installed beside
+	// the budget tracker and for the same reason: the constraint has to reach
+	// seven tools, and the tools take a context and a JSON string. Before the
+	// LLMs are resolved, so that every row this turn writes — including the
+	// audit row for a turn that fails to build an agent at all — carries it.
+	//
+	// **Above the small-talk short-circuit as of T-N1**, where it used to sit
+	// below. The short-circuit exists to skip *model* calls, and this is one
+	// indexed lookup the agent's own turn does anyway; what it buys is that a
+	// greeting records who greeted. A message row that says "assistant" and
+	// nothing else is the gap this ticket closes, and a room where three agents
+	// can say hello is where it stops being cosmetic.
+	agentRow := r.resolveAgent(ctx, p)
+	ctx = agentscope.WithScope(ctx, scopeOf(agentRow))
+
+	// Cheap small-talk short-circuit: skip the model (and the light-LLM
 	// guardrail/classifier pipeline behind it) when the message is a
 	// greeting or one-word ack. Saves multiple LLM calls per turn.
 	//
@@ -746,7 +761,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// nothing attached — the exact silent failure T-A2b exists to remove.
 	if reply, ok := trivialReply(p.Message); ok && p.Directive == "" {
 		now := time.Now()
-		_ = r.bus.Publish(p.ThreadID, ChatEvent{
+		_ = r.publish(ctx, p.ThreadID, ChatEvent{
 			JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "started", Timestamp: now,
 		})
 		// No suggestions on a greeting. The small-talk path never called the model
@@ -773,14 +788,6 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	}
 	tracker := agentbudget.New(budget)
 	ctx = agentbudget.WithTracker(ctx, tracker)
-
-	// Which of the tenant's agents this turn runs as (T-S2). Installed beside
-	// the budget tracker and for the same reason: the constraint has to reach
-	// seven tools, and the tools take a context and a JSON string. Before the
-	// LLMs are resolved, so that every row this turn writes — including the
-	// audit row for a turn that fails to build an agent at all — carries it.
-	agentRow := r.resolveAgent(ctx, p)
-	ctx = agentscope.WithScope(ctx, scopeOf(agentRow))
 
 	// One turn, one source memory. After the scope, because what it may recall
 	// is bounded by what the scope allows, and installed here so that every
@@ -865,7 +872,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	}
 
 	now := time.Now()
-	_ = r.bus.Publish(p.ThreadID, ChatEvent{
+	_ = r.publish(ctx, p.ThreadID, ChatEvent{
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "started", Timestamp: now,
 	})
 
@@ -1503,7 +1510,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 		// a stalled spinner — the SDK offers no iteration event of its own.
 		if n := iterationOf(evt.Metadata); n > lastIteration {
 			lastIteration = n
-			_ = r.bus.Publish(p.ThreadID, ChatEvent{
+			_ = r.publish(ctx, p.ThreadID, ChatEvent{
 				JobID:     p.UserMsgID,
 				ThreadID:  p.ThreadID,
 				Type:      "iteration",
@@ -1515,7 +1522,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 		switch evt.Type {
 		case interfaces.AgentEventContent:
 			fullResponse.Write(evt.Metadata, evt.Content)
-			_ = r.bus.Publish(p.ThreadID, ChatEvent{
+			_ = r.publish(ctx, p.ThreadID, ChatEvent{
 				JobID:     p.UserMsgID,
 				ThreadID:  p.ThreadID,
 				Type:      "delta",
@@ -1524,7 +1531,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 			})
 
 		case interfaces.AgentEventThinking:
-			_ = r.bus.Publish(p.ThreadID, ChatEvent{
+			_ = r.publish(ctx, p.ThreadID, ChatEvent{
 				JobID:        p.UserMsgID,
 				ThreadID:     p.ThreadID,
 				Type:         "thinking",
@@ -1538,7 +1545,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 				if evt.ToolCall.Arguments != "" {
 					_ = json.Unmarshal([]byte(evt.ToolCall.Arguments), &args)
 				}
-				_ = r.bus.Publish(p.ThreadID, ChatEvent{
+				_ = r.publish(ctx, p.ThreadID, ChatEvent{
 					JobID:     p.UserMsgID,
 					ThreadID:  p.ThreadID,
 					Type:      "tool_call",
@@ -1608,7 +1615,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 					}
 				}
 
-				_ = r.bus.Publish(p.ThreadID, ChatEvent{
+				_ = r.publish(ctx, p.ThreadID, ChatEvent{
 					JobID:     p.UserMsgID,
 					ThreadID:  p.ThreadID,
 					Type:      "tool_result",
@@ -1622,7 +1629,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 				// one: an admin-opt-out kind (status executed/failed) has nothing
 				// to approve, and the tool_result already carries its outcome.
 				if evt.ToolCall.Name == "propose_action" && res["status"] == string(domain.InvocationProposed) {
-					_ = r.bus.Publish(p.ThreadID, ChatEvent{
+					_ = r.publish(ctx, p.ThreadID, ChatEvent{
 						JobID:     p.UserMsgID,
 						ThreadID:  p.ThreadID,
 						Type:      "action_proposed",
@@ -1642,7 +1649,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 					userMsg := strings.TrimPrefix(errMsg, guardrailsPrefix)
 					fullResponse.Replace(userMsg)
 					r.recordBlockedTurn(ctx, p, "guardrail", userMsg)
-					_ = r.bus.Publish(p.ThreadID, ChatEvent{
+					_ = r.publish(ctx, p.ThreadID, ChatEvent{
 						JobID:     p.UserMsgID,
 						ThreadID:  p.ThreadID,
 						Type:      "delta",
@@ -1650,7 +1657,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 						Timestamp: time.Now(),
 					})
 				} else {
-					_ = r.bus.Publish(p.ThreadID, ChatEvent{
+					_ = r.publish(ctx, p.ThreadID, ChatEvent{
 						JobID:     p.UserMsgID,
 						ThreadID:  p.ThreadID,
 						Type:      "error",
@@ -2009,7 +2016,7 @@ func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload,
 		r.completeWith(ctx, p, userMsg, 0, 0, 0, nil, "")
 		return nil
 	}
-	_ = r.bus.Publish(p.ThreadID, ChatEvent{
+	_ = r.publish(ctx, p.ThreadID, ChatEvent{
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "error",
 		Error:     "I encountered an error processing your request. Please try rephrasing.",
 		Timestamp: time.Now(),
@@ -2023,6 +2030,27 @@ func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload,
 
 // completeWith persists the assistant message, publishes the final event,
 // and (for WA channels) sends the reply through the WhatsApp provider.
+// publish stamps the turn's agent onto an event and forwards it to the bus
+// (T-N1).
+//
+// Every ChatEvent this file builds goes through here rather than through
+// r.bus.Publish directly, for the reason T-05 gave for decorating the whole
+// tool registry instead of each tool: twelve call sites is twelve places to
+// forget, and the one that forgets is the one a reader notices — a bubble in a
+// room that will not say who is typing in it. A new publisher gets the
+// attribution without knowing this ticket happened.
+//
+// The source is agentscope.FromContext, which is the same value the audit
+// decorator and the usage recorder read (agentscope's package comment), so the
+// event, the message row, the audit row and the usage row cannot disagree about
+// who ran the turn. An unscoped turn leaves both fields empty and the event is
+// byte-identical to what it was before this ticket.
+func (r *ChatRunner) publish(ctx context.Context, threadID string, evt ChatEvent) error {
+	sc := agentscope.FromContext(ctx)
+	evt.AgentID, evt.AgentName = sc.AgentID, sc.Name
+	return r.bus.Publish(threadID, evt)
+}
+
 func (r *ChatRunner) completeWith(
 	ctx context.Context, p queue.ChatRunPayload, response string,
 	tokensIn, tokensOut int, latency time.Duration, steps []domain.NextStep,
@@ -2077,7 +2105,7 @@ func (r *ChatRunner) completeWith(
 	if len(steps) > 0 {
 		finalMeta["next_steps"] = steps
 	}
-	if err := r.bus.Publish(p.ThreadID, ChatEvent{
+	if err := r.publish(ctx, p.ThreadID, ChatEvent{
 		JobID: p.UserMsgID, ThreadID: p.ThreadID, Type: "final",
 		Content:   response,
 		Metadata:  finalMeta,

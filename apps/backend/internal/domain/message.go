@@ -17,10 +17,26 @@ const (
 
 // Message is a single turn (user, assistant, or tool) inside a thread.
 type Message struct {
-	ID        string                 `json:"id"`
-	ThreadID  string                 `json:"thread_id"`
-	Role      MessageRole            `json:"role"`
-	Content   string                 `json:"content"`
+	ID       string      `json:"id"`
+	ThreadID string      `json:"thread_id"`
+	Role     MessageRole `json:"role"`
+	Content  string      `json:"content"`
+	// AgentID is the roster agent that wrote this message (T-N1), or "" for a
+	// user message and for every assistant message written before the column
+	// existed on a thread that named no agent.
+	//
+	// It is the id the turn **actually ran as** — agentscope.AgentID(ctx),
+	// which is the same value the audit row and the usage event record — and
+	// not the id the queue payload asked for. The two differ whenever an agent
+	// was deleted between enqueue and run, and three rows describing one turn
+	// must not be able to disagree about who ran it.
+	AgentID string `json:"agent_id,omitempty"`
+	// AgentName rides along on reads so a transcript does not have to join the
+	// roster in the browser. **It is not persisted** — the same arrangement, and
+	// the same reason, as AgentChannelBinding.AgentName. A renamed agent
+	// therefore renames its past messages, which is the behaviour a reader
+	// expects from a roster they can edit.
+	AgentName string                 `json:"agent_name,omitempty"`
 	ToolCalls map[string]interface{} `json:"tool_calls,omitempty"`
 	TokensIn  int                    `json:"tokens_in,omitempty"`
 	TokensOut int                    `json:"tokens_out,omitempty"`

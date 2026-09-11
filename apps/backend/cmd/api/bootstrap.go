@@ -433,6 +433,13 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		// ordering against mcpServerSvc, which is built later.
 		WithMCPServers(pgctl.NewMCPServerRepo(controlDB))
 	deps.agentBindingSvc = app.NewAgentBindingService(bindingRepo, agentRepo)
+	// The room (T-N2). agentRepo satisfies RosterReader directly, so this needs
+	// no ordering against anything built later; the cap falls back to
+	// domain.MaxThreadParticipants when THREAD_MAX_PARTICIPANTS is unset.
+	deps.threadParticipantSvc = app.NewThreadParticipantService(
+		pgctl.NewThreadParticipantRepo(controlDB), threadRepo, agentRepo,
+		cfg.ThreadMaxParticipants,
+	)
 	companyProfileRepo := pgctl.NewCompanyProfileRepo(controlDB)
 	sourceProfileRepo := pgctl.NewSourceProfileRepo(controlDB)
 	deps.companyProfileSvc = app.NewCompanyProfileService(companyProfileRepo).

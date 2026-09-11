@@ -68,7 +68,8 @@ docs/
 │   ├── 02-architecture.md        System map, data flow, invariants
 │   ├── 03-gap-analysis.md        Gaps, risks, and the agent-native thesis
 │   ├── 04-social-carousel.md     Social-media carousels: what exists, gaps, build
-│   └── 05-hermes-self-learning.md  How Hermes Agent closes the learning loop we leave open, and what it costs
+│   ├── 05-hermes-self-learning.md  How Hermes Agent closes the learning loop we leave open, and what it costs
+│   └── 06-hermes-multi-agent.md    Hermes Agent's group chat: who speaks, what stops it, and the guard that isn't there
 ├── coverage/
 │   ├── feature-coverage.md       Feature status matrix
 │   ├── test-coverage.md          Measured test state + CI gaps
@@ -114,6 +115,7 @@ docs/
 │   ├── pdf-knowledge.md          T-P1→T-P13 a PDF that is a source, and its number
 │   ├── skills.md                 T-K1→T-K10 the procedures a tenant writes down, and the one line each costs
 │   ├── provider-routing.md       T-Q17 the OpenRouter endpoint that answered with a tool call, and the two halves of the fix
+│   ├── multi-agent.md            T-N1 which agent wrote this message; the nine tickets above it are unbuilt
 │   └── live-gate-backlog.md      Every acceptance item owed that code cannot close
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals
@@ -126,6 +128,8 @@ docs/
 │   ├── 06-pdf-knowledge-roadmap.md        T-P1→T-P13 a PDF the agent can query, not quote
 │   ├── 07-agentic-skills-roadmap.md       T-K1→T-K10 a procedure the tenant writes down (built 08-22→08-27)
 │   ├── 08-social-carousel-roadmap.md      T-G1→T-G10 Instagram carousels from the video pipeline (planned 09-03)
+│   ├── 09-multi-agent-conversations-roadmap.md
+│   │                             T-N1→T-N10 several agents in one room, and one that can ask another (planned 09-11)
 │   └── backlog.md                Deferred work with rationale
 └── agents/
     ├── workspace-context.md      Repo map, invariants, danger zones

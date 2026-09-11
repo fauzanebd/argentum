@@ -67,12 +67,23 @@ type ConversationThread struct {
 	// roster resolves to and what a thread whose agent was deleted falls back
 	// to — the column is ON DELETE SET NULL precisely so that a tidied roster
 	// cannot strand a conversation.
-	AgentID       string    `json:"agent_id,omitempty"`
-	Title         string    `json:"title"`
-	Summary       string    `json:"summary,omitempty"`
-	LastMessageAt time.Time `json:"last_message_at"`
-	IsArchived    bool      `json:"is_archived"`
-	CreatedAt     time.Time `json:"created_at"`
+	AgentID string `json:"agent_id,omitempty"`
+	// Participants is every agent in this conversation (T-N2), populated only
+	// by the reads that ask for it — the thread detail route and
+	// ThreadService.ListParticipants. **Nil is not "no participants"**, it is
+	// "not loaded", which is why HasParticipant is a method on this struct and
+	// not a free function over the slice: the one place that distinction can be
+	// documented is beside the field.
+	//
+	// The listing route deliberately does not populate it. A sidebar needs a
+	// title, and joining a second table per row to render one is a cost paid on
+	// every page load.
+	Participants  []ThreadParticipant `json:"participants,omitempty"`
+	Title         string              `json:"title"`
+	Summary       string              `json:"summary,omitempty"`
+	LastMessageAt time.Time           `json:"last_message_at"`
+	IsArchived    bool                `json:"is_archived"`
+	CreatedAt     time.Time           `json:"created_at"`
 }
 
 // ThreadFilter narrows a keyset-paginated thread listing (T-A3).

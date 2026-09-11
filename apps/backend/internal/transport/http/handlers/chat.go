@@ -15,10 +15,23 @@ type ChatHandler struct {
 	chat     *app.ChatEnqueuer
 	threads  domain.ThreadRepository
 	messages domain.MessageRepository
+	// members is the room (T-N2). Nil is legal and is every wiring that has
+	// not been given one: the participant routes then answer 503 and every
+	// other route on this handler behaves exactly as it did before, which is
+	// what keeps this ticket inert until it is wired.
+	members *app.ThreadParticipantService
 }
 
 func NewChatHandler(chat *app.ChatEnqueuer, threads domain.ThreadRepository, messages domain.MessageRepository) *ChatHandler {
 	return &ChatHandler{chat: chat, threads: threads, messages: messages}
+}
+
+// WithParticipants enables the membership routes (T-N2). Optional, in the
+// shape ChatEnqueuer.WithRoster uses and for the same reason: a wiring that
+// does not supply one must keep working unchanged.
+func (h *ChatHandler) WithParticipants(s *app.ThreadParticipantService) *ChatHandler {
+	h.members = s
+	return h
 }
 
 // Register installs the routes. Caller wraps with Auth middleware.
@@ -28,7 +41,91 @@ func (h *ChatHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/threads/:id", h.getThread)
 	rg.DELETE("/threads/:id", h.deleteThread)
 	rg.GET("/threads/:id/messages", h.listMessages)
+	// The room (T-N2). `:agentID` and not `:id` on the delete: gin's tree
+	// requires one name per position per method, and the position already
+	// belongs to a thread id two segments up.
+	rg.GET("/threads/:id/participants", h.listParticipants)
+	rg.POST("/threads/:id/participants", h.addParticipant)
+	rg.DELETE("/threads/:id/participants/:agentID", h.removeParticipant)
 	rg.POST("/chat", h.sendMessage)
+}
+
+// participantsUnavailable answers the routes when no service was wired.
+func (h *ChatHandler) participantsUnavailable(c *gin.Context) bool {
+	if h.members != nil {
+		return false
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{"error": "conversation participants are not configured"})
+	return true
+}
+
+// participantFail maps the membership sentinels onto status codes.
+//
+// The three service-specific ones are 409 rather than 400: each says the
+// request was well-formed and the conversation's current state refuses it,
+// and each names the action that would make it succeed.
+func participantFail(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, app.ErrParticipantLimit),
+		errors.Is(err, app.ErrDefaultSpeaker),
+		errors.Is(err, app.ErrAgentDisabled),
+		errors.Is(err, domain.ErrAlreadyExists):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, domain.ErrNotFound):
+		// 404 and not 403 for another company's thread or agent, which is what
+		// chatFail does one function up and for the same reason.
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	case errors.Is(err, domain.ErrInvalidInput):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
+}
+
+func (h *ChatHandler) listParticipants(c *gin.Context) {
+	if h.participantsUnavailable(c) {
+		return
+	}
+	out, err := h.members.List(c.Request.Context(), companyID(c), c.Param("id"))
+	if err != nil {
+		participantFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"participants": out})
+}
+
+// addParticipantReq is the body of POST /threads/:id/participants.
+type addParticipantReq struct {
+	AgentID string `json:"agent_id"`
+}
+
+func (h *ChatHandler) addParticipant(c *gin.Context) {
+	if h.participantsUnavailable(c) {
+		return
+	}
+	var req addParticipantReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	p, err := h.members.Add(c.Request.Context(), companyID(c), c.Param("id"), req.AgentID, userID(c))
+	if err != nil {
+		participantFail(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"participant": p})
+}
+
+func (h *ChatHandler) removeParticipant(c *gin.Context) {
+	if h.participantsUnavailable(c) {
+		return
+	}
+	err := h.members.Remove(c.Request.Context(), companyID(c), c.Param("id"), c.Param("agentID"))
+	if err != nil {
+		participantFail(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *ChatHandler) listThreads(c *gin.Context) {
@@ -45,8 +142,14 @@ func (h *ChatHandler) listThreads(c *gin.Context) {
 // dashboard's "New conversation" button still posts nothing at all.
 type createThreadReq struct {
 	// AgentID pins the conversation to one of the company's agents (T-S3).
-	// Absent means the company default, resolved per turn.
+	// Absent means the company default, resolved per turn. It is also the
+	// conversation's **default speaker** (T-N2) — who answers a message that
+	// addresses nobody.
 	AgentID string `json:"agent_id,omitempty"`
+	// ParticipantIDs are the other agents in the room (T-N2). Absent is the
+	// ordinary case and makes a room of one, which is every conversation this
+	// product has ever created.
+	ParticipantIDs []string `json:"participant_ids,omitempty"`
 }
 
 func (h *ChatHandler) createThread(c *gin.Context) {
@@ -64,6 +167,25 @@ func (h *ChatHandler) createThread(c *gin.Context) {
 	if err != nil {
 		chatFail(c, err)
 		return
+	}
+	// The rest of the room (T-N2). After the thread exists, because a
+	// participant needs something to belong to, and **failing the whole
+	// creation if one of them is refused** — the alternative is a conversation
+	// that silently opened with fewer agents than the user picked, which they
+	// would discover by addressing one and being told it is not here.
+	//
+	// The thread is left behind rather than rolled back: it is a valid empty
+	// conversation with a default speaker, it costs nothing, and the user's
+	// next action is to try again. A delete here would be a second write that
+	// can also fail.
+	for _, id := range req.ParticipantIDs {
+		if h.members == nil {
+			break
+		}
+		if _, err := h.members.Add(c.Request.Context(), companyID(c), thread.ID, id, userID(c)); err != nil {
+			participantFail(c, err)
+			return
+		}
 	}
 	c.JSON(http.StatusCreated, thread)
 }
@@ -93,6 +215,23 @@ func (h *ChatHandler) getThread(c *gin.Context) {
 	if thread.CompanyID != companyID(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
+	}
+	// The room, on the detail read only (T-N2). The listing route deliberately
+	// does not do this: a sidebar needs a title, and a second query per row to
+	// render one is a cost paid on every page load.
+	//
+	// A failure here is logged by the repository and dropped rather than
+	// failing the read. Participants make a conversation richer; they are never
+	// what makes it openable, and refusing to show a thread because a join
+	// missed would trade a slightly poorer screen for no screen at all — the
+	// argument ChatRunner.companyContext already makes for the company profile.
+	if h.members != nil {
+		if ps, err := h.members.List(c.Request.Context(), thread.CompanyID, thread.ID); err == nil {
+			thread.Participants = make([]domain.ThreadParticipant, 0, len(ps))
+			for _, p := range ps {
+				thread.Participants = append(thread.Participants, *p)
+			}
+		}
 	}
 	c.JSON(http.StatusOK, thread)
 }

@@ -249,8 +249,17 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/threads/:id":          domain.RoleMember,
 	"DELETE /api/threads/:id":       domain.RoleMember,
 	"GET /api/threads/:id/messages": domain.RoleMember,
-	"GET /api/threads/:id/stream":   domain.RoleMember,
-	"POST /api/chat":                domain.RoleMember,
+	// The room (T-N2). Member on all three, matching the thread routes above
+	// rather than the admin-only `/api/agent-bindings`: a channel binding is
+	// routing configuration for a company's shared rooms, whereas these three
+	// act on one conversation the caller already has. Every one of them is
+	// tenant-checked inside ThreadParticipantService, so a member cannot reach
+	// another company's thread by holding its uuid.
+	"GET /api/threads/:id/participants":             domain.RoleMember,
+	"POST /api/threads/:id/participants":            domain.RoleMember,
+	"DELETE /api/threads/:id/participants/:agentID": domain.RoleMember,
+	"GET /api/threads/:id/stream":                   domain.RoleMember,
+	"POST /api/chat":                                domain.RoleMember,
 
 	// Answer feedback (T-Q2). Rating is member — deliberately the most open
 	// write in this table — because whoever read the answer is the only person

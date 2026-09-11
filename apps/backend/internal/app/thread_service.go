@@ -10,6 +10,7 @@ import (
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -595,6 +596,14 @@ func (s *ThreadService) AppendUserMessage(ctx context.Context, threadID, content
 // suggestions (T-Q10) — and nil is the common case. The column and both marshal
 // sites already existed; only this parameter was missing, which is why the
 // suggestions needed no migration.
+//
+// The agent is read off the context rather than taken as a parameter (T-N1).
+// agentscope.AgentID is already what the audit decorator and the usage recorder
+// record, both of them from a context four packages down, and reading the same
+// value here is what makes the three rows a turn writes agree by construction
+// instead of by three call sites remembering to pass the same thing. It is ""
+// for a turn running unscoped — the eval harness, a company whose roster never
+// seeded — and the column is nullable for exactly that case.
 func (s *ThreadService) AppendAssistantMessage(
 	ctx context.Context, threadID, content string,
 	tokensIn, tokensOut int, latencyMs int64, metadata map[string]any,
@@ -604,6 +613,7 @@ func (s *ThreadService) AppendAssistantMessage(
 		ThreadID:  threadID,
 		Role:      domain.MessageRoleAssistant,
 		Content:   content,
+		AgentID:   agentscope.AgentID(ctx),
 		TokensIn:  tokensIn,
 		TokensOut: tokensOut,
 		LatencyMs: latencyMs,

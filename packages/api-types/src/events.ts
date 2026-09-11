@@ -95,11 +95,26 @@ export interface ToolCallEvent {
 export interface ChatEvent {
   job_id: string;
   thread_id: string;
-  type: string; // state | started | delta | thinking | tool_call | tool_result | final | error | render_progress
+  type: string; // state | started | iteration | delta | thinking | tool_call | tool_result | final | error | render_progress
   content?: string;
   thinking_step?: string;
   tool_call?: ToolCallEvent;
   error?: string;
+  /**
+   * AgentID and AgentName are the roster agent producing this turn (T-N1),
+   * or empty for a turn running unscoped.
+   * They are stamped by ChatRunner.publish from the turn's agentscope.Scope
+   * rather than set at each of the twelve sites that build a ChatEvent — the
+   * same argument T-05 made for decorating the tool registry instead of every
+   * tool: one integration point, and the thirteenth publisher gets it without
+   * remembering to.
+   * **A client that reads neither field is unaffected**, which is the property
+   * T-Q10 established when `next_steps` rode in on the existing `final` event.
+   * They matter when a thread holds more than one agent (T-N2), and until then
+   * every event on a thread carries the same pair.
+   */
+  agent_id?: string;
+  agent_name?: string;
   /**
    * Live is set on — and only on — a `state` event: the turn already in
    * flight when this socket opened. Every other event describes something

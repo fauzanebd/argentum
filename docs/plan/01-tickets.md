@@ -52,6 +52,8 @@ with no number cannot drift.
 | T-V4   | `050_report_shares` | landed 2026-08-09 — the only migration in the video track; `T-V1`→`T-V3` and `T-V5` add no schema |
 | T-D22  | `057_agent_tools_update_dashboard` | **applied 2026-08-17.** A backfill in `043`'s shape. Gated up/down/up against the real control database across 45 real agent rows: the 4 holding `create_dashboard` gained the tool, the 39 unrestricted ones are byte-identical |
 | T-Q15  | `076_query_example_archive` | **written 2026-09-10, not yet applied.** Two nullable columns and a partial index — the down migration restores every archived example to retrieval, which is the honest direction for it to fail in |
+| T-N1   | `077_message_agent` | **written 2026-09-11, not yet applied.** One nullable column on `messages` plus a backfill of assistant rows from the thread's agent; no FK and no index, both for `031`'s stated reasons. `076` was *also* still unapplied when this was numbered — the two do not conflict, but **re-read `schema_migrations` before applying either**, which is what the paragraph above exists to say ([`../coverage/multi-agent.md`](../coverage/multi-agent.md) §4) |
+| T-N2   | `078_thread_participants` | **written 2026-09-11, not yet applied.** One table, one index, and **no data write** — the backfill the ticket specified was deleted rather than written, because it would have made a six-writer table have one writer ([`../coverage/multi-agent.md`](../coverage/multi-agent.md) §4) |
 | T-U13  | `058_suggestion_picks` | **applied 2026-08-17**, gated down against a populated table. `T-Q10` and `T-D23` add no schema — the suggestions ride `messages.metadata`, which already existed |
 
 ---

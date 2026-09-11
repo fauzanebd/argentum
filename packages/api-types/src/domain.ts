@@ -1619,6 +1619,25 @@ export interface Message {
   thread_id: string;
   role: MessageRole;
   content: string;
+  /**
+   * AgentID is the roster agent that wrote this message (T-N1), or "" for a
+   * user message and for every assistant message written before the column
+   * existed on a thread that named no agent.
+   * It is the id the turn **actually ran as** — agentscope.AgentID(ctx),
+   * which is the same value the audit row and the usage event record — and
+   * not the id the queue payload asked for. The two differ whenever an agent
+   * was deleted between enqueue and run, and three rows describing one turn
+   * must not be able to disagree about who ran it.
+   */
+  agent_id?: string;
+  /**
+   * AgentName rides along on reads so a transcript does not have to join the
+   * roster in the browser. **It is not persisted** — the same arrangement, and
+   * the same reason, as AgentChannelBinding.AgentName. A renamed agent
+   * therefore renames its past messages, which is the behaviour a reader
+   * expects from a roster they can edit.
+   */
+  agent_name?: string;
   tool_calls?: { [key: string]: unknown};
   tokens_in?: number /* int */;
   tokens_out?: number /* int */;
@@ -2614,6 +2633,18 @@ export interface ConversationThread {
    * cannot strand a conversation.
    */
   agent_id?: string;
+  /**
+   * Participants is every agent in this conversation (T-N2), populated only
+   * by the reads that ask for it — the thread detail route and
+   * ThreadService.ListParticipants. **Nil is not "no participants"**, it is
+   * "not loaded", which is why HasParticipant is a method on this struct and
+   * not a free function over the slice: the one place that distinction can be
+   * documented is beside the field.
+   * The listing route deliberately does not populate it. A sidebar needs a
+   * title, and joining a second table per row to render one is a cost paid on
+   * every page load.
+   */
+  participants?: ThreadParticipant[];
   title: string;
   summary?: string;
   last_message_at: string;
@@ -2644,6 +2675,57 @@ export interface ThreadFilter {
   CursorID: string;
   Limit: number /* int */;
 }
+
+//////////
+// source: thread_participant.go
+
+/**
+ * ThreadParticipant is one agent in one conversation (T-N2).
+ * The roster (T-S1) gave a company several agents and gave a conversation
+ * exactly one of them: `conversation_threads.agent_id`, resolved once per turn.
+ * That is the right shape for "which agent is this conversation with" and it
+ * cannot express "which agents are in this room", so a user who wants Ops and
+ * Finance on the same question opens two conversations and carries numbers
+ * between them by hand.
+ * **A room is a thread with more than one participant, not a new object.**
+ * Every thread that existed before this table is a room of one, created by
+ * 078's backfill, and no turn that ran before it runs differently after.
+ * Membership is not an access boundary and does not pretend to be one. T-S1's
+ * locked decision 1 stands: company membership is the authorization boundary,
+ * any member may open any of their company's agents, and an agent named "HR" is
+ * not a wall. A room makes that more visible rather than less — see the
+ * roadmap's §7.
+ */
+export interface ThreadParticipant {
+  id: string;
+  thread_id: string;
+  agent_id: string;
+  /**
+   * AgentName rides along on reads so a participant list does not have to
+   * join the roster in the browser. Not persisted — the same arrangement as
+   * AgentChannelBinding.AgentName and Message.AgentName, and for the same
+   * reason.
+   */
+  agent_name?: string;
+  /**
+   * AddedBy is the user who put this agent in the room, or "" for a row the
+   * backfill wrote and for one whose user has since been deleted. It is
+   * provenance, not permission: nothing reads it to decide anything.
+   */
+  added_by?: string;
+  added_at: string;
+}
+/**
+ * MaxThreadParticipants is the ceiling when no configuration says otherwise.
+ * Four is the number of jobs this product was built around — domain/agent.go's
+ * opening comment names Marketing, Ops, HR and Finance — and not a round number
+ * chosen to look like one. It is a default rather than a constant because the
+ * cost of a room has never been measured (the roadmap's §2c); Hermes Agent, the
+ * only shipped implementation of this feature, caps a room at six as a
+ * compile-time literal with an open issue asking for configurability, which is
+ * the mistake this default exists not to repeat.
+ */
+export const MaxThreadParticipants = 4;
 
 //////////
 // source: usage.go

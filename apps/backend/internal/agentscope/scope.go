@@ -36,7 +36,12 @@ import (
 type Scope struct {
 	// AgentID is the roster row this turn runs as. Empty when there is none.
 	AgentID string
-	// Name is carried for logs only. Nothing branches on it.
+	// Name is the agent's display name. Nothing branches on it.
+	//
+	// It was "carried for logs only" until T-N1, which reads it onto every
+	// ChatEvent so a transcript can say who is speaking. Still nothing
+	// branches on it — but it is now user-visible, so a caller building a
+	// Scope by hand is producing a label somebody reads, not a log line.
 	Name string
 	// SourceIDs is the agent's connection allowlist. **Empty means every
 	// source the company owns** — the same rule domain.Agent.AllowsSource

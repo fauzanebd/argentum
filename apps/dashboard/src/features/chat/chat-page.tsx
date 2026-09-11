@@ -531,6 +531,27 @@ export function ChatPage() {
     );
   }, [persistedMessages, optimisticMessages, activeThreadId]);
 
+  /**
+   * Does this conversation have more than one agent in it? (T-N1)
+   *
+   * Attribution renders only when the answer is yes, so a single-agent thread —
+   * which is every thread until T-N2 ships participants — looks exactly as it
+   * did before this ticket. The signal is the transcript's own `agent_id`s
+   * rather than a participant count, deliberately: the participants table does
+   * not exist yet, and a flag wired to `false` awaiting a later ticket is a
+   * branch nobody can see working. Two distinct authors in the log is the thing
+   * that actually makes a name necessary, and it will keep being true when the
+   * room arrives.
+   */
+  const showAuthors = useMemo(() => {
+    const ids = new Set(
+      displayedMessages
+        .filter((m) => m.role !== "user" && m.agent_id)
+        .map((m) => m.agent_id),
+    );
+    return ids.size > 1;
+  }, [displayedMessages]);
+
   useEffect(() => {
     timelineRef.current?.scrollTo({
       top: timelineRef.current.scrollHeight,
@@ -629,6 +650,7 @@ export function ChatPage() {
                     threads.find((t) => t.id === activeThreadId),
                     agents,
                   )}
+                  showAuthor={showAuthors}
                   // The newest assistant message only, and not while a turn is
                   // in flight: options beside a streaming answer invite a click
                   // that would queue a second question behind the first.
@@ -821,6 +843,13 @@ function ChatHeader({
 function MessageBubble({
   message,
   agentName,
+  /** Name the agent that wrote this bubble (T-N1).
+   *
+   *  False on a single-agent thread, which is every thread until T-N2, so the
+   *  common case renders exactly as it did before attribution existed. The list
+   *  decides — a bubble cannot see the rest of the conversation, and "is there
+   *  more than one voice here" is a property of the conversation. */
+  showAuthor,
   /** A turn is already going out; the next-step options stop taking taps. */
   sending,
   /** Suggestions render under the NEWEST assistant message only (T-U13).
@@ -833,6 +862,7 @@ function MessageBubble({
 }: {
   message: Message;
   agentName?: string;
+  showAuthor?: boolean;
   sending?: boolean;
   onPickNextStep?: (prompt: string) => void;
 }) {
@@ -893,6 +923,17 @@ function MessageBubble({
           </div>
         ) : (
           <div className="text-sm leading-relaxed text-foreground">
+            {/* The author, when there is more than one (T-N1).
+                `agent_name` comes back on the message so a renamed agent
+                renames its past turns; `agentName` is the thread's agent and
+                the fallback for a row written before the column existed.
+                Text, not colour — a reader who cannot distinguish two hues
+                must lose nothing, which is the rule T-R3's palette gate set. */}
+            {showAuthor && (
+              <div className="text-[11px] font-semibold text-muted-foreground mb-1">
+                {message.agent_name || agentName || "Assistant"}
+              </div>
+            )}
             <MarkdownRenderer content={message.content} />
             {message.tool_calls && (
               <div className="mt-3 pt-3 border-t border-border/30 space-y-2 text-left">

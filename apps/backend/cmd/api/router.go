@@ -64,7 +64,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// apiPolicy: the delete has no undo, and the export is the tenant's whole
 	// conversation history in one response.
 	handlers.NewCompanyDataHandler(d.retentionSvc).Register(authed)
-	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo).Register(authed)
+	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo).
+		WithParticipants(d.threadParticipantSvc).
+		Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
 	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)
 	handlers.NewSuggestionsHandler(d.suggestionSvc).Register(authed)

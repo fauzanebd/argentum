@@ -100,6 +100,8 @@ type apiDeps struct {
 	// reads the same table on every inbound message and must not be handed a
 	// service that can write to it.
 	agentBindingSvc *app.AgentBindingService
+	// threadParticipantSvc is the room (T-N2): which agents are in a conversation.
+	threadParticipantSvc *app.ThreadParticipantService
 	// The company business profile (T-B1): what this workspace does, in the
 	// tenant's own words. The API writes it; the worker reads the same table on
 	// every turn through its own repository, which is why nothing here is shared

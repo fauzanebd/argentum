@@ -40,11 +40,26 @@ type ToolCallEvent struct {
 type ChatEvent struct {
 	JobID        string         `json:"job_id"`
 	ThreadID     string         `json:"thread_id"`
-	Type         string         `json:"type"` // state | started | delta | thinking | tool_call | tool_result | final | error | render_progress
+	Type         string         `json:"type"` // state | started | iteration | delta | thinking | tool_call | tool_result | final | error | render_progress
 	Content      string         `json:"content,omitempty"`
 	ThinkingStep string         `json:"thinking_step,omitempty"`
 	ToolCall     *ToolCallEvent `json:"tool_call,omitempty"`
 	Error        string         `json:"error,omitempty"`
+	// AgentID and AgentName are the roster agent producing this turn (T-N1),
+	// or empty for a turn running unscoped.
+	//
+	// They are stamped by ChatRunner.publish from the turn's agentscope.Scope
+	// rather than set at each of the twelve sites that build a ChatEvent — the
+	// same argument T-05 made for decorating the tool registry instead of every
+	// tool: one integration point, and the thirteenth publisher gets it without
+	// remembering to.
+	//
+	// **A client that reads neither field is unaffected**, which is the property
+	// T-Q10 established when `next_steps` rode in on the existing `final` event.
+	// They matter when a thread holds more than one agent (T-N2), and until then
+	// every event on a thread carries the same pair.
+	AgentID   string `json:"agent_id,omitempty"`
+	AgentName string `json:"agent_name,omitempty"`
 	// Live is set on — and only on — a `state` event: the turn already in
 	// flight when this socket opened. Every other event describes something
 	// that just happened; this one describes what has happened so far.

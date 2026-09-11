@@ -5999,6 +5999,99 @@ someone with access to run it:
     WHERE tool_name = 'create_dashboard' AND result_status = 'error'
     GROUP BY 1 ORDER BY 2 DESC;
 
+## Phase 3af — The product that attributed money and tool calls, but not words (2026-09-11)
+
+A request for group chat — several agents in one conversation, able to nudge
+each other — produced a roadmap
+([`../plan/09-multi-agent-conversations-roadmap.md`](../plan/09-multi-agent-conversations-roadmap.md),
+`T-N1`→`T-N10`, 18.5d) and a research note against the one shipped
+implementation of it
+([`../research/06-hermes-multi-agent.md`](../research/06-hermes-multi-agent.md),
+Hermes Agent at `v2026.9.7`). Neither is scheduled. **One ticket was built
+anyway, because it closes a gap that exists today.**
+
+### The gap
+
+`031_thread_agent.up.sql` gave `agent_actions` and `usage_events` an `agent_id`
+and gave `messages` none. Since 2026-07-30 this product has been able to say
+which agent ran a query and what the Finance agent cost, and not **which agent
+said that** — the only one of the three a customer reads. A thread holds one
+agent, so the thread row was the answer, and the gap was invisible for six
+weeks.
+
+### What the research changed about the plan
+
+Hermes reached four of the six locked decisions independently — deterministic
+`@name` routing with *"never parallel, no LLM router"* in a source comment, one
+addressed agent = one ordinary turn, visible-in-room nudges, hard
+conversation-level caps. It then stops one decision short: **no fence, no
+taint, no sanitizer on any peer text**, and its mention parser runs over
+*model-authored* text, so the laundering path the plan describes as a risk is a
+two-hop consequence of their design. Four amendments came back into §3, the
+largest being that a conversation ceiling must count **turns enqueued** rather
+than messages appended — their 10-message cap sits over 18 possible member
+turns, because a pass costs a full model call and does not increment the
+counter.
+
+### `T-N1`, and the three things it found
+
+Built, unit-gated, migration `077` written and **not applied**. Details in
+[`multi-agent.md`](multi-agent.md); the short version:
+
+1. **No signature needed to change.** `agentscope.Scope` already carried the
+   turn's agent id and name on the context, and it is already what the audit
+   decorator and usage recorder read. `AppendAssistantMessage` reads the same
+   value, so the three rows a turn writes agree by construction rather than by
+   three call sites passing the same argument.
+2. **Twelve publish sites became one.** `ChatEvent` is built in twelve places;
+   stamping each is twelve places to forget. `ChatRunner.publish` is the
+   decorator, on `T-05`'s argument for wrapping the registry instead of each
+   tool. `r.bus.Publish` now appears exactly once in the file.
+3. **The small-talk short-circuit completed before the agent was resolved.** A
+   greeting would have recorded no author. The resolution moved above the
+   short-circuit — the short-circuit exists to skip *model* calls, and one
+   indexed lookup is not one. A greeting is still a thing an agent said.
+
+All four behavioural tests were **proven red before green** by reverting the two
+assignments under test.
+
+### `T-N2`, and a backfill that was written and then deleted
+
+Built the same sitting. `thread_participants`, a service owning six refusals,
+three routes on the existing `ChatHandler`, thirteen tests.
+
+**The ticket specified a backfill and it was removed.** One participant row per
+existing thread, naming its `agent_id` — which makes the new table the only
+answer to *who is in this conversation*, and threads are created by **six**
+paths (the dashboard's `POST`, plus WhatsApp, Discord, Lark, Slack and API).
+All six would have had to remember to write a row. That is `T-K1`'s defect
+exactly, and that one was invisible to every unit test for five days.
+
+So `conversation_threads.agent_id` — already written by all six — stays the
+default speaker and is read as an **implicit member with no row**, and the new
+table holds the others. `078` writes no data. Every thread that exists is
+already a room of one, and no write path can forget because there is nothing for
+it to remember.
+
+The two checks the unique index would otherwise have supplied free are now
+explicit and tested: adding the default speaker is `ErrAlreadyExists` (no row to
+collide with), and the cap counts the implicit seat (or a room capped at four
+holds five).
+
+**The ticket's load-bearing negative is checkable rather than assertable**:
+`chat_enqueuer.go` and `internal/queue/` carry zero changes across both tickets,
+so no turn behaves differently. Membership is reachable, correct and inert until
+`T-N3` reads it.
+
+### What is owed
+
+Neither migration has round-tripped. The only control-plane Postgres on this
+machine is production, so the arm is in
+[`live-gate-backlog.md`](live-gate-backlog.md) §3d — owed on a go-ahead naming
+the namespace, not on effort — and three acceptance boxes stay unticked until it
+runs. The dashboard's multi-agent branch is also untested in its true case,
+because a thread cannot hold two agents until `T-N2`.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

@@ -163,6 +163,12 @@ type Config struct {
 	ThreadIdleMinutes  int    // gap that triggers a topic-relevance check
 	ClassifierModel    string // cheap model for topic classification, defaults to LLM_MODEL
 	SummaryEveryNTurns int    // how often to refresh the rolling summary
+	// ThreadMaxParticipants caps how many agents one conversation may hold
+	// (T-N2). A default rather than a constant because the cost of a room has
+	// never been measured — see the roadmap's §2c — and a ceiling a customer
+	// can neither see nor change is the mistake the reference implementation
+	// made.
+	ThreadMaxParticipants int
 
 	// Asynq queue + worker
 	AsynqRedisURL     string // falls back to RedisURL when empty
@@ -642,9 +648,14 @@ func Load() (*Config, error) {
 		corsOriginsSet: strings.TrimSpace(os.Getenv("CORS_ORIGINS")) != "",
 
 		// Conversation threading
-		ThreadIdleMinutes:  getEnvAsInt("THREAD_IDLE_MINUTES", 30),
-		ClassifierModel:    getEnv("LLM_CLASSIFIER_MODEL", "gpt-5-nano"),
-		SummaryEveryNTurns: getEnvAsInt("SUMMARY_EVERY_N_TURNS", 8),
+		ThreadIdleMinutes:     getEnvAsInt("THREAD_IDLE_MINUTES", 30),
+		ClassifierModel:       getEnv("LLM_CLASSIFIER_MODEL", "gpt-5-nano"),
+		SummaryEveryNTurns:    getEnvAsInt("SUMMARY_EVERY_N_TURNS", 8),
+		ThreadMaxParticipants: getEnvAsInt("THREAD_MAX_PARTICIPANTS", 0),
+		// **Zero, deliberately.** The number lives in
+		// domain.MaxThreadParticipants and ThreadParticipantService applies it
+		// when this is unset. Repeating it here would be a second default able
+		// to disagree with the first, and this package does not import domain.
 
 		// Asynq
 		AsynqRedisURL:     getEnv("ASYNQ_REDIS_URL", ""),
