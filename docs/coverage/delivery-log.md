@@ -6083,6 +6083,42 @@ holds five).
 so no turn behaves differently. Membership is reachable, correct and inert until
 `T-N3` reads it.
 
+### `T-N3` — a room routes, and an acceptance item gets struck
+
+`@Finance what happened?` becomes one turn for Finance. Nothing addressed goes
+to the thread's default speaker, which is what every message did before.
+`@all`/`@everyone` address the room. Deterministic parsing, no router model —
+`ParseAddressing` is pure, so its test table is the whole specification.
+
+**The two ways an `@` can fail need different answers**, and telling them apart
+is most of the ticket. A name nobody has is text. A name the *company* has and
+this conversation does not is a 409 with nothing enqueued — otherwise the user
+addresses a real agent, is silently answered by the default speaker, and finds
+out by reading a reply in the wrong voice.
+
+**Three dependencies were narrowed to one-method consumer interfaces**
+(`ChatRunEnqueuer`, `CompanyReader`, `RoomReader`), and the first was not
+tidying: the ticket's central claim is *one user message, N turns, one
+UserMsgID*, and against a concrete `*queue.Enqueuer` that was checkable only
+with a live Redis — which is why nothing checked it. It is now five tests.
+
+**The parser had a defect the tests caught.** Bare prefix matching meant an
+agent named `Ops` answered `@opsummary`, and `@allocation` addressed the whole
+room. `atTokens` over-reads on purpose — without it "Finance Team" is
+unaddressable — so every match is a prefix match, and a prefix match without a
+word boundary matches the wrong word. Both directions are now regression cases.
+
+**One acceptance item was struck rather than ticked or dropped.** *"A tenant
+with credit for one turn who addresses three gets one answer and a refusal
+naming the other two."* `CheckBudget` is a cached balance read; the decrement
+happens in the worker after the turn, and nothing reserves credit at enqueue —
+so three calls return one verdict three times, and the roadmap's "three
+CheckBudget calls" would have been enforcement theatre. A reservation is a
+credits ticket, not an addressing one. The exposure is bounded by
+`THREAD_MAX_PARTICIPANTS`, and the single-turn path already overshoots by one,
+so this widens an existing gap rather than opening a new one. The roadmap now
+carries the item struck with that reasoning attached.
+
 ### What is owed
 
 Neither migration has round-tripped. The only control-plane Postgres on this

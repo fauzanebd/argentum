@@ -255,10 +255,23 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// its contract is two reads, and a write method it can reach is a write
 	// method somebody eventually calls from there.
 	bindingRepo := pgctl.NewAgentBindingRepo(controlDB)
+	// The room (T-N2) and the addressing that reads it (T-N3), built here
+	// rather than beside the roster service further down: the enqueuer on the
+	// next line needs them, and a dependency constructed after its consumer is
+	// a nil the consumer silently degrades around.
+	//
+	// The cap falls back to domain.MaxThreadParticipants when
+	// THREAD_MAX_PARTICIPANTS is unset.
+	deps.threadParticipantSvc = app.NewThreadParticipantService(
+		pgctl.NewThreadParticipantRepo(controlDB), threadRepo, agentRepo,
+		cfg.ThreadMaxParticipants,
+	)
+	deps.room = app.NewRoom(deps.threadParticipantSvc, agentRepo)
 	deps.chatEnq = app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, deps.enqueuer).
 		WithBudget(deps.usageSvc).
 		WithRoster(agentRepo).
-		WithChannelBindings(bindingRepo)
+		WithChannelBindings(bindingRepo).
+		WithRoom(deps.room)
 	scheduledRepo := pgctl.NewScheduledTaskRepo(controlDB)
 	// The API process only creates and edits schedules — the worker fires
 	// them — but the service is the same type, and wiring it here keeps the
@@ -433,13 +446,6 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		// ordering against mcpServerSvc, which is built later.
 		WithMCPServers(pgctl.NewMCPServerRepo(controlDB))
 	deps.agentBindingSvc = app.NewAgentBindingService(bindingRepo, agentRepo)
-	// The room (T-N2). agentRepo satisfies RosterReader directly, so this needs
-	// no ordering against anything built later; the cap falls back to
-	// domain.MaxThreadParticipants when THREAD_MAX_PARTICIPANTS is unset.
-	deps.threadParticipantSvc = app.NewThreadParticipantService(
-		pgctl.NewThreadParticipantRepo(controlDB), threadRepo, agentRepo,
-		cfg.ThreadMaxParticipants,
-	)
 	companyProfileRepo := pgctl.NewCompanyProfileRepo(controlDB)
 	sourceProfileRepo := pgctl.NewSourceProfileRepo(controlDB)
 	deps.companyProfileSvc = app.NewCompanyProfileService(companyProfileRepo).

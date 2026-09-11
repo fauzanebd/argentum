@@ -102,6 +102,9 @@ type apiDeps struct {
 	agentBindingSvc *app.AgentBindingService
 	// threadParticipantSvc is the room (T-N2): which agents are in a conversation.
 	threadParticipantSvc *app.ThreadParticipantService
+	// room is T-N3's addressing: membership plus the roster, for deciding who
+	// an `@` names.
+	room *app.Room
 	// The company business profile (T-B1): what this workspace does, in the
 	// tenant's own words. The API writes it; the worker reads the same table on
 	// every turn through its own repository, which is why nothing here is shared

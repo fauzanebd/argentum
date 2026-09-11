@@ -197,6 +197,12 @@ func (h *ChatHandler) createThread(c *gin.Context) {
 // routes — a 403 would confirm the row is real to a caller holding a bare uuid.
 func chatFail(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, app.ErrAgentNotInRoom):
+		// 409 and not 404: the agent exists and the caller may have it, and the
+		// action that would make this succeed — add it to the conversation — is
+		// one they can take. The message names the agent, because "not in this
+		// conversation" without saying which one is not actionable.
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, domain.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "no such agent"})
 	case errors.Is(err, domain.ErrInvalidInput):

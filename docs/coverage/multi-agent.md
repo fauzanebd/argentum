@@ -11,12 +11,12 @@ that the ticket did not anticipate, and what is owed.
 | --- | --- |
 | `T-N1` Every assistant message says which agent wrote it | **built 2026-09-11, unit-gated. Migration `077` written, not applied — §4** |
 | `T-N2` A conversation can hold more than one agent | **built 2026-09-11, unit-gated. Migration `078` written, not applied — §4** |
-| `T-N3`→`T-N10` | Not built, not scheduled |
+| `T-N3` Addressing — `@agent` decides who answers | **built 2026-09-11, unit-gated. One acceptance item struck as unachievable — §6** |
+| `T-N4`→`T-N10` | Not built, not scheduled |
 
-**Nothing routes to a room yet.** `T-N3` is what reads participants at enqueue
-time; until it lands, membership is reachable over HTTP, correct, and inert. A
-turn behaves exactly as it did before either ticket — `chat_enqueuer.go` and
-`internal/queue/` carry **zero changes** across both.
+**As of `T-N3` a room routes.** One user message addressing two agents becomes
+two `chat:run` turns. There is still no UI — that is `T-N4` — so a room can only
+be assembled and addressed with `curl`.
 
 ---
 
@@ -164,7 +164,73 @@ that can also fail. The alternative — opening a conversation with quietly fewe
 agents than the user picked — is discovered by addressing one and being told it
 is not there.
 
-## 5. What is owed
+## 5. `T-N3`, and the acceptance item that was struck
+
+`@Finance what happened?` routes to Finance. Nothing addressed goes to the
+thread's default speaker, which is what every message did before this ticket.
+`@all` and `@everyone` address the room. Parsing is deterministic — **no router
+LLM**, decision 3 — and `ParseAddressing` is a pure function of
+`(text, participants)`, so the grammar is fully specified by its own test table.
+
+### The two ways an `@` can fail need different answers
+
+- **A name nobody has is text.** `@notanagent`, an email address, a handle.
+  One turn, to the default speaker, message unchanged.
+- **A name the company has and this conversation does not is a refusal.**
+  `409`, naming the agent, **nothing enqueued**. Without this the user addresses
+  a real agent, is silently answered by the default speaker, and finds out by
+  reading a reply in the wrong voice — the failure `T-S3` refused to ship.
+
+Telling those apart needs the roster, so `RoomReader` has a second method. It is
+read **only** when an `@` matched no participant, which is off the hot path for
+every ordinary message and is pinned by a test that counts the calls.
+
+A **disabled** roster agent is text, not a refusal: it is unreachable, and
+refusing would tell a user to add an agent they cannot add.
+
+### What the build found, and what was narrowed
+
+Three dependencies became consumer-declared interfaces, each one method wide:
+`ChatRunEnqueuer`, `CompanyReader` and `RoomReader`. The first was not tidying.
+The ticket's central claim is *one user message, N turns, one `UserMsgID`* —
+and with a concrete `*queue.Enqueuer` that claim was checkable only against a
+live Redis, **which is why nothing checked it**. It is now five tests, including
+the fan-out order, the stripped `@` tokens, and a partial queue failure
+reporting how far it got.
+
+`@` tokens are stripped from what the model sees and kept in what is persisted —
+`lark.StripMentions`' arrangement, and its reason: leaving them in the prompt
+teaches the model that `@` is something it should produce.
+
+Both degraded paths fail open. A participant lookup that errors, or a roster
+lookup that errors, resolves the turn to the thread's agent rather than refusing
+it — `ChatRunner.companyContext`'s argument, that context makes an answer better
+and is never what makes one possible.
+
+### The acceptance item that was struck rather than ticked
+
+> *"A tenant with credit for one turn who addresses three gets one answer and a
+> refusal naming the other two."*
+
+**This is not achievable as written and was not quietly dropped.**
+`UsageService.CheckBudget` (`credits.go:122`) is a *cached balance read*. The
+decrement happens in the worker after a turn runs, and nothing reserves credit
+at enqueue — so calling it three times returns the same verdict three times, and
+the roadmap's "three `CheckBudget` calls" would have been three identical
+answers dressed as enforcement.
+
+Making it true needs a reservation at enqueue time. That is a credits ticket,
+not an addressing one, and inventing one here would have put a spend-control
+mechanism in the middle of a routing change.
+
+**The exposure, stated plainly:** a tenant near zero who addresses N agents can
+overshoot by up to N turns instead of one. It is bounded by
+`THREAD_MAX_PARTICIPANTS` (4 by default), and the single-turn path already has
+the same shape of overshoot — a turn is checked before it is queued and paid for
+after it runs. So this widens an existing gap rather than opening a new one, and
+the roadmap's `T-N3` now carries the struck item with this reasoning attached.
+
+## 6. What is owed
 
 **Neither migration has been applied anywhere.** `077_message_agent` and
 `078_thread_participants` are written with both directions and have had **no
@@ -195,6 +261,19 @@ of the six refusals in §4's table. Plus the ticket's load-bearing negative —
 **no turn behaves differently**, which is checkable rather than assertable:
 `chat_enqueuer.go` and `internal/queue/` carry zero changes across both tickets.
 
+**What is proven for `T-N3`**: 13 grammar cases over the pure parser (including
+the two word-boundary regressions below), 11 over the resolution path, and 5
+over the fan-out. The grammar table *is* the specification — Appendix A of the
+roadmap and the test are the same list.
+
+**A defect the tests found before the gate did.** The first parser matched a
+participant by bare prefix, so an agent named `Ops` answered `@opsummary` and
+`@allocation` addressed the whole room — `atTokens` deliberately over-reads to
+the end of a plausible name, because otherwise a two-word agent like "Finance
+Team" is unaddressable, and a prefix match over an over-read token matches the
+wrong word. Both directions are now boundary-checked and both are regression
+cases.
+
 **What is proven for `T-N1`**, by tests that fail without the change (all four
 verified red before green):
 
@@ -207,8 +286,9 @@ verified red before green):
 - a user message carries no agent
 - an unscoped turn writes no agent rather than failing
 
-**`T-N2` has no UI at all.** That is `T-N4`, and until it lands a room can only
-be assembled with `curl`. The three routes are wired and policy-gated at
+**`T-N2` and `T-N3` have no UI at all.** That is `T-N4`, and until it lands a
+room can only be assembled and addressed with `curl`. Nobody has typed an `@`
+into this product. The three routes are wired and policy-gated at
 `RoleMember`, matching the thread routes beside them rather than the admin-only
 `/api/agent-bindings`: a channel binding is routing configuration for a
 company's shared rooms, whereas these act on one conversation the caller

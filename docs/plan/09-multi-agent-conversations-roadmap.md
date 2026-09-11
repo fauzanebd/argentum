@@ -607,9 +607,18 @@ add / list / remove / the three refusals.
 
 ---
 
-#### `T-N3` Addressing — `@agent` decides who answers
+#### `T-N3` Addressing — `@agent` decides who answers · **built 2026-09-11, unit-gated**
 **Repo:** BE · **Size:** 2.0d · **Deps:** `T-N2` · **Priority:** P0
 **Migration:** none
+
+**Built. One acceptance item was struck as unachievable rather than ticked or
+quietly dropped** — the per-payload budget refusal below; `CheckBudget` is a
+cached balance read with no reservation, so N calls return one verdict N times.
+Three dependencies were narrowed to consumer-declared interfaces along the way
+(`ChatRunEnqueuer`, `CompanyReader`, `RoomReader`), which is what made the
+central claim — *one user message, N turns, one `UserMsgID`* — testable at all:
+it previously needed a live Redis, which is why nothing checked it.
+[`../coverage/multi-agent.md`](../coverage/multi-agent.md) §6.
 
 ##### Why
 With participants stored and nothing reading them, a room is a settings page.
@@ -693,8 +702,15 @@ queued today, so nothing downstream of the queue learns what a room is.
 - [ ] `@notanagent` is treated as text and produces one ordinary turn
 - [ ] The persisted user message contains the original `@` tokens; the message
       handed to the model does not
-- [ ] A tenant with credit for one turn who addresses three gets one answer and
-      a refusal naming the other two
+- [ ] ~~A tenant with credit for one turn who addresses three gets one answer and
+      a refusal naming the other two~~ — **struck 2026-09-11 as unachievable as
+      written.** `UsageService.CheckBudget` (`credits.go:122`) is a *cached
+      balance read*; the decrement happens in the worker after a turn runs, and
+      nothing reserves credit at enqueue. Calling it three times returns the
+      same verdict three times. Making this true needs a reservation at enqueue
+      — a credits ticket, not an addressing one. The exposure is bounded by
+      `THREAD_MAX_PARTICIPANTS`, and today's single-turn path already has the
+      same overshoot of one. See [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §6
 - [ ] Two concurrent turns on one thread both stream, and every event carries
       the agent that produced it
 

@@ -426,6 +426,12 @@ func (s *AgentService) validated(ctx context.Context, companyID string, in Agent
 		return nil, fmt.Errorf("%w: an agent needs a name", domain.ErrInvalidInput)
 	case len([]rune(name)) > agentNameMax:
 		return nil, fmt.Errorf("%w: name must be %d characters or fewer", domain.ErrInvalidInput, agentNameMax)
+	case IsReservedHandle(name):
+		// `@all` and `@everyone` address every participant of a room (T-N3).
+		// An agent a tenant could name "all" would shadow the handle for that
+		// tenant only — a feature that works everywhere except one workspace,
+		// with nothing to see in either the roster or the message.
+		return nil, fmt.Errorf("%w: %q is reserved — it addresses everyone in a conversation", domain.ErrInvalidInput, name)
 	case len([]rune(description)) > agentDescriptionMax:
 		return nil, fmt.Errorf("%w: description must be %d characters or fewer", domain.ErrInvalidInput, agentDescriptionMax)
 	case len([]rune(persona)) > agentPersonaMax:

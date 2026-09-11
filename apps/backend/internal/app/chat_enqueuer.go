@@ -20,12 +20,70 @@ import (
 type ChatEnqueuer struct {
 	threads   *ThreadService
 	messages  domain.MessageRepository
-	companies domain.CompanyRepository
-	enqueuer  *queue.Enqueuer
+	companies CompanyReader
+	enqueuer  ChatRunEnqueuer
 	budget    BudgetChecker
 	roster    RosterReader
 	bindings  ChannelBinder
+	// room is T-N3's addressing. Nil disables it entirely: every message then
+	// goes to the thread's agent, which is what every message did before this
+	// ticket.
+	room RoomReader
 }
+
+// CompanyReader is the one read this service makes of the company: the display
+// name and default currency a turn's context carries.
+//
+// Declared at the consumer and narrowed to one method, like ChatRunEnqueuer
+// below and RosterReader above. domain.CompanyRepository can create and update
+// companies; an enqueue path that can reach those is one that could be asked
+// to, and it is also one no test can build without implementing five methods it
+// never calls.
+type CompanyReader interface {
+	GetByID(ctx context.Context, id string) (*domain.Company, error)
+}
+
+// ChatRunEnqueuer is the one thing this service asks of the queue.
+//
+// Declared at the consumer, like RosterReader, BudgetChecker and RoomReader,
+// and narrowed to one method for the reason those give — plus one specific to
+// T-N3: a message that addresses three agents produces three payloads, and
+// "one user message became N turns with one UserMsgID" is the ticket's central
+// claim. With a concrete *queue.Enqueuer that claim was only checkable against
+// a live Redis, which is why nothing checked it.
+//
+// *queue.Enqueuer satisfies this; nothing about the wiring changes.
+type ChatRunEnqueuer interface {
+	EnqueueChatRun(ctx context.Context, p queue.ChatRunPayload) (string, error)
+}
+
+// RoomReader is the membership half of a conversation the enqueue path needs
+// (T-N3): who is in this room, and what the company's roster is called.
+//
+// Declared at the consumer, like RosterReader and BudgetChecker, and read-only
+// for the same reason: an enqueue path that could write a participant is one
+// that could be asked to.
+//
+// Two methods rather than the repository whole, and the second one is the odd
+// one. Addressing resolves `@Finance` against the *room*; the roster listing
+// exists only to tell apart the two ways that can fail — a name nobody has
+// (which is ordinary text) from a name the company does have but has not put in
+// this conversation (which is a refusal). Without it both look like text, and a
+// user who addressed a real agent silently gets the default speaker instead.
+type RoomReader interface {
+	ListParticipants(ctx context.Context, companyID, threadID string) ([]*domain.ThreadParticipant, error)
+	ListAgents(ctx context.Context, companyID string) ([]*domain.Agent, error)
+}
+
+// ErrAgentNotInRoom is an `@` naming an agent the company has and this
+// conversation does not.
+//
+// It refuses the whole message and enqueues nothing. The two alternatives are
+// both worse: answering as the default speaker is the "the answer came from the
+// wrong agent" failure T-S3 refused to ship, and silently adding the agent to
+// the room is a message that quietly enlarges a conversation and quietly spends
+// more money.
+var ErrAgentNotInRoom = errors.New("that agent is not in this conversation")
 
 // ChannelBinder resolves an inbound address to the agent an admin bound it to
 // (T-S4). Declared at the consumer, like RosterReader and BudgetChecker, and
@@ -65,7 +123,7 @@ type BudgetChecker interface {
 // NewChatEnqueuer wires the dependencies. messages is unused today (kept
 // for symmetry / future "user message ack" responses) but threads is
 // required for ResolveForPhone / ResolveForUser + AppendUserMessage.
-func NewChatEnqueuer(threads *ThreadService, messages domain.MessageRepository, companies domain.CompanyRepository, enqueuer *queue.Enqueuer) *ChatEnqueuer {
+func NewChatEnqueuer(threads *ThreadService, messages domain.MessageRepository, companies CompanyReader, enqueuer ChatRunEnqueuer) *ChatEnqueuer {
 	return &ChatEnqueuer{threads: threads, messages: messages, companies: companies, enqueuer: enqueuer}
 }
 
@@ -92,6 +150,14 @@ func (s *ChatEnqueuer) WithRoster(r RosterReader) *ChatEnqueuer {
 // company default, which is the behaviour of every turn before this ticket.
 func (s *ChatEnqueuer) WithChannelBindings(b ChannelBinder) *ChatEnqueuer {
 	s.bindings = b
+	return s
+}
+
+// WithRoom enables `@agent` addressing (T-N3). Optional, in the shape
+// WithRoster and WithChannelBindings use: without it every message resolves to
+// the thread's agent exactly as it did before this ticket, and the `@` is text.
+func (s *ChatEnqueuer) WithRoom(r RoomReader) *ChatEnqueuer {
+	s.room = r
 	return s
 }
 
@@ -257,10 +323,19 @@ func (in ChatInput) validate() error {
 // EnqueueResult is returned synchronously from Enqueue. The actual
 // response streams over the WebSocket once the worker finishes.
 type EnqueueResult struct {
-	TaskID      string
-	Thread      *domain.ConversationThread
-	IsNewThread bool
-	UserMsgID   string
+	// TaskID is the first task of the turn. It stays a single value because
+	// every caller reads it as "the turn started"; the full list is TaskIDs.
+	TaskID string
+	// TaskIDs is one id per addressed agent (T-N3). Length one for every
+	// message that addresses nobody, which is every message on every channel
+	// but the dashboard and most of those.
+	TaskIDs []string
+	// AddressedAgentIDs is who this message was routed to, or nil when it
+	// addressed nobody and the thread's own agent answered.
+	AddressedAgentIDs []string
+	Thread            *domain.ConversationThread
+	IsNewThread       bool
+	UserMsgID         string
 	// BudgetWarning is set only when the turn ran but the tenant is near the
 	// end of their credit. Nil is the ordinary case, which keeps the field
 	// absent from the JSON response rather than shipping a "not warning"
@@ -492,6 +567,17 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 	}
 	thread := resolved.Thread
 
+	// Who this message is for (T-N3). Before the user message is written, so a
+	// refused `@` leaves no orphan row behind — the ordering the budget check
+	// and the agent pick both already follow.
+	addr, err := s.resolveAddressing(ctx, in, thread)
+	if err != nil {
+		return nil, err
+	}
+
+	// **The original text, not the cleaned one.** A transcript should read as
+	// what the person typed; the `@` tokens are stripped only from what the
+	// model sees, which is lark.StripMentions' arrangement and its reason.
 	userMsg, err := s.threads.AppendUserMessage(ctx, thread.ID, in.Message)
 	if err != nil {
 		return nil, fmt.Errorf("append user message: %w", err)
@@ -504,55 +590,185 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		currency = company.DefaultCurrency
 	}
 
-	taskID, err := s.enqueuer.EnqueueChatRun(ctx, queue.ChatRunPayload{
-		CompanyID:        in.CompanyID,
-		ThreadID:         thread.ID,
-		UserID:           in.UserID,
-		PhoneNumber:      in.PhoneNumber,
-		DiscordUserID:    in.DiscordUserID,
-		DiscordChannelID: in.DiscordChannelID,
-		LarkOpenID:       in.LarkOpenID,
-		LarkChatID:       in.LarkChatID,
-		LarkThreadKey:    in.LarkThreadKey,
-		LarkMessageID:    in.LarkMessageID,
-		SlackTeamID:      in.SlackTeamID,
-		SlackChannelID:   in.SlackChannelID,
-		SlackUserID:      in.SlackUserID,
-		// The thread the reply hangs under: the message's own ts when it is
-		// top-level, which is the same value the resolved thread stores.
-		SlackThreadTS:   slackReplyTS(in),
-		Channel:         in.Channel,
-		Message:         in.Message,
-		Directive:       in.Directive,
-		AgentID:         s.agentFor(ctx, thread),
-		UserMsgID:       userMsg.ID,
-		CompanyName:     companyName,
-		DefaultCurrency: currency,
-		APIReportID:     in.APIReportID,
-		APIKeyID:        in.APIKeyID,
-		EmbedUserRef:    in.EmbedUserRef,
-		EmbedKeyID:      in.EmbedKeyID,
-		// Off the context rather than out of ChatInput: the request id is
-		// ambient per-request identity, exactly like the company id, and a
-		// field on the input would be one every caller has to remember to
-		// fill. Empty for every non-HTTP caller, which is the truth.
-		RequestID: tenantctx.RequestID(ctx),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("enqueue chat:run: %w", err)
+	// One user message, N turns (T-N3). Every payload carries the same
+	// UserMsgID, which is what ChatEvent.JobID is — so N concurrent turns
+	// publish under one job id and are told apart by the agent id T-N1 put on
+	// every event.
+	//
+	// Order is the order the agents were addressed. asynq gives no ordering
+	// guarantee across workers and this does not add one: the transcript is
+	// ordered by messages.created_at, which is Postgres's clock, and that is
+	// the order a reader sees. Do not build a sequencer for this.
+	addressed := addr.AgentIDs
+	targets := addressed
+	if len(targets) == 0 {
+		targets = []string{s.agentFor(ctx, thread)}
+	}
+
+	var taskIDs []string
+	var taskID string
+	for _, target := range targets {
+		id, ferr := s.enqueuer.EnqueueChatRun(ctx, queue.ChatRunPayload{
+			CompanyID:        in.CompanyID,
+			ThreadID:         thread.ID,
+			UserID:           in.UserID,
+			PhoneNumber:      in.PhoneNumber,
+			DiscordUserID:    in.DiscordUserID,
+			DiscordChannelID: in.DiscordChannelID,
+			LarkOpenID:       in.LarkOpenID,
+			LarkChatID:       in.LarkChatID,
+			LarkThreadKey:    in.LarkThreadKey,
+			LarkMessageID:    in.LarkMessageID,
+			SlackTeamID:      in.SlackTeamID,
+			SlackChannelID:   in.SlackChannelID,
+			SlackUserID:      in.SlackUserID,
+			// The thread the reply hangs under: the message's own ts when it is
+			// top-level, which is the same value the resolved thread stores.
+			SlackThreadTS: slackReplyTS(in),
+			Channel:       in.Channel,
+			// The cleaned text: the `@` tokens are routing metadata, and leaving
+			// them in the prompt teaches the model that `@` is something it should
+			// produce (lark/mention.go:28-33).
+			Message:         addr.Cleaned,
+			Directive:       in.Directive,
+			AgentID:         target,
+			UserMsgID:       userMsg.ID,
+			CompanyName:     companyName,
+			DefaultCurrency: currency,
+			APIReportID:     in.APIReportID,
+			APIKeyID:        in.APIKeyID,
+			EmbedUserRef:    in.EmbedUserRef,
+			EmbedKeyID:      in.EmbedKeyID,
+			// Off the context rather than out of ChatInput: the request id is
+			// ambient per-request identity, exactly like the company id, and a
+			// field on the input would be one every caller has to remember to
+			// fill. Empty for every non-HTTP caller, which is the truth.
+			RequestID: tenantctx.RequestID(ctx),
+		})
+		if ferr != nil {
+			// The first failure ends the fan-out. Turns already queued keep
+			// running and their answers still arrive — they are real turns the
+			// user asked for, and cancelling them is neither possible nor
+			// desirable. What the caller is told is that the message did not
+			// reach everybody, which is the honest report and is why the
+			// partial ids travel with the error rather than being discarded.
+			if len(taskIDs) > 0 {
+				return nil, fmt.Errorf("enqueue chat:run for %d of %d agents: %w",
+					len(taskIDs), len(targets), ferr)
+			}
+			return nil, fmt.Errorf("enqueue chat:run: %w", ferr)
+		}
+		if taskID == "" {
+			taskID = id
+		}
+		taskIDs = append(taskIDs, id)
 	}
 
 	out := &EnqueueResult{
-		TaskID:      taskID,
-		Thread:      thread,
-		IsNewThread: resolved.IsNew,
-		UserMsgID:   userMsg.ID,
+		TaskID:            taskID,
+		TaskIDs:           taskIDs,
+		Thread:            thread,
+		IsNewThread:       resolved.IsNew,
+		UserMsgID:         userMsg.ID,
+		AddressedAgentIDs: addressed,
 	}
 	if budget.Verdict == BudgetWarning {
 		warning := budget
 		out.BudgetWarning = &warning
 	}
 	return out, nil
+}
+
+// resolveAddressing decides who this message is for (T-N3).
+//
+// **Dashboard only.** The `@` is a human affordance: `/v1` and the widget carry
+// an explicit agent_id field (T-N10), and the channels resolve theirs from the
+// address the message arrived on (T-S4) or from a group room's bindings (T-N9).
+// A machine caller's message text is not a place to look for routing.
+//
+// Returns zero agents for every message that names nobody, which is what every
+// message did before this ticket and what the caller turns into a single turn
+// for the thread's own agent.
+func (s *ChatEnqueuer) resolveAddressing(
+	ctx context.Context, in ChatInput, thread *domain.ConversationThread,
+) (Addressing, error) {
+	plain := Addressing{Cleaned: in.Message}
+	if s.room == nil || in.Channel != domain.ChannelDashboard || !strings.Contains(in.Message, "@") {
+		return plain, nil
+	}
+
+	participants, err := s.room.ListParticipants(ctx, in.CompanyID, thread.ID)
+	if err != nil {
+		// A membership lookup that failed must not refuse the turn. The answer
+		// then comes from the thread's own agent, which is the answer it would
+		// have come from before this ticket — ChatRunner.companyContext's
+		// argument, that context makes an answer better and is never what makes
+		// one possible.
+		logrus.WithError(err).WithField("thread_id", thread.ID).
+			Warn("participant lookup failed; addressing this turn to the thread's agent")
+		return plain, nil
+	}
+	if len(participants) < 2 {
+		// A room of one cannot be addressed: there is nobody else to pick, and
+		// "@Finance" in a conversation that only has Finance is text.
+		return plain, nil
+	}
+
+	addr := ParseAddressing(in.Message, participants)
+	if len(addr.AgentIDs) > 0 {
+		return addr, nil
+	}
+
+	// Nothing matched. Two ways that can be true, and they need different
+	// answers: a name nobody has is ordinary text, and a name the *company* has
+	// but this conversation does not is a refusal. Without the second the user
+	// addresses a real agent, is silently answered by the default speaker, and
+	// finds out by reading a reply in the wrong voice.
+	//
+	// Only reached when a message contains an `@` that resolved to no
+	// participant, so the roster listing is off the hot path for every ordinary
+	// message.
+	if name := s.namesARosterAgent(ctx, in, participants); name != "" {
+		return plain, fmt.Errorf("%w: %s", ErrAgentNotInRoom, name)
+	}
+	return addr, nil
+}
+
+// namesARosterAgent returns the name of a company agent that was addressed and
+// is not in the room, or "".
+func (s *ChatEnqueuer) namesARosterAgent(
+	ctx context.Context, in ChatInput, participants []*domain.ThreadParticipant,
+) string {
+	agents, err := s.room.ListAgents(ctx, in.CompanyID)
+	if err != nil {
+		// Same rule as the participant lookup: a failed read degrades to
+		// today's behaviour rather than refusing the turn.
+		logrus.WithError(err).WithField("company_id", in.CompanyID).
+			Warn("roster lookup failed; an unmatched @ is being treated as text")
+		return ""
+	}
+	inRoom := make(map[string]bool, len(participants))
+	for _, p := range participants {
+		inRoom[p.AgentID] = true
+	}
+	// Reuse the parser rather than re-implementing the match: the whole roster
+	// stands in for the room, so "would this have matched if the agent were
+	// here" is the same question ParseAddressing already answers.
+	roster := make([]*domain.ThreadParticipant, 0, len(agents))
+	for _, a := range agents {
+		if !inRoom[a.ID] && a.Enabled {
+			roster = append(roster, &domain.ThreadParticipant{AgentID: a.ID, AgentName: a.Name})
+		}
+	}
+	hit := ParseAddressing(in.Message, roster)
+	for _, id := range hit.AgentIDs {
+		for _, a := range agents {
+			if a.ID == id {
+				return a.Name
+			}
+		}
+	}
+	return ""
 }
 
 // forkForAgent starts a new API conversation when the one the resolver picked
