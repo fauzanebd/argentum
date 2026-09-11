@@ -18,7 +18,8 @@ func NewConnectionRepo(db *sql.DB) *ConnectionRepo { return &ConnectionRepo{db: 
 const connColumns = `id, company_id, db_type, label, dsn_encrypted, is_default,
 		description, description_source,
 		enable_table_embedding, embeddings_indexed_at, origin,
-		allowlist, created_at, updated_at`
+		allowlist, freshness_sql, freshness_warn_after_mins, freshness_stale_after_mins,
+		created_at, updated_at`
 
 func scanConn(row interface {
 	Scan(dest ...interface{}) error
@@ -26,11 +27,14 @@ func scanConn(row interface {
 	c := &domain.DBConnection{}
 	var indexedAt sql.NullTime
 	var allowlist []byte
+	var freshSQL sql.NullString
+	var warnMins, staleMins sql.NullInt64
 	err := row.Scan(
 		&c.ID, &c.CompanyID, &c.DBType, &c.Label, &c.DSNEncrypted, &c.IsDefault,
 		&c.Description, &c.DescriptionSource,
 		&c.EnableTableEmbedding, &indexedAt, &c.Origin,
-		&allowlist, &c.CreatedAt, &c.UpdatedAt,
+		&allowlist, &freshSQL, &warnMins, &staleMins,
+		&c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -47,6 +51,15 @@ func scanConn(row interface {
 	if indexedAt.Valid {
 		t := indexedAt.Time
 		c.EmbeddingsIndexedAt = &t
+	}
+	// All three freshness columns are nullable and read independently. A source
+	// with no expression keeps the zero value, which every reader treats as
+	// unchecked — the direction this feature must fail in, since the alternative
+	// is announcing staleness about a source nobody configured.
+	c.Freshness = domain.SourceFreshness{
+		SQL:            freshSQL.String,
+		WarnAfterMins:  int(warnMins.Int64),
+		StaleAfterMins: int(staleMins.Int64),
 	}
 	return c, nil
 }
@@ -167,6 +180,25 @@ func (r *ConnectionRepo) Delete(ctx context.Context, id string) error {
 func (r *ConnectionRepo) SetEmbeddingToggle(ctx context.Context, id string, on bool) error {
 	const q = `UPDATE db_connections SET enable_table_embedding = $1, updated_at = now() WHERE id = $2`
 	_, err := r.db.ExecContext(ctx, q, on, id)
+	return err
+}
+
+// SetFreshness writes one source's freshness setup. A focused setter, like
+// SetEmbeddingToggle beside it, so a settings form does not round-trip the
+// encrypted DSN through Update to change a threshold.
+//
+// Empty values are written as NULL rather than as '' and 0, so "never
+// configured" and "configured and then cleared" end up in the same state — the
+// one every reader already treats as unchecked.
+func (r *ConnectionRepo) SetFreshness(ctx context.Context, id string, f domain.SourceFreshness) error {
+	const q = `
+		UPDATE db_connections
+		   SET freshness_sql = NULLIF($1, ''),
+		       freshness_warn_after_mins = NULLIF($2, 0),
+		       freshness_stale_after_mins = NULLIF($3, 0),
+		       updated_at = now()
+		 WHERE id = $4`
+	_, err := r.db.ExecContext(ctx, q, f.SQL, f.WarnAfterMins, f.StaleAfterMins, id)
 	return err
 }
 

@@ -138,6 +138,10 @@ type apiDeps struct {
 	// runs in the worker, but its *record* and the two routes a tenant uses to
 	// discharge their own UU PDP obligation are read and written here.
 	retentionSvc *app.RetentionService
+	// freshnessSvc probes how current a tenant's source is (T-F1). The API owns
+	// the configuration routes; the worker builds its own so a turn's probe does
+	// not cross a process boundary to reach a cache.
+	freshnessSvc *app.FreshnessService
 	// Watchers (T-08): CRUD and the dry-run. The API never fires or delivers —
 	// that is the worker's WatcherService — so this instance carries no delivery
 	// providers and no budget checker.

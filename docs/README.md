@@ -69,7 +69,8 @@ docs/
 │   ├── 03-gap-analysis.md        Gaps, risks, and the agent-native thesis
 │   ├── 04-social-carousel.md     Social-media carousels: what exists, gaps, build
 │   ├── 05-hermes-self-learning.md  How Hermes Agent closes the learning loop we leave open, and what it costs
-│   └── 06-hermes-multi-agent.md    Hermes Agent's group chat: who speaks, what stops it, and the guard that isn't there
+│   ├── 06-hermes-multi-agent.md    Hermes Agent's group chat: who speaks, what stops it, and the guard that isn't there
+│   └── 07-feature-candidates.md   What is worth adding next, and what already has a backlog entry
 ├── coverage/
 │   ├── feature-coverage.md       Feature status matrix
 │   ├── test-coverage.md          Measured test state + CI gaps

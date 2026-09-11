@@ -420,6 +420,16 @@ type Config struct {
 	// unbounded background load and, once each fires an agent turn, an unbounded
 	// bill.
 	WatcherMaxPerCompany int
+	// SourceFreshnessTTLSecs is how long one source's freshness verdict is
+	// reused before it is probed again (T-F1). It is the trade the whole feature
+	// rests on: a probe is a round trip to the tenant's warehouse, and a turn
+	// that runs five queries against one source should pay for one.
+	//
+	// A minute is short enough that a load finishing is reflected in the next
+	// answer, and long enough that a busy tenant's warehouse is not asked the
+	// same question once per tool call. Failures are cached for the same
+	// duration, deliberately — see FreshnessService.For.
+	SourceFreshnessTTLSecs int
 	// APIV1ObsFlushSeconds is how often the request recorder writes what it has
 	// buffered (T-A5). It is the staleness of the tenant's own error list and
 	// the write rate of the rollup, traded against each other: the acceptance
@@ -731,6 +741,7 @@ func Load() (*Config, error) {
 		RenderMaxFrames:            getEnvAsInt("RENDER_MAX_FRAMES", 18_000),
 		WatcherEnabled:             getEnv("WATCHER_ENABLED", "true") == "true",
 		WatcherMaxPerCompany:       getEnvAsInt("WATCHER_MAX_PER_COMPANY", 20),
+		SourceFreshnessTTLSecs:     getEnvAsInt("SOURCE_FRESHNESS_TTL_SECS", 60),
 		APIV1ObsFlushSeconds:       getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
 		APIV1ObsRetentionDays:      getEnvAsInt("API_V1_OBS_RETENTION_DAYS", 30),
 

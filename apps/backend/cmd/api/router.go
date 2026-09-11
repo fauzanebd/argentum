@@ -59,6 +59,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewCompanyHandler(d.companySvc, d.embeddingSvc).
 		WithRequiredTLS(cfg.IsProduction()).
 		WithRetention(d.retentionSvc).
+		WithFreshness(d.freshnessSvc).
 		Register(authed)
 	// Retention, erasure and export (T-H6). Every route here is admin in
 	// apiPolicy: the delete has no undo, and the export is the tenant's whole

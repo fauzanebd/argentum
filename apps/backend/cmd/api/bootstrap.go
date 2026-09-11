@@ -590,6 +590,13 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		feedbackRepo, deps.embedCache,
 	).WithSweep(deps.tenant)
 
+	// Source freshness (T-F1). The API half is configuration: the PUT and the
+	// Test button. Its cache is this process's, which is correct — the worker
+	// builds its own, and a verdict that is at most a TTL old in two places is
+	// cheaper and simpler than a shared one.
+	deps.freshnessSvc = app.NewFreshnessService(
+		connRepo, connRepo, deps.tenant, time.Duration(cfg.SourceFreshnessTTLSecs)*time.Second)
+
 	// Retention and erasure (T-H6). The API half: the settings write, the
 	// erasure route, the export and the record. The nightly purge that uses the
 	// same service lives in the worker.

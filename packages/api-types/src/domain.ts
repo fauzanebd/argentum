@@ -942,8 +942,41 @@ export interface DBConnection {
    * written before migration 068 has to keep meaning.
    */
   allowlist: Allowlist;
+  /**
+   * Freshness says how to find out when this source last loaded, and how old
+   * is too old (T-F1). The zero value is unchecked.
+   */
+  freshness: SourceFreshness;
   created_at: string;
   updated_at: string;
+}
+/**
+ * SourceFreshness is a source's freshness setup as it is stored: an expression
+ * and two thresholds in minutes.
+ * It is a storage and transport shape only — the policy lives in
+ * internal/freshness, which this package deliberately does not import. Minutes
+ * rather than a Duration because the two things that read this are a Postgres
+ * INTEGER column and a settings form, and both want a number.
+ */
+export interface SourceFreshness {
+  /**
+   * SQL is a single SELECT returning one row and one column: the moment this
+   * source last loaded. Empty means unchecked, and an unchecked source reports
+   * `unknown`, which says nothing to anybody.
+   */
+  sql?: string;
+  /**
+   * WarnAfterMins is how old the data may be before an answer dates itself.
+   * Zero means never warn.
+   */
+  warn_after_mins?: number /* int */;
+  /**
+   * StaleAfterMins is how old the data may be before an answer carries a
+   * notice the server wrote. Zero with a non-empty SQL is refused on save:
+   * an expression that can never report stale is a setting that silently does
+   * nothing.
+   */
+  stale_after_mins?: number /* int */;
 }
 export const DescriptionSourceAuto = "auto";
 export const DescriptionSourceManual = "manual";

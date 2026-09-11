@@ -32,6 +32,11 @@ type CompanyHandler struct {
 	// it silently, because a retention setting that appears to save and does
 	// not is the worst of the three outcomes.
 	retention *app.RetentionService
+	// freshness owns the two source-freshness endpoints (T-F1). Optional for
+	// the same reason retention is, and with the same 503: a freshness
+	// expression that appears to save and does not would leave an admin
+	// believing their answers are dated when nothing is checking.
+	freshness *app.FreshnessService
 }
 
 // NewCompanyHandler wires the company service. embeddingSvc is optional;
@@ -44,6 +49,15 @@ func NewCompanyHandler(svc *app.CompanyService, embeddingSvc *app.EmbeddingServi
 // endpoints. Without it that field answers 503 and the rest still works.
 func (h *CompanyHandler) WithRetention(svc *app.RetentionService) *CompanyHandler {
 	h.retention = svc
+	return h
+}
+
+// WithFreshness enables the two freshness endpoints (T-F1). Without it they
+// answer 503 and every other connection route still works — the shape
+// WithRetention established, and for the same reason: an optional dependency
+// that is absent should say so on the route that needs it, not at boot.
+func (h *CompanyHandler) WithFreshness(svc *app.FreshnessService) *CompanyHandler {
+	h.freshness = svc
 	return h
 }
 
@@ -66,6 +80,13 @@ func (h *CompanyHandler) Register(rg *gin.RouterGroup) {
 	// is a permission and that endpoint is a cosmetic edit — see
 	// CompanyService.SetConnectionAllowlist.
 	rg.PUT("/connections/:id/allowlist", h.updateConnectionAllowlist)
+	// Its own route for the same reason as the allowlist above: this is SQL the
+	// product will run on a schedule against the tenant's database, not a label.
+	rg.PUT("/connections/:id/freshness", h.updateConnectionFreshness)
+	// Test before Save, the pairing T-06 built for metric templates. An
+	// expression that returns three rows should be discovered by the admin who
+	// wrote it, not by a watcher at 03:00.
+	rg.POST("/connections/:id/freshness/test", h.testConnectionFreshness)
 	rg.POST("/connections/:id/default", h.setDefault)
 	rg.POST("/connections/:id/regenerate-description", h.regenerateDescription)
 	rg.POST("/connections/:id/rescan", h.rescanSource)
@@ -431,6 +452,77 @@ func (h *CompanyHandler) updateConnectionAllowlist(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// updateConnectionFreshness stores how to find out when a source last loaded,
+// and how old is too old (T-F1).
+//
+// The body is the whole configuration, not a patch: clearing the expression is
+// how a tenant turns the feature off, and a merge semantics that could only set
+// would make that unexpressible — updateConnectionAllowlist's argument.
+func (h *CompanyHandler) updateConnectionFreshness(c *gin.Context) {
+	if h.freshness == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "source freshness is not configured on this deployment"})
+		return
+	}
+	var req domain.SourceFreshness
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.freshness.Set(c.Request.Context(), companyID(c), c.Param("id"), req); err != nil {
+		switch {
+		case errors.Is(err, domain.ErrInvalidInput):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, domain.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "connection not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// testConnectionFreshness probes a candidate expression without storing it, and
+// returns what it read.
+//
+// **The parsed instant is in the response on purpose.** It is the only place an
+// admin can see that their naive timestamp is being read as UTC — somebody in
+// Jakarta configuring `max(loaded_at)` on a column with no zone gets an age
+// seven hours out, and seeing the instant here is how they find out now rather
+// than from a wrong caveat weeks later.
+func (h *CompanyHandler) testConnectionFreshness(c *gin.Context) {
+	if h.freshness == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "source freshness is not configured on this deployment"})
+		return
+	}
+	var req domain.SourceFreshness
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	rep, err := h.freshness.Test(c.Request.Context(), companyID(c), c.Param("id"), req)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrInvalidInput):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, domain.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "connection not found"})
+		default:
+			// A probe that failed is a 200 with the reason in it, not a 500. The
+			// request succeeded; what it found out is that the expression does
+			// not work, and that is the answer the admin asked for.
+			c.JSON(http.StatusOK, gin.H{"verdict": string(rep.Verdict), "error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"verdict":     string(rep.Verdict),
+		"observed_at": rep.ObservedAt,
+		"age_seconds": int(rep.Age.Seconds()),
+		"note":        rep.Note,
+	})
 }
 
 func (h *CompanyHandler) updateConnectionMeta(c *gin.Context) {

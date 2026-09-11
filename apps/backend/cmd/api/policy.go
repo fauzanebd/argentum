@@ -51,7 +51,12 @@ var apiPolicy = middleware.RolePolicy{
 	// already draws — it changes what the agent can reach — and it is the one
 	// route here whose *loosening* is the dangerous direction rather than its
 	// use.
-	"PUT /api/connections/:id/allowlist":               domain.RoleAdmin,
+	"PUT /api/connections/:id/allowlist": domain.RoleAdmin,
+	// Admin for the same reason as the allowlist: this is tenant-supplied SQL
+	// that the product will run on a schedule against their database, and the
+	// thresholds decide whether every answer carries a caveat.
+	"PUT /api/connections/:id/freshness":               domain.RoleAdmin,
+	"POST /api/connections/:id/freshness/test":         domain.RoleAdmin,
 	"POST /api/connections/:id/default":                domain.RoleAdmin,
 	"POST /api/connections/:id/regenerate-description": domain.RoleAdmin,
 	"POST /api/connections/:id/reindex-embeddings":     domain.RoleAdmin,
