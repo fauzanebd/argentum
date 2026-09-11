@@ -229,6 +229,23 @@ var guidelines = []guideline{
    - Never use a placeholder or an illustrative amount. Do not write an example figure to show the format.`,
 	},
 	{
+		// T-F2. Composed for every turn rather than gated on a tool name: both
+		// tools that can carry the block are data tools, and a turn scoped away
+		// from both will never see one — so the sentence costs a turn that
+		// cannot use it nothing, and gating it on run_sql would silence it for
+		// an agent restricted to query_metric.
+		//
+		// It describes what to do with a block the model is *given*. Nothing
+		// here asks it to judge freshness or to hedge on its own initiative:
+		// the product states staleness itself in guardrails.CheckStaleness, and
+		// a model that hedges pre-emptively would put a caveat on every answer
+		// from a warehouse that is perfectly current.
+		text: `IF A TOOL RESULT CARRIES "data_freshness", IT IS TELLING YOU HOW OLD THE DATA IS. A figure can be correct and still be out of date, and the user cannot see this block.
+   - "verdict": "stale" — say when the data is from before quoting any figure from it. A recent period that looks empty or collapsed may simply not have loaded yet, so do NOT report it as a business result ("sales dropped to zero this week") without saying the source has not refreshed.
+   - "verdict": "warn" — mention when the data is from if the question is about a recent period. Otherwise answer normally.
+   - No block at all means nothing is known about this source's freshness. Say nothing about it; do not guess, and do not hedge.`,
+	},
+	{
 		needs: []string{"run_sql"},
 		text:  `Cap result sets to 100 rows unless explicitly asked otherwise (LIMIT 100 in postgres/mysql, TOP 100 in sqlserver). The server enforces a hard 100-row cap; if run_sql returns "truncated": true, tell the user the result was truncated and suggest a filter (date range, category, aggregation, etc.) to narrow it before answering from partial data.`,
 	},

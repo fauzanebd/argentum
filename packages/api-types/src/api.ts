@@ -4,6 +4,7 @@
 // apps/backend/internal/transport/http/handlers/wire.go.
 import type { BudgetState, SkillIndexCost } from "./events.js";
 import type {
+  AdHocQuestion,
   Agent,
   AgentChannelBinding,
   APIKey,
@@ -23,6 +24,41 @@ import type {
 //////////
 // source: wire.go
 
+/**
+ * MetricCoverageResponse is Answer quality's "is the metric layer actually
+ * accumulating" panel (T-F4).
+ * Percent and Answered are computed on the server and sent, rather than left
+ * for the client to derive, because the definition of "covered" is a judgement
+ * — a mixed turn counts, a turn that called no data tool is not in the
+ * denominator — and a client re-deriving it would be a second definition able
+ * to disagree with the first.
+ */
+export interface MetricCoverageResponse {
+  /**
+   * WindowDays is what the server actually used, which is not always what was
+   * asked for: the value is clamped. Echoed for the same reason the feedback
+   * list echoes `only_negative` — so the screen can label itself from the
+   * response rather than from what it hoped it requested.
+   */
+  window_days: number /* int */;
+  from: string;
+  certified: number /* int */;
+  ad_hoc: number /* int */;
+  mixed: number /* int */;
+  no_data: number /* int */;
+  /**
+   * Answered is Certified + AdHoc + Mixed — the turns that asked the data
+   * something. NoData is deliberately not in it.
+   */
+  answered: number /* int */;
+  percent: number /* float64 */;
+  /**
+   * AdHocTop names what to define next. Empty rather than absent when there is
+   * nothing to list, and also empty when the query behind it failed — the
+   * counts are the point and the list is best-effort.
+   */
+  ad_hoc_top: AdHocQuestion[];
+}
 /**
  * AgentToolInfo is one tool checkbox in Settings → Agents (T-S1).
  * Name comes from the live registry, so a tool added on the backend appears in

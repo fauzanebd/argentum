@@ -25,6 +25,12 @@ type TurnEvidence struct {
 	// which dimension ran out.
 	Exhausted bool
 	Reason    string
+	// Freshness is the worst currency verdict any data tool in the turn
+	// reported (T-F2), and FreshnessNote the sentence that went with it. Only
+	// CheckStaleness reads them; the other checks judge what the turn retrieved,
+	// and how old it is is a different question from whether it exists.
+	Freshness     string
+	FreshnessNote string
 	// Tools names what ran, in call order. CheckFabrication ignores it — it
 	// judges evidence, and a tool name is not evidence — but CheckEmptyReply
 	// has nothing else to tell the user what happened, because on that path

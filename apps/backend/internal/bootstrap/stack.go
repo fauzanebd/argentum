@@ -588,6 +588,13 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		Usage:       s.UsageSvc,
 		// The tenant's redaction policy, for the empty-result probe (T-H10).
 		Companies: s.Companies,
+		// How current each source is (T-F2). Built here rather than shared with
+		// the API's: the cache is per process on purpose, and a verdict at most
+		// one TTL old in two processes is cheaper than a shared one and wrong in
+		// the same harmless direction.
+		Freshness: app.NewFreshnessService(
+			s.Connections, s.Connections, s.TenantPool,
+			time.Duration(cfg.SourceFreshnessTTLSecs)*time.Second),
 		// Native dashboards (T-D11). The worker builds the whole service rather
 		// than a saver, because create_dashboard now validates a spec and runs
 		// every panel before it stores one — the same code path the API resolves

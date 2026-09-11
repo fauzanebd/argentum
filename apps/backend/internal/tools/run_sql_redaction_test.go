@@ -6,6 +6,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/freshness"
 )
 
 // The shape the 2026-08-19 live gate found: a published document table with a
@@ -115,7 +116,7 @@ func TestThePayloadNamesWhatItWithheld(t *testing.T) {
 	redacted := RedactResultColumns([]string{"pelanggan", "email", "nilai"}, rows, domain.PIIRedactionStrict)
 	out := marshalSQLResult("src-1", "postgres", &db.QueryResult{
 		Columns: []string{"pelanggan", "email", "nilai"}, Rows: rows, Count: len(rows),
-	}, 0, nil, redacted)
+	}, 0, nil, redacted, freshness.Report{})
 
 	var payload map[string]interface{}
 	if err := json.Unmarshal(out, &payload); err != nil {
@@ -142,7 +143,7 @@ func TestAnOrdinaryPayloadIsUnchanged(t *testing.T) {
 		Rows:    []map[string]interface{}{{"bulan": "Oktober", "nilai": 3377718500}},
 		Count:   1,
 	}
-	out := marshalSQLResult("src-1", "postgres", res, 0, nil, nil)
+	out := marshalSQLResult("src-1", "postgres", res, 0, nil, nil, freshness.Report{})
 	var payload map[string]interface{}
 	if err := json.Unmarshal(out, &payload); err != nil {
 		t.Fatalf("unmarshal: %v", err)

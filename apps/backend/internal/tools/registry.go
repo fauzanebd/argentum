@@ -57,6 +57,11 @@ type RegistryDeps struct {
 	// neither contact nor identity columns, which is the strict reading and the
 	// right default for a build that has no company repository to hand.
 	Companies PIIPolicyLookup
+	// Freshness says how current a source is (T-F2), for the two tools that
+	// read a tenant's data. Optional: nil reports `unknown` everywhere, which
+	// attaches nothing to a payload and leaves both tools' results
+	// byte-identical to what they returned before freshness existed.
+	Freshness FreshnessProber
 	// Dashboards backs create_dashboard (T-D11) and update_dashboard (T-D22).
 	// Nil is legal and is what the API's name-only build and cmd/mcp pass: both
 	// tools still register, so they appear in the agent allowlist and the
@@ -132,13 +137,15 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// re-derived one (T-07). They register unconditionally — nil Metrics
 		// still yields their names for the allowlist and the vocabulary.
 		NewListMetricsTool(d.Metrics),
-		NewQueryMetricTool(d.Metrics, d.Usage),
+		NewQueryMetricTool(d.Metrics, d.Usage).
+			WithFreshness(d.Freshness),
 		// The schema tool is handed to run_sql as well as registered: a query that
 		// fails on a name the source does not have answers with the names it does,
 		// off the cache above rather than another introspection.
 		NewRunSQLTool(d.Pool, d.Connections, d.Usage, d.MaxQueryRows, d.MaxQueryResultBytes).
 			WithSchema(schema).
-			WithPIIPolicy(d.Companies),
+			WithPIIPolicy(d.Companies).
+			WithFreshness(d.Freshness),
 		// One call, every panel (T-D11). The pair it replaces —
 		// create_visualization then create_dashboard — spent four tool calls on a
 		// three-panel answer and carried a thread-scoped in-memory map to make

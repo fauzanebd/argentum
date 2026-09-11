@@ -6166,6 +6166,96 @@ the namespace, not on effort — and three acceptance boxes stay unticked until 
 runs. The dashboard's multi-agent branch is also untested in its true case,
 because a thread cannot hold two agents until `T-N2`.
 
+## Phase 3ag — The wrong answer nothing was looking for, and the moat nobody measured (2026-09-11)
+
+The owner asked what could be added to the roadmap. The useful half of the
+answer turned out to be **subtraction**: [`../plan/backlog.md`](../plan/backlog.md)
+already holds ~45 candidates with a why, a trigger and an estimate, so every
+`❌` and `🟡` row in the feature matrix was checked against the backlog, the
+nine roadmaps and the rejected list before anything was proposed. Four survived
+([`../research/07-feature-candidates.md`](../research/07-feature-candidates.md));
+fifteen did not, and §4 of that file says where each already lives so the next
+person to have the idea finds the entry instead of re-proposing it.
+
+Four of those became [`../plan/10-freshness-metrics-email-roadmap.md`](../plan/10-freshness-metrics-email-roadmap.md),
+`T-F1`→`T-F7`. Three are built.
+
+### The finding, and it is a wrong-answer class
+
+**Every accuracy mechanism this product owns compares the answer to the result
+set. None of them can see that the result set is a day old.** `CheckGrounding`
+checks each figure against the rows a tool returned; `CheckFabrication` checks
+the turn retrieved anything; `T-Q9`'s note catches a zero-row match; `sqlguard`
+catches a statement that is not a read. A warehouse whose nightly load failed at
+02:00 produces an answer that is grounded, cited, non-fabricated, correctly
+formatted **and wrong** — with the entire apparatus vouching for it.
+
+`grep -rin "freshness\|loaded_at\|data_as_of"` over `apps/backend/internal`
+returned one hit before this, and it was about watcher dry-runs. The pilot is a
+supermarket chain reading yesterday's sales.
+
+### `T-F1`/`T-F2` — what closed it
+
+A tenant-supplied expression per source, two thresholds over it (dbt's
+`source freshness` shape), a block on the `run_sql` and `query_metric` payloads,
+the turn carrying the **worst** verdict any source reported, and
+`guardrails.CheckStaleness` appending a dated notice the server wrote. Plus the
+settings sheet, which **was not in either ticket and should have been** — a
+ticket specifying a route and no form describes a capability an operator has and
+a tenant does not.
+
+**The distinction the whole design turns on is `Unknown` versus `Stale`.** A
+probe that errors, times out, returns two rows, two columns, a NULL or an
+unparseable string says *nothing*. Eight failure paths, one table test.
+Announcing staleness because a probe broke puts a false caveat on a correct
+answer, and a caveat users learn to ignore destroys the one case the feature
+exists for.
+
+**An unknown verdict attaches nothing**, so a tool result on an unconfigured
+source is **byte-identical** to what it was before — asserted by marshalling the
+same result twice and comparing bytes, not by review. That is what makes the
+code safe to carry on every deployment while nobody has opted in.
+
+Five things the build found are in [`freshness.md`](freshness.md) §4. The two
+worth repeating: the `warn` threshold nearly shipped with the `stale` branch's
+hedging language, which applied to six hours of ordinary ETL lag would have put
+a caveat on every answer from a healthy warehouse; and **failures had to be
+cached too**, or a warehouse that is down waits out a connection timeout on
+every tool call in every turn, in front of a query that was going to fail anyway.
+
+### `T-F4` — the moat, finally as a number
+
+[`03-gap-analysis.md`](../research/03-gap-analysis.md) argued in July that the
+metric layer is the moat — *"a competitor can clone the chat UI in a week; they
+cannot clone a customer's accumulated, curated metric layer"*. `T-06`/`T-07`
+built it and the agent prefers it. **Nothing has ever measured whether it is
+accumulating**, so for six weeks the moat has been an argument rather than a
+number.
+
+It needed no migration: `agent_actions` has carried `tool_name`, `message_id`
+and `result_status` since `023`, so coverage is a `GROUP BY` — which cannot
+drift from the truth, needs no backfill, and is **retroactive to every turn this
+deployment has ever run**.
+
+A turn is classified, not a call: *certified*, *ad hoc*, *mixed*, *no data
+tool*. The panel refuses to be read as a measurement below ~20 turns, because
+eight turns at 50% and eighty at 50% are different claims and a screen that
+renders them identically invites an admin to act on a coin flip.
+
+### What is owed, and the thing that may cancel the next ticket
+
+Three arms, all filed: `079`'s round-trip, `make eval` either side of `T-F2`'s
+prompt change (**prediction recorded: no movement**, because no eval source has
+an expression, so the added lines are inert — a score that *moves* is the
+interesting outcome), and **`T-F4`'s query has never touched a Postgres**.
+
+That last one is one read and it decides `T-F5`. The only evidence that exists
+points *against* building it: Phase 3ae's 28 long turns ran `query_metric` 85
+times against `run_sql` 19. Those turns were selected for being long rather than
+sampled, so they say nothing about the other 409 — but if coverage is genuinely
+high, `T-F5` is three days spent on a problem this deployment does not have, and
+saying so now is cheaper than finding out afterwards.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

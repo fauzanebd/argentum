@@ -187,7 +187,7 @@ func (r *ConnectionRepo) SetEmbeddingToggle(ctx context.Context, id string, on b
 // SetEmbeddingToggle beside it, so a settings form does not round-trip the
 // encrypted DSN through Update to change a threshold.
 //
-// Empty values are written as NULL rather than as '' and 0, so "never
+// Empty values are written as NULL rather than as ” and 0, so "never
 // configured" and "configured and then cleared" end up in the same state — the
 // one every reader already treats as unchecked.
 func (r *ConnectionRepo) SetFreshness(ctx context.Context, id string, f domain.SourceFreshness) error {

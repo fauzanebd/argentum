@@ -282,6 +282,10 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/messages/:id/feedback":  domain.RoleMember,
 	"GET /api/feedback":               domain.RoleAdmin,
 	"GET /api/feedback/summary":       domain.RoleAdmin,
+	// Metric coverage (T-F4). Admin beside the two above and on their line: it
+	// is the workspace's aggregate quality data, and the list underneath it
+	// quotes the questions the company's people have been asking.
+	"GET /api/quality/metric-coverage": domain.RoleAdmin,
 
 	// Next-step chips (T-U13), split on the same line and for the same reasons.
 	// The pick is member because the person clicking is the person reading, and

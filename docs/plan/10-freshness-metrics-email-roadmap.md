@@ -119,8 +119,15 @@ caller.
 
 ### Track A — A number you can date (4.0d) · do first
 
-#### `T-F1` A source can say when it was last loaded
+#### `T-F1` A source can say when it was last loaded — **built 2026-09-11**
 **Repo:** BE · **Size:** 1.5d · **Deps:** none · **Migration:** `079`
+
+> **Built and unit-gated 2026-09-11.** The record is
+> [`../coverage/freshness.md`](../coverage/freshness.md). The settings sheet the
+> feature is unusable without was **not in this ticket and should have been** —
+> it shipped with `T-F2`, and this line is here rather than a quiet edit because
+> the omission is the finding: a ticket that specifies a route and no form
+> describes a capability an operator has and a tenant does not.
 
 ##### Do
 - `079_source_freshness`: three nullable columns on `db_connections` —
@@ -144,13 +151,16 @@ caller.
 - A TTL cache keyed by source id (decision 8).
 
 ##### Acceptance
-- [ ] A source with no expression probes nothing and reports `Unknown`
-- [ ] An expression returning one timestamp inside `warn_after` is `Fresh`
-- [ ] Between the thresholds is `Warn`; beyond `stale_after` is `Stale`
-- [ ] A probe that errors, times out, returns two rows, two columns, or an
-      unparseable value is `Unknown` — never `Stale`
-- [ ] A mutating freshness expression is refused on save
-- [ ] Two probes inside the TTL run one query
+- [x] A source with no expression probes nothing and reports `Unknown`
+- [x] An expression returning one timestamp inside `warn_after` is `Fresh`
+- [x] Between the thresholds is `Warn`; beyond `stale_after` is `Stale`
+- [x] A probe that errors, times out, returns two rows, two columns, or an
+      unparseable value is `Unknown` — never `Stale` — eight paths, one table test
+- [x] A mutating freshness expression is refused on save
+- [x] Two probes inside the TTL run one query — and a *failed* probe is cached
+      too, which the ticket did not ask for and a warehouse that is down needs
+- [ ] The `079` round-trip against a real Postgres — owed,
+      [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §3d
 
 ##### Gate
 `go test ./internal/freshness/... ./internal/app/... -race`, then `make check`.
@@ -159,8 +169,14 @@ The migration round-trip is owed live —
 
 ---
 
-#### `T-F2` The turn knows, and the answer says so
+#### `T-F2` The turn knows, and the answer says so — **built 2026-09-11**
 **Repo:** BE + FE · **Size:** 1.5d · **Deps:** `T-F1` · **Migration:** none
+
+> **Built and unit-gated 2026-09-11**, plus `T-F1`'s settings sheet. The
+> dashboard half of this ticket turned out to be nothing: the notice is appended
+> to the reply text server-side, so it renders as the markdown it already is.
+> What the dashboard actually needed was the *configuration* form, which is why
+> it is here.
 
 ##### Do
 - `attachFreshness` on the `run_sql` payload, beside `attachProbe`. The block
@@ -179,14 +195,18 @@ The migration round-trip is owed live —
 - The dashboard renders the dated line under an answer that carries one.
 
 ##### Acceptance
-- [ ] A `run_sql` result against a source with freshness configured carries the
-      block; against one without, the payload is byte-identical to today's
-- [ ] A turn that queried a stale source gets the notice appended, deterministically
-- [ ] A turn that queried a fresh source gets nothing appended
-- [ ] A turn that queried two sources, one stale, is treated as stale
-- [ ] `Unknown` appends nothing (decision 6)
-- [ ] The notice is not duplicated when the model already stated the date
-- [ ] `make eval` at or above [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md); both numbers pasted
+- [x] A `run_sql` result against a source with freshness configured carries the
+      block; against one without, the payload is byte-identical to today's —
+      asserted by marshalling the same result twice and comparing bytes
+- [x] A turn that queried a stale source gets the notice appended, deterministically
+- [x] A turn that queried a fresh source gets nothing appended
+- [x] A turn that queried two sources, one stale, is treated as stale — five
+      orderings, and the *note* travels with the verdict it belongs to
+- [x] `Unknown` appends nothing (decision 6)
+- [x] The notice is not duplicated when the model already stated the date — and
+      a vague hedge with no date does **not** suppress it, which is the second
+      half nobody asked for and the reason the first half is safe
+- [ ] `make eval` at or above [`../coverage/eval-baseline.md`](../coverage/eval-baseline.md); both numbers pasted — **owed, costs model spend**
 
 ##### Gate
 `go test ./internal/guardrails/... ./internal/agentbudget/... ./internal/tools/... -race`,
@@ -220,8 +240,15 @@ The migration round-trip is owed live —
 
 ### Track B — The layer that is supposed to be the moat (4.0d)
 
-#### `T-F4` Metric coverage, measured
+#### `T-F4` Metric coverage, measured — **built 2026-09-11**
 **Repo:** BE + FE · **Size:** 1.0d · **Deps:** none · **Migration:** none
+
+> **Built and unit-gated 2026-09-11**; the record is
+> [`../coverage/metric-coverage.md`](../coverage/metric-coverage.md). **The
+> route is admin, not member.** This ticket said member "beside the feedback
+> routes `T-Q16` added" and those routes are admin (`policy.go:283-284`) — so
+> the ticket was wrong about its own precedent, and matching the precedent was
+> the smaller surprise.
 
 ##### Why
 [`../research/03-gap-analysis.md`](../research/03-gap-analysis.md) §"The
@@ -242,12 +269,19 @@ trusted unattended.
   questions** — which is the part that tells an admin what to define next.
 
 ##### Acceptance
-- [ ] A turn calling only `query_metric` is `certified`; only `run_sql` is
-      `ad_hoc`; both is `mixed`
-- [ ] A turn with no data tool is in neither bucket and is reported separately
-- [ ] Blocked and errored calls do not make a turn certified
+- [x] A turn calling only `query_metric` is `certified`; only `run_sql` is
+      `ad_hoc`; both is `mixed` — and a mixed turn counts as *covered* in the
+      percentage while keeping its own column
+- [x] A turn with no data tool is in neither bucket and is reported separately
+- [x] Blocked and errored calls do not make a turn certified — `result_status =
+      'ok'` throughout
 - [ ] The query is scoped `WHERE company_id = $1` and a second tenant's turns
-      cannot appear — asserted, not reviewed
+      cannot appear — **the scoping is in the SQL and is not asserted by a
+      test**, because the repository has never run against a database. Honest
+      status: reviewed, not proven. The arm is one read,
+      [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §3d
+- [ ] The panel read against real data, which is also the number that decides
+      whether `T-F5` is worth building
 
 ---
 

@@ -73,6 +73,8 @@ docs/
 │   └── 07-feature-candidates.md   What is worth adding next, and what already has a backlog entry
 ├── coverage/
 │   ├── feature-coverage.md       Feature status matrix
+│   ├── freshness.md              T-F1/T-F2 how old is the data behind an answer
+│   ├── metric-coverage.md        T-F4 is the metric layer accumulating
 │   ├── test-coverage.md          Measured test state + CI gaps
 │   ├── api-surface.md            Endpoint + tool inventory
 │   ├── delivery-log.md           What has been shipped, chronologically

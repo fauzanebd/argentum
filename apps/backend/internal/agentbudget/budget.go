@@ -221,6 +221,11 @@ type Tracker struct {
 	// reply saying "Done" on such a turn is making the same unevidenced claim as
 	// one that called nothing at all.
 	succeeded []string
+	// freshness is the worst currency verdict seen this turn, and the sentence
+	// that came with it (T-F2). Guarded by the same mutex as everything else
+	// here, because two tool calls can complete concurrently.
+	freshness     string
+	freshnessNote string
 	// warned records that the mid-turn checkpoint notice has been delivered.
 	// One per turn: the second one says nothing the first did not, and every
 	// notice is a paragraph of the context window spent on bookkeeping.
@@ -269,6 +274,19 @@ type Snapshot struct {
 	// without executing — and neither does one that errored.
 	Succeeded []string
 	Elapsed   time.Duration
+	// Freshness is the worst currency verdict any data tool in this turn saw
+	// (T-F2), as the string internal/freshness uses. Empty when no tool reported
+	// one, which is every turn on a deployment where nobody has configured a
+	// freshness expression.
+	//
+	// **Worst, not last.** A turn that queried a fresh source and a stale one
+	// has a stale answer in it, and reporting the last verdict would make which
+	// caveat the user gets depend on the order the model happened to call its
+	// tools in.
+	Freshness string
+	// FreshnessNote is the sentence that went with that verdict, so the guard
+	// that states it does not have to re-derive the age.
+	FreshnessNote string
 }
 
 // Snapshot returns the current state of the turn.
@@ -294,6 +312,8 @@ func (t *Tracker) Snapshot() Snapshot {
 		Tools:            tools,
 		Succeeded:        succeeded,
 		Elapsed:          time.Since(t.start),
+		Freshness:        t.freshness,
+		FreshnessNote:    t.freshnessNote,
 	}
 }
 
@@ -400,6 +420,12 @@ func (t *Tracker) Observe(tool, result string, err error) {
 	// leave `succeeded` empty for exactly the calls the check exists to find.
 	if _, failed := ToolErrorText(result); !failed && !resultCarriesError(result) {
 		t.succeeded = append(t.succeeded, tool)
+	}
+	// Read before the data-tool filter would matter, and independently of the
+	// row count: a query that matched nothing against a source that has not
+	// loaded in three days is exactly the case where the currency is the answer.
+	if v, note, ok := freshnessOf(result); ok && freshnessRank(v) > freshnessRank(t.freshness) {
+		t.freshness, t.freshnessNote = v, note
 	}
 	if !dataTools[tool] {
 		return
@@ -688,6 +714,41 @@ func (t *Tracker) retrievedLocked() string {
 // the result is not JSON or carries no row_count — an unparseable result is
 // not evidence of zero rows, and treating it as such would block honest
 // replies.
+// freshnessRank orders the verdict strings without importing internal/freshness
+// — this package is below it and a cycle would follow. The strings are the
+// package's own constants and are pinned by a test on the other side.
+func freshnessRank(v string) int {
+	switch v {
+	case "fresh":
+		return 1
+	case "warn":
+		return 2
+	case "stale":
+		return 3
+	default:
+		return 0
+	}
+}
+
+// freshnessOf reads the currency block a data tool attaches (T-F2), the same way
+// rowCount reads the row count: off the tool's own result, so no tool signature
+// changes and the thirteenth tool to attach one is read without being wired.
+func freshnessOf(result string) (verdict, note string, ok bool) {
+	var payload struct {
+		Freshness *struct {
+			Verdict string `json:"verdict"`
+			Note    string `json:"note"`
+		} `json:"data_freshness"`
+	}
+	if err := json.Unmarshal([]byte(result), &payload); err != nil || payload.Freshness == nil {
+		return "", "", false
+	}
+	if payload.Freshness.Verdict == "" {
+		return "", "", false
+	}
+	return payload.Freshness.Verdict, payload.Freshness.Note, true
+}
+
 func rowCount(result string) (int, bool) {
 	var payload struct {
 		RowCount *int `json:"row_count"`

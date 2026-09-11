@@ -142,12 +142,14 @@ packages:
       domain.MetricGrain: "MetricGrain"
       domain.MetricUnit: "MetricUnit"
       domain.FeedbackWithContext: "FeedbackWithContext"
+      domain.AdHocQuestion: "AdHocQuestion"
     frontmatter: |
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
       // apps/backend/internal/transport/http/handlers/wire.go.
       import type { BudgetState, SkillIndexCost } from "./events.js";
       import type {
+        AdHocQuestion,
         Agent,
         AgentChannelBinding,
         APIKey,

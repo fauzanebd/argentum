@@ -88,6 +88,11 @@ func (t *ListMetricsTool) Execute(ctx context.Context, _ string) (string, error)
 type QueryMetricTool struct {
 	store    MetricStore
 	recorder UsageRecorder
+	// fresh says how current the metric's source is (T-F2). A metric names a
+	// source, so freshness comes for free here and there is one place a tenant
+	// configures it — roadmap decision 7. Optional: nil is `unknown`, which
+	// attaches nothing.
+	fresh FreshnessProber
 }
 
 func NewQueryMetricTool(store MetricStore, recorder UsageRecorder) *QueryMetricTool {
@@ -95,6 +100,12 @@ func NewQueryMetricTool(store MetricStore, recorder UsageRecorder) *QueryMetricT
 		recorder = nopRecorder{}
 	}
 	return &QueryMetricTool{store: store, recorder: recorder}
+}
+
+// WithFreshness attaches the source-currency prober (T-F2).
+func (t *QueryMetricTool) WithFreshness(p FreshnessProber) *QueryMetricTool {
+	t.fresh = p
+	return t
 }
 
 func (t *QueryMetricTool) Name() string { return "query_metric" }
@@ -268,6 +279,12 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 			payload["delta_pct"] = *res.DeltaPct
 		}
 	}
+	// The metric names its source, so freshness needs no second piece of
+	// configuration here (roadmap decision 7). Probed after the evaluation, like
+	// run_sql's: a call that could not produce a number should not pay a round
+	// trip to date it.
+	attachFreshness(payload, probeFreshness(ctx, t.fresh, companyID, res.Metric.SourceID))
+
 	out, _ := json.Marshal(payload)
 	return string(out), nil
 }

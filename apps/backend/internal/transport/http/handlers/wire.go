@@ -27,6 +27,38 @@ import (
 // `apps/backend/openapi/v1.yaml` (T-A4) — a published contract is authored,
 // not derived.
 
+// MetricCoverageResponse is Answer quality's "is the metric layer actually
+// accumulating" panel (T-F4).
+//
+// Percent and Answered are computed on the server and sent, rather than left
+// for the client to derive, because the definition of "covered" is a judgement
+// — a mixed turn counts, a turn that called no data tool is not in the
+// denominator — and a client re-deriving it would be a second definition able
+// to disagree with the first.
+type MetricCoverageResponse struct {
+	// WindowDays is what the server actually used, which is not always what was
+	// asked for: the value is clamped. Echoed for the same reason the feedback
+	// list echoes `only_negative` — so the screen can label itself from the
+	// response rather than from what it hoped it requested.
+	WindowDays int       `json:"window_days"`
+	From       time.Time `json:"from"`
+
+	Certified int `json:"certified"`
+	AdHoc     int `json:"ad_hoc"`
+	Mixed     int `json:"mixed"`
+	NoData    int `json:"no_data"`
+
+	// Answered is Certified + AdHoc + Mixed — the turns that asked the data
+	// something. NoData is deliberately not in it.
+	Answered int     `json:"answered"`
+	Percent  float64 `json:"percent"`
+
+	// AdHocTop names what to define next. Empty rather than absent when there is
+	// nothing to list, and also empty when the query behind it failed — the
+	// counts are the point and the list is best-effort.
+	AdHocTop []domain.AdHocQuestion `json:"ad_hoc_top"`
+}
+
 // AgentToolInfo is one tool checkbox in Settings → Agents (T-S1).
 //
 // Name comes from the live registry, so a tool added on the backend appears in

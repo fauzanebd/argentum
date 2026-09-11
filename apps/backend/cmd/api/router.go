@@ -70,6 +70,10 @@ func newRouter(d *apiDeps) *gin.Engine {
 		Register(authed)
 	handlers.NewUsageHandler(d.usageSvc).Register(authed)
 	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)
+	// Is the metric layer accumulating (T-F4). No migration and no writes: the
+	// answer is a GROUP BY over agent_actions, so it is retroactive to every
+	// turn this deployment has ever run.
+	handlers.NewMetricCoverageHandler(d.metricCoverageSvc).Register(authed)
 	handlers.NewSuggestionsHandler(d.suggestionSvc).Register(authed)
 	handlers.NewCookbookHandler(d.cookbookSvc).Register(authed)
 	handlers.NewConfigHandler(cfg).Register(authed)

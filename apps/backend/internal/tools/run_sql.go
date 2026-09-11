@@ -15,6 +15,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/freshness"
 	"github.com/fauzanebd/argentum/internal/sqlguard"
 	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
@@ -37,6 +38,10 @@ type RunSQLTool struct {
 	// strict, so a build that forgets to wire it discloses less rather than
 	// more.
 	companies PIIPolicyLookup
+	// fresh says how current the source is (T-F2). Optional: nil reports
+	// `unknown` for every source, which attaches nothing and leaves the payload
+	// byte-identical to the one this tool returned before freshness existed.
+	fresh FreshnessProber
 }
 
 // PIIPolicyLookup is the one question run_sql asks of the company repository:
@@ -88,6 +93,15 @@ func (t *RunSQLTool) WithSchema(p SchemaProvider) *RunSQLTool {
 	return t
 }
 
+// WithFreshness attaches the source-currency prober (T-F2). Optional in the
+// builder for the same reason WithPIIPolicy below is: a build that forgets it
+// gets the safer behaviour, which here is saying nothing rather than claiming
+// currency this tool has not checked.
+func (t *RunSQLTool) WithFreshness(p FreshnessProber) *RunSQLTool {
+	t.fresh = p
+	return t
+}
+
 // WithPIIPolicy lets the empty-result probe honour the tenant's redaction mode
 // (T-H10). A tenant on `contact_ok` has said they want customer contact details
 // in answers, and a tenant on `off` has switched redaction off entirely; both
@@ -96,6 +110,7 @@ func (t *RunSQLTool) WithSchema(p SchemaProvider) *RunSQLTool {
 // Optional, and unset means strict: the probe discloses data the user's own
 // query did not return, so "we could not find out what this tenant allows" has
 // to answer the same way as "this tenant allows nothing".
+
 func (t *RunSQLTool) WithPIIPolicy(p PIIPolicyLookup) *RunSQLTool {
 	t.companies = p
 	return t
@@ -275,7 +290,13 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 		}
 	}
 
-	return string(marshalSQLResult(source.ID, source.DBType, result, t.maxBytes, probes, redactedCols)), nil
+	// Probed after the query rather than before it: a turn that never reaches a
+	// successful read should not pay a round trip to find out how current the
+	// data it did not get is. The verdict is cached per source, so a turn
+	// running five queries against one source probes once.
+	rep := probeFreshness(ctx, t.fresh, companyID, source.ID)
+
+	return string(marshalSQLResult(source.ID, source.DBType, result, t.maxBytes, probes, redactedCols, rep)), nil
 }
 
 // marshalSQLResult serialises a query result for the model, dropping rows from
@@ -289,7 +310,7 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 // Split out of Execute so the trimming loop is reachable without a live tenant
 // connection: it is the branch that decides how much of a result the model
 // ever sees.
-func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes int, probes []map[string]interface{}, redacted []string) []byte {
+func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes int, probes []map[string]interface{}, redacted []string, fresh freshness.Report) []byte {
 	payload := buildSQLPayload(sourceID, dbType, result)
 	// Before the shrink loop, and never shrunk away: the probe replaces the
 	// zero-row note, and a payload that lost it would tell the model nothing
@@ -297,6 +318,10 @@ func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes 
 	// so the loop below cannot run on the one payload this affects.
 	attachProbe(payload, probes)
 	attachRedaction(payload, redacted)
+	// Before the shrink loop for the same reason the probe is: the freshness
+	// block is a handful of bytes and losing it would leave the model quoting a
+	// figure off a source it was about to be told had not loaded.
+	attachFreshness(payload, fresh)
 	out, _ := json.Marshal(payload)
 	if maxBytes <= 0 || len(out) <= maxBytes {
 		return out

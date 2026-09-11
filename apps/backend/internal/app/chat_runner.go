@@ -972,6 +972,14 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// to see what completeWith is about to persist rather than what the agent
 	// produced.
 	response = r.rescueEmptyReply(ctx, p, response, tracker, streaming)
+	// After every gate that can replace the reply, and after the one that can
+	// rescue an empty one. This guard *appends* rather than replaces, so running
+	// it earlier would mean a later gate replacing text that already carried the
+	// notice — and the empty-reply rescue writing over it is the case that would
+	// actually have happened: a stale turn that produced nothing gets a sentence
+	// about having no data, and a caveat about currency stapled to it would have
+	// been the second half of a contradiction.
+	response = r.noteStaleness(ctx, p, response, tracker)
 	// Last in the post-turn chain and before completeWith, so the suggestions are
 	// written against the text the user will actually read — the redacted one, the
 	// rescued one — rather than against what the agent first produced (T-Q10).
@@ -1146,6 +1154,35 @@ func toolNamesOf(a *domain.Agent) []string {
 // both carry the replacement, so the UI settles on the honest answer, and the
 // WhatsApp / Discord / Lark paths — which only ever see the final — never see
 // the figure at all.
+// noteStaleness appends the dated notice to an answer drawn from a source that
+// has not loaded recently (T-F2).
+//
+// The counterpart to the freshness block on the tool result: the model is told
+// so it can phrase it, and the product says it regardless so that a model which
+// did not is not the reason a reader trusts a stale figure.
+func (r *ChatRunner) noteStaleness(
+	ctx context.Context, p queue.ChatRunPayload, response string, tracker *agentbudget.Tracker,
+) string {
+	snap := tracker.Snapshot()
+	amended, added := guardrails.CheckStaleness(response, guardrails.TurnEvidence{
+		Freshness:     snap.Freshness,
+		FreshnessNote: snap.FreshnessNote,
+	})
+	if !added {
+		return response
+	}
+	logrus.WithFields(logrus.Fields{
+		"company_id": p.CompanyID,
+		"thread_id":  p.ThreadID,
+		"verdict":    snap.Freshness,
+	}).Info("answer dated: a source behind this turn has not loaded recently")
+	// Deliberately not recorded through recordBlockedTurn. Nothing was blocked:
+	// the answer is correct and is being dated, and filing it beside the
+	// fabrication refusals would put an annotation into the count an operator
+	// reads to find out how often this product had to withhold an answer.
+	return amended
+}
+
 func (r *ChatRunner) rejectFabrication(
 	ctx context.Context, p queue.ChatRunPayload, response string, tracker *agentbudget.Tracker,
 ) string {

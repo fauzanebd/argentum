@@ -597,6 +597,10 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.freshnessSvc = app.NewFreshnessService(
 		connRepo, connRepo, deps.tenant, time.Duration(cfg.SourceFreshnessTTLSecs)*time.Second)
 
+	// Is the metric layer accumulating (T-F4). `03-gap-analysis.md` argued the
+	// registry is the moat and nothing has ever measured whether it grows.
+	deps.metricCoverageSvc = app.NewMetricCoverageService(pgctl.NewMetricCoverageRepo(controlDB))
+
 	// Retention and erasure (T-H6). The API half: the settings write, the
 	// erasure route, the export and the record. The nightly purge that uses the
 	// same service lives in the worker.

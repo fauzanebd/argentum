@@ -5,6 +5,7 @@ import type { FeedbackWithContext } from "@argentum/api-types";
 import { useIsAdmin } from "@/store/auth";
 import { cn } from "@/lib/utils";
 import { useFeedbackList, useFeedbackSummary } from "./use-feedback";
+import { MetricCoveragePanel } from "./metric-coverage-panel";
 
 /**
  * Answer quality — what people said about the agent's answers (T-Q16).
@@ -56,6 +57,12 @@ export function QualityPage() {
         <p className="text-sm text-muted-foreground mb-6">
           What people said about the agent&rsquo;s answers. A rated answer is one somebody checked.
         </p>
+
+        {/* Above the verdicts, deliberately. A thumbs-down is one person saying
+            one answer was wrong; coverage is a structural property of every
+            answer this workspace gives, and it is the one an admin can fix this
+            afternoon. */}
+        <MetricCoveragePanel />
 
         <div className="grid grid-cols-3 gap-3 mb-8">
           <Stat label="Rated" value={rated} />

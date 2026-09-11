@@ -22,9 +22,14 @@ vi.mock("./use-feedback", () => ({
   useFeedbackList: (...a: unknown[]) => list(...a),
   useFeedbackSummary: (...a: unknown[]) => summary(...a),
 }));
+// The coverage panel (T-F4) fetches its own data, so it is stubbed out here —
+// without this every test in the file dies on "No QueryClient set", which is a
+// failure about the harness rather than about the page. It has its own test
+// beside this one, against the view rather than the container.
+vi.mock("./metric-coverage-panel", () => ({ MetricCoveragePanel: () => null }));
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, params }: { children: unknown; params: { threadId: string } }) => (
-    <a data-testid="thread-link" href={`/chat/${params.threadId}`}>
+  Link: ({ children, params }: { children: unknown; params?: { threadId: string } }) => (
+    <a data-testid="thread-link" href={params ? `/chat/${params.threadId}` : "#"}>
       {children as never}
     </a>
   ),

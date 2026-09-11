@@ -2260,7 +2260,9 @@ who can run it**, and none of them is hard.
 | `T-23`'s transcript half | A running stack that writes: a minted session and a thread whose turn ran a query, then the route read in a network tab. **Against a scratch database, never the pilot** — the finding is about what the server hands a valid caller, and a seeded thread proves it as well as a real one | a scratch schema on the same Postgres, migrations, one seeded tool-role row |
 | `T-19`'s embed tab | The same, plus a second origin serving a page for the cross-origin preflight | as above, plus any static server on a second port |
 | `create_dashboard`'s cause (§3c) | One read of `error_text` | the query in §3c |
+| `T-F4`'s only real arm (added 2026-09-11) | **One read.** The coverage query has never touched a Postgres — it is unit-proven against a fake repository and nothing else. It costs nothing, it is retroactive to all 437 turns, and **it is the number that decides whether `T-F5` is worth three days**. The one hint that exists points the other way: Phase 3ae's 28 *long* turns ran `query_metric` 85 times against `run_sql` 19, which would make coverage high and `T-F5` a solution to a problem this deployment does not have | the `WITH turns AS (…)` query in [`metric-coverage.md`](metric-coverage.md) §5 |
 | `T-N2`'s migration (added 2026-09-11) | The same database, for `078_thread_participants`. Additive only — one table, one index, **no data write** — so the `up` is the cheapest in this file. The arms worth actually looking at are the two a unit test cannot reach: that `ON DELETE CASCADE` on `agent_id` removes participant rows and leaves the threads openable, and that the unique index refuses the duplicate two concurrent adds would otherwise both win | `migrate … up`, then `down 1`, then `up`; then delete a test agent that is in a room and re-open the thread |
+| `T-F1`'s migration (added 2026-09-11) | The same database, for `079_source_freshness`. **Three nullable columns, no backfill, no data write** — the cheapest `up` in this file, and the `down` loses only the expressions and thresholds a tenant typed. The arm worth actually looking at is not the DDL: it is **one source with a real expression and one real turn**, because nobody has ever seen a `data_freshness` block on a tool result. Configure `SELECT max(loaded_at) …` on a source, ask a question, read the payload, then move the threshold under the age and read the appended notice | `migrate … up`, then `down 1`, then `up`; then Settings → Data sources → the clock icon → Test |
 | `T-N1`'s migration (added 2026-09-11) | A control-plane Postgres to round-trip `077_message_agent` against. The only one on this machine is **production**, serving the Gelael pilot — so this is owed on a go-ahead naming the namespace, not on effort. The `up` adds one nullable column and backfills assistant rows; the `down` drops the column and loses the attribution of anything written while it existed, which is stated in the file | `migrate -path apps/backend/migrations/control -database "$DATABASE_URL" up`, then `down 1`, then `up`; paste `schema_migrations` before and after and one `SELECT id, role, agent_id FROM messages WHERE thread_id = '…'` |
 
 **None of these is blocked on money, and none is blocked on this machine
@@ -2313,6 +2315,23 @@ on the body openai-go builds.
 | ------- | -------- | ------- |
 | `T-Q17` | One live turn on the deployed backend, and a `provider.ignore` field in the request it sends. `LLM_WIRE_TAP_DIR` is exactly the instrument: it captures what the provider receives, and `llmroute` sits above it in the chain on purpose | A deployment. The probe that proved the preference hand-wrote its own body, which is the one thing a capture would not be doing |
 | `T-Q17` | Four endpoints in the `kimi-k2.6` pool remain unmeasured — Fireworks errored once, and StreamLake, Novita and Phala were skipped as deranked upstream ([`provider-routing.md`](provider-routing.md) §2). Any of them could be a second `decart` | Nothing but a re-run. It is three curl calls and belongs in whichever week somebody next touches the model choice |
+
+## 7a. `T-F2`'s paired eval (added 2026-09-11)
+
+`T-F2` adds four lines to `bootstrap.SystemPrompt`, and this repository's rule
+is that a prompt change owes a paired score
+([`../agents/verification.md`](../agents/verification.md)).
+
+| Owed by | The gate | Blocker |
+| ------- | -------- | ------- |
+| `T-F2` | `make eval` before and after the prompt edit, both rates pasted into [`freshness.md`](freshness.md) | Model spend (~the cost of one golden-set run) |
+
+**The prediction is recorded so it can be checked rather than remembered: no
+movement.** No source in the eval tenant has a freshness expression, so no case
+can produce a `data_freshness` block and the added lines are inert text
+describing a field nothing will emit. **A score that moves would mean four
+prompt lines changed behaviour on turns they do not apply to**, which is the
+more interesting outcome and the reason to run it paired rather than once.
 
 ## 7. Needs the paid eval set (added 2026-09-11)
 

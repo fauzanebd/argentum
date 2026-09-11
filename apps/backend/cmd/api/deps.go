@@ -142,6 +142,9 @@ type apiDeps struct {
 	// the configuration routes; the worker builds its own so a turn's probe does
 	// not cross a process boundary to reach a cache.
 	freshnessSvc *app.FreshnessService
+	// metricCoverageSvc reports whether this tenant's answers stand on defined
+	// metrics (T-F4). Reads only, no state.
+	metricCoverageSvc *app.MetricCoverageService
 	// Watchers (T-08): CRUD and the dry-run. The API never fires or delivers —
 	// that is the worker's WatcherService — so this instance carries no delivery
 	// providers and no budget checker.

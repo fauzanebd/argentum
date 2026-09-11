@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, Trash2, Star, PlugZap, Boxes, Search, ScanSearch } from "lucide-react";
+import { RefreshCw, Trash2, Star, PlugZap, Boxes, Search, ScanSearch, CalendarClock } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-error";
 import { certVerificationHint, defaultSslMode, sslModeOptions, supportsSslMode } from "@/lib/ssl-modes";
+import { SourceFreshnessSheet, type SourceFreshness } from "./source-freshness-sheet";
 
 interface Connection {
   id: string;
@@ -26,6 +27,9 @@ interface Connection {
   label?: string;
   is_default: boolean;
   created_at: string;
+  /** How this source reports when it last loaded (T-F1). Absent on every source
+   *  nobody has configured, which is every source until somebody does. */
+  freshness?: SourceFreshness;
 }
 
 interface RagHit {
@@ -183,6 +187,8 @@ export function ConnectionsTab() {
       setError(apiErrorMessage(e));
     }
   }
+
+  const [freshnessFor, setFreshnessFor] = useState<Connection | null>(null);
 
   async function makeDefault(id: string) {
     await api.post(`/connections/${id}/default`);
@@ -533,6 +539,20 @@ export function ConnectionsTab() {
                 <Button
                   variant="ghost"
                   size="icon"
+                  onClick={() => setFreshnessFor(c)}
+                  title={
+                    c.freshness?.sql
+                      ? "Data freshness — configured"
+                      : "Data freshness — not configured"
+                  }
+                >
+                  <CalendarClock
+                    className={`h-4 w-4 ${c.freshness?.sql ? "" : "text-muted-foreground"}`}
+                  />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => rescanSource(c.id)}
                   disabled={rescanningId === c.id}
                   title="Re-scan for business context"
@@ -682,6 +702,15 @@ export function ConnectionsTab() {
           </div>
         </SheetContent>
       </Sheet>
+
+      <SourceFreshnessSheet
+        sourceId={freshnessFor?.id ?? null}
+        label={freshnessFor?.label || freshnessFor?.db_type || ""}
+        initial={freshnessFor?.freshness}
+        open={freshnessFor !== null}
+        onOpenChange={(open) => !open && setFreshnessFor(null)}
+        onSaved={() => qc.invalidateQueries({ queryKey: ["connections"] })}
+      />
     </div>
   );
 }
