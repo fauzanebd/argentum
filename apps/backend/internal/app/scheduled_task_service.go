@@ -315,9 +315,11 @@ func (s *ScheduledTaskService) HandleFire(ctx context.Context, taskID string) er
 	}
 
 	var companyName, currency string
+	var money domain.Currency
 	if c, err := s.companies.GetByID(ctx, t.CompanyID); err == nil {
 		companyName = c.Name
 		currency = c.DefaultCurrency
+		money = c.Currency()
 	}
 
 	if _, err := s.enqueuer.EnqueueChatRun(ctx, queue.ChatRunPayload{
@@ -329,6 +331,7 @@ func (s *ScheduledTaskService) HandleFire(ctx context.Context, taskID string) er
 		UserMsgID:       userMsg.ID,
 		CompanyName:     companyName,
 		DefaultCurrency: currency,
+		Money:           money,
 		// A schedule runs as whatever agent its dedicated thread runs as
 		// (T-S2). Empty leaves the worker to resolve the company default,
 		// which is every schedule today — nothing sets a thread's agent until

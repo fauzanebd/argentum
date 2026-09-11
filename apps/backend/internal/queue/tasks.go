@@ -216,8 +216,17 @@ type ChatRunPayload struct {
 	UserMsgID       string `json:"user_msg_id"`
 	CompanyName     string `json:"company_name,omitempty"`
 	DefaultCurrency string `json:"default_currency,omitempty"` // ISO 4217
-	ScheduledTaskID string `json:"scheduled_task_id,omitempty"`
-	ScheduledRunID  string `json:"scheduled_run_id,omitempty"`
+	// Money is the resolved convention that currency is written under (T-W2):
+	// how many decimal places, and which way it rounds at a half.
+	//
+	// Carried beside the code rather than derived from it in the worker,
+	// because the rounding half is an accounting policy stored on the company
+	// row and the enqueuer has already read that row. A task queued before this
+	// field existed carries the zero value, which quantises nothing and states
+	// nothing — exactly what the worker did before it existed.
+	Money           domain.Currency `json:"money,omitzero"`
+	ScheduledTaskID string          `json:"scheduled_task_id,omitempty"`
+	ScheduledRunID  string          `json:"scheduled_run_id,omitempty"`
 	// WatcherEventID ties a breach's briefing turn to the watcher_events row it
 	// explains (T-08). The worker delivers the turn's answer to the watcher's
 	// channels and records the outcome on that row when the turn finishes; a

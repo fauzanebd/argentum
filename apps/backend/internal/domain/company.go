@@ -55,6 +55,16 @@ type Company struct {
 	// migration 067 and therefore what an unset row must keep doing — see
 	// [RetentionForever].
 	MessageRetentionDays int `json:"message_retention_days"`
+	// CurrencyMinorUnits overrides how many decimal places DefaultCurrency is
+	// written with (T-W2). Nil is the ordinary case and means "use the
+	// currency's own precision" — see [Company.Currency] and
+	// [CurrencyMinorUnits]. It exists for the ledger that genuinely prices in
+	// half-cents, not as a place to put a guess.
+	CurrencyMinorUnits *int `json:"currency_minor_units,omitempty"`
+	// CurrencyRounding is what a money figure does at exactly half a minor
+	// unit (T-W2). Empty means unstated and resolves to half-up, which is what
+	// every answer this product has ever given already did.
+	CurrencyRounding RoundingMode `json:"currency_rounding,omitempty"`
 }
 
 // RetentionForever is the MessageRetentionDays value that disables the purge.

@@ -34,30 +34,36 @@ func (r *CompanyRepo) Create(ctx context.Context, c *domain.Company) error {
 }
 
 func (r *CompanyRepo) GetByID(ctx context.Context, id string) (*domain.Company, error) {
-	const q = `SELECT id, name, slug, default_currency, pii_redaction_mode, message_retention_days, created_at FROM companies WHERE id = $1`
+	const q = `SELECT id, name, slug, default_currency, pii_redaction_mode, message_retention_days, currency_minor_units, currency_rounding, created_at FROM companies WHERE id = $1`
 	c := &domain.Company{}
+	var minorUnits sql.NullInt16
 	if err := r.db.QueryRowContext(ctx, q, id).Scan(
-		&c.ID, &c.Name, &c.Slug, &c.DefaultCurrency, &c.PIIRedactionMode, &c.MessageRetentionDays, &c.CreatedAt,
+		&c.ID, &c.Name, &c.Slug, &c.DefaultCurrency, &c.PIIRedactionMode, &c.MessageRetentionDays,
+		&minorUnits, &c.CurrencyRounding, &c.CreatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
 		return nil, err
 	}
+	applyMinorUnits(c, minorUnits)
 	return c, nil
 }
 
 func (r *CompanyRepo) GetBySlug(ctx context.Context, slug string) (*domain.Company, error) {
-	const q = `SELECT id, name, slug, default_currency, pii_redaction_mode, message_retention_days, created_at FROM companies WHERE slug = $1`
+	const q = `SELECT id, name, slug, default_currency, pii_redaction_mode, message_retention_days, currency_minor_units, currency_rounding, created_at FROM companies WHERE slug = $1`
 	c := &domain.Company{}
+	var minorUnits sql.NullInt16
 	if err := r.db.QueryRowContext(ctx, q, slug).Scan(
-		&c.ID, &c.Name, &c.Slug, &c.DefaultCurrency, &c.PIIRedactionMode, &c.MessageRetentionDays, &c.CreatedAt,
+		&c.ID, &c.Name, &c.Slug, &c.DefaultCurrency, &c.PIIRedactionMode, &c.MessageRetentionDays,
+		&minorUnits, &c.CurrencyRounding, &c.CreatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
 		return nil, err
 	}
+	applyMinorUnits(c, minorUnits)
 	return c, nil
 }
 
@@ -72,7 +78,7 @@ func (r *CompanyRepo) GetBySlug(ctx context.Context, slug string) (*domain.Compa
 // purge. The settable path validates and rejects (app.CompanyService); this is
 // the floor under it.
 func (r *CompanyRepo) Update(ctx context.Context, c *domain.Company) error {
-	const q = `UPDATE companies SET name = $1, slug = $2, default_currency = $3, pii_redaction_mode = $4, message_retention_days = $5 WHERE id = $6`
+	const q = `UPDATE companies SET name = $1, slug = $2, default_currency = $3, pii_redaction_mode = $4, message_retention_days = $5, currency_minor_units = $6, currency_rounding = $7 WHERE id = $8`
 	mode := c.PIIRedactionMode
 	if !mode.Valid() {
 		mode = domain.PIIRedactionStrict
@@ -81,8 +87,32 @@ func (r *CompanyRepo) Update(ctx context.Context, c *domain.Company) error {
 	if !domain.ValidRetentionDays(retention) {
 		retention = domain.RetentionForever
 	}
-	_, err := r.db.ExecContext(ctx, q, c.Name, c.Slug, c.DefaultCurrency, string(mode), retention, c.ID)
+	// Both currency columns carry a CHECK, so this floor is the same one the
+	// two fields above stand on: a caller that loaded a row and changed the
+	// name must not be able to fail the write with a value it never touched.
+	var minorUnits sql.NullInt16
+	if c.CurrencyMinorUnits != nil && *c.CurrencyMinorUnits >= 0 && *c.CurrencyMinorUnits <= domain.MaxCurrencyMinorUnits {
+		minorUnits = sql.NullInt16{Int16: int16(*c.CurrencyMinorUnits), Valid: true}
+	}
+	rounding := c.CurrencyRounding
+	if !rounding.Valid() {
+		rounding = ""
+	}
+	_, err := r.db.ExecContext(ctx, q, c.Name, c.Slug, c.DefaultCurrency, string(mode), retention,
+		minorUnits, string(rounding), c.ID)
 	return err
+}
+
+// applyMinorUnits copies a nullable column onto the optional field. NULL is the
+// ordinary case — "use the currency's own precision" — and is left as nil
+// rather than flattened to 0, because 0 is itself a real precision and the one
+// rupiah uses.
+func applyMinorUnits(c *domain.Company, n sql.NullInt16) {
+	if !n.Valid {
+		return
+	}
+	v := int(n.Int16)
+	c.CurrencyMinorUnits = &v
 }
 
 // EnsureWebhookSecret returns the tenant's callback signing secret, minting

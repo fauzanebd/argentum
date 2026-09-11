@@ -598,8 +598,14 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		Redis:       s.Redis,
 		Schema:      schemaTool,
 		Usage:       s.UsageSvc,
-		// The tenant's redaction policy, for the empty-result probe (T-H10).
+		// The tenant's redaction policy, for the empty-result probe (T-H10) —
+		// and, since T-W2, the currency a money figure is written with.
 		Companies: s.Companies,
+		// When this tenant's fiscal year starts, for compute's period
+		// references (T-W2). The same repository the company-context block is
+		// composed from, so "last quarter" means one thing in the prompt and in
+		// the arithmetic.
+		Profiles: s.CompanyProfiles,
 		// How current each source is (T-F2). Built here rather than shared with
 		// the API's: the cache is per process on purpose, and a verdict at most
 		// one TTL old in two processes is cheaper than a shared one and wrong in

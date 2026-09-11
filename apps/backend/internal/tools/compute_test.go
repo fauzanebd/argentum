@@ -6,11 +6,14 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
 	"github.com/fauzanebd/argentum/internal/agentbudget"
+	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/freshness"
 	"github.com/fauzanebd/argentum/internal/guardrails"
+	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
 // turnWithResult installs a compute-capable turn, runs one query result through
@@ -318,5 +321,235 @@ func TestBindingFollowsTheTrimmedPayload(t *testing.T) {
 	}
 	if got := computed["computed"]; got != strconv.Itoa(shown) {
 		t.Errorf("sum over the bound column = %v, want %d — the rows the model was shown", got, shown)
+	}
+}
+
+// ---------------------------------------------------------------- T-W2
+
+type fakeCompany struct {
+	co  *domain.Company
+	err error
+}
+
+func (f fakeCompany) GetByID(context.Context, string) (*domain.Company, error) {
+	return f.co, f.err
+}
+
+type fakeProfile struct{ month int }
+
+func (f fakeProfile) GetByCompany(context.Context, string) (*domain.CompanyProfile, error) {
+	return &domain.CompanyProfile{FiscalYearStartMonth: f.month}, nil
+}
+
+// moneyTurn is a turn holding one result and one tenant's conventions.
+func moneyTurn(t *testing.T, code string, rounding domain.RoundingMode, fyStart int) (context.Context, *ComputeTool) {
+	t.Helper()
+	ctx := tenantctx.WithCompanyID(WithTurnValues(context.Background()), "co-1")
+	marshalSQLResult(ctx, "src-1", "postgres", &db.QueryResult{
+		Columns: []string{"gross", "units", "rate"},
+		Rows:    []map[string]interface{}{{"gross": "1234567.894", "units": "3", "rate": "0.5"}},
+		Count:   1,
+	}, 0, nil, nil, freshness.Report{})
+	tool := NewComputeTool().
+		WithConventions(
+			fakeCompany{co: &domain.Company{DefaultCurrency: code, CurrencyRounding: rounding}},
+			fakeProfile{month: fyStart},
+		).
+		WithClock(func() time.Time { return time.Date(2026, time.May, 15, 0, 0, 0, 0, time.UTC) })
+	return ctx, tool
+}
+
+func run(t *testing.T, tool *ComputeTool, ctx context.Context, args map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	raw, _ := json.Marshal(args)
+	out, err := tool.Execute(ctx, string(raw))
+	if err != nil {
+		t.Fatalf("compute(%v): %v", args, err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("payload is not JSON: %v", err)
+	}
+	return payload
+}
+
+// An IDR money result carries no decimal places; a USD one carries two.
+func TestMoneyIsQuantisedToItsCurrency(t *testing.T) {
+	args := map[string]interface{}{
+		"expression": "gross",
+		"inputs":     map[string]string{"gross": "r1.gross"},
+		"unit":       "money",
+	}
+
+	ctx, idr := moneyTurn(t, "IDR", "", 1)
+	if got := run(t, idr, ctx, args)["computed"]; got != "1234568" {
+		t.Errorf("a rupiah figure = %v, want 1234568 — rupiah has no decimal places", got)
+	}
+
+	ctx, usd := moneyTurn(t, "USD", "", 1)
+	payload := run(t, usd, ctx, args)
+	if got := payload["computed"]; got != "1234567.89" {
+		t.Errorf("a dollar figure = %v, want 1234567.89", got)
+	}
+	if got := payload["currency"]; got != "USD" {
+		t.Errorf("the payload does not name the currency it rounded to: %v", got)
+	}
+	// The pre-rounding figure is on the working, because "why is this one
+	// rupiah off the invoice" is exactly what a quantised figure gets asked.
+	working, _ := payload["working"].(map[string]interface{})
+	if got := working["before_rounding"]; got != "1234567.894" {
+		t.Errorf("the working does not record what was rounded: %v", working)
+	}
+}
+
+// A ratio is not quantised to the currency's scale. Under rupiah's zero places
+// it would be destroyed outright — which is why `unit` is on the call.
+func TestARatioIsNotQuantised(t *testing.T) {
+	ctx, idr := moneyTurn(t, "IDR", "", 1)
+	for _, unit := range []string{"ratio", "percent", "count", ""} {
+		args := map[string]interface{}{
+			"expression": "rate",
+			"inputs":     map[string]string{"rate": "r1.rate"},
+		}
+		if unit != "" {
+			args["unit"] = unit
+		}
+		if got := run(t, idr, ctx, args)["computed"]; got != "0.5" {
+			t.Errorf("unit %q was quantised to %v; only money may be", unit, got)
+		}
+	}
+	// And the counterfactual, so the test above cannot pass because nothing
+	// quantises at all.
+	args := map[string]interface{}{
+		"expression": "rate",
+		"inputs":     map[string]string{"rate": "r1.rate"},
+		"unit":       "money",
+	}
+	if got := run(t, idr, ctx, args)["computed"]; got != "1" {
+		t.Errorf("the same figure marked money = %v, want 1 — the instrument is not firing", got)
+	}
+}
+
+func TestRoundingConventionIsTheTenants(t *testing.T) {
+	// 2.5 at zero places: half-up gives 3, half-even gives 2.
+	res := &db.QueryResult{
+		Columns: []string{"half"},
+		Rows:    []map[string]interface{}{{"half": "2.5"}},
+		Count:   1,
+	}
+	for _, tc := range []struct {
+		mode domain.RoundingMode
+		want string
+	}{
+		{domain.RoundingHalfUp, "3"},
+		{domain.RoundingHalfEven, "2"},
+		{"", "3"}, // unstated resolves to half-up, which is what every answer already did
+	} {
+		ctx := tenantctx.WithCompanyID(WithTurnValues(context.Background()), "co-1")
+		marshalSQLResult(ctx, "src-1", "postgres", res, 0, nil, nil, freshness.Report{})
+		tool := NewComputeTool().WithConventions(
+			fakeCompany{co: &domain.Company{DefaultCurrency: "IDR", CurrencyRounding: tc.mode}},
+			fakeProfile{month: 1},
+		)
+		got := run(t, tool, ctx, map[string]interface{}{
+			"expression": "half",
+			"inputs":     map[string]string{"half": "r1.half"},
+			"unit":       "money",
+		})["computed"]
+		if got != tc.want {
+			t.Errorf("rounding %q turned 2.5 into %v, want %v", tc.mode, got, tc.want)
+		}
+	}
+}
+
+// A company with no currency behaves exactly as it did before T-W2: nothing is
+// quantised and nothing is added to the payload.
+func TestNoCurrencyQuantisesNothing(t *testing.T) {
+	for _, name := range []string{"unset", "unknown", "no lookup"} {
+		ctx := tenantctx.WithCompanyID(WithTurnValues(context.Background()), "co-1")
+		marshalSQLResult(ctx, "src-1", "postgres", &db.QueryResult{
+			Columns: []string{"gross"},
+			Rows:    []map[string]interface{}{{"gross": "1234567.894"}},
+			Count:   1,
+		}, 0, nil, nil, freshness.Report{})
+		tool := NewComputeTool()
+		switch name {
+		case "unset":
+			tool = tool.WithConventions(fakeCompany{co: &domain.Company{}}, nil)
+		case "unknown":
+			tool = tool.WithConventions(fakeCompany{co: &domain.Company{DefaultCurrency: "XYZ"}}, nil)
+		}
+		payload := run(t, tool, ctx, map[string]interface{}{
+			"expression": "gross",
+			"inputs":     map[string]string{"gross": "r1.gross"},
+			"unit":       "money",
+		})
+		if got := payload["computed"]; got != "1234567.894" {
+			t.Errorf("%s: a money figure was quantised to %v with no currency to quantise it to", name, got)
+		}
+		if _, ok := payload["currency"]; ok {
+			t.Errorf("%s: the payload claims a currency it does not have", name)
+		}
+		working, _ := payload["working"].(map[string]interface{})
+		if _, ok := working["before_rounding"]; ok {
+			t.Errorf("%s: the working records a rounding that never happened", name)
+		}
+	}
+}
+
+// The period namespace: a run rate divides by a day count that belongs to the
+// tenant's fiscal calendar, not to the model's arithmetic.
+func TestPeriodDaysAreBindable(t *testing.T) {
+	// 2026-05-15. On a calendar year, last quarter is Jan-Mar = 90 days. On a
+	// May fiscal year it is Feb-Apr = 89 days, and that difference is the whole
+	// point of resolving it here.
+	for _, tc := range []struct {
+		fyStart int
+		days    string
+	}{{1, "90"}, {5, "89"}} {
+		ctx, tool := moneyTurn(t, "IDR", "", tc.fyStart)
+		got := run(t, tool, ctx, map[string]interface{}{
+			"expression": "days",
+			"inputs":     map[string]string{"days": "period.last_quarter.days"},
+			"unit":       "count",
+		})["computed"]
+		if got != tc.days {
+			t.Errorf("last quarter under a fiscal year starting month %d = %v days, want %s", tc.fyStart, got, tc.days)
+		}
+	}
+
+	// And the thing it is for: a per-day figure neither half of which the
+	// model supplied.
+	ctx, tool := moneyTurn(t, "USD", "", 1)
+	got := run(t, tool, ctx, map[string]interface{}{
+		"expression": "gross / days",
+		"inputs":     map[string]string{"gross": "r1.gross", "days": "period.last_quarter.days"},
+		"unit":       "money",
+	})["computed"]
+	if got != "13717.42" {
+		t.Errorf("a per-day run rate = %v, want 13717.42", got)
+	}
+}
+
+func TestPeriodRefusals(t *testing.T) {
+	ctx, tool := moneyTurn(t, "IDR", "", 1)
+	for _, tc := range []struct{ ref, wantIn string }{
+		{"period.next_quarter.days", "not a period this workspace resolves"},
+		{"period.last_quarter.weeks", "only figure a period offers is `days`"},
+		{"period.days", "not a period reference"},
+		{"period.", "not a period reference"},
+	} {
+		raw, _ := json.Marshal(map[string]interface{}{
+			"expression": "d",
+			"inputs":     map[string]string{"d": tc.ref},
+		})
+		_, err := tool.Execute(ctx, string(raw))
+		if err == nil {
+			t.Errorf("compute accepted %q", tc.ref)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.wantIn) {
+			t.Errorf("binding %q = %v, want a message containing %q", tc.ref, err, tc.wantIn)
+		}
 	}
 }

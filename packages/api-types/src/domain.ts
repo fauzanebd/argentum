@@ -779,6 +779,20 @@ export interface Company {
    * [RetentionForever].
    */
   message_retention_days: number /* int */;
+  /**
+   * CurrencyMinorUnits overrides how many decimal places DefaultCurrency is
+   * written with (T-W2). Nil is the ordinary case and means "use the
+   * currency's own precision" — see [Company.Currency] and
+   * [CurrencyMinorUnits]. It exists for the ledger that genuinely prices in
+   * half-cents, not as a place to put a guess.
+   */
+  currency_minor_units?: number /* int */;
+  /**
+   * CurrencyRounding is what a money figure does at exactly half a minor
+   * unit (T-W2). Empty means unstated and resolves to half-up, which is what
+   * every answer this product has ever given already did.
+   */
+  currency_rounding?: RoundingMode;
 }
 /**
  * RetentionForever is the MessageRetentionDays value that disables the purge.
@@ -998,6 +1012,62 @@ export const OriginDocument = "document";
  * Connection origins.
  */
 export type Origin = typeof OriginTenant | typeof OriginDocument;
+
+//////////
+// source: currency.go
+
+/**
+ * Currency is how much precision a money figure has, and which way it rounds
+ * when it has to lose some (T-W2).
+ * **Why this is not a formatting concern.** Exact arithmetic over the wrong
+ * convention is exactly wrong. `T-W1` made `compute` produce a figure no model
+ * retyped; this decides how many decimal places that figure is entitled to. A
+ * rupiah amount carrying two decimals is a dollar assumption that has already
+ * gone wrong somewhere upstream, and a half-cent that rounds the wrong way is
+ * the difference a reconciliation exists to find.
+ * **Stated, not assumed.** The three fields are separate and named because
+ * each answers a different question — which currency, how many places, and
+ * which way at the midpoint — and the last of those is an accounting policy
+ * rather than a fact about the money. It is rendered into the prompt as a fact
+ * so a tenant reading an answer can see which convention produced it.
+ */
+export interface Currency {
+  /**
+   * Code is ISO 4217 — "IDR", "USD". Empty means this company has no
+   * currency configured, and nothing is quantised.
+   */
+  code: string;
+  /**
+   * MinorUnits is how many decimal places the currency has: 0 for rupiah and
+   * yen, 2 for dollars and euros.
+   */
+  minor_units: number /* int */;
+  /**
+   * Rounding is what happens at exactly half a minor unit.
+   */
+  rounding: RoundingMode;
+}
+/**
+ * RoundingMode is what a money figure does at exactly half a minor unit.
+ */
+export type RoundingMode = string;
+/**
+ * RoundingHalfUp rounds a half away from zero: 2.5 → 3, -2.5 → -3. What a
+ * person expects and what a spreadsheet does.
+ */
+export const RoundingHalfUp: RoundingMode = "half_up";
+/**
+ * RoundingHalfEven rounds a half to the nearest even digit: 2.5 → 2,
+ * 3.5 → 4. Banker's rounding, which several accounting standards require
+ * because it does not drift upward over a long ledger.
+ */
+export const RoundingHalfEven: RoundingMode = "half_even";
+/**
+ * MaxCurrencyMinorUnits bounds an admin's override. Four is past every real
+ * currency — the most any ISO 4217 entry carries is three — and stops a typo
+ * from turning every money figure into a twenty-place decimal.
+ */
+export const MaxCurrencyMinorUnits = 4;
 
 //////////
 // source: dashboard.go
@@ -1444,6 +1514,32 @@ export interface TableEmbedding {
 export interface TableHit {
   TableName: string;
   Distance: number /* float32 */;
+}
+
+//////////
+// source: fiscal_period.go
+
+/**
+ * Period is a resolved date range, closed-open: From is included, To is not.
+ * **Closed-open because every other convention loses a day somewhere.** A
+ * range written `BETWEEN '2026-01-01' AND '2026-03-31'` silently drops
+ * everything timestamped on the 31st after midnight, which is the commonest
+ * off-by-one in analytical SQL and the hardest to notice: the answer is only
+ * slightly wrong, and only for the last day.
+ */
+export interface Period {
+  /**
+   * Name is the phrase this was resolved from, normalised.
+   */
+  name: string;
+  /**
+   * From is the first instant in the period.
+   */
+  from: string;
+  /**
+   * To is the first instant after it.
+   */
+  to: string;
 }
 
 //////////

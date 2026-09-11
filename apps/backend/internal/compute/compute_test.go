@@ -241,3 +241,39 @@ func TestNoPrecisionIsLostInTransit(t *testing.T) {
 		t.Errorf("a 29-digit figure came back as %q, want %q", got, exact)
 	}
 }
+
+// Half-up and half-even both round 2.5 the way their names say — the T-W2 arm.
+// The assertion is on the string again, for T-W1's reason.
+func TestQuantize(t *testing.T) {
+	for _, tc := range []struct {
+		in     string
+		places int
+		mode   Rounding
+		want   string
+	}{
+		// The midpoint, both ways. Half-even is not "half-up with extra
+		// steps": 2.5 and 3.5 both land on an even digit, in opposite
+		// directions.
+		{"2.5", 0, HalfAwayFromZero, "3"},
+		{"2.5", 0, HalfToEven, "2"},
+		{"3.5", 0, HalfAwayFromZero, "4"},
+		{"3.5", 0, HalfToEven, "4"},
+		{"-2.5", 0, HalfAwayFromZero, "-3"},
+		{"-2.5", 0, HalfToEven, "-2"},
+		// A rupiah figure carries no decimals; a dollar one carries two.
+		{"1234567.89", 0, HalfAwayFromZero, "1234568"},
+		{"1234567.894", 2, HalfAwayFromZero, "1234567.89"},
+		{"1234567.895", 2, HalfAwayFromZero, "1234567.9"},
+		// Already exact: nothing is added, so an integer stays an integer
+		// rather than growing "​.00".
+		{"1000", 2, HalfAwayFromZero, "1000"},
+		// Out-of-range places leave the figure alone rather than mangling it.
+		{"1.23456", -1, HalfAwayFromZero, "1.23456"},
+		{"1.23456", 99, HalfAwayFromZero, "1.23456"},
+	} {
+		got := Quantize(decimal.RequireFromString(tc.in), tc.places, tc.mode).String()
+		if got != tc.want {
+			t.Errorf("Quantize(%s, %d, %v) = %q, want %q", tc.in, tc.places, tc.mode, got, tc.want)
+		}
+	}
+}

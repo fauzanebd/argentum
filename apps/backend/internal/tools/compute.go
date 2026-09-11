@@ -5,10 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/fauzanebd/argentum/internal/compute"
+	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/tenantctx"
 )
 
 // ComputeTool is exact arithmetic over figures this turn already retrieved
@@ -31,9 +36,88 @@ import (
 // results, never a literal the model copied out of a payload. Getting only the
 // first half would produce exact arithmetic over a transcription error, which
 // is the defect wearing a better hat.
-type ComputeTool struct{}
+type ComputeTool struct {
+	// companies supplies the tenant's currency (T-W2). Optional: nil quantises
+	// nothing, which is exactly what this tool did before the convention
+	// existed.
+	companies PIIPolicyLookup
+	// profiles supplies the fiscal year start, for `period.*` references
+	// (T-W2). Optional in the same way: nil resolves periods against a
+	// January year, which is what every caller with no profile has always
+	// done.
+	profiles CompanyProfileLookup
+	// now is the clock, injectable so a period test is not a coin flip on the
+	// day it runs.
+	now func() time.Time
+}
 
-func NewComputeTool() *ComputeTool { return &ComputeTool{} }
+func NewComputeTool() *ComputeTool { return &ComputeTool{now: time.Now} }
+
+// WithConventions gives compute the tenant's money and calendar conventions
+// (T-W2). Both halves are optional and degrade separately: without a company
+// nothing is quantised, and without a profile a fiscal year starts in January.
+func (t *ComputeTool) WithConventions(companies PIIPolicyLookup, profiles CompanyProfileLookup) *ComputeTool {
+	t.companies = companies
+	t.profiles = profiles
+	return t
+}
+
+// WithClock replaces the clock. Tests only.
+func (t *ComputeTool) WithClock(now func() time.Time) *ComputeTool {
+	t.now = now
+	return t
+}
+
+// CompanyProfileLookup is the one question compute asks of the profile
+// repository: when does this tenant's fiscal year start. Narrowed here for
+// PIIPolicyLookup's reason — a tool that could read the whole profile is a
+// tool that could put the tenant's business description somewhere it does not
+// belong.
+type CompanyProfileLookup interface {
+	GetByCompany(ctx context.Context, companyID string) (*domain.CompanyProfile, error)
+}
+
+// currency resolves the tenant's money convention, or the zero value — which
+// quantises nothing.
+func (t *ComputeTool) currency(ctx context.Context) domain.Currency {
+	if t.companies == nil {
+		return domain.Currency{}
+	}
+	companyID := tenantctx.CompanyID(ctx)
+	if companyID == "" {
+		return domain.Currency{}
+	}
+	co, err := t.companies.GetByID(ctx, companyID)
+	if err != nil {
+		// A lookup that failed is not a licence to guess two decimal places.
+		return domain.Currency{}
+	}
+	return co.Currency()
+}
+
+// fiscalYearStart is the month this tenant's year begins in, and January for a
+// tenant with no profile.
+func (t *ComputeTool) fiscalYearStart(ctx context.Context) int {
+	if t.profiles == nil {
+		return 1
+	}
+	companyID := tenantctx.CompanyID(ctx)
+	if companyID == "" {
+		return 1
+	}
+	p, err := t.profiles.GetByCompany(ctx, companyID)
+	if err != nil || p == nil {
+		return 1
+	}
+	return p.FiscalYearStartMonth
+}
+
+func (t *ComputeTool) clock() time.Time {
+	if t.now == nil {
+		return time.Now()
+	}
+	return t.now()
+}
 
 func (t *ComputeTool) Name() string { return "compute" }
 
@@ -45,7 +129,9 @@ func (t *ComputeTool) Description() string {
 		"its numbers as `<result_id>.<column>`, e.g. `r1.total_revenue`. A column with several rows " +
 		"can be reduced with sum(), min() or max(). The arithmetic is exact decimal, so money is safe. " +
 		"Available: + - * / ( ), comparison, abs, round(x, places), sum, min, max. It has no loops, no " +
-		"variables and no other functions — if a question needs those, say so rather than approximating."
+		"variables and no other functions — if a question needs those, say so rather than approximating. " +
+		"Set `unit` to money for a currency amount: it is then rounded to this workspace's own currency " +
+		"precision, which is not always two decimal places."
 }
 
 func (t *ComputeTool) Parameters() map[string]interfaces.ParameterSpec {
@@ -63,14 +149,18 @@ func (t *ComputeTool) Parameters() map[string]interfaces.ParameterSpec {
 				"in this turn, as {\"revenue\": \"r1.total_revenue\", \"cost\": \"r2.total_cost\"}. The " +
 				"value is a reference, NEVER a number you typed: `<result_id>.<column>` for the whole " +
 				"column, or `<result_id>.<column>[0]` for one row, counted from 0. A result with one row " +
-				"binds as a single figure.",
+				"binds as a single figure. For a run rate you can also bind the length of a date range " +
+				"in this workspace's own fiscal calendar: `period.last_quarter.days`, and likewise " +
+				"this_month, last_month, this_quarter, ytd, last_year.",
 			Required: true,
 		},
 		"unit": {
 			Type: "string",
-			Description: "What kind of figure this is, so it can be presented correctly. `money` for " +
-				"an amount of currency, `ratio` for a fraction between 0 and 1, `percent` for the same " +
-				"thing out of 100, `count` for a number of things.",
+			Description: "What kind of figure this is. This is not cosmetic: `money` is rounded to " +
+				"this workspace's currency precision (rupiah has none, dollars have two) using its " +
+				"stated rounding convention, and the others are left exact. Use `ratio` for a fraction " +
+				"between 0 and 1, `percent` for the same thing out of 100, `count` for a number of " +
+				"things. Marking a ratio as money would destroy it.",
 			Required: false,
 			Enum:     []interface{}{"money", "ratio", "percent", "count", "other"},
 		},
@@ -116,7 +206,7 @@ func (t *ComputeTool) Execute(ctx context.Context, args string) (string, error) 
 			return "", fmt.Errorf("%q appears in the expression and is not in `inputs`. Bind it to a figure a tool returned in this turn, as \"%s\": \"r1.<column>\". %s",
 				name, name, describeTurnValues(ctx))
 		}
-		bound, err := resolveRef(ctx, ref)
+		bound, err := t.bind(ctx, ref)
 		if err != nil {
 			return "", fmt.Errorf("cannot bind %q: %w", name, err)
 		}
@@ -141,6 +231,25 @@ func (t *ComputeTool) Execute(ctx context.Context, args string) (string, error) 
 		return "", err
 	}
 
+	// A money figure is written with the precision its currency has, and
+	// rounded the way the tenant's ledger rounds (T-W2). Exact arithmetic over
+	// the wrong convention is exactly wrong: a rupiah amount carrying two
+	// decimals is a dollar assumption, and a half-cent that goes the wrong way
+	// is the difference a reconciliation exists to find.
+	//
+	// **Only money.** A ratio quantised to a currency's scale is a ratio
+	// destroyed — 0.4564 at rupiah's zero places is 0 — so the decision is made
+	// on what the figure IS, which is why `unit` is on the call rather than
+	// inferred from how the number looks.
+	exact := got
+	cur := domain.Currency{}
+	if in.Unit == unitMoney {
+		cur = t.currency(ctx)
+		if cur.IsSet() {
+			got = compute.Quantize(got, cur.MinorUnits, roundingOf(cur.Rounding))
+		}
+	}
+
 	payload := map[string]interface{}{
 		// The field the rest of the system reads as "this call produced a
 		// figure": agentbudget counts it as evidence and the grounding check
@@ -150,12 +259,13 @@ func (t *ComputeTool) Execute(ctx context.Context, args string) (string, error) 
 		// The working, on the payload and therefore on the audit row. A derived
 		// figure whose derivation is not recorded is a figure nobody can check
 		// six months later, which is the state this tool found the product in.
-		"working": map[string]interface{}{
-			"bindings": bindings,
-		},
+		"working": working(bindings, exact, got, cur),
 	}
 	if in.Unit != "" {
 		payload["unit"] = in.Unit
+	}
+	if cur.IsSet() {
+		payload["currency"] = cur.Code
 	}
 	out, _ := json.Marshal(payload)
 	return string(out), nil
@@ -189,4 +299,81 @@ func describeTurnValues(ctx context.Context) string {
 		return "This caller has no earlier tool results to bind to."
 	}
 	return t.describe()
+}
+
+// unitMoney is the one `unit` value that changes what the result is, rather
+// than only how it is described.
+const unitMoney = "money"
+
+// roundingOf maps the tenant's stated convention onto the arithmetic package's.
+// Two vocabularies rather than one shared constant because the domain states a
+// policy and internal/compute performs an operation, and the day a third
+// convention appears it will be added to exactly one of them.
+func roundingOf(m domain.RoundingMode) compute.Rounding {
+	if m.OrDefault() == domain.RoundingHalfEven {
+		return compute.HalfToEven
+	}
+	return compute.HalfAwayFromZero
+}
+
+// working is the derivation, for the payload and therefore for the audit row.
+//
+// The pre-rounding figure is recorded whenever rounding changed it. A derived
+// number whose derivation is not recorded is a number nobody can check six
+// months later — and "why is this one rupiah off the invoice" is precisely the
+// question a quantised figure will be asked.
+func working(bindings []map[string]interface{}, exact, final decimal.Decimal, cur domain.Currency) map[string]interface{} {
+	out := map[string]interface{}{"bindings": bindings}
+	if !cur.IsSet() || exact.Equal(final) {
+		return out
+	}
+	out["before_rounding"] = exact.String()
+	out["rounded_to"] = cur.MinorUnits
+	out["rounding"] = string(cur.Rounding.OrDefault())
+	return out
+}
+
+// bind resolves one input reference, which is either a figure a tool returned
+// in this turn or a fact about a date range (T-W2).
+//
+// The period namespace is what makes a run rate computable rather than
+// narrated. "Revenue per day last quarter" needs a day count, and the day
+// count is a property of the tenant's fiscal calendar — 90 days, or 91 in a
+// leap year, or a different three months entirely if their year starts in May.
+// Before this the model supplied that number from its own arithmetic, which is
+// the class T-W1 exists to close, one step upstream.
+func (t *ComputeTool) bind(ctx context.Context, ref string) (boundValue, error) {
+	trimmed := strings.TrimSpace(ref)
+	if !strings.HasPrefix(strings.ToLower(trimmed), periodRefPrefix) {
+		return resolveRef(ctx, trimmed)
+	}
+	rest := trimmed[len(periodRefPrefix):]
+	name, field, ok := cutLast(rest, ".")
+	if !ok {
+		return boundValue{}, fmt.Errorf("%q is not a period reference: write it as period.<name>.days, for example period.last_quarter.days", ref)
+	}
+	if !strings.EqualFold(field, "days") {
+		return boundValue{}, fmt.Errorf("a period has no %q. The only figure a period offers is `days`, as period.%s.days", field, name)
+	}
+	p, ok := domain.FiscalPeriod(strings.ReplaceAll(name, "_", " "), t.clock(), t.fiscalYearStart(ctx))
+	if !ok {
+		return boundValue{}, fmt.Errorf("%q is not a period this workspace resolves. It knows: %s. For anything else, compute the day count from dates you already have",
+			name, strings.Join(domain.FiscalPeriodNames, ", "))
+	}
+	return boundValue{Values: []decimal.Decimal{decimal.NewFromInt(int64(p.Days()))}}, nil
+}
+
+// periodRefPrefix namespaces a calendar fact so it can never collide with a
+// result id: `r1` is minted by a counter and `period` is a word, so the two
+// vocabularies cannot meet.
+const periodRefPrefix = "period."
+
+// cutLast splits on the LAST separator, because a period name contains dots in
+// none of its spellings but its field is always the final segment.
+func cutLast(s, sep string) (before, after string, found bool) {
+	i := strings.LastIndex(s, sep)
+	if i < 0 {
+		return s, "", false
+	}
+	return s[:i], s[i+len(sep):], true
 }

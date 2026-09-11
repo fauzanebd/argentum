@@ -131,6 +131,12 @@ var guidelines = []guideline{
    - That paragraph is about the TIME WINDOW and nothing else. It is not a reason to stop asking: if the ambiguity is which source, which metric, or which of two readings the user means — "what was our best month" is best by revenue, by orders, or by average order value — ask_clarification is still the right call, and an unnamed period is not what makes those questions ambiguous.`,
 	},
 	{
+		needs: []string{"compute"},
+		text: `DO NOT DO ARITHMETIC YOURSELF. A margin, a ratio, a growth rate, a difference, a share, a per-unit figure — anything you would work out from numbers a tool returned — goes through compute, binding its inputs to those results by their result_id. A figure you calculate in your head is a figure no tool produced: it cannot be checked, and a division that is wrong by a fraction of a percent looks exactly like one that is right.
+   - Bind, never retype. ` + "`" + `{"revenue": "r1.total_revenue"}` + "`" + `, not the digits you read off the payload. Copying a number is the other way this goes wrong, and it goes wrong quietly.
+   - Set unit to money for a currency amount, so it is rounded to this workspace's own precision. Leave a ratio or a percentage as ratio or percent — marking one of those as money would round it away.`,
+	},
+	{
 		// T-H8. Unconditional, because the fence is applied by a decorator over
 		// the whole registry: any tool this turn holds can return a fenced
 		// result, including one added after this sentence was written.

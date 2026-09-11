@@ -732,9 +732,11 @@ func (s *WatcherService) HandleFire(ctx context.Context, watcherID string) error
 	}
 
 	var companyName, currency string
+	var money domain.Currency
 	if c, err := s.companies.GetByID(ctx, w.CompanyID); err == nil {
 		companyName = c.Name
 		currency = c.DefaultCurrency
+		money = c.Currency()
 	}
 
 	if _, err := s.enqueuer.EnqueueChatRun(ctx, queue.ChatRunPayload{
@@ -745,6 +747,7 @@ func (s *WatcherService) HandleFire(ctx context.Context, watcherID string) error
 		UserMsgID:       userMsg.ID,
 		CompanyName:     companyName,
 		DefaultCurrency: currency,
+		Money:           money,
 		WatcherEventID:  event.ID,
 	}); err != nil {
 		logrus.WithError(err).WithField("watcher_id", w.ID).Warn("watcher fire: chat:run not enqueued; event recorded without a turn")

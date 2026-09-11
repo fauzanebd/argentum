@@ -585,9 +585,14 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 
 	// Look up company display name and default currency for agent context.
 	var companyName, currency string
+	// And the convention that currency is written under (T-W2) — off the same
+	// row, so the worker needs no second read to know whether a rupiah figure
+	// has decimal places.
+	var money domain.Currency
 	if company, err := s.companies.GetByID(ctx, in.CompanyID); err == nil {
 		companyName = company.Name
 		currency = company.DefaultCurrency
+		money = company.Currency()
 	}
 
 	// One user message, N turns (T-N3). Every payload carries the same
@@ -635,6 +640,7 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 			UserMsgID:       userMsg.ID,
 			CompanyName:     companyName,
 			DefaultCurrency: currency,
+			Money:           money,
 			APIReportID:     in.APIReportID,
 			APIKeyID:        in.APIKeyID,
 			EmbedUserRef:    in.EmbedUserRef,

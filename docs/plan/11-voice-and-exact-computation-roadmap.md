@@ -17,17 +17,18 @@ P Q S T`. The two obvious mnemonics are both taken: `T-V` is the video track,
 and `T-C1` would sit one character from the finding `C-1`. `W` collides with
 neither list.
 
-> **Status, 2026-09-12: `T-W1` is built, `make check` green, unit-gated.**
+> **Status, 2026-09-12: `T-W1` and `T-W2` are built, `make check` green,
+> unit-gated.**
 > Track A's first ticket — the one §7 argued for — is in
 > [`../coverage/exact-computation.md`](../coverage/exact-computation.md). Two
 > gates are owed and neither is blocked on code: a paired `make eval` either
 > side of the prompt catalog line, and one live turn
 > ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7b).
 >
-> **Nothing else here is built.** `T-W2` next in Track A — it is where the
-> prompt gains its *guideline*, and the two prompt edits should be scored in one
-> paired run rather than two. `T-W3` after it, because it is the measurement
-> that decides whether `T-W4`/`T-W5`'s five days happen at all. The board's
+> **`T-W3` is next**, because it is the measurement that decides whether
+> `T-W4`/`T-W5`'s five days happen at all — and `T-W4` should not be started
+> before it answers. Both prompt edits (`T-W1`'s catalog line, `T-W2`'s
+> guideline) are owed **one** paired `make eval` between them, not two. The board's
 > other open items are `T-F5` (held on a measurement), `T-H4` step 2, `T-H14`'s
 > envelope half, `T-K8`→`T-K10` and `T-G8`→`T-G9`.
 
@@ -245,8 +246,27 @@ whole point of `T-W3` is to find out how much of it is left.
 
 ---
 
-#### `T-W2` Money, periods and rounding are stated rather than assumed
+#### `T-W2` Money, periods and rounding are stated rather than assumed — **BUILT 2026-09-12**
 **Repo:** BE + FE · **Size:** 1.0d · **Deps:** `T-W1` · **Migration:** none
+
+> **Built, `make check` green, unit-gated.** Record:
+> [`../coverage/exact-computation.md`](../coverage/exact-computation.md) §5.
+>
+> **"Migration: none" was wrong for the second ticket running** — and this time
+> because of where the data already lives. The currency *code* has been on
+> `companies.default_currency` since before any of this, read by the report
+> renderer, the document generator and the prompt. Putting a second one on
+> `company_profiles` would be two rows expressing one idea, so the precision
+> and the rounding policy went beside the code: migration `082`.
+>
+> **And the quarters acceptance line cannot hold as written.** "April fiscal
+> year returns Jan–Mar, January one returns Oct–Dec" needs two different
+> `now`s — the windows that satisfy each are disjoint. The more useful half:
+> April, July, October and January are themselves calendar-quarter boundaries,
+> so a fiscal year starting in any of them produces the *same blocks* as a
+> calendar year and the example cannot distinguish a correct implementation
+> from one that ignores the fiscal month at all. The discriminating test uses a
+> **May** fiscal year.
 
 ##### Why
 Exact arithmetic over the wrong convention is exactly wrong. IDR has **zero**

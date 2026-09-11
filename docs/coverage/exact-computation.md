@@ -4,13 +4,13 @@ The plan is
 [`../plan/11-voice-and-exact-computation-roadmap.md`](../plan/11-voice-and-exact-computation-roadmap.md)
 Track A; the evidence is
 [`../research/08-voice-and-exact-computation.md`](../research/08-voice-and-exact-computation.md).
-**One ticket of five is built.**
+**Two tickets of five are built.**
 
 | Ticket | Status |
 | --- | --- |
-| `T-W1` `compute`: exact arithmetic, no sandbox | **built 2026-09-12, unit-gated. Migration `081` (a backfill the ticket did not anticipate — §3a). Three gates owed — §6** |
-| `T-W2` Money, periods and rounding stated rather than assumed | Not built |
-| `T-W3` The measurement that decides whether the sandbox is worth building | Not built — §5 is the panel it owes a number to |
+| `T-W1` `compute`: exact arithmetic, no sandbox | **built 2026-09-12, unit-gated. Migration `081` (a backfill the ticket did not anticipate — §3a). Three gates owed — §7** |
+| `T-W2` Money, periods and rounding stated rather than assumed | **built 2026-09-12, unit-gated. Migration `082` (the ticket said none — §5a). Two gates owed — §7** |
+| `T-W3` The measurement that decides whether the sandbox is worth building | Not built — §6 is the panel it owes a number to |
 | `T-W4` The sandbox: CPython under WASI | Not built, and deliberately not started — it is what `T-W3` decides |
 | `T-W5` `run_program`, and the working it leaves behind | Not built |
 
@@ -128,7 +128,97 @@ rather than passing vacuously if the cap did not bite.
 A NULL or non-numeric cell is absent from a bound column rather than zero —
 the rule SQL's own `SUM` follows, and the only one that does not invent a figure.
 
-## 5. The measurement this file exists to hold
+## 5. `T-W2` — the convention a figure was computed under
+
+Exact arithmetic over the wrong convention is exactly wrong, and `T-W1` shipped
+the exactness without the convention.
+
+**Money.** A `unit: "money"` result is now quantised to the tenant's currency
+precision using their stated rounding. IDR carries **no** decimal places, USD
+carries two, and a ratio carries whatever it has — `0.4564` quantised to
+rupiah's zero places is `0`, which is why the decision is made on what the
+figure *is* (`unit` is on the call) rather than on how the number looks. A
+company with no currency, or one this product does not recognise, quantises
+nothing: the "behaves exactly as today" path, asserted three ways.
+
+**Rounding is a policy, not a fact.** Half-up and half-even are both offered
+because several accounting standards require half-even precisely so a long
+ledger does not drift upward, and which standard a tenant is held to is not
+something this product can know. Unstated resolves to half-up — which is what
+every answer this product has ever given already did, so the default changes
+nothing — and the resolved convention is *rendered into the prompt as a
+sentence*, so it is visible rather than implied.
+
+**Periods.** `domain.FiscalPeriod` resolves "last quarter", "ytd", "last month"
+and three more against the tenant's fiscal year, returning a **closed-open**
+range. `BETWEEN '2026-01-01' AND '2026-03-31'` silently drops everything
+timestamped on the 31st after midnight, which is the commonest off-by-one in
+analytical SQL and the hardest to notice: the answer is only slightly wrong, and
+only for the last day. The resolved ranges go into the turn as dates — a fact,
+not the hint `fiscalLine` has been since `T-B1` — and a period's **day count**
+is bindable by `compute` as `period.last_quarter.days`, which is what makes a
+run rate computable rather than narrated.
+
+### 5a. Two things the ticket got wrong, and one it could not have known
+
+**"`domain.Currency` on the company profile" — it went on `companies`
+instead.** The currency *code* has lived at `companies.default_currency` since
+before the agent could compute anything, and it is read by the report renderer,
+the document generator and the prompt. A second currency column on
+`company_profiles` would be two rows expressing one idea — the rot this
+repository has avoided everywhere else — so the precision and the policy went
+beside the code rather than opposite it. Which made **`082` a migration the
+ticket said it did not need**, for the second ticket running.
+
+**And the acceptance line about quarters cannot hold as written:**
+
+> `fiscal_period("last quarter")` against an April fiscal year returns Jan–Mar,
+> and against a January one returns Oct–Dec — the table test
+
+Those need two different `now`s. A January fiscal year yields Oct–Dec only when
+asked in Jan–Mar; an April one yields Jan–Mar only when asked in Apr–Jun. The
+two windows are disjoint, so no single instant satisfies both.
+
+**The more useful half of that finding is why the example was reachable at
+all.** April, July, October and January are themselves calendar-quarter
+boundaries, so a fiscal year starting in any of them produces **exactly the same
+three-month blocks** as a calendar year — only the numbering differs. The
+ticket's own example therefore cannot tell a correct implementation from one
+that ignores `FiscalYearStartMonth` entirely. The test that discriminates uses a
+**May** fiscal year, and `TestAFiscalYearThatIsNotOnAQuarterBoundary` asserts
+exactly that: a May year and a calendar year must *disagree* about what this
+quarter is, and the test fails if they agree.
+
+**`IDR` is 0 minor units here and ISO 4217 says 2.** The sen was withdrawn
+decades ago; Indonesian prices, invoices and ledgers are whole rupiah, and this
+product has rendered them that way since `T-R2`. Writing 2 because a standard
+says so would put `Rp 1.234.567,00` on every figure — a dollar's shape wearing a
+rupiah's name. The note is in `currency.go` beside the table, and the same
+practice-over-standard call is made for no other currency.
+
+### 5b. What `T-W2` added, by file
+
+| Piece | Where |
+| --- | --- |
+| The money convention, and the ISO precision table | `internal/domain/currency.go` |
+| The fiscal calendar, closed-open | `internal/domain/fiscal_period.go` |
+| Quantisation, half-up and half-even | `internal/compute/compute.go` (`Quantize`) |
+| Money quantised, periods bindable | `internal/tools/compute.go` |
+| The columns | `migrations/control/082_company_currency.{up,down}.sql` |
+| The setter, and the three-state `currency_minor_units` body | `internal/app/company_service.go`, `internal/transport/http/handlers/company.go` |
+| The convention on every enqueued turn | `internal/queue/tasks.go`, the three enqueue sites |
+| The currency sentence, and the resolved periods | `internal/app/chat_runner.go` |
+| The guideline: do not do arithmetic yourself | `internal/bootstrap/system_prompt.go` |
+| Rounding, and what a currency's precision means | `apps/dashboard/src/features/settings/general-tab.tsx` |
+
+**The parity test worth knowing about.** The accepted-currency list lives in
+`internal/app` and the precision table in `internal/domain`, and
+`TestEverySupportedCurrencyHasAStatedPrecision` asserts both directions.
+Without it, adding a currency to one list would let a tenant select a currency
+that silently stops being quantised — which looks exactly like a currency that
+was never configured.
+
+## 6. The measurement this file exists to hold
 
 `T-W3`'s panel goes here: how many turns state a figure no data tool returned,
 how many call `compute` once it exists, and how many call it and then state a
@@ -138,7 +228,7 @@ sized. The discipline is `T-F5`'s, deliberately repeated.
 
 Nothing is in this section yet. It needs `T-W3` and a database.
 
-## 6. What is owed
+## 7. What is owed
 
 | Gate | What it would prove | Blocker |
 | --- | --- | --- |

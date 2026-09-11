@@ -6416,6 +6416,68 @@ derived figure after `compute` exists — and if the residue is small, `T-W4` an
 `T-W5`'s five days are cut and the track ends at 2.5. That outcome is a success.
 The discipline is `T-F5`'s, deliberately repeated.
 
+## Phase 3ak — The convention a number was computed under (2026-09-12)
+
+`T-W2`, the second of roadmap 11's Track A. Record:
+[`exact-computation.md`](exact-computation.md) §5.
+
+**`T-W1` shipped exactness without the convention, and exact arithmetic over
+the wrong convention is exactly wrong.** A rupiah figure carrying two decimals
+is a dollar assumption that already went wrong upstream; a half-cent that
+rounds the wrong way is the difference a reconciliation exists to find; and
+"last quarter" against an April fiscal year is three different months from
+"last quarter" against a calendar one.
+
+**Money is quantised, and only money.** A `unit: "money"` result takes its
+currency's precision — IDR none, USD two — under a half-up or half-even policy
+the tenant states. A ratio is left exact, because `0.4564` quantised to
+rupiah's zero places is `0`: the decision is made on what the figure *is*,
+which is why `unit` is on the call rather than inferred from how the number
+looks. A company with no currency quantises nothing, asserted three ways.
+
+**Rounding is a policy and is offered as one.** Several accounting standards
+require half-even precisely so a long ledger does not drift upward, and which
+standard a tenant is held to is not something this product can know. Unstated
+resolves to half-up — what every answer here already did — and the resolved
+convention is rendered into the prompt as a sentence rather than left implicit.
+
+**The periods are stated as dates, closed-open.** `BETWEEN '2026-01-01' AND
+'2026-03-31'` silently drops everything timestamped on the 31st after midnight,
+which is the commonest off-by-one in analytical SQL and the hardest to notice —
+the answer is only slightly wrong, and only for the last day. The fiscal month
+has been in the prompt since `T-B1` as a fact about the company and nothing
+that computes has ever read it; now the turn carries the resolved ranges, and
+`compute` can bind a period's day count as `period.last_quarter.days`, which is
+what makes a run rate computed rather than narrated.
+
+**Where it went is not where the ticket said.** "`domain.Currency` on the
+company profile" — but the currency *code* has been on
+`companies.default_currency` since long before any of this, read by the report
+renderer, the document generator and the prompt. A second one on
+`company_profiles` would be two rows expressing one idea, so the precision and
+the policy went beside the code. Migration `082`, and **"Migration: none" was
+wrong for the second ticket running.**
+
+**The acceptance line about quarters cannot hold as written, and the reason is
+worth more than the correction.** "April fiscal year returns Jan–Mar, January
+one returns Oct–Dec" needs two different `now`s — the windows are disjoint. But
+the useful half is why the example was reachable at all: **April, July, October
+and January are themselves calendar-quarter boundaries**, so a fiscal year
+starting in any of them produces the same three-month blocks as a calendar
+year. The ticket's own example cannot tell a correct implementation from one
+that ignores `FiscalYearStartMonth` entirely. The discriminating test uses a
+**May** fiscal year and fails if the two agree.
+
+**And one deliberate disagreement with a standard.** ISO 4217 gives IDR two
+minor units. The sen was withdrawn decades ago, Indonesian ledgers are whole
+rupiah, and this product has rendered them that way since `T-R2` — so the table
+says 0, the note beside it says why, and no other currency gets the same
+treatment.
+
+**`T-W3` is next and nothing should be built past it.** It counts how many
+turns still state a derived figure now that `compute` exists; if the residue is
+small, `T-W4` and `T-W5`'s five days are cut and Track A ends at 2.5 days.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

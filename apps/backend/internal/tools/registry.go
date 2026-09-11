@@ -114,6 +114,11 @@ type RegistryDeps struct {
 	// that has not indexed anything yet should not have a different tool list
 	// from one that has.
 	Documents DocumentSearch
+	// Profiles supplies the fiscal year start month to `compute`'s period
+	// references (T-W2). Optional in the way Companies is: nil resolves every
+	// period against a January year, which is what every caller with no
+	// profile has always done.
+	Profiles CompanyProfileLookup
 	// Skills is the tenant's written procedures (T-K1). Optional in the way
 	// Metrics is: a nil repository still registers `load_skill`, so the tool
 	// appears in the allowlist checkboxes and the template vocabulary on every
@@ -152,7 +157,7 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// nothing has nothing to compute from. No dependencies — the exactness
 		// is in internal/compute and the grounding is in the turn's own memory,
 		// so this registers on every deployment.
-		NewComputeTool(),
+		NewComputeTool().WithConventions(d.Companies, d.Profiles),
 		// One call, every panel (T-D11). The pair it replaces —
 		// create_visualization then create_dashboard — spent four tool calls on a
 		// three-panel answer and carried a thread-scoped in-memory map to make

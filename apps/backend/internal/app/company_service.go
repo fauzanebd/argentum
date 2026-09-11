@@ -475,6 +475,35 @@ func (s *CompanyService) UpdateCurrency(ctx context.Context, companyID, currency
 	return s.companies.Update(ctx, c)
 }
 
+// UpdateCurrencyConvention persists how much precision this tenant's money
+// carries and which way it rounds at a half (T-W2).
+//
+// Separate from UpdateCurrency above rather than folded into it, because the
+// two answer different questions and arrive from different places: the code is
+// what the tenant trades in, and these are how their ledger is written. A
+// caller that changes the code alone must not have its convention silently
+// reset, which is what one combined setter taking three arguments would do to
+// every existing client.
+//
+// A nil minorUnits clears the override and returns the currency to its own
+// precision. An empty rounding clears the policy and resolves to half-up,
+// which is what every answer this product has ever given already did.
+func (s *CompanyService) UpdateCurrencyConvention(ctx context.Context, companyID string, minorUnits *int, rounding domain.RoundingMode) error {
+	if minorUnits != nil && (*minorUnits < 0 || *minorUnits > domain.MaxCurrencyMinorUnits) {
+		return fmt.Errorf("%w: currency_minor_units must be between 0 and %d", domain.ErrInvalidInput, domain.MaxCurrencyMinorUnits)
+	}
+	if !rounding.Valid() {
+		return fmt.Errorf("%w: unsupported currency_rounding %q", domain.ErrInvalidInput, rounding)
+	}
+	c, err := s.companies.GetByID(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	c.CurrencyMinorUnits = minorUnits
+	c.CurrencyRounding = rounding
+	return s.companies.Update(ctx, c)
+}
+
 // UpdatePIIRedactionMode validates and persists the tenant's redaction policy
 // (T-07b). Admin-gated at the router like every other company setting: this
 // widens what the agent may print, and it is not a per-user preference.

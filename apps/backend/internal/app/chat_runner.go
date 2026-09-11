@@ -907,7 +907,8 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// closest to the top so the agent reads it before the source catalog.
 	agentMsg := withLanguageReminder(p.Message)
 	agentMsg = withCompanyNameContext(agentMsg, p.CompanyName)
-	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency)
+	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency, p.Money)
+	agentMsg = r.withPeriodContext(ctx, agentMsg, p.CompanyID)
 	agentMsg = withSourcesContext(agentMsg, sources)
 	agentMsg = r.withMetricsContext(ctx, agentMsg, p.CompanyID)
 	agentMsg = r.withActionsContext(ctx, agentMsg, p.CompanyID)
@@ -2364,14 +2365,68 @@ func withCompanyNameContext(msg, companyName string) string {
 // withCurrencyContext prepends a short currency instruction to the user
 // message so the agent knows which currency to use for formatting. If
 // currency is empty, the message is returned unchanged.
-func withCurrencyContext(msg, currency string) string {
+//
+// T-W2 added the second half: how many decimal places that currency has and
+// which way it rounds. "Format money accordingly" was an instruction the model
+// had to interpret against whatever it knows about IDR, and what it mostly
+// knows is dollars. The convention is now stated rather than implied — and a
+// company whose currency this product does not recognise gets the old
+// single-sentence block unchanged, which keeps every existing turn where it
+// was.
+func withCurrencyContext(msg, currency string, money domain.Currency) string {
 	if currency == "" {
 		return msg
 	}
+	line := money.Line()
+	if line == "" {
+		return fmt.Sprintf(
+			"[System context: The default currency is %s. Format money accordingly.]\n\n%s",
+			currency, msg,
+		)
+	}
 	return fmt.Sprintf(
-		"[System context: The default currency is %s. Format money accordingly.]\n\n%s",
-		currency, msg,
+		"[System context: The default currency is %s. Format money accordingly. %s]\n\n%s",
+		currency, line, msg,
 	)
+}
+
+// withPeriodContext prepends the tenant's own calendar, resolved to dates
+// (T-W2).
+//
+// **A fact, not a hint.** The fiscal month has been in the company block since
+// T-B1 — "Fiscal year starts in April" — and what the model does with it is
+// calendar arithmetic in its head, on a request where the numbers are about to
+// be right and the period wrong. This states the answer instead: last quarter
+// IS 2026-01-01 up to 2026-04-01, in this workspace, today. That is also why
+// the ranges are written closed-open: `BETWEEN` silently drops the last day,
+// and a range the model copies is a range the model does not have to derive.
+//
+// Emitted only for a fiscal year that does not start in January — the same rule
+// CompanyProfile.fiscalLine follows, for the same reason. On a calendar year
+// "last quarter" is what every model already resolves correctly, and six lines
+// of dates on every turn of every tenant to confirm it is tokens for nothing.
+func (r *ChatRunner) withPeriodContext(ctx context.Context, msg, companyID string) string {
+	if r.profiles == nil {
+		return msg
+	}
+	p, err := r.profiles.GetByCompany(ctx, companyID)
+	if err != nil || p == nil || p.FiscalYearStartMonth < 2 || p.FiscalYearStartMonth > 12 {
+		return msg
+	}
+	now := time.Now()
+	var b strings.Builder
+	b.WriteString("[System context: This organization's fiscal year starts in ")
+	b.WriteString(time.Month(p.FiscalYearStartMonth).String())
+	b.WriteString(", so these phrases mean these dates today. Use them verbatim in SQL:\n")
+	for _, name := range domain.FiscalPeriodNames {
+		period, ok := domain.FiscalPeriod(name, now, p.FiscalYearStartMonth)
+		if !ok {
+			continue
+		}
+		b.WriteString("- " + period.String() + "\n")
+	}
+	b.WriteString("Write a date filter as `>= from AND < to`, never BETWEEN — BETWEEN drops the last day.]\n\n")
+	return b.String() + msg
 }
 
 // withRelevantTablesContext queries the per-source embedding index for the

@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -851,6 +853,21 @@ func (h *CompanyHandler) getSettings(c *gin.Context) {
 		"message_retention_days":     company.MessageRetentionDays,
 		"message_retention_forever":  domain.RetentionForever,
 		"message_retention_days_max": domain.MaxMessageRetentionDays,
+		// T-W2. The resolved convention rather than the raw columns: the form
+		// shows what a money figure will actually be written with, which for a
+		// tenant who has stated nothing is the currency's own precision and
+		// half-up. Sending the override separately is what lets the form tell
+		// "IDR's own 0" from "an admin typed 0".
+		"currency":                company.Currency(),
+		"currency_minor_units":    company.CurrencyMinorUnits,
+		"currency_rounding":       company.CurrencyRounding,
+		"currency_rounding_modes": []domain.RoundingMode{domain.RoundingHalfUp, domain.RoundingHalfEven},
+		// The precision of every currency the form offers, so it can say what
+		// a selection means before it is saved. Sent as a map rather than
+		// duplicated in TypeScript: a second copy of this table is a second
+		// place for IDR to become two decimal places.
+		"currency_precisions":      currencyPrecisions(),
+		"currency_minor_units_max": domain.MaxCurrencyMinorUnits,
 	})
 }
 
@@ -867,16 +884,31 @@ type updateSettingsReq struct {
 	// client that does not send the field must not be read as asking for
 	// forever, and a client that sends 0 must not be read as sending nothing.
 	MessageRetentionDays *int `json:"message_retention_days"`
+	// CurrencyMinorUnits and CurrencyRounding are the money convention (T-W2).
+	//
+	// CurrencyMinorUnits is a pointer for MessageRetentionDays' reason and a
+	// sharper one: 0 is not merely meaningful here, it is the value rupiah
+	// uses. Absent leaves the setting alone; an explicit null clears the
+	// override back to the currency's own precision. Distinguishing those
+	// three needs the second pointer below.
+	CurrencyMinorUnits *int                 `json:"currency_minor_units"`
+	CurrencyRounding   *domain.RoundingMode `json:"currency_rounding"`
 }
 
 func (h *CompanyHandler) updateSettings(c *gin.Context) {
+	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, settingsBodyMax))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not read request body"})
+		return
+	}
 	var req updateSettingsReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := json.Unmarshal(raw, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.DefaultCurrency == "" && req.PIIRedactionMode == "" && req.MessageRetentionDays == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no settings in request: send default_currency, pii_redaction_mode, message_retention_days, or any combination"})
+	if req.DefaultCurrency == "" && req.PIIRedactionMode == "" && req.MessageRetentionDays == nil &&
+		req.CurrencyRounding == nil && !hasKey(raw, "currency_minor_units") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no settings in request: send default_currency, pii_redaction_mode, message_retention_days, currency_minor_units, currency_rounding, or any combination"})
 		return
 	}
 	if req.DefaultCurrency != "" {
@@ -887,6 +919,27 @@ func (h *CompanyHandler) updateSettings(c *gin.Context) {
 	}
 	if req.PIIRedactionMode != "" {
 		if err := h.svc.UpdatePIIRedactionMode(c.Request.Context(), companyID(c), req.PIIRedactionMode); err != nil {
+			writeSettingsErr(c, err)
+			return
+		}
+	}
+	// The convention is written when either half is present, because they live
+	// in one row and the setter takes both. An absent half keeps what is
+	// stored, which is why the current company is read first.
+	if req.CurrencyRounding != nil || hasKey(raw, "currency_minor_units") {
+		company, err := h.svc.GetCompany(c.Request.Context(), companyID(c))
+		if err != nil {
+			writeSettingsErr(c, err)
+			return
+		}
+		units, rounding := company.CurrencyMinorUnits, company.CurrencyRounding
+		if hasKey(raw, "currency_minor_units") {
+			units = req.CurrencyMinorUnits
+		}
+		if req.CurrencyRounding != nil {
+			rounding = *req.CurrencyRounding
+		}
+		if err := h.svc.UpdateCurrencyConvention(c.Request.Context(), companyID(c), units, rounding); err != nil {
 			writeSettingsErr(c, err)
 			return
 		}
@@ -902,6 +955,39 @@ func (h *CompanyHandler) updateSettings(c *gin.Context) {
 		}
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// currencyPrecisions is every supported code and how many decimal places it
+// carries, for the settings form's "IDR is written with no decimal places"
+// line.
+func currencyPrecisions() map[string]int {
+	out := map[string]int{}
+	for _, code := range app.SupportedCurrencies() {
+		if units, ok := domain.CurrencyMinorUnits(code); ok {
+			out[code] = units
+		}
+	}
+	return out
+}
+
+// settingsBodyMax bounds the settings body. It is a handful of scalar fields;
+// anything larger is not a settings write.
+const settingsBodyMax = 64 * 1024
+
+// hasKey reports whether the submitted object carried a key at all.
+//
+// `currency_minor_units` needs three states and JSON gives a pointer two:
+// absent means "leave it alone", null means "clear the override back to the
+// currency's own precision", and a number means that number. 0 is a real
+// precision — it is rupiah's — so none of the three can be folded into
+// another.
+func hasKey(raw []byte, key string) bool {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return false
+	}
+	_, ok := probe[key]
+	return ok
 }
 
 func writeSettingsErr(c *gin.Context, err error) {

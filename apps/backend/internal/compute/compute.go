@@ -640,3 +640,35 @@ func guard(d decimal.Decimal) error {
 	}
 	return nil
 }
+
+// Rounding is what Quantize does at exactly half a unit.
+type Rounding int
+
+const (
+	// HalfAwayFromZero: 2.5 → 3, -2.5 → -3. What a person expects.
+	HalfAwayFromZero Rounding = iota
+	// HalfToEven: 2.5 → 2, 3.5 → 4. Banker's rounding, which several
+	// accounting standards require because it does not drift upward over a
+	// long ledger.
+	HalfToEven
+)
+
+// Quantize fixes a figure to a currency's precision (T-W2).
+//
+// It lives here rather than in the domain because it is arithmetic, and this
+// is the package that owns arithmetic: the domain states *which* convention a
+// tenant uses and this applies it. Which also keeps the decimal dependency out
+// of the domain.
+//
+// Applied to money and to nothing else. A ratio quantised to a currency's
+// scale is a ratio destroyed — 0.4564 at IDR's zero places is 0 — and the
+// caller decides by what the figure *is*, not by how it looks.
+func Quantize(d decimal.Decimal, places int, mode Rounding) decimal.Decimal {
+	if places < 0 || places > 18 {
+		return d
+	}
+	if mode == HalfToEven {
+		return d.RoundBank(int32(places))
+	}
+	return d.Round(int32(places))
+}
