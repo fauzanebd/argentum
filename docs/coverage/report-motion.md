@@ -169,3 +169,79 @@ passed is a check nobody has tested.
   comparator. `T-V1` already proves the *plan* is byte-identical between runs,
   which is where the determinism this project cares about actually lives —
   locked decision 9 says the video itself is not byte-stable. Filed, not built.
+
+## 5. The contact sheet, run 2026-09-11 — and the defect on it
+
+`T-V5`'s two owed visual items sat in §4 above since 2026-08-09 as "needs the
+render service running and a place to put the PNGs". Both existed; nobody had
+put them together.
+
+    ARGENTUM_PLAN_OUT=/tmp/plans go test ./internal/report/videoplan -run WritePlans
+    pnpm --filter @argentum/render render:fixture /tmp/plans/monthly_sales.plan.json /tmp/stills --stills
+    pnpm --filter @argentum/render sheet /tmp/stills
+
+The third line is new (`apps/render/harness/sheet.mjs`) and lays the sheet out
+in a browser rather than with an image library — the alternative is a
+compositing dependency in a service whose selling point is that it has no
+database, no object storage and no outbound network, for a picture that goes in
+a document.
+
+**The first attempt failed exactly as this repo predicted it would.** Feeding a
+`testdata` golden straight to the renderer gives `net::ERR_UNKNOWN_URL_SCHEME`
+on `sha256:…`, because the goldens replace chart images with their digest to
+stay reviewable. `build_test.go:400` says so, names the symptom, and gives the
+two commands above. Worth recording that the note did its job on the second
+reader.
+
+![Every scene kind the video renderer draws](assets/video-scene-contact-sheet.png)
+
+One frame per *kind* — thirteen scenes across eight kinds, and a sheet carrying
+`section` three times is a sheet whose reader stops reading.
+
+### 5a. The KPI row overflowed the frame, and four cards is the sanctioned cap
+
+The first sheet showed three KPI cards and **a sliver of a fourth**: the label
+clipped mid-word, the `%` sheared off by the right edge of the frame.
+
+Not an entrance artifact — `KPIRow`'s entrance is opacity and `translateY`, and
+the still is sampled mid-scene. It is flexbox: each card is `flex: 1` with
+`whiteSpace: "pre"` inside, a flex item's default `min-width: auto` refuses to
+shrink below its content, so four long labels add up wider than the body and
+`AbsoluteFill` clips the overflow. **Four cards is not an unusual input — it is
+the wide surface's own cap** (`canvas.go:165`).
+
+`minWidth: 0` fixed the frame overflow and moved the clipping inside the card:
+the values then ran over their own borders. So the numbers were measured off the
+rendered still rather than estimated:
+
+| | |
+| --- | --- |
+| Body width, wide surface | 1,648px |
+| Inner width per card, four across | **318px** |
+| Inner width per card, three across | 459px |
+| `Rp 3,86 Miliar` at `display` (86px) | **554px of ink** |
+
+The widest value fits neither, so **capping the card count does not save it** —
+the number has to get smaller as its card does. `valueSize` steps down the
+existing scale: `h2` (47px) at four across puts that value at 303px inside 318;
+`h1` (58px) at three puts it at 374 inside 459. Portrait stacks its cards
+full-width and keeps `display`.
+
+The label now wraps, alone among this file's `pre` strings: a label is prose and
+a second line costs nothing, while `Rp 3,86` above `Miliar` is a number broken
+in half.
+
+**What this does not do is fit text.** A value longer than any the builder
+produces today would still overflow. That absence is the same one that let four
+cards be inherited from the deck, where text *is* measured and fitted — and it
+is why `canvas.Wide`'s comment reasons about card width in millimetres for a
+renderer that never measures.
+
+### 5b. Still owed
+
+**The pale-brand frame beside the PDF cover.** `theme.Readable` is applied when
+the *plan is built* (`build.go:650`), so photographing it needs a plan built from
+a pale brand, not a hand-edited JSON — which means a brand override in
+`TestWritePlans`, the same again in the PDF fixture writer, and a rasteriser to
+turn the PDF cover into a PNG to sit beside it. Three small things rather than
+one, none of them hard, none of them done today.

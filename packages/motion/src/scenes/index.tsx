@@ -574,6 +574,33 @@ const Quote: React.FC<Props> = ({ scene, brand, metrics }) => {
  * display size, inside the body with the spacing the plan measured. The value
  * keeps the display size on both — a big number is the point of the card.
  */
+/**
+ * How big the number on a KPI card may be, given how many cards share the row.
+ *
+ * **Measured rather than chosen** (T-V5's contact sheet, 2026-09-11). On the
+ * wide surface the body is 1,648px, so four cards leave 318px of inner width
+ * each and three leave 459px. The widest value in the fixtures — `Rp 3,86
+ * Miliar` — is **554px of ink at `display` (86px)**, read off the rendered
+ * still. It therefore fits neither, and capping the card count does not save it:
+ * the number has to get smaller as its card does.
+ *
+ * The steps are the existing scale, not new sizes. At four across, `h2` (47px)
+ * puts that value at 303px inside 318; at three, `h1` (58px) puts it at 374
+ * inside 459.
+ *
+ * Portrait stacks its cards full-width, so the row count is not the constraint
+ * there and `display` stands.
+ *
+ * **What this does not do is fit text.** A value longer than any the builder
+ * produces today would still overflow its card — there is no measurement in
+ * this renderer, which is the same absence that let four cards be inherited
+ * from the deck (`canvas.go:127`), where text *is* measured and fitted.
+ */
+function valueSize(metrics: Metrics, count: number, portrait?: boolean): number {
+  if (portrait || count <= 2) return metrics.type.display;
+  return count >= 4 ? metrics.type.h2 : metrics.type.h1;
+}
+
 const KPIRow: React.FC<Props> = ({ scene, brand, metrics, portrait }) => {
   const frame = useSceneFrame();
   const cards = scene.kpis ?? [];
@@ -617,6 +644,16 @@ const KPIRow: React.FC<Props> = ({ scene, brand, metrics, portrait }) => {
                 key={card.label}
                 style={{
                   flex: portrait ? "none" : 1,
+                  // **`minWidth: 0` is what keeps the fourth card on screen.**
+                  // A flex item's default `min-width: auto` refuses to shrink
+                  // below its content, and the label below is `pre` — so four
+                  // cards whose labels are long ("Tingkat Pembatalan") add up
+                  // wider than the frame, the row overflows to the right, and
+                  // AbsoluteFill clips it. Four is not an unusual case: it is
+                  // the wide surface's own cap (`canvas.go:165`). Found on the
+                  // T-V5 contact sheet, 2026-09-11 — the still showed three
+                  // cards and a sliver of a fourth.
+                  minWidth: 0,
                   backgroundColor: brand.surface,
                   border: `1px solid ${brand.border}`,
                   borderRadius: metrics.radius,
@@ -629,7 +666,11 @@ const KPIRow: React.FC<Props> = ({ scene, brand, metrics, portrait }) => {
                   style={{
                     fontSize: metrics.type.caption,
                     color: brand.muted,
-                    whiteSpace: "pre",
+                    // Wraps, unlike every other `pre` in this file. A label is
+                    // prose and a second line of it costs nothing; the *value*
+                    // below stays `pre`, because "Rp 3,86" above "Miliar" is a
+                    // number broken in half.
+                    overflowWrap: "break-word",
                   }}
                 >
                   {card.label}
@@ -644,7 +685,7 @@ const KPIRow: React.FC<Props> = ({ scene, brand, metrics, portrait }) => {
                 >
                   <div
                     style={{
-                      fontSize: metrics.type.display,
+                      fontSize: valueSize(metrics, cards.length, portrait),
                       fontWeight: 700,
                       color: brand.foreground,
                       whiteSpace: "pre",

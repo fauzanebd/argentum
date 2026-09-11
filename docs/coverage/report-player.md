@@ -195,3 +195,49 @@ retrying with the same company name (`duplicate key … companies_slug_key`). Hi
 while creating a second tenant for the cross-company check. It is not this
 ticket's and it is not filed as one — it is recorded here because it cost ten
 minutes and will cost the next person the same.
+
+## 8. The browser arm, run 2026-09-11 — two engines of three
+
+§7 left two items owed with the same reason: *"these two are visual and need a
+human opening the page."* They ran today through the dashboard's screenshot
+harness, which fulfils `/share/:token` at the network — the page uses a bare
+axios call rather than `@/lib/api` precisely because its visitor has no session,
+so there is no module to stub and interception is the only way in.
+
+| Acceptance item | Result |
+| --------------- | ------ |
+| The shared player rendering in Chrome, Safari and Firefox | **Pass in Chromium and Firefox, byte-for-byte the same layout, type and colour. WebKit is owed** — see below |
+| A plan with an unknown version renders its known scenes and shows a notice | **Pass.** `version: 99` draws the amber notice above the player and the thirteen known scenes still play beneath it |
+
+![The shared player](assets/share-player.png)
+
+![The notice a future-version plan shows](assets/share-player-future-version.png)
+
+### 8a. Two harness artifacts that looked like product defects
+
+Both worth recording, because both would have been filed as bugs by a less
+suspicious reader.
+
+**The player photographed black.** Frame 0 of the cover scene *is* black — its
+entrance begins at zero opacity, the same reason the stills CLI samples
+mid-scene rather than at a scene's first frame. The shooter now presses the
+page's own Play button and waits before shooting.
+
+**The player photographed in Times.** `index.css` asks for
+`/fonts/space-grotesk-latin.woff2` root-absolutely; the harness's vite root is
+`harness/`, so it 404'd, and **a missing webfont does not fail — it silently
+falls back.** Fixed by pointing the harness at the app's own `public/`. Every
+dashboard shot taken before this correction was in a fallback face; they were
+re-taken.
+
+### 8b. WebKit, and exactly what it needs
+
+`playwright-core` installs the WebKit build fine; launching it fails on missing
+system libraries (`libsecret-1.so.0`, `libwoff2dec.so.1.0.2`). That is
+`playwright install-deps webkit`, which is `apt-get` and therefore **root on a
+host that also runs the production cluster** — not something to do on the way
+past. The harness reports the engine as skipped and keeps going rather than
+failing the run, so the two that work keep producing.
+
+Safari proper is a further step again: WebKit-on-Linux is the same engine, not
+the same browser.

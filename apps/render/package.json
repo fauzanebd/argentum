@@ -11,7 +11,8 @@
     "lint": "tsc -p tsconfig.json --noEmit && node --import tsx --test src/*.test.ts",
     "render:fixture": "tsx src/fixture.ts",
     "browser:ensure": "node --input-type=module -e \"import {ensureBrowser} from '@remotion/renderer'; await ensureBrowser();\"",
-    "test": "node --import tsx --test src/*.test.ts"
+    "test": "node --import tsx --test src/*.test.ts",
+    "sheet": "node harness/sheet.mjs"
   },
   "dependencies": {
     "@argentum/api-types": "workspace:*",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.8.6",
+    "playwright-core": "1.61.1",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }

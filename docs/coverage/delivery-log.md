@@ -5864,6 +5864,71 @@ network tab. The fixtures here are hand-written, so nothing proves the *server*
 drops the tool rows §6b taught it to drop. That needs the stack and a tenant,
 and it stays in the backlog as the second half of the row.
 
+## Phase 3ad — Two owed visual arms, and the card that was half off the frame (2026-09-11)
+
+Both had sat in [`live-gate-backlog.md`](live-gate-backlog.md) since
+**2026-08-09** — a month — for the same reason: somebody had to look at them.
+The camera from Phase 3ab made that an afternoon.
+
+### `T-V5`: the scene contact sheet
+
+The first attempt failed exactly as this repo predicted. Feeding a `testdata`
+golden to the renderer gives `net::ERR_UNKNOWN_URL_SCHEME` on `sha256:…`,
+because the goldens replace chart images with their digest to stay reviewable —
+and `build_test.go:400` says so, names the symptom and prints the two commands
+that produce an undigested plan. The note did its job on the second reader.
+
+**The defect it found: the KPI row overflowed the frame.** Three cards and a
+sliver of a fourth, the label clipped mid-word. Not an entrance artifact — the
+entrance is opacity and `translateY`. Flexbox: `flex: 1` cards with
+`whiteSpace: "pre"` inside, `min-width: auto` refusing to shrink below content,
+four labels adding up wider than the body. **Four cards is the wide surface's own
+cap**, so this is a sanctioned input.
+
+`minWidth: 0` moved the clipping from the frame into the card, which is better
+and still wrong, so the numbers got measured off the rendered still:
+`Rp 3,86 Miliar` is **554px of ink** at `display` against **318px** of inner
+card width at four across. Capping the count would not have saved it either —
+459px at three across is still short. The value now steps down the existing type
+scale with the card count.
+
+The honest limit is recorded in the code: **this renderer does not fit text.**
+That absence is what let four cards be inherited from the deck, where text *is*
+measured and fitted.
+
+### `T-V4`: the shared player, in more than one engine
+
+Fulfilled at the network rather than by a module stub — `share-page` uses a bare
+axios call precisely because its visitor has no session. Both items pass:
+identical rendering in Chromium and Firefox, and a `version: 99` plan draws the
+amber notice above thirteen scenes that still play.
+
+**WebKit is owed for a named reason**: the build installs, the launch fails on
+`libsecret` and `libwoff2dec`, and `playwright install-deps webkit` is `apt-get`
+as root on the host that also runs the production cluster. The harness now
+reports an engine as skipped instead of failing the run.
+
+### Two harness artifacts that looked like product defects
+
+Recorded because both would have been filed by a less suspicious reader, and one
+of them silently degraded every screenshot taken earlier in the day.
+
+1. **The player photographed black.** Frame 0 of a cover *is* black — the
+   entrance starts at zero opacity, which is the same reason the stills CLI
+   samples mid-scene.
+2. **The player photographed in Times.** `index.css` asks for
+   `/fonts/space-grotesk-latin.woff2` root-absolutely and the harness's vite
+   root is `harness/`, so it 404'd — and **a missing webfont does not fail, it
+   falls back.** Every dashboard shot from Phase 3ab was taken in a fallback
+   face; they were re-taken after pointing the harness at the app's `public/`.
+
+### Gate
+
+`pnpm -r build` and `pnpm -r lint` clean across the workspace (dashboard 0
+errors, 8 warnings, 33 tests). `go test ./internal/report/videoplan/...
+./internal/report/canvas/...` ok — the plan goldens are unmoved, because the fix
+is in the renderer and not in what it is handed.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

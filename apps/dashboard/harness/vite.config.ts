@@ -20,6 +20,12 @@ const src = path.resolve(__dirname, "../src");
 
 export default defineConfig({
   root: __dirname,
+  // The app's `public/`, not the harness directory's. `index.css` asks for
+  // `/fonts/space-grotesk-latin.woff2` root-absolutely, which under this root
+  // is a 404 — and a missing webfont does not fail, it silently falls back. The
+  // first player shot came out in Times, which looks exactly like a product
+  // defect and is not one.
+  publicDir: path.resolve(__dirname, "../public"),
   plugins: [react()],
   resolve: {
     alias: [

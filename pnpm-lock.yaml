@@ -287,6 +287,9 @@ importers:
       '@types/node':
         specifier: ^22.8.6
         version: 22.20.1
+      playwright-core:
+        specifier: 1.61.1
+        version: 1.61.1
       tsx:
         specifier: ^4.19.2
         version: 4.23.11

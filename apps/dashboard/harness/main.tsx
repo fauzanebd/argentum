@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ToolCallCard } from "@/features/chat/tool-call-card";
 import { SkillsTab } from "@/features/settings/skills-tab";
 import { SettingsPage } from "@/features/settings/settings-page";
+import { SharePage } from "@/features/share/share-page";
 import { Scene, makeAPI, setHarnessAdmin, SKILLS_OK, SKILLS_OVERFLOW } from "./fixtures";
 import { setFixtures } from "./stub-api";
 import "@/index.css";
@@ -89,6 +90,15 @@ switch (scene) {
         <SkillsTab />
       </Scene>,
     );
+    break;
+
+  // The shared report player (T-V4). No stub module is involved: `share-page`
+  // deliberately uses a bare axios call rather than `@/lib/api`, because its
+  // visitor has no session — so the shooter fulfils `/share/:token` at the
+  // network, and what runs here is the page a logged-out visitor gets.
+  case "share-player":
+  case "share-player-future":
+    render(<SharePage token="harness" />);
     break;
 
   default:
