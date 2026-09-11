@@ -94,6 +94,34 @@ const SCENES = [
     },
   },
   {
+    // The room's controls, driven open rather than rendered open: the add menu
+    // is a Radix dropdown and a screenshot of it closed photographs a button.
+    id: "room-bar",
+    file: "room-participant-bar.png",
+    height: 420,
+    async drive(page) {
+      await page.getByRole("button", { name: /Add agent/ }).click();
+      await page.getByRole("menuitem", { name: /Legal/ }).waitFor();
+      // Radix fades the menu in. waitFor returns on attachment, which is before
+      // the animation ends, so the first run of this scene photographed a
+      // half-transparent menu — the same trap the player scene above hit.
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    // The same bar with every hue removed. If the agents are still tellable
+    // apart here, the colour is reinforcement rather than the attribution —
+    // which is the rule T-R3's palette gate set for the report charts.
+    id: "room-bar-grayscale",
+    file: "room-participant-bar-grayscale.png",
+    height: 240,
+  },
+  {
+    id: "room-mentions",
+    file: "room-mention-menu.png",
+    height: 420,
+  },
+  {
     id: "skills-form",
     file: "skills-form-preview.png",
     height: 1400,

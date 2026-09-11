@@ -618,7 +618,7 @@ Three dependencies were narrowed to consumer-declared interfaces along the way
 (`ChatRunEnqueuer`, `CompanyReader`, `RoomReader`), which is what made the
 central claim — *one user message, N turns, one `UserMsgID`* — testable at all:
 it previously needed a live Redis, which is why nothing checked it.
-[`../coverage/multi-agent.md`](../coverage/multi-agent.md) §6.
+[`../coverage/multi-agent.md`](../coverage/multi-agent.md) §5.
 
 ##### Why
 With participants stored and nothing reading them, a room is a settings page.
@@ -710,7 +710,7 @@ queued today, so nothing downstream of the queue learns what a room is.
       same verdict three times. Making this true needs a reservation at enqueue
       — a credits ticket, not an addressing one. The exposure is bounded by
       `THREAD_MAX_PARTICIPANTS`, and today's single-turn path already has the
-      same overshoot of one. See [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §6
+      same overshoot of one. See [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §5
 - [ ] Two concurrent turns on one thread both stream, and every event carries
       the agent that produced it
 
@@ -727,9 +727,25 @@ queued today, so nothing downstream of the queue learns what a room is.
 
 ### Track B — The room on screen (2.5d)
 
-#### `T-N4` The dashboard room — participants, `@` autocomplete, and who said what
+#### `T-N4` The dashboard room — participants, `@` autocomplete, and who said what · **built 2026-09-11, visual gate run**
 **Repo:** FE · **Size:** 2.5d · **Deps:** `T-N3` · **Priority:** P0
 **Migration:** none
+
+**Built. The state change was the work**, not the chrome: `liveAssistant` was
+one `LiveTurn | null`, and a room has several streaming concurrently under one
+job id — so `final` and `error` had to stop meaning "the turn ended" and start
+meaning "one agent finished". Three screenshot scenes were added and **looking
+at them found three defects**, one of them in the harness itself: its Tailwind
+globs excluded `harness/`, so a class used only in a scene was silently absent
+and the grayscale scene came out in full colour. Details in
+[`../coverage/multi-agent.md`](../coverage/multi-agent.md) §6.
+
+**One acceptance item is owed rather than met**: *"A single-agent thread is
+pixel-identical to today — proven by a harness screenshot"*. The harness mounts
+components, not the routed `ChatPage`, so there is no before/after pair of the
+whole screen. What is proven instead is structural and stated as such — the bar
+returns null, `showAuthors` is false, and `PendingBubble` takes no author when a
+thread has fewer than two participants.
 
 ##### Why
 Three backend tickets in and the feature is reachable only by `curl`. This is

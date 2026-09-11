@@ -11,8 +11,9 @@ that the ticket did not anticipate, and what is owed.
 | --- | --- |
 | `T-N1` Every assistant message says which agent wrote it | **built 2026-09-11, unit-gated. Migration `077` written, not applied — §4** |
 | `T-N2` A conversation can hold more than one agent | **built 2026-09-11, unit-gated. Migration `078` written, not applied — §4** |
-| `T-N3` Addressing — `@agent` decides who answers | **built 2026-09-11, unit-gated. One acceptance item struck as unachievable — §6** |
-| `T-N4`→`T-N10` | Not built, not scheduled |
+| `T-N3` Addressing — `@agent` decides who answers | **built 2026-09-11, unit-gated. One acceptance item struck as unachievable — §5** |
+| `T-N4` The dashboard room | **built 2026-09-11. Visual gate run; three findings — §6** |
+| `T-N5`→`T-N10` | Not built, not scheduled |
 
 **As of `T-N3` a room routes.** One user message addressing two agents becomes
 two `chat:run` turns. There is still no UI — that is `T-N4` — so a room can only
@@ -230,7 +231,81 @@ the same shape of overshoot — a turn is checked before it is queued and paid f
 after it runs. So this widens an existing gap rather than opening a new one, and
 the roadmap's `T-N3` now carries the struck item with this reasoning attached.
 
-## 6. What is owed
+## 6. `T-N4`, and three things the screenshots found
+
+The room on screen: a participant bar, `@` autocomplete, one streaming bubble
+per agent, and an author on every answer.
+
+![The room](assets/room-participant-bar.png)
+
+### The state change that was the actual work
+
+`liveAssistant` was a single `LiveTurn | null` — the right shape for a thread
+that can only have one turn in flight. A room addressing two agents has two,
+concurrently, **on one socket and under one job id**, because `T-N3` appends the
+user message once and every payload carries its id. So the container became a
+map keyed by `agent_id || job_id`, and three consequences followed that the
+ticket did not name:
+
+- **`final` no longer ends the turn.** It ends *one agent's* turn. A room
+  publishes N `final` events, and the backstop poll and the "we have an answer"
+  flag must wait for the last of them, or the other agents are stranded
+  mid-answer with nothing polling for them.
+- **`error` is the same shape.** A room where Finance errors must still deliver
+  Ops's answer, so an error drops one turn and the banner names the agent —
+  "Something went wrong" in a room of three does not say whose answer is
+  missing.
+- **The scroll effect** followed one turn's growth and now follows the combined
+  progress of all of them.
+
+### Three findings from actually looking at the screenshots
+
+**1. The harness's Tailwind globs excluded `harness/`.** `tailwind.config.ts`
+scanned `./src/**` only, so a utility used *only* in a screenshot scene was
+absent from the generated CSS. The grayscale scene came out in **full colour**
+and a height class collapsed — both silently, and both look exactly like product
+defects rather than harness defects. This has been true since the harness was
+written; nobody hit it because every earlier scene happened to use classes the
+app also uses. `harness/**/*.{ts,tsx}` is now in the globs, which is the fix for
+every future scene as well as these.
+
+**2. `bg-accent` is the brand red in this design system.** `--accent` is
+`#F25C5C` (`tokens.generated.css:27`), so the mention menu's active row rendered
+as a solid red fill that swallowed the agent's own colour dot. `command.tsx` —
+the closest analogue, a highlighted typeahead row — uses `bg-secondary`, and the
+menu now does too. `dropdown-menu.tsx` pairs `bg-accent` with
+`text-accent-foreground`; a component that borrows one without the other gets an
+unreadable row.
+
+**3. `tsc -b` catches what `tsc --noEmit -p` does not.** A use-before-declare in
+`chat-page.tsx` passed the incremental check I was running after each edit and
+failed the project build. The gate is `pnpm --filter dashboard lint`, which runs
+`tsc -b`; nothing else is a check.
+
+### What the grayscale scene is for
+
+![The room, grayscale](assets/room-participant-bar-grayscale.png)
+
+Colour is never the attribution — the name is, and the colour reinforces it.
+Under a grayscale filter the three agents are still fully distinguishable, which
+is the rule `T-R3`'s palette gate set for the report charts, applied to the one
+other place this product colours things by category.
+
+Colours come from the tokens' categorical ramp **by roster position, never
+hashed from the id**. Two agents colliding on one hue in a room of four is
+roughly a one-in-three coin flip on a hash, and the collision would be silent
+and permanent for that tenant.
+
+### What `AgentPicker` keeps
+
+The picker still sets which agent a *new* conversation opens on and still
+disappears after the first message. Its own comment argued that reinterpreting
+history under a different persona is a decision rather than a widget, and that
+is untouched: the participant bar adds a **reader**, not a reinterpretation, and
+the picker's doc comment now says where the line is so the next reader does not
+"fix" the apparent inconsistency.
+
+## 7. What is owed
 
 **Neither migration has been applied anywhere.** `077_message_agent` and
 `078_thread_participants` are written with both directions and have had **no
@@ -286,9 +361,20 @@ verified red before green):
 - a user message carries no agent
 - an unscoped turn writes no agent rather than failing
 
-**`T-N2` and `T-N3` have no UI at all.** That is `T-N4`, and until it lands a
-room can only be assembled and addressed with `curl`. Nobody has typed an `@`
-into this product. The three routes are wired and policy-gated at
+**One `T-N4` acceptance item is owed rather than met**: *"A single-agent thread
+is pixel-identical to today — proven by a harness screenshot, not by
+inspection"*. The harness mounts components, not the routed `ChatPage`, so there
+is no before/after pair of the whole screen and producing one means either
+mounting the router in the harness or exporting internals for it. What is proven
+instead is structural, and saying which is the point: `ParticipantBar` returns
+null below two participants with nothing addable, `showAuthors` is false, and
+`PendingBubble` receives no author. That is an argument, not a photograph.
+
+**Nobody has typed an `@` into this product.** The three scenes photograph the
+room's controls against real components and real fixtures, which is what the
+harness is for; none of them is a person using the feature against a running
+stack. That arm needs the migrations applied first, and it is the same arm as
+the `T-N3` live gate. The three routes are wired and policy-gated at
 `RoleMember`, matching the thread routes beside them rather than the admin-only
 `/api/agent-bindings`: a channel binding is routing configuration for a
 company's shared rooms, whereas these act on one conversation the caller

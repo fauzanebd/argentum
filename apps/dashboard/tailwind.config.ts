@@ -4,7 +4,14 @@ import typography from "@tailwindcss/typography";
 
 export default {
   darkMode: ["class"],
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  // `harness/` is here for a reason worth keeping: a utility used *only* in a
+  // screenshot scene is otherwise absent from the generated CSS, so the scene
+  // renders without it and the shot looks like a product defect rather than a
+  // missing class. Found twice while building T-N4's scenes — `grayscale` came
+  // out in full colour and `h-56` collapsed, and both were invisible until the
+  // PNG was actually looked at. Same species as the missing-webfont note in
+  // `harness/vite.config.ts`.
+  content: ["./index.html", "./src/**/*.{ts,tsx}", "./harness/**/*.{ts,tsx}"],
   theme: {
   	container: {
   		center: true,

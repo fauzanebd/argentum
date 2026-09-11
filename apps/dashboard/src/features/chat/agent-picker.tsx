@@ -20,6 +20,15 @@ import type { Agent } from "@argentum/api-types";
  * One agent means no control at all rather than a select with a single option
  * — a company that has never opened Settings → Agents has exactly the backfilled
  * default, and a picker that cannot pick anything is furniture.
+ *
+ * **This is not the participant bar, and the rule above is not in tension with
+ * it** (T-N4). What this sets is the conversation's *default speaker*: who
+ * answers a message that addresses nobody. `ParticipantBar` adds and removes
+ * the other agents, and it deliberately does keep working after the first
+ * message — because adding a participant does not reinterpret history under a
+ * new persona, it adds a reader who can see the transcript and be addressed
+ * from here on. Changing the *default speaker* mid-thread is still not offered,
+ * for the reason above.
  */
 export function AgentPicker({
   agents,

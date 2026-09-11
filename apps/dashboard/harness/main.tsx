@@ -11,6 +11,9 @@
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ToolCallCard } from "@/features/chat/tool-call-card";
+import { ParticipantBar } from "@/features/chat/participant-bar";
+import { MentionMenu } from "@/features/chat/mention-menu";
+import { agentColorIndex } from "@/features/chat/agent-colors";
 import { SkillsTab } from "@/features/settings/skills-tab";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { SharePage } from "@/features/share/share-page";
@@ -42,6 +45,71 @@ function ChatChips() {
   );
 }
 
+/* ── The room (T-N4) ──────────────────────────────────────────────────── */
+
+/** A roster of four with one disabled, and a room holding three of them. The
+ *  disabled one is what the add menu has to show greyed with a reason rather
+ *  than hide, so an admin can see why the agent they want is not offered. */
+const ROOM_ROSTER = [
+  { id: "ag-fin", name: "Finance", enabled: true },
+  { id: "ag-ops", name: "Ops", enabled: true },
+  { id: "ag-people", name: "People", enabled: true },
+  { id: "ag-legal", name: "Legal", enabled: false },
+] as never[];
+
+const ROOM_PARTICIPANTS = [
+  { id: "tp-1", thread_id: "th-1", agent_id: "ag-fin", agent_name: "Finance", added_at: "" },
+  { id: "tp-2", thread_id: "th-1", agent_id: "ag-ops", agent_name: "Ops", added_at: "" },
+  { id: "tp-3", thread_id: "th-1", agent_id: "ag-people", agent_name: "People", added_at: "" },
+] as never[];
+
+const ROOM_COLORS = agentColorIndex(["ag-fin", "ag-ops", "ag-people", "ag-legal"]);
+
+function RoomBar({ grayscale = false }: { grayscale?: boolean }) {
+  return (
+    <Scene
+      title={
+        grayscale
+          ? "The room in grayscale — the name carries the attribution, the colour only reinforces it"
+          : "The room — who is in this conversation, who answers an unaddressed message"
+      }
+    >
+      <div className={grayscale ? "grayscale" : undefined}>
+        <ParticipantBar
+          participants={ROOM_PARTICIPANTS}
+          roster={ROOM_ROSTER}
+          colorIndex={ROOM_COLORS}
+          defaultSpeakerID="ag-fin"
+          onAdd={() => {}}
+          onRemove={() => {}}
+        />
+      </div>
+    </Scene>
+  );
+}
+
+function RoomMentions() {
+  return (
+    <Scene title="Addressing — the @ menu offers participants only, never the whole roster">
+      {/* The menu is `absolute bottom-full`, so it needs the same anchor the
+          real composer gives it: a `relative` box with room above. The first
+          run of this scene put it on a wrapper instead and photographed the
+          menu half off the top of the frame. */}
+      <div className="flex h-56 w-full max-w-xl items-end">
+        <div className="relative w-full rounded-xl border border-border bg-card p-3">
+          <MentionMenu
+            participants={ROOM_PARTICIPANTS}
+            query={{ at: 0, query: "" }}
+            colorIndex={ROOM_COLORS}
+            onPick={() => {}}
+          />
+          <span className="text-sm text-muted-subtle">@</span>
+        </div>
+      </div>
+    </Scene>
+  );
+}
+
 function render(node: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -52,6 +120,18 @@ function render(node: React.ReactNode) {
 switch (scene) {
   case "chat-chips":
     render(<ChatChips />);
+    break;
+
+  case "room-bar":
+    render(<RoomBar />);
+    break;
+
+  case "room-bar-grayscale":
+    render(<RoomBar grayscale />);
+    break;
+
+  case "room-mentions":
+    render(<RoomMentions />);
     break;
 
   case "settings-admin":

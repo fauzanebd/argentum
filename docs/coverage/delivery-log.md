@@ -6119,6 +6119,44 @@ credits ticket, not an addressing one. The exposure is bounded by
 so this widens an existing gap rather than opening a new one. The roadmap now
 carries the item struck with that reasoning attached.
 
+### `T-N4` — the room on screen, and three defects found by looking
+
+A participant bar, `@` autocomplete over participants only, one streaming bubble
+per agent, an author on every answer, and colours from the tokens' categorical
+ramp by roster position — never hashed, because a hash collides about one time
+in three in a room of four and the collision is silent and permanent.
+
+**The state change was the work.** `liveAssistant` was a single
+`LiveTurn | null`, which is right for a thread that can hold one turn. A room
+addressing two agents has two, concurrently, *on one socket and under one job
+id*. So it became a map, and `final` stopped meaning "the turn ended": it means
+one agent finished, and the backstop poll waits for the last of them or the
+others are stranded mid-answer. `error` is the same shape, and now names the
+agent — "Something went wrong" in a room of three does not say whose answer is
+missing.
+
+**Three defects found by actually opening the PNGs**, which is the whole reason
+the visual gate exists:
+
+1. **The harness's Tailwind globs excluded `harness/`.** A utility used only in
+   a scene was absent from the generated CSS, so the grayscale scene rendered in
+   full colour and a height class collapsed — both silently, and both looking
+   exactly like product defects. True since the harness was written; every
+   earlier scene happened to use classes the app also uses. Fixed in the globs,
+   which fixes every future scene too.
+2. **`bg-accent` is the brand red in this design system** (`--accent` is
+   `#F25C5C`), so the mention menu's active row was a solid red fill that
+   swallowed the agent's colour dot. `command.tsx` uses `bg-secondary` for a
+   highlighted typeahead row; the menu now does too.
+3. **`tsc -b` catches what `tsc --noEmit -p` does not.** A use-before-declare
+   passed the incremental check being run after each edit and failed the real
+   gate.
+
+**One acceptance item is owed rather than met**: the single-agent
+pixel-identity screenshot. The harness mounts components, not the routed
+`ChatPage`. What is proven instead is structural, and the coverage doc says so
+rather than ticking the box.
+
 ### What is owed
 
 Neither migration has round-tripped. The only control-plane Postgres on this

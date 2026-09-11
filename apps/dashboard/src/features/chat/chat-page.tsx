@@ -25,10 +25,15 @@ import type {
   ConversationThread,
   Message,
   SendMessageResponse,
+  ThreadParticipant,
 } from "@argentum/api-types";
 import { useModels } from "@/lib/use-models";
 import { useAgents } from "./use-agents";
 import { AgentBadge, AgentPicker } from "./agent-picker";
+import { ParticipantBar } from "./participant-bar";
+import { useParticipants } from "./use-participants";
+import { agentColorIndex, colorForAgent } from "./agent-colors";
+import { MentionMenu, mentionQueryAt, applyMention, type MentionQuery } from "./mention-menu";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
 import { MessageFeedback } from "./message-feedback";
@@ -50,6 +55,13 @@ import { apiErrorMessage } from "@/lib/api-error";
  */
 type LiveTurn = {
   jobId: string;
+  /** Which agent is producing this turn (T-N1), and what to call it.
+   *
+   *  In a room, N turns of one user message share a `jobId` — it is the user
+   *  message id — and are told apart only by this. It is "" for a turn with no
+   *  roster agent, which is what `turnKey` falls back to the job id for. */
+  agentId: string;
+  agentName: string;
   content: string;
   /** Every thinking step of this turn, in arrival order (T-U4).
    *
@@ -69,8 +81,22 @@ type LiveTurn = {
   startedAt: number;
 };
 
-function blankTurn(jobId: string): LiveTurn {
-  return { jobId, content: "", thinkingSteps: [], startedAt: Date.now() };
+function blankTurn(jobId: string, agentId = "", agentName = ""): LiveTurn {
+  return { jobId, agentId, agentName, content: "", thinkingSteps: [], startedAt: Date.now() };
+}
+
+/**
+ * The key a live turn is held under (T-N4).
+ *
+ * The agent, falling back to the job id. A room's N concurrent turns share one
+ * job id and differ by agent, so keying on the job id alone would make the last
+ * event win and three agents would render as one flickering bubble. A
+ * single-agent thread has one turn either way, and an unscoped turn — the eval
+ * harness, a company whose roster never seeded — carries no agent and falls
+ * back to exactly the behaviour it had before this ticket.
+ */
+function turnKey(evt: { agent_id?: string; job_id: string }): string {
+  return evt.agent_id || evt.job_id;
 }
 
 /**
@@ -87,10 +113,12 @@ function blankTurn(jobId: string): LiveTurn {
  * start, and that is the point: the elapsed caption should say how long the
  * agent has been working, not how long this browser has been looking at it.
  */
-function resumedTurn(live: NonNullable<ChatEvent["live"]>): LiveTurn {
+function resumedTurn(live: NonNullable<ChatEvent["live"]>, agentId = "", agentName = ""): LiveTurn {
   const startedAt = Date.parse(live.started_at);
   return {
     jobId: live.job_id,
+    agentId,
+    agentName,
     content: live.content ?? "",
     thinkingSteps: live.thinking_steps ?? [],
     toolCalls: (live.tool_calls ?? []).map((tc) => ({
@@ -139,7 +167,50 @@ export function ChatPage() {
 
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
 
-  const [liveAssistant, setLiveAssistant] = useState<LiveTurn | null>(null);
+  /**
+   * Every turn currently streaming, keyed by `turnKey` (T-N4).
+   *
+   * This was one `LiveTurn | null`, which is the right shape for a thread that
+   * can only ever have one turn in flight. A room addressing two agents has
+   * two, concurrently, on one socket and under one job id — so the container
+   * had to become a map. A single-agent thread holds exactly one entry and
+   * renders identically to before.
+   */
+  const [liveTurns, setLiveTurns] = useState<Record<string, LiveTurn>>({});
+  const liveList = useMemo(() => Object.values(liveTurns), [liveTurns]);
+  const anyLive = liveList.length > 0;
+  /** A mirror of `liveTurns` readable inside the event handler, which runs from
+   *  a socket callback and cannot see the state it is about to change. Used for
+   *  one question only: is the turn that just ended the last one running? */
+  const liveTurnsRef = useRef<Record<string, LiveTurn>>({});
+  useEffect(() => {
+    liveTurnsRef.current = liveTurns;
+  }, [liveTurns]);
+
+  /** upsertTurn applies `fn` to one turn, creating it if this is the first
+   *  event of it. Every handler below goes through here so that "which turn"
+   *  is decided in one place rather than in eight. */
+  const upsertTurn = useCallback(
+    (evt: ChatEvent, fn: (prev: LiveTurn) => LiveTurn) => {
+      setLiveTurns((prev) => {
+        const key = turnKey(evt);
+        const base =
+          prev[key] ?? blankTurn(evt.job_id, evt.agent_id ?? "", evt.agent_name ?? "");
+        return { ...prev, [key]: fn(base) };
+      });
+    },
+    [],
+  );
+
+  const dropTurn = useCallback((evt: ChatEvent) => {
+    setLiveTurns((prev) => {
+      const key = turnKey(evt);
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
 
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -177,6 +248,17 @@ export function ChatPage() {
    * here — so a roster that still has one agent behaves exactly as it did.
    */
   const agents = useAgents();
+  const room = useParticipants(activeThreadId ?? null);
+  const isRoom = room.isRoom;
+  /** Roster-position colours, computed once for every surface that names an
+   *  agent: the participant bar, the `@` menu, the streaming bubbles and the
+   *  message bubbles. One map so they cannot disagree.
+   *
+   *  Below `useAgents`, necessarily — it reads the roster. */
+  const colorIndex = useMemo(
+    () => agentColorIndex([...agents.byId.keys()]),
+    [agents.byId],
+  );
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
   // What a new conversation would run as — the picked agent, or the company
   // default when nothing is picked, which is the same resolution the backend
@@ -290,10 +372,10 @@ export function ChatPage() {
   }, [takePrefill, fillComposer]);
 
   /** Leaving a thread closes the WS (useThreadStream cleanup → ws.close), but
-   *  liveAssistant would keep showing the previous thread’s stream without this.
+   *  the live turns would keep showing the previous thread’s stream without this.
    *  Do not stop fallback polling when opening a thread from new chat (null → id). */
   useLayoutEffect(() => {
-    setLiveAssistant(null);
+    setLiveTurns({});
     setError(null);
     resumeEchoRef.current = null;
 
@@ -337,40 +419,32 @@ export function ChatPage() {
         ts: evt.live.last_event_at,
       };
       finalReceivedRef.current = false;
-      setLiveAssistant(resumedTurn(evt.live));
+      setLiveTurns({
+        [turnKey(evt)]: resumedTurn(evt.live, evt.agent_id ?? "", evt.agent_name ?? ""),
+      });
     } else if (evt.type === "started") {
       finalReceivedRef.current = false;
-      setLiveAssistant(blankTurn(evt.job_id));
+      upsertTurn(evt, () => blankTurn(evt.job_id, evt.agent_id ?? "", evt.agent_name ?? ""));
     } else if (evt.type === "delta") {
-      setLiveAssistant((prev) =>
-        prev && prev.jobId === evt.job_id
-          ? { ...prev, content: prev.content + (evt.content ?? "") }
-          : { ...blankTurn(evt.job_id), content: evt.content ?? "" },
-      );
+      upsertTurn(evt, (prev) => ({ ...prev, content: prev.content + (evt.content ?? "") }));
     } else if (evt.type === "thinking") {
       const step = evt.thinking_step?.trim();
       if (step) {
-        setLiveAssistant((prev) =>
-          prev && prev.jobId === evt.job_id
-            ? // Append, but never twice in a row for the same sentence. The
-              // backend re-emits the current step alongside some iteration
-              // events, and a trace that lists "Checking the schema" four times
-              // reads as a stuck agent rather than a working one.
-              prev.thinkingSteps[prev.thinkingSteps.length - 1] === step
-              ? prev
-              : { ...prev, thinkingSteps: [...prev.thinkingSteps, step] }
-            : { ...blankTurn(evt.job_id), thinkingSteps: [step] },
+        // Append, but never twice in a row for the same sentence. The backend
+        // re-emits the current step alongside some iteration events, and a
+        // trace that lists "Checking the schema" four times reads as a stuck
+        // agent rather than a working one.
+        upsertTurn(evt, (prev) =>
+          prev.thinkingSteps[prev.thinkingSteps.length - 1] === step
+            ? prev
+            : { ...prev, thinkingSteps: [...prev.thinkingSteps, step] },
         );
       }
     } else if (evt.type === "iteration") {
       const current = Number(evt.metadata?.iteration ?? 0);
       const max = Number(evt.metadata?.max_iterations ?? 0);
       if (current > 0) {
-        setLiveAssistant((prev) =>
-          prev && prev.jobId === evt.job_id
-            ? { ...prev, iteration: { current, max } }
-            : { ...blankTurn(evt.job_id), iteration: { current, max } },
-        );
+        upsertTurn(evt, (prev) => ({ ...prev, iteration: { current, max } }));
       }
     } else if (evt.type === "tool_call" || evt.type === "tool_result") {
       // A dashboard on screen has just been edited (T-D23). Noted here and acted
@@ -382,8 +456,7 @@ export function ChatPage() {
       if (evt.tool_call?.name === "update_dashboard") {
         dashboardEditedRef.current = true;
       }
-      setLiveAssistant((prev) => {
-        if (!prev) return blankTurn(evt.job_id);
+      upsertTurn(evt, (prev) => {
         const calls = prev.toolCalls ? [...prev.toolCalls] : [];
         if (evt.tool_call) {
           calls.push({
@@ -397,9 +470,20 @@ export function ChatPage() {
         return { ...prev, toolCalls: calls };
       });
     } else if (evt.type === "final") {
-      finalReceivedRef.current = true;
-      resumeEchoRef.current = null;
-      setLiveAssistant(null);
+      // **One agent has finished, not necessarily the turn.** A room addressing
+      // three agents publishes three `final` events under one job id, and the
+      // other two are still working when the first arrives — so the backstop
+      // poll and the "we have an answer" flag wait for the last of them, and
+      // only this agent's bubble goes away now.
+      const lastOne = Object.keys(liveTurnsRef.current).filter(
+        (k) => k !== turnKey(evt),
+      ).length === 0;
+      dropTurn(evt);
+      if (lastOne) {
+        finalReceivedRef.current = true;
+        resumeEchoRef.current = null;
+        stopPolling();
+      }
       setOptimisticMessages((prev) =>
         prev.filter((m) => m.thread_id !== evt.thread_id),
       );
@@ -412,18 +496,28 @@ export function ChatPage() {
         qc.invalidateQueries({ queryKey: ["dashboard-data"] });
         qc.invalidateQueries({ queryKey: ["dashboards"] });
       }
-      stopPolling();
     } else if (evt.type === "action_proposed") {
       // The agent proposed a write-capable action (T-11). Refresh the pending
       // list so its approval card appears in the strip above the composer live,
       // without waiting for the 60s backstop poll.
       qc.invalidateQueries({ queryKey: PENDING_ACTIONS_KEY });
     } else if (evt.type === "error") {
-      finalReceivedRef.current = true;
-      resumeEchoRef.current = null;
-      setLiveAssistant(null);
-      setError(evt.error ?? "Something went wrong");
-      stopPolling();
+      // One agent failed. The others keep going — a room where Finance errors
+      // must still deliver Ops's answer — so the same last-one-out rule applies
+      // as for `final`. The error banner names the agent when there is more
+      // than one, because "Something went wrong" in a room of three does not
+      // say whose answer is missing.
+      const lastOne = Object.keys(liveTurnsRef.current).filter(
+        (k) => k !== turnKey(evt),
+      ).length === 0;
+      const who = evt.agent_name ? `${evt.agent_name}: ` : "";
+      dropTurn(evt);
+      if (lastOne) {
+        finalReceivedRef.current = true;
+        resumeEchoRef.current = null;
+        stopPolling();
+      }
+      setError(who + (evt.error ?? "Something went wrong"));
     }
   });
 
@@ -543,26 +637,49 @@ export function ChatPage() {
    * that actually makes a name necessary, and it will keep being true when the
    * room arrives.
    */
+  /**
+   * Does this conversation name its speakers? (T-N1, narrowed by T-N4)
+   *
+   * Membership is the signal now that there is one — a room names its agents
+   * from the first message, before two of them have answered. `T-N1` shipped
+   * this derived from the transcript's own distinct `agent_id`s, because
+   * participants did not exist yet; that fallback is kept for a thread whose
+   * membership has not loaded, and for the window after an agent is removed
+   * while its earlier answers are still on screen.
+   */
   const showAuthors = useMemo(() => {
+    if (isRoom) return true;
     const ids = new Set(
       displayedMessages
         .filter((m) => m.role !== "user" && m.agent_id)
         .map((m) => m.agent_id),
     );
     return ids.size > 1;
-  }, [displayedMessages]);
+  }, [isRoom, displayedMessages]);
+
+  /**
+   * How far every live turn has got, as one string.
+   *
+   * The scroll effect used to depend on the single live turn's three growing
+   * fields. A room has several streaming at once and the timeline should follow
+   * whichever produced the newest line, so the dependency is their combined
+   * progress — extracted to a variable rather than computed in the dependency
+   * array, which eslint cannot check statically and a reader cannot either.
+   */
+  const liveProgress = useMemo(
+    () =>
+      liveList
+        .map((t) => `${t.content.length}:${t.thinkingSteps.length}:${t.toolCalls?.length ?? 0}`)
+        .join("|"),
+    [liveList],
+  );
 
   useEffect(() => {
     timelineRef.current?.scrollTo({
       top: timelineRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [
-    displayedMessages.length,
-    liveAssistant?.content,
-    liveAssistant?.thinkingSteps.length,
-    liveAssistant?.toolCalls?.length,
-  ]);
+  }, [displayedMessages.length, liveProgress]);
 
   return (
     <section className="flex flex-col h-full overflow-hidden">
@@ -634,7 +751,7 @@ export function ChatPage() {
           />
           <div ref={timelineRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
             <div className="max-w-3xl mx-auto space-y-5">
-              {displayedMessages.length === 0 && !liveAssistant && (
+              {displayedMessages.length === 0 && !anyLive && (
                 <div className="text-center text-muted-foreground py-12 text-sm">
                   No messages yet — start the conversation below.
                 </div>
@@ -651,27 +768,45 @@ export function ChatPage() {
                     agents,
                   )}
                   showAuthor={showAuthors}
+                  authorColor={colorForAgent(colorIndex.get(m.agent_id ?? "") ?? -1)}
+                  // A room's chips prefill with the agent they came from, so a
+                  // click continues with the same voice rather than silently
+                  // falling to the default speaker (T-N3's routing rule, made
+                  // visible).
+                  mentionPrefix={
+                    showAuthors && m.agent_name ? `@${m.agent_name} ` : undefined
+                  }
                   // The newest assistant message only, and not while a turn is
                   // in flight: options beside a streaming answer invite a click
                   // that would queue a second question behind the first.
                   onPickNextStep={
-                    i === displayedMessages.length - 1 && !liveAssistant
+                    i === displayedMessages.length - 1 && !anyLive
                       ? sendNextStep
                       : undefined
                   }
                   sending={sending}
                 />
               ))}
-              {liveAssistant && (
-                <PendingBubble
-                  key={`live-${liveAssistant.jobId}`}
-                  content={liveAssistant.content}
-                  thinkingSteps={liveAssistant.thinkingSteps}
-                  toolCalls={liveAssistant.toolCalls}
-                  iteration={liveAssistant.iteration}
-                  startedAt={liveAssistant.startedAt}
-                />
-              )}
+              {/* One bubble per agent still working (T-N4). Ordered by when
+                  each turn started, so a room reads in the order the agents
+                  began rather than reshuffling as deltas arrive. */}
+              {liveList
+                .slice()
+                .sort((a, b) => a.startedAt - b.startedAt)
+                .map((turn) => (
+                  <PendingBubble
+                    key={`live-${turn.jobId}-${turn.agentId}`}
+                    content={turn.content}
+                    thinkingSteps={turn.thinkingSteps}
+                    toolCalls={turn.toolCalls}
+                    iteration={turn.iteration}
+                    startedAt={turn.startedAt}
+                    authorName={isRoom ? turn.agentName || "Agent" : undefined}
+                    authorColor={
+                      isRoom ? colorForAgent(colorIndex.get(turn.agentId) ?? -1) : undefined
+                    }
+                  />
+                ))}
             </div>
           </div>
           {budgetWarning && (
@@ -695,6 +830,27 @@ export function ChatPage() {
             onSend={send}
             disabled={sending}
             focusSignal={focusSignal}
+            // Participants only (T-N3 refuses an @ naming an agent that is not
+            // in the room, so offering one would be a menu of refusals).
+            mentionable={room.participants}
+            colorIndex={colorIndex}
+            context={
+              /* Who is in this conversation (T-N4). The AgentPicker above
+                 belongs to the *other* composer — it sets which agent a new
+                 conversation opens on and is gone by the time this one renders,
+                 which is deliberate and argued in agent-picker.tsx. */
+              <ParticipantBar
+                participants={room.participants}
+                roster={[...agents.byId.values()]}
+                colorIndex={colorIndex}
+                defaultSpeakerID={
+                  threads.find((t) => t.id === activeThreadId)?.agent_id ?? ""
+                }
+                onAdd={(id) => room.add.mutate(id)}
+                onRemove={(id) => room.remove.mutate(id)}
+                busy={room.add.isPending || room.remove.isPending}
+              />
+            }
             className="shrink-0 bg-background/95 backdrop-blur-md z-20"
           />
         </>
@@ -843,6 +999,8 @@ function ChatHeader({
 function MessageBubble({
   message,
   agentName,
+  authorColor,
+  mentionPrefix,
   /** Name the agent that wrote this bubble (T-N1).
    *
    *  False on a single-agent thread, which is every thread until T-N2, so the
@@ -862,6 +1020,12 @@ function MessageBubble({
 }: {
   message: Message;
   agentName?: string;
+  /** The agent's colour from the shared ramp. Redundant with the name by
+   *  design — see agent-colors.ts: colour is never the attribution. */
+  authorColor?: string;
+  /** Prepended to a next-step chip's prompt so the follow-up reaches the same
+   *  agent that suggested it. */
+  mentionPrefix?: string;
   showAuthor?: boolean;
   sending?: boolean;
   onPickNextStep?: (prompt: string) => void;
@@ -930,8 +1094,15 @@ function MessageBubble({
                 Text, not colour — a reader who cannot distinguish two hues
                 must lose nothing, which is the rule T-R3's palette gate set. */}
             {showAuthor && (
-              <div className="text-[11px] font-semibold text-muted-foreground mb-1">
-                {message.agent_name || agentName || "Assistant"}
+              <div className="mb-1 flex items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: authorColor }}
+                />
+                <span className="text-[11px] font-semibold text-muted-foreground">
+                  {message.agent_name || agentName || "Assistant"}
+                </span>
               </div>
             )}
             <MarkdownRenderer content={message.content} />
@@ -973,9 +1144,9 @@ function MessageBubble({
         {!isUser && onPickNextStep && (
           <NextStepChips
             message={message}
-            agentName={agentName}
+            agentName={message.agent_name || agentName}
             sending={sending}
-            onPick={onPickNextStep}
+            onPick={(prompt) => onPickNextStep((mentionPrefix ?? "") + prompt)}
           />
         )}
       </div>
@@ -999,12 +1170,18 @@ function PendingBubble({
   toolCalls,
   iteration,
   startedAt,
+  authorName,
+  authorColor,
 }: {
   content: string;
   thinkingSteps: string[];
   toolCalls?: Array<{ name: string; payload: unknown }>;
   iteration?: { current: number; max: number };
   startedAt: number;
+  /** Who is producing this turn (T-N4). Undefined outside a room, which is
+   *  every single-agent thread, so the common case renders unchanged. */
+  authorName?: string;
+  authorColor?: string;
 }) {
   const elapsed = useElapsedSeconds(startedAt);
   /* The step number without its ceiling, deliberately. "Step 3 of 8" reads as
@@ -1031,6 +1208,19 @@ function PendingBubble({
           aria-live="polite"
           className="flex items-center gap-2 text-xs"
         >
+          {authorName && (
+            <>
+              <span
+                aria-hidden
+                className="size-2 shrink-0 rounded-full"
+                style={{ backgroundColor: authorColor }}
+              />
+              {/* In the status line, not above it: this element is the one a
+                  screen reader announces, and "Finance is working, 4s" is the
+                  whole sentence a reader of a room needs. */}
+              <span className="font-semibold text-foreground">{authorName}</span>
+            </>
+          )}
           <span className="font-medium text-muted-foreground">{progress}</span>
           <Elapsed startedAt={startedAt} />
         </div>
@@ -1146,6 +1336,8 @@ function ChatComposer({
   disabled,
   context,
   suggestions,
+  mentionable,
+  colorIndex,
   focusSignal = 0,
   className,
 }: {
@@ -1155,12 +1347,45 @@ function ChatComposer({
   disabled: boolean;
   context?: React.ReactNode;
   suggestions?: React.ReactNode;
+  /** Who `@` may address (T-N4): the room's participants, and nobody else.
+   *  Empty outside a room, which turns the whole menu off. */
+  mentionable?: ThreadParticipant[];
+  colorIndex?: Map<string, number>;
   /** Bumped when something else filled the composer; see `fillComposer`. */
   focusSignal?: number;
   className?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { data: models } = useModels();
+
+  /** The `@…` the caret is inside, or null. Recomputed on every keystroke and
+   *  on every caret move, because the menu has to close when the caret leaves
+   *  a mention as well as when the mention stops matching. */
+  const [mention, setMention] = useState<MentionQuery | null>(null);
+  const participants = mentionable ?? [];
+
+  const syncMention = (el: HTMLTextAreaElement) => {
+    if (participants.length < 2) {
+      setMention(null);
+      return;
+    }
+    setMention(mentionQueryAt(el.value, el.selectionStart ?? el.value.length));
+  };
+
+  const pickMention = (name: string) => {
+    const el = textareaRef.current;
+    if (!el || !mention) return;
+    const next = applyMention(el.value, mention, name);
+    onChange(next);
+    setMention(null);
+    // The caret goes after the inserted name and its trailing space, so the
+    // next character typed is the question rather than another mention.
+    const caret = mention.at + name.length + 2;
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(caret, caret);
+    });
+  };
 
   const resize = (el: HTMLTextAreaElement) => {
     el.style.height = "auto";
@@ -1169,6 +1394,7 @@ function ChatComposer({
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
+    syncMention(e.target);
     if (textareaRef.current) resize(textareaRef.current);
   };
 
@@ -1194,7 +1420,15 @@ function ChatComposer({
 
   // Unchanged from before T-U8, deliberately. Enter/Shift+Enter is muscle
   // memory and every rewrite of this pair reintroduces the same newline bug.
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Escape closes the mention menu and nothing else — it must not reach the
+    // Enter branch below, and it must not be the only way out of the menu
+    // either, which is why clicking elsewhere clears it through syncMention.
+    if (mention && e.key === "Escape") {
+      e.preventDefault();
+      setMention(null);
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       onSend();
@@ -1217,13 +1451,24 @@ function ChatComposer({
               {context}
             </div>
           )}
-          <div className="flex min-h-10 items-center px-1">
+          <div className="relative flex min-h-10 items-center px-1">
+            {mention && participants.length > 1 && (
+              <MentionMenu
+                participants={participants}
+                query={mention}
+                colorIndex={colorIndex ?? new Map()}
+                onPick={pickMention}
+              />
+            )}
             <div className="max-h-48 flex-1 overflow-auto">
               <Textarea
                 ref={textareaRef}
                 value={value}
                 onChange={handleChange}
                 onKeyDown={handleKeyDown}
+                onKeyUp={(e) => syncMention(e.currentTarget)}
+                onClick={(e) => syncMention(e.currentTarget)}
+                onBlur={() => setMention(null)}
                 placeholder="Ask about your business…"
                 className="min-h-0 resize-none rounded-none border-0 bg-transparent p-0 text-[13px] placeholder:text-muted-subtle focus-visible:ring-0 focus-visible:ring-offset-0"
                 rows={1}
