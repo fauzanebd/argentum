@@ -430,6 +430,33 @@ type Config struct {
 	// same question once per tool call. Failures are cached for the same
 	// duration, deliberately — see FreshnessService.For.
 	SourceFreshnessTTLSecs int
+
+	// --- Email (T-F6) -----------------------------------------------------
+	//
+	// The product had no way to reach a person who was not looking at it. A
+	// team invite produced a link and handed it to the *inviting admin* to
+	// forward by hand; an export or erasure record had nowhere to go; and a
+	// tenant with no Slack, Discord or Lark could receive no push at all,
+	// because every delivery channel this product had was a team-chat product.
+	//
+	// Every field is optional. A deployment with none of them set gets the
+	// no-op sender and one log line at startup, and the invite route still
+	// returns its link — refusing to boot over an outbound channel most tenants
+	// never touch would be the wrong trade.
+	EmailEnabled bool
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	EmailTimeout int // seconds
+	// AppBaseURL is where the dashboard answers, e.g. https://app.example.com.
+	// Needed because an email has to build its own links: the dashboard has
+	// always constructed the invite URL from window.location.origin, which a
+	// server process has no equivalent of. Unset means no invite mail is sent
+	// at all — a message whose only purpose is a link, carrying a broken one,
+	// is worse than no message.
+	AppBaseURL string
 	// APIV1ObsFlushSeconds is how often the request recorder writes what it has
 	// buffered (T-A5). It is the staleness of the tenant's own error list and
 	// the write rate of the rollup, traded against each other: the acceptance
@@ -742,8 +769,17 @@ func Load() (*Config, error) {
 		WatcherEnabled:             getEnv("WATCHER_ENABLED", "true") == "true",
 		WatcherMaxPerCompany:       getEnvAsInt("WATCHER_MAX_PER_COMPANY", 20),
 		SourceFreshnessTTLSecs:     getEnvAsInt("SOURCE_FRESHNESS_TTL_SECS", 60),
-		APIV1ObsFlushSeconds:       getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
-		APIV1ObsRetentionDays:      getEnvAsInt("API_V1_OBS_RETENTION_DAYS", 30),
+
+		EmailEnabled:          getEnv("EMAIL_ENABLED", "false") == "true",
+		SMTPHost:              getEnv("SMTP_HOST", ""),
+		SMTPPort:              getEnvAsInt("SMTP_PORT", 587),
+		SMTPUsername:          getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:          getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:              getEnv("SMTP_FROM", ""),
+		EmailTimeout:          getEnvAsInt("EMAIL_TIMEOUT_SECS", 15),
+		AppBaseURL:            strings.TrimRight(getEnv("APP_BASE_URL", ""), "/"),
+		APIV1ObsFlushSeconds:  getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
+		APIV1ObsRetentionDays: getEnvAsInt("API_V1_OBS_RETENTION_DAYS", 30),
 
 		MetricsToken:  getEnv("METRICS_TOKEN", ""),
 		MCPServerAddr: getEnv("MCP_SERVER_ADDR", ":8081"),

@@ -16,6 +16,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/docwarehouse"
+	"github.com/fauzanebd/argentum/internal/email"
 	"github.com/fauzanebd/argentum/internal/idempotency"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
@@ -145,6 +146,9 @@ type apiDeps struct {
 	// metricCoverageSvc reports whether this tenant's answers stand on defined
 	// metrics (T-F4). Reads only, no state.
 	metricCoverageSvc *app.MetricCoverageService
+	// mailer is how this product reaches somebody not looking at it (T-F6).
+	// Always non-nil; a deployment with no relay gets the no-op sender.
+	mailer email.Sender
 	// Watchers (T-08): CRUD and the dry-run. The API never fires or delivers —
 	// that is the worker's WatcherService — so this instance carries no delivery
 	// providers and no budget checker.

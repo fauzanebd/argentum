@@ -94,6 +94,11 @@ type WatcherService struct {
 	lark  lark.Provider
 	slack slack.Provider
 	bus   EventBus
+	// mail delivers a breach to an inbox (T-F7). Its own setter rather than a
+	// sixth argument to WithDelivery, because every other provider there is a
+	// chat product a tenant configures per company and this one is a single
+	// relay the *deployment* owns.
+	mail AlertMailer
 
 	// budget refuses an unattended fire on an exhausted tenant, the same second
 	// integration point ScheduledTaskService needs and for the same reason: a
@@ -140,6 +145,61 @@ func (s *WatcherService) WithDelivery(wa whatsapp.Provider, larkProv lark.Provid
 	s.slack = slackProv
 	s.bus = bus
 	return s
+}
+
+// WithMail delivers breaches by email (T-F7). Absent means an email channel on
+// a watcher records "skipped" — the same answer every other unwired provider
+// gives, and the reason a watcher never silently loses a delivery.
+func (s *WatcherService) WithMail(m AlertMailer) *WatcherService {
+	s.mail = m
+	return s
+}
+
+// AlertMailer is the slice of the email surface a watcher needs.
+type AlertMailer interface {
+	SendAlert(ctx context.Context, to []string, title, body string) error
+	Enabled() bool
+}
+
+// validateEmailRefs checks a watcher's email ref at save time.
+//
+// The ref is one or more addresses, comma-separated — the shape every other
+// channel's ref has (one opaque string), rather than a new array field on
+// WatcherChannel that the four existing channels would all leave empty.
+func validateEmailRefs(ref string) error {
+	addrs := splitEmailRefs(ref)
+	if len(addrs) == 0 {
+		return fmt.Errorf("%w: the email channel needs at least one address", domain.ErrInvalidInput)
+	}
+	if len(addrs) > maxWatcherEmailRecipients {
+		return fmt.Errorf("%w: at most %d email recipients per watcher", domain.ErrInvalidInput, maxWatcherEmailRecipients)
+	}
+	for _, a := range addrs {
+		// Deliberately shallow. A full RFC 5322 check rejects addresses that
+		// work, and the only mistake worth catching here is the one somebody
+		// makes in a form: a name, a phone number, a Slack channel pasted into
+		// the wrong field.
+		if !strings.Contains(a, "@") || strings.HasPrefix(a, "@") || strings.HasSuffix(a, "@") {
+			return fmt.Errorf("%w: %q is not an email address", domain.ErrInvalidInput, a)
+		}
+	}
+	return nil
+}
+
+// maxWatcherEmailRecipients bounds the fan-out. A watcher fires on a cron, so
+// an unbounded recipient list is an unbounded send rate against one relay, and
+// a list that long is a mailing list the tenant should own rather than one this
+// product should store.
+const maxWatcherEmailRecipients = 20
+
+func splitEmailRefs(ref string) []string {
+	out := []string{}
+	for _, part := range strings.Split(ref, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // WithBudget gates each fire on the tenant's credit balance.
@@ -376,6 +436,14 @@ func validateChannels(channels []domain.WatcherChannel) error {
 		case domain.ChannelWhatsApp, domain.ChannelDiscord, domain.ChannelLark, domain.ChannelSlack:
 			if strings.TrimSpace(ch.Ref) == "" {
 				return fmt.Errorf("%w: the %s channel needs a ref (phone, channel id, or chat id)", domain.ErrInvalidInput, ch.Channel)
+			}
+		case domain.ChannelEmail:
+			// Checked here rather than at send time, which is the whole point of
+			// a save-time validator: a watcher fires at 03:00, and an address
+			// with a typo in it should be a 400 in front of the person who typed
+			// it rather than a "failed" row nobody reads the next morning.
+			if err := validateEmailRefs(ch.Ref); err != nil {
+				return err
 			}
 		default:
 			return fmt.Errorf("%w: %q is not a channel a watcher can deliver to", domain.ErrInvalidInput, ch.Channel)
@@ -727,6 +795,15 @@ func (s *WatcherService) deliver(ctx context.Context, w *domain.Watcher, respons
 			if s.slack == nil || ch.Ref == "" {
 				d.Status, d.Error = "skipped", "no slack provider"
 			} else if err := s.slack.Send(ctx, w.CompanyID, ch.Ref, response); err != nil {
+				d.Status, d.Error = "failed", err.Error()
+			}
+		case domain.ChannelEmail:
+			// One message to every address on the ref, not one message each:
+			// the recipients are colleagues watching the same number, and N
+			// separate emails about one breach is how a team mutes a watcher.
+			if s.mail == nil || !s.mail.Enabled() || ch.Ref == "" {
+				d.Status, d.Error = "skipped", "no email transport"
+			} else if err := s.mail.SendAlert(ctx, splitEmailRefs(ch.Ref), w.Name, response); err != nil {
 				d.Status, d.Error = "failed", err.Error()
 			}
 		default:

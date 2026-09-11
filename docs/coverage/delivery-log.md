@@ -6256,6 +6256,68 @@ sampled, so they say nothing about the other 409 — but if coverage is genuinel
 high, `T-F5` is three days spent on a problem this deployment does not have, and
 saying so now is cheaper than finding out afterwards.
 
+## Phase 3ah — The first outbound channel that is not a chat app (2026-09-11)
+
+`T-F6`/`T-F7`, the third of the four candidates the owner accepted. Record:
+[`email.md`](email.md).
+
+**`grep -rin "smtp\|sendgrid\|mailgun\|resend\|postmark"` over `apps/backend`
+returned nothing**, and three shipped features were quietly incomplete because
+of it. `T-04`'s invite produced a link and the dashboard told the admin to
+forward it themselves. `T-H6`'s export and erasure record had nowhere to go. And
+every push channel this product had — Slack, Discord, Lark, WhatsApp — was a
+team-chat product, so a tenant with no team chat could receive no push at all,
+which for a great many Indonesian SMBs is the whole feature.
+
+### Three decisions
+
+**Outbound only.** Inbound email is a new untrusted-input surface with its own
+threat model (`T-H8`'s argument). `domain.ChannelEmail` carries that in its own
+doc comment, because it is the only one-way `Channel` constant and the next
+reader will otherwise assume a thread can open on it.
+
+**A deployment with nothing configured gets a no-op sender, one startup line and
+`Enabled() == false`** — not an error type. What it must not do is *look* like
+it worked, which is precisely the defect `T-P8`'s embedder resolver shipped:
+no client, no error, and a boot log printing "enabled".
+
+**`APP_BASE_URL` is required for invites and optional for alerts.** An
+invitation *is* a link, and one carrying a link to nowhere makes the recipient
+conclude the product is broken rather than that their admin has not finished
+setting up. So SMTP without a base URL sends no invitations and the admin keeps
+copying links — the behaviour they already had. An alert is a paragraph the
+agent wrote and stands on its own.
+
+### Five things the protocol made the build find
+
+The plain-text part has to come **first** (a client picks the last part it can
+display, so the order that reads naturally is the one that breaks it). A bare
+`.` on its own line ends an SMTP message, so a body containing one would be
+truncated there and the rest read as commands. A non-ASCII subject has to be
+encoded — Indonesian subject lines are the normal case here. The envelope sender
+must be the bare address, or SPF checks against a display name and a
+deployment's entire mail output starts bouncing. And the accept URL has to match
+what `team-tab.tsx` builds from `window.location.origin`, with the token
+escaped — a raw `+` reads as a space, turning a valid single-use token into a
+404 that looks exactly like an expired invite.
+
+`T-F7` also needed no migration, which its ticket said it would: `watcher_channels`
+is JSONB, so a new channel is a constant and a `case`.
+
+### What is owed, and it is the interesting part
+
+**No message has ever been sent.** The whole surface is unit-gated against a
+recording sender and **zero percent live-gated** — on a new protocol surface,
+which is the category this log has recorded the live half catching something in
+sixteen sittings out of sixteen. It needs a local catcher and twenty minutes,
+no production anything and no money: [`live-gate-backlog.md`](live-gate-backlog.md) §1t.
+
+One acceptance item was **struck rather than built**: `send_message` gaining an
+email target. Its consumer — the backlog's *Scheduled branded report delivery* —
+is not built, and adding an unused target to an action tool puts a capability
+into every turn's prompt that nothing asks for. That is `T-14`'s `list_watchers`
+exactly, which the 2026-08-04 gate found advertised for a week.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

@@ -110,6 +110,7 @@ export const CHANNEL_LABELS: Record<string, string> = {
   discord: "Discord",
   lark: "Lark",
   slack: "Slack",
+  email: "Email",
   api: "API",
 };
 
@@ -124,6 +125,11 @@ export function channelRefPlaceholder(channel: Channel): string {
       return "Chat id";
     case "slack":
       return "Channel id, e.g. C0123ABCD";
+    case "email":
+      // Comma-separated, which is the shape every other channel's ref already
+      // has — one opaque string — rather than a second array field the other
+      // four would all leave empty.
+      return "ops@example.com, finance@example.com";
     default:
       return "";
   }

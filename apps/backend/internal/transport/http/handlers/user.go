@@ -114,12 +114,19 @@ func (h *UserHandler) invite(c *gin.Context) {
 		}
 		return
 	}
-	// There is no mail transport in the product yet, so the plaintext token
-	// goes back to the admin who created it and they pass on the link
-	// themselves. It is returned exactly once: nothing can read it back.
+	// The plaintext token goes back to the admin who created it **whether or
+	// not it was also emailed** (T-F6), and it is returned exactly once —
+	// nothing can read it back.
+	//
+	// Both, rather than one or the other, because `emailed: false` covers three
+	// situations an admin cannot tell apart and does not need to: no relay
+	// configured, no APP_BASE_URL to build a link with, or a send that failed.
+	// In all three the answer is the same as it was before this product could
+	// send anything, which is to copy the link.
 	c.JSON(http.StatusCreated, gin.H{
 		"user":       res.Member,
 		"token":      res.Token,
+		"emailed":    res.Emailed,
 		"expires_at": res.ExpiresAt,
 	})
 }

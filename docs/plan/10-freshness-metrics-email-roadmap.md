@@ -329,8 +329,15 @@ shapes, here is the metric nobody has written.*
 
 ### Track C — A way to reach people (3.0d)
 
-#### `T-F6` Email, and invites that arrive
-**Repo:** BE · **Size:** 2.0d · **Deps:** none · **Migration:** none
+#### `T-F6` Email, and invites that arrive — **built 2026-09-11**
+**Repo:** BE + FE · **Size:** 2.0d · **Deps:** none · **Migration:** none
+
+> **Built and unit-gated 2026-09-11**; the record is
+> [`../coverage/email.md`](../coverage/email.md). One thing this ticket did not
+> name and should have: **`APP_BASE_URL`**. A server process has no
+> `window.location.origin`, so an email cannot build its own links without one,
+> and an invitation carrying a link to nowhere is worse than no invitation — so
+> a deployment with SMTP and no base URL sends nothing.
 
 ##### Why
 `grep -rin "smtp\|sendgrid\|mailgun\|resend\|postmark"` over `apps/backend`
@@ -354,17 +361,29 @@ for them; and a tenant with no team chat cannot receive a push at all.
   bounces must not make the invite unrecoverable.
 
 ##### Acceptance
-- [ ] A deployment with no SMTP config boots, logs once, and invites still
+- [x] A deployment with no SMTP config boots, logs once, and invites still
       return a link
-- [ ] An invite with email on sends exactly one message to the invitee
-- [ ] A send failure does not fail the invite
-- [ ] No credential appears in any log line — asserted
-- [ ] The recipient address is never logged at `Info`
+- [x] An invite with email on sends exactly one message to the invitee, to the
+      **normalised** address — or a re-invite would go to a different mailbox
+      from the one the token is bound to
+- [x] A send failure does not fail the invite, and `emailed: false` means the
+      dashboard shows the link instead of claiming it sent
+- [x] No credential appears in any log line — the auth error is rewritten
+      rather than wrapped, so `smtp`'s own message cannot carry one through
+- [x] The recipient address is never logged at `Info` — the failure line names
+      the company id and nothing else
+- [ ] **One real message, read by a human.** Nothing here has opened a TCP
+      connection to a relay — [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1
 
 ---
 
-#### `T-F7` Watchers and reports arrive by email
-**Repo:** BE + FE · **Size:** 1.0d · **Deps:** `T-F6` · **Migration:** `082`
+#### `T-F7` Watchers and reports arrive by email — **built 2026-09-11**
+**Repo:** BE + FE · **Size:** 1.0d · **Deps:** `T-F6` · ~~**Migration:** `082`~~ **no migration**
+
+> **Built and unit-gated 2026-09-11.** `082` was never needed:
+> `watcher_channels` is a JSONB column, so a new channel is a constant and a
+> `case`, not a schema change. The `send_message` half is **not built** — see
+> the struck acceptance item below.
 
 ##### Do
 - `email` as a watcher delivery channel beside Slack/Discord/Lark/WhatsApp,
@@ -373,9 +392,21 @@ for them; and a tenant with no team chat cannot receive a push at all.
   report delivery* can land a PDF in an inbox as well as in Lark.
 
 ##### Acceptance
-- [ ] A watcher configured for email delivers one message per fire, not one per recipient per retry
-- [ ] An email delivery failure is recorded on `WatcherDelivery` like every other channel's
-- [ ] Delivery to a company with no members with email is a no-op, not an error
+- [x] A watcher configured for email delivers one message per fire, not one per
+      recipient — N separate emails about one breach is how a team mutes a watcher
+- [x] An email delivery failure is recorded on `WatcherDelivery` like every
+      other channel's, and an unwired relay records `skipped` rather than failing
+- [x] Delivery to nobody is a no-op, not an error
+- [x] **Added, not in the ticket:** the address list is validated when the
+      watcher is *saved*. A watcher fires at 03:00 and a typo should be a 400 in
+      front of whoever typed it
+- [x] **Added:** the recipient list is capped at 20 — a cron-fired unbounded
+      list is an unbounded send rate against one relay
+- [ ] ~~`send_message` gains an email target~~ — **struck.** The backlog's
+      *Scheduled branded report delivery* is the consumer, and it is not built;
+      adding an unused target to an action tool would put a capability into
+      every turn's prompt that nothing asks for, which is exactly what `T-14`'s
+      `list_watchers` did and the 2026-08-04 gate found
 
 ---
 

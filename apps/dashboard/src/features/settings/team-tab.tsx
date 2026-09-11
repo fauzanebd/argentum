@@ -42,6 +42,11 @@ interface InviteResponse {
   user: Member;
   token: string;
   expires_at: string;
+  /** Whether the invitation was actually emailed (T-F6). False covers three
+   *  situations an admin cannot tell apart and does not need to — no relay,
+   *  no APP_BASE_URL, or a send that failed — and the answer to all three is
+   *  the same: copy the link. */
+  emailed?: boolean;
 }
 
 /** The link an invitee opens. Built here because the API has no idea what
@@ -161,11 +166,16 @@ export function TeamTab() {
           {issued && (
             <div className="rounded-md border border-border bg-muted/40 p-3.5 space-y-2">
               <p className="text-sm font-medium">
-                Invitation link for {issued.user.email}
+                {issued.emailed
+                  ? `Invitation sent to ${issued.user.email}`
+                  : `Invitation link for ${issued.user.email}`}
               </p>
               <p className="text-xs text-muted-foreground">
-                Argentum does not send email yet, so pass this on yourself. It works once, expires{" "}
-                {new Date(issued.expires_at).toLocaleDateString()}, and cannot be shown again.
+                {issued.emailed
+                  ? "They should have it in a moment. The link below is the same one — keep it if you want to pass it on another way."
+                  : "Argentum could not email this, so pass it on yourself."}{" "}
+                It works once, expires {new Date(issued.expires_at).toLocaleDateString()}, and
+                cannot be shown again.
               </p>
               <div className="flex items-center gap-2">
                 <Input readOnly value={inviteURL(issued.token)} className="font-mono text-xs" />

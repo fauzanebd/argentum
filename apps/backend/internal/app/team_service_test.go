@@ -590,3 +590,90 @@ func TestPreviewDoesNotConsumeTheInvite(t *testing.T) {
 		t.Errorf("Preview of a spent token: err = %v, want ErrNotFound", err)
 	}
 }
+
+// --- T-F6: the invitation arrives, or the link still does -------------------
+
+type stubInviteMailer struct {
+	enabled bool
+	err     error
+	calls   int
+	lastTo  string
+}
+
+func (s *stubInviteMailer) Enabled() bool { return s.enabled }
+func (s *stubInviteMailer) SendInvite(_ context.Context, to string, _ InviteMail) error {
+	s.calls++
+	s.lastTo = to
+	return s.err
+}
+
+func TestAnInviteIsEmailedWhenItCan(t *testing.T) {
+	svc, _, _, _ := teamFixture(t)
+	m := &stubInviteMailer{enabled: true}
+	svc.WithMailer(m)
+
+	res, err := svc.Invite(context.Background(), "co-1", "u-admin", "New@Gelael.co.id", domain.RoleMember)
+	if err != nil {
+		t.Fatalf("Invite() = %v", err)
+	}
+	if m.calls != 1 {
+		t.Fatalf("sends = %d; want 1", m.calls)
+	}
+	// Lower-cased, the same address the invite row carries — or a re-invite
+	// would go to a different mailbox from the one the token is bound to.
+	if m.lastTo != "new@gelael.co.id" {
+		t.Errorf("sent to %q; want the normalised address", m.lastTo)
+	}
+	if !res.Emailed {
+		t.Error("Emailed = false after a successful send")
+	}
+	if res.Token == "" {
+		t.Error("the token is missing; the link must be in the response whether or not it was mailed")
+	}
+}
+
+// The property that makes this safe to turn on: a relay that is down costs the
+// admin nothing they did not already have.
+func TestAFailedSendStillProducesAUsableInvite(t *testing.T) {
+	svc, _, invites, _ := teamFixture(t)
+	svc.WithMailer(&stubInviteMailer{enabled: true, err: errors.New("connection refused")})
+
+	res, err := svc.Invite(context.Background(), "co-1", "u-admin", "new@gelael.co.id", domain.RoleMember)
+	if err != nil {
+		t.Fatalf("Invite() = %v; a relay being down must not roll back a good invitation", err)
+	}
+	if res.Token == "" {
+		t.Error("no token in the response")
+	}
+	if res.Emailed {
+		t.Error("Emailed = true after the send failed; the dashboard would say 'sent' when nothing was")
+	}
+	if len(invites.rows) != 1 {
+		t.Errorf("invite rows = %d; the invitation must be durable regardless", len(invites.rows))
+	}
+}
+
+func TestADeploymentWithNoMailerBehavesExactlyAsBefore(t *testing.T) {
+	svc, _, _, _ := teamFixture(t)
+	res, err := svc.Invite(context.Background(), "co-1", "u-admin", "new@gelael.co.id", domain.RoleMember)
+	if err != nil {
+		t.Fatalf("Invite() = %v", err)
+	}
+	if res.Token == "" || res.Emailed {
+		t.Errorf("res = %+v; want a token and Emailed=false", res)
+	}
+}
+
+// A configured-but-off mailer must not be asked. Enabled() is the switch; a
+// caller that ignored it would produce one ErrDisabled per invite in the log.
+func TestADisabledMailerIsNotCalled(t *testing.T) {
+	svc, _, _, _ := teamFixture(t)
+	m := &stubInviteMailer{enabled: false}
+	svc.WithMailer(m)
+	if _, err := svc.Invite(context.Background(), "co-1", "u-admin", "new@gelael.co.id", domain.RoleMember); err != nil {
+		t.Fatalf("Invite() = %v", err)
+	}
+	if m.calls != 0 {
+		t.Errorf("sends = %d; a disabled mailer must not be asked", m.calls)
+	}
+}

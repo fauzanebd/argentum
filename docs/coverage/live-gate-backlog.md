@@ -232,6 +232,31 @@ The one thing the run needed that no document named:
 `API_V1_CALLBACK_ALLOW_PRIVATE=true` for a loopback webhook receiver — separate
 from `MCP_ALLOW_PRIVATE_EGRESS`, and the two are easy to confuse.
 
+## 1t. Needs a local SMTP catcher, nothing else — added 2026-09-11, not run
+
+`T-F6`/`T-F7`. **The whole email surface is zero percent live-gated**: every
+property is proven against a recording sender and nothing has opened a TCP
+connection to a relay. It is a new protocol surface, which is the category this
+file's own record says the live half always finds something in — sixteen
+sittings out of sixteen.
+
+It needs no production anything and no money. MailHog or Mailpit on a port:
+
+    EMAIL_ENABLED=true SMTP_HOST=localhost SMTP_PORT=1025 \
+    SMTP_FROM='Argentum <no-reply@test>' APP_BASE_URL=http://localhost:5173
+
+| Arm | What it would prove |
+| --- | --- |
+| Invite somebody from Settings → Team, then **read the message** | That the button renders, the link works when clicked, the subject is not mojibake, and the plain-text part is usable on its own. Four things no unit test can see |
+| Point a watcher at the email channel with two addresses, force a breach | **One** message with two recipients, and `delivered` in the event's delivery status |
+| Stop the catcher, invite again | `emailed: false`, the invite still durable, the link still in the response, one `Warn` line naming the company and not the address |
+| Set SMTP with **no** `APP_BASE_URL`, invite | Nothing sent, link returned. The asymmetry that keeps a link-to-nowhere out of an inbox |
+
+**Deliverability is not in scope and cannot be**: SPF/DKIM/DMARC are an
+operator's DNS records. What this code can get wrong — the envelope sender, the
+encoded subject, the part order — is unit-covered; whether a given relay's
+reputation lands the message is not a property of this repository.
+
 ## 1a. ~~Needs the local stack, nothing else~~ — added and run 2026-08-09
 
 | Owed by | The gate | Outcome |

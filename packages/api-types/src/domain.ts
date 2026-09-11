@@ -2655,6 +2655,14 @@ export const ChannelDiscord = "discord";
 export const ChannelLark = "lark";
 export const ChannelSlack = "slack";
 /**
+ * ChannelEmail is delivery only (T-F7). Every other channel here is
+ * two-way — a person can reply into it and start a turn — and this one
+ * cannot: inbound email is a new untrusted-input surface with its own
+ * threat model, and it is deliberately not built. So a thread is never
+ * created with this channel; it appears only on a watcher's delivery list.
+ */
+export const ChannelEmail = "email";
+/**
  * ChannelAPI is a turn started over the public `/v1` API (T-A1). It is
  * the only channel with no outbound provider: the reply is the HTTP
  * response the caller is already holding open, so ChatRunner.completeWith
@@ -2669,7 +2677,7 @@ export const ChannelAPI = "api";
  * script.
  */
 export const ChannelWidget = "widget";
-export type Channel = typeof ChannelWhatsApp | typeof ChannelDashboard | typeof ChannelDiscord | typeof ChannelLark | typeof ChannelSlack | typeof ChannelAPI | typeof ChannelWidget;
+export type Channel = typeof ChannelWhatsApp | typeof ChannelDashboard | typeof ChannelDiscord | typeof ChannelLark | typeof ChannelSlack | typeof ChannelEmail | typeof ChannelAPI | typeof ChannelWidget;
 /**
  * ConversationThread is one logical conversation. Each phone number gets its
  * own thread chain; threads auto-split on long idle gaps + topic shifts.

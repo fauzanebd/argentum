@@ -30,6 +30,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/bootstrap"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/email"
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/slack"
@@ -149,6 +150,18 @@ func main() {
 	// disabled, which deliver() treats as "skipped" rather than dialling a nil
 	// client.
 	stack.Watchers.WithDelivery(waProvider, larkProv, slackProv, bus)
+	// Email delivery for a breach (T-F7). Built unconditionally: with no relay
+	// configured this is the no-op sender, and an email channel on a watcher
+	// records "skipped" — the same answer every other unwired provider gives.
+	stack.Watchers.WithMail(app.NewAlertMailerAdapter(email.New(email.Config{
+		Enabled:  cfg.EmailEnabled,
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUsername,
+		Password: cfg.SMTPPassword,
+		From:     cfg.SMTPFrom,
+		Timeout:  time.Duration(cfg.EmailTimeout) * time.Second,
+	}), cfg.AppBaseURL))
 	// A render result reaches the channel that asked for it through the same
 	// four providers (T-G6, finding 6). Before this line the mp4 and the
 	// carousel were written to the thread and published on the dashboard bus

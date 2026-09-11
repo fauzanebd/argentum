@@ -14,6 +14,12 @@ const (
 	ChannelDiscord   Channel = "discord"
 	ChannelLark      Channel = "lark"
 	ChannelSlack     Channel = "slack"
+	// ChannelEmail is delivery only (T-F7). Every other channel here is
+	// two-way — a person can reply into it and start a turn — and this one
+	// cannot: inbound email is a new untrusted-input surface with its own
+	// threat model, and it is deliberately not built. So a thread is never
+	// created with this channel; it appears only on a watcher's delivery list.
+	ChannelEmail Channel = "email"
 	// ChannelAPI is a turn started over the public `/v1` API (T-A1). It is
 	// the only channel with no outbound provider: the reply is the HTTP
 	// response the caller is already holding open, so ChatRunner.completeWith

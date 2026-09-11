@@ -184,7 +184,7 @@ capability that quietly disappears reads as one nobody built.
 | Lark / Feishu          | ✅     | Webhook in, REST reply out, per-tenant app secret, thread-key mapping     |
 | Telegram               | ❌     | **Advertised on the landing page.** Not implemented anywhere              |
 | Slack                  | ✅     | Events API webhook in, `chat.postMessage` out, per-tenant bot token, user allowlist, thread + DM keying. Watchers deliver to it since 2026-08-08 — top-level, so a breach starts its own thread ([`slack-channel.md`](slack-channel.md) §6) |
-| Email                  | ❌     | Not implemented                                                          |
+| Email                  | 🟡     | `T-F6`/`T-F7` (2026-09-11). **Outbound only** — `internal/email`, SMTP behind a `Sender` interface, with the no-op that every deployment configuring nothing gets. Team invites now arrive instead of being handed to the inviting admin to forward, and a watcher can deliver a breach to an inbox, which is the first push channel this product has that is not a team-chat product. **Inbound is deliberately absent**: it is a new untrusted-input surface with its own threat model (`T-H8`'s argument), and `domain.ChannelEmail` says so in its own comment because it is the only one-way `Channel`. `APP_BASE_URL` is required for invites and optional for alerts — an invitation *is* a link. 🟡 for one reason and it is the whole of it: **no message has ever been sent.** Every property is proven against a recording sender; nothing has opened a connection to a relay, and the gate is a local catcher and twenty minutes ([`email.md`](email.md) §5) |
 
 ## Data sources
 

@@ -83,6 +83,13 @@ func (h *WatchersHandler) list(c *gin.Context) {
 		Channels: []domain.Channel{
 			domain.ChannelDashboard, domain.ChannelWhatsApp,
 			domain.ChannelDiscord, domain.ChannelLark, domain.ChannelSlack,
+			// Email (T-F7). Listed unconditionally, like the four chat channels
+			// beside it: this list is what a watcher *may* deliver to, not what
+			// this deployment has wired. A channel with no provider records
+			// "skipped" on the fire, which is visible in the event's delivery
+			// status — whereas hiding the option would make a tenant think the
+			// product cannot do it.
+			domain.ChannelEmail,
 		},
 		CompareOptions: []string{"previous_period", "same_period_last_year"},
 	})

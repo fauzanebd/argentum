@@ -23,6 +23,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/dashboard"
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/docwarehouse"
+	"github.com/fauzanebd/argentum/internal/email"
 	"github.com/fauzanebd/argentum/internal/embedding"
 	"github.com/fauzanebd/argentum/internal/idempotency"
 	"github.com/fauzanebd/argentum/internal/lark"
@@ -98,7 +99,20 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// Read-only here. The rows are written by the worker, which is where the
 	// agent runs; the API only serves them back to an admin.
 	deps.actionRepo = pgctl.NewAgentActionRepo(controlDB)
-	deps.teamSvc = app.NewTeamService(userRepo, pgctl.NewUserInviteRepo(controlDB))
+	// Email (T-F6). Built unconditionally: with nothing configured this is the
+	// no-op sender, which logs once at startup and reports Enabled() false, so
+	// the invite route keeps returning its link exactly as it always has.
+	deps.mailer = email.New(email.Config{
+		Enabled:  cfg.EmailEnabled,
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUsername,
+		Password: cfg.SMTPPassword,
+		From:     cfg.SMTPFrom,
+		Timeout:  time.Duration(cfg.EmailTimeout) * time.Second,
+	})
+	deps.teamSvc = app.NewTeamService(userRepo, pgctl.NewUserInviteRepo(controlDB)).
+		WithMailer(app.NewInviteMailerAdapter(deps.mailer, companyRepo, userRepo, cfg.AppBaseURL))
 	// The only machine credential in the product (T-13). It authenticates
 	// `/v1`; the dashboard routes beside it are how an admin mints one.
 	deps.apiKeySvc = app.NewAPIKeyService(pgctl.NewAPIKeyRepo(controlDB))

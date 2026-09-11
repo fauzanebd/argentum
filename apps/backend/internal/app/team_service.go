@@ -1,6 +1,8 @@
 package app
 
 import (
+	"github.com/sirupsen/logrus"
+
 	"context"
 	"errors"
 	"fmt"
@@ -23,12 +25,44 @@ type TeamService struct {
 	users   domain.UserRepository
 	invites domain.UserInviteRepository
 	now     func() time.Time
+	// mail delivers the invitation (T-F6). Optional, and absent is the state
+	// this product shipped in for two months: the route still returns the
+	// token, and the dashboard still renders a link for the admin to copy.
+	mail InviteMailer
+}
+
+// InviteMailer is the slice of the email surface this service needs. Declared
+// here rather than taking internal/email so a test can answer it without a
+// relay, and so the only thing this package knows about email is that it can
+// fail and that it can be absent.
+type InviteMailer interface {
+	SendInvite(ctx context.Context, to string, d InviteMail) error
+	Enabled() bool
+}
+
+// InviteMail is what the invitation says, assembled by whoever knows the
+// company's name and the deployment's base URL — not by this service, which
+// knows neither.
+type InviteMail struct {
+	CompanyID string
+	InvitedBy string
+	Token     string
+	ExpiresIn time.Duration
 }
 
 // NewTeamService wires the repositories. now is injectable so tests can drive
 // expiry without sleeping.
 func NewTeamService(users domain.UserRepository, invites domain.UserInviteRepository) *TeamService {
 	return &TeamService{users: users, invites: invites, now: time.Now}
+}
+
+// WithMailer makes the invitation arrive (T-F6). Optional in the builder, like
+// every other outbound channel in this codebase: a deployment with no relay
+// keeps the behaviour it had, where the link comes back in the response and a
+// human forwards it.
+func (s *TeamService) WithMailer(m InviteMailer) *TeamService {
+	s.mail = m
+	return s
 }
 
 // Member is one row of the team list: a user plus the invite state that
@@ -48,6 +82,12 @@ type InviteResult struct {
 	Member    Member    `json:"member"`
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// Emailed says whether the invitation actually went out (T-F6). False
+	// covers three different situations — no relay configured, the send failed,
+	// no base URL to build a link with — and the dashboard treats all three the
+	// same way, by showing the link to copy. What it must not do is say "sent"
+	// when nothing was.
+	Emailed bool `json:"emailed"`
 }
 
 // List returns every account in the company, pending ones included, with the
@@ -159,6 +199,33 @@ func (s *TeamService) Invite(ctx context.Context, companyID, invitedBy, email st
 		return nil, err
 	}
 
+	// The mail goes out *after* the invite is durable, and a failure to send is
+	// logged rather than returned (T-F6).
+	//
+	// **The token is in the response either way**, and that is the whole design
+	// of this step. An invite that could not be mailed is still a usable invite
+	// — the admin copies the link, which is what every invite in this product
+	// did before today — whereas returning an error would roll a perfectly good
+	// invitation back because a relay was briefly unreachable. The one thing
+	// that must not happen is silence, so the failure is a Warn line naming the
+	// company and not the address.
+	emailed := false
+	if s.mail != nil && s.mail.Enabled() {
+		err := s.mail.SendInvite(ctx, email, InviteMail{
+			CompanyID: companyID,
+			InvitedBy: invitedBy,
+			Token:     token,
+			ExpiresIn: InviteTTL,
+		})
+		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"company_id": companyID,
+			}).Warn("invite created but could not be emailed; the link is in the response")
+		} else {
+			emailed = true
+		}
+	}
+
 	return &InviteResult{
 		Member: Member{
 			ID:              user.ID,
@@ -171,6 +238,7 @@ func (s *TeamService) Invite(ctx context.Context, companyID, invitedBy, email st
 		},
 		Token:     token,
 		ExpiresAt: inv.ExpiresAt,
+		Emailed:   emailed,
 	}, nil
 }
 
