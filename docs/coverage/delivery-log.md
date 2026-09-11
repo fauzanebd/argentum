@@ -5672,6 +5672,10 @@ being read as "stop".
 
 ### The question it left open, deliberately
 
+> **Answered 2026-09-11 in Phase 3ae, from production rather than from an eval
+> run: the cap *is* binding, on ~5% of turns — and it should still not be
+> raised, because the tail is failing calls rather than work.**
+
 `MaxIterations: 8` was not touched. There is no evidence it is wrong, and the
 screenshot that started this suggests it may not be doing much work: step 3 at
 67s is roughly 22s a step, which puts the 150s wall at around step 7 — the same
@@ -5928,6 +5932,72 @@ of them silently degraded every screenshot taken earlier in the day.
 errors, 8 warnings, 33 tests). `go test ./internal/report/videoplan/...
 ./internal/report/canvas/...` ok — the plan goldens are unmoved, because the fix
 is in the renderer and not in what it is handed.
+
+## Phase 3ae — The question Phase 3z left open, answered from production (2026-09-11)
+
+Phase 3z shipped the budget warning and deliberately did not touch
+`MaxIterations: 8`, closing with *"there is no evidence it is wrong… settling
+that is a count."* The count was going to come off two eval runs. It came off
+**437 real turns** instead, which is a better instrument: eval cases are chosen,
+tenants' questions are not.
+
+`agent_actions` carries `message_id`, so tool calls per turn are countable.
+Three read-only queries, no writes, no model spend.
+
+### The distribution
+
+| Tool calls in a turn | Turns |
+| --- | --- |
+| 1 | 194 |
+| 2 | 106 |
+| 3 | 60 |
+| 4 | 30 |
+| 5 | 19 |
+| 6 | 7 |
+| **7** | **20** |
+| 8 | 1 |
+
+It decays cleanly to six and then **bumps at seven**. That is the shape of a
+ceiling, not of demand: turns are stopping just under the cap rather than
+tapering through it. `MaxIterations` is binding, on roughly **5% of turns**
+(21 of 437).
+
+Every turn in that tail is `actor_kind = user`. It is not one scheduled report
+running the same seven tools every morning — the first thing worth ruling out,
+and it is ruled out.
+
+### But the tail is thrash, not work
+
+The 28 turns at six calls or more contain 190 tool calls, and **49 of them did
+not succeed**: 23 `blocked`, 26 `error`. The breakdown is where the finding is:
+
+| Tool | ok | error | blocked |
+| --- | --- | --- | --- |
+| `query_metric` | 85 | — | 9 |
+| `get_schema` | 22 | — | — |
+| `run_sql` | 19 | 9 | 7 |
+| **`create_dashboard`** | **2** | **14** | **4** |
+| `generate_document` | — | 3 | 3 |
+
+**`create_dashboard` fails seven times for every two successes in a long turn.**
+That is `Q-5`'s shape — the 2026-08-16 finding where deepseek answered a Go error
+by re-sending the identical call until the budget ended the turn — and it says
+the long turns are long *because something in them keeps failing*.
+
+### So the answer is: do not raise the cap
+
+Raising `MaxIterations` would buy a thrashing turn more rounds to thrash in,
+and would spend an operator's credits doing it. The lever is
+`create_dashboard`'s failure rate, which is a different ticket and a better one.
+
+**What is not proven here.** Reading the `error_text` column was refused by this
+environment's permission layer, so *why* `create_dashboard` fails is unnamed —
+the count is solid, the cause is not. That is the next query, and it needs
+someone with access to run it:
+
+    SELECT left(error_text, 120), count(*) FROM agent_actions
+    WHERE tool_name = 'create_dashboard' AND result_status = 'error'
+    GROUP BY 1 ORDER BY 2 DESC;
 
 ## Feature velocity, measured
 
