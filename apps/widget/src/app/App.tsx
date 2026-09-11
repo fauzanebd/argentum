@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { EmbedClient, SessionExpired, type Message, type WidgetConfig } from "./api";
 import { renderMarkdown } from "./markdown";
+import { stringsFor } from "./strings";
 import { MARKER, isWidgetMessage, type WidgetTheme } from "@argentum/widget";
 
 // The app inside the iframe (T-21).
@@ -43,6 +44,13 @@ export function App() {
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLInputElement>(null);
   const hostOrigin = useRef("*");
+  // The host page's own choice, if it made one. State rather than a ref
+  // because the labels below are rendered from it.
+  const [hostLocale, setHostLocale] = useState<string | undefined>(undefined);
+
+  // The widget's own chrome, in the tenant's language (`strings.ts`). Not the
+  // greeting, which is the tenant's words or the server's default.
+  const t = stringsFor(hostLocale ?? config?.locale);
 
   const post = useCallback((message: Record<string, unknown>) => {
     parent.postMessage({ marker: MARKER, ...message }, hostOrigin.current);
@@ -64,6 +72,11 @@ export function App() {
       if (msg.type === "auth") {
         hostOrigin.current = event.origin;
         applyTheme(msg.theme);
+        // The loader has carried a `locale` option since T-21 and nothing ever
+        // read it either. It wins over the stored config when present: the
+        // tenant configures a default, and a page that says which language
+        // *this* visitor is reading knows better than the default does.
+        if (msg.locale) setHostLocale(msg.locale);
         // A fresh token for an existing client is a re-mint after expiry, not a
         // new visitor: keep the client (and the conversation on screen) and
         // swap the credential underneath it.
@@ -135,10 +148,10 @@ export function App() {
       // The host has to re-sign; we cannot. Telling it is the whole recovery
       // path, and a widget that retried instead would loop against a refusal.
       post({ type: "event", name: "token_expired" });
-      setError("Session expired. Reloading identity…");
+      setError(t.sessionExpired);
       return;
     }
-    const msg = e instanceof Error ? e.message : "Something went wrong.";
+    const msg = e instanceof Error ? e.message : t.wentWrong;
     setError(msg);
     post({ type: "event", name: "error", detail: msg });
   }
@@ -194,7 +207,7 @@ export function App() {
         case "error":
           patchPending((b) => ({
             ...b,
-            content: evt.error || "The agent stopped before answering.",
+            content: evt.error || t.stopped,
             pending: false,
             failed: true,
           }));
@@ -233,7 +246,7 @@ export function App() {
       handleFailure(e);
       patchPending((b) => ({
         ...b,
-        content: e instanceof Error ? e.message : "Could not send that.",
+        content: e instanceof Error ? e.message : t.couldNotSend,
         pending: false,
         failed: true,
       }));
@@ -254,7 +267,7 @@ export function App() {
         <span class="title">Argentum</span>
         <button
           class="icon"
-          aria-label="Close chat"
+          aria-label={t.closeChat}
           onClick={() => post({ type: "close" })}
         >
           ✕
@@ -318,11 +331,11 @@ export function App() {
           ref={composer}
           value={draft}
           disabled={!client || sending}
-          placeholder={sending ? "Thinking…" : "Ask about your data…"}
-          aria-label="Message"
+          placeholder={sending ? t.thinking : t.placeholder}
+          aria-label={t.message}
           onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
         />
-        <button type="submit" disabled={!client || sending || !draft.trim()} aria-label="Send">
+        <button type="submit" disabled={!client || sending || !draft.trim()} aria-label={t.send}>
           ➤
         </button>
       </form>

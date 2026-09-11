@@ -8,16 +8,18 @@
     "build": "vite build --config vite.app.config.ts",
     "dev": "vite --config vite.app.config.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "size": "node scripts/size.mjs"
+    "size": "node scripts/size.mjs",
+    "shots": "pnpm build && node harness/shoot.mjs"
   },
   "dependencies": {
     "@argentum/api-types": "workspace:*",
+    "@argentum/widget": "workspace:*",
     "dompurify": "^3.2.3",
     "marked": "^15.0.6",
-    "preact": "^10.25.4",
-    "@argentum/widget": "workspace:*"
+    "preact": "^10.25.4"
   },
   "devDependencies": {
+    "playwright-core": "1.61.1",
     "typescript": "~5.6.3",
     "vite": "^5.4.11"
   }

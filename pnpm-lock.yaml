@@ -312,6 +312,9 @@ importers:
         specifier: ^10.25.4
         version: 10.29.8
     devDependencies:
+      playwright-core:
+        specifier: 1.61.1
+        version: 1.61.1
       typescript:
         specifier: ~5.6.3
         version: 5.6.3

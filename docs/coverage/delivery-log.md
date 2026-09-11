@@ -5801,6 +5801,69 @@ member really gets a 403, that a model really opens a procedure. All three are
 proven elsewhere (§6a, `cmd/api/policy.go`, §3), and the two halves meet in the
 middle.
 
+## Phase 3ac — The widget's second unread field (2026-09-11)
+
+The camera from Phase 3ab pointed at the arm the backlog said was cheapest, and
+it was: `T-23`'s first half, owed since 2026-09-10, with a note that reads like
+an instruction — *"the first half is the one that was wrong in the browser for a
+month while every server-side test passed."*
+
+### The technique had to be the opposite of the dashboard's
+
+The dashboard harness stubs `@/lib/api` at the module boundary. That would have
+been useless here, because the defect this arm was owed for lived **inside the
+client's own parsing**: `EmbedClient` read `{config, agents}` as though it were
+the config, so every tenant who filled in Settings → Widget was shown Argentum's
+default instead of their own words. A stub of that client stubs out the bug.
+
+So `apps/widget/harness/` serves the **built IIFE bundle** from `dist/app`
+inside an iframe sandboxed `allow-scripts allow-forms` — no `allow-same-origin`,
+the opaque-origin condition that made a module bundle open blank on 2026-08-10 —
+on a host page that speaks the real `auth` handshake, and fakes `/api/embed` at
+the network.
+
+### The instrument was checked against a defect with a known answer
+
+Before trusting it, §6a's envelope bug went back in on a scratch copy of
+`App.tsx`. The harness failed in three directions at once — both tenant strings
+missing, Argentum's default leaking — **and the unconfigured scene passed while
+the bug was in place.** That is not a gap. It is the month-long invisibility
+reproduced: a tenant who had configured nothing saw the right screen throughout.
+
+### The defect: `locale` was stored, served, and read by nobody
+
+`WidgetConfig.Locale`'s comment has said what it is for since `T-23`: *"the
+default language of the widget's own chrome… **this is the label on the
+composer**."* Validated to `en`/`id`, defaulted, persisted, served inside
+`ConfigResponse` — and never read, in either of the two places that carry it
+(the config, and the loader's `locale` option since T-21). An Indonesian tenant
+got their own Indonesian greeting, because that field *is* read, above an
+English composer they could not change.
+
+**This is §6a's species, not its instance**, and the distinction is the whole
+value of the sitting. §6a was found by making the widget a consumer of generated
+types. A generated type cannot catch this one: the field arrives correctly
+typed and is simply never used. The argument for a browser gate over a type gate
+is now made by two defects rather than one.
+
+`strings.ts`: nine strings, two languages, host option over stored config over
+`en`. **0.32 KB gzipped** (32.75 → 33.07, budget 80). Not an i18n runtime —
+nothing here has a plural or an interpolation. The Indonesian wording is a
+judgement call, flagged as one, and is one commit to change.
+
+### Gate
+
+`pnpm -r build` and `pnpm -r lint` both clean — the whole web workspace, which
+is what CI's `web` job runs: dashboard 0 errors / 8 warnings / 33 tests, every
+other package `Done`. `pnpm --filter @argentum/widget-app size` reads 33.6 KB of
+80. Three widget scenes pass with assertions in both directions, so a locale fix
+cannot quietly make every widget Indonesian.
+
+**Still owed, and narrowed rather than closed:** the transcript route in a
+network tab. The fixtures here are hand-written, so nothing proves the *server*
+drops the tool rows §6b taught it to drop. That needs the stack and a tenant,
+and it stays in the backlog as the second half of the row.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

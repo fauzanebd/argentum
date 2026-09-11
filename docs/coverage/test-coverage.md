@@ -402,6 +402,18 @@ keep getting narrowed. Its shape:
 > "somebody should look at this in a browser". `live-gate-backlog.md` has had a
 > §3a browser bucket since 2026-08-10 and the things in it are usually free —
 > what stops them is a person and a session, and this removes the session.
+>
+> **A second one the same day: `apps/widget/harness/`.** Same idea, opposite
+> technique, and the difference is the interesting part. The dashboard's stubs
+> `@/lib/api` at the module boundary; the widget's **intercepts the network in
+> the browser** and serves the built IIFE bundle inside a sandboxed iframe on a
+> host page. It has to: the defect that arm was owed for lived *in the client's
+> own parsing* (`widget.md` §6a), so a module stub would have stubbed out the
+> bug. It found one on its first run and caught a known one on demand — §7.
+>
+> Both are run by hand, neither is in CI. That is deliberate for now: a
+> screenshot diff in CI is a different and much larger commitment than a script
+> that takes screenshots, and nothing here has earned it yet.
 
 Both now run in CI via the `web` job.
 

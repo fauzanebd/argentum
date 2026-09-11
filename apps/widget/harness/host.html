@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>A tenant's page</title>
+    <style>
+      body {
+        margin: 0;
+        font: 15px/1.5 system-ui, sans-serif;
+        color: #1f2328;
+        background: #f6f7f9;
+      }
+      .page { max-width: 760px; padding: 40px 24px; }
+      h1 { font-size: 22px; margin: 0 0 6px; }
+      p.lede { margin: 0 0 28px; color: #6b7280; }
+      .panel {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        width: 380px;
+        height: 560px;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+        background: #fff;
+      }
+      iframe { width: 100%; height: 100%; border: 0; display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Gelael Member</h1>
+      <p class="lede">
+        A stand-in for the tenant's own website — the document whose origin is the one an
+        embed key allowlists, and the only one that may mint a session.
+      </p>
+    </div>
+
+    <div class="panel"><iframe id="frame" title="Chat"></iframe></div>
+
+    <script>
+      // The half of the loader this arm needs, and no more: the real loader
+      // mints a session against the tenant's backend with a client key and an
+      // HMAC, which is a credential this harness has no business holding. What
+      // it reproduces exactly is the part the app can tell apart — the sandbox
+      // (no allow-same-origin, so the frame has an opaque origin, which is what
+      // forced the bundle to be a classic script on 2026-08-10) and the `auth`
+      // message, whose shape is packages/widget/src/protocol.ts.
+      const frame = document.getElementById("frame");
+      frame.setAttribute("sandbox", "allow-scripts allow-forms");
+      frame.src = "/app/index.html";
+
+      window.addEventListener("message", (event) => {
+        const data = event.data;
+        if (!data || data.marker !== "argentum-widget") return;
+        if (data.type === "ready") {
+          frame.contentWindow.postMessage(
+            {
+              marker: "argentum-widget",
+              type: "auth",
+              // Same origin as this page, so the frame's fetches are the ones
+              // the shooter intercepts.
+              apiBase: location.origin,
+              token: "harness-session-token",
+            },
+            "*",
+          );
+        }
+      });
+    </script>
+  </body>
+</html>

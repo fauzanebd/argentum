@@ -451,3 +451,89 @@ type erases to nothing.
 starter prompts, which is the one arm that proves 6a from the outside rather
 than from a test. Filed in
 [`live-gate-backlog.md`](live-gate-backlog.md) §1a.
+
+## 7. The second browser gate, run 2026-09-11 — one defect, and the instrument checked against a known one
+
+`T-23`'s gate row had been owed since 2026-09-10 with a note that reads, in
+hindsight, like an instruction: *"the first half is the one that was wrong **in
+the browser** for a month while every server-side test passed."* It ran today
+against `apps/widget/harness/`, and it cost nothing.
+
+### 7a. The harness fakes the network, not the client — which is the whole point
+
+§6a's defect was `EmbedClient` reading `{config, agents}` as though it were the
+config. **A harness that stubbed the client would have stubbed out the bug.** So
+this one serves the *built* bundle from `dist/app` inside a sandboxed iframe on
+a host page, and intercepts `/api/embed/**` in the browser. Three properties of
+the real thing survive that a module stub would have lost:
+
+1. The frame is sandboxed `allow-scripts allow-forms` — **no
+   `allow-same-origin`** — so it runs on an opaque origin. That is the condition
+   that made a `type="module"` bundle open blank on 2026-08-10 (§5a).
+2. What loads is the IIFE `vite.app.config.ts` emits, not source modules.
+3. `EmbedClient` really parses the response body.
+
+**The instrument was checked against a defect with a known answer**, which is
+the part worth copying. §6a's envelope bug was reintroduced on a scratch copy of
+`App.tsx` and the harness failed in all three directions at once — both of the
+tenant's strings missing and Argentum's default leaking:
+
+```
+FAIL  widget-empty-configured.png  MISSING "Selamat datang di Gelael"
+      | MISSING "Berapa penjualan minggu ini?" | LEAKED "Ask me about your data."
+```
+
+**And the unconfigured scene passed while the bug was in place.** That is not a
+gap in the harness — it is the month-long invisibility of §6a reproduced exactly.
+A tenant who had configured nothing saw the correct screen throughout.
+
+### 7b. The defect: `locale` was stored, served, and read by nobody
+
+`domain.WidgetConfig.Locale` has carried the same comment since `T-23`: *"the
+default language of the widget's own chrome… **this is the label on the
+composer**, not an instruction to the model."* It is validated to `en` or `id`
+(`widget_config.go:106`), defaulted to `en`, persisted, and served inside
+`ConfigResponse`.
+
+Nothing in `apps/widget` ever read it. The composer was the string literal
+`"Ask about your data…"` at `App.tsx:321`, and eight more English literals sat
+beside it. A tenant who chose Indonesian got their own Indonesian greeting —
+because that field *is* read — above an English composer they could not change.
+
+**The loader's `locale` option (T-21, `loader.ts:132`) was unread too.** Two
+separate paths carried the value and neither arrived.
+
+This is §6a's species, not its instance: a field an admin fills in that never
+reaches a visitor, silent because the fallback is indistinguishable from the
+configured default. §6a was found by making the widget a consumer of generated
+types; a generated type cannot catch this one, because the field arrives
+correctly typed and is simply never used. **That is the argument for the browser
+gate over the type gate, and it is now made by two defects rather than one.**
+
+Fixed in `apps/widget/src/app/strings.ts`: nine strings, two languages, host
+option over stored config over `en`. **Measured cost: 0.32 KB gzipped** (32.75 →
+33.07), against an 80 KB budget `pnpm size` reads as 33.6 KB used. Not an i18n
+runtime, because nothing here has a plural or an interpolation — when something
+does, that is the moment to reconsider.
+
+> **The Indonesian wording is a judgement call and is one commit to change.**
+> Nine strings were translated by the author of the fix, not by the owner of the
+> product. Nothing about the mechanism depends on the words.
+
+### 7c. What the shots show, and what they still do not
+
+| | |
+| --- | --- |
+| ![A tenant who configured the widget](assets/widget-empty-configured.png) | ![A tenant who did not](assets/widget-empty-default.png) |
+
+The tenant's greeting, their two starter prompts and — after 7b — their language
+in the chrome. Beside it the unconfigured default, asserted in both directions
+so that a locale fix cannot quietly make every widget Indonesian.
+
+![A returning visitor](assets/widget-returning-visitor.png)
+
+**Still owed: the second half of `T-23`'s row.** The transcript route in a
+network tab, on a thread whose turn ran a query — no SQL, no `source_id`, no
+tool row. These fixtures are written by hand, so nothing here says the *server*
+drops what §6b taught it to drop. That half needs the stack and a tenant, and it
+stays in [`live-gate-backlog.md`](live-gate-backlog.md).
