@@ -453,6 +453,14 @@ multiple agents, so a customer-facing roster was read into it for a while. It
 does not cover that, and its trigger would never have fired for it — eval
 regressions are not customer demand. The roster is now its own track in
 [`01-tickets.md`](01-tickets.md).
+**Note added 2026-09-11:** and now a *third* thing has been read into this entry
+— several agents in one conversation, addressing each other. It is not this
+either, for the same reason: a planner is invisible and gated on eval data, a
+room is a product surface gated on customer demand. Both would coexist — a
+planner sits inside one participant of a room. It is planned in
+[`09-multi-agent-conversations-roadmap.md`](09-multi-agent-conversations-roadmap.md),
+18.5 days across ten tickets, **and nothing there is scheduled**. That roadmap's
+§8 argues against starting it now and recommends two cheap measurements first.
 
 ### Per-agent user grants
 Restrict which users may open which agent, so the HR agent is reachable only by
@@ -467,6 +475,15 @@ is one of the four use cases that motivated the track. **Until it ships, the
 dashboard must say plainly that an agent is not an access boundary.**
 **Estimate:** 2d. `agents` and `agent_sources` are shaped so an `agent_grants`
 table adds no column to either.
+**Note added 2026-09-11:** the trigger has not fired, and
+[`09-multi-agent-conversations-roadmap.md`](09-multi-agent-conversations-roadmap.md)
+§7 records why it becomes likelier if that track ships. A room puts Marketing,
+Ops, HR and Finance in one pane answering the same person, which reads as an org
+chart and therefore as a boundary. The fact does not change; how a customer
+reads it does. That roadmap does not promote this item to a dependency — it
+states the obligation the room's copy inherits, and refuses multi-agent threads
+on widget sessions, where the person on the other end is the tenant's customer
+rather than their staff.
 
 ### Per-agent model, temperature, and budget
 A cheap model for the marketing agent, the expensive one for finance.
