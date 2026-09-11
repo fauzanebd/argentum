@@ -20,5 +20,10 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  // The screenshot harness is typechecked with the app it photographs. A
+  // harness that quietly stopped compiling is a harness nobody would notice had
+  // stopped running. Its vite config is node-side and belongs to the other
+  // project, below.
+  "include": ["src", "harness"],
+  "exclude": ["harness/vite.config.ts"]
 }

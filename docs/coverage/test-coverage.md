@@ -386,6 +386,22 @@ keep getting narrowed. Its shape:
 > wrong for a test run.
 >
 > **Landing's `0` is still accurate.**
+>
+> **Added 2026-09-11: `apps/dashboard/harness/`, a screenshot harness.** Not a
+> test — nothing asserts, and it is not in the `lint` script. It boots the real
+> components on a vite server with `@/lib/api` and `@/store/auth` aliased to
+> stubs, drives them under a real Chromium through the product's own controls,
+> and writes PNGs into `docs/coverage/assets/`. `pnpm --filter dashboard shots`.
+>
+> The dependency it added is `playwright-core`, the **driver only**: the browser
+> it launches is the chromium already in the shared `~/.cache/ms-playwright`, so
+> the install downloads nothing. It is typechecked with the app (it is in
+> `tsconfig.app.json`), which caught three of its own bugs on the first run.
+>
+> **What it is for** is the class of arm this repo keeps owing and paying late:
+> "somebody should look at this in a browser". `live-gate-backlog.md` has had a
+> §3a browser bucket since 2026-08-10 and the things in it are usually free —
+> what stops them is a person and a session, and this removes the session.
 
 Both now run in CI via the `web` job.
 

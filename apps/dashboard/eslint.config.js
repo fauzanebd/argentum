@@ -52,8 +52,27 @@ export default tseslint.config(
   },
 
   {
-    // Node context, not browser: vite/tailwind/postcss config files.
-    files: ['*.config.{js,ts}', 'vite.config.ts', 'tailwind.config.js', 'postcss.config.js'],
+    // The screenshot harness is not an app: nothing hot-reloads it, so the
+    // fast-refresh rule has nothing to protect there. Its files deliberately
+    // export fixtures beside components, which is the shape that rule warns
+    // about.
+    files: ['harness/**/*.{ts,tsx}'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+
+  {
+    // Node context, not browser: vite/tailwind/postcss config files, and the
+    // screenshot harness's server half — `harness/shoot.mjs` boots vite and
+    // drives a browser from node, and its `harness/vite.config.ts` reads
+    // __dirname.
+    files: [
+      '*.config.{js,ts}',
+      'vite.config.ts',
+      'tailwind.config.js',
+      'postcss.config.js',
+      'harness/*.mjs',
+      'harness/vite.config.ts',
+    ],
     languageOptions: { globals: globals.node },
   },
 )

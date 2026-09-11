@@ -439,6 +439,62 @@ constraint the day somebody widens it.
 > answers with a framed string rather than JSON and `chat_runner.go`'s unmarshal
 > leaves an empty map — naming a procedure there would mean guessing which one.
 
+### Looked at, 2026-09-11
+
+The browser arm §7 owed since 2026-08-27 ran today, and closed the two fixes
+above with it. `pnpm --filter dashboard shots` boots the real components on a
+real vite server under a real Chromium and drives them through the product's own
+controls — `apps/dashboard/harness/`, five scenes, no model spend and no
+production data.
+
+| | |
+| --- | --- |
+| ![The chips a turn that opened a procedure leaves behind](assets/skills-chat-chips.png) | |
+
+**The chat timeline.** `Procedure · Weekly revenue by branch`, then the bare
+`Procedure` for the result event that carries no name, then `SQL query` with its
+disclosure chevron, then `some_new_tool` — the fallback, deliberately unchanged,
+because a tool nobody has written copy for should show its real name rather than
+a guess at a friendly one.
+
+| Admin | Member |
+| --- | --- |
+| ![Settings as an admin](assets/skills-tab-admin.png) | ![Settings as a member](assets/skills-tab-member.png) |
+
+**The tab strip, both roles.** Procedures sits between Agents and Phone numbers
+for an admin and is absent for a member — not present-and-empty, which is what it
+was until today.
+
+![The form, its counters and both preview panes](assets/skills-form-preview.png)
+
+**The form.** Seventy-seven characters typed into a field capped at 60: the
+counter reads `77 / 60` in red, **Save is disabled** — the form refuses before
+the server is asked — and the preview pane carries the sentence the save would
+have used, `name is 77 characters; the limit is 60, because it rides in every
+turn's prompt`, which is `domain/skill.go:139` word for word. Both panes render:
+the index line with its own character count (`147 characters on every turn`), and
+the framed body with `<<<WORKSPACE_PROCEDURE name="…">>>` intact.
+
+![The index over its bound](assets/skills-index-overflow.png)
+
+**The amber notice**, which is the only place a tenant is ever told that a
+procedure they wrote is not reaching their agents. Legible, and it names the
+ones left out.
+
+**Two things the shots do not prove, and they are the same thing twice.** The
+harness stubs `@/lib/api` and `@/store/auth`, so nothing here says `GET
+/api/skills` really returns this shape or that a member really gets a 403 — those
+are proven on the wire in §6a and in `cmd/api/policy.go`. And no model ran: the
+chat scene mounts the chip with the payload a `load_skill` turn produces
+(§3 recorded a real one), it does not earn that payload. The two halves meet in
+the middle and neither covers the other.
+
+**One correction the shots forced, in the fixtures rather than the product.**
+The first overflow shot listed a *disabled* procedure among those dropped for
+overflow. Only enabled procedures are ever in the index, so only an enabled one
+can be dropped from it — the screenshot would have documented a state the backend
+cannot produce.
+
 ## 5f. `T-K7` — draft a skill from a conversation (2026-08-27)
 
 "Start from a conversation" on the form: one light-LLM call over a thread's
@@ -717,13 +773,14 @@ for deepseek's category, and two light-model calls for the draft arm.
 ## 7. What is still owed
 
 Everything free in the previous version of this table ran on 2026-08-29 and is
-in §6a. What is left is four things, and none of them is blocked on tooling.
+in §6a. What is left is three things, and none of them is blocked on tooling — the
+browser arm closed 2026-09-11 and its row is struck through below.
 
 | Arm | Why it did not run | Cost |
 | --- | --- | --- |
 | A vector written by a **real embedding provider**, at save time and through the backfill | This deployment has no embedding credential: `EMBEDDING_API_KEY` is empty and OpenRouter serves no embeddings endpoint. §6a proved the ordering and the storage against hand-written vectors; the provider call is the half that stays owed | free, needs an OpenAI-compatible key |
 | `BackfillSoon` firing from a real overflowing turn, once and not twice inside the cooldown | Same credential. The trigger path is unit-tested; it has never run against a provider | free, same key |
-| The preview panes **in a browser**, and now two more things while somebody is in there: the Procedures tab **absent** for a member, and the chat chip reading "Procedure · ‹name›" | The bytes are proven on the wire (§6a); nobody has looked at the rendering, the live counters going red, or the amber over-the-bound notice. The two 2026-09-11 fixes in §5e are unit-gated only — the tab list is asserted as a list of strings and the chip as rendered text, neither as a screen | free, needs a browser |
+| ~~The preview panes **in a browser**~~ | **Ran 2026-09-11, no defects — §5e has the five shots.** A screenshot harness (`apps/dashboard/harness/`) drives the real components under a real Chromium, so this arm and the two fixes that landed the same day were looked at rather than inferred. It needed neither a credential nor a tenant, which is why it sat owed for a fortnight and then took an afternoon | — |
 | `skill-conflicts-with-metric` measuring precedence **at all** | It fails identically on both models before precedence is reached (§5b, §5b1). This is a case to rewrite, not an arm to run | — |
 
 **The rule-1 re-score is being paid rather than owed** — see §6b.

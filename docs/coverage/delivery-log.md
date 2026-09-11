@@ -5736,6 +5736,71 @@ error output, and `tabs.ts` did not exist.
 same arm §7 of [`skills.md`](skills.md) already owes for the preview panes, and
 this adds two more things to look at while somebody is in there.
 
+## Phase 3ab — The browser arm, closed by a harness rather than by a login (2026-09-11)
+
+The question was "what do you need to unblock the browser part?", and the honest
+answer turned out to be *a driver package*. A Chromium was already in
+`~/.cache/ms-playwright` on this machine; what was missing was the thing that
+talks to it.
+
+### The arm had been owed for a fortnight for the wrong reason
+
+`skills.md` §7 had carried "the preview panes **in a browser** — free, needs a
+browser" since 2026-08-27, sitting behind the two arms that genuinely are
+blocked (an embedding credential this deployment does not have). It read like a
+member of that group and was not one: no credential, no spend, no tenant. Filed
+beside two blocked things, an unblocked thing looks blocked.
+
+### What it would have cost to do it the obvious way
+
+Driving the deployed dashboard needs a production login, and two of the five
+things worth photographing cannot be produced on demand there: a workspace whose
+index actually overflows, and a turn that happens to open a procedure. The third
+— the member view — needs a second account. **None of that makes the pixels more
+true.**
+
+So `apps/dashboard/harness/` mounts the real components on a real vite server
+with two aliases: `@/lib/api` and `@/store/auth` become stubs. Everything else is
+the product's own — the `@` alias, `index.css`, every design token — so what is
+photographed is the app's CSS rather than a lookalike. `pnpm --filter dashboard
+shots` writes five PNGs into `docs/coverage/assets/`.
+
+**A scene that needs an interaction gets one, through the product's own
+controls.** The red counter is produced by typing 77 characters into a field
+capped at 60, not by a fixture claiming the counter is red — the second would
+photograph the harness.
+
+### Three things it caught, none of them in the product
+
+1. **`tsc` found the stub's own signatures wrong** the moment the harness was
+   added to the app's project — `post` took one argument where callers pass two.
+   Typechecking the harness with the app it photographs is the reason it is in
+   `tsconfig.app.json` rather than outside it: a harness that quietly stops
+   compiling is one nobody notices has stopped running.
+2. **A screenshot documenting a state the backend cannot produce.** The first
+   overflow shot listed a *disabled* procedure among those dropped for overflow.
+   Only enabled procedures are in the index, so only an enabled one can be
+   dropped from it.
+3. **A red border that was not an error.** The body textarea photographed as a
+   field in error; it was the focus ring, and this app's primary colour is red.
+   The shooter now moves focus off the last field before the shot. Worth
+   recording because it was very nearly filed as a defect in the product.
+
+### Gate
+
+Dashboard `tsc -b --noEmit && eslint . && vitest run` green — 0 errors, **8
+warnings, back to the app's own count**: the harness turns off
+`react-refresh/only-export-components` for itself, because nothing hot-reloads a
+screenshot run and the rule has nothing to protect there. 33 tests, unchanged:
+this phase added no assertions, it added a camera.
+
+`skills.md` §5e now carries the five shots and `live-gate-backlog.md` §1p's
+`T-K6` row is marked run. **What the shots still do not prove** is the wiring
+either side of the render — that `GET /api/skills` returns this shape, that a
+member really gets a 403, that a model really opens a procedure. All three are
+proven elsewhere (§6a, `cmd/api/policy.go`, §3), and the two halves meet in the
+middle.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
