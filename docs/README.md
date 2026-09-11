@@ -70,7 +70,9 @@ docs/
 │   ├── 04-social-carousel.md     Social-media carousels: what exists, gaps, build
 │   ├── 05-hermes-self-learning.md  How Hermes Agent closes the learning loop we leave open, and what it costs
 │   ├── 06-hermes-multi-agent.md    Hermes Agent's group chat: who speaks, what stops it, and the guard that isn't there
-│   └── 07-feature-candidates.md   What is worth adding next, and what already has a backlog entry
+│   ├── 07-feature-candidates.md   What is worth adding next, and what already has a backlog entry
+│   └── 08-voice-and-exact-computation.md
+│                                  Voice chat, and an answer that was computed rather than composed
 ├── coverage/
 │   ├── feature-coverage.md       Feature status matrix
 │   ├── email.md                  T-F6/T-F7 the first outbound channel that is not a chat app
@@ -134,6 +136,12 @@ docs/
 │   ├── 08-social-carousel-roadmap.md      T-G1→T-G10 Instagram carousels from the video pipeline (planned 09-03)
 │   ├── 09-multi-agent-conversations-roadmap.md
 │   │                             T-N1→T-N10 several agents in one room, and one that can ask another (planned 09-11)
+│   ├── 10-freshness-metrics-email-roadmap.md
+│   │                             T-F1→T-F7 dated data, a measured registry, and email (six of seven built 09-11)
+│   ├── 11-voice-and-exact-computation-roadmap.md
+│   │                             T-W1→T-W9 a figure a program produced, and a question you speak (planned 09-11)
+│   ├── 12-access-grants-roadmap.md
+│   │                             T-Z1→T-Z9 which agent, which dashboard, which feature — per user (planned 09-11)
 │   └── backlog.md                Deferred work with rationale
 └── agents/
     ├── workspace-context.md      Repo map, invariants, danger zones

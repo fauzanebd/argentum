@@ -462,7 +462,19 @@ planner sits inside one participant of a room. It is planned in
 18.5 days across ten tickets, **and nothing there is scheduled**. That roadmap's
 §8 argues against starting it now and recommends two cheap measurements first.
 
-### Per-agent user grants
+### Per-agent user grants — **ticketed 2026-09-11 as `T-Z4`**
+**The trigger did not fire; the owner asked for it directly**, and widened it
+past agents to dashboards, data sources, documents and named feature
+capabilities. The plan is
+[`12-access-grants-roadmap.md`](12-access-grants-roadmap.md) — nine tickets,
+~13.0d, of which `T-Z4` is the 2.0d this entry estimated. The estimate held, and
+the reason the roadmap is six times larger is the part this entry did not price:
+**three of the four doors into a turn carry no Argentum user at all**
+(`ChatInput.UserID` is commented *"dashboard only"*), so each needs its own
+decision rather than an inherited one. The standing obligation below — that the
+dashboard must say an agent is not an access boundary — is discharged by `T-Z4`,
+which replaces the sentence rather than deleting it.
+
 Restrict which users may open which agent, so the HR agent is reachable only by
 HR. `T-S1`'s v1 makes company membership the whole boundary: the Finance agent
 cannot query the HR source, but any member can talk to the Finance agent.
