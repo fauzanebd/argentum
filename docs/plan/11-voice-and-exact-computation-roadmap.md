@@ -17,10 +17,19 @@ P Q S T`. The two obvious mnemonics are both taken: `T-V` is the video track,
 and `T-C1` would sit one character from the finding `C-1`. `W` collides with
 neither list.
 
-> **Status: nothing here is built, and none of it is scheduled.** This is a
-> plan. The board's open items are `T-F5` (held on a measurement), `T-H4` step
-> 2, `T-H14`'s envelope half, `T-K8`→`T-K10` and `T-G8`→`T-G9`. Whether this
-> displaces any of them is the owner's call; §7 states the case.
+> **Status, 2026-09-12: `T-W1` is built, `make check` green, unit-gated.**
+> Track A's first ticket — the one §7 argued for — is in
+> [`../coverage/exact-computation.md`](../coverage/exact-computation.md). Two
+> gates are owed and neither is blocked on code: a paired `make eval` either
+> side of the prompt catalog line, and one live turn
+> ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7b).
+>
+> **Nothing else here is built.** `T-W2` next in Track A — it is where the
+> prompt gains its *guideline*, and the two prompt edits should be scored in one
+> paired run rather than two. `T-W3` after it, because it is the measurement
+> that decides whether `T-W4`/`T-W5`'s five days happen at all. The board's
+> other open items are `T-F5` (held on a measurement), `T-H4` step 2, `T-H14`'s
+> envelope half, `T-K8`→`T-K10` and `T-G8`→`T-G9`.
 
 **The two requests are not one feature, and the order between them is not a
 preference.** Track A closes a defect this repository has already recorded in
@@ -165,8 +174,33 @@ rather than discovered by it later.
 
 ### Track A — An answer that was computed (7.5d) · do first
 
-#### `T-W1` `compute`: exact arithmetic, and no sandbox at all
+#### `T-W1` `compute`: exact arithmetic, and no sandbox at all — **BUILT 2026-09-12**
 **Repo:** BE · **Size:** 1.0d · **Deps:** none · **Migration:** none
+
+> **Built, `make check` green, unit-gated.** Record and the two owed gates:
+> [`../coverage/exact-computation.md`](../coverage/exact-computation.md).
+>
+> **Two things the ticket did not anticipate, both settled in the build.**
+> The signature widened from `map[string]decimal` to a `Value` that is either a
+> figure or a column, because `sum` over a named column — which the same ticket
+> asks for — has no other shape. And the ticket's last acceptance line ("a
+> payload for a turn that never calls `compute` is byte-identical") turned out
+> to constrain the *design* rather than to be a test of it: `result_id` cannot
+> be attached unconditionally, so the turn's result memory is installed only
+> for a turn that holds the tool, exactly as `attachFreshness` attaches nothing
+> for a source with no expression.
+>
+> **And two the ticket got wrong.** It says *Migration: none*, and a backfill
+> turned out to be mandatory: every gallery card lists its tools explicitly, so
+> without `081` every template-created agent would be scoped away from the tool
+> — the *"a capability nobody's allowed_tools contains is a capability nobody
+> has"* rule, and the same hole `043` closed for `generate_document`.
+>
+> Second: it scheduled the prompt sentence into
+> `T-W2` — but `TestEveryRegisteredToolHasAPromptLine` makes a catalog line
+> mandatory for any registered tool, so registering `compute` *is* a prompt
+> change. The line was written; the paired eval it owes is filed rather than
+> skipped, and should be run once, covering `T-W2`'s guideline as well.
 
 ##### Why
 The margin case, which is the common one. Revenue and cost came back from two

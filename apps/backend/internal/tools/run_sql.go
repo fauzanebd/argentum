@@ -296,7 +296,7 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 	// running five queries against one source probes once.
 	rep := probeFreshness(ctx, t.fresh, companyID, source.ID)
 
-	return string(marshalSQLResult(source.ID, source.DBType, result, t.maxBytes, probes, redactedCols, rep)), nil
+	return string(marshalSQLResult(ctx, source.ID, source.DBType, result, t.maxBytes, probes, redactedCols, rep)), nil
 }
 
 // marshalSQLResult serialises a query result for the model, dropping rows from
@@ -310,8 +310,18 @@ func (t *RunSQLTool) Execute(ctx context.Context, args string) (string, error) {
 // Split out of Execute so the trimming loop is reachable without a live tenant
 // connection: it is the branch that decides how much of a result the model
 // ever sees.
-func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes int, probes []map[string]interface{}, redacted []string, fresh freshness.Report) []byte {
+func marshalSQLResult(ctx context.Context, sourceID, dbType string, result *db.QueryResult, maxBytes int, probes []map[string]interface{}, redacted []string, fresh freshness.Report) []byte {
+	// The handle a later compute call binds its inputs to (T-W1). Reserved
+	// before the payload is built so the id is inside the bytes the cap below
+	// is measuring, and filled in after the trim so what this turn can bind is
+	// exactly what the model was shown. Empty — and attached nowhere — on a
+	// turn that does not hold `compute`, which is what keeps this payload
+	// byte-identical to the one it returned before the tool existed.
+	resultID := reserveResultID(ctx, "run_sql")
+	defer func() { recordSQLResult(ctx, resultID, result) }()
+
 	payload := buildSQLPayload(sourceID, dbType, result)
+	attachResultID(payload, resultID)
 	// Before the shrink loop, and never shrunk away: the probe replaces the
 	// zero-row note, and a payload that lost it would tell the model nothing
 	// about why it got no rows. A zero-row result has no rows to drop anyway,
@@ -334,6 +344,7 @@ func marshalSQLResult(sourceID, dbType string, result *db.QueryResult, maxBytes 
 		result.Count = len(rows)
 		result.Truncated = true
 		payload = buildSQLPayload(sourceID, dbType, result)
+		attachResultID(payload, resultID)
 		attachProbe(payload, probes)
 		attachRedaction(payload, redacted)
 		out, _ = json.Marshal(payload)

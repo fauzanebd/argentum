@@ -146,6 +146,13 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 			WithSchema(schema).
 			WithPIIPolicy(d.Companies).
 			WithFreshness(d.Freshness),
+		// Arithmetic over what the two tools above just returned (T-W1). It
+		// sits directly after them because it can only ever run second: its
+		// inputs are references to their results, and a turn that has queried
+		// nothing has nothing to compute from. No dependencies — the exactness
+		// is in internal/compute and the grounding is in the turn's own memory,
+		// so this registers on every deployment.
+		NewComputeTool(),
 		// One call, every panel (T-D11). The pair it replaces —
 		// create_visualization then create_dashboard — spent four tool calls on a
 		// three-panel answer and carried a thread-scoped in-memory map to make

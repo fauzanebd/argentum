@@ -6356,6 +6356,66 @@ hand-written version would have compiled and rendered `undefined`.
 unbuilt, and it is deliberately gated on a measurement rather than on effort —
 see Phase 3ag.
 
+## Phase 3aj — A number a program produced, not a number a sentence contained (2026-09-12)
+
+`T-W1`, the first ticket of roadmap 11's Track A. Record:
+[`exact-computation.md`](exact-computation.md).
+
+**The defect is not a crash and never was.** Revenue comes back from one
+`run_sql`, cost from another, and the margin in the reply is produced by the
+model dividing two numbers inside a sentence. Every instrument here vouches for
+it: `CheckFabrication` is satisfied because the turn *did* retrieve rows, and
+`CheckGrounding` cannot match a derived figure against a returned one because no
+tool returned it. `T-Q14` measured the size of the error this makes — a December
+figure printed `$3,860,405,700.00` against a returned `3,863,405,700.00`, which
+is **0.078% wrong and inside every tolerance this product owns.**
+
+**Two halves, and one of them alone would have shipped the bug in better
+clothes.** `internal/compute` is a small decimal grammar with no `float64` in
+it, and the test asserts the *string* rather than a comparison inside a
+tolerance — a tolerance is exactly what let `T-Q14`'s figure through. And an
+input is a **reference**, `r1.total_revenue`, resolved against the turn's own
+results: a `compute` that accepted `{"revenue": 3863405700}` would be exact
+arithmetic over a transcription, and transcription is the error that was
+actually found.
+
+**The acceptance line that turned out to be a design constraint.** *"A payload
+for a turn that never calls `compute` is byte-identical to today's"* cannot be
+satisfied if `result_id` is attached unconditionally — and the model has to see
+the id *before* it decides to compute. So the turn's result memory is installed
+only for a turn that holds the tool, and both data tools attach nothing without
+it. The same bargain `attachFreshness` strikes for a source with no expression.
+
+**What the model is shown and what it can bind are the same figures.** `run_sql`
+trims rows off the tail until the payload fits the context budget, so the id is
+*reserved* before the payload is built — it is inside the bytes the cap
+measures — and *filled in* after the trim. The test fails rather than passing
+vacuously if the cap did not bite.
+
+**The ticket said "Migration: none" and needed one.** Every gallery card lists
+its tools explicitly and `draftFromTemplate` copies that list verbatim, so
+without `081` every template-created agent would have been scoped away from the
+tool — while their own starter questions (*"revenue last month compared with the
+month before"*, *"our conversion rate from lead to closed deal"*) ask for
+exactly the derived figures it exists to make honest. The same hole `043` closed
+for `generate_document` after a Sales agent told a user to press Ctrl+P. Unlike
+`043` this one is unconditional: `compute` opens no connection and reads no
+source, so it widens what an agent can *say correctly*, never what it can see.
+
+**And the ticket was wrong about one more thing, which a test caught immediately.**
+It scheduled the prompt sentence into `T-W2`. But
+`TestEveryRegisteredToolHasAPromptLine` makes a catalog line mandatory for any
+registered tool, so registering `compute` **is** a prompt change — the parity
+test doing precisely the job it was written for after `propose_action` shipped
+undescribed. The line was written and the paired eval it owes is filed rather
+than skipped ([`live-gate-backlog.md`](live-gate-backlog.md) §7b), to be run
+once with `T-W2`'s guideline rather than twice.
+
+**`T-W3` is next and it is the point.** It counts how many turns still state a
+derived figure after `compute` exists — and if the residue is small, `T-W4` and
+`T-W5`'s five days are cut and the track ends at 2.5. That outcome is a success.
+The discipline is `T-F5`'s, deliberately repeated.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

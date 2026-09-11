@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -796,6 +797,18 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// (coverage/eval-sprint1.md §4).
 	ctx = tools.WithTurnSource(ctx)
 
+	// One turn, one memory of what its data tools returned (T-W1) — and only
+	// for a turn that can actually compute from it. `compute` binds its inputs
+	// to results by id rather than to numbers the model retyped, so run_sql and
+	// query_metric put a `result_id` on their payloads when this memory is
+	// present and put nothing there when it is not. A turn scoped away from
+	// `compute` therefore sees byte-for-byte the payloads it saw before this
+	// existed, which is the same bargain attachFreshness strikes for a source
+	// with no expression configured.
+	if allowsCompute(agentRow) {
+		ctx = tools.WithTurnValues(ctx)
+	}
+
 	// The tenant's own MCP tools for this turn (T-M2), resolved from the scope
 	// just installed: empty binding means none, so this is nil for every turn
 	// until a server is bound. Built here, before the factory, because it needs
@@ -1129,6 +1142,14 @@ func personaOf(a *domain.Agent) string {
 		return ""
 	}
 	return a.PersonaPrompt
+}
+
+// allowsCompute reports whether this turn holds the compute tool. An agent with
+// no allowlist holds every registered tool, which is the common case and the
+// reason this is not simply slices.Contains.
+func allowsCompute(a *domain.Agent) bool {
+	names := toolNamesOf(a)
+	return len(names) == 0 || slices.Contains(names, "compute")
 }
 
 func toolNamesOf(a *domain.Agent) []string {

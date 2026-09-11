@@ -2359,6 +2359,25 @@ describing a field nothing will emit. **A score that moves would mean four
 prompt lines changed behaviour on turns they do not apply to**, which is the
 more interesting outcome and the reason to run it paired rather than once.
 
+## 7b. `T-W1`'s paired eval and its live turn (added 2026-09-12)
+
+`compute` ships exact arithmetic over figures a turn already retrieved, and
+**everything about it is proven against fakes.** Two arms are owed and neither
+is blocked on money in any amount that matters — the eval set costs about three
+cents.
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `T-W1` | `make eval` before and after the prompt catalog line, both rates pasted into [`exact-computation.md`](exact-computation.md) §6. **The prediction is recorded so it can be checked rather than remembered: no movement.** No golden case asks for a derived figure, so the line describes a tool nothing in the set will reach for. A score that *moves* would mean one catalog line changed behaviour on turns it does not apply to, which is the more interesting outcome and the reason to run it paired | A local stack and ~$0.03. `cmd/eval` refuses a non-local `DB_HOST` (finding `E-2`) |
+| `T-W1` | **One live turn, and it is the arm no fake can have.** Two figures from two queries, one margin: does the model reach for `compute` at all, and does the `<result_id>.<column>` reference survive contact with a real model rather than a hand-written fixture? Then the same question with `compute` scoped away — which must still answer, and must not silently divide | The stack, a source and a model key |
+
+| `T-W1` | `081` up, `down 1`, up against the real control database. The `up` appends `compute` to every scoped agent's `allowed_tools` and the `down` is `SELECT 1;`, so what is worth actually looking at is the guard: an agent with `allowed_tools = '{}'` must come back **still empty**, because empty means *every* tool and writing one name into it would narrow that agent from everything to one. Then create an agent from a gallery card and read `compute` back out of the row | A control-plane Postgres. §3d's constraint applies — the only one on this machine is production |
+
+**Run it with `T-W2`'s, not before it.** `T-W2` adds the prompt *guideline* —
+prefer `compute` for a derived figure — where this added only the catalog line
+saying the tool exists. Two paired runs of the same set to score two edits to
+the same prompt is the expensive way to learn one thing.
+
 ## 7. Needs the paid eval set (added 2026-09-11)
 
 `T-Q18`'s remaining half, and the only half that is about the model rather than

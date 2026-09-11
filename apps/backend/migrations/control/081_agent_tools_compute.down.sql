@@ -1,0 +1,11 @@
+-- Deliberately not reversed, for 043's reason.
+--
+-- The up migration adds one tool name to agents that lacked it, and nothing
+-- records which rows it touched. Stripping `compute` from every scoped agent on
+-- the way down would also strip it from the agents an admin ticked by hand —
+-- taking away a capability somebody chose in order to undo one they were never
+-- offered.
+--
+-- A down migration that loses tenant intent is worse than one that does nothing.
+-- Removing the capability from a single agent is a checkbox in Settings → Agents.
+SELECT 1;

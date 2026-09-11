@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -114,7 +115,7 @@ func TestAnUnknownModeIsStrict(t *testing.T) {
 func TestThePayloadNamesWhatItWithheld(t *testing.T) {
 	rows := rowsWithEmails()
 	redacted := RedactResultColumns([]string{"pelanggan", "email", "nilai"}, rows, domain.PIIRedactionStrict)
-	out := marshalSQLResult("src-1", "postgres", &db.QueryResult{
+	out := marshalSQLResult(context.Background(), "src-1", "postgres", &db.QueryResult{
 		Columns: []string{"pelanggan", "email", "nilai"}, Rows: rows, Count: len(rows),
 	}, 0, nil, redacted, freshness.Report{})
 
@@ -143,7 +144,7 @@ func TestAnOrdinaryPayloadIsUnchanged(t *testing.T) {
 		Rows:    []map[string]interface{}{{"bulan": "Oktober", "nilai": 3377718500}},
 		Count:   1,
 	}
-	out := marshalSQLResult("src-1", "postgres", res, 0, nil, nil, freshness.Report{})
+	out := marshalSQLResult(context.Background(), "src-1", "postgres", res, 0, nil, nil, freshness.Report{})
 	var payload map[string]interface{}
 	if err := json.Unmarshal(out, &payload); err != nil {
 		t.Fatalf("unmarshal: %v", err)

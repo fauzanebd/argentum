@@ -285,6 +285,19 @@ func (t *QueryMetricTool) Execute(ctx context.Context, args string) (string, err
 	// trip to date it.
 	attachFreshness(payload, probeFreshness(ctx, t.fresh, companyID, res.Metric.SourceID))
 
+	// The handle a later compute call binds its inputs to (T-W1). Reserved and
+	// filled in one step, because — unlike run_sql's — this payload is never
+	// trimmed, so what is recorded is already what the model is shown. Empty,
+	// and attached nowhere, on a turn that does not hold `compute`.
+	//
+	// Three fields and not the whole payload: `row_count` is a number with no
+	// business meaning, and a growth rate computed against it would be exact,
+	// grounded and nonsense.
+	if id := reserveResultID(ctx, "query_metric"); id != "" {
+		attachResultID(payload, id)
+		recordPayloadFigures(ctx, id, payload, "value", "delta", "delta_pct")
+	}
+
 	out, _ := json.Marshal(payload)
 	return string(out), nil
 }

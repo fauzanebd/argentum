@@ -227,7 +227,31 @@ func digestArgs(args, out string) (redacted []byte, rows *int, sourceID string) 
 	if s, ok := parsed["source_id"].(string); ok {
 		sourceID = s
 	}
+	// A tool whose result carries a `working` object has its derivation
+	// recorded beside its arguments (T-W1). It is read off the *result*
+	// because that is where it is produced: `compute`'s arguments say
+	// `r1.total_revenue` and the figure that reference resolved to is the
+	// thing an audit six months later actually needs.
+	//
+	// Keyed off the payload rather than off the tool name, on the same
+	// reasoning as the rest of this decorator: a tool added next year is
+	// audited without its author knowing this package exists, and one that
+	// emits no `working` is recorded exactly as it is today.
+	if w := resultWorking(out); w != nil {
+		parsed["_working"] = w
+	}
 	return marshalRedacted(parsed), resultRows(out), sourceID
+}
+
+// resultWorking returns the `working` object a tool result carried, or nil.
+func resultWorking(out string) interface{} {
+	var payload struct {
+		Working interface{} `json:"working"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		return nil
+	}
+	return payload.Working
 }
 
 func marshalRedacted(parsed map[string]interface{}) []byte {

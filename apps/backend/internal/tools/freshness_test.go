@@ -22,7 +22,7 @@ func (s *stubProber) For(context.Context, string, string) freshness.Report {
 
 func payloadOf(t *testing.T, rep freshness.Report) map[string]interface{} {
 	t.Helper()
-	out := marshalSQLResult("src-1", "postgres", &db.QueryResult{
+	out := marshalSQLResult(context.Background(), "src-1", "postgres", &db.QueryResult{
 		Columns: []string{"total"},
 		Rows:    []map[string]interface{}{{"total": 42}},
 		Count:   1,
@@ -38,12 +38,12 @@ func payloadOf(t *testing.T, rep freshness.Report) map[string]interface{} {
 // nobody configured produces exactly the payload run_sql produced before
 // freshness existed.
 func TestAnUnknownVerdictLeavesThePayloadUntouched(t *testing.T) {
-	before := marshalSQLResult("src-1", "postgres", &db.QueryResult{
+	before := marshalSQLResult(context.Background(), "src-1", "postgres", &db.QueryResult{
 		Columns: []string{"total"},
 		Rows:    []map[string]interface{}{{"total": 42}},
 		Count:   1,
 	}, 0, nil, nil, freshness.Report{})
-	after := marshalSQLResult("src-1", "postgres", &db.QueryResult{
+	after := marshalSQLResult(context.Background(), "src-1", "postgres", &db.QueryResult{
 		Columns: []string{"total"},
 		Rows:    []map[string]interface{}{{"total": 42}},
 		Count:   1,

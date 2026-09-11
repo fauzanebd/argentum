@@ -78,6 +78,7 @@ docs/
 │   ├── email.md                  T-F6/T-F7 the first outbound channel that is not a chat app
 │   ├── freshness.md              T-F1/T-F2 how old is the data behind an answer
 │   ├── metric-coverage.md        T-F4 is the metric layer accumulating
+│   ├── exact-computation.md      T-W1 a derived figure that was computed, not composed
 │   ├── test-coverage.md          Measured test state + CI gaps
 │   ├── api-surface.md            Endpoint + tool inventory
 │   ├── delivery-log.md           What has been shipped, chronologically

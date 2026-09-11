@@ -10,6 +10,7 @@ import {
   Loader2,
   PencilLine,
   Plug,
+  Sigma,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -24,6 +25,11 @@ const TOOL_META: Record<string, { icon: LucideIcon; label: string }> = {
   create_dashboard: { icon: ExternalLink, label: "Dashboard" },
   update_dashboard: { icon: PencilLine, label: "Dashboard edit" },
   schedule_task: { icon: CalendarClock, label: "Schedule task" },
+  // "Calculation" rather than "Compute": the chip names what happened, and the
+  // reason it is named at all is that a derived figure used to have no visible
+  // origin (T-W1). A margin the model worked out in a sentence left no trace
+  // here; one this tool produced leaves a row a reader can open.
+  compute: { icon: Sigma, label: "Calculation" },
   // "Procedure" rather than "Skill": the word this product shows a tenant is
   // the one on the settings tab they wrote it in, and `load_skill` is the
   // internal name of the tool, not of the thing. Labelled at all because this

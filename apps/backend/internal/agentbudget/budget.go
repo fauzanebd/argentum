@@ -168,6 +168,11 @@ var dataTools = map[string]bool{
 	// why the runner collects it with CollectNumbersInProse: the numbers are
 	// inside sentences rather than in fields.
 	"search_documents": true,
+	// A figure `compute` returned is a figure this product produced, from
+	// inputs it also produced — which is the whole point of T-W1. Before it
+	// existed a derived figure was grounded by nothing: CheckFabrication does
+	// not see it as unsupported, because it is composed of supported parts.
+	"compute": true,
 }
 
 // IsDataTool reports whether a tool's result can ground a figure in a reply.
@@ -766,12 +771,22 @@ func rowCount(result string) (int, bool) {
 		// time this guard has replaced a correct answer whose evidence was of a
 		// shape it could not see.
 		Passages *[]json.RawMessage `json:"passages"`
+		// compute answers with one exact figure rather than with rows (T-W1),
+		// and the same gap applies: a tool in the evidence list that
+		// contributes nothing to the tally leaves a turn that computed a margin
+		// looking like a turn that retrieved nothing, and CheckFabrication
+		// replaces the correct answer. One computed figure is one piece of
+		// evidence.
+		Computed *string `json:"computed"`
 	}
 	if err := json.Unmarshal([]byte(result), &payload); err != nil {
 		return 0, false
 	}
 	if payload.RowCount != nil {
 		return *payload.RowCount, true
+	}
+	if payload.Computed != nil {
+		return 1, true
 	}
 	if payload.Passages != nil {
 		// Zero passages is an empty result, not silence: the caller turns it
