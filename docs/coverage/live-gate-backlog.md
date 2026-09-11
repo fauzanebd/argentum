@@ -262,7 +262,7 @@ error message costs exactly as much as one filed in the wrong bucket.
 | Owed by | The gate | Outcome |
 | ------- | -------- | ------- |
 | `T-19` | Migration `051` applied up **and** down against a real Postgres; then a `curl` transcript of a successful session mint and a forged one, plus one from an origin that is not on the key's allowlist (expect `403`) | **Pass, 2026-08-10.** Up/down/up clean from version 50; eight-case mint matrix over HTTP matching the unit tests exactly; revoke refusing the next mint; the token carrying no `sub` and no `role`; cross-family refusal both ways. No defect found — the matrix was re-running a table-driven test that already existed ([`embed-auth.md`](embed-auth.md) §5). ~~**Owed.**~~ The full refusal matrix passes as unit tests, including both cross-family token checks; what no test covers is the migration itself and the three responses as an integrator would see them ([`embed-auth.md`](embed-auth.md) §5) |
-| `T-19` | The Embed tab in a browser: create a key, copy the secret once, edit the origin list, pause, resume, revoke. Then one real cross-origin preflight of `POST /api/embed/session` from a page on another origin | **Owed.** `tsc -b` is clean and every route it calls has a test; the preflight is the half that needs a second origin serving a page, and it is the one `EmbedCORS` exists for |
+| `T-19` | The Embed tab in a browser: create a key, copy the secret once, edit the origin list, pause, resume, revoke. Then one real cross-origin preflight of `POST /api/embed/session` from a page on another origin | **Owed, and re-costed 2026-09-11 — see §3d.** Attempted that day and stopped by this environment's permission layer, not by cost or tooling: the arm writes (a key, a session), so it wants a scratch database rather than the pilot tenant. `tsc -b` is clean and every route it calls has a test; the preflight is the half that needs a second origin serving a page, and it is the one `EmbedCORS` exists for |
 
 **Added 2026-08-10, with the widget phase built.** Same bucket, same cost.
 
@@ -2207,6 +2207,65 @@ also drops legitimate narration, and making the fabrication check evidence every
 figure is a change to a guardrail that has blocked correct answers before. Both
 are somebody's decision. Reproduction:
 [`next-steps-and-revision.md`](next-steps-and-revision.md) §6.5.
+
+## 3c. Found by a count, owned by nobody — `create_dashboard` fails more often than it works
+
+Added 2026-09-11 by the reading that answered Phase 3z's open question
+([`delivery-log.md`](delivery-log.md) Phase 3ae). **Not a gate that is owed: a
+defect that needs a ticket, and it does not have one yet.**
+
+Across 437 real turns in `agent_actions`, in the 28 turns that ran six tool
+calls or more:
+
+| Tool | ok | error | blocked |
+| --- | --- | --- | --- |
+| `query_metric` | 85 | — | 9 |
+| `get_schema` | 22 | — | — |
+| `run_sql` | 19 | 9 | 7 |
+| **`create_dashboard`** | **2** | **14** | **4** |
+| `generate_document` | — | 3 | 3 |
+
+**Seven failures for every two successes**, and they are concentrated in exactly
+the turns that run longest — which is `Q-5`'s shape, the 2026-08-16 finding where
+a model answered an error by re-sending the identical call until the iteration
+budget ended the turn. The turns are long *because* something in them keeps
+failing.
+
+It is filed here rather than as a gate because the count is already solid and
+what is missing is a cause. **`error_text` was refused by this environment's
+permission layer**, so nobody has read a single one of the fourteen messages.
+That is one query by somebody with database access:
+
+```sql
+SELECT left(error_text, 120), count(*) FROM agent_actions
+WHERE tool_name = 'create_dashboard' AND result_status = 'error'
+GROUP BY 1 ORDER BY 2 DESC;
+```
+
+**The reason this matters beyond one tool:** Phase 3ae was asked whether
+`MaxIterations: 8` should be raised. The answer is no, and this row is why —
+raising the ceiling would buy a thrashing turn more rounds to thrash in, on an
+operator's credits. Fixing this is the same win without the bill.
+
+## 3d. Owed on a permission rather than on effort (2026-09-11)
+
+Three arms were attempted on 2026-09-11 and stopped by this environment's own
+permission layer rather than by cost, cluster access or a missing tool. They are
+recorded together because they share a shape: **each is one command by somebody
+who can run it**, and none of them is hard.
+
+| Arm | What it needs | Command |
+| --- | --- | --- |
+| `T-V4`'s third engine | WebKit's system libraries. The browser build installs fine; the launch fails on `libsecret-1.so.0` and `libwoff2dec.so.1.0.2`. The harness already reports it as skipped and keeps going, so this costs nothing until somebody runs it | `sudo npx playwright install-deps webkit`, then `pnpm --filter dashboard shots` |
+| `T-23`'s transcript half | A running stack that writes: a minted session and a thread whose turn ran a query, then the route read in a network tab. **Against a scratch database, never the pilot** — the finding is about what the server hands a valid caller, and a seeded thread proves it as well as a real one | a scratch schema on the same Postgres, migrations, one seeded tool-role row |
+| `T-19`'s embed tab | The same, plus a second origin serving a page for the cross-origin preflight | as above, plus any static server on a second port |
+| `create_dashboard`'s cause (§3c) | One read of `error_text` | the query in §3c |
+
+**None of these is blocked on money, and none is blocked on this machine
+lacking something.** Recording that distinction is the point of the row: an arm
+owed for a permission looks identical, in a list, to an arm owed for a
+credential — and §7 of [`skills.md`](skills.md) spent a fortnight proving how
+expensive that confusion is.
 
 ## 4. Needs an operator's decision, not a gate
 
