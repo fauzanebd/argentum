@@ -67,7 +67,8 @@ build: ## Build every binary and every workspace package
 	cd $(BACKEND) && go build ./...
 	pnpm -r build
 
-# GOLANGCI resolves the binary from PATH, then from GOPATH/bin.
+# GOLANGCI resolves the binary from PATH, then from GOPATH/bin, then from the
+# default GOPATH.
 #
 # The fallback is not belt-and-braces: `go install` puts it in GOPATH/bin, which
 # is the way a Go developer most often gets this tool and is NOT on PATH by
@@ -75,8 +76,20 @@ build: ## Build every binary and every workspace package
 # 2026-09-11 the hook fired correctly, failed to find a golangci-lint that was
 # installed, and blocked a push it should have passed. A guard that reports a
 # missing tool it could have found is a guard people disable.
+#
+# **It blocked a second push the same day**, for the next link in the same
+# chain: asking `go env GOPATH` assumes `go` is on PATH, and in git's environment
+# it was not either — the tarball install lives in /usr/local/go/bin. The
+# message even said so, printing "Looked on PATH and in /bin" because the
+# substitution it interpolated had returned nothing. So `go` is now resolved the
+# same way golangci-lint is, and $$HOME/go/bin is tried last, because that is
+# where GOPATH points when nothing has set it. The recipe then puts that same
+# toolchain on PATH for golangci-lint's own child processes — see below.
+GO := $(shell command -v go 2>/dev/null || ls /usr/local/go/bin/go 2>/dev/null)
+GOPATH_BIN := $(shell [ -n "$(GO)" ] && $(GO) env GOPATH 2>/dev/null || echo $$HOME/go)/bin
 GOLANGCI := $(shell command -v golangci-lint 2>/dev/null || \
-	(command -v go >/dev/null 2>&1 && ls $$(go env GOPATH)/bin/golangci-lint 2>/dev/null))
+	ls $(GOPATH_BIN)/golangci-lint 2>/dev/null || \
+	ls $$HOME/go/bin/golangci-lint 2>/dev/null)
 
 .PHONY: lint-go
 lint-go: ## golangci-lint the backend (config: apps/backend/.golangci.yml)
@@ -84,10 +97,14 @@ lint-go: ## golangci-lint the backend (config: apps/backend/.golangci.yml)
 		echo "golangci-lint is not installed. CI pins the version, so match it:"; \
 		echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2"; \
 		echo "  # or: brew install golangci-lint — https://golangci-lint.run/welcome/install/"; \
-		echo "Looked on PATH and in $$(go env GOPATH 2>/dev/null)/bin."; \
+		echo "Looked on PATH, in $(GOPATH_BIN), and in $$HOME/go/bin."; \
 		exit 1; \
 	}
-	cd $(BACKEND) && $(GOLANGCI) run ./...
+	@# golangci-lint shells out to `go` for the package graph, so finding the
+	@# linter is only half of it: the toolchain has to be on PATH for the child
+	@# too. Prepending rather than replacing, so a developer whose own PATH is
+	@# already right is unaffected.
+	cd $(BACKEND) && PATH="$(dir $(GO)):$$PATH" $(GOLANGCI) run ./...
 
 .PHONY: lint-web
 lint-web: ## Lint every workspace app (dashboard=tsc + eslint + vitest, landing=tsc --noEmit)
