@@ -18,6 +18,19 @@ from "task assigned" to "change merged without breaking a tenant".
    This codebase has a strong, consistent style — match it rather than importing
    your defaults.
 
+### The `/continue-building` shortcut
+
+`.claude/skills/continue-building/SKILL.md` is steps 1-4 above plus the gate,
+the docs and the reporting shape, written down so "what's next" does not have to
+be re-derived every session. It reads the roadmaps' status blocks rather than
+`plan/01-tickets.md` (which is ~380 KB), picks one ticket by this repo's own
+ordering rules, builds it and stops **without committing** — *"never commit or
+push unless explicitly asked"* below is not negotiable by a skill.
+
+It also carries the traps that have actually cost time here: a new tool is a
+prompt change, `make check | tail` reports `tail`'s exit status, and a ticket
+saying *Migration: none* has been wrong twice running.
+
 ## 2. Hard rules
 
 These are not preferences. Violating them breaks tenant isolation, billing, or
