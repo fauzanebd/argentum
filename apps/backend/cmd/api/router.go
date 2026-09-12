@@ -74,6 +74,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// answer is a GROUP BY over agent_actions, so it is retroactive to every
 	// turn this deployment has ever run.
 	handlers.NewMetricCoverageHandler(d.metricCoverageSvc).Register(authed)
+	// How much arithmetic still happens in the sentence (T-W3). The tool half is
+	// retroactive; the reply half starts the day the grounding record did.
+	handlers.NewDerivedFiguresHandler(d.derivedFiguresSvc).Register(authed)
 	handlers.NewSuggestionsHandler(d.suggestionSvc).Register(authed)
 	handlers.NewCookbookHandler(d.cookbookSvc).Register(authed)
 	handlers.NewConfigHandler(cfg).Register(authed)

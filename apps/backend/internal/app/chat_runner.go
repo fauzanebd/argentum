@@ -768,7 +768,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		// No suggestions on a greeting. The small-talk path never called the model
 		// or a tool, so the agent has discovered nothing to suggest from — and
 		// three chips under "hello" is the product talking to itself.
-		r.completeWith(ctx, p, reply, 0, 0, 0, nil, "")
+		r.completeWith(ctx, p, reply, 0, 0, 0, nil, "", nil)
 		return nil
 	}
 
@@ -975,7 +975,16 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// After the fabrication gate and before the redaction: this measures the
 	// text the agent actually produced, and a reply the gate has already
 	// replaced is not one whose figures say anything about the agent (T-Q9).
-	ungrounded := r.checkGrounding(ctx, p, response, returnedNumbers)
+	grounding := r.checkGrounding(ctx, p, response, returnedNumbers)
+	ungrounded := len(grounding.Ungrounded)
+	// Stored on the reply only when neither gate above replaced it (T-W3). A
+	// replacement states no figures, so its verdict is always clean — and a
+	// turn the product refused to answer counted as a clean measured turn would
+	// dilute the one denominator that decides whether T-W4 is built.
+	var groundingRecord *guardrails.GroundingReport
+	if response == agentWrote {
+		groundingRecord = &grounding
+	}
 	// After the fabrication check, never before it: that check reads the figures
 	// in the reply and compares them against the turn's evidence, and a redaction
 	// that has already blanked part of the text would have it judging a sentence
@@ -1006,7 +1015,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	steps := r.suggestNextSteps(ctx, p, response,
 		heldToolNames(agent.GetTools()), snap.Tools,
 		response != agentWrote)
-	r.completeWith(ctx, p, response, 0, 0, latency, steps, generatedDocID)
+	r.completeWith(ctx, p, response, 0, 0, latency, steps, generatedDocID, groundingRecord)
 	// One line per turn, carrying what the turn cost and what it may have got
 	// wrong (T-Q11). `ungrounded` is here rather than only in checkGrounding's
 	// own Warn because a turn is found by its completion line: a rate nobody
@@ -1789,10 +1798,15 @@ func documentIDFrom(result map[string]interface{}) string {
 // persisted answer stating 1,667 against a true 300 invisible for a week: a log
 // line nothing reads is not a measurement. The count lands on the process
 // counters and on the turn's own span, so a turn can be found by it.
-func (r *ChatRunner) checkGrounding(ctx context.Context, p queue.ChatRunPayload, response string, returned []float64) int {
+//
+// **It returns the whole report now (T-W3)**, clean or not, because the report
+// is stored on the reply and a clean verdict is a measurement too. The counter,
+// the span and the Warn line still fire only on Ungrounded, exactly as before —
+// the percentage fields T-W3 added are recorded and read by nothing else here.
+func (r *ChatRunner) checkGrounding(ctx context.Context, p queue.ChatRunPayload, response string, returned []float64) guardrails.GroundingReport {
 	rep := guardrails.CheckGrounding(response, returned)
 	if rep.Clean() {
-		return 0
+		return rep
 	}
 	n := len(rep.Ungrounded)
 	metrics.Default().RecordUngroundedFigures(n)
@@ -1805,7 +1819,7 @@ func (r *ChatRunner) checkGrounding(ctx context.Context, p queue.ChatRunPayload,
 		"ungrounded":       fmt.Sprint(rep.Ungrounded),
 		"returned_numbers": len(returned),
 	}).Warn("reply states a figure no tool result contains; not blocked, recorded for review")
-	return n
+	return rep
 }
 
 // checkActionEvidence measures whether a reply claiming a completed change had
@@ -2072,7 +2086,7 @@ func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload,
 		// A refusal is a guardrail's message, not an answer, so it carries no
 		// suggestions — the same rule the post-turn chain applies to a reply the
 		// fabrication gate replaced.
-		r.completeWith(ctx, p, userMsg, 0, 0, 0, nil, "")
+		r.completeWith(ctx, p, userMsg, 0, 0, 0, nil, "", nil)
 		return nil
 	}
 	_ = r.publish(ctx, p.ThreadID, ChatEvent{
@@ -2117,12 +2131,21 @@ func (r *ChatRunner) completeWith(
 	// APIReportService.CompleteReport for why it travels rather than being
 	// looked up.
 	generatedDocID string,
+	// grounding is this turn's grounding verdict, or nil when the turn was not
+	// measured — the small-talk path, a guardrail refusal, a reply a gate
+	// replaced (T-W3).
+	grounding *guardrails.GroundingReport,
 ) {
 	now := time.Now()
 	// The suggestions ride the message's metadata column, which already exists
 	// and is already marshalled at both ends (T-Q10). Nil steps produce a nil map
 	// and the row is written exactly as it was before this ticket.
-	meta := nextStepsMetadata(steps)
+	//
+	// The grounding verdict rides the same column (T-W3), on the stored row
+	// only. `finalMeta` below is built separately and does not carry it: the
+	// stream reaches the widget and `/v1` callers, and a measurement about a
+	// reply is not something either of them asked for.
+	meta := withGroundingRecord(nextStepsMetadata(steps), p.UserMsgID, grounding)
 	assistantMsg, err := r.threads.AppendAssistantMessage(
 		ctx, p.ThreadID, response, tokensIn, tokensOut, latency.Milliseconds(), meta,
 	)

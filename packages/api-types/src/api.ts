@@ -60,6 +60,50 @@ export interface MetricCoverageResponse {
   ad_hoc_top: AdHocQuestion[];
 }
 /**
+ * DerivedFiguresResponse is Answer quality's "how much arithmetic still
+ * happens in the sentence" panel (T-W3).
+ * The percentages are computed on the server for MetricCoverageResponse's
+ * reason, and with a sharper edge: which turns are in the denominator is the
+ * whole judgement here. An unchecked turn is in Answered and in no reply bucket,
+ * and a client dividing Composed by Answered would print a rate that falls as
+ * the unmeasured history grows.
+ */
+export interface DerivedFiguresResponse {
+  /**
+   * WindowDays is what the server used after clamping, echoed so the screen
+   * labels itself from the response.
+   */
+  window_days: number /* int */;
+  from: string;
+  /**
+   * Answered is every turn that called a data tool. Checked is the subset
+   * whose reply carries a grounding record; Unchecked is the rest, sent so
+   * the screen can say how much it could not see.
+   */
+  answered: number /* int */;
+  checked: number /* int */;
+  unchecked: number /* int */;
+  /**
+   * Composed, Computed and Residue partition Checked turns by whether they
+   * called compute and whether they still stated a figure nothing returned.
+   * A checked turn that did neither is in none of them.
+   */
+  composed: number /* int */;
+  computed: number /* int */;
+  residue: number /* int */;
+  /**
+   * CrossSource is over Answered, not Checked: agent_actions answers it alone.
+   */
+  cross_source: number /* int */;
+  /**
+   * UnaccountedPercent is (Composed + Residue) over Checked. ResiduePercent is
+   * Residue over the checked turns that called compute. Both 0 with an empty
+   * denominator.
+   */
+  unaccounted_percent: number /* float64 */;
+  residue_percent: number /* float64 */;
+}
+/**
  * AgentToolInfo is one tool checkbox in Settings → Agents (T-S1).
  * Name comes from the live registry, so a tool added on the backend appears in
  * the dashboard without a frontend change. Label does not: a tool's own

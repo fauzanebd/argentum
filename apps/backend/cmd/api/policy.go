@@ -286,6 +286,9 @@ var apiPolicy = middleware.RolePolicy{
 	// is the workspace's aggregate quality data, and the list underneath it
 	// quotes the questions the company's people have been asking.
 	"GET /api/quality/metric-coverage": domain.RoleAdmin,
+	// Derived figures (T-W3), on the same line: aggregate quality data for the
+	// workspace, and nothing on it a member could act on.
+	"GET /api/quality/derived-figures": domain.RoleAdmin,
 
 	// Next-step chips (T-U13), split on the same line and for the same reasons.
 	// The pick is member because the person clicking is the person reading, and

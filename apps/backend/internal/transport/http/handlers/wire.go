@@ -59,6 +59,44 @@ type MetricCoverageResponse struct {
 	AdHocTop []domain.AdHocQuestion `json:"ad_hoc_top"`
 }
 
+// DerivedFiguresResponse is Answer quality's "how much arithmetic still
+// happens in the sentence" panel (T-W3).
+//
+// The percentages are computed on the server for MetricCoverageResponse's
+// reason, and with a sharper edge: which turns are in the denominator is the
+// whole judgement here. An unchecked turn is in Answered and in no reply bucket,
+// and a client dividing Composed by Answered would print a rate that falls as
+// the unmeasured history grows.
+type DerivedFiguresResponse struct {
+	// WindowDays is what the server used after clamping, echoed so the screen
+	// labels itself from the response.
+	WindowDays int       `json:"window_days"`
+	From       time.Time `json:"from"`
+
+	// Answered is every turn that called a data tool. Checked is the subset
+	// whose reply carries a grounding record; Unchecked is the rest, sent so
+	// the screen can say how much it could not see.
+	Answered  int `json:"answered"`
+	Checked   int `json:"checked"`
+	Unchecked int `json:"unchecked"`
+
+	// Composed, Computed and Residue partition Checked turns by whether they
+	// called compute and whether they still stated a figure nothing returned.
+	// A checked turn that did neither is in none of them.
+	Composed int `json:"composed"`
+	Computed int `json:"computed"`
+	Residue  int `json:"residue"`
+
+	// CrossSource is over Answered, not Checked: agent_actions answers it alone.
+	CrossSource int `json:"cross_source"`
+
+	// UnaccountedPercent is (Composed + Residue) over Checked. ResiduePercent is
+	// Residue over the checked turns that called compute. Both 0 with an empty
+	// denominator.
+	UnaccountedPercent float64 `json:"unaccounted_percent"`
+	ResiduePercent     float64 `json:"residue_percent"`
+}
+
 // AgentToolInfo is one tool checkbox in Settings → Agents (T-S1).
 //
 // Name comes from the live registry, so a tool added on the backend appears in

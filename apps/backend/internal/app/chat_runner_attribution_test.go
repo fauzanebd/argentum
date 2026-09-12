@@ -64,7 +64,7 @@ func TestAnAssistantMessageRecordsTheAgentThatWroteIt(t *testing.T) {
 
 	r.completeWith(scoped("ag-fin", "Finance"), queue.ChatRunPayload{
 		ThreadID: "th-1", UserMsgID: "um-1", Channel: domain.ChannelDashboard,
-	}, "margin fell 4%", 0, 0, 0, nil, "")
+	}, "margin fell 4%", 0, 0, 0, nil, "", nil)
 
 	if len(msgs.appended) != 1 {
 		t.Fatalf("appended %d messages, want 1", len(msgs.appended))
@@ -94,7 +94,7 @@ func TestTheMessageRecordsTheAgentTheTurnRanAsNotTheOneThePayloadNamed(t *testin
 	}
 	// What Run does: resolve, install the scope, then complete through it.
 	ctx := agentscope.WithScope(context.Background(), scopeOf(r.resolveAgent(context.Background(), p)))
-	r.completeWith(ctx, p, "answer", 0, 0, 0, nil, "")
+	r.completeWith(ctx, p, "answer", 0, 0, 0, nil, "", nil)
 
 	if got := msgs.appended[0].AgentID; got != "ag-def" {
 		t.Errorf("message agent_id = %q, want ag-def — the agent the turn ran as", got)
@@ -112,7 +112,7 @@ func TestAnUnscopedTurnWritesNoAgent(t *testing.T) {
 
 	r.completeWith(context.Background(), queue.ChatRunPayload{
 		ThreadID: "th-1", UserMsgID: "um-1", Channel: domain.ChannelDashboard,
-	}, "answer", 0, 0, 0, nil, "")
+	}, "answer", 0, 0, 0, nil, "", nil)
 
 	if got := msgs.appended[0].AgentID; got != "" {
 		t.Errorf("unscoped turn recorded agent_id %q, want empty", got)
@@ -145,7 +145,7 @@ func TestEveryPublishedEventCarriesTheAgent(t *testing.T) {
 	_ = r.publish(ctx, "th-1", ChatEvent{Type: "delta", Content: "mar"})
 	r.completeWith(ctx, queue.ChatRunPayload{
 		ThreadID: "th-1", UserMsgID: "um-1", Channel: domain.ChannelDashboard,
-	}, "margin fell 4%", 0, 0, 0, nil, "")
+	}, "margin fell 4%", 0, 0, 0, nil, "", nil)
 
 	if len(bus.events) < 3 {
 		t.Fatalf("published %d events, want at least 3", len(bus.events))

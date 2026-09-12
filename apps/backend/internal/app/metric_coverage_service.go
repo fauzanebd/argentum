@@ -50,12 +50,7 @@ type CoverageReport struct {
 // and no list is useful; a panel that shows an error because the second query
 // timed out is not.
 func (s *MetricCoverageService) ForCompany(ctx context.Context, companyID string, days int) (CoverageReport, error) {
-	if days <= 0 {
-		days = defaultCoverageDays
-	}
-	if days > maxCoverageDays {
-		days = maxCoverageDays
-	}
+	days = clampQualityWindow(days)
 	since := s.now().AddDate(0, 0, -days)
 
 	cov, err := s.repo.Coverage(ctx, companyID, since)

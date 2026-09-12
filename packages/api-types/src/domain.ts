@@ -1198,6 +1198,96 @@ export interface ExportedMessage {
 }
 
 //////////
+// source: derived_figures.go
+
+/**
+ * DerivedFigures is how often a company's answers stated a figure no tool
+ * returned, and how often they did so after `compute` was called (T-W3).
+ * It is the measurement that decides whether `T-W4`'s sandbox is worth three
+ * days. `compute` closes the margin case — two figures from two queries, one
+ * ratio — without executing anything. What it cannot express is a loop, a
+ * reconciliation, or arithmetic across two sources, and nobody knew how often
+ * this deployment meets those. Residue is the bucket that says a program might
+ * be needed; CrossSource is the one class of the three that has a structural
+ * signature at all.
+ * **A turn is classified, not a call**, for MetricCoverage's reason: the unit a
+ * customer experiences is the answer.
+ */
+export interface DerivedFigures {
+  /**
+   * From is the start of the window these counts cover.
+   */
+  from: string;
+  /**
+   * Answered is every turn that called a data tool successfully. The
+   * denominator CrossSource is read against.
+   */
+  answered: number /* int */;
+  /**
+   * Checked is the subset whose reply carries a grounding record — the only
+   * turns about which "did it state a figure no tool returned" has an answer.
+   * **It is smaller than Answered and the gap is not noise.** Nothing stored a
+   * turn's grounding verdict before this ticket, so every earlier turn is
+   * unchecked; so is a blocking run, which produces no tool events to check
+   * against. Reported so the three buckets below are never read against the
+   * wrong denominator.
+   */
+  checked: number /* int */;
+  /**
+   * Composed turns stated a figure no tool returned and did not call
+   * `compute`: arithmetic done in the sentence. The class T-W1 exists for.
+   */
+  composed: number /* int */;
+  /**
+   * Computed turns called `compute` and stated nothing that it — or another
+   * data tool — did not return. Covered.
+   */
+  computed: number /* int */;
+  /**
+   * Residue turns called `compute` and then stated a further figure no tool
+   * returned anyway. **This is the number that justifies T-W4**, and it is
+   * counted apart from Composed because the two call for different fixes: a
+   * Composed turn needed a tool it did not reach for, a Residue turn reached
+   * for one and it was not enough — or was not used for everything.
+   */
+  residue: number /* int */;
+  /**
+   * CrossSource turns' data tools read from two or more different sources in
+   * one turn — research §3d's first class, and the one that needs no new
+   * instrumentation, because `agent_actions.source_id` already says it.
+   */
+  cross_source: number /* int */;
+}
+/**
+ * TurnShape is one combination of the four facts T-W3 reads about a turn, and
+ * how many turns had it.
+ * The repository returns these rather than the buckets, so which combination
+ * lands in which bucket is decided in Go — by TallyDerivedFigures, where a test
+ * can reach it. Four booleans are at most sixteen rows, so nothing is lost by
+ * moving the arithmetic out of SQL, and the classification is the part of this
+ * ticket most likely to be argued with.
+ */
+export interface TurnShape {
+  /**
+   * Computed: at least one successful `compute` call.
+   */
+  computed: boolean;
+  /**
+   * CrossSource: the turn's data tools read two or more sources.
+   */
+  cross_source: boolean;
+  /**
+   * Checked: the reply carries a grounding record.
+   */
+  checked: boolean;
+  /**
+   * Unaccounted: that record lists a figure or a percentage no tool returned.
+   */
+  unaccounted: boolean;
+  turns: number /* int */;
+}
+
+//////////
 // source: discord_credential.go
 
 /**

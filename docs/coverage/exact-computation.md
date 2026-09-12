@@ -4,14 +4,15 @@ The plan is
 [`../plan/11-voice-and-exact-computation-roadmap.md`](../plan/11-voice-and-exact-computation-roadmap.md)
 Track A; the evidence is
 [`../research/08-voice-and-exact-computation.md`](../research/08-voice-and-exact-computation.md).
-**Two tickets of five are built.**
+**Three tickets of five are built — the track's floor — and the other two wait
+on a number that does not exist yet (§6a).**
 
 | Ticket | Status |
 | --- | --- |
 | `T-W1` `compute`: exact arithmetic, no sandbox | **built 2026-09-12, unit-gated. Migration `081` (a backfill the ticket did not anticipate — §3a). Three gates owed — §7** |
 | `T-W2` Money, periods and rounding stated rather than assumed | **built 2026-09-12, unit-gated. Migration `082` (the ticket said none — §5a). Two gates owed — §7** |
-| `T-W3` The measurement that decides whether the sandbox is worth building | Not built — §6 is the panel it owes a number to |
-| `T-W4` The sandbox: CPython under WASI | Not built, and deliberately not started — it is what `T-W3` decides |
+| `T-W3` The measurement that decides whether the sandbox is worth building | **built 2026-09-12, `make check` green, unit-gated. No migration. The number is not read, and cannot be yet: the reply half of it starts the day it deploys — §6a** |
+| `T-W4` The sandbox: CPython under WASI | Not built, and still not to be started — `T-W3`'s number needs weeks of production turns before it can decide this |
 | `T-W5` `run_program`, and the working it leaves behind | Not built |
 
 ---
@@ -218,15 +219,120 @@ Without it, adding a currency to one list would let a tenant select a currency
 that silently stops being quantised — which looks exactly like a currency that
 was never configured.
 
-## 6. The measurement this file exists to hold
+## 6. `T-W3` — the measurement this file exists to hold
 
-`T-W3`'s panel goes here: how many turns state a figure no data tool returned,
-how many call `compute` once it exists, and how many call it and then state a
-*further* derived figure anyway. **That last number is what justifies `T-W4`**,
-and until it is read, the sandbox is five days aimed at a residue nobody has
-sized. The discipline is `T-F5`'s, deliberately repeated.
+**Built 2026-09-12, unit-gated. The number itself has not been read** — and on
+the day this ships it cannot be, for a reason the ticket did not know.
 
-Nothing is in this section yet. It needs `T-W3` and a database.
+The question: how many turns state a figure no data tool returned, how many
+call `compute`, and how many call it and then state a *further* derived figure
+anyway. **That last number is what justifies `T-W4`.** The discipline is
+`T-F5`'s, deliberately repeated.
+
+### 6a. What the ticket got wrong: half of it was never retroactive
+
+The ticket, and research §6 unknown 5, describe one read "over `agent_actions`
++ `messages`, the shape `metric-coverage.md` §5 already established",
+"retroactive to all 437 turns". **Only the tool half is.** `agent_actions`
+stores what a turn called; nothing stores what came back (`args_redacted` is
+the arguments, `rows_returned` a count), and nothing stored whether the reply's
+figures matched it. `CheckGrounding` has run on every streamed turn since
+`T-Q9`, and its verdict went to a Warn line, a process counter and a span —
+none of which joins to a message.
+
+So "how many turns stated a figure no tool returned" had **no stored answer for
+any turn this deployment has ever run.** `T-W3` now writes one: the verdict
+rides the assistant message's `metadata` under `grounding`, keyed by the user
+message id that `agent_actions.message_id` holds. No migration — the column and
+both marshal sites already carry `T-Q10`'s suggestions, and neither the embed
+surface nor `/v1` serialises it, so a verdict about a reply does not reach a
+widget visitor. **`Migration: none` was right this time**, which after `T-W1`
+and `T-W2` is worth saying.
+
+The consequence for the decision point is the finding: **`T-W4` cannot be cut or
+kept on this ticket's number until weeks of production turns have run with
+both `compute` and the grounding record deployed.** Neither is deployed today,
+so the Residue bucket is structurally empty, and every earlier answering turn is
+reported as *unchecked* rather than read as clean.
+
+### 6b. What it could not have known: the instrument was blind to margins
+
+`CheckGrounding` skips every figure under 1,000 — right for what it guards (list
+positions, row counts, "the top 5") and fatal here. **A margin is 18.42%.** The
+class `compute` exists for was invisible to the only instrument this
+measurement could be built on, so a residue count over `Ungrounded` alone would
+have read low *by construction* — and "the residue is small, cut `T-W4`" would
+have been a finding about the extractor, not about the deployment.
+
+So `GroundingReport` gained `StatedPercents` and `UngroundedPercents`
+(`internal/guardrails/grounding_percent.go`). A percentage — `18.42%`,
+`18,42 persen` — is grounded when a tool returned it or the fraction it renders
+(`compute`'s `"0.1842"`), held to the precision the reply wrote: "18%" of a
+returned 18.4211 is a correct rounding, and one percent relative would have
+called it wrong. **A ratio of two returned values is deliberately not
+forgiven**, unlike the sums and differences `grounded()` accepts, because
+dividing is precisely the arithmetic `compute` takes away. `Clean()` does not
+read the new fields: `T-Q11`'s counter and the Warn line mean exactly what they
+meant in August.
+
+### 6c. What is counted, and how
+
+| Bucket | A turn is in it when | Read from |
+| --- | --- | --- |
+| Answered | it called a data tool — agentbudget's list, `ok` or `truncated` | `agent_actions`, retroactive |
+| Cross-source | its data calls read ≥ 2 sources: each `run_sql` `source_id`, or `search_documents` | `agent_actions`, retroactive |
+| Checked | its reply carries a grounding record | `messages.metadata`, from deploy |
+| Composed | checked, no `compute`, stated a figure or percentage nothing returned | both |
+| Computed | checked, called `compute`, nothing unaccounted | both |
+| **Residue** | checked, called `compute`, **and still** stated something nothing returned | both |
+
+Four decisions worth the words:
+
+- **The SQL returns shapes; Go picks the buckets.** The repository groups by four
+  booleans — at most sixteen rows — and `domain.TallyDerivedFigures` classifies
+  them. The two acceptance lines about compute turns are therefore unit tests,
+  not a claim about a query owed a database.
+- **An unchecked turn is in no reply bucket, including one that called
+  `compute`.** Without a record, "computed and said nothing else" and "computed
+  and then divided anyway" are indistinguishable, and a guess would land in the
+  number that decides `T-W4`.
+- **A reply a gate replaced is not recorded.** A replacement states no figures,
+  so its verdict is always clean; refusals counted as clean measured turns would
+  dilute the one denominator that matters.
+- **`truncated` counts as having run.** A trimmed `run_sql` still returned rows
+  the model did arithmetic over. `T-F4`'s coverage counts `ok` only and so drops
+  those turns — noted here, not changed.
+
+Under-counts, stated rather than fixed: `query_metric` names no source on its
+audit row, so a metric plus a query reads as one source; percentages are the
+only sub-1,000 figures read, so "Rp 450 per item" is still invisible; and a room
+turn fanning out to several agents (`T-N3`) is one turn, as it is in `T-F4`.
+
+| Piece | Where |
+| --- | --- |
+| The percentage half of the grounding check | `internal/guardrails/grounding_percent.go` |
+| The verdict, stored on the reply | `internal/app/grounding_record.go`; `chat_runner.go` (`checkGrounding`, `completeWith`) |
+| Turn shapes and the tally | `internal/domain/derived_figures.go` |
+| The query | `internal/adapters/postgres/derived_figures_repo.go` |
+| One window for both `/quality` panels; the data tools are agentbudget's | `internal/app/derived_figures_service.go`, `agentbudget.DataTools` |
+| `GET /api/quality/derived-figures?days=30` (admin) | `handlers/derived_figures.go`, `DerivedFiguresResponse` in `handlers/wire.go` |
+| The panel, under coverage on `/quality` | `apps/dashboard/src/features/quality/derived-figures-panel.tsx` |
+
+### 6d. The number
+
+**Not read.** The predictions, recorded so they can be checked rather than
+remembered:
+
+1. **The first read after deploy shows Checked = 0 and every answering turn
+   Unchecked.** Nothing stored a verdict before this ticket. A non-zero Checked
+   on day one would mean a record is being written for turns it should not be.
+2. **Cross-source, the one retroactive class, is low single-digit percent** of
+   answering turns: the pilot tenant has one warehouse source, and Phase 3ae's
+   long turns ran `query_metric` 85 times, which contributes no source.
+3. **Once there is traffic, Composed is not small** — the grounding check now
+   sees percentages, and nothing in the prompt before `T-W2` told the model not
+   to divide. Residue is the number nobody can predict, which is why this
+   ticket exists.
 
 ## 7. What is owed
 

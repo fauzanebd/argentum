@@ -146,6 +146,9 @@ type apiDeps struct {
 	// metricCoverageSvc reports whether this tenant's answers stand on defined
 	// metrics (T-F4). Reads only, no state.
 	metricCoverageSvc *app.MetricCoverageService
+	// derivedFiguresSvc reports how often answers stated a figure no tool
+	// returned, and how often compute was not enough (T-W3). Reads only.
+	derivedFiguresSvc *app.DerivedFiguresService
 	// mailer is how this product reaches somebody not looking at it (T-F6).
 	// Always non-nil; a deployment with no relay gets the no-op sender.
 	mailer email.Sender

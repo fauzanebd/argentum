@@ -6478,6 +6478,58 @@ treatment.
 turns still state a derived figure now that `compute` exists; if the residue is
 small, `T-W4` and `T-W5`'s five days are cut and Track A ends at 2.5 days.
 
+## Phase 3al — The measurement that could not be taken yet (2026-09-12)
+
+`T-W3`, the third of roadmap 11's Track A and the last before its decision
+point. Record: [`exact-computation.md`](exact-computation.md) §6.
+
+**The ticket was a read, and there was nothing to read.** It asked how many
+turns state a figure no tool returned, "over `agent_actions` + `messages`",
+"retroactive to all 437 turns" — the shape `T-F4` established. Only the tool
+half is retroactive. `agent_actions` stores what a turn *called*, not what came
+back, and `CheckGrounding`'s verdict has gone to a Warn line, a counter and a
+span since `T-Q9` — none of which joins to a message. So the question had no
+stored answer for any turn this deployment has run. The build stores one now,
+on the reply's existing `metadata` column under `grounding`, keyed by the user
+message id `agent_actions` already carries. **The measurement starts the day
+this deploys, and `T-W4`'s decision waits on weeks of turns after that** —
+with `compute`, which is not deployed either.
+
+**And the instrument could not see the figure in question.** `CheckGrounding`
+skips everything under 1,000 — list positions, row counts — and a margin is
+18.42%. A residue count built on it would have read small by construction and
+cut `T-W4` on a property of a regex. Percentages are now checked in their own
+report fields, grounded when a tool returned the percentage or the fraction it
+renders, at the precision the reply wrote, and **never forgiven as a ratio of
+two returned values** — dividing is what `compute` exists to take away.
+`Clean()` ignores them, so `T-Q11`'s counter means what it meant.
+
+**The SQL counts shapes; Go picks buckets.** Four booleans per turn — called
+`compute`, read two sources, carries a record, record lists something
+unaccounted — at most sixteen rows, tallied by `domain.TallyDerivedFigures`. The
+two acceptance lines about compute turns are therefore unit tests rather than a
+claim about a query nobody has run. An unchecked turn lands in no reply bucket
+even if it called `compute`; a reply a gate replaced writes no record; a
+`truncated` `run_sql` counts as having run, which `T-F4` does not.
+
+**`Migration: none` was right**, the first header on this track that was.
+
+**`/quality` gains a second panel under coverage**, whose day-one state is the
+sentence *"None of the N answering turns could be checked"* rather than 0%.
+
+**Owed, and none of it is code:** the read after deploy (with its predictions:
+Checked = 0 on day one, Cross-source low single-digit percent), the SQL against
+a real Postgres with a second tenant, and a screenshot that is runnable here
+([`live-gate-backlog.md`](live-gate-backlog.md) §7b).
+
+**Gate.** `make check` → `MAKE EXIT: 0`, zero `FAIL`/`panic` lines, 69 Go
+packages `ok` (the exit status read from the log, not from the pipe). Before it:
+`gofmt -l` empty; `go test -race` green on `guardrails`, `agentbudget`,
+`domain`, `handlers`, `cmd/api` and the new `app` tests; `api-types` current
+after `make types`; dashboard `vitest` 62/62, `tsc -b` and lint clean. The build
+caught one defect of its own — `checkGrounding` still returned the old `int` on
+its Warn path — which no inspection had.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

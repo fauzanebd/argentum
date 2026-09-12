@@ -6,6 +6,7 @@ import { useIsAdmin } from "@/store/auth";
 import { cn } from "@/lib/utils";
 import { useFeedbackList, useFeedbackSummary } from "./use-feedback";
 import { MetricCoveragePanel } from "./metric-coverage-panel";
+import { DerivedFiguresPanel } from "./derived-figures-panel";
 
 /**
  * Answer quality — what people said about the agent's answers (T-Q16).
@@ -63,6 +64,11 @@ export function QualityPage() {
             answer this workspace gives, and it is the one an admin can fix this
             afternoon. */}
         <MetricCoveragePanel />
+
+        {/* Beside coverage and for its reason: a structural property of every
+            answer, not one person's verdict on one. Coverage asks where a
+            number came from; this asks whether it was computed or composed. */}
+        <DerivedFiguresPanel />
 
         <div className="grid grid-cols-3 gap-3 mb-8">
           <Stat label="Rated" value={rated} />

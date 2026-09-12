@@ -27,6 +27,8 @@ vi.mock("./use-feedback", () => ({
 // failure about the harness rather than about the page. It has its own test
 // beside this one, against the view rather than the container.
 vi.mock("./metric-coverage-panel", () => ({ MetricCoveragePanel: () => null }));
+// And the derived-figures panel (T-W3), for the same reason.
+vi.mock("./derived-figures-panel", () => ({ DerivedFiguresPanel: () => null }));
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, params }: { children: unknown; params?: { threadId: string } }) => (
     <a data-testid="thread-link" href={params ? `/chat/${params.threadId}` : "#"}>

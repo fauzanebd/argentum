@@ -76,9 +76,34 @@ type GroundingReport struct {
 	// "ungrounded" and the report would be noise. CheckFabrication is the gate
 	// for that case and it already covers it.
 	Checked bool
+
+	// StatedPercents is every percentage in the reply's prose (T-W3).
+	//
+	// Separate from Stated because extractStatedFigures skips everything below
+	// 1000 — the right cut for what it guards, since small integers are list
+	// positions and row counts — and that cut hides every ratio a reply can
+	// state. A margin is 18.42%. **The class `compute` exists for was invisible
+	// to this instrument**, so a count of "turns stating a figure no tool
+	// returned" built on Ungrounded alone would have read low by construction,
+	// on exactly the question T-W3 asks it.
+	StatedPercents []float64
+	// UngroundedPercents is the subset no tool returned, either as the
+	// percentage itself or as the fraction it renders (0.1842 for 18.42%).
+	//
+	// **A ratio of two returned values is not forgiven here**, unlike the sums
+	// and differences grounded() accepts. Dividing one figure by another is the
+	// arithmetic `compute` exists to take away from the model, and accepting it
+	// would leave this field unable to see the one thing it is counting.
+	UngroundedPercents []float64
 }
 
 // Clean reports whether every stated figure was accounted for.
+//
+// It does not read UngroundedPercents, deliberately. Ungrounded feeds T-Q11's
+// counter and the turn's Warn line, and widening what those count would move a
+// rate operators have been reading since August without anything about the
+// replies having changed. The percentages are T-W3's measurement, recorded on
+// the message, and nothing else reads them.
 func (r GroundingReport) Clean() bool { return !r.Checked || len(r.Ungrounded) == 0 }
 
 // figureInProse finds the numbers a reply asserts. Deliberately narrower than
@@ -108,6 +133,7 @@ func CheckGrounding(reply string, returned []float64) GroundingReport {
 			rep.Ungrounded = append(rep.Ungrounded, f.value)
 		}
 	}
+	groundPercents(&rep, reply, returned)
 	return rep
 }
 

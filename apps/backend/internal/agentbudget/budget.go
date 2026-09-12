@@ -178,6 +178,20 @@ var dataTools = map[string]bool{
 // IsDataTool reports whether a tool's result can ground a figure in a reply.
 func IsDataTool(name string) bool { return dataTools[name] }
 
+// DataTools lists every data tool, in no particular order (T-W3).
+//
+// Exported so the quality panel's query asks "did this turn ask the data
+// anything" with this map rather than with its own copy of it — a second list
+// is the one nobody edits the day a fifth data tool is added, and the panel
+// would silently stop counting that tool's turns.
+func DataTools() []string {
+	out := make([]string, 0, len(dataTools))
+	for name := range dataTools {
+		out = append(out, name)
+	}
+	return out
+}
+
 // deliverableTools produce what the user asked for, rather than gather what it
 // takes to produce it. Exactly one call to one of these is held in reserve past
 // exhaustion — see Tracker.reserveAppliesLocked.

@@ -17,20 +17,25 @@ P Q S T`. The two obvious mnemonics are both taken: `T-V` is the video track,
 and `T-C1` would sit one character from the finding `C-1`. `W` collides with
 neither list.
 
-> **Status, 2026-09-12: `T-W1` and `T-W2` are built, `make check` green,
-> unit-gated.**
-> Track A's first ticket — the one §7 argued for — is in
-> [`../coverage/exact-computation.md`](../coverage/exact-computation.md). Two
-> gates are owed and neither is blocked on code: a paired `make eval` either
-> side of the prompt catalog line, and one live turn
-> ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7b).
+> **Status, 2026-09-12: `T-W1`, `T-W2` and `T-W3` are built, `make check`
+> green, unit-gated — Track A's 2.5-day floor.** Record:
+> [`../coverage/exact-computation.md`](../coverage/exact-computation.md).
 >
-> **`T-W3` is next**, because it is the measurement that decides whether
-> `T-W4`/`T-W5`'s five days happen at all — and `T-W4` should not be started
-> before it answers. Both prompt edits (`T-W1`'s catalog line, `T-W2`'s
-> guideline) are owed **one** paired `make eval` between them, not two. The board's
-> other open items are `T-F5` (held on a measurement), `T-H4` step 2, `T-H14`'s
-> envelope half, `T-K8`→`T-K10` and `T-G8`→`T-G9`.
+> **Nothing on this track should be built next, and that is `T-W3`'s finding,
+> not a pause.** `T-W4` was to be decided by `T-W3`'s residue count, and that
+> count exists for no past turn: nothing stored whether a reply's figures
+> matched its tools, so the reply half of the measurement starts the day `T-W3`
+> deploys (§6a of the record). The decision needs weeks of production turns
+> with `compute` and the grounding record both live. Starting `T-W4` before then
+> is building past an unanswered measurement.
+>
+> **What is owed is deployment and reads, not code:** one paired `make eval`
+> for `T-W1`'s catalog line and `T-W2`'s guideline together, `081`/`082`'s
+> round-trips, the live turns, and `T-W3`'s SQL against a real Postgres
+> ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7b).
+> The board's other open items are `T-F5` (held on a measurement), `T-H4` step 2,
+> `T-H14`'s envelope half, `T-K8`→`T-K10`, `T-G8`→`T-G9`, Track C (`T-W7`→`T-W9`,
+> which depends on `T-Z1`) and roadmap 12 (`T-Z1`→`T-Z9`, nothing built).
 
 **The two requests are not one feature, and the order between them is not a
 preference.** Track A closes a defect this repository has already recorded in
@@ -302,8 +307,32 @@ prompt and read by nothing that computes.
 
 ---
 
-#### `T-W3` The measurement that decides whether the sandbox is worth building
+#### `T-W3` The measurement that decides whether the sandbox is worth building — **BUILT 2026-09-12**
 **Repo:** BE + FE · **Size:** 0.5d · **Deps:** `T-W1` · **Migration:** none
+
+> **Built, unit-gated, the number not read.** Record:
+> [`../coverage/exact-computation.md`](../coverage/exact-computation.md) §6.
+> `Migration: none` held — the first header on this track that did.
+>
+> **What the ticket got wrong: it is not retroactive, and it cannot decide
+> anything yet.** "Retroactive to all 437 turns" is true of the tool half only.
+> Nothing stored a turn's grounding verdict — `CheckGrounding` wrote a log line
+> and a counter — and tool outputs are not stored at all, so "stated a figure no
+> tool returned" had no answer for any past turn. The build now stores the
+> verdict on the reply's `metadata`, and the measurement starts the day it
+> deploys. **The decision point below therefore waits on weeks of production
+> turns with `compute` and the record both live**, not on one read.
+>
+> **And one it could not have known: the instrument was blind to margins.**
+> `CheckGrounding` skips every figure under 1,000, so 18.42% was never even
+> extracted. A residue count over it would have read small by construction and
+> cut `T-W4` on a property of the regex. Percentages are now checked in their
+> own report fields, and `T-Q11`'s counter is unchanged.
+>
+> Acceptance lines 2 and 3 are unit-proven (`TallyDerivedFigures`, and the
+> grounding record on the same margin sentence with and without `compute`).
+> Line 1's SQL half and line 4 are owed:
+> [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7b.
 
 ##### Why
 `T-F5` is currently held on a read that costs nothing and sizes three days of

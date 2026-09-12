@@ -615,6 +615,9 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// registry is the moat and nothing has ever measured whether it grows.
 	deps.metricCoverageSvc = app.NewMetricCoverageService(pgctl.NewMetricCoverageRepo(controlDB))
 
+	// The measurement that decides whether T-W4's sandbox is built (T-W3).
+	deps.derivedFiguresSvc = app.NewDerivedFiguresService(pgctl.NewDerivedFiguresRepo(controlDB))
+
 	// Retention and erasure (T-H6). The API half: the settings write, the
 	// erasure route, the export and the record. The nightly purge that uses the
 	// same service lives in the worker.
