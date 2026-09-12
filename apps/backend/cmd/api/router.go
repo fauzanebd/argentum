@@ -53,6 +53,11 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// rate limiter, so a request a member is not allowed to make does not
 	// consume their budget. apiPolicy in policy.go is the whole access model.
 	authed.Use(middleware.RequireRole(apiPolicy))
+	// RequireCapability (T-Z1) runs after RequireRole, so a capability can only
+	// narrow a route the role table opened and never admit a caller it refused,
+	// and before the rate limiter for RequireRole's own reason: a request
+	// refused for a missing grant spends nothing.
+	authed.Use(middleware.RequireCapability(capabilityPolicy, d.capabilitySvc))
 	if rateLimiter := middleware.NewRateLimiter(d.rdb, 60, 1.0); rateLimiter != nil {
 		authed.Use(rateLimiter.Middleware())
 	}
@@ -80,7 +85,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewSuggestionsHandler(d.suggestionSvc).Register(authed)
 	handlers.NewCookbookHandler(d.cookbookSvc).Register(authed)
 	handlers.NewConfigHandler(cfg).Register(authed)
-	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).Register(authed.Group("/users"))
+	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).
+		WithCapabilities(d.capabilitySvc).
+		Register(authed.Group("/users"))
 	handlers.NewReportsHandler(d.brandingSvc, d.companyRepo).Register(authed)
 	handlers.NewPostImagesHandler(d.postImages).Register(authed)
 	handlers.NewDocumentsHandler(d.documentRepo, d.docGen).Register(authed)

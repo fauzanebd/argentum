@@ -2387,6 +2387,20 @@ cents.
 score two edits to the same prompt is the expensive way to learn one thing, and
 both migrations want the same database.
 
+## 7c. `T-Z1`'s migration, its three statements and a revoke (added 2026-09-12)
+
+The capability mechanism is proven against fakes that reproduce the one join the
+repository depends on. **No statement in `capability_repo.go` has run**, and the
+middleware cannot be exercised live at all yet, because no route asks for a
+capability ([`access-grants.md`](access-grants.md) §2). Nothing here costs money;
+two arms need a database and one needs the stack.
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `T-Z1` | `083` up, `down 1`, up. A new table with three foreign keys and a composite primary key; the `down` is a real `DROP TABLE`, not `SELECT 1;`. Worth looking at beyond "clean": delete a user and see their grants go (`CASCADE`), delete the admin who granted and see `granted_by` become `NULL` while the grant stays (`SET NULL`). **Prediction: clean, both cascades as designed** | A control-plane Postgres. §3d's constraint applies — the only one on this machine is production |
+| `T-Z1` | **The three statements, against two seeded companies.** Grant twice → one row, first `granted_by` kept. Grant for company B's user under company A → `ErrNotFound` and no row. Grant with `id = "x"` → `ErrNotFound`, not a 500 (the `22P02` mapping). List for a user holding nothing → `[]`; for a user of another company → `ErrNotFound` (the `LEFT JOIN`'s all-NULL row against no row). Revoke of an unheld capability → success. **Prediction: all pass.** If one fails it will be Grant's, whose `SELECT $1, id, $3, NULLIF($4, '')::uuid` relies on Postgres inferring `$1` as `uuid` from its first use in the `target` CTE — a type error there would be loud, not silent | The same database, the same sitting |
+| `T-Z1` | **Two real users and a revoke, by curl.** Admin `PUT`s `voice` on a member; the member's `GET /api/users/me/capabilities` shows it; admin `DELETE`s; the member's next `GET` is `[]` with no re-login. That proves the routes and the uncached read. **It does not prove the middleware's cache**, which only a capability-gated route reaches — that arm is owed by whichever ticket adds the first entry to `capabilityPolicy` (roadmap 11's `T-W7`), and should be run there: grant, reach the route, revoke, be refused on the very next request. **Prediction: passes; the curl half is uninteresting and the `T-W7` half is the one that could find something** | The stack. No model key |
+
 ## 7. Needs the paid eval set (added 2026-09-11)
 
 `T-Q18`'s remaining half, and the only half that is about the model rather than

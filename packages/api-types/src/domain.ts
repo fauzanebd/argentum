@@ -733,6 +733,52 @@ export interface ReportBranding {
 }
 
 //////////
+// source: capability.go
+
+/**
+ * Capability is a named power a person may be granted (T-Z1): something they
+ * may *do*, with no object attached. Speaking a question is a capability; which
+ * agent they may speak it to is not — that has an object, and is a resource
+ * grant (T-Z2). Folding the two into one table would make the resource id
+ * nullable and every query ambiguous about what a NULL means
+ * (docs/plan/12-access-grants-roadmap.md §1a).
+ * It is Scope's shape for a human rather than a machine, and deliberately not
+ * the same type. A key outlives the person who minted it, so a key that
+ * borrowed its minter's capabilities would widen whenever theirs did (roadmap
+ * 12, decision 9).
+ * The vocabulary is closed. A policy entry naming a capability that does not
+ * exist is a compile error, and a grant request naming one is a 400 rather than
+ * a row that grants nothing until somebody debugs why.
+ */
+/**
+ * CapabilityVoice — speak a question and hear the answer (roadmap 11, Track
+ * C, which depends on this ticket rather than building a table of its own).
+ */
+export const CapabilityVoice = "voice";
+/**
+ * CapabilityApproveActions — decide an action the agent proposed.
+ */
+export const CapabilityApproveActions = "approve_actions";
+/**
+ * CapabilityExportData — take the company's data out of the product.
+ */
+export const CapabilityExportData = "export_data";
+export type Capability = typeof CapabilityVoice | typeof CapabilityApproveActions | typeof CapabilityExportData;
+/**
+ * CapabilityGrant is one held capability, and who decided it.
+ */
+export interface CapabilityGrant {
+  user_id: string;
+  capability: Capability;
+  /**
+   * GrantedBy is empty once the admin who granted it has been deleted: the
+   * grant survives them, and only the attribution does not.
+   */
+  granted_by?: string;
+  granted_at: string;
+}
+
+//////////
 // source: company.go
 
 /**

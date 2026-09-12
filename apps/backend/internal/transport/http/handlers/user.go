@@ -19,12 +19,23 @@ type UserHandler struct {
 	userRepo    *pgctl.UserRepo
 	companyRepo *pgctl.CompanyRepo
 	team        *app.TeamService
+	// caps is capability grants (T-Z1). Optional for team's reason: nil
+	// answers 503 rather than panicking.
+	caps *app.CapabilityService
 }
 
 // NewUserHandler constructs the handler. team may be nil in stripped-down
 // wirings; the team routes then answer 503 rather than panicking.
 func NewUserHandler(userRepo *pgctl.UserRepo, companyRepo *pgctl.CompanyRepo, team *app.TeamService) *UserHandler {
 	return &UserHandler{userRepo: userRepo, companyRepo: companyRepo, team: team}
+}
+
+// WithCapabilities serves the grant routes (T-Z1). They are registered either
+// way; without this they answer 503, which says why, where an absent route
+// would read as a wrong path.
+func (h *UserHandler) WithCapabilities(caps *app.CapabilityService) *UserHandler {
+	h.caps = caps
+	return h
 }
 
 // Register installs user routes onto the supplied router group.
@@ -34,6 +45,14 @@ func (h *UserHandler) Register(rg *gin.RouterGroup) {
 	rg.POST("/invite", h.invite)
 	rg.PATCH("/:id", h.updateRole)
 	rg.DELETE("/:id", h.remove)
+
+	// Capabilities (T-Z1) hang off the user they belong to, beside the role
+	// change: a grant is a fact about a person, and the settings page that
+	// shows one shows the other.
+	rg.GET("/me/capabilities", h.myCapabilities)
+	rg.GET("/:id/capabilities", h.userCapabilities)
+	rg.PUT("/:id/capabilities/:capability", h.grantCapability)
+	rg.DELETE("/:id/capabilities/:capability", h.revokeCapability)
 }
 
 func (h *UserHandler) me(c *gin.Context) {
@@ -163,6 +182,80 @@ func (h *UserHandler) remove(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// myCapabilities is the one capability read a member may make, and it can only
+// name what the caller holds: the user comes from the session, never from the
+// path. The dashboard needs it to decide whether a control renders enabled.
+func (h *UserHandler) myCapabilities(c *gin.Context) {
+	uid := userID(c)
+	if uid == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	h.listCapabilities(c, uid)
+}
+
+func (h *UserHandler) userCapabilities(c *gin.Context) {
+	h.listCapabilities(c, c.Param("id"))
+}
+
+func (h *UserHandler) listCapabilities(c *gin.Context, uid string) {
+	if h.caps == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "capabilities are not configured"})
+		return
+	}
+	grants, err := h.caps.ListForUser(c.Request.Context(), companyID(c), uid)
+	if err != nil {
+		writeCapabilityError(c, err)
+		return
+	}
+	if grants == nil {
+		grants = []domain.CapabilityGrant{}
+	}
+	c.JSON(http.StatusOK, gin.H{"capabilities": grants})
+}
+
+// grantCapability is a PUT because granting is idempotent by decision: asking
+// again for what is already held is a 204, not a 409. An admin double-clicking a
+// toggle has not caused a conflict.
+func (h *UserHandler) grantCapability(c *gin.Context) {
+	if h.caps == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "capabilities are not configured"})
+		return
+	}
+	err := h.caps.Grant(c.Request.Context(), companyID(c), userID(c), c.Param("id"), c.Param("capability"))
+	if err != nil {
+		writeCapabilityError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *UserHandler) revokeCapability(c *gin.Context) {
+	if h.caps == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "capabilities are not configured"})
+		return
+	}
+	err := h.caps.Revoke(c.Request.Context(), companyID(c), userID(c), c.Param("id"), c.Param("capability"))
+	if err != nil {
+		writeCapabilityError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func writeCapabilityError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, domain.ErrInvalidInput):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, domain.ErrNotFound):
+		// A user of another company, a malformed id and a user who never
+		// existed are one answer: there is nobody by that id here.
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 func writeTeamError(c *gin.Context, err error) {

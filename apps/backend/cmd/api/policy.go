@@ -41,6 +41,18 @@ var apiPolicy = middleware.RolePolicy{
 	"PATCH /api/users/:id":   domain.RoleAdmin,
 	"DELETE /api/users/:id":  domain.RoleAdmin,
 
+	// Capabilities (T-Z1). Reading your own is a member's: the dashboard has to
+	// know whether to render a control enabled, and the route names only what
+	// the caller already holds. Reading anybody else's, granting and revoking
+	// are an admin's, on the line the role change above draws — each decides
+	// what a colleague may do. An admin may grant themselves, on purpose
+	// (roadmap 12, decision 4): this is a boundary against accident rather than
+	// against a determined admin, and saying so is what keeps it honest.
+	"GET /api/users/me/capabilities":                 domain.RoleMember,
+	"GET /api/users/:id/capabilities":                domain.RoleAdmin,
+	"PUT /api/users/:id/capabilities/:capability":    domain.RoleAdmin,
+	"DELETE /api/users/:id/capabilities/:capability": domain.RoleAdmin,
+
 	// Data sources. Reads are open; everything that writes, tests or spends is
 	// not.
 	"GET /api/connections":         domain.RoleMember,
@@ -475,6 +487,27 @@ var apiPolicy = middleware.RolePolicy{
 	"POST /api/slack/users":       domain.RoleAdmin,
 	"DELETE /api/slack/users/:id": domain.RoleAdmin,
 }
+
+// capabilityPolicy is the second question a route can ask, after apiPolicy's
+// (T-Z1): not "is this caller's rank high enough" but "was this person granted
+// this". It only ever adds a requirement. RequireCapability runs after
+// RequireRole, so a capability can narrow a route the role table opened and can
+// never open one the role table refused — and, unlike a role, an admin holds no
+// capability nobody granted them (roadmap 12, decision 4).
+//
+// **It is empty, and that is the ticket's acceptance rather than an unfinished
+// table.** Two of the three day-one capabilities name things routes already do:
+// `export_data` is GET /api/company/data/export, and `approve_actions` is the
+// approve and reject pair. 083 grants nobody anything. Putting any of those
+// routes here would 403 every admin who exports and every member who approves,
+// on their very next request — the opposite of "every route that exists today
+// behaves identically". Moving one behind its capability needs a backfill that
+// grants it to whoever can do it today, and that is a decision for the ticket
+// that wants the gate; TestExistingRoutesAskForNoCapability pins the three so it
+// cannot be made by accident.
+//
+// `voice` has no route yet. Its entry arrives with roadmap 11's T-W7.
+var capabilityPolicy = middleware.CapabilityPolicy{}
 
 // unpolicedPaths are the routes that legitimately sit outside the policy: they
 // run before or without authentication, or they authenticate as something

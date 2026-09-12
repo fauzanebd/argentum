@@ -6530,6 +6530,65 @@ after `make types`; dashboard `vitest` 62/62, `tsc -b` and lint clean. The build
 caught one defect of its own — `checkGrounding` still returned the old `int` on
 its Warn path — which no inspection had.
 
+## Phase 3am — A power granted to a person, which an admin does not hold by rank (2026-09-12)
+
+`T-Z1`, the first of roadmap 12 and the one roadmap 11's voice track waits on.
+Record: [`access-grants.md`](access-grants.md).
+
+**Picked because everything else on the board was waiting on something.**
+Track A of roadmap 11 is held on `T-W3`'s number, which needs weeks of production
+turns; `T-F5` is held on `T-F4`'s read; `T-H4` step 2 was declined by the owner;
+`T-H14`'s envelope half needs a KMS decision; `T-G8` needs an aggregator
+account. `T-Z1` has no deps and its decisions are locked, and both roadmap 12 and
+roadmap 11's Track C call it. Reading the board for the pick also found that
+roadmap 11's status sentence still listed `T-K8`→`T-K10` as open; roadmap 07 has
+recorded them landed since 2026-08-25.
+
+**What shipped.** A closed vocabulary — `voice`, `approve_actions`,
+`export_data` — granted per person on four `/api/users/…/capabilities` routes,
+stored by `083`, and enforced by `RequireCapability` between the role check and
+the rate limiter. It only ever narrows: a capability cannot admit a caller the
+role table refused, and for that request the grant store is not even read. An
+admin with no grant is refused like a member.
+
+**The ticket could not have meant to gate anything yet.** Its vocabulary names
+two things routes already do, its migration grants nobody anything, and its
+acceptance says every existing route behaves identically. The three are true
+together only if `capabilityPolicy` is empty — so it is, with its reason beside
+it and a test that pins the export, approve and reject routes and fails naming
+the backfill if one is moved behind its capability. The route-level acceptance
+is proven on synthetic routes; the real-router arm skips until `T-W7` adds the
+first gated route.
+
+**"A short cache" and "the next request" were in tension, and both hold.** A
+write clears its entry, and a generation counter stops a load that raced a
+revoke from caching the grant the revoke deleted — a test drives that exact
+interleaving. On another replica the bound is the ten-second TTL; `kubectl` says
+there is one replica.
+
+**The ticket had no cross-company line, and needed one.** `REFERENCES users(id)`
+proves a user exists, not that they are in `company_id`. Every statement starts
+from the company-scoped `users` row; grant and revoke do it in one statement via
+a data-modifying CTE, and a malformed id is a 404 rather than a 500 carrying
+the driver's message.
+
+**`Migration: 083` was right.** The FE half of `BE + FE` is the generated
+`Capability` union and `CapabilityGrant`; the page an admin uses is `T-Z7`.
+
+**Owed, and none of it costs money:** `083`'s round-trip and the three
+statements against a Postgres with two companies, and a two-user revoke by curl
+([`live-gate-backlog.md`](live-gate-backlog.md) §7c). The middleware's own live
+arm cannot run until a route asks for a capability, so it moves to `T-W7`.
+
+**Gate.** `make check` → `MAKE EXIT: 0`, read from the log rather than the pipe;
+69 Go packages `ok`, zero `FAIL`/`panic` lines, `golangci-lint` 0 issues, and
+`pnpm -r build` clean across the workspace, which covers the regenerated
+`api-types` in both the dashboard and the widget. Before it: `gofmt -l` empty,
+`go build`/`go vet` clean, and the 33 new or re-run tests green under
+`-race` — eleven in the service, ten in the middleware, seven in the handler,
+and the policy suite's three new tests beside the two role sweeps they now run
+through, one of which skips with its reason. `make types` changed one file.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

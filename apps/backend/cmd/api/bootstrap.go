@@ -113,6 +113,10 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	})
 	deps.teamSvc = app.NewTeamService(userRepo, pgctl.NewUserInviteRepo(controlDB)).
 		WithMailer(app.NewInviteMailerAdapter(deps.mailer, companyRepo, userRepo, cfg.AppBaseURL))
+	// Capability grants (T-Z1). Read per request behind a ten-second in-process
+	// cache rather than carried on the JWT above, whose fifteen-minute lifetime
+	// would make every revoke wait that long.
+	deps.capabilitySvc = app.NewCapabilityService(pgctl.NewCapabilityRepo(controlDB))
 	// The only machine credential in the product (T-13). It authenticates
 	// `/v1`; the dashboard routes beside it are how an admin mints one.
 	deps.apiKeySvc = app.NewAPIKeyService(pgctl.NewAPIKeyRepo(controlDB))

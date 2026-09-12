@@ -36,6 +36,25 @@ neither list.
 > The board's other open items are `T-F5` (held on a measurement), `T-H4` step 2,
 > `T-H14`'s envelope half, `T-K8`→`T-K10`, `T-G8`→`T-G9`, Track C (`T-W7`→`T-W9`,
 > which depends on `T-Z1`) and roadmap 12 (`T-Z1`→`T-Z9`, nothing built).
+>
+> **Revised 2026-09-12, later the same day: `T-Z1` is built**
+> ([`../coverage/access-grants.md`](../coverage/access-grants.md)), so Track C's
+> dependency is met. Two corrections to the sentence above, found reading the
+> board for it: **`T-K8`→`T-K10` are not open** — roadmap 07 records them landed
+> 2026-08-25. **`T-H4` step 2, `T-H14`'s envelope half and `T-G8` are open but not
+> buildable by an implementer**: the first was declined by the owner on
+> 2026-09-03, the second waits on a KMS decision, the third on an aggregator
+> account.
+>
+> **`T-W7`'s dependency is met, and two things about it are now wrong or owed.**
+> Its header says `Migration: 082`, which `T-W2` took — and roadmap 12 has
+> already written `084` and `085` into `T-Z2` and `T-Z8`, so whichever of these
+> ships first should claim its number at build time rather than trust a header.
+> And `POST /api/threads/:id/voice` would be the first entry in
+> `capabilityPolicy`, so `T-W7` inherits the capability middleware's live arm
+> (grant, reach the route, revoke, refused on the very next request —
+> [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7c). Its
+> own live arms need a speech provider key, which this machine does not have.
 
 **The two requests are not one feature, and the order between them is not a
 preference.** Track A closes a defect this repository has already recorded in

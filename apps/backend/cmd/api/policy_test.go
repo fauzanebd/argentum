@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -99,7 +101,31 @@ func testDeps(cfg *config.Config, signer *auth.TokenSigner) *apiDeps {
 		discordSvc:   app.NewDiscordService(nil, nil, nil, nil),
 		larkSvc:      app.NewLarkService(nil, nil, nil),
 		slackSvc:     app.NewSlackService(nil, nil, nil),
+		// A grant store that has granted nothing to anybody. That makes every
+		// role assertion in this file a second assertion as well (T-Z1): a route
+		// that had quietly started asking for a capability would 403 the admin
+		// in TestGatedRoutesRejectMembers and the member in
+		// TestMemberRoutesAdmitMembers.
+		capabilitySvc: app.NewCapabilityService(&noCapabilities{}),
 	}
+}
+
+// noCapabilities is a capability store in which nobody holds anything. It
+// counts reads, so a test can tell "refused for lack of a grant" apart from
+// "never asked".
+type noCapabilities struct{ lists atomic.Int64 }
+
+func (n *noCapabilities) ListForUser(context.Context, string, string) ([]domain.CapabilityGrant, error) {
+	n.lists.Add(1)
+	return []domain.CapabilityGrant{}, nil
+}
+
+func (n *noCapabilities) Grant(context.Context, string, string, domain.Capability, string) error {
+	return nil
+}
+
+func (n *noCapabilities) Revoke(context.Context, string, string, domain.Capability) error {
+	return nil
 }
 
 // TestEveryAuthedRouteIsClassified is the reason the policy is a table rather
@@ -232,6 +258,12 @@ func TestGatedRoutesRejectMembers(t *testing.T) {
 				if role == "member" && code != http.StatusForbidden {
 					t.Errorf("member got %d, want 403", code)
 				}
+				// A capability-gated route refuses an admin who was not granted
+				// it, which is the point of it; TestCapabilityGatedRoutesRefuseAnAdminWithoutAGrant
+				// owns that half.
+				if _, gated := capabilityPolicy[key]; gated {
+					continue
+				}
 				if role == "admin" && code == http.StatusForbidden {
 					t.Errorf("admin got 403 on a route they are allowed to call")
 				}
@@ -256,6 +288,11 @@ func TestMemberRoutesAdmitMembers(t *testing.T) {
 
 	var keys []string
 	for key, role := range apiPolicy {
+		// A member route behind a capability is a member route a member
+		// without the grant cannot reach. That is not a role-table failure.
+		if _, gated := capabilityPolicy[key]; gated {
+			continue
+		}
 		if role == domain.RoleMember {
 			keys = append(keys, key)
 		}
@@ -274,6 +311,105 @@ func TestMemberRoutesAdmitMembers(t *testing.T) {
 				t.Errorf("member got 403 on a member route")
 			}
 		})
+	}
+}
+
+// TestEveryCapabilityGateIsClassified keeps capabilityPolicy a refinement of
+// apiPolicy rather than a second route list. A capability narrows a route the
+// role table already decided, so an entry the role table does not know is
+// either stale or a route that skipped its role decision — and apiPolicy is the
+// table the router is diffed against, so being in it is also being real.
+func TestEveryCapabilityGateIsClassified(t *testing.T) {
+	for key, capability := range capabilityPolicy {
+		if _, ok := apiPolicy[key]; !ok {
+			t.Errorf("capabilityPolicy gates %s, which apiPolicy does not classify", key)
+		}
+		if !capability.Valid() {
+			t.Errorf("capabilityPolicy gates %s on %q, which is not a capability", key, capability)
+		}
+	}
+}
+
+// TestExistingRoutesAskForNoCapability is T-Z1's "every route that exists today
+// behaves identically", held in two ways.
+//
+// The pinned three are the routes the day-one vocabulary tempts somebody to
+// gate. 083 granted nobody anything, so gating one without a backfill locks the
+// whole company out of it on the next request — the reasoning is beside
+// capabilityPolicy, and this is what makes somebody read it first.
+//
+// The sweep is the rest: every classified route, as an admin, against a store
+// that has granted nothing, must not consult it. The grant routes themselves
+// are excluded because reading the store is their job.
+func TestExistingRoutesAskForNoCapability(t *testing.T) {
+	tempting := map[string]domain.Capability{
+		"GET /api/company/data/export":  domain.CapabilityExportData,
+		"POST /api/actions/:id/approve": domain.CapabilityApproveActions,
+		"POST /api/actions/:id/reject":  domain.CapabilityApproveActions,
+	}
+	for key, capability := range tempting {
+		if _, ok := apiPolicy[key]; !ok {
+			t.Errorf("%s is no longer a route; update this list rather than deleting the assertion", key)
+		}
+		if _, gated := capabilityPolicy[key]; gated {
+			t.Errorf("%s now requires %q, which 083 granted to nobody — ship the backfill that grants it to whoever does this today, then move it out of this list", key, capability)
+		}
+	}
+
+	store := &noCapabilities{}
+	r := routerWithDeps(t, func(d *apiDeps) { d.capabilitySvc = app.NewCapabilityService(store) })
+	signer, err := auth.NewTokenSigner("0123456789abcdef0123456789abcdef", 15*time.Minute, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("NewTokenSigner: %v", err)
+	}
+	token, err := signer.IssueAccessToken("user-1", "co-1", "admin")
+	if err != nil {
+		t.Fatalf("IssueAccessToken: %v", err)
+	}
+	for key := range apiPolicy {
+		if _, gated := capabilityPolicy[key]; gated || strings.Contains(key, "/capabilities") {
+			continue
+		}
+		method, path, _ := strings.Cut(key, " ")
+		req, err := http.NewRequest(method, concreteURL(path), nil)
+		if err != nil {
+			t.Fatalf("NewRequest: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		statusOf(r, req)
+	}
+	if n := store.lists.Load(); n != 0 {
+		t.Errorf("routes outside capabilityPolicy read the grant store %d times, want 0", n)
+	}
+}
+
+// TestCapabilityGatedRoutesRefuseAnAdminWithoutAGrant is decision 4 against the
+// real router: an admin with no grant is refused every capability-gated route.
+// Nothing is gated yet, so this skips until voice's routes arrive (T-W7) — and
+// from then on every new gate is covered without a new test.
+func TestCapabilityGatedRoutesRefuseAnAdminWithoutAGrant(t *testing.T) {
+	if len(capabilityPolicy) == 0 {
+		t.Skip("no route asks for a capability yet; roadmap 11's T-W7 adds the first")
+	}
+	r := realRouter(t)
+	signer, err := auth.NewTokenSigner("0123456789abcdef0123456789abcdef", 15*time.Minute, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("NewTokenSigner: %v", err)
+	}
+	token, err := signer.IssueAccessToken("user-1", "co-1", "admin")
+	if err != nil {
+		t.Fatalf("IssueAccessToken: %v", err)
+	}
+	for key := range capabilityPolicy {
+		method, path, _ := strings.Cut(key, " ")
+		req, err := http.NewRequest(method, concreteURL(path), nil)
+		if err != nil {
+			t.Fatalf("NewRequest: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		if code := statusOf(r, req); code != http.StatusForbidden {
+			t.Errorf("%s: admin with no grant got %d, want 403", key, code)
+		}
 	}
 }
 

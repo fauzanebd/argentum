@@ -16,7 +16,25 @@ rejected anyway: this repo has numeric tickets `T-01`→`T-23`, so `T-L1` and
 `T-I1` sit one glyph from `T-11`. `Z` collides with nothing and cannot be
 misread.
 
-> **Status: nothing here is built.** This ticket-ifies a backlog item that has
+> **Status, 2026-09-12: `T-Z1` is built, `make check` green, unit-gated.**
+> Migration `083`. Record: [`../coverage/access-grants.md`](../coverage/access-grants.md).
+> **`T-Z2` is next** — no deps, and `T-Z3`, `T-Z4` and `T-Z7` all wait on it.
+>
+> **`capabilityPolicy` ships empty, and that is the acceptance, not a gap.** The
+> ticket's day-one vocabulary names two things routes already do
+> (`export_data`, `approve_actions`), its migration grants nobody anything, and
+> its acceptance says every existing route behaves identically. All three hold
+> only if nothing is gated yet; gating either route without a backfill would lock
+> out everyone who does it today. Whoever adds the first entry owns that
+> backfill, and a test pins the three routes so it cannot happen by accident.
+>
+> **Owed:** `083`'s round-trip, the repository's three statements against a real
+> Postgres, and a two-user revoke — none needs money
+> ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7c).
+> The middleware's live arm cannot run until a route asks for a capability, so
+> it is owed by roadmap 11's `T-W7` rather than by this ticket.
+
+> **Status, 2026-09-11: nothing here is built.** This ticket-ifies a backlog item that has
 > been filed since 2026-07-29 — *Per-agent user grants*,
 > [`backlog.md`](backlog.md) — widened from agents to every resource an admin
 > would want to gate, and merged with the capability half that
@@ -225,6 +243,25 @@ it, with decision 4's sentence in its place.
 
 > **Supersedes `T-W6`** in [`11-voice-and-exact-computation-roadmap.md`](11-voice-and-exact-computation-roadmap.md).
 > That ticket built this table for voice alone; this one builds it once.
+
+> **Built 2026-09-12, as written, with five places the ticket was wrong or
+> silent** ([`../coverage/access-grants.md`](../coverage/access-grants.md) §5):
+>
+> 1. **The vocabulary contradicts "behaves identically".** `approve_actions` and
+>    `export_data` name existing routes, and nobody holds anything on day one, so
+>    neither route can be gated without a backfill. `capabilityPolicy` is empty.
+> 2. **"A short cache" contradicts "the next request"** unless a write clears the
+>    cache. It does, with a generation counter against the race; across replicas
+>    the bound is the ten-second TTL, and there is one replica today.
+> 3. **No cross-company acceptance line.** A foreign key to `users(id)` does not
+>    prove the user is in `company_id`; every statement now starts from the
+>    company-scoped `users` row.
+> 4. **`RequireCapability(capabilityPolicy)` needs a checker** as well — a grant
+>    is data, not a claim on the token.
+> 5. **`Repo: BE + FE` with no FE work in *Do*.** The frontend half is the
+>    generated `Capability` and `CapabilityGrant` types; the surface is `T-Z7`'s.
+>
+> `Migration: 083` was right.
 
 ##### Do
 - `083_user_capabilities`: `(company_id, user_id, capability, granted_by,

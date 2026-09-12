@@ -38,18 +38,22 @@ type apiDeps struct {
 	rdb       *redis.Client
 	enqueuer  *queue.Enqueuer
 
-	signer       *auth.TokenSigner
-	authSvc      *app.AuthService
-	teamSvc      *app.TeamService
-	companySvc   *app.CompanyService
-	embeddingSvc *app.EmbeddingService
-	usageSvc     *app.UsageService
-	chatEnq      *app.ChatEnqueuer
-	threadRepo   *pgctl.ThreadRepo
-	msgRepo      *pgctl.MessageRepo
-	userRepo     *pgctl.UserRepo
-	companyRepo  *pgctl.CompanyRepo
-	actionRepo   *pgctl.AgentActionRepo
+	signer  *auth.TokenSigner
+	authSvc *app.AuthService
+	teamSvc *app.TeamService
+	// capabilitySvc answers "was this person granted this" for
+	// RequireCapability, and serves the grant routes (T-Z1). A nil one refuses
+	// every capability-gated route rather than opening them.
+	capabilitySvc *app.CapabilityService
+	companySvc    *app.CompanyService
+	embeddingSvc  *app.EmbeddingService
+	usageSvc      *app.UsageService
+	chatEnq       *app.ChatEnqueuer
+	threadRepo    *pgctl.ThreadRepo
+	msgRepo       *pgctl.MessageRepo
+	userRepo      *pgctl.UserRepo
+	companyRepo   *pgctl.CompanyRepo
+	actionRepo    *pgctl.AgentActionRepo
 	// actionSvc is the human side of the action framework (T-10/T-11): the
 	// approval endpoints call Approve/Reject on it, and it executes an approved
 	// action exactly once. Built with the same action registry the worker
