@@ -24,6 +24,27 @@ says so explicitly rather than leaving it to be discovered — the one figure th
 plan would most like to have is what a room actually costs per user message, and
 it is owed, not estimated.
 
+> **Status, 2026-09-14, later: `T-N8`'s ledger is built and unit-gated — the
+> conversation budget, with nothing to refuse until `T-N6`.** No migration, no prompt
+> change. Record: [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §10.
+>
+> - **Every message's turns are counted** in Redis before the first is queued. A person's
+>   own `@all` is never refused, even past the ceiling.
+> - **An ask** — `T-N6`'s nudge, `T-N7`'s hand-off — is refused past 6 turns, at a third
+>   hop, after 5 minutes, or when Redis cannot be read.
+> - **The same agent asked the same question twice is queued once.**
+> - **The three numbers are placeholders**, labelled so in the code. §2c's arm replaces them.
+>
+> **Where the ticket was wrong** (§10d):
+> - Its watermark could never fire, and was built as that repeat check.
+> - Its pass outcome, room notice and two-worker gate have no caller before `T-N6`, and
+>   moved there.
+> - It asked for per-company ceilings and put them out of scope. Deployment defaults were
+>   built.
+>
+> **Next on this track: `T-N6`**, whose dependencies are now all met. It inherits `T-N8`'s
+> room notice and pass — see its *Do*.
+
 > **Status, 2026-09-14: `T-N11` is built and unit-gated.** The owner answered §8b's
 > question: a colleague's earlier turns do not pass their document taint on. No migration.
 > Record: [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §9.
@@ -1136,6 +1157,27 @@ remove and instead relocated.
   - **Skip the input topic classifier on a peer turn**, keyed on `p.Peer != nil`
     and **never** on finding a fence marker in the text — a person can type one
     (`multi-agent.md` §8c).
+- **Revised 2026-09-14 by `T-N8`, which built the ledger and left its callers here**
+  (`multi-agent.md` §10d):
+  - **Ask the ledger before enqueueing.** Call `agentbudget.Conversation.Admit` with the
+    asker's `UserMsgID`, the target, the question, and the asker's depth plus one. Wire
+    the ledger into the worker's stack — today only `cmd/api` and `cmd/discord` hold one.
+  - **What each verdict does:**
+    - **Admitted:** enqueue.
+    - **A repeat:** return `Verdict.ToolResult`, and enqueue nothing.
+    - **Refused, or `ErrLedgerUnavailable`:** return `Verdict.ToolResult`, and write
+      `Verdict.Notice` into the room.
+  - **Decide how often the notice is written:** once per message, or once per refused
+    question. A model that keeps asking after a refusal would otherwise fill the room.
+  - **The credit check runs before `Admit`**, so a tenant at zero reads the credit refusal.
+  - **The pass, and its transcript marker, are this ticket's now.** A nudged agent with
+    nothing to add ends the chain without an answer, and the room shows a settle that reads
+    differently from `Notice`'s cap. Design the two markers together.
+  - **`T-N8`'s open acceptance items move here:**
+    - *a stubbed agent that always nudges terminates, and the room says why*;
+    - *exhaustion produces a visible message naming the unasked question*;
+    - *a pass renders as a settle*;
+    - the two-worker gate.
 - The asker's turn ends normally. The answer arrives as a later message in the
   room, attributed to the answerer by `T-N1`, and the human sees both.
 - **The asker is not automatically resumed.** v1 does not re-run A when B
@@ -1256,9 +1298,25 @@ off and a question that should not.
 
 ---
 
-#### `T-N8` The conversation budget and the loop guard
+#### `T-N8` The conversation budget and the loop guard · **ledger built 2026-09-14, unit-gated; pass, room notice and two-worker arm moved to `T-N6` — `coverage/multi-agent.md` §10**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-N3` · **Priority:** P0 — **not cuttable**
-**Migration:** none
+**Migration:** none — correct
+
+> **What moved against this ticket ([`../coverage/multi-agent.md`](../coverage/multi-agent.md) §10d):**
+> - **The watermark below cannot fire.** Every turn here is queued because a new message
+>   arrived for it, so an agent's context has always changed when it is queued. Built
+>   instead: the same agent asked the same question twice in one conversation is queued
+>   once.
+> - **The pass, the room notice and the two-worker gate have no caller until `T-N6`**, and
+>   moved there with their acceptance items. `Verdict.Notice` builds the sentence;
+>   `agentbudget.Conversation.Admit` is what `T-N6` calls.
+> - **A person's own fan-out is counted and never refused**, which the ticket did not say.
+>   A loop guard is for turns nobody addressed.
+> - **Per deployment, not per company.** *Do* and the acceptance say per company, and *Out
+>   of scope* excludes it; the narrower was built.
+> - **`CONVERSATION_WALL` is `CONVERSATION_WALL_SECS`**, the house idiom.
+> - **The metric is counted where asks run — the worker, which has no exposition endpoint
+>   yet** (`T-17`).
 
 ##### Why
 `agentbudget` bounds one turn: 8 iterations, 12 tool calls, a token ceiling and

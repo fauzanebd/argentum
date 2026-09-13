@@ -140,6 +140,11 @@ func (s MetricsSnapshot) WriteProm(w io.Writer) error {
 		}
 	}
 
+	// --- conversation budget (T-N8) ---
+	p.counterVec("conversation_ceiling_hits_total",
+		"Asks a conversation budget refused, by the ceiling that refused them.",
+		"dimension", asFloats(s.Domain.ConversationCeilings))
+
 	p.duration("turn_duration_ms", "Agent turn wall clock.", nil, s.Domain.Turns)
 
 	// Tool traffic: three metric names, each with every tool's series together,

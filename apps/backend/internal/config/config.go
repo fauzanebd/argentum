@@ -170,6 +170,21 @@ type Config struct {
 	// made.
 	ThreadMaxParticipants int
 
+	// The conversation budget (T-N8): what one person's message may set off
+	// across every turn it leads to, one level above the per-turn budget. Zero
+	// takes agentbudget.DefaultCeilings — the numbers live there, once, for
+	// AgentBudgetWarnRatio's reason — and **those numbers are placeholders
+	// chosen by arithmetic, not measurement**. See
+	// 09-multi-agent-conversations-roadmap.md §2c for the arm that would replace
+	// them, and DefaultCeilings for the arithmetic.
+	//
+	// Deployment defaults rather than per-company rows. The ticket asks for both,
+	// in different sections; its own Out of scope is the narrower and holds until
+	// a tenant asks, when it becomes a settings row.
+	ConversationMaxAgentTurns int // agent turns queued from one person's message (default 6)
+	ConversationMaxNudgeDepth int // hops in a chain of asks between agents (default 2)
+	ConversationWallSecs      int // from the first queued turn to the last admitted ask (default 300)
+
 	// Asynq queue + worker
 	AsynqRedisURL     string // falls back to RedisURL when empty
 	WorkerConcurrency int    // simultaneous tasks per worker process
@@ -689,6 +704,11 @@ func Load() (*Config, error) {
 		ClassifierModel:       getEnv("LLM_CLASSIFIER_MODEL", "gpt-5-nano"),
 		SummaryEveryNTurns:    getEnvAsInt("SUMMARY_EVERY_N_TURNS", 8),
 		ThreadMaxParticipants: getEnvAsInt("THREAD_MAX_PARTICIPANTS", 0),
+
+		// Zero, not the defaults spelled a second time — see the fields.
+		ConversationMaxAgentTurns: getEnvAsInt("CONVERSATION_MAX_AGENT_TURNS", 0),
+		ConversationMaxNudgeDepth: getEnvAsInt("CONVERSATION_MAX_NUDGE_DEPTH", 0),
+		ConversationWallSecs:      getEnvAsInt("CONVERSATION_WALL_SECS", 0),
 		// **Zero, deliberately.** The number lives in
 		// domain.MaxThreadParticipants and ThreadParticipantService applies it
 		// when this is unset. Repeating it here would be a second default able

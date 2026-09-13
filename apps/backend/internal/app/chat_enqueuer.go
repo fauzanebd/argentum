@@ -41,6 +41,20 @@ type ChatEnqueuer struct {
 	// conversations refuses a send into a conversation the person may not read
 	// (T-Z10). Nil admits every conversation, as before.
 	conversations ConversationReader
+	// conversation counts each message's turns against the conversation budget
+	// (T-N8). Nil counts nothing, which is every turn before that ticket.
+	conversation ConversationOpener
+}
+
+// ConversationOpener is what the enqueue path asks of the conversation budget
+// (T-N8): count this message's turns before any of them is queued.
+// *agentbudget.Conversation is the production one.
+//
+// Open, and deliberately not Admit. A person's own fan-out is counted and never
+// refused (agentbudget.Conversation.Open says why), so this path holds no method
+// that could refuse a person's message on a loop guard's behalf.
+type ConversationOpener interface {
+	Open(ctx context.Context, companyID, userMsgID, question string, agentIDs []string) error
 }
 
 // ConversationReader is whether a person may read one conversation (T-Z10).
@@ -282,6 +296,15 @@ func (s *ChatEnqueuer) WithAgentAccess(access AgentAccess, agents AgentLister) *
 // them from.
 func (s *ChatEnqueuer) WithConversationAccess(r ConversationReader) *ChatEnqueuer {
 	s.conversations = r
+	return s
+}
+
+// WithConversationBudget counts every message's turns against the conversation
+// budget (T-N8), so that a turn which asks a colleague (T-N6) finds its own
+// message's fan-out already spent. Optional, in the shape of the ones above:
+// without it nothing is counted, which is every turn before that ticket.
+func (s *ChatEnqueuer) WithConversationBudget(c ConversationOpener) *ChatEnqueuer {
+	s.conversation = c
 	return s
 }
 
@@ -1183,6 +1206,24 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		companyName = company.Name
 		currency = company.DefaultCurrency
 		money = company.Currency()
+	}
+
+	// Counted before the first turn is queued (T-N8). A turn that asks a colleague
+	// the moment it starts must find this message's fan-out already on the
+	// ledger, or the room's first ask is measured against a budget that does not
+	// know four turns are running. A queue failure below leaves those turns
+	// counted and never run — an over-count, the safe direction for a loop guard
+	// to be wrong in.
+	//
+	// Every door, not the dashboard's alone: an ask needs a room, and rooms reach
+	// the chat channels with T-N9. A door that skipped this would be the one whose
+	// rooms asked against a ledger that never counted the person's message.
+	if s.conversation != nil {
+		if err := s.conversation.Open(ctx, in.CompanyID, userMsg.ID, addr.Cleaned, targets); err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"company_id": in.CompanyID, "thread_id": thread.ID,
+			}).Warn("conversation budget not opened; queueing the turns anyway")
+		}
 	}
 
 	// One user message, N turns (T-N3). Every payload carries the same

@@ -17,6 +17,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
+	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/config"
@@ -115,7 +116,15 @@ func main() {
 		WithChannelBindings(pgctl.NewAgentBindingRepo(controlDB)).
 		// Its refusals are counted in this process and written to the audit log
 		// beside the webhook's (T-Z9).
-		WithAgentAccess(authz.New(pgctl.NewResourceGrantRepo(controlDB)).WithAudit(pgctl.NewAgentActionRepo(controlDB)), agentRepo)
+		WithAgentAccess(authz.New(pgctl.NewResourceGrantRepo(controlDB)).WithAudit(pgctl.NewAgentActionRepo(controlDB)), agentRepo).
+		// And the same conversation budget (T-N8), on the same Redis: a channel
+		// room (T-N9) whose messages the webhook counted and the gateway did not
+		// would be one room with two budgets.
+		WithConversationBudget(agentbudget.NewConversation(rdb, agentbudget.Ceilings{
+			MaxAgentTurns: cfg.ConversationMaxAgentTurns,
+			MaxNudgeDepth: cfg.ConversationMaxNudgeDepth,
+			Wall:          time.Duration(cfg.ConversationWallSecs) * time.Second,
+		}))
 
 	// --- Discord session manager ---
 	rootCtx, cancelRoot := context.WithCancel(context.Background())

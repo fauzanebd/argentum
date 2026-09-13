@@ -682,3 +682,199 @@ The gate's output is in [`delivery-log.md`](delivery-log.md) Phase 3bb.
   user messages in a row. OpenAI-compatible endpoints accept that. The Anthropic interface
   already sends tool results as user messages, so the shape is not new there — but it has
   not been seen against a real Anthropic endpoint.
+
+## 10. `T-N8`, and a loop guard with nothing to guard yet
+
+**Built 2026-09-14, unit-gated.** No migration and no prompt change, so no `make eval` is
+owed. Nothing asks another agent until `T-N6`, so in production the ceilings have nothing
+to refuse yet. What goes live the day this deploys is the counting.
+
+### 10a. What was built
+
+| Piece | Where |
+| --- | --- |
+| `agentbudget.Conversation`: one ledger per person's message, in Redis, decided by two Lua scripts | `internal/agentbudget/conversation.go` |
+| `Ceilings` — 6 agent turns, depth 2, 5 minutes — labelled as arithmetic, not measurement | the same file, `DefaultCeilings` |
+| `Open`: a person's fan-out, counted before its first turn is queued | called from `ChatEnqueuer.Enqueue` |
+| `Admit`: one ask, for `T-N6`'s nudge and `T-N7`'s hand-off | no caller yet |
+| `Verdict.ToolResult` and `Verdict.Notice`: what the asking model reads, and what the room shows | the same file |
+| `CONVERSATION_MAX_AGENT_TURNS`, `CONVERSATION_MAX_NUDGE_DEPTH`, `CONVERSATION_WALL_SECS` | `internal/config`, `.env.example` |
+| `argentum_conversation_ceiling_hits_total{dimension}` | `internal/metrics` |
+| The ledger on both processes that queue a person's turns | `cmd/api/bootstrap.go`, `cmd/discord/main.go` |
+
+**The rules**, in the order the script checks them:
+
+| Asked for | Answer |
+| --- | --- |
+| A person's message, to any number of agents | queued whole and counted — never refused, even past the ceiling |
+| An ask deeper than `MaxNudgeDepth` | refused before Redis is read, so no ledger is created |
+| An ask after `Wall` has passed since the first turn | refused |
+| The same agent, asked the same question again in this conversation | a repeat: nothing queued, nothing counted, and not a refusal |
+| An ask past `MaxAgentTurns` | refused |
+| An ask when Redis cannot be reached | refused |
+
+**The ledger** is one hash per company and message: `started`, `turns`, and one
+`asked:<agent>:<digest>` field per question asked. Its TTL is `2 × Wall`, set when the hash is
+created and never extended. **Depth is not stored.** It rides the asked turn's payload, so a
+lost or expired ledger cannot reset it.
+
+### 10b. Three decisions worth the words
+
+- **A person's message is never refused by the loop guard.** The ticket counts the fan-out
+  against the ceiling. That is right — an ask must know four turns are already running —
+  but it does not say what happens when the fan-out alone is wider than the ceiling.
+  Refusing part of an `@all` would be a loop guard overruling a person about their own
+  message, after the credit check has agreed to it. So `Open` counts and never refuses, and
+  a fan-out that wide simply leaves no asks.
+- **`Open` fails open; `Admit` fails closed.** A Redis outage must not stop a person's
+  message; the rate limiter and the share-refresh cap fail open for the same reason. An ask
+  is a model spending another agent's budget on its own initiative, and admitting it blind
+  is the unbounded spend this ticket exists to stop. The asking model gets a result it can
+  act on either way.
+- **A refusal carries `budget_exhausted`, deliberately.** That is `IsRefusal`'s key, so
+  three readers that already exist get it right with no change:
+  - the audit decorator records the call as refused (`T-05`);
+  - the tool digest remembers it as refused (`T-Q12`);
+  - `Observe` keeps it out of the calls that succeeded, so *"I asked Finance"* is an
+    unevidenced claim (`T-Q13`).
+
+  One test asserts all three. A **repeat** carries `already_asked` instead: the colleague
+  *was* asked, and saying otherwise would have the model apologise for a question already
+  on its way.
+
+### 10c. The acceptance items, quoted back
+
+- [ ] *A stubbed agent that always nudges terminates, and the room says why.* **The ledger's
+  half is met; the room's half moved to `T-N6`** (§10d).
+  `TestARoomThatAlwaysNudgesStops` runs a room of three in which every turn asks both
+  colleagues something new. It is run once with each ceiling binding:
+  - turns bind: 6 turns run;
+  - depth binds: 21 turns run — 3, then 6, then 12, and nothing deeper.
+
+  Each run's `Notice` names the question that went unasked. Nothing writes it into a room
+  until `T-N6`.
+- [x] *Depth 3 is refused; depth 2 runs.* `TestDepthTwoRunsAndDepthThreeIsRefused`, which also
+  checks that a refused hop counts nothing and creates no ledger.
+- [x] *The turn counter is shared across two worker replicas — proven with two processes, not
+  one.* `TestTwoProcessesShareOneCounter` starts two copies of the test binary, each with its
+  own client, against one Redis. Each tries 30 asks against a ceiling of 40. **They were
+  admitted 20 and 20** (pids 1267296 and 1267297 on the run under `-race -v`), where two
+  counters would have admitted 60. The Redis was `miniredis`; a real one is owed (§10f), and
+  so is the arm with two *workers*, which needs `T-N6`.
+- [ ] *Exhaustion produces a visible message naming the unasked question.* The sentence is
+  built and tested (`Verdict.Notice`). Writing it into the room is `T-N6`'s.
+- [x] *The per-turn budget is unchanged.* `budget.go`, `guard.go` and `checkpoint.go` carry
+  zero changes: `internal/agentbudget` gained two new files and nothing else. The existing
+  budget tests pass unchanged.
+- [x] *A tenant at zero credit still gets the credit refusal, not this one.*
+  `TestZeroCreditIsTheCreditRefusalAndTouchesNoLedger`: `ErrInsufficientCredits`, nothing
+  queued, and no key written to Redis.
+- [x] *The conversation key expires.* `TestTheLedgerExpiresAndIsNeverExtended`: 10 minutes at
+  creation, 6 after an ask four minutes in (not pushed back out), gone at 10.
+- [ ] *A pass ends a chain and renders as a settle.* **Moved to `T-N6`** (§10d).
+- [x] *An agent addressed twice with nothing in between is enqueued once* — as a repeat, which
+  is the form of the watermark this product can reach (§10d).
+  `TestAnAgentAskedTheSameQuestionTwiceIsQueuedOnce` covers case and spacing, a new question,
+  and another agent. `TestAMessagesFanOutIsOnTheLedgerBeforeAnyAsk` shows a colleague
+  re-asking the person's own question is a repeat. One agent named twice in one message was
+  already one turn: `ParseAddressing` has de-duplicated since `T-N3`.
+- [x] *The ceilings are readable and overridable per company, not compiled in* — **per
+  deployment**, as the ticket's own *Out of scope* says (§10d). Three env vars, zero meaning
+  the default.
+
+**Beyond the ticket:**
+- `TestAPersonsFanOutIsCountedAndNeverRefused`
+- `TestAMessagesFanOutIsOnTheLedgerBeforeAnyAsk` — the ordering: counted before any ask
+- `TestAFanOutWiderThanTheBudgetStillReachesEveryoneAddressed`
+- `TestALedgerThatCannotBeReachedRefusesAnAskAndNeverAPerson`
+- `TestALedgerOutageDoesNotRefuseAPersonsMessage`
+- `TestARefusalIsReadAsARefusalByTheReadersThatAlreadyExist`
+- `TestTheClockEndsAConversation`
+- `TestOnlyACeilingIsCounted`, `TestExpositionCarriesTheConversationCeilings`
+- `TestTheDefaultCeilingsAreTheirStatedArithmetic` — pins the numbers *and* the claim that
+  five minutes is two per-turn wall clocks, so a change to either makes somebody re-read the
+  comment.
+
+### 10d. Where the ticket was wrong
+
+- **Its watermark cannot fire.** *"Do not enqueue an addressed agent whose context has not
+  changed since its own last turn."*
+  - Hermes' version fires in a *round*, where every member is re-polled whether or not
+    anyone spoke to it.
+  - Nothing here re-polls. Every turn is queued because a new message arrived for it — the
+    person's, or a nudge — so "no new messages it has not seen" is never true when a turn is
+    queued.
+  - The ticket's own example, *"a user addresses the same agent twice in a row"*, is two
+    user messages.
+
+  What is real, and costs a model call for nothing, is an agent asked again what it was
+  already asked in this conversation. That is what was built: `Verdict.Repeat`.
+- **Half its *Do* has no caller before `T-N6`, and moved there.**
+  - **The pass outcome** needs a nudged turn that can pass, and a way for the model to say
+    so. A tool or a sentinel is a prompt change with an eval attached, for a turn that does
+    not exist yet.
+  - **The room notice** needs something to write it. Only an ask is ever refused, and asks
+    are made in the worker by the tool `T-N6` adds. `Verdict.Notice` builds the sentence;
+    `T-N6` writes it, and designs its marker beside the settle's, which is the distinction
+    the ticket wanted built in rather than retrofitted.
+  - **The gate drives "the always-nudging stub" through two workers.** There is nothing to
+    drive. The ledger's half is proven with two processes (§10c); the workers' half is owed
+    with `T-N6`.
+- **It asks for per-company ceilings, and puts per-company overrides out of scope.**
+  Decision 9 and the acceptance say per company; *Out of scope* says a deployment default
+  until a tenant asks. The narrower was built. A settings row would be read where `Admit`
+  takes its ceilings.
+- **`CONVERSATION_WALL=5m` became `CONVERSATION_WALL_SECS=300`**, beside
+  `AGENT_TURN_BUDGET_SECS`. The config has no duration parser, and seconds are the house
+  idiom.
+- **"`internal/metrics` already has the shape" — in a process nobody scrapes.** Only an ask is
+  ever refused, asks run in the worker, and the worker has no exposition endpoint. That is
+  `T-17`'s gap, the same one the grounding counters sit in. Until it closes, the series is
+  declared on `cmd/api`'s `/metrics` and will only ever read zero there.
+- **"Outlives the fan-out by exactly `WALL`" is right, and is not the whole bound.**
+  - A turn admitted in the window's last second runs for up to 150s more, and its ask must
+    find the ledger in order to be refused by the clock. `2 × Wall` covers that.
+  - A queue backlog longer than `Wall` does not: that ask would open a fresh ledger.
+  - Depth is what bounds that case, which is why it is kept out of the ledger.
+- **"Incremented at enqueue"** — and a queue failure after `Open` leaves turns counted that
+  never run. That over-counts, which is the safe direction for a loop guard to be wrong in.
+
+### 10e. Proven failing
+
+Eight mutations, run one at a time. Each file was restored, and its hash matched the
+pre-run hash, before the gate.
+
+| Mutation | Tests that failed |
+| --- | --- |
+| The depth check off | `TestDepthTwoRunsAndDepthThreeIsRefused`, the depth-binds room, `TestOnlyACeilingIsCounted` |
+| The turns ceiling off, in `admitLua` | the fan-out test, the turns-binds room, `TestTwoProcessesShareOneCounter`, the readers test, `TestOnlyACeilingIsCounted` |
+| The repeat check off | `TestAnAgentAskedTheSameQuestionTwiceIsQueuedOnce`, `TestOnlyACeilingIsCounted` |
+| Every ask pushes the expiry back out | `TestTheLedgerExpiresAndIsNeverExtended` |
+| The wall clock off | `TestTheClockEndsAConversation` |
+| An ask admitted when Redis fails | `TestALedgerThatCannotBeReachedRefusesAnAskAndNeverAPerson` |
+| The enqueuer never opens the ledger | `TestAMessagesFanOutIsOnTheLedgerBeforeAnyAsk`, `TestAFanOutWiderThanTheBudgetStillReachesEveryoneAddressed` |
+| A ledger outage refuses the person's message | `TestALedgerOutageDoesNotRefuseAPersonsMessage` |
+
+**Not proven by any test: that the ledger is opened before the first turn is queued rather
+than after.** The fan-out tests' queue never asks, so it cannot see the order. What holds it
+is the call's position — after the user message is appended, whose id it needs, and before
+the enqueue loop — and the comment beside it. Moving the call below the loop would pass
+every test here. It would fail the first always-nudging room.
+
+The gate's output is in [`delivery-log.md`](delivery-log.md) Phase 3bc.
+
+### 10f. What is owed, and what stays open
+
+- **`T-N6`'s part**, carried in its *Do*:
+  - call `Admit`, and write `Notice` into the room;
+  - build the pass and its marker;
+  - put the depth on `PeerOrigin`;
+  - wire the ledger into the worker.
+- **The two Lua scripts on a real Redis** (live-gate §7e). Prediction: identical to
+  `miniredis`.
+- **Two workers and an always-nudging room**, with `T-N6` (§7e).
+- **§2c's measurement**, before any of the three numbers stops being a placeholder (§7e).
+- **Open: a queue backlog longer than `Wall`** can let an ask open a fresh ledger (§10d).
+  Depth still bounds it. If a real backlog ever does this, the fix is a longer TTL, not a
+  stored depth.
+- **Open: the ceiling metric is unreadable** until the worker exposes metrics (`T-17`).

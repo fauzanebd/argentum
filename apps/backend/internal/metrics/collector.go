@@ -80,9 +80,12 @@ type Collector struct {
 	// vocabularies in internal/authz, which drops a refusal naming anything else
 	// before it gets here.
 	accessRefusals map[string]map[string]int64
-	toolCalls      map[string]*toolAgg // tool name -> count/errors/duration
-	turnDurations  *durationAgg
-	llmLatency     map[string]*durationAgg // model -> latency
+	// conversationCeilings is dimension -> asks a conversation budget refused
+	// (T-N8). A closed vocabulary in internal/agentbudget: turns, depth, wall.
+	conversationCeilings map[string]int64
+	toolCalls            map[string]*toolAgg // tool name -> count/errors/duration
+	turnDurations        *durationAgg
+	llmLatency           map[string]*durationAgg // model -> latency
 
 	// Public API request metrics (T-A5), guarded by mu rather than by atomics:
 	// the unit of update is a map entry and a bucket array, not a counter.
@@ -359,6 +362,26 @@ func (c *Collector) RecordAccessRefusal(kind, reason string) {
 	c.accessRefusals[kind][reason]++
 }
 
+// RecordConversationCeiling counts one ask a conversation budget refused (T-N8),
+// by the ceiling that refused it: "turns", "depth" or "wall".
+//
+// Refusals rather than asks, for RecordAccessRefusal's reason: the question is
+// "how often does a room hit its limit", and a counter that moved with every
+// admitted ask would bury that in ordinary traffic. An outage refusing asks is
+// not a room hitting its limit and is not counted — see
+// agentbudget.DimensionUnavailable.
+func (c *Collector) RecordConversationCeiling(dimension string) {
+	if c == nil || dimension == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conversationCeilings == nil {
+		c.conversationCeilings = map[string]int64{}
+	}
+	c.conversationCeilings[dimension]++
+}
+
 // RecordToolCall counts one tool call and how long it took. Called from the
 // audit decorator, which is the one place every tool call passes through — the
 // same reason the audit row is written there.
@@ -606,11 +629,12 @@ func (c *Collector) domainSnapshot() DomainMetrics {
 	defer c.mu.RUnlock()
 
 	out := DomainMetrics{
-		WatcherFires:     copyCounts(c.watcherFires),
-		ActionExecutions: copyCounts(c.actionExecutions),
-		ActionFailures:   copyCounts(c.actionFailures),
-		Tools:            make(map[string]ToolMetrics, len(c.toolCalls)),
-		LLMLatency:       make(map[string]DurationMetrics, len(c.llmLatency)),
+		WatcherFires:         copyCounts(c.watcherFires),
+		ActionExecutions:     copyCounts(c.actionExecutions),
+		ActionFailures:       copyCounts(c.actionFailures),
+		ConversationCeilings: copyCounts(c.conversationCeilings),
+		Tools:                make(map[string]ToolMetrics, len(c.toolCalls)),
+		LLMLatency:           make(map[string]DurationMetrics, len(c.llmLatency)),
 	}
 	if len(c.accessRefusals) > 0 {
 		out.AccessRefusals = make(map[string]map[string]int64, len(c.accessRefusals))
@@ -772,6 +796,9 @@ type DomainMetrics struct {
 	// because of who was asking (T-Z9). Kinds are internal/authz's resource kinds
 	// plus "conversation"; reasons are its refusal reasons.
 	AccessRefusals map[string]map[string]int64 `json:"access_refusals,omitempty"`
+	// ConversationCeilings is dimension → asks a conversation budget refused
+	// (T-N8): "turns", "depth", "wall".
+	ConversationCeilings map[string]int64 `json:"conversation_ceilings,omitempty"`
 }
 
 // GroundingMetrics is the wrong-but-nonempty instrument (T-Q11). Both numbers
@@ -923,4 +950,12 @@ type ConversationMetrics struct {
 func DocumentPagesOCR(companyID string, pages int) {
 	_ = companyID
 	Default().RecordDocumentPagesOCR(pages)
+}
+
+// ConversationCeiling is the package-level shorthand agentbudget calls (T-N8).
+// It counts in whichever process asked, and today only an ask can be refused —
+// a person's own fan-out never is — so the series lives in the process that
+// runs the asks (T-N6), which is the worker.
+func ConversationCeiling(dimension string) {
+	Default().RecordConversationCeiling(dimension)
 }

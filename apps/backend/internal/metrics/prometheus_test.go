@@ -89,6 +89,33 @@ func TestExpositionCarriesTheAccessRefusals(t *testing.T) {
 	}
 }
 
+// "How often does a room hit the ceiling" is a series, one per dimension, and
+// the metric is declared before any room has hit anything (T-N8).
+func TestExpositionCarriesTheConversationCeilings(t *testing.T) {
+	c := NewCollector()
+	if out := renderSnapshot(t, c); !strings.Contains(out, "# TYPE argentum_conversation_ceiling_hits_total counter") {
+		t.Errorf("a process that has refused no ask does not declare the series:\n%s", out)
+	}
+
+	c.RecordConversationCeiling("turns")
+	c.RecordConversationCeiling("turns")
+	c.RecordConversationCeiling("depth")
+	c.RecordConversationCeiling("")
+
+	out := renderSnapshot(t, c)
+	for _, want := range []string{
+		`argentum_conversation_ceiling_hits_total{dimension="depth"} 1`,
+		`argentum_conversation_ceiling_hits_total{dimension="turns"} 2`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("exposition is missing:\n  %s\n\ngot:\n%s", want, out)
+		}
+	}
+	if got := strings.Count(out, "argentum_conversation_ceiling_hits_total{"); got != 2 {
+		t.Errorf("%d ceiling series, want 2 — an empty dimension is not a series", got)
+	}
+}
+
 func TestExpositionCarriesTheGroundingCounters(t *testing.T) {
 	c := NewCollector()
 	// A clean reply must not touch either counter, or the rate is meaningless.

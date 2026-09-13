@@ -7358,6 +7358,70 @@ de-duplication mutation did not compile, so it proved nothing and was redone.
   Finance's reply, rows and catalog as its own. After, it reads the question and one fenced
   reply, and its completion line shows `peer_agents=Finance`.
 
+## Phase 3bc — The conversation budget, before anything asks (`T-N8`, 2026-09-14)
+
+Picked because roadmap 09's status named it next. It is P0 and not cuttable, its dependency
+(`T-N3`) is met, `T-N6` waits on it, and it is on the track already in flight. Record:
+[`multi-agent.md`](multi-agent.md) §10.
+
+**What it does.** `agentbudget.Conversation` is a Redis ledger per person's message,
+decided by two Lua scripts:
+- **`Open`** counts a message's fan-out before its first turn is queued. It never refuses,
+  and it fails open.
+- **`Admit`** decides one ask between agents. It refuses past 6 turns, at a third hop, after
+  5 minutes, or when Redis cannot be read. The same agent asked the same question twice is a
+  repeat, and costs nothing.
+- **A refusal carries `budget_exhausted`**, so the audit log, the tool digest and `T-Q13`'s
+  success tracking all read it as a refusal, unchanged.
+
+Wired into `cmd/api` and `cmd/discord`. Three env vars and one metric. No migration, no
+prompt change.
+
+**Where the ticket was wrong (§10d).**
+- **Its watermark could never fire.** Every turn is queued because a new message arrived for
+  it. Built as a repeat check instead.
+- **Its pass outcome, room notice and two-worker gate have no caller before `T-N6`**, and
+  moved there.
+- **It asked for per-company ceilings and put them out of scope.** Deployment defaults were
+  built.
+- **Its metric is counted in the worker**, which has no exposition endpoint.
+
+**Proven failing.** Eight mutations, each failing its tests (§10e). Both files were restored
+and hash-matched before the gate. One ordering — the ledger opened before the enqueue loop —
+is held by position, not by a test, and §10e says so.
+
+**The first `make check` failed, on a test this ticket does not reach.**
+`TestToolFramesCarryTheNameAndNotTheArguments` (`transport/http/handlers`) failed once, with
+`MAKE EXIT: 2` read from the log. It passed 10/10 alone under `-race`. Nothing under
+`transport/` is changed in this tree, the test file has not moved since `cba9d80`, and its
+fixture's enqueuer is a fake, so the ledger is not on its path.
+
+**The failing body says why.** Its one `final` frame carries `"IDR 3.863.405.700"`, which is
+`assistantMessage()`'s content, and not the `"done"` the test published. So the stream was
+ended by the handler's store backstop (`LatestAssistantSince`), not by the event. The test
+persists the answer before publishing the events, so under a loaded `-race ./...` that
+backstop can win before the queued `tool_call` frame is written.
+
+It is the same family, and the same load-sensitivity, as Phase 3i's
+`TestSSETurnStreamsDeltasAndEndsWithFinal`. It is not fixed here: that is the `/v1` chat
+handler's test and its own change. It is written down so the next failure is not
+re-diagnosed.
+
+**Gate.** The second `make check`, on the same tree with no source edited between runs,
+passed: `MAKE EXIT: 0`, read from the log.
+- **Go:** 73 packages `ok`, the handlers package among them. Zero `FAIL`/`panic` lines,
+  `golangci-lint` `0 issues.`, and `gofmt -l` empty.
+- **Dashboard:** 88 vitest tests pass, and all six builds finished.
+- **New tests:** 16 — 11 in `agentbudget` (plus the helper the two-process test starts), 4
+  in `app`, 1 in `metrics`. All were listed by name under `go test -race -v` before the gate.
+- `make types` was not needed: no struct that crosses the API changed.
+
+**Owed** (live-gate §7e):
+- **The scripts on a real Redis.** **Prediction: identical to `miniredis`.**
+- **Two workers and an always-nudging room**, with `T-N6`. **Prediction: exactly six turns.**
+- **§2c's cost per message.** **Prediction: no ordinary question comes within two turns of the
+  ceiling.**
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

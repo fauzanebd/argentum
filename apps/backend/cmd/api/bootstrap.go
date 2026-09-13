@@ -13,6 +13,7 @@ import (
 	mcpclient "github.com/fauzanebd/argentum/internal/adapters/mcp"
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
+	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/agenttemplates"
 	"github.com/fauzanebd/argentum/internal/apiobs"
 	"github.com/fauzanebd/argentum/internal/app"
@@ -311,7 +312,15 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		WithChannelBindings(bindingRepo).
 		WithRoom(deps.room).
 		WithAgentAccess(deps.resourceAuthz, agentRepo).
-		WithConversationAccess(deps.conversationAccess)
+		WithConversationAccess(deps.conversationAccess).
+		// The conversation budget (T-N8), over the Redis every worker replica
+		// reads: this process counts a message's fan-out and the worker counts the
+		// asks that follow it (T-N6), and two ledgers would be two budgets.
+		WithConversationBudget(agentbudget.NewConversation(deps.rdb, agentbudget.Ceilings{
+			MaxAgentTurns: cfg.ConversationMaxAgentTurns,
+			MaxNudgeDepth: cfg.ConversationMaxNudgeDepth,
+			Wall:          time.Duration(cfg.ConversationWallSecs) * time.Second,
+		}))
 	scheduledRepo := pgctl.NewScheduledTaskRepo(controlDB)
 	// The API process only creates and edits schedules — the worker fires
 	// them — but the service is the same type, and wiring it here keeps the
