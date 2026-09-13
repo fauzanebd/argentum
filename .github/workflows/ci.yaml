@@ -467,11 +467,17 @@ jobs:
       # a command argument (`server /data`) and the services block has nowhere
       # to put one. The render door answers a typed 503 without object storage,
       # so this is not optional for these samples.
+      #
+      # From quay.io, and pinned. Docker Hub's minio/minio repository is gone —
+      # it answers 404, and every run from 2026-09-12 failed here pulling it —
+      # while MinIO still publishes to quay.io. Pinned rather than `latest`
+      # because an image that vanished once can vanish again, and a pinned tag
+      # fails with a name somebody can search for.
       - name: Start MinIO
         run: |
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:latest server /data
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z.hotfix.7aa24e772 server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && break
             sleep 2
