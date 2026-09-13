@@ -82,7 +82,7 @@ func (f *fakeCapabilityStore) Revoke(_ context.Context, companyID, userID string
 // moves by writing through the returned pointer.
 func newTestCapabilities() (*CapabilityService, *fakeCapabilityStore, *time.Time) {
 	store := newFakeCapabilityStore()
-	svc := NewCapabilityService(store)
+	svc := NewCapabilityService(store, nil)
 	clock := time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return clock }
 	return svc, store, &clock

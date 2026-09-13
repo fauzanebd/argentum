@@ -36,6 +36,74 @@ type ReportShareService struct {
 	// testable without an object store. Everything else in this file is about
 	// the link rather than about the plan.
 	planLoader func(context.Context, *domain.Document) ([]byte, error)
+	// conversations holds a link shut while its document's conversation has a
+	// restricted agent in it (T-Z13). Nil shares and opens as before.
+	conversations ShareConversations
+}
+
+// ShareConversations is the one question a link asks about the conversation its
+// document came from: is every agent in it open (T-Z13). *ConversationAccess is
+// the production one.
+type ShareConversations interface {
+	OpenToEveryone(ctx context.Context, companyID, threadID string) (bool, error)
+}
+
+// ErrDocumentRestricted refuses a link on a document made in a conversation with
+// a restricted agent in it (T-Z13) — whoever asks, a person granted that agent
+// included, because a grant is a person's and a link has none. The dashboard
+// rule (T-Z5), carried to what a restricted agent's conversation produced.
+var ErrDocumentRestricted = errors.New("this document was made in a conversation with a restricted agent, so it cannot be shared while that agent is restricted")
+
+// ErrShareCheckFailed is a link that could not be minted because whether its
+// conversation is restricted could not be read. A retry, never a refusal.
+var ErrShareCheckFailed = errors.New("could not check access to that document; try again")
+
+// WithConversations holds links shut on a document whose conversation has a
+// restricted agent in it (T-Z13, the owner's decision on access-grants §13d).
+//
+// **Checked at the two moments a link does anything — minting and opening — and
+// revoking nothing.** A restriction closes every link to its conversations'
+// documents on their next open, whenever they were minted, and re-opening the
+// agent opens them again. The alternative, revoking on restrict, would need a
+// bulk revoke of every link on every document of every conversation an agent was
+// ever in, inside the flip's transaction — and would be permanent for a mistake
+// that one flip otherwise undoes. A dashboard revokes because its mode is one
+// column on the row a link reads; a document's restriction is three sources away.
+func (s *ReportShareService) WithConversations(c ShareConversations) *ReportShareService {
+	s.conversations = c
+	return s
+}
+
+// openToEveryone is whether doc's links may open. A document with no conversation
+// — the render door's — has nothing to inherit a restriction from.
+func (s *ReportShareService) openToEveryone(ctx context.Context, doc *domain.Document) (bool, error) {
+	if s.conversations == nil || doc.ThreadID == "" {
+		return true, nil
+	}
+	open, err := s.conversations.OpenToEveryone(ctx, doc.CompanyID, doc.ThreadID)
+	if err != nil {
+		return false, fmt.Errorf("%w: %w", ErrShareCheckFailed, err)
+	}
+	return open, nil
+}
+
+// Paused reports whether a document's links are held shut right now (T-Z13): they
+// are live — not revoked, not expired — and will not open until every agent in
+// the document's conversation is open again. The share list says so, rather
+// than showing an admin a link as working that a visitor is told is gone.
+func (s *ReportShareService) Paused(ctx context.Context, companyID, documentID string) (bool, error) {
+	if s.conversations == nil {
+		return false, nil
+	}
+	doc, err := s.docs.GetForCompany(ctx, companyID, documentID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	open, err := s.openToEveryone(ctx, doc)
+	return !open, err
 }
 
 func NewReportShareService(
@@ -85,6 +153,16 @@ func (s *ReportShareService) Create(ctx context.Context, companyID, userID, docu
 	doc, err := s.docs.GetForCompany(ctx, companyID, documentID)
 	if err != nil {
 		return nil, err
+	}
+
+	// A restricted agent's conversation is not shared, whoever asks (T-Z13) —
+	// refused before the plan is read, so the answer is the reason rather than a
+	// complaint about the format.
+	switch open, err := s.openToEveryone(ctx, doc); {
+	case err != nil:
+		return nil, err
+	case !open:
+		return nil, ErrDocumentRestricted
 	}
 
 	// No plan, no share. The page would open on a document it cannot play,
@@ -166,6 +244,18 @@ func (s *ReportShareService) Resolve(ctx context.Context, token, ip, userAgent s
 	// session and asserts nothing.
 	doc, err := s.docs.GetForCompany(ctx, sh.CompanyID, sh.DocumentID)
 	if err != nil {
+		return nil, ErrShareGone
+	}
+	// Answered exactly as a revoked link (T-Z13), and before the view is counted:
+	// a visitor held at a closed door did not see the report. A check that could
+	// not be made closes the door too — the visitor is a stranger, and "try again"
+	// is the right answer for a person, not for a link.
+	if open, err := s.openToEveryone(ctx, doc); err != nil || !open {
+		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"company_id": sh.CompanyID, "share_id": sh.ID, "document_id": doc.ID,
+			}).Warn("share access check failed; answering the link as gone")
+		}
 		return nil, ErrShareGone
 	}
 	plan, err := s.planLoader(ctx, doc)

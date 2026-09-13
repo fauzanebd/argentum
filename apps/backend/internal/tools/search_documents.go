@@ -174,6 +174,11 @@ func (t *SearchDocumentsTool) Execute(ctx context.Context, input string) (string
 			return "", documentCheckFailed(companyID, err)
 		}
 		if !d.Allowed {
+			// Recorded as a refusal (T-Z9) whatever the model is told — unless the
+			// id was simply not a document, which refuses nobody.
+			if d.Reason != authz.ReasonNotFound {
+				recordRefusal(ctx, t.access, reader, domain.ResourceKindDocument, args.DocumentID, d.Reason)
+			}
 			// Word for word what an id that is not a document gets — no passage,
 			// the note for a document that matched nothing — and nothing is
 			// searched, so no passage of it passes through this process at all.

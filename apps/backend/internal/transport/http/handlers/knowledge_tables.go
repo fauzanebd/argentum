@@ -132,6 +132,12 @@ func (h *KnowledgeTablesHandler) mayReachTable(c *gin.Context, tableID string) b
 	if d.Allowed || d.Reason == authz.ReasonNotFound {
 		return true
 	}
+	// Recorded as the document it was refused, which is what was restricted —
+	// the table is only where the person reached it from (T-Z9).
+	authz.Record(c.Request.Context(), h.access, authz.Refusal{
+		Subject: subject, Kind: string(domain.ResourceKindDocument), ResourceID: documentID, Reason: d.Reason,
+		Door: authz.DoorDashboard, Channel: domain.ChannelDashboard,
+	})
 	middleware.AbortNotGranted(c, domain.ResourceKindDocument)
 	return false
 }

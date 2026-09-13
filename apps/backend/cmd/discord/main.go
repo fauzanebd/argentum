@@ -113,7 +113,9 @@ func main() {
 		WithBudget(usageSvc).
 		WithRoster(agentRepo).
 		WithChannelBindings(pgctl.NewAgentBindingRepo(controlDB)).
-		WithAgentAccess(authz.New(pgctl.NewResourceGrantRepo(controlDB)), agentRepo)
+		// Its refusals are counted in this process and written to the audit log
+		// beside the webhook's (T-Z9).
+		WithAgentAccess(authz.New(pgctl.NewResourceGrantRepo(controlDB)).WithAudit(pgctl.NewAgentActionRepo(controlDB)), agentRepo)
 
 	// --- Discord session manager ---
 	rootCtx, cancelRoot := context.WithCancel(context.Background())

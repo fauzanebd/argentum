@@ -41,6 +41,9 @@ type Share = {
   view_count: number;
   last_viewed_at?: string;
   live: boolean;
+  /** Live, but shut while an agent in the conversation that made this document
+   *  is restricted; it opens again when that agent does (T-Z13). */
+  paused?: boolean;
 };
 
 export function DocumentsPage() {
@@ -261,6 +264,9 @@ function SharePanel({ documentId }: { documentId: string }) {
                 <span className="text-muted-foreground">
                   {s.live ? (
                     <>
+                      {s.paused
+                        ? "Paused: an agent in the conversation that made this is restricted, so the link does not open until it is open again · "
+                        : null}
                       Expires {new Date(s.expires_at).toLocaleDateString()} ·{" "}
                       {s.view_count} view{s.view_count === 1 ? "" : "s"}
                       {s.last_viewed_at

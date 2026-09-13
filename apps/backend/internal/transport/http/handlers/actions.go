@@ -20,10 +20,102 @@ import (
 // Approve and reject are member in the coarse policy table and refined per kind
 // here: a company_actions row's allowed_roles names who may decide that kind, and
 // a caller outside it gets a 403 the card renders as read-only.
-type ActionsHandler struct{ svc *app.ActionService }
+type ActionsHandler struct {
+	svc *app.ActionService
+	// conversations hides a proposal raised in a conversation the caller may not
+	// read (T-Z14). Nil leaves every route as it was.
+	conversations ConversationReader
+}
 
 func NewActionsHandler(svc *app.ActionService) *ActionsHandler {
 	return &ActionsHandler{svc: svc}
+}
+
+// WithConversationAccess makes a proposal as hidden as the conversation it was
+// raised in (T-Z14, the owner's decision on access-grants §13d).
+//
+// **Hidden from the list, not found by id, and not decided by anyone who may not
+// read it.** A proposal carries what the conversation said — an email body, a
+// caption — so listing it hid nothing that `T-Z10` hid; and approving an action
+// without being able to read why it was proposed is deciding blind. The rule is
+// the conversation's, so an admin without the agent's grant is hidden from too
+// (decision 4): an action only admins may approve, raised in a conversation no
+// admin is granted, waits until one grants themselves — and the grant is audited.
+//
+// A proposal raised outside any conversation has nothing to inherit and is
+// listed and decided as before.
+func (h *ActionsHandler) WithConversationAccess(r ConversationReader) *ActionsHandler {
+	h.conversations = r
+	return h
+}
+
+// readableProposals keeps the proposals whose conversation the caller may read,
+// in order, with one readability check for the page.
+func (h *ActionsHandler) readableProposals(c *gin.Context, invs []*domain.ActionInvocation) ([]*domain.ActionInvocation, error) {
+	if h.conversations == nil || len(invs) == 0 {
+		return invs, nil
+	}
+	var threads []string
+	seen := map[string]bool{}
+	for _, inv := range invs {
+		if inv != nil && inv.ThreadID != "" && !seen[inv.ThreadID] {
+			seen[inv.ThreadID] = true
+			threads = append(threads, inv.ThreadID)
+		}
+	}
+	if len(threads) == 0 {
+		return invs, nil
+	}
+	readable, err := h.conversations.Readable(c.Request.Context(), companyID(c), userID(c), threads)
+	if err != nil {
+		return nil, err
+	}
+	ok := make(map[string]bool, len(readable))
+	for _, id := range readable {
+		ok[id] = true
+	}
+	out := make([]*domain.ActionInvocation, 0, len(invs))
+	for _, inv := range invs {
+		if inv != nil && (inv.ThreadID == "" || ok[inv.ThreadID]) {
+			out = append(out, inv)
+		}
+	}
+	return out, nil
+}
+
+// mayReachProposal answers whether the caller may open or decide one proposal,
+// and writes the answer when they may not: the route's own not-found, byte for
+// byte, so a hidden proposal and an id that never existed cannot be told apart —
+// and a 503 when the check itself failed. **Before the role check**, so a hidden
+// proposal does not reveal whether its kind is one the caller could decide.
+//
+// A proposal this lookup cannot find passes through to the route, which answers a
+// missing one exactly as it did before.
+func (h *ActionsHandler) mayReachProposal(c *gin.Context, id string) bool {
+	if h.conversations == nil {
+		return true
+	}
+	ctx := c.Request.Context()
+	threadID, err := h.svc.ThreadOf(ctx, companyID(c), id)
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return true
+	case err != nil:
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to that proposal; try again"})
+		return false
+	case threadID == "":
+		return true
+	}
+	ok, err := h.conversations.MayRead(ctx, companyID(c), userID(c), threadID)
+	switch {
+	case err != nil:
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to that proposal; try again"})
+		return false
+	case !ok:
+		actionFail(c, domain.ErrNotFound)
+		return false
+	}
+	return true
 }
 
 // Register installs the routes. The member/admin split is applied by apiPolicy in
@@ -87,6 +179,11 @@ func (h *ActionsHandler) pending(c *gin.Context) {
 		actionFail(c, err)
 		return
 	}
+	// Never the unfiltered list: a check that failed serves nothing (T-Z14).
+	if invs, err = h.readableProposals(c, invs); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to these proposals; try again"})
+		return
+	}
 	c.JSON(http.StatusOK, ActionsResponse{Actions: invs})
 }
 
@@ -128,7 +225,7 @@ func (h *ActionsHandler) configure(c *gin.Context) {
 }
 
 func (h *ActionsHandler) get(c *gin.Context) {
-	if h.unavailable(c) {
+	if h.unavailable(c) || !h.mayReachProposal(c, c.Param("id")) {
 		return
 	}
 	inv, err := h.svc.Get(c.Request.Context(), companyID(c), c.Param("id"), c.GetString("role"))
@@ -156,6 +253,9 @@ func (h *ActionsHandler) decide(c *gin.Context, approve bool) {
 	}
 	cid, uid, role := companyID(c), userID(c), c.GetString("role")
 	id := c.Param("id")
+	if !h.mayReachProposal(c, id) {
+		return
+	}
 
 	ok, err := h.svc.PermittedToDecide(c.Request.Context(), cid, id, role)
 	if err != nil {

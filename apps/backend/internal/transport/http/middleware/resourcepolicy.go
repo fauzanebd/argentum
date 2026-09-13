@@ -113,6 +113,13 @@ func RequireResource(policy ResourcePolicy, authorizer ResourceAuthorizer) gin.H
 			c.Next()
 			return
 		}
+		// Counted and written down by the authorizer that refused it (T-Z9). This
+		// middleware runs on the dashboard's session group and nowhere else, so
+		// the door is the dashboard's.
+		authz.Record(c.Request.Context(), authorizer, authz.Refusal{
+			Subject: subject, Kind: string(route.Kind), ResourceID: id, Reason: decision.Reason,
+			Door: authz.DoorDashboard, Channel: domain.ChannelDashboard,
+		})
 		AbortNotGranted(c, route.Kind)
 	}
 }

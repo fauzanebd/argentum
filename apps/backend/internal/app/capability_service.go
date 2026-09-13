@@ -41,8 +41,12 @@ var errCapabilitiesUnconfigured = errors.New("capabilities are not configured")
 // not worth that hop yet, and the day there are replicas is the day to revisit.
 type CapabilityService struct {
 	repo domain.CapabilityRepository
-	ttl  time.Duration
-	now  func() time.Time
+	// audit is where a grant and a revoke are written down (T-Z9), by
+	// ResourceAccessService's rule: a grant that cannot be recorded is undone,
+	// a revoke that cannot be recorded stands. Nil writes nothing.
+	audit AccessAudit
+	ttl   time.Duration
+	now   func() time.Time
 
 	mu sync.Mutex
 	// cache holds one entry per user who has reached a gated route. Nothing
@@ -62,10 +66,12 @@ type capabilityEntry struct {
 	expires time.Time
 }
 
-// NewCapabilityService wires the repository.
-func NewCapabilityService(repo domain.CapabilityRepository) *CapabilityService {
+// NewCapabilityService wires the repository and the audit log. A nil audit writes
+// nothing and reads nothing extra, as NewResourceAccessService's does.
+func NewCapabilityService(repo domain.CapabilityRepository, audit AccessAudit) *CapabilityService {
 	return &CapabilityService{
 		repo:  repo,
+		audit: audit,
 		ttl:   capabilityCacheTTL,
 		now:   time.Now,
 		cache: map[string]capabilityEntry{},
@@ -141,6 +147,10 @@ func (s *CapabilityService) Grant(ctx context.Context, companyID, grantedBy, use
 	if err != nil {
 		return err
 	}
+	held, err := s.holds(ctx, companyID, userID, c)
+	if err != nil {
+		return err
+	}
 	err = s.repo.Grant(ctx, companyID, userID, c, grantedBy)
 	// Forgotten whether or not the write reported success. An error after the
 	// commit — a connection that dropped on the way back — leaves the database
@@ -148,6 +158,21 @@ func (s *CapabilityService) Grant(ctx context.Context, companyID, grantedBy, use
 	s.forget(companyID, userID)
 	if err != nil {
 		return err
+	}
+	if s.audit != nil && !held {
+		err := recordAccessChange(ctx, s.audit, companyID, grantedBy, CapabilityGrantAudit, "", "",
+			map[string]any{"user_id": userID, "capability": c})
+		if err != nil {
+			// Undone, by ResourceAccessService.Grant's rule and its reason.
+			rerr := s.repo.Revoke(context.WithoutCancel(ctx), companyID, userID, c)
+			s.forget(companyID, userID)
+			if rerr != nil {
+				logrus.WithError(rerr).WithFields(logrus.Fields{
+					"company_id": companyID, "user_id": userID, "capability": c,
+				}).Error("a capability could not be audited or taken back; revoke it by hand")
+			}
+			return fmt.Errorf("record the grant, so nothing was granted: %w", err)
+		}
 	}
 	logrus.WithFields(logrus.Fields{
 		"company_id": companyID,
@@ -168,10 +193,24 @@ func (s *CapabilityService) Revoke(ctx context.Context, companyID, revokedBy, us
 	if err != nil {
 		return err
 	}
+	held, err := s.holds(ctx, companyID, userID, c)
+	if err != nil {
+		return err
+	}
 	err = s.repo.Revoke(ctx, companyID, userID, c)
 	s.forget(companyID, userID)
 	if err != nil {
 		return err
+	}
+	if s.audit != nil && held {
+		err := recordAccessChange(ctx, s.audit, companyID, revokedBy, CapabilityRevokeAudit, "", "",
+			map[string]any{"user_id": userID, "capability": c})
+		if err != nil {
+			// Stands, by ResourceAccessService.Revoke's rule.
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"company_id": companyID, "user_id": userID, "capability": c, "revoked_by": revokedBy,
+			}).Error("a capability was revoked and its audit row could not be written; the revoke stands")
+		}
 	}
 	logrus.WithFields(logrus.Fields{
 		"company_id": companyID,
@@ -180,6 +219,27 @@ func (s *CapabilityService) Revoke(ctx context.Context, companyID, revokedBy, us
 		"revoked_by": revokedBy,
 	}).Info("Capability revoked")
 	return nil
+}
+
+// holds reports whether userID held c before a change — uncached, because the
+// cache may be ten seconds behind the row a change is about. Read only when there
+// is an audit log, so without one Grant and Revoke make exactly the calls they
+// made before T-Z9. A user who is not the company's is not found here, which is
+// what the write after it would have answered.
+func (s *CapabilityService) holds(ctx context.Context, companyID, userID string, c domain.Capability) (bool, error) {
+	if s.audit == nil {
+		return false, nil
+	}
+	grants, err := s.repo.ListForUser(ctx, companyID, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, g := range grants {
+		if g.Capability == c {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *CapabilityService) forget(companyID, userID string) {

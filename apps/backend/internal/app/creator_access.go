@@ -96,12 +96,26 @@ func (c *CreatorAccess) Check(ctx context.Context, companyID, creatorID, threadI
 		return "", err
 	}
 	if !member {
+		c.refused(ctx, companyID, creatorID, agentID, authz.ReasonCreatorRemoved)
 		return domain.DisabledReasonCreatorRemoved, nil
 	}
 	if !d.Allowed {
+		c.refused(ctx, companyID, creatorID, agentID, authz.ReasonNotGranted)
 		return domain.DisabledReasonCreatorNotGranted, nil
 	}
 	return "", nil
+}
+
+// refused records a job refused the agent it runs as (T-Z9). Once per job, in
+// practice: the caller switches the job off, and a job that is off does not fire
+// to be refused again. The row names the creator whose access was checked, as
+// the user the job was running as.
+func (c *CreatorAccess) refused(ctx context.Context, companyID, creatorID, agentID string, reason authz.Reason) {
+	authz.Record(ctx, c.access, authz.Refusal{
+		Subject: authz.Subject{CompanyID: companyID, UserID: creatorID},
+		Kind:    string(domain.ResourceKindAgent), ResourceID: agentID, Reason: reason,
+		Door: authz.DoorJob,
+	})
 }
 
 // jobAgent is the agent a job's turn will run as: its thread's, else the company

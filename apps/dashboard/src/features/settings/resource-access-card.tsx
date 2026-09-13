@@ -60,7 +60,7 @@ const DESCRIPTION: Record<EnforcedKind, string> = {
   // What a grant does in the dashboard. What a restriction does on the doors
   // with no person is DESCRIPTION_AFTER's, below decision 4.
   agent:
-    "Every agent is open to everyone in the workspace until you restrict it. A restricted agent is offered in chat only to the people granted it, and a conversation it was in — with any document that conversation produced — is hidden from everyone else, admins included.",
+    "Every agent is open to everyone in the workspace until you restrict it. A restricted agent is offered in chat only to the people granted it, and a conversation it was in — with any document that conversation produced and any action proposed there — is hidden from everyone else, admins included. Public links to those documents do not open, and none can be made, while it is restricted.",
   // The sentence after DECISION_4 is where T-Z12 stops: update_dashboard asks for
   // the person on a dashboard turn, and a turn with no person — T-Z8's doors —
   // asks nothing (access-grants §15).

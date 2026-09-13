@@ -156,7 +156,7 @@ func TestResourceAccessLifecycleForEveryKind(t *testing.T) {
 	for _, kind := range domain.AllResourceKinds {
 		t.Run(string(kind), func(t *testing.T) {
 			store := newFakeResourceGrants()
-			svc := NewResourceAccessService(store)
+			svc := NewResourceAccessService(store, nil)
 
 			if !allowed(t, store, "member-1", domain.RoleMember, kind, "ours") {
 				t.Fatal("an open resource refused a member with no grant")
@@ -207,7 +207,7 @@ func TestResourceAccessLifecycleForEveryKind(t *testing.T) {
 func TestResourceGrantCannotCrossCompanies(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeResourceGrants()
-	svc := NewResourceAccessService(store)
+	svc := NewResourceAccessService(store, nil)
 
 	if err := svc.Grant(ctx, "co-1", "admin-1", "member-1", "dashboard", "theirs"); !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("grant on another company's dashboard = %v, want ErrNotFound", err)
@@ -232,7 +232,7 @@ func TestResourceGrantCannotCrossCompanies(t *testing.T) {
 func TestResourceGrantTwiceIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeResourceGrants()
-	svc := NewResourceAccessService(store)
+	svc := NewResourceAccessService(store, nil)
 	for i := 0; i < 2; i++ {
 		if err := svc.Grant(ctx, "co-1", "admin-1", "member-1", "agent", "ours"); err != nil {
 			t.Fatalf("grant #%d: %v", i+1, err)
@@ -253,7 +253,7 @@ func TestResourceGrantTwiceIsIdempotent(t *testing.T) {
 func TestResourceAccessRefusesOutsideTheVocabulary(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeResourceGrants()
-	svc := NewResourceAccessService(store)
+	svc := NewResourceAccessService(store, nil)
 
 	if err := svc.Grant(ctx, "co-1", "admin-1", "member-1", "folder", "ours"); !errors.Is(err, domain.ErrInvalidInput) {
 		t.Errorf("unknown kind = %v, want ErrInvalidInput", err)
@@ -275,7 +275,7 @@ func TestResourceAccessRefusesOutsideTheVocabulary(t *testing.T) {
 func TestResourceAccessListIsOneCompanysKind(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeResourceGrants()
-	svc := NewResourceAccessService(store)
+	svc := NewResourceAccessService(store, nil)
 	if err := svc.Grant(ctx, "co-1", "admin-1", "member-1", "agent", "ours"); err != nil {
 		t.Fatalf("grant: %v", err)
 	}

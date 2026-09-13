@@ -204,6 +204,37 @@ restricted agent follows its own rule:
 |--------|------|-------------|
 | PUT | `/api/agent-bindings/:id/acknowledgement` | Acknowledge, for an existing binding, that anyone who can post on its address can use its restricted agent. Admin only. `200 {"binding": …}`; `409` when the agent is open; `404` for another company's binding; idempotent, keeping the first admin. |
 
+### What access leaves on the audit log (T-Z9)
+
+`GET /api/audit` returns these rows beside the tool calls. Each is a pseudo tool:
+nothing ran.
+
+| `tool_name` | `result_status` | Written when | Actor, and arguments |
+|------|------|------|------|
+| `access.refused` | `blocked` | A request for one agent, dashboard, source, document or conversation is refused because of who asked — by a route, a pick, a turn, a room add, a tool, or a job firing. Not when a list leaves something out, an id does not exist, or a check could not be made. | The person refused; on the widget, a key or a channel, the visitor, key or platform identity. `resource_kind`, `resource_id`, `reason` (`not_granted`, `not_cleared`, `not_on_key`, `creator_removed`), `door`. `agent_id` or `thread_id` is set too. |
+| `access.grant`, `access.revoke` | `ok` | `PUT`/`DELETE /api/access/:kind/:id/grants/:userID` changed something | The admin. `user_id` (the person), `resource_kind`, `resource_id` |
+| `access.mode` | `ok` | `PUT /api/access/:kind/:id/mode` changed the mode, or revoked a link | The admin. `access_mode`, `previous_access_mode`, `revoked_shares`, `resource_kind`, `resource_id` |
+| `capability.grant`, `capability.revoke` | `ok` | `PUT`/`DELETE /api/users/:id/capabilities/:capability` changed something | The admin. `user_id`, `capability` |
+
+A repeated grant, or a revoke of what is not held, writes no row and still answers
+`204`. When the row cannot be written, a grant or a re-open is undone and answers an
+error, while a revoke or a restriction stands.
+
+Every such refusal also counts once on `/metrics` as
+`argentum_access_refusals_total{kind, reason}` — but only in the process that
+refused it. The API serves `/metrics`, so refusals made by the worker's tools and
+jobs, or by the Discord bot, are not in that series.
+
+### Links and proposals from a restricted agent's conversation (T-Z13, T-Z14)
+
+| Route | While an agent that is or was in the document's or proposal's conversation is restricted |
+|------|------|
+| `POST /api/documents/:id/shares` | `409 {"error": "this document was made in a conversation with a restricted agent, …"}`, whoever asks, a person granted the agent included. `503` when that cannot be checked. |
+| `GET /api/documents/:id/shares` | Each live link carries `"paused": true`: it will not open until every agent in the conversation is open again. Nothing is revoked. |
+| `GET /share/:token` | Answered exactly as a revoked link; the view is not counted or audited. |
+| `GET /api/actions/pending` | Omits every proposal raised in a conversation the caller may not read. One with no conversation is listed as before. |
+| `GET /api/actions/:id`, `POST …/approve`, `POST …/reject` | `404 {"error": "no such action proposal"}` for a proposal the caller may not read, before the role check, admins included. `503` when that cannot be checked. |
+
 ---
 
 ### Documents

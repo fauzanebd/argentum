@@ -117,7 +117,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// Capability grants (T-Z1). Read per request behind a ten-second in-process
 	// cache rather than carried on the JWT above, whose fifteen-minute lifetime
 	// would make every revoke wait that long.
-	deps.capabilitySvc = app.NewCapabilityService(pgctl.NewCapabilityRepo(controlDB))
+	deps.capabilitySvc = app.NewCapabilityService(pgctl.NewCapabilityRepo(controlDB), deps.actionRepo)
 	// Resource grants (T-Z2, T-Z3). One repository, two readers: the admin's
 	// routes change what it holds, and internal/authz decides against it — for
 	// RequireResource now, and for the seams that select an agent from T-Z4.
@@ -125,8 +125,10 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// no route asks it yet (resourcePolicy is empty), so a cache would be a
 	// revoke-latency argument with nothing on the other side of it.
 	resourceGrants := pgctl.NewResourceGrantRepo(controlDB)
-	deps.resourceAccessSvc = app.NewResourceAccessService(resourceGrants)
-	deps.resourceAuthz = authz.New(resourceGrants)
+	// Both write to the audit log (T-Z9): every grant change the service makes,
+	// and every refusal a route, a room or a conversation acts on.
+	deps.resourceAccessSvc = app.NewResourceAccessService(resourceGrants, deps.actionRepo)
+	deps.resourceAuthz = authz.New(resourceGrants).WithAudit(deps.actionRepo)
 	// The only machine credential in the product (T-13). It authenticates
 	// `/v1`; the dashboard routes beside it are how an admin mints one.
 	deps.apiKeySvc = app.NewAPIKeyService(pgctl.NewAPIKeyRepo(controlDB))
@@ -400,9 +402,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		// link plays lives in the bucket, so a deployment without one has
 		// nothing to share and the routes answer 503 rather than minting
 		// tokens for pages that cannot open.
+		// A link to a document made in a restricted agent's conversation is not
+		// minted and does not open while that agent is restricted (T-Z13).
 		deps.shareSvc = app.NewReportShareService(
 			pgctl.NewReportShareRepo(controlDB), deps.documentRepo, deps.docGen, deps.actionRepo,
-		)
+		).WithConversations(deps.conversationAccess)
 
 		// Uploaded documents (T-P1). Also inside the storage branch, and for a
 		// blunter reason than the share links above: there is nowhere to put the

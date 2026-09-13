@@ -542,6 +542,17 @@ func (s *ActionService) describeAll(invs []*domain.ActionInvocation) []*domain.A
 	return invs
 }
 
+// ThreadOf is the conversation a proposal was raised in, and "" for one raised
+// outside any (T-Z14). A proposal is as hidden as its conversation, so the routes
+// that open or decide one by id ask this before anything else about it.
+func (s *ActionService) ThreadOf(ctx context.Context, companyID, id string) (string, error) {
+	inv, err := s.repo.GetInvocation(ctx, companyID, id)
+	if err != nil {
+		return "", err
+	}
+	return inv.ThreadID, nil
+}
+
 // PermittedToDecide reports whether a caller in role may approve or reject an
 // invocation. The gate is the invocation's kind, not the invocation: a kind's
 // company_actions.allowed_roles names who may decide it, and an empty list means

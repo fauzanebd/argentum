@@ -107,7 +107,7 @@ func testDeps(cfg *config.Config, signer *auth.TokenSigner) *apiDeps {
 		// that had quietly started asking for a capability would 403 the admin
 		// in TestGatedRoutesRejectMembers and the member in
 		// TestMemberRoutesAdmitMembers.
-		capabilitySvc: app.NewCapabilityService(&noCapabilities{}),
+		capabilitySvc: app.NewCapabilityService(&noCapabilities{}, nil),
 		// A grant store in which every object is restricted and nobody holds a
 		// grant (T-Z3), for the same double duty: a route that had quietly
 		// started asking about the object in its path would 403 both roles.
@@ -373,7 +373,7 @@ func TestExistingRoutesAskForNoCapability(t *testing.T) {
 	}
 
 	store := &noCapabilities{}
-	r := routerWithDeps(t, func(d *apiDeps) { d.capabilitySvc = app.NewCapabilityService(store) })
+	r := routerWithDeps(t, func(d *apiDeps) { d.capabilitySvc = app.NewCapabilityService(store, nil) })
 	signer, err := auth.NewTokenSigner("0123456789abcdef0123456789abcdef", 15*time.Minute, 7*24*time.Hour)
 	if err != nil {
 		t.Fatalf("NewTokenSigner: %v", err)

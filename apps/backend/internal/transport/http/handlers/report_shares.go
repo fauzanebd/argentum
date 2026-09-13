@@ -122,6 +122,11 @@ type shareResponse struct {
 	// Live is computed rather than stored so the dashboard does not have to
 	// re-derive "revoked or expired" and get it subtly different.
 	Live bool `json:"live"`
+	// Paused is a live link that will not open while an agent in its document's
+	// conversation is restricted (T-Z13). It opens again when that agent does, so
+	// it is not "revoked", and a list calling it live would be a list an admin
+	// believes when a visitor is being told the link is gone.
+	Paused bool `json:"paused,omitempty"`
 }
 
 func toShareResponse(s *domain.ReportShare) shareResponse {
@@ -139,9 +144,16 @@ func (h *ReportShareHandler) list(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	paused, err := h.svc.Paused(c.Request.Context(), companyID(c), c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to that document; try again"})
+		return
+	}
 	out := make([]shareResponse, 0, len(shares))
 	for _, s := range shares {
-		out = append(out, toShareResponse(s))
+		r := toShareResponse(s)
+		r.Paused = r.Live && paused
+		out = append(out, r)
 	}
 	c.JSON(http.StatusOK, gin.H{"shares": out})
 }
@@ -156,6 +168,13 @@ func (h *ReportShareHandler) create(c *gin.Context) {
 		time.Duration(req.ExpiresInDays)*24*time.Hour)
 	if err != nil {
 		switch {
+		// 409 with the reason, T-Z5's answer for a restricted dashboard: the
+		// document is there and the caller may see it, and a link is the one thing
+		// it cannot have.
+		case errors.Is(err, app.ErrDocumentRestricted):
+			c.JSON(http.StatusConflict, gin.H{"error": app.ErrDocumentRestricted.Error()})
+		case errors.Is(err, app.ErrShareCheckFailed):
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": app.ErrShareCheckFailed.Error()})
 		case errors.Is(err, domain.ErrNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
 		case errors.Is(err, domain.ErrInvalidInput):

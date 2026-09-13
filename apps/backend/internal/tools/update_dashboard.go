@@ -393,6 +393,7 @@ func (t *UpdateDashboardTool) refusal(ctx context.Context, s authz.Subject, asks
 		// would have answered a moment later.
 		return "", domain.ErrNotFound
 	}
+	recordRefusal(ctx, t.access, s, domain.ResourceKindDashboard, id, d.Reason)
 	blob, _ := json.Marshal(map[string]any{
 		// `error` is the key agentbudget reads as a failed call, so T-Q13's
 		// evidence check never counts a refusal as an edit: a reply saying "done"

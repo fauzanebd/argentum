@@ -492,8 +492,9 @@ export function AgentsTab() {
             a restricted agent only where an admin acknowledged it, the website widget never
             reaches one, and an API key reaches one unless the key lists its agents and this is not
             among them.
-            Conversations with a restricted agent, and the documents they produced, are hidden from
-            everyone it is not granted to.
+            Conversations with a restricted agent, the documents they produced and the actions
+            proposed in them are hidden from everyone it is not granted to, and public links to those
+            documents do not open while it is restricted.
             Restrict an agent, and choose who it is granted to, in Settings → Team.
           </div>
 

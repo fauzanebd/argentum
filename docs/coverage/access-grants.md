@@ -3,7 +3,15 @@
 The plan is
 [`../plan/12-access-grants-roadmap.md`](../plan/12-access-grants-roadmap.md). The
 role table this track sits on top of is [`rbac.md`](rbac.md) (`T-04`).
-**Nine tickets are built, and the agent boundary holds on the dashboard for
+**All fourteen tickets are built.** `T-Z13` and `T-Z14` close the two owner
+decisions `T-Z11` left: a public link does not open or get minted on what a
+restricted agent's conversation produced (§19), and a pending action is as hidden as
+the conversation that raised it (§20). **`T-Z9` proves the refusals and records them**
+(§18): one table says what every door does with every kind under
+all eight combinations of role, grant and mode, a probe in each of four packages
+holds the product to it, and every refusal of one object is counted on `/metrics`
+and written to the audit log — as is every grant, revoke and flip.
+**The agent boundary holds on the dashboard for
 talking and for reading, behind a control an admin can press**: a restricted
 agent cannot be talked to (§10), a conversation is hidden from anyone not granted
 every agent in it (§11, `T-Z10`, added after `T-Z4` found every conversation
@@ -35,10 +43,12 @@ pages and tables, and quotes nothing into an answer for a person not granted it.
 | `T-Z6` The "etc": data sources and documents | **built 2026-09-13, `make check` green, unit-gated. No migration. Two of the ticket's three source surfaces do not exist, and every source route with an id is admin (§17b); `resourcePending` is empty. A document's tables are checked through their document in the handler. Live arms owed — §17g** |
 | `T-Z7` Settings → Team: the access matrix | **built 2026-09-12, `make check` green, unit-gated. No migration, and one read route the ticket did not list (§12b). Agents only — no switch for a kind nothing enforces (§12c). The member's disabled control has nothing to disable yet (§12d). One live arm owed — §12f** |
 | `T-Z8` The other three doors, decided rather than inherited | **built 2026-09-13, `make check` green, unit-gated. Migration `085`. An embed key names no agent, so the widget refuses at the pick and the turn (§16c); a channel's acknowledgement is stored and checked per turn, because a binding made before a restriction was the bypass (§16c). Found Slack refused as an unknown channel since 2026-08-08, and fixed it (§16c item 7). Live arms owed — §16g** |
-| `T-Z9` The negative suite, and the row that says a refusal happened | Not built. Its cross-product now needs a conversation row (§11g) |
+| `T-Z9` The negative suite, and the row that says a refusal happened | **built 2026-09-13, `make check` green, unit-gated. No migration. The cross product is per kind, door and surface — 38 surfaces × 8 cells — not per door, because one door does different things to different kinds (§18b). Refusals counted and audited at 15 call sites; grant changes audited by direction (§18d). The worker's refusals are counted where nothing scrapes them (§18f). Live arms owed — §18j** |
 | `T-Z10` A conversation is as restricted as the agents in it | **built 2026-09-12, `make check` green, unit-gated. No migration. Added to the roadmap by the owner's decision on §10d. One live arm owed — §11h** |
 | `T-Z11` A generated document is as restricted as the conversation that made it | **built 2026-09-12, `make check` green, unit-gated. No migration. Added after `T-Z7` on the owner's go-ahead. Two surfaces found still readable, both the owner's (§13d). One live arm owed — §13f** |
 | `T-Z12` An agent asked to change a dashboard checks the person's grant | **built 2026-09-12, `make check` green, unit-gated. No migration. Added after `T-Z5`, which found it (§14d). Refused by name, not as not-found (§15b); §14d's "panel SQL in the result" was wrong (§15c). One live arm owed, and it is the track's only one that needs a model — §15g** |
+| `T-Z13` A public link does not open what a restricted agent's conversation produced | **built 2026-09-13, `make check` green, unit-gated. No migration. The owner's decision on §13d: refused at open and at mint, nothing revoked, so re-opening the agent opens the link again (§19b). The share list says *paused*. A presigned download URL handed out earlier still works until it expires (§19e). Stack arm owed — §19g** |
+| `T-Z14` A pending action is as hidden as the conversation that raised it | **built 2026-09-13, `make check` green, unit-gated. No migration. The owner's decision on §13d: hidden from the list, not found by id, and decided only by people who may read the conversation — before the role check (§20a). An admin-only kind raised where no admin is granted waits (§20b). The negative suite gains a `pending_action` row. Stack arm owed — §20f** |
 
 ---
 
@@ -1028,8 +1038,8 @@ had drifted.
 
 | Surface | Why it is not covered |
 | --- | --- |
-| **A share link minted before the restriction** | Still plays at `/share/:token` for whoever holds it — a bearer door with no person, decision 10's shape. `T-Z5` will revoke a *dashboard's* links when that dashboard is restricted, but a document is not restricted itself; its agent is. Revoking every link of every conversation an agent was ever in, on one press of *Restrict*, is a product decision, not a line in this ticket. **The owner's call.** The natural shape is `T-Z5`'s: revoke on restrict, and name the count in `T-Z7`'s confirmation |
-| **Pending actions** — `GET /api/actions/pending`, `GET /api/actions/:id` | Not in §11e, and found here: an action carries its conversation's `thread_id` and a proposal written in it — a caption, an email body — and is listed to every member. Hiding it is easy; *who may approve an action proposed in a conversation they cannot read* is a question about approval as well as visibility, and `company_actions.allowed_roles` already answers part of it. **The owner's call** |
+| **A share link minted before the restriction** | **Closed by `T-Z13` (§19), on the owner's decision: it does not open, and none can be minted, while the agent is restricted.** Until then it still played at `/share/:token` for whoever holds it — a bearer door with no person, decision 10's shape. `T-Z5` will revoke a *dashboard's* links when that dashboard is restricted, but a document is not restricted itself; its agent is. Revoking every link of every conversation an agent was ever in, on one press of *Restrict*, is a product decision, not a line in this ticket. **The owner's call.** The natural shape is `T-Z5`'s: revoke on restrict, and name the count in `T-Z7`'s confirmation |
+| **Pending actions** — `GET /api/actions/pending`, `GET /api/actions/:id` | **Closed by `T-Z14` (§20), on the owner's decision: hidden, and decided only by people who may read the conversation.** Not in §11e, and found here: an action carries its conversation's `thread_id` and a proposal written in it — a caption, an email body — and is listed to every member. Hiding it is easy; *who may approve an action proposed in a conversation they cannot read* is a question about approval as well as visibility, and `company_actions.allowed_roles` already answers part of it. **The owner's call** |
 | `/v1/documents` | No Argentum user — `T-Z8` |
 | Native dashboards an agent created | `T-Z5` restricts a dashboard in its own right; 056 keeps a `thread_id`, and nothing inherits through it |
 | Scheduled-task run history | Unchanged from §11e |
@@ -1711,3 +1721,377 @@ One row in [`live-gate-backlog.md`](live-gate-backlog.md) §7c, in two sittings:
 **Prediction: every arm as §17a lists. If one differs, it will be the model, which
 may still answer from a published Payroll table through `run_sql`** — §17c's first
 honest gap, arriving in a live turn rather than in a table.
+
+---
+
+## 18. `T-Z9` — the negative suite, and the row that says a refusal happened
+
+*"An access feature with no negative tests is a claim"* (roadmap 12 §6). Eleven
+tickets each proved their own refusals, in their own words, against their own
+fixtures. This one writes down in one place what every door does with every kind
+of object — admin or member, granted or not, open or restricted — and makes each
+package that owns a check prove it against that one table. And it gives decision 12
+its record: a refusal is counted and written down, and so is every change to who
+may reach what. No migration.
+
+### 18a. What was built
+
+| Piece | Where |
+| --- | --- |
+| The table: six kinds, five doors, 38 surfaces, each with a typed outcome, the reason a refusal there is recorded as, and — where it asks nothing — why | `internal/authz/authztest/authztest.go` |
+| `Run`: every surface a package owns, under all eight cells, held to its outcome — and each refusal to one count and one audit row, each admission to none | the same file |
+| The table checking itself: a row per kind, every door decided, every surface coherent, and every package the table names calling `Run` | `authztest_test.go` |
+| The probes | `internal/app/access_suite_test.go` (13), `internal/tools/access_suite_test.go` (15), `internal/transport/http/handlers/access_suite_test.go` (2), `cmd/api/access_suite_test.go` (8, one per gated route) |
+| `Refusal`, `Door`, three door reasons beside `not_granted`, `Record`, and the authorizer's counter and audit log | `internal/authz/refusal.go`, `authz.go` |
+| `argentum_access_refusals_total{kind,reason}` | `internal/metrics/collector.go`, `prometheus.go` |
+| Refusals recorded at every seam that refuses one object | `RequireResource`; the knowledge-table route; `pickAgent`, `openingAgent`, `turnTargets` and the `/v1` default check, through one `refused` per door; a room add; `ConversationAccess.MayRead`; `CreatorAccess.Check`; `update_dashboard`; `search_documents` |
+| Grant, revoke and mode changes on the audit log, for resources and capabilities | `internal/app/resource_access_service.go`, `capability_service.go` |
+| The audit log wired to every authorizer | `cmd/api/bootstrap.go`, `internal/bootstrap/stack.go` (four), `cmd/discord/main.go` |
+
+### 18b. The cross product is per surface, not per door
+
+The ticket's product is `{admin, member} × {granted, not} × {open, restricted} ×
+{agent, dashboard, connection, document} × {every door in §2}` — a door as one
+axis. **It cannot be one.** The widget refuses a restricted agent (decision 10) and
+quotes a restricted document to the same visitor (§17c). A key with no list reaches
+a restricted agent by decision and edits a restricted dashboard by omission. So an
+expected value belongs to a *surface* — one place a door reaches one kind — and the
+table is written that way:
+
+| Kind | Dashboard | `/v1` key | Widget | Channel | Job |
+| --- | --- | --- | --- | --- | --- |
+| agent | by grant — pick, opening default, turn, room add | unasked with no list; never when it lists another agent | open only — pick, opening default, turn | open only unacknowledged; unasked acknowledged | by grant — the creator |
+| conversation | by grant — opened by id | *none, and why* | *none, and why* | *none, and why* | *none, and why* |
+| generated document | by grant — through its conversation | *none, and why* | *none, and why* | *none, and why* | *none, and why* |
+| dashboard | by grant — two routes, `update_dashboard` | unasked (gap, §15d) | unasked (gap against decision 10) | unasked (gap, §16d) | unasked (a watcher has no person) |
+| connection | by grant — three admin routes; unasked for an agent's own source | unasked (T-Z6's rule) | unasked (T-Z6's rule) | unasked (T-Z6's rule) | unasked (T-Z6's rule) |
+| document | by grant — four routes, `search_documents` | unasked (§17c) | unasked (gap against decision 10) | unasked (§17c) | unasked (a watcher has no person) |
+
+Four outcomes, each typed out as four answers rather than computed from the rule it
+tests — *by grant*, *open only*, *unasked*, *never*. Role is not an axis: each
+surface holds the admin and the member to the same four answers, which is decision 4
+as 152 pairs of cells that must agree instead of a sentence. The one exception is the role table's, not
+this track's: the three connection routes are admin, so a member there is expected
+refused *and recording nothing*.
+
+**The gaps are in the table as gaps.** A surface that asks nothing carries its
+reason, and four of them say *gap* and where it is written. The suite does not close
+them; it makes closing one a one-word change that fails in the package owning the
+check until the check exists.
+
+### 18c. What a refusal is
+
+**A request for one named object, turned away because of who was asking.** A route
+by id, a pick, a turn, an `@`, a room add, a conversation opened by id, a tool
+naming a dashboard or a document, a job firing. Each is one count on
+`argentum_access_refusals_total{kind, reason}` and one `access.refused` row — tool
+name, `blocked`, the kind, id, reason and door in its arguments, the agent or the
+conversation in its own column, and as the actor the person, or the key, visitor or
+platform identity on a door without one.
+
+Not a refusal, and not recorded:
+
+| | Why |
+| --- | --- |
+| An object left out of a list | Every render of a restricted workspace leaves some out. A counter of that moves with page views, and a misconfiguration would look like traffic |
+| An object that does not exist | A mistyped id. `not_found` passes through to the handler, as §9c decided |
+| A check that could not be made | An outage, not a boundary. It is a `503` or a retry, already logged at `Warn` where it happens |
+| A share minted on a restricted dashboard (`409`) | Refused whoever asks, so it says nothing about who lacks a grant |
+| A link to a restricted dashboard (`/share/dashboard/:token`) | A bearer door with no person, answered as revoked |
+
+The vocabulary is closed and checked where it is recorded: kinds are the four
+resource kinds plus `conversation`; reasons are `not_granted`, `not_cleared` (the
+widget; a channel nobody acknowledged), `not_on_key` and `creator_removed`. A refusal
+naming anything else is dropped with a warning, because both are labels on a scraped
+series.
+
+**Recorded through the authorizer that decided it.** Every seam already holds
+`internal/authz` behind an interface declared where it is consumed; `authz.Record`
+asks that value to record, and `*authz.Authorizer` does. So there is no second
+dependency for fifteen call sites and three processes to forget, and `New` counts on the
+process's collector before anybody calls `WithAudit`. A unit-test fake that only
+decides records nothing — which is why the suite, not the seams' own tests, is where
+recording is proven.
+
+### 18d. The record of a change, by the direction of the change
+
+Grant, revoke and access-mode changes write `access.grant`, `access.revoke` and
+`access.mode`; capabilities write `capability.grant` and `capability.revoke`. The
+admin is the actor, the person the change was for is `user_id` in the arguments, and
+a flip carries the mode before and after and the links it revoked.
+
+The ticket did not say what happens when the row cannot be written, and the two
+directions want opposite answers:
+
+| Change | Row cannot be written |
+| --- | --- |
+| **Opens** — a grant, a re-open, a capability grant | **Undone**, and the admin is told nothing was granted. An opening nobody can review is what decision 12 exists to prevent, and it is `T-Z8`'s rule for an acknowledgement |
+| **Closes** — a revoke, a restriction, a capability revoke | **Stands**, logged at `Error`. Holding a revoke hostage to the audit log would leave access open on a database blip |
+| **Changes nothing** — granting what is held, revoking what is not, a flip to the current mode | **No row.** The log records changes, not button presses |
+
+To know which, each change reads the state first — `View` for a resource,
+`ListForUser` for a capability — **and only when an audit log is wired**, so a
+service built without one makes exactly the calls it made before. A restriction to
+the mode a dashboard already has still runs the flip, because that is how a link the
+previous binary minted mid-deploy is revoked (§14c item 4); it writes a row only if a
+link was.
+
+### 18e. Where the ticket was wrong, or silent
+
+1. **A door is not an axis** — §18b.
+2. **"A refusal counter per `(kind, reason)`" was silent on what a refusal is**, and
+   the obvious answer — count where `authz` refuses — counts every list render. §18c.
+3. **"Kind" needed a fifth value.** A hidden conversation is refused as a
+   conversation, not as the agent that made it hidden, which the person never named.
+   A generated document's refusal is its conversation's (`RecordedAs`).
+4. **The acceptance goes further than decision 12.** The decision audits grant
+   changes and counts refusals; the acceptance writes a row for each refusal too.
+   Built as the acceptance says, with its cost in §18i.
+5. **Silent on capabilities**, although `T-Z1` §5 left their audit row to this
+   ticket. Included.
+6. **Silent on a row that cannot be written, and on a change that changes nothing** —
+   §18d.
+7. **"Naming both users"** names them by id. An email on the row would be a copy of a
+   person's address in a table that outlives their account.
+8. **"Exactly one new row"** is true of the expectation and not of the work. A fifth
+   kind is one row in `authztest.Table`; each surface it lists then fails in its
+   package until a probe exists, and each probe is code. The table lives in its own
+   package — the repository's first test-support package — because the checks live in
+   four, and a table in one package's `_test` file cannot be read by the other three.
+9. **`Migration: none` was right.** `agent_actions` carries everything, and its
+   repository already maps an empty agent or thread id to `NULL`.
+
+### 18f. Counted where nothing reads the count
+
+**The worker's refusals are counted in the worker, and the worker has no exporter.**
+`update_dashboard`, `search_documents` and a job's creator check all run there, and the
+Discord bot's channel refusals run in its own process. `metrics.Default()` is per
+process and only `cmd/api` serves `/metrics` — the collector's own comment has said
+so since `T-17`. So on today's deployment `argentum_access_refusals_total` shows the
+dashboard's routes, rooms, conversations and the enqueue path (the API enqueues every
+chat and webhook turn), and **not** the tools, the jobs or the Discord bot. Their
+audit rows are written; their counts are not scraped. It is `T-17`'s gap, arriving in
+a new counter, and a spike alert built on this series would be blind to exactly the
+refusals a model turn produces.
+
+### 18g. Acceptance, quoted back
+
+| Acceptance | Evidence |
+| --- | --- |
+| The cross product runs and every cell has an expected value written down | `authztest.Table`: 38 surfaces × 8 cells = 304, each outcome typed as four answers. `TestTheNegativeSuite` in four packages runs every one; `TestEveryRowDecidesEveryDoor` fails a kind with a door nobody wrote a word about |
+| Adding a fifth resource kind requires exactly one new row in the table | `TestEveryKindAPersonCanBeRefusedHasARow` fails until the row exists; `Run` fails in each package whose surface has no probe; `TestEveryPackageTheTableNamesRunsItsSurfaces` fails a package that never calls `Run`. The row is one; the probes are code — §18e item 8 |
+| A refusal increments its counter and writes its audit row | `Run` asserts, for every refused cell, exactly one count under the row's kind and the surface's reason, and exactly one `access.refused` row carrying kind, id, reason and door and — on the dashboard and job doors — naming the person refused; for every admitted cell, nothing. `TestARefusalIsCountedAndWrittenDown` and three siblings in `internal/authz`; `TestExpositionCarriesTheAccessRefusals` |
+| A grant change writes an audit row naming both users | `TestAResourceGrantChangeIsAuditedNamingBothPeople` (grant, restrict, revoke, re-open), `TestACapabilityChangeIsAuditedAndAnUnrecordedGrantIsUndone`, `TestAnAccessChangeThatChangesNothingWritesNoRow`, `TestAnAccessOpeningThatCannotBeRecordedIsUndone`, `TestAnAccessClosingThatCannotBeRecordedStands` |
+| Filed in the live-gate backlog: two users, one browser, both restricted resources | [`live-gate-backlog.md`](live-gate-backlog.md) §7c, `T-Z9` row, with its prediction |
+
+### 18h. Proven failing, in three rounds
+
+- **Recording switched off** (`authz.Record` returning at once): **57 cells failed**
+  across `app`, `tools`, `handlers` and `cmd/api` — every refused cell in the table, no
+  more and no fewer (36, 4, 4 and 13) — and the `authz` tests with them.
+- **Two defects a real change could make:** the widget reading a visitor's ref as a
+  person, and `RequireResource` letting an admin past (decision 4 broken). **20 cells
+  failed**: the three widget surfaces' four restricted cells each, and the admin's
+  restricted, ungranted cell on all eight gated routes.
+- **The table and a probe:** the job surface's outcome changed from *by grant* to *open
+  only* failed its two granted cells; deleting the knowledge-table probe failed with
+  *"no probe runs it"*.
+
+Every planted file was restored and `cmp`'d byte-identical before the gate.
+
+### 18i. What it costs
+
+- **A refusal:** one counter increment and one audit insert, synchronous, detached
+  from the request, bounded at five seconds. A client retrying a refused request
+  writes a row per retry — and on the widget that client is a website visitor, bounded
+  by the embed session's limits and nothing of this ticket's.
+- **An admission:** nothing.
+- **A grant change:** one read before the write, one insert after — on admin routes a
+  person presses.
+- **Without an audit log wired:** nothing at all.
+
+### 18j. Owed
+
+One row in [`live-gate-backlog.md`](live-gate-backlog.md) §7c: the counter and the rows
+against the stack, two people, a restricted agent and a restricted dashboard, and a
+browser. No worker and no model key for the API's half. **Prediction: every refusal §10a
+and §14a list moves the series once and writes one row naming the person; the tools'
+and the jobs' refusals write rows and do not appear on the API's `/metrics` (§18f).**
+No `make eval`: no prompt, tool description or template changed.
+
+---
+
+## 19. `T-Z13` — a public link does not open what a restricted agent's conversation produced
+
+§13d's first open surface. `T-Z11` hid a restricted agent's documents from every person
+not granted it, and left the one door that has no person: a link minted on HR's payroll
+carousel before HR was restricted went on playing for whoever held it, and a person
+granted HR could mint a new one. The owner decided it on 2026-09-13. No migration.
+
+### 19a. What was built
+
+| Surface | While any agent that is or was in the document's conversation is restricted |
+| --- | --- |
+| `GET /share/:token` | answered exactly as a revoked link; the view is not counted and no `report_share.view` row is written |
+| `POST /api/documents/:id/shares` | `409` with the reason, **whoever asks** — a person granted the agent, and an admin, included |
+| `GET /api/documents/:id/shares` | each live link carries `paused: true`; the documents page says *Paused* and why |
+| a document with no conversation, or nothing restricted | as before, and nothing is asked |
+| — the check cannot be made | the mint and the list `503`; the link answers as revoked |
+
+| Piece | Where |
+| --- | --- |
+| `OpenToEveryone` — `T-Z10`'s rule asked as nobody, beside `Readable` and `MayRead` over one `siftFor` | `internal/app/conversation_access.go` |
+| `WithConversations`, `ErrDocumentRestricted`, `ErrShareCheckFailed`, `Paused`, and the checks in `Create` and `Resolve` | `internal/app/report_share_service.go` |
+| `409`/`503` on mint, `paused` on the list | `handlers/report_shares.go` |
+| Wired with `T-Z10`'s reader | `cmd/api/bootstrap.go` |
+| The paused link; the agent card, restrict warning and Settings → Agents copy | `documents/documents-page.tsx`, `settings/resource-access-card.tsx`, `access.ts`, `agents-tab.tsx` |
+
+### 19b. The decision, and the shape §13d proposed instead
+
+§13d called `T-Z5`'s shape natural: revoke every link on restrict and count them in the
+warning. **The owner chose refusing at open and at mint**, and it is the better fit for a
+document for a reason §13d did not weigh:
+
+- **A dashboard's restriction is on the row its link reads.** Revoking in the flip's
+  transaction is one `UPDATE` beside another.
+- **A document's restriction is three sources away** — its conversation's agent, its
+  room, and every agent that wrote in it. Revoking on restrict means finding every link
+  on every document of every conversation an agent was ever in, inside the flip, and it
+  is permanent for a mistake one flip otherwise undoes.
+
+Refusing at open asks the question at the moment it matters, whenever the link was
+minted and by whichever binary. It also closes the race `T-Z5` needed a row lock for: a
+link minted in the instant before a restriction does not open after it.
+
+Refusing at mint follows `T-Z5`: a grant is a person's and a link has none, so a
+granted person is refused too.
+
+### 19c. Where §13d was wrong, or silent
+
+1. **The proposed shape** — §19b.
+2. **Silent: what the admin's list shows.** A shut link is live — not revoked, not
+   expired — and the list would have called it working while a visitor was told it was
+   gone. `paused` says which, and the page says why.
+3. **Silent: whether a refused open is a view.** It is not counted and not audited: the
+   visitor did not see the report.
+4. **Silent: a check that fails.** Mint and list answer `503`, a retry for the admin. The
+   link answers as revoked: "try again" is an answer for a person, and a stranger holding
+   a link is not one.
+5. **No refusal is recorded** by `T-Z9`'s counter or audit log. A link has no person to
+   have been refused, and a mint refused whoever asks says nothing about who lacks a
+   grant (§18c).
+6. **`Migration: none` was right.**
+
+### 19d. Acceptance, quoted back
+
+| Acceptance | Evidence |
+| --- | --- |
+| A link minted before a restriction does not open while the agent is restricted, and opens again when it is re-opened — nothing is revoked | `TestALinkIsShutWhileItsConversationIsRestrictedAndOpensAgainAfter` — no view counted, no audit row, `revoked_at` unset, `Paused` true then false |
+| Minting a link on such a document is refused with the reason, for a person granted the agent too | `TestADocumentFromARestrictedConversationCannotBeShared` (no row written), `TestADocumentFromARestrictedConversationIsNotSharedAndItsLinksArePaused` (`409` naming the restricted agent; the list's `paused`) |
+| A document with no conversation, and every document when nothing is restricted, shares as before | `TestADocumentWithNoConversationIsSharedAsBefore` (nothing asked); the link test's re-opened half; every pre-existing share test unchanged |
+| A check that fails mints nothing, opens nothing, and lists nothing | `TestAShareCheckThatFailsMintsNothingAndOpensNothing`, `TestAShareRouteWhoseCheckFailsMintsAndListsNothing` (no cause in the body) |
+
+Beyond it: `TestAConversationIsOpenToEveryoneOnlyWhenEveryAgentInItIs`. It covers the
+agent's own conversation, its room, a removed agent that answered there, a restricted
+default, a deleted agent, and a missing conversation. A grant somebody holds changes
+none of them.
+
+### 19e. Still reachable
+
+| Surface | Why it is not covered |
+| --- | --- |
+| **A presigned download URL handed out before the restriction** | `GET /api/documents` mints one per read, and a video's share page offers one. It is a storage URL, not a route, and works until its own expiry |
+| A document already sent to a channel as an attachment | Delivered; nothing can take it back |
+| `/v1/documents` | No person — `T-Z8`, and §13d's own row |
+
+### 19f. Proven failing, and what it costs
+
+- **The open-time check off:** both tests that open a shut link failed —
+  `Resolve while restricted = <nil>, want ErrShareGone`. The first run's `-run`
+  pattern did not select the first of them, and was rerun with one that does.
+- **The mint check off:** 2 tests failed, one in `app` and one in `handlers`.
+
+Each file was restored and `cmp`'d before the gate.
+
+**Cost.** One conversation-agents read and one grant read per open, per mint and per list
+load, plus the default when the conversation names no agent. Nothing for a document with
+no conversation.
+
+### 19g. Owed
+
+One row in [`live-gate-backlog.md`](live-gate-backlog.md) §7c. **Prediction: every arm as §19a
+lists; if one differs, it is `AgentsByThread`'s first run — `T-Z10`'s owed statement — failing
+closed.** No `make eval`.
+
+---
+
+## 20. `T-Z14` — a pending action is as hidden as the conversation that raised it
+
+§13d's second open surface. A proposal carries what its conversation said — an email body, a
+caption — and `GET /api/actions/pending` listed every one in the company, including those
+raised in a conversation `T-Z10` hid, to every member; `allowed_roles` alone decided who could
+approve it. The owner decided it on 2026-09-13. No migration.
+
+### 20a. What was built
+
+| Route | For a proposal raised in a conversation the person may not read — member or admin |
+| --- | --- |
+| `GET /api/actions/pending` | omitted — one readability check for the page; the approvals badge counts what is left |
+| `GET /api/actions/:id`, `POST …/approve`, `POST …/reject` | `404 {"error":"no such action proposal"}`, byte-identical to an unknown id, **before the role check**, and nothing decided |
+| a proposal raised outside any conversation | as before |
+| — the check cannot be made | `503` on all four, carrying nothing; never the unfiltered list |
+
+| Piece | Where |
+| --- | --- |
+| `ThreadOf` | `internal/app/action_service.go` |
+| `WithConversationAccess`, `readableProposals`, `mayReachProposal` | `handlers/actions.go` |
+| Wired with `T-Z10`'s reader | `cmd/api/router.go` |
+| `pending_action` — three surfaces, recorded as the conversation's | `internal/authz/authztest`, `handlers/access_suite_test.go` |
+
+**Before the role check**, so a hidden proposal does not reveal whether its kind is one the
+person could decide. A refusal by id is counted and audited through `MayRead` as a refusal
+of kind `conversation` (§18c).
+
+### 20b. The approver who can read nothing
+
+Decision 4 carries through: an admin not granted the agent is hidden from like anybody. So a
+kind whose `allowed_roles` is admin only, raised in a conversation no admin is granted,
+**waits** — nobody who may decide it may see it. It expires at its TTL like any undecided
+proposal, or an admin grants themselves the agent, which `T-Z9` audits. The owner chose this
+over a redacted card that nobody could act on anyway.
+
+### 20c. Where §13d was wrong, or silent
+
+1. **§13d framed approval as a question beside visibility.** The owner's answer makes it the
+   same question: whoever may not read a conversation may not decide what it proposed.
+2. **Silent: the order against `allowed_roles`** — readability first (§20a).
+3. **Silent: proposals raised outside any conversation.** Nothing to inherit; unchanged.
+4. **`Migration: none` was right.**
+
+### 20d. Still reachable
+
+| Surface | Why it is not covered |
+| --- | --- |
+| **`GET /api/audit/actions`** — the admin's company-wide ledger, parameters included | An admin review, left out by §11e's reasoning. Whether an admin without HR's grant should read HR's proposals there is a decision about what that screen is for |
+| An executed action's outcome — the email already sent | Outside the product once it has run |
+
+### 20e. Acceptance, quoted back
+
+| Acceptance | Evidence |
+| --- | --- |
+| A proposal from a conversation the person may not read is absent from the list and 404s by id, on approve and on reject, for a member and an admin — byte-identical to an unknown id | `TestThePendingListOmitsProposalsFromHiddenConversations` (no body text of it), `TestAProposalFromAHiddenConversationIsNotFoundByID` (three routes, compared with an unknown id, nothing decided) — as an admin; the suite's `pending_action` row for both roles |
+| A readable proposal and one with no conversation are listed and decided as before | The same two tests' other halves; `TestWithNoConversationAccessEveryProposalIsListedAsBefore` |
+| A page of proposals costs one readability check | The list test: one `Readable` over the page's two conversations, no `MayRead` |
+| A check that fails serves and decides nothing | `TestAProposalCheckThatFailsServesAndDecidesNothing` |
+
+**Proven failing.** With the list filter and the by-id check switched off, 4 tests failed, and so
+did 6 suite cells — the restricted, ungranted cell of all three routes for both roles. The file
+was restored and `cmp`'d. The negative suite's table is now 7 rows, 41 surfaces and 328 cells.
+
+**Cost.** One readability check per page of the list, and one invocation read plus one check per
+opened or decided proposal.
+
+### 20f. Owed
+
+One row in [`live-gate-backlog.md`](live-gate-backlog.md) §7c, including the waiting case (§20b).
+**Prediction: every arm as §20a lists.** No `make eval`.

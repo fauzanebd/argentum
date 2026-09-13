@@ -16,6 +16,47 @@ rejected anyway: this repo has numeric tickets `T-01`→`T-23`, so `T-L1` and
 `T-I1` sit one glyph from `T-11`. `Z` collides with nothing and cannot be
 misread.
 
+> **Status, 2026-09-13, after `T-Z9`: `T-Z13` and `T-Z14` are built, `make check` green, unit-gated — §13d's two owner
+> decisions, made and closed.** No migration. Record:
+> [`../coverage/access-grants.md`](../coverage/access-grants.md) §19 and §20.
+>
+> - **A public link** to a document made in a conversation with a restricted agent does not open
+>   and cannot be minted while that agent is restricted, whoever minted it. Nothing is revoked:
+>   re-opening the agent opens the link again, and the share list marks it *paused* meanwhile.
+> - **A pending action** raised in a conversation somebody may not read is gone from their
+>   approvals list, is not found by id, and cannot be approved or rejected by them — admins
+>   included.
+>
+> **Where §13d's own proposal was not taken:** it suggested revoking links on restrict, `T-Z5`'s
+> shape. The owner chose refusing at open, which undoes with the flip that caused it (§19b).
+>
+> **Still reachable, written down:** a presigned download URL handed out before the restriction
+> works until it expires (§19e). The admin's company-wide action ledger still lists every
+> proposal (§20d).
+>
+> **Owed:** both rows' stack arms (§7c). The negative suite's table grew by one kind and three
+> surfaces, to 41 × 8.
+
+> **Status, 2026-09-13, last: `T-Z9` is built, `make check` green, unit-gated — every ticket in this roadmap is
+> built.** No migration. Record: [`../coverage/access-grants.md`](../coverage/access-grants.md)
+> §18. One table in `internal/authz/authztest` says what each of 38 surfaces does for an admin and
+> a member, granted or not, open or restricted, and probes in four packages hold the product to
+> all 304 cells. Every refusal of one object is counted on `argentum_access_refusals_total{kind,
+> reason}` and written as an `access.refused` row. Every grant, revoke and flip is written too:
+> undone if an opening cannot be recorded, left standing if a closing cannot.
+>
+> **Where it was wrong:** a door is not an axis — the widget refuses a restricted agent and quotes
+> a restricted document — so expectations are per surface (§18b). And "count refusals" had to say
+> that a list leaving something out is not one (§18c).
+>
+> **One finding outside the ticket (§18f):** the worker's and the Discord bot's refusals are
+> counted in processes with no `/metrics`, so the series shows the API's refusals and none of the
+> tools' or jobs'. It is `T-17`'s standing gap.
+>
+> **Owed:** the counter and the rows against the stack (§7c). §13d's two owner decisions and
+> §17c's open surfaces are now the whole of what stands between the feature row and ✅, beside
+> the live arms.
+
 > **Status, 2026-09-13, later: `T-Z6` is built, `make check` green, unit-gated — every kind has a
 > switch, and `resourcePending` is empty.** No migration. Record:
 > [`../coverage/access-grants.md`](../coverage/access-grants.md) §17. A restricted source leaves a
@@ -851,6 +892,26 @@ a claim an admin will believe.
 #### `T-Z9` The negative suite, and the row that says a refusal happened
 **Repo:** BE · **Size:** 1.5d · **Deps:** all · **Migration:** none
 
+> **Built 2026-09-13** ([`../coverage/access-grants.md`](../coverage/access-grants.md) §18e),
+> with these corrections:
+>
+> 1. **A door is not an axis.** The same door does different things to different kinds, so
+>    each of 38 surfaces carries its own typed outcome, with conversation and generated-document
+>    rows (§18b).
+> 2. **Silent on what a refusal is.** One named object turned away; a list omission, a missing
+>    object and a failed check are not counted (§18c).
+> 3. **"Kind" needed `conversation`**, and a generated document's refusal is its conversation's.
+> 4. **The acceptance audits every refusal, which decision 12 does not ask**; built as written,
+>    one insert per refused request (§18i).
+> 5. **Silent on capabilities** (`T-Z1` §5 left them here), **on an unwritable row** — an opening
+>    is undone, a closing stands — **and on a change that changes nothing** — no row (§18d).
+> 6. **"Exactly one new row"** holds for the expectation; the probes are code, in the four
+>    packages that own the checks, which is why the table is its own package.
+> 7. **Found: refusals in the worker and the Discord bot are counted where nothing scrapes**
+>    (§18f).
+>
+> `Migration: none` was right.
+
 ##### Why
 An authorisation feature is defined by what it *refuses*. This repository's
 record is that the live half finds something in sixteen sittings out of sixteen;
@@ -871,13 +932,17 @@ that are not are named below.
   way to be caught ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §1e).
 
 ##### Acceptance
-- [ ] The cross product runs and every cell has an expected value written down
-- [ ] Adding a fifth resource kind requires exactly one new row in the table
-- [ ] A refusal increments its counter and writes its audit row
-- [ ] A grant change writes an audit row naming both users
-- [ ] Filed in the live-gate backlog: two users, one browser, both restricted
+- [x] The cross product runs and every cell has an expected value written down
+      *(per surface, not per door — correction 1)*
+- [x] Adding a fifth resource kind requires exactly one new row in the table
+      *(one row of expectation; its probes are code — correction 6)*
+- [x] A refusal increments its counter and writes its audit row
+- [x] A grant change writes an audit row naming both users *(by id)*
+- [x] Filed in the live-gate backlog: two users, one browser, both restricted
       resources — and it needs the stack and nothing else, which is the bucket
       that has paid sixteen out of sixteen
+
+*Unit-gated; the counter and the rows against the stack are owed — [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7c.*
 
 ---
 
@@ -1050,6 +1115,73 @@ which is a boundary with a caveat printed on it.
 - [x] A check that fails edits and lists nothing, and does not hand the storage
       error to the model *(what the model then does with a refusal is owed live —
       §7c)*
+
+---
+
+### Added 2026-09-13, after `T-Z9` — §13d's two owner decisions
+
+Written and built the same day, after the owner answered the two questions
+[`../coverage/access-grants.md`](../coverage/access-grants.md) §13d had left open since `T-Z11`.
+Neither changes a decision above; each applies decision 10's refusal (a door with no person) or
+`T-Z10`'s hiding (a person who may not read the conversation) to a surface that had neither.
+
+#### `T-Z13` A public link does not open what a restricted agent's conversation produced
+**Repo:** BE + FE (copy) · **Size:** 0.5d · **Deps:** `T-Z11` · **Migration:** none
+
+> **Built 2026-09-13** ([`../coverage/access-grants.md`](../coverage/access-grants.md) §19). §13d
+> proposed revoking every link on restrict; **the owner chose refusing at open and at mint**, which
+> is reversible and needs no bulk revoke. `Migration: none` was right.
+
+##### Why
+A link minted on HR's payroll carousel before HR was restricted still played at `/share/:token`
+for anyone holding it, and a person granted HR could mint a new one: a bearer door out of the
+boundary `T-Z11` drew around the conversation's documents.
+
+##### Do
+- "Is every agent that is or was in this conversation open?" — asked as nobody, because a link has
+  no person. `T-Z10`'s rule otherwise: the default judges an unattributed conversation, a deleted
+  agent restricts nothing.
+- **Mint:** refused `409` with the reason while the answer is no, whoever asks.
+- **Open:** answered exactly as a revoked link, the view not counted or audited.
+- **The share list** marks a live link on such a document as paused, so an admin is not shown as
+  working a link a visitor is told is gone.
+- The restrict copy says links to those documents stop opening.
+
+##### Acceptance
+- [x] A link minted before a restriction does not open while the agent is restricted, and opens
+      again when it is re-opened — nothing is revoked
+- [x] Minting a link on such a document is refused with the reason, for a person granted the agent too
+- [x] A document with no conversation, and every document when nothing is restricted, shares as before
+- [x] A check that fails mints nothing (`503`), opens nothing, and lists nothing
+
+#### `T-Z14` A pending action is as hidden as the conversation that raised it
+**Repo:** BE + FE (copy) · **Size:** 0.5d · **Deps:** `T-Z10` · **Migration:** none
+
+> **Built 2026-09-13** ([`../coverage/access-grants.md`](../coverage/access-grants.md) §20), as the
+> owner chose it: hidden, and decided only by people who may read the conversation.
+> `Migration: none` was right.
+
+##### Why
+`GET /api/actions/pending` listed every proposal in the company — an email body, a caption —
+including those raised in a conversation `T-Z10` hid, and `allowed_roles` alone decided who could
+approve one. Approving an action without being able to read why it was proposed is deciding blind.
+
+##### Do
+- The pending list keeps the proposals whose conversation the person may read, with one
+  readability check for the page.
+- `GET /api/actions/:id`, `approve` and `reject` answer a hidden proposal with the not-found an
+  unknown id gets, **before the role check**, and decide nothing.
+- A proposal raised outside any conversation is listed and decided as before.
+- Decision 4 holds: an admin not granted the agent is hidden from too, so an admin-only kind raised
+  in a conversation no admin is granted waits until one grants themselves — which is audited.
+- The negative suite gains a `pending_action` row.
+
+##### Acceptance
+- [x] A proposal from a conversation the person may not read is absent from the list and 404s by id,
+      on approve and on reject, for a member and an admin — byte-identical to an unknown id
+- [x] A readable proposal and one with no conversation are listed and decided as before
+- [x] A page of proposals costs one readability check
+- [x] A check that fails serves and decides nothing
 
 ---
 

@@ -152,6 +152,16 @@ func (s *ThreadParticipantService) Add(ctx context.Context, companyID, threadID,
 			return nil, fmt.Errorf("%w: %w", ErrAccessCheckFailed, err)
 		}
 		if !d.Allowed {
+			// Answered as not found, and recorded as what it was (T-Z9): the
+			// person asked for an agent and was refused it. An agent the grant
+			// store could not find is a race with a deletion, and refuses nobody.
+			if d.Reason != authz.ReasonNotFound {
+				authz.Record(ctx, s.access, authz.Refusal{
+					Subject: authz.Subject{CompanyID: companyID, UserID: addedBy},
+					Kind:    string(domain.ResourceKindAgent), ResourceID: agent.ID, Reason: d.Reason,
+					Door: authz.DoorDashboard, Channel: domain.ChannelDashboard,
+				})
+			}
 			return nil, domain.ErrNotFound
 		}
 	}

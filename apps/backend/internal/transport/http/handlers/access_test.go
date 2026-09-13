@@ -133,7 +133,7 @@ func accessRoutes(repo domain.ResourceGrantRepository) *gin.Engine {
 	})
 	var svc *app.ResourceAccessService
 	if repo != nil {
-		svc = app.NewResourceAccessService(repo)
+		svc = app.NewResourceAccessService(repo, nil)
 	}
 	NewAccessHandler(svc).Register(g)
 	return r

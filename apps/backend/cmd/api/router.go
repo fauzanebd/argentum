@@ -142,7 +142,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 		Register(authed)
 	handlers.NewMetricsHandler(d.metricSvc).Register(authed)
 	handlers.NewWatchersHandler(d.watcherSvc).Register(authed)
-	handlers.NewActionsHandler(d.actionSvc).Register(authed)
+	// A proposal is as hidden as its conversation (T-Z14), with T-Z10's
+	// possibly-nil reader, which reads everything when nil.
+	handlers.NewActionsHandler(d.actionSvc).WithConversationAccess(d.conversationAccess).Register(authed)
 	handlers.NewHTTPEndpointsHandler(d.httpEndpointSvc).Register(authed)
 	handlers.NewWebhooksHandler(d.webhookSubsSvc).Register(authed)
 	// Native dashboards (T-D10). Registered unconditionally: the handler answers

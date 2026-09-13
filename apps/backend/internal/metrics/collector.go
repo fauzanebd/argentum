@@ -76,9 +76,13 @@ type Collector struct {
 	watcherFires     map[string]int64 // "breached" | "quiet" | "suppressed"
 	actionExecutions map[string]int64 // action kind -> count
 	actionFailures   map[string]int64
-	toolCalls        map[string]*toolAgg // tool name -> count/errors/duration
-	turnDurations    *durationAgg
-	llmLatency       map[string]*durationAgg // model -> latency
+	// accessRefusals is kind -> reason -> count (T-Z9). Both labels are closed
+	// vocabularies in internal/authz, which drops a refusal naming anything else
+	// before it gets here.
+	accessRefusals map[string]map[string]int64
+	toolCalls      map[string]*toolAgg // tool name -> count/errors/duration
+	turnDurations  *durationAgg
+	llmLatency     map[string]*durationAgg // model -> latency
 
 	// Public API request metrics (T-A5), guarded by mu rather than by atomics:
 	// the unit of update is a map entry and a bucket array, not a counter.
@@ -161,6 +165,7 @@ func NewCollector() *Collector {
 		watcherFires:     map[string]int64{},
 		actionExecutions: map[string]int64{},
 		actionFailures:   map[string]int64{},
+		accessRefusals:   map[string]map[string]int64{},
 		toolCalls:        map[string]*toolAgg{},
 		llmLatency:       map[string]*durationAgg{},
 		turnDurations:    &durationAgg{},
@@ -328,6 +333,30 @@ func (c *Collector) RecordActionExecution(kind string, ok bool) {
 	if !ok {
 		c.actionFailures[kind]++
 	}
+}
+
+// RecordAccessRefusal counts one request for a single object refused because of
+// who was asking (T-Z9, roadmap 12's decision 12), by the kind of object and the
+// reason.
+//
+// It is a count of refusals rather than of decisions. A list that leaves out a
+// restricted dashboard is not counted: an omission is what every page render of
+// a restricted workspace does, and a counter that moved with page views would
+// make a misconfiguration look like traffic. A person asking for one object and
+// being refused it is the event worth a spike.
+func (c *Collector) RecordAccessRefusal(kind, reason string) {
+	if c == nil || kind == "" || reason == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.accessRefusals == nil {
+		c.accessRefusals = map[string]map[string]int64{}
+	}
+	if c.accessRefusals[kind] == nil {
+		c.accessRefusals[kind] = map[string]int64{}
+	}
+	c.accessRefusals[kind][reason]++
 }
 
 // RecordToolCall counts one tool call and how long it took. Called from the
@@ -583,6 +612,12 @@ func (c *Collector) domainSnapshot() DomainMetrics {
 		Tools:            make(map[string]ToolMetrics, len(c.toolCalls)),
 		LLMLatency:       make(map[string]DurationMetrics, len(c.llmLatency)),
 	}
+	if len(c.accessRefusals) > 0 {
+		out.AccessRefusals = make(map[string]map[string]int64, len(c.accessRefusals))
+		for kind, byReason := range c.accessRefusals {
+			out.AccessRefusals[kind] = copyCounts(byReason)
+		}
+	}
 	for name, agg := range c.toolCalls {
 		out.Tools[name] = ToolMetrics{
 			Calls: agg.calls, Errors: agg.errors, SumMS: agg.sumMS, MaxMS: agg.maxMS,
@@ -733,6 +768,10 @@ type DomainMetrics struct {
 	Turns            DurationMetrics        `json:"turns"`
 	// LLMLatency is keyed by model id.
 	LLMLatency map[string]DurationMetrics `json:"llm_latency,omitempty"`
+	// AccessRefusals is kind → reason → count: requests for one object refused
+	// because of who was asking (T-Z9). Kinds are internal/authz's resource kinds
+	// plus "conversation"; reasons are its refusal reasons.
+	AccessRefusals map[string]map[string]int64 `json:"access_refusals,omitempty"`
 }
 
 // GroundingMetrics is the wrong-but-nonempty instrument (T-Q11). Both numbers

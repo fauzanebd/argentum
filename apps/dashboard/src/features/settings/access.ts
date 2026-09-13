@@ -220,7 +220,7 @@ export function restrictWarning(
   if (kind === "dashboard") {
     return `${who} will lose access to ${name}${me}: it will be gone from their dashboards, and a link to it — in a chat reply or bookmarked — will not open for them.`;
   }
-  return `${who} will lose access to ${name}${me}: they will not be offered it in chat, and conversations it was in — with the documents they produced — will be hidden from them.`;
+  return `${who} will lose access to ${name}${me}: they will not be offered it in chat, and conversations it was in — with the documents they produced and the actions proposed there — will be hidden from them. Public links to those documents stop opening until it is open again.`;
 }
 
 /** A dashboard share link as `GET /api/dashboards/:id/shares` sends one, with

@@ -7103,6 +7103,115 @@ Four Settings → Team scenes were shot before it, one of them new.
 **Prediction: the routes hold. If anything differs, it is the model answering from
 a table already published from the document** — §17c's gap.
 
+## Phase 3ax — The negative suite, and the record of a refusal (2026-09-13)
+
+`T-Z9`, the last ticket in roadmap 12, recommended by Phase 3aw. Record:
+[`access-grants.md`](access-grants.md) §18. No migration.
+
+**What shipped.**
+- **The suite:** `internal/authz/authztest` holds one table — six kinds, five doors,
+  38 surfaces, each with a typed outcome. Probes in `app`, `tools`, `handlers` and
+  `cmd/api` run all 304 cells against the real authorizer. A test fails a kind with
+  no row, a door with nothing written down, and a package that never runs its
+  surfaces.
+- **The counter:** `argentum_access_refusals_total{kind,reason}`, moved by a request
+  for one object refused because of who asked. A list leaving something out, a
+  missing id and a failed check move nothing.
+- **The rows:** every such refusal writes an `access.refused` audit row naming the
+  person, key, visitor or platform identity. Grants, revokes, flips and capability
+  changes write rows naming the admin and the person. A no-op writes nothing.
+- **One helper, `authz.Record`:** the refusal is recorded by the authorizer that
+  decided it, at all 15 call sites. `New` counts on the process collector, and the
+  API, the worker and the Discord bot all attach the audit log.
+
+**Where the ticket was wrong, or silent.**
+- **A door is not an axis.** The widget refuses a restricted agent and quotes a
+  restricted document, so each expectation belongs to a surface.
+- **Silent on what a refusal is.** Counting where `authz` refuses would count every
+  list render.
+- **"Kind" needed `conversation`.** A generated document's refusal is its
+  conversation's.
+- **Silent on an audit row that cannot be written.** An opening is undone; a closing
+  stands.
+- **Silent on capabilities**, which `T-Z1` left to this ticket.
+- **"Exactly one new row"** is one row of expectation, and its probes are code.
+
+**Found:** the worker's and the Discord bot's refusals are counted in processes with
+no `/metrics` endpoint, so the scraped series shows only the API's (§18f).
+
+**Proven failing.**
+- **Recording off:** 57 cells failed — every refused cell in the table.
+- **The widget reading a visitor as a person, plus `RequireResource` admitting
+  admins:** 20 cells failed.
+- **A changed outcome and a deleted probe:** 2 cells failed, plus *"no probe runs
+  it"*.
+
+Every file was restored and `cmp`'d before the gate.
+
+**Gate.** `make check` passed on the first run: `MAKE EXIT: 0`, read from the log.
+- **Go:** 72 packages `ok`, zero `FAIL`/`panic` lines, `golangci-lint` `0 issues.`,
+  `gofmt -l` empty, and `packages/api-types` current (`generate.mjs --check`).
+- **Dashboard:** 88 vitest tests pass, and every workspace build finished.
+
+**Owed:** live-gate §7c's `T-Z9` row — the counter and the rows against the stack,
+two people, no worker or model key for the API's half.
+
+**Prediction: every refusal moves the series once and writes one row. The tools'
+and jobs' refusals write rows and never reach the API's series.**
+
+## Phase 3ay — §13d's two decisions: a link and a proposal (2026-09-13)
+
+`T-Z13` and `T-Z14`, written and built after the owner answered the two questions
+[`access-grants.md`](access-grants.md) §13d had left open since `T-Z11`. Records: §19
+and §20. No migration.
+
+**The owner's decisions.**
+- **A link:** refuse at open and at mint — the recommended option over revoking on
+  restrict or leaving links working.
+- **A proposal:** hidden, and decided only by people who may read its conversation —
+  over a redacted card or hiding from the list alone.
+
+**What shipped.**
+- **`T-Z13`:** `ConversationAccess.OpenToEveryone` asks, as nobody, whether every agent
+  in a conversation is open. A link on a document from one that is not answers as
+  revoked and counts no view, a mint is `409` for everyone, and the share list says
+  *paused*. Re-opening the agent opens the link; nothing was revoked.
+- **`T-Z14`:** the pending list is filtered by one readability check. A hidden
+  proposal is `404` by id on read, approve and reject, before the role check.
+- **The suite** gained a `pending_action` row with three surfaces: 41 surfaces, 328
+  cells.
+- **Settings copy:** the agent card, its restrict warning and Settings → Agents
+  say what restricting now does to links and proposals.
+
+**Where §13d was wrong, or silent.**
+- **Its proposed shape was revoke-on-restrict.** Refusing at open needs no bulk revoke
+  across every conversation an agent was ever in, and a mistaken restriction undoes
+  with one flip.
+- **Silent: what an admin's share list shows** for a link held shut — it said live.
+- **Silent: presigned download URLs** already handed out, which work until they
+  expire.
+- **Silent: the approver who can read nothing.** An admin-only kind in a
+  conversation no admin is granted now waits, and expires at its TTL like any
+  undecided proposal.
+
+**Proven failing.**
+- **Open-time check off:** 2 tests failed. The first run's `-run` pattern had missed
+  one of them, and was rerun with a pattern that selects it.
+- **Mint check off:** 2 failed, one in `app` and one in `handlers`.
+- **List filter and by-id check off:** 4 tests failed and 6 suite cells.
+
+Every file was restored and `cmp`'d before the gate.
+
+**Gate.** `make check` passed on the first run: `MAKE EXIT: 0`, read from the log.
+- **Go:** 72 packages `ok`, zero `FAIL`/`panic` lines, `golangci-lint` `0 issues.`, and
+  `gofmt -l` empty.
+- **Dashboard:** 88 vitest tests pass, and all six builds finished.
+
+**Owed:** live-gate §7c's `T-Z13` and `T-Z14` rows, both on the stack with no model.
+
+**Prediction: every arm as listed. If something differs, it is the conversation-agents
+statement's first run, failing closed.**
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

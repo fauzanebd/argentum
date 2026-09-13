@@ -55,6 +55,7 @@ scrapes reads as what moved.
 | `argentum_llm_latency_ms_{sum,count,max}{model}` | `MeteredLLM` |
 | `argentum_watcher_fires_total{outcome}` | `WatcherService`, four outcomes |
 | `argentum_action_executions_total{kind}`, `_failures_total` | `ActionService.execute` |
+| `argentum_access_refusals_total{kind,reason}` | `authz.Authorizer.Refused`, at every seam that refuses one object — added by `T-Z9` ([`access-grants.md`](access-grants.md) §18c). **The API's series holds the API's refusals only**: the worker's tools and jobs and the Discord bot count in processes this endpoint does not serve (§18f) |
 
 Every label is bounded by code — a tool name from the registry, an action kind
 from the action registry, a model from deployment config, a watcher outcome from

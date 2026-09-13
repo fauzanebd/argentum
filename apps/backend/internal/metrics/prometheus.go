@@ -125,6 +125,21 @@ func (s MetricsSnapshot) WriteProm(w io.Writer) error {
 	p.counterVec("action_executions_total", "Actions executed, by kind.", "kind", asFloats(s.Domain.ActionExecutions))
 	p.counterVec("action_failures_total", "Actions that failed, by kind.", "kind", asFloats(s.Domain.ActionFailures))
 
+	// --- access (T-Z9) ---
+	//
+	// Two labels, so one loop per kind inside one header: the format needs a
+	// metric's series contiguous, and they are. Written even with no series, like
+	// the tool counters below — a scrape that has never seen a refusal should
+	// still say the metric exists, so a dashboard built on it is not an error.
+	p.header("access_refusals_total", "counter",
+		"Requests for one object refused because of who was asking, by kind and reason.")
+	for _, kind := range sortedKeys(s.Domain.AccessRefusals) {
+		byReason := s.Domain.AccessRefusals[kind]
+		for _, reason := range sortedKeys(byReason) {
+			p.sample("access_refusals_total", map[string]string{"kind": kind, "reason": reason}, float64(byReason[reason]))
+		}
+	}
+
 	p.duration("turn_duration_ms", "Agent turn wall clock.", nil, s.Domain.Turns)
 
 	// Tool traffic: three metric names, each with every tool's series together,

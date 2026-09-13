@@ -78,7 +78,7 @@ func capabilityRoutes(repo domain.CapabilityRepository) *gin.Engine {
 		c.Set("user_id", "admin-1")
 		c.Set("role", "admin")
 	})
-	NewUserHandler(nil, nil, nil).WithCapabilities(app.NewCapabilityService(repo)).Register(g)
+	NewUserHandler(nil, nil, nil).WithCapabilities(app.NewCapabilityService(repo, nil)).Register(g)
 	return r
 }
 

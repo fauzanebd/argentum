@@ -320,6 +320,14 @@ type door struct {
 	cleared string
 	// keyAgents is `/v1`'s allowlist, empty for every agent.
 	keyAgents []string
+	// name, channel and the actor are what a refusal at this door is recorded
+	// with (T-Z9): which door was closed, and who the audit row names — the
+	// person on the dashboard, and on the doors with none the key, the visitor
+	// or the platform identity the turn arrived as.
+	name      authz.Door
+	channel   domain.Channel
+	actorKind domain.ActorKind
+	actorRef  string
 }
 
 // doorFor builds the door for a turn. route is the channel binding the address
@@ -329,30 +337,79 @@ type door struct {
 // exactly as before roadmap 12. `/v1`'s allowlist needs no wiring: it arrived on
 // the key.
 func (s *ChatEnqueuer) doorFor(in ChatInput, route domain.ChannelRoute) door {
+	var d door
 	switch in.Channel {
 	case domain.ChannelAPI:
-		return door{keyAgents: in.KeyAgentIDs}
+		d = door{keyAgents: in.KeyAgentIDs}
 	case domain.ChannelDashboard:
 		return s.personDoor(in.UserID)
 	case domain.ChannelWidget:
 		// Decision 10, and the one door where refusing is right: the person on
 		// the other end is the tenant's customer, and no admin acknowledgement
 		// changes that. Nothing is ever cleared here.
-		return door{grants: s.access != nil}
+		d = door{grants: s.access != nil}
 	default:
-		d := door{grants: s.access != nil}
+		d = door{grants: s.access != nil}
 		if route.Acknowledged {
 			d.cleared = route.AgentID
 		}
-		return d
 	}
+	d.name, d.channel = authz.DoorOf(in.Channel), in.Channel
+	d.actorKind, d.actorRef = doorActor(in)
+	return d
 }
 
 // personDoor is the dashboard's door for one person. An empty user id asks
 // nothing, as T-Z4 did: the dashboard validates that one is present, so the case
 // is a caller outside Enqueue that has no person to name.
 func (s *ChatEnqueuer) personDoor(userID string) door {
-	return door{grants: s.access != nil && userID != "", userID: userID}
+	return door{
+		grants: s.access != nil && userID != "", userID: userID,
+		name: authz.DoorDashboard, channel: domain.ChannelDashboard,
+	}
+}
+
+// doorActor is who a refusal on a door with no person is written down as, in the
+// order a turn's own audit rows name their actor (chat_runner.go): a key, then a
+// visitor, then the platform identity a channel message arrived as. A refusal
+// and the turn it stopped would name the same party.
+func doorActor(in ChatInput) (domain.ActorKind, string) {
+	switch {
+	case in.APIKeyID != "":
+		return domain.ActorKindAPIKey, in.APIKeyID
+	case in.EmbedUserRef != "":
+		return domain.ActorKindEmbed, in.EmbedUserRef
+	}
+	for _, ref := range []string{in.DiscordUserID, in.LarkOpenID, in.PhoneNumber, in.SlackUserID} {
+		if ref != "" {
+			return domain.ActorKindUser, ref
+		}
+	}
+	return domain.ActorKindUser, ""
+}
+
+// refused records a refusal of agentID at door d (T-Z9), through the authorizer
+// the enqueue path decides with. Every refusal on this path comes through here —
+// a grant, a channel nobody cleared, a key's list — so each is recorded with its
+// door's name and actor rather than with whatever its call site had to hand.
+//
+// A key's list needs no authorizer to decide, and a deployment that wired none
+// records none of its refusals; every process that serves `/v1` wires one.
+func (s *ChatEnqueuer) refused(ctx context.Context, companyID string, d door, agentID string, reason authz.Reason) {
+	authz.Record(ctx, s.access, authz.Refusal{
+		Subject: authz.Subject{CompanyID: companyID, UserID: d.userID},
+		Kind:    string(domain.ResourceKindAgent), ResourceID: agentID, Reason: reason,
+		Door: d.name, Channel: d.channel, ActorKind: d.actorKind, ActorRef: d.actorRef,
+	})
+}
+
+// closedReason is what a grant refusal at d is recorded as: a person not granted
+// it, or — on a door where nobody can be granted anything — not cleared.
+func (d door) closedReason() authz.Reason {
+	if d.userID != "" {
+		return authz.ReasonNotGranted
+	}
+	return authz.ReasonNotCleared
 }
 
 // ChatInput is the unified input shape across channels. It mirrors the
@@ -630,10 +687,14 @@ func (s *ChatEnqueuer) pickAgent(ctx context.Context, companyID string, d door, 
 			return "", fmt.Errorf("%w: %w", ErrAccessCheckFailed, err)
 		}
 		if !dec.Allowed {
+			if dec.Reason != authz.ReasonNotFound {
+				s.refused(ctx, companyID, d, a.ID, d.closedReason())
+			}
 			return "", ErrAgentNotFound
 		}
 	}
 	if !domain.KeyAllowsAgent(d.keyAgents, a.ID) {
+		s.refused(ctx, companyID, d, a.ID, authz.ReasonNotOnKey)
 		return "", ErrAgentNotFound
 	}
 	return a.ID, nil
@@ -689,7 +750,16 @@ func (s *ChatEnqueuer) openingAgent(ctx context.Context, companyID string, d doo
 	if dec.Allowed {
 		return "", nil
 	}
+	// Nothing to fall through to is a refusal of the default the person could
+	// not use — unless the default vanished between the two reads, which refuses
+	// nobody (T-Z9).
+	refuseDefault := func() {
+		if dec.Reason != authz.ReasonNotFound {
+			s.refused(ctx, companyID, d, def.ID, d.closedReason())
+		}
+	}
 	if s.agents == nil {
+		refuseDefault()
 		return "", ErrNoAgentAvailable
 	}
 	roster, err := s.agents.ListByCompany(ctx, companyID)
@@ -709,6 +779,7 @@ func (s *ChatEnqueuer) openingAgent(ctx context.Context, companyID string, d doo
 		return "", fmt.Errorf("%w: %w", ErrAccessCheckFailed, err)
 	}
 	if len(open) == 0 {
+		refuseDefault()
 		return "", ErrNoAgentAvailable
 	}
 	return open[0], nil
@@ -753,7 +824,9 @@ func (s *ChatEnqueuer) turnTargets(
 			if len(d.keyAgents) > 0 {
 				// A key limited to named agents, in a company whose default could
 				// not be named: the worker would run unscoped, and unscoped is no
-				// agent on the key's list.
+				// agent on the key's list. Recorded with no agent, which is what it
+				// was refused.
+				s.refused(ctx, in.CompanyID, d, "", authz.ReasonNotOnKey)
 				return nil, ErrAgentNotAllowed
 			}
 			// A company with no roster: the worker runs unscoped, and there is
@@ -768,6 +841,7 @@ func (s *ChatEnqueuer) turnTargets(
 		// on the key.
 		for _, id := range targets {
 			if !domain.KeyAllowsAgent(d.keyAgents, id) {
+				s.refused(ctx, in.CompanyID, d, id, authz.ReasonNotOnKey)
 				return nil, ErrAgentNotAllowed
 			}
 		}
@@ -818,6 +892,7 @@ func (s *ChatEnqueuer) turnTargets(
 // ask an admin; nobody on a channel or the widget is told the agent is
 // restricted here, because nobody there can be granted anything.
 func (s *ChatEnqueuer) closedTo(ctx context.Context, d door, companyID, agentID string) error {
+	s.refused(ctx, companyID, d, agentID, d.closedReason())
 	if d.userID != "" {
 		return s.restrictedAgent(ctx, companyID, agentID)
 	}
@@ -916,16 +991,18 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 		if perr != nil {
 			return nil, perr
 		}
-		if pinned == "" && in.ThreadID == "" && len(gate.keyAgents) > 0 &&
-			!domain.KeyAllowsAgent(gate.keyAgents, s.defaultAgent(ctx, in.CompanyID)) {
-			// A key limited to named agents, a call naming none, and a default
-			// that is not on the list: refused here, before a conversation is
-			// opened for it, so a refused call leaves no thread behind. Judged by
-			// the default rather than by whichever conversation `user_ref` would
-			// continue, so the answer does not depend on history the caller cannot
-			// see — a key like this names its agent. A default that could not be
-			// read is not on any list.
-			return nil, ErrAgentNotAllowed
+		if pinned == "" && in.ThreadID == "" && len(gate.keyAgents) > 0 {
+			if def := s.defaultAgent(ctx, in.CompanyID); !domain.KeyAllowsAgent(gate.keyAgents, def) {
+				// A key limited to named agents, a call naming none, and a default
+				// that is not on the list: refused here, before a conversation is
+				// opened for it, so a refused call leaves no thread behind. Judged
+				// by the default rather than by whichever conversation `user_ref`
+				// would continue, so the answer does not depend on history the
+				// caller cannot see — a key like this names its agent. A default
+				// that could not be read is not on any list.
+				s.refused(ctx, in.CompanyID, gate, def, authz.ReasonNotOnKey)
+				return nil, ErrAgentNotAllowed
+			}
 		}
 		if in.ThreadID != "" {
 			thread, err := s.threads.GetByID(ctx, in.ThreadID)

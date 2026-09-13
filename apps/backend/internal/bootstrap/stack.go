@@ -394,7 +394,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// And the one that switches a schedule off when its creator loses the
 		// agent it runs as (T-Z8, decision 11). Uncached, like every grant read.
 		WithCreatorAccess(app.NewCreatorAccess(
-			authz.New(pgctl.NewResourceGrantRepo(controlDB)), pgctl.NewUserRepo(controlDB), s.Agents, s.ThreadSvc))
+			authz.New(pgctl.NewResourceGrantRepo(controlDB)).WithAudit(s.AgentActions), pgctl.NewUserRepo(controlDB), s.Agents, s.ThreadSvc))
 
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
 	s.Documents = documentRepo
@@ -530,7 +530,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// A metric watcher's briefing runs as an agent, so its creator is
 		// re-checked at every fire, as a schedule's is (T-Z8).
 		WithCreatorAccess(app.NewCreatorAccess(
-			authz.New(pgctl.NewResourceGrantRepo(controlDB)), pgctl.NewUserRepo(controlDB), s.Agents, s.ThreadSvc))
+			authz.New(pgctl.NewResourceGrantRepo(controlDB)).WithAudit(s.AgentActions), pgctl.NewUserRepo(controlDB), s.Agents, s.ThreadSvc))
 
 	// The action framework (T-10/T-12a/T-12b). send_message and http_action are the
 	// registered kinds; propose_action resolves one at propose time, and the
@@ -638,7 +638,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// edits only what the person on the turn may open. The grant store the
 		// API's dashboard routes decide against, uncached for the reason
 		// cmd/api's bootstrap gives: a revoke is honoured on the next call.
-		DashboardAccess: authz.New(pgctl.NewResourceGrantRepo(controlDB)),
+		DashboardAccess: authz.New(pgctl.NewResourceGrantRepo(controlDB)).WithAudit(s.AgentActions),
 		Scheduled:       s.ScheduledSvc,
 		Docs:            s.Docs,
 		Images:          s.postImageResolver(),
@@ -663,7 +663,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// Who may read which uploaded document (T-Z6), so search_documents quotes
 		// only what the person on the turn may read. The grant store Knowledge's
 		// routes decide against, uncached like the dashboards' above.
-		DocumentAccess: authz.New(pgctl.NewResourceGrantRepo(controlDB)),
+		DocumentAccess: authz.New(pgctl.NewResourceGrantRepo(controlDB)).WithAudit(s.AgentActions),
 	})
 
 	// Every tool runs behind the per-turn budget guard (T-16). Wrapping here

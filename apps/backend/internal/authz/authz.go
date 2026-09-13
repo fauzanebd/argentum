@@ -85,11 +85,17 @@ func Evaluate(access domain.ResourceAccess, found bool) Decision {
 	}
 }
 
-// Authorizer decides against a Loader.
-type Authorizer struct{ loader Loader }
+// Authorizer decides against a Loader, and records the refusals its callers act
+// on (refusal.go).
+type Authorizer struct {
+	loader  Loader
+	counter RefusalCounter
+	audit   AuditWriter
+}
 
-// New builds an Authorizer.
-func New(loader Loader) *Authorizer { return &Authorizer{loader: loader} }
+// New builds an Authorizer that counts refusals on the process's collector and
+// writes none down until WithAudit.
+func New(loader Loader) *Authorizer { return &Authorizer{loader: loader, counter: processCounter()} }
 
 // Decide answers for one resource. An error means the answer could not be read,
 // and every caller must treat it as a refusal.

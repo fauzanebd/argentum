@@ -55,6 +55,40 @@ func TestExpositionCarriesTheDomainCounters(t *testing.T) {
 // The wrong-but-nonempty instrument (T-Q11). Two numbers, because one reply
 // carrying five invented figures and five replies carrying one each are the
 // same figure count and different problems.
+// T-Z9: refusals by kind and reason. The header is there before the first
+// refusal, and an empty label is not a refusal of anything.
+func TestExpositionCarriesTheAccessRefusals(t *testing.T) {
+	c := NewCollector()
+	if out := renderSnapshot(t, c); !strings.Contains(out, "# TYPE argentum_access_refusals_total counter") {
+		t.Errorf("a process that has refused nobody does not declare the series:\n%s", out)
+	}
+
+	c.RecordAccessRefusal("agent", "not_granted")
+	c.RecordAccessRefusal("agent", "not_granted")
+	c.RecordAccessRefusal("agent", "not_cleared")
+	c.RecordAccessRefusal("conversation", "not_granted")
+	c.RecordAccessRefusal("", "not_granted")
+	c.RecordAccessRefusal("agent", "")
+
+	out := renderSnapshot(t, c)
+	for _, want := range []string{
+		`argentum_access_refusals_total{kind="agent",reason="not_cleared"} 1`,
+		`argentum_access_refusals_total{kind="agent",reason="not_granted"} 2`,
+		`argentum_access_refusals_total{kind="conversation",reason="not_granted"} 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("exposition is missing:\n  %s\n\ngot:\n%s", want, out)
+		}
+	}
+	if got := strings.Count(out, "argentum_access_refusals_total{"); got != 3 {
+		t.Errorf("%d refusal series, want 3 — an empty kind or reason is not a series", got)
+	}
+	snap := c.GetSnapshot().Domain.AccessRefusals
+	if snap["agent"]["not_granted"] != 2 || snap["conversation"]["not_granted"] != 1 || len(snap) != 2 {
+		t.Errorf("snapshot = %v", snap)
+	}
+}
+
 func TestExpositionCarriesTheGroundingCounters(t *testing.T) {
 	c := NewCollector()
 	// A clean reply must not touch either counter, or the rate is meaningless.
