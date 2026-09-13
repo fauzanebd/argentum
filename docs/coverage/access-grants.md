@@ -43,12 +43,12 @@ pages and tables, and quotes nothing into an answer for a person not granted it.
 | `T-Z6` The "etc": data sources and documents | **built 2026-09-13, `make check` green, unit-gated. No migration. Two of the ticket's three source surfaces do not exist, and every source route with an id is admin (§17b); `resourcePending` is empty. A document's tables are checked through their document in the handler. Live arms owed — §17g** |
 | `T-Z7` Settings → Team: the access matrix | **built 2026-09-12, `make check` green, unit-gated. No migration, and one read route the ticket did not list (§12b). Agents only — no switch for a kind nothing enforces (§12c). The member's disabled control has nothing to disable yet (§12d). One live arm owed — §12f** |
 | `T-Z8` The other three doors, decided rather than inherited | **built 2026-09-13, `make check` green, unit-gated. Migration `085`. An embed key names no agent, so the widget refuses at the pick and the turn (§16c); a channel's acknowledgement is stored and checked per turn, because a binding made before a restriction was the bypass (§16c). Found Slack refused as an unknown channel since 2026-08-08, and fixed it (§16c item 7). Live arms owed — §16g** |
-| `T-Z9` The negative suite, and the row that says a refusal happened | **built 2026-09-13, `make check` green, unit-gated. No migration. The cross product is per kind, door and surface — 38 surfaces × 8 cells — not per door, because one door does different things to different kinds (§18b). Refusals counted and audited at 15 call sites; grant changes audited by direction (§18d). The worker's refusals are counted where nothing scrapes them (§18f). Live arms owed — §18j** |
+| `T-Z9` The negative suite, and the row that says a refusal happened | **built 2026-09-13, `make check` green, unit-gated. No migration. The cross product is per kind, door and surface — 38 surfaces × 8 cells — not per door, because one door does different things to different kinds (§18b). Refusals counted and audited at 15 call sites; grant changes audited by direction (§18d). The worker's refusals are counted where nothing scrapes them (§18f). API arms run on a scratch stack, as predicted; the widget and worker arms owed — §18j** |
 | `T-Z10` A conversation is as restricted as the agents in it | **built 2026-09-12, `make check` green, unit-gated. No migration. Added to the roadmap by the owner's decision on §10d. One live arm owed — §11h** |
 | `T-Z11` A generated document is as restricted as the conversation that made it | **built 2026-09-12, `make check` green, unit-gated. No migration. Added after `T-Z7` on the owner's go-ahead. Two surfaces found still readable, both the owner's (§13d). One live arm owed — §13f** |
 | `T-Z12` An agent asked to change a dashboard checks the person's grant | **built 2026-09-12, `make check` green, unit-gated. No migration. Added after `T-Z5`, which found it (§14d). Refused by name, not as not-found (§15b); §14d's "panel SQL in the result" was wrong (§15c). One live arm owed, and it is the track's only one that needs a model — §15g** |
 | `T-Z13` A public link does not open what a restricted agent's conversation produced | **built 2026-09-13, `make check` green, unit-gated. No migration. The owner's decision on §13d: refused at open and at mint, nothing revoked, so re-opening the agent opens the link again (§19b). The share list says *paused*. A presigned download URL handed out earlier still works until it expires (§19e). Stack arm owed — §19g** |
-| `T-Z14` A pending action is as hidden as the conversation that raised it | **built 2026-09-13, `make check` green, unit-gated. No migration. The owner's decision on §13d: hidden from the list, not found by id, and decided only by people who may read the conversation — before the role check (§20a). An admin-only kind raised where no admin is granted waits (§20b). The negative suite gains a `pending_action` row. Stack arm owed — §20f** |
+| `T-Z14` A pending action is as hidden as the conversation that raised it | **built 2026-09-13, `make check` green, unit-gated. No migration. The owner's decision on §13d: hidden from the list, not found by id, and decided only by people who may read the conversation — before the role check (§20a). An admin-only kind raised where no admin is granted waits (§20b). The negative suite gains a `pending_action` row. API arm run on a scratch stack, as predicted; the browser badge and the waiting case owed — §20f** |
 
 ---
 
@@ -1919,6 +1919,18 @@ and §14a list moves the series once and writes one row naming the person; the t
 and the jobs' refusals write rows and do not appear on the API's `/metrics` (§18f).**
 No `make eval`: no prompt, tool description or template changed.
 
+**Run 2026-09-13 on a scratch stack, not production.** `HEAD`'s API over an embedded
+Postgres and miniredis, with seeded rows — production runs `1.6.0`, which does not carry
+this code.
+- **Arm (1):** exactly as predicted. The counter moved by `agent 1`, `dashboard 2` and
+  `conversation 1`. Four `access.refused` rows named the person refused, and a list
+  leaving something out moved nothing.
+- **Arm (2):** exactly as predicted. Six change rows named admin and member, and a
+  repeated grant wrote none.
+- **Not run:** the widget arm and the worker half.
+
+Results are in [`live-gate-backlog.md`](live-gate-backlog.md) §7c.
+
 ---
 
 ## 19. `T-Z13` — a public link does not open what a restricted agent's conversation produced
@@ -2095,3 +2107,12 @@ opened or decided proposal.
 
 One row in [`live-gate-backlog.md`](live-gate-backlog.md) §7c, including the waiting case (§20b).
 **Prediction: every arm as §20a lists.** No `make eval`.
+
+**Run 2026-09-13 on `T-Z9`'s scratch stack, the API half: every arm as §20a lists.**
+- **Pending lists:** without the grant, both people's held only the proposal with no
+  conversation.
+- **By id:** a hidden proposal's read, approve and reject each answered byte-identical
+  to an unknown uuid's. The proposal stayed `proposed`, and each was recorded as a
+  conversation refusal.
+- **Granted:** the member saw the proposal and approved it.
+- **Not run:** the badge in a browser, and the waiting case.

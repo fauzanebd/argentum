@@ -34,7 +34,10 @@ misread.
 > works until it expires (§19e). The admin's company-wide action ledger still lists every
 > proposal (§20d).
 >
-> **Owed:** both rows' stack arms (§7c). The negative suite's table grew by one kind and three
+> **Live, 2026-09-13, on a scratch stack — production runs `1.6.0` without this code:**
+> `T-Z14`'s API arm ran exactly as predicted. `T-Z13`'s did not run, because it needs object
+> storage the scratch stack lacked. **Owed:** `T-Z13`'s arm, and `T-Z14`'s browser badge and
+> waiting case (§7c). The negative suite's table grew by one kind and three
 > surfaces, to 41 × 8.
 
 > **Status, 2026-09-13, last: `T-Z9` is built, `make check` green, unit-gated — every ticket in this roadmap is
@@ -53,7 +56,8 @@ misread.
 > counted in processes with no `/metrics`, so the series shows the API's refusals and none of the
 > tools' or jobs'. It is `T-17`'s standing gap.
 >
-> **Owed:** the counter and the rows against the stack (§7c). §13d's two owner decisions and
+> **Live, 2026-09-13, on a scratch stack:** refusal arm (1) and change arm (2) ran exactly as
+> predicted (§18j). **Owed:** the widget arm and the worker half (§7c). §13d's two owner decisions and
 > §17c's open surfaces are now the whole of what stands between the feature row and ✅, beside
 > the live arms.
 

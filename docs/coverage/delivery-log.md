@@ -7212,6 +7212,43 @@ Every file was restored and `cmp`'d before the gate.
 **Prediction: every arm as listed. If something differs, it is the conversation-agents
 statement's first run, failing closed.**
 
+## Phase 3az — Roadmap 12's API arms, live on a scratch stack (2026-09-13)
+
+The owner gave the go-ahead for §7c's arms, and **production was not used**.
+- **Production runs `1.6.0`.** That tag is `c077eb4`, so this code isn't deployed and
+  gating it there would prove nothing about it. The `v1.7.0` tag exists, but CI skipped
+  the tag-triggered image build.
+- **Seeding a restricted agent into the pilot tenant** would have locked real people out.
+
+**The stack, all on loopback, and not in this repository.**
+- An embedded Postgres 16 and miniredis.
+- `HEAD`'s `cmd/api`, run under `env -i` from a directory with no `.env`, with every
+  setting explicit.
+- Its `config/` directory linked in.
+- A `/tmp` copy of the control migrations. pgvector's four statements became
+  `real[]`, because the embedded build has no `vector`.
+- All 85 control migrations applied. `083`→`085` went **up** without error; nothing was
+  rolled down.
+- Rows seeded directly, and tokens signed with the scratch secret.
+
+**Run, exactly as predicted.**
+- **`T-Z9` refusals:** the counter moved by `agent 1`, `dashboard 2`, `conversation 1`,
+  with four `access.refused` rows naming the person. A list omission moved nothing.
+- **`T-Z9` changes:** six rows naming admin and member. A repeated grant wrote none.
+- **`T-Z14`:** a hidden proposal was left out of both people's lists, answered
+  byte-identical to an unknown id on read, approve and reject, and stayed `proposed`.
+  Granted, the member saw it and approved it.
+- **First runs, without error:** `T-Z2`'s `Grant` `ON CONFLICT`, `SetAccessMode`, `View`
+  and `LoadAccess`. `T-Z1`'s capability statements. Two of the five shapes of `T-Z10`'s
+  `AgentsByThread`.
+
+**Not run.**
+- `T-Z13` — no object storage.
+- The widget arm — no embed key session.
+- The worker half, the browser badge and the waiting case.
+
+**Owed, still:** those, in live-gate §7c.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
