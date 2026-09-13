@@ -18,22 +18,25 @@ import (
 // the three wrong misses, which is the failure this stub exists to catch.
 type stubBinder struct {
 	bound map[string]string
+	// acked is the addresses an admin acknowledged for a restricted agent
+	// (T-Z8), keyed like bound.
+	acked map[string]bool
 	err   error
 	asked []string
 }
 
 func (s *stubBinder) AgentForChannel(
 	_ context.Context, companyID string, channel domain.Channel, externalID string,
-) (string, error) {
+) (domain.ChannelRoute, error) {
 	key := companyID + "/" + string(channel) + "/" + externalID
 	s.asked = append(s.asked, key)
 	if s.err != nil {
-		return "", s.err
+		return domain.ChannelRoute{}, s.err
 	}
 	if id, ok := s.bound[key]; ok {
-		return id, nil
+		return domain.ChannelRoute{AgentID: id, Acknowledged: s.acked[key]}, nil
 	}
-	return "", domain.ErrNotFound
+	return domain.ChannelRoute{}, domain.ErrNotFound
 }
 
 func TestABoundChannelRunsAsItsAgent(t *testing.T) {
@@ -47,8 +50,8 @@ func TestABoundChannelRunsAsItsAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boundAgent: %v", err)
 	}
-	if got != "ag-ops" {
-		t.Errorf("boundAgent = %q, want ag-ops", got)
+	if got.AgentID != "ag-ops" {
+		t.Errorf("boundAgent = %q, want ag-ops", got.AgentID)
 	}
 }
 
@@ -83,8 +86,8 @@ func TestAWhatsAppBindingMatchesAPrefixedInboundNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boundAgent: %v", err)
 	}
-	if got != "ag-fin" {
-		t.Errorf("boundAgent = %q, want ag-fin for a prefixed inbound number", got)
+	if got.AgentID != "ag-fin" {
+		t.Errorf("boundAgent = %q, want ag-fin for a prefixed inbound number", got.AgentID)
 	}
 }
 
@@ -97,8 +100,8 @@ func TestAnUnboundChannelAsksForNoAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boundAgent: %v", err)
 	}
-	if got != "" {
-		t.Errorf("boundAgent = %q, want empty so the company default answers", got)
+	if got.AgentID != "" {
+		t.Errorf("boundAgent = %q, want empty so the company default answers", got.AgentID)
 	}
 }
 
@@ -125,8 +128,43 @@ func TestNoBinderWiredIsEveryChannelOnTheDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boundAgent: %v", err)
 	}
-	if got != "" {
-		t.Errorf("boundAgent = %q, want empty", got)
+	if got.AgentID != "" {
+		t.Errorf("boundAgent = %q, want empty", got.AgentID)
+	}
+}
+
+// Slack reaches the channel arm of Enqueue, not the "unknown channel" default.
+//
+// Found building T-Z8, by reading rather than by a test, because no test sent a
+// Slack message through Enqueue: validate() accepts the channel and boundAgent,
+// resolveChannelThread and rebindThread all have a Slack case, but the switch
+// that calls them named WhatsApp, Discord and Lark only. T-S4 wrote that case
+// line on 2026-07-30 and the Slack commit (36c0c22) added its arms everywhere
+// but there — so every Slack message since has been refused as
+// ErrInvalidInput, and the webhook answered it 500.
+func TestASlackMessageReachesItsBinding(t *testing.T) {
+	repo := &fakeThreadRepo{latestErr: domain.ErrNotFound}
+	q := &recordingEnqueuer{}
+	msgs := &stubMessages{}
+	svc := NewThreadService(quietThreadRepo{repo}, msgs, nil, nil, ThreadServiceConfig{
+		IdleMinutes: 30, SummaryEveryNTurns: 8,
+	})
+	enq := NewChatEnqueuer(svc, msgs, fakeCompanies{}, q).
+		WithChannelBindings(&stubBinder{bound: map[string]string{"co-1/slack/C0OPS": "ag-ops"}})
+
+	_, err := enq.Enqueue(context.Background(), ChatInput{
+		Channel: domain.ChannelSlack, CompanyID: "co-1", SlackTeamID: "T01",
+		SlackChannelID: "C0OPS", SlackUserID: "U09", SlackMessageTS: "1726200000.000100",
+		Message: "how were sales?",
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(slack) = %v, want the turn enqueued", err)
+	}
+	if len(q.payloads) != 1 || q.payloads[0].AgentID != "ag-ops" {
+		t.Fatalf("payloads = %+v, want one turn on the channel's bound agent", q.payloads)
+	}
+	if len(repo.created) != 1 || repo.created[0].AgentID != "ag-ops" {
+		t.Errorf("created = %+v, want one Slack thread pinned to ag-ops", repo.created)
 	}
 }
 

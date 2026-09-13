@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fauzanebd/argentum/internal/domain"
 )
@@ -15,10 +16,11 @@ import (
 // in the wrong shape, is a routing rule that exists and never fires.
 
 type fakeBindingRepo struct {
-	created []*domain.AgentChannelBinding
-	list    []*domain.AgentChannelBinding
-	err     error
-	deleted []string
+	created      []*domain.AgentChannelBinding
+	list         []*domain.AgentChannelBinding
+	err          error
+	deleted      []string
+	acknowledged []string
 }
 
 func (f *fakeBindingRepo) Create(_ context.Context, b *domain.AgentChannelBinding) error {
@@ -39,8 +41,20 @@ func (f *fakeBindingRepo) Delete(_ context.Context, _, id string) error {
 	return f.err
 }
 
-func (f *fakeBindingRepo) AgentForChannel(context.Context, string, domain.Channel, string) (string, error) {
+func (f *fakeBindingRepo) AgentForChannel(context.Context, string, domain.Channel, string) (domain.ChannelRoute, error) {
 	panic("unexpected AgentForChannel: the CRUD service never resolves a turn")
+}
+
+func (f *fakeBindingRepo) Acknowledge(_ context.Context, companyID, id, actorID string, at time.Time) (*domain.AgentChannelBinding, error) {
+	f.acknowledged = append(f.acknowledged, id)
+	for _, b := range f.list {
+		if b.CompanyID == companyID && b.ID == id {
+			cp := *b
+			cp.RestrictedAcknowledgedAt, cp.RestrictedAcknowledgedBy = &at, actorID
+			return &cp, nil
+		}
+	}
+	return nil, domain.ErrNotFound
 }
 
 // fakeAgentRepo answers GetByID from the same "companyID/agentID" key the
@@ -80,7 +94,7 @@ func TestABindingIsStoredAgainstTheAddress(t *testing.T) {
 	repo := &fakeBindingRepo{}
 	svc := bindingService(repo, &domain.Agent{ID: "ag-ops", CompanyID: "co-1", Enabled: true})
 
-	b, err := svc.Create(context.Background(), "co-1", BindingInput{
+	b, err := svc.Create(context.Background(), "co-1", "admin-1", BindingInput{
 		AgentID: "ag-ops", Channel: "discord", ExternalID: "chan-ops",
 	})
 	if err != nil {
@@ -97,7 +111,7 @@ func TestAWhatsAppBindingIsStoredNormalised(t *testing.T) {
 	repo := &fakeBindingRepo{}
 	svc := bindingService(repo, &domain.Agent{ID: "ag-fin", CompanyID: "co-1", Enabled: true})
 
-	b, err := svc.Create(context.Background(), "co-1", BindingInput{
+	b, err := svc.Create(context.Background(), "co-1", "admin-1", BindingInput{
 		AgentID: "ag-fin", Channel: "whatsapp", ExternalID: " whatsapp:+628123 ",
 	})
 	if err != nil {
@@ -123,7 +137,7 @@ func TestABindingCannotNameAnotherCompanysAgent(t *testing.T) {
 		"an id that never existed": "ag-nope",
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := svc.Create(context.Background(), "co-1", BindingInput{
+			_, err := svc.Create(context.Background(), "co-1", "admin-1", BindingInput{
 				AgentID: id, Channel: "discord", ExternalID: "chan-ops",
 			})
 			if !errors.Is(err, domain.ErrInvalidInput) {
@@ -148,7 +162,7 @@ func TestOnlyTheInboundChatChannelsCanBeBound(t *testing.T) {
 	// "slack" until Slack became one.
 	for _, channel := range []string{"dashboard", "api", "", "telegram"} {
 		t.Run(channel, func(t *testing.T) {
-			_, err := svc.Create(context.Background(), "co-1", BindingInput{
+			_, err := svc.Create(context.Background(), "co-1", "admin-1", BindingInput{
 				AgentID: "ag-ops", Channel: channel, ExternalID: "whatever",
 			})
 			if !errors.Is(err, domain.ErrInvalidInput) {
@@ -170,7 +184,7 @@ func TestASecondBindingOnOneAddressIsRefused(t *testing.T) {
 	repo := &fakeBindingRepo{err: domain.ErrAlreadyExists}
 	svc := bindingService(repo, &domain.Agent{ID: "ag-ops", CompanyID: "co-1", Enabled: true})
 
-	_, err := svc.Create(context.Background(), "co-1", BindingInput{
+	_, err := svc.Create(context.Background(), "co-1", "admin-1", BindingInput{
 		AgentID: "ag-ops", Channel: "discord", ExternalID: "chan-ops",
 	})
 	if !errors.Is(err, domain.ErrAlreadyExists) {
@@ -192,7 +206,7 @@ func TestAnEmptyOrOversizedIdentifierIsRefused(t *testing.T) {
 	}
 	for name, ref := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, err := svc.Create(context.Background(), "co-1", BindingInput{
+			_, err := svc.Create(context.Background(), "co-1", "admin-1", BindingInput{
 				AgentID: "ag-ops", Channel: "whatsapp", ExternalID: ref,
 			})
 			if !errors.Is(err, domain.ErrInvalidInput) {
@@ -213,7 +227,7 @@ func TestTheRefusalNamesWhatTheChannelWants(t *testing.T) {
 		"lark":     "Lark chat id",
 		"whatsapp": "phone number",
 	} {
-		_, err := svc.Create(context.Background(), "co-1", BindingInput{
+		_, err := svc.Create(context.Background(), "co-1", "admin-1", BindingInput{
 			AgentID: "ag-ops", Channel: channel, ExternalID: "",
 		})
 		if err == nil || !strings.Contains(err.Error(), want) {

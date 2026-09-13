@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useIsAdmin } from "@/store/auth";
 import { apiErrorMessage } from "@/lib/api-error";
 import type { Watcher } from "@argentum/api-types";
+import { DISABLED_REASON_COPY } from "@/features/settings/access";
 import {
   conditionSummary,
   GRAIN_LABELS,
@@ -123,7 +124,7 @@ export function WatcherRow({
             {watcher.enabled ? (
               <Badge variant="secondary">enabled</Badge>
             ) : (
-              <Badge variant="outline">off</Badge>
+              <Badge variant="outline">{watcher.disabled_reason ? "turned off" : "off"}</Badge>
             )}
             <Badge variant="outline" className="font-mono text-[10px]">
               {watcher.timezone}
@@ -138,6 +139,13 @@ export function WatcherRow({
             {humanCron(watcher.cron_expression)} · cooldown {watcher.cooldown_minutes}m · last fired{" "}
             {relative(watcher.last_fired_at)}
           </div>
+          {/* Why the product switched it off (T-Z8) — "not silently skipped"
+              means the reason is on the row, not only in the events sheet. */}
+          {!watcher.enabled && watcher.disabled_reason && (
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+              {DISABLED_REASON_COPY[watcher.disabled_reason]}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
           <Button

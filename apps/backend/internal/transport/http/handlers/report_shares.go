@@ -17,10 +17,25 @@ import (
 // The half that serves the link is `ShareHandler`, and it is a different type
 // on a different route group for a reason that is not organisational — see
 // that file.
-type ReportShareHandler struct{ svc *app.ReportShareService }
+type ReportShareHandler struct {
+	svc *app.ReportShareService
+	// docs and conversations hide the links of a document the caller may not
+	// see (T-Z11). Either nil leaves every route as it was.
+	docs          domain.DocumentRepository
+	conversations ConversationReader
+}
 
 func NewReportShareHandler(svc *app.ReportShareService) *ReportShareHandler {
 	return &ReportShareHandler{svc: svc}
+}
+
+// WithConversationAccess applies DocumentsHandler's rule to a document's links
+// (T-Z11). The document is read here, not in the service, because the service
+// answers a company's question and this is a person's.
+func (h *ReportShareHandler) WithConversationAccess(docs domain.DocumentRepository, r ConversationReader) *ReportShareHandler {
+	h.docs = docs
+	h.conversations = r
+	return h
 }
 
 // Register installs the routes on the authenticated `/api` group. All three
@@ -34,8 +49,11 @@ func NewReportShareHandler(svc *app.ReportShareService) *ReportShareHandler {
 // keeps `apiPolicy` diffable against the router: a route the table lists and
 // the router registers only sometimes is a table nothing can check.
 func (h *ReportShareHandler) Register(rg *gin.RouterGroup) {
-	rg.GET("/documents/:id/shares", h.available, h.list)
-	rg.POST("/documents/:id/shares", h.available, h.create)
+	rg.GET("/documents/:id/shares", h.available, h.visible, h.list)
+	rg.POST("/documents/:id/shares", h.available, h.visible, h.create)
+	// Revoking asks nothing about the document (T-Z11): it can only close a
+	// door, and an admin the document is hidden from must still be able to take
+	// back a link to it — resourceExempt's reason for the dashboard revoke.
 	rg.DELETE("/documents/:id/shares/:shareID", h.available, h.revoke)
 }
 
@@ -44,6 +62,42 @@ func (h *ReportShareHandler) available(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
 			"error": "Sharing a report as a player needs object storage, which is not configured on this deployment.",
 		})
+	}
+}
+
+// visible hides the links of a document the caller may not see (T-Z11), and
+// answers as the route answers a document with none: listing is an empty list —
+// what an id nobody shared gets — and minting is create's own not-found. A link
+// is a door out of every session, so a person the product will not show the
+// document to is not somebody who may open one.
+//
+// A document this lookup cannot find passes through untouched, so the route
+// answers a missing one exactly as it did before this ticket.
+func (h *ReportShareHandler) visible(c *gin.Context) {
+	if h.conversations == nil || h.docs == nil {
+		return
+	}
+	ctx := c.Request.Context()
+	doc, err := h.docs.GetForCompany(ctx, companyID(c), c.Param("id"))
+	if errors.Is(err, domain.ErrNotFound) {
+		return
+	}
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to that document; try again"})
+		return
+	}
+	if doc.ThreadID == "" {
+		return
+	}
+	ok, err := h.conversations.MayRead(ctx, companyID(c), userID(c), doc.ThreadID)
+	switch {
+	case err != nil:
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to that document; try again"})
+	case ok:
+	case c.Request.Method == http.MethodGet:
+		c.AbortWithStatusJSON(http.StatusOK, gin.H{"shares": []shareResponse{}})
+	default:
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "document not found"})
 	}
 }
 

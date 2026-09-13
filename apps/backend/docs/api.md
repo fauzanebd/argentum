@@ -147,11 +147,62 @@ A `400` means the request's filters were wrong and names which one; the body
 There is no create or update route. A dashboard is authored by the agent through
 `create_dashboard`, which is the one path its validation rules live on.
 
+**Restricted dashboards (T-Z5).** An admin can restrict a dashboard with
+`PUT /api/access/dashboard/:id/mode` and grant it per person; an admin is not
+granted by rank. For a person without the grant, `GET /api/dashboards` omits it,
+and `GET /api/dashboards/:id`, `/data` and `/shares` answer
+`403 {"error": "...", "resource_kind": "dashboard"}` — an id that is not one of
+this company's dashboards still gets that route's own `404`. A failed access check
+is a `503`, and the list is never served unfiltered.
+
+A restricted dashboard cannot be shared: `POST /api/dashboards/:id/shares` answers
+`409` with the reason, whoever asks. Restricting one revokes its live share links
+in the same transaction, and the mode route answers
+`200 {"access_mode": "restricted", "revoked_shares": 2}`. A link that somehow
+survives does not open a restricted dashboard; it is answered as a revoked one.
+Revoking a link and deleting the dashboard never ask for a grant.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/saved-dashboards` | **Deprecated.** Metabase-backed dashboards (moved off `/api/dashboards` in T-D10, removed in T-D15). |
 | DELETE | `/api/saved-dashboards/:id` | **Deprecated.** Deletes the Metabase dashboard and the local row. |
 | ANY | `/metabase/*` | **Deprecated.** Transparent reverse proxy to the embedded analytics dashboard. Forward the request as-is. |
+
+---
+
+### Sources and uploaded documents, restricted (T-Z6)
+
+An admin restricts a data source with `PUT /api/access/connection/:id/mode`, and an
+uploaded document with `PUT /api/access/document/:id/mode`, and grants either per
+person. For a person without the grant — an admin not granted it included:
+
+| Route | Answer |
+|-------|--------|
+| `GET /api/connections` | A **member**'s list omits the source. An **admin**'s list is whole: it is where sources are configured, and the agent form saves every source ticked there. |
+| `POST /api/connections/:id/freshness/test`, `/regenerate-description`, `/test-rag` | `403 {"error": "...", "resource_kind": "connection"}` — the three routes that return what is in a source. The other connection routes configure and are not asked. |
+| `GET /api/knowledge/documents` | Omits the document. A page can come back shorter than its `limit`. |
+| `GET /api/knowledge/documents/:id`, `/tables`, `/pages/:page` | `403 {"error": "...", "resource_kind": "document"}` |
+| `GET` and `PATCH /api/knowledge/tables/:tableId`, `POST /api/knowledge/tables/:tableId/apply` | The same `403`, asked of the document the table came from, before a body is read or anything written. `POST …/unpublish` is not asked. |
+
+A failed access check is `503 {"error": "could not check access; try again"}`, and
+no list is ever served unfiltered. **A grant on a source never changes what an agent
+may query** — that is the agent's own source list.
+
+### Agents on the doors with no person (T-Z8)
+
+A grant is a person's, and only the dashboard carries one. Every other way into a
+restricted agent follows its own rule:
+
+| Door | Rule |
+|------|------|
+| API keys | `POST /api/api-keys` takes `agent_ids` (optional, fixed at creation). Empty is every agent, restricted ones included. A listed key reaches only those agents; see `openapi/v1.yaml` for `agent_not_allowed`. The key's record carries `agent_ids`. |
+| Channel bindings | `POST /api/agent-bindings` takes `acknowledge_restricted`. Binding a restricted agent without it is a `400` naming the acknowledgement; with it, the binding stores `restricted_acknowledged_at` / `_by` and an audit row `agent_binding.acknowledge_restricted` names the admin. Reads carry `agent_access_mode`. A binding to a restricted agent that nobody acknowledged answers nothing, and says so to the person who wrote in. |
+| Website widget | Never reaches a restricted agent. `GET /api/embed/config` omits them; a pick of one is a `404`; a conversation running as one is a `403`. |
+| Watchers, scheduled tasks | Re-checked at every fire against their creator. A refused one is switched off with `disabled_reason` (`creator_not_granted`, `creator_removed`) on its record; switching it back on clears it. |
+
+| Method | Path | Description |
+|--------|------|-------------|
+| PUT | `/api/agent-bindings/:id/acknowledgement` | Acknowledge, for an existing binding, that anyone who can post on its address can use its restricted agent. Admin only. `200 {"binding": …}`; `409` when the agent is open; `404` for another company's binding; idempotent, keeping the first admin. |
 
 ---
 

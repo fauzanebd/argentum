@@ -7,7 +7,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"os/signal"
 	"strings"
@@ -19,6 +18,7 @@ import (
 
 	pgctl "github.com/fauzanebd/argentum/internal/adapters/postgres"
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/discord"
@@ -104,10 +104,16 @@ func main() {
 	// is the *other* Discord call site the ticket warned about, and a binding
 	// honoured by the webhook and not by the bot is a channel that answers as
 	// two different agents depending on how the message reached us.
+	//
+	// And the same access (T-Z8): a restricted agent answers a channel only
+	// through a binding an admin acknowledged. Refused on the webhook and
+	// answered here would be one Discord channel with two rules.
+	agentRepo := pgctl.NewAgentRepo(controlDB)
 	chatEnq := app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, enq).
 		WithBudget(usageSvc).
-		WithRoster(pgctl.NewAgentRepo(controlDB)).
-		WithChannelBindings(pgctl.NewAgentBindingRepo(controlDB))
+		WithRoster(agentRepo).
+		WithChannelBindings(pgctl.NewAgentBindingRepo(controlDB)).
+		WithAgentAccess(authz.New(pgctl.NewResourceGrantRepo(controlDB)), agentRepo)
 
 	// --- Discord session manager ---
 	rootCtx, cancelRoot := context.WithCancel(context.Background())
@@ -177,12 +183,13 @@ func (d *dispatcher) Dispatch(ctx context.Context, in discord.InboundMessage) er
 		DiscordChannelID: in.ChannelID,
 		Message:          in.Content,
 	})
-	// A tenant out of credit gets the sentence, not a dropped message. The
-	// error is swallowed after sending because returning it would surface in
-	// the gateway log as a failure, and nothing failed.
-	if errors.Is(err, domain.ErrInsufficientCredits) {
+	// A tenant out of credit — or a channel whose agent is closed to it (T-Z8)
+	// — gets the sentence, not a dropped message. The error is swallowed after
+	// sending because returning it would surface in the gateway log as a
+	// failure, and nothing failed.
+	if refusal, ok := app.SpokenRefusal(err); ok {
 		if d.sender != nil {
-			_ = d.sender.Send(in.CompanyID, in.ChannelID, app.CreditsExhaustedMessage)
+			_ = d.sender.Send(in.CompanyID, in.ChannelID, refusal)
 		}
 		return nil
 	}

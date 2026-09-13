@@ -474,6 +474,23 @@ the reason the roadmap is six times larger is the part this entry did not price:
 decision rather than an inherited one. The standing obligation below — that the
 dashboard must say an agent is not an access boundary — is discharged by `T-Z4`,
 which replaces the sentence rather than deleting it.
+**Built 2026-09-12, and the obligation discharged as planned** — with one
+addition this entry could not have seen. The sentence was replaced in both places
+it was printed (the room's participant bar and Settings → Agents) by decision 4's,
+plus three edges that are still true: grants bind the dashboard only, there is no
+control to restrict with yet, and **conversations already held with a restricted
+agent stay readable by every member**, because conversation reads are
+company-wide — a hole no ticket in roadmap 12 closes
+([`../coverage/access-grants.md`](../coverage/access-grants.md) §10d).
+**Closed the same day by `T-Z10`**, on the owner's choice: a conversation is hidden
+from anyone not granted every agent in it, and the copy's clause about transcripts
+was replaced to say so (§11). Documents a restricted agent generated are the next
+place its output is still company-readable (§11e).
+**The first edge closed 2026-09-13 by `T-Z8`**: grants no longer bind the dashboard
+only. A key reaches only the agents it lists, the widget never reaches a restricted
+agent, a channel answers as one only where an admin acknowledged it, and a watcher
+or schedule whose creator lost the agent stops and says why — each door's rule
+printed where the switch is (§16).
 
 Restrict which users may open which agent, so the HR agent is reachable only by
 HR. `T-S1`'s v1 makes company membership the whole boundary: the Finance agent

@@ -6,7 +6,7 @@ import type { DocumentTable, SourceDocument } from "@argentum/api-types";
 import type { Column, Table } from "@argentum/api-types/doctable";
 
 import { api } from "@/lib/api";
-import { apiErrorMessage } from "@/lib/api-error";
+import { apiErrorMessage, apiErrorStatus } from "@/lib/api-error";
 import { useIsAdmin } from "@/store/auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -96,7 +96,12 @@ export function DocumentReviewPage() {
       {isLoading && <p className="mt-6 text-sm text-muted-foreground">Reading the parse…</p>}
       {error && (
         <p className="mt-6 max-w-prose text-sm text-muted-foreground">
-          {apiErrorMessage(error)}
+          {/* A 403 is a restriction (T-Z6), named for the reason the dashboard
+              view names one (T-Z5): a document is reached by a link, and "could
+              not be loaded" would read as a bug. */}
+          {apiErrorStatus(error) === 403
+            ? "This document is restricted, and an admin has not granted it to you. Ask an admin if you need it."
+            : apiErrorMessage(error)}
         </p>
       )}
 

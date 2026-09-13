@@ -13,9 +13,10 @@ import (
 // the refusal path. The rest return zero values: a test that needed them
 // would be testing something else.
 type stubScheduledRepo struct {
-	task    *domain.ScheduledTask
-	runs    []*domain.ScheduledTaskRun
-	updated []*domain.ScheduledTaskRun
+	task     *domain.ScheduledTask
+	runs     []*domain.ScheduledTaskRun
+	updated  []*domain.ScheduledTaskRun
+	disabled []domain.DisabledReason
 }
 
 func (s *stubScheduledRepo) GetTask(context.Context, string) (*domain.ScheduledTask, error) {
@@ -41,6 +42,10 @@ func (s *stubScheduledRepo) ListTasksByUser(context.Context, string, string) ([]
 func (s *stubScheduledRepo) UpdateTask(context.Context, *domain.ScheduledTask) error { return nil }
 func (s *stubScheduledRepo) DeleteTask(context.Context, string) error                { return nil }
 func (s *stubScheduledRepo) SetTaskEnabled(context.Context, string, bool) error      { return nil }
+func (s *stubScheduledRepo) DisableTask(_ context.Context, id string, reason domain.DisabledReason) error {
+	s.disabled = append(s.disabled, reason)
+	return nil
+}
 func (s *stubScheduledRepo) TouchTaskRunTimes(context.Context, string, time.Time, time.Time) error {
 	return nil
 }

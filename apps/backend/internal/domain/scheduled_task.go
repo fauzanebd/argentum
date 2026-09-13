@@ -26,19 +26,23 @@ const (
 // dedicated thread (ThreadID) so the dashboard can render the run history
 // as a normal conversation.
 type ScheduledTask struct {
-	ID             string     `json:"id"`
-	CompanyID      string     `json:"company_id"`
-	UserID         string     `json:"user_id,omitempty"`
-	ThreadID       string     `json:"thread_id"`
-	Name           string     `json:"name"`
-	Prompt         string     `json:"prompt"`
-	CronExpression string     `json:"cron_expression"`
-	Timezone       string     `json:"timezone"`
-	Enabled        bool       `json:"enabled"`
-	LastRunAt      *time.Time `json:"last_run_at,omitempty"`
-	NextRunAt      *time.Time `json:"next_run_at,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID             string `json:"id"`
+	CompanyID      string `json:"company_id"`
+	UserID         string `json:"user_id,omitempty"`
+	ThreadID       string `json:"thread_id"`
+	Name           string `json:"name"`
+	Prompt         string `json:"prompt"`
+	CronExpression string `json:"cron_expression"`
+	Timezone       string `json:"timezone"`
+	Enabled        bool   `json:"enabled"`
+	// DisabledReason is set when the product switched the task off rather than
+	// a person (T-Z8): its creator lost the agent it runs as. Cleared by
+	// switching it back on.
+	DisabledReason DisabledReason `json:"disabled_reason,omitempty"`
+	LastRunAt      *time.Time     `json:"last_run_at,omitempty"`
+	NextRunAt      *time.Time     `json:"next_run_at,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
 // ScheduledTaskRun is one execution of a ScheduledTask. AssistantMsgID
@@ -66,6 +70,10 @@ type ScheduledTaskRepository interface {
 	UpdateTask(ctx context.Context, t *ScheduledTask) error
 	DeleteTask(ctx context.Context, id string) error
 	SetTaskEnabled(ctx context.Context, id string, enabled bool) error
+	// DisableTask switches a task off with the reason the product did it
+	// (T-Z8). SetTaskEnabled(true) and an UpdateTask that enables it clear the
+	// reason.
+	DisableTask(ctx context.Context, id string, reason DisabledReason) error
 	TouchTaskRunTimes(ctx context.Context, id string, lastRun, nextRun time.Time) error
 
 	// All enabled tasks across all companies. Used by the worker-side

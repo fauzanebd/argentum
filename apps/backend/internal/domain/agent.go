@@ -13,12 +13,17 @@ import (
 // Agent is persona + tools + sources — a named, tenant-editable configuration
 // of the one pipeline this product runs.
 //
-// It is **not** an access boundary. Company membership remains the
-// authorization boundary, so any member can open any of their company's
-// agents; the Finance agent physically cannot query the HR source, but nothing
-// stops an employee from opening it and asking what it can reach. Per-agent
-// user grants are a follow-on, and this struct is shaped so adding them later
-// changes no field here.
+// Sources scope what an agent can read; since roadmap 12, grants scope who may
+// ask it — **on one door**. An admin may restrict an agent (`access_mode`, 084)
+// and grant it per person (`resource_grants`), and the dashboard enforces that
+// at every point a turn picks an agent (T-Z4). `/v1`, the website widget and the
+// chat channels carry no Argentum user, and until T-Z8 decides each of them a
+// restricted agent is still reachable through them. It is a boundary against
+// accident and casual browsing, not against a determined admin, who can grant
+// themselves.
+//
+// This struct did not change for any of that, as the roster was shaped to
+// allow: the grant lives beside the agent, not on it.
 //
 // T-S2 is what reads these rows at turn time: the persona is appended to the
 // system prompt, AllowedTools filters the registry the turn is built with, and

@@ -10,6 +10,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/apiobs"
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/transport/http/handlers"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
@@ -48,32 +49,30 @@ func newRouter(d *apiDeps) *gin.Engine {
 		Register(api.Group("/auth"))
 
 	authed := api.Group("")
-	authed.Use(middleware.Auth(d.signer))
-	// RequireRole runs after Auth (it reads the role Auth sets) and before the
-	// rate limiter, so a request a member is not allowed to make does not
-	// consume their budget. apiPolicy in policy.go is the whole access model.
-	authed.Use(middleware.RequireRole(apiPolicy))
-	// RequireCapability (T-Z1) runs after RequireRole, so a capability can only
-	// narrow a route the role table opened and never admit a caller it refused,
-	// and before the rate limiter for RequireRole's own reason: a request
-	// refused for a missing grant spends nothing.
-	authed.Use(middleware.RequireCapability(capabilityPolicy, d.capabilitySvc))
-	if rateLimiter := middleware.NewRateLimiter(d.rdb, 60, 1.0); rateLimiter != nil {
-		authed.Use(rateLimiter.Middleware())
-	}
+	authed.Use(authedChain(d)...)
 	handlers.NewCompanyHandler(d.companySvc, d.embeddingSvc).
 		WithRequiredTLS(cfg.IsProduction()).
 		WithRetention(d.retentionSvc).
 		WithFreshness(d.freshnessSvc).
+		// A member's source list is narrowed by grant (T-Z6); an admin's stays
+		// whole, because it is where sources are configured.
+		WithAccess(connectionAccessOrNil(d.resourceAuthz)).
 		Register(authed)
 	// Retention, erasure and export (T-H6). Every route here is admin in
 	// apiPolicy: the delete has no undo, and the export is the tenant's whole
 	// conversation history in one response.
 	handlers.NewCompanyDataHandler(d.retentionSvc).Register(authed)
+	// Conversation reads (T-Z10). d.conversationAccess is handed over as a
+	// possibly-nil *app.ConversationAccess without an OrNil helper, unlike the
+	// readers above: its methods are nil-safe and read everything when nil,
+	// which is exactly what "not wired" should mean for these routes.
 	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo).
 		WithParticipants(d.threadParticipantSvc).
+		WithConversationAccess(d.conversationAccess).
 		Register(authed)
-	handlers.NewUsageHandler(d.usageSvc).Register(authed)
+	handlers.NewUsageHandler(d.usageSvc).
+		WithConversationAccess(d.conversationAccess).
+		Register(authed)
 	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)
 	// Is the metric layer accumulating (T-F4). No migration and no writes: the
 	// answer is a GROUP BY over agent_actions, so it is retroactive to every
@@ -88,20 +87,38 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).
 		WithCapabilities(d.capabilitySvc).
 		Register(authed.Group("/users"))
+	// Resource access (T-Z2): restricting a resource and granting it. Agents are
+	// enforced at the enqueuer (T-Z4) and dashboards at their routes and list
+	// (T-Z5); a restriction on a source or a document is still recorded intent
+	// until T-Z6.
+	handlers.NewAccessHandler(d.resourceAccessSvc).Register(authed)
 	handlers.NewReportsHandler(d.brandingSvc, d.companyRepo).Register(authed)
 	handlers.NewPostImagesHandler(d.postImages).Register(authed)
-	handlers.NewDocumentsHandler(d.documentRepo, d.docGen).Register(authed)
+	// Generated documents inherit their conversation's restriction (T-Z11), with
+	// the same possibly-nil reader the conversation routes get above.
+	handlers.NewDocumentsHandler(d.documentRepo, d.docGen).
+		WithConversationAccess(d.conversationAccess).
+		Register(authed)
 	// Uploaded documents (T-P1) — the input side, against the generated
 	// documents above. Registered unconditionally: a nil service answers 503,
 	// which tells a deployment without object storage why, where an absent route
 	// reads as a wrong path.
-	handlers.NewKnowledgeDocumentsHandler(d.documentIngestSvc, cfg.DocMaxUploadMB).Register(authed)
+	handlers.NewKnowledgeDocumentsHandler(d.documentIngestSvc, cfg.DocMaxUploadMB).
+		// The list is narrowed by grant (T-Z6); opening one is resourcePolicy's.
+		WithAccess(documentAccessOrNil(d.resourceAuthz)).
+		Register(authed)
 	// The review surface's API (T-P6/T-P7): the tables inside a document, the
 	// page they were read from, and the one call that publishes one. Same
 	// unconditional registration and same reason — 503 says why, a missing
 	// route says nothing.
-	handlers.NewKnowledgeTablesHandler(d.documentTableSvc, d.documentPageSvc).Register(authed)
-	handlers.NewReportShareHandler(d.shareSvc).Register(authed)
+	handlers.NewKnowledgeTablesHandler(d.documentTableSvc, d.documentPageSvc).
+		// A table is served under its own id, so it asks about its document in
+		// the handler (T-Z6); the two document routes here are resourcePolicy's.
+		WithAccess(documentAccessOrNil(d.resourceAuthz)).
+		Register(authed)
+	handlers.NewReportShareHandler(d.shareSvc).
+		WithConversationAccess(d.documentRepo, d.conversationAccess).
+		Register(authed)
 	handlers.NewAuditHandler(d.actionRepo).Register(authed)
 	handlers.NewAPIKeysHandler(d.apiKeySvc).
 		WithTraffic(trafficReaderOrNil(d.requestRepo)).
@@ -114,6 +131,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 		Register(authed)
 	handlers.NewAgentsHandler(d.agentSvc).
 		WithGenerator(d.agentGenSvc).
+		WithAccess(agentAccessOrNil(d.resourceAuthz)).
 		Register(authed)
 	handlers.NewAgentBindingsHandler(d.agentBindingSvc).Register(authed)
 	handlers.NewCompanyProfileHandler(d.companyProfileSvc).Register(authed)
@@ -130,7 +148,12 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// Native dashboards (T-D10). Registered unconditionally: the handler answers
 	// a typed 503 when the service is absent, which tells a client why, where a
 	// missing route reads as a wrong path.
-	handlers.NewNativeDashboardsHandler(d.dashboardSvc).Register(authed)
+	//
+	// Opening one asks through resourcePolicy (T-Z5); the list, which has no id
+	// for a route entry to name, asks in the handler.
+	handlers.NewNativeDashboardsHandler(d.dashboardSvc).
+		WithAccess(dashboardAccessOrNil(d.resourceAuthz)).
+		Register(authed)
 	handlers.NewDashboardShareHandler(d.dashboardShareSvc).Register(authed)
 	if d.scheduledSvc != nil {
 		handlers.NewScheduledTasksHandler(d.scheduledSvc).Register(authed)
@@ -144,7 +167,8 @@ func newRouter(d *apiDeps) *gin.Engine {
 	if d.slackSvc != nil {
 		handlers.NewSlackHandler(d.slackSvc).Register(authed)
 	}
-	authed.GET("/threads/:id/stream", ws.NewHandler(d.rdb, d.threadRepo, cfg.CORSOrigins).Stream)
+	authed.GET("/threads/:id/stream", ws.NewHandler(d.rdb, d.threadRepo, cfg.CORSOrigins).
+		WithConversationAccess(d.conversationAccess).Stream)
 
 	// The CORS preflight, on its own group and registered as a route.
 	//
@@ -209,6 +233,8 @@ func newRouter(d *apiDeps) *gin.Engine {
 	}
 	handlers.NewEmbedChatHandler(d.chatEnq, d.threadRepo, d.msgRepo, rosterListerOrNil(d.agentSvc)).
 		WithConfig(widgetConfigOrNil(d.companyRepo)).
+		// The widget never offers a restricted agent (T-Z8, decision 10).
+		WithAgentAccess(widgetAccessOrNil(d.resourceAuthz)).
 		Register(embedAPI)
 	// Registered here rather than inside the handler for the reason the
 	// dashboard's own stream is: the WebSocket handler belongs to the transport
@@ -338,6 +364,95 @@ func newRouter(d *apiDeps) *gin.Engine {
 	}
 
 	return r
+}
+
+// authedChain is the middleware every dashboard route runs, in the order it runs
+// them. It is a function returning a slice rather than five Use calls so that the
+// order is a value a test can read: gin's RouteInfo exposes a route's last
+// handler and never its chain, and T-Z3's acceptance asks for the order to be
+// asserted rather than described (TestAuthedChainOrder).
+func authedChain(d *apiDeps) []gin.HandlerFunc {
+	chain := []gin.HandlerFunc{
+		middleware.Auth(d.signer),
+		// RequireRole runs after Auth (it reads the role Auth sets) and before
+		// the rate limiter, so a request a member is not allowed to make does not
+		// consume their budget. apiPolicy in policy.go is the whole role model.
+		middleware.RequireRole(apiPolicy),
+		// RequireCapability (T-Z1) runs after RequireRole, so a capability can
+		// only narrow a route the role table opened and never admit a caller it
+		// refused, and before the rate limiter for RequireRole's own reason: a
+		// request refused for a missing grant spends nothing.
+		middleware.RequireCapability(capabilityPolicy, d.capabilitySvc),
+		// RequireResource (T-Z3) runs after both, on the same argument one layer
+		// further down: a grant on an object can only narrow what the role and
+		// capability tables allowed, and a database read about the object in
+		// the path is only worth making once the caller may make the request at
+		// all. Before the rate limiter, like the two above it.
+		middleware.RequireResource(resourcePolicy, resourceAuthorizerOrNil(d.resourceAuthz)),
+	}
+	if rateLimiter := middleware.NewRateLimiter(d.rdb, 60, 1.0); rateLimiter != nil {
+		chain = append(chain, rateLimiter.Middleware())
+	}
+	return chain
+}
+
+// resourceAuthorizerOrNil is budgetReaderOrNil for RequireResource (T-Z3). A nil
+// *authz.Authorizer would arrive as a non-nil interface; it happens to refuse
+// safely — Decide answers an error, and the middleware a 503 — but the
+// middleware's own nil check is the one that says "not wired", and it should be
+// the one that fires.
+func resourceAuthorizerOrNil(a *authz.Authorizer) middleware.ResourceAuthorizer {
+	if a == nil {
+		return nil
+	}
+	return a
+}
+
+// agentAccessOrNil is resourceAuthorizerOrNil for the roster routes (T-Z4). Here
+// a typed nil would not refuse safely: the handler's nil check is what decides
+// between "list everything, as before grants" and "ask", and a non-nil
+// interface holding nil would ask, fail, and 503 the chat picker.
+func agentAccessOrNil(a *authz.Authorizer) handlers.AgentAccess {
+	if a == nil {
+		return nil
+	}
+	return a
+}
+
+// dashboardAccessOrNil is agentAccessOrNil for the dashboard list (T-Z5), for the
+// same reason: the handler's nil check chooses "list everything, as before
+// grants", and a typed nil would ask, fail, and 503 the dashboards page.
+func dashboardAccessOrNil(a *authz.Authorizer) handlers.DashboardAccess {
+	if a == nil {
+		return nil
+	}
+	return a
+}
+
+// widgetAccessOrNil is dashboardAccessOrNil for the widget's agent picker
+// (T-Z8), and for its reason: a nil *authz.Authorizer handed straight over would
+// be a non-nil interface holding a nil pointer.
+func widgetAccessOrNil(a *authz.Authorizer) handlers.WidgetAgentAccess {
+	if a == nil {
+		return nil
+	}
+	return a
+}
+
+// connectionAccessOrNil and documentAccessOrNil are the same guard for the
+// source list and the two knowledge handlers (T-Z6).
+func connectionAccessOrNil(a *authz.Authorizer) handlers.ConnectionAccess {
+	if a == nil {
+		return nil
+	}
+	return a
+}
+
+func documentAccessOrNil(a *authz.Authorizer) handlers.DocumentAccess {
+	if a == nil {
+		return nil
+	}
+	return a
 }
 
 // budgetReaderOrNil hands the credit reader to `/v1/me` only when there is

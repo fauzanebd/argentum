@@ -12,6 +12,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/apiobs"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/docgen"
@@ -45,15 +46,26 @@ type apiDeps struct {
 	// RequireCapability, and serves the grant routes (T-Z1). A nil one refuses
 	// every capability-gated route rather than opening them.
 	capabilitySvc *app.CapabilityService
-	companySvc    *app.CompanyService
-	embeddingSvc  *app.EmbeddingService
-	usageSvc      *app.UsageService
-	chatEnq       *app.ChatEnqueuer
-	threadRepo    *pgctl.ThreadRepo
-	msgRepo       *pgctl.MessageRepo
-	userRepo      *pgctl.UserRepo
-	companyRepo   *pgctl.CompanyRepo
-	actionRepo    *pgctl.AgentActionRepo
+	// resourceAccessSvc is the admin's half of resource grants (T-Z2): the
+	// access mode and who holds a grant. Nil answers 503 on its routes.
+	resourceAccessSvc *app.ResourceAccessService
+	// resourceAuthz is internal/authz over the same grant store: what
+	// RequireResource asks (T-Z3). Nil refuses every route in resourcePolicy
+	// rather than opening them.
+	resourceAuthz *authz.Authorizer
+	// conversationAccess hides a conversation from a person who may not talk to
+	// every agent in it (T-Z10), on every route that lists, opens or streams
+	// one. Nil-safe: nil reads everything.
+	conversationAccess *app.ConversationAccess
+	companySvc         *app.CompanyService
+	embeddingSvc       *app.EmbeddingService
+	usageSvc           *app.UsageService
+	chatEnq            *app.ChatEnqueuer
+	threadRepo         *pgctl.ThreadRepo
+	msgRepo            *pgctl.MessageRepo
+	userRepo           *pgctl.UserRepo
+	companyRepo        *pgctl.CompanyRepo
+	actionRepo         *pgctl.AgentActionRepo
 	// actionSvc is the human side of the action framework (T-10/T-11): the
 	// approval endpoints call Approve/Reject on it, and it executes an approved
 	// action exactly once. Built with the same action registry the worker

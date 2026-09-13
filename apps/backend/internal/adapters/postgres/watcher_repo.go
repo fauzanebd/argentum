@@ -24,22 +24,25 @@ func NewWatcherRepo(db *sql.DB) *WatcherRepo { return &WatcherRepo{db: db} }
 const watcherColumns = `id, company_id, COALESCE(kind, 'metric'),
 	COALESCE(metric_id::text, ''), COALESCE(source_id::text, ''), thread_id, name, window_grain, comparator,
 	threshold, COALESCE(compare_to, ''), cron_expression, timezone, channels, cooldown_minutes,
-	enabled, last_fired_at, last_dry_run_at, COALESCE(created_by::text, ''), created_at, updated_at`
+	enabled, last_fired_at, last_dry_run_at, COALESCE(created_by::text, ''), created_at, updated_at,
+	COALESCE(disabled_reason, '')`
 
 func scanWatcher(row interface {
 	Scan(dest ...interface{}) error
 }) (*domain.Watcher, error) {
 	w := &domain.Watcher{}
-	var grain, comparator, kind string
+	var grain, comparator, kind, reason string
 	var channels []byte
 	var lastFired, lastDryRun sql.NullTime
 	if err := row.Scan(
 		&w.ID, &w.CompanyID, &kind, &w.MetricID, &w.SourceID, &w.ThreadID, &w.Name, &grain, &comparator,
 		&w.Threshold, &w.CompareTo, &w.CronExpression, &w.Timezone, &channels, &w.CooldownMinutes,
 		&w.Enabled, &lastFired, &lastDryRun, &w.CreatedBy, &w.CreatedAt, &w.UpdatedAt,
+		&reason,
 	); err != nil {
 		return nil, err
 	}
+	w.DisabledReason = domain.DisabledReason(reason)
 	w.Kind = domain.WatcherKind(kind).Normalized()
 	w.WindowGrain = domain.WatcherGrain(grain)
 	w.Comparator = domain.WatcherComparator(comparator)
@@ -155,7 +158,10 @@ func (r *WatcherRepo) Update(ctx context.Context, w *domain.Watcher) error {
 		   SET metric_id = NULLIF($3, '')::uuid, name = $4, window_grain = $5, comparator = $6, threshold = $7,
 		       compare_to = NULLIF($8, ''), cron_expression = $9, timezone = $10, channels = $11,
 		       cooldown_minutes = $12, enabled = $13, last_dry_run_at = $14,
-		       source_id = NULLIF($15, '')::uuid, updated_at = now()
+		       source_id = NULLIF($15, '')::uuid, updated_at = now(),
+		       -- Enabling it is somebody deciding the reason no longer holds
+		       -- (T-Z8). If it still does, the next fire says so again.
+		       disabled_reason = CASE WHEN $13 THEN NULL ELSE disabled_reason END
 		 WHERE company_id = $1 AND id = $2
 		RETURNING updated_at`
 	// kind is deliberately absent from the SET list. A watcher changing what it
@@ -192,6 +198,16 @@ func (r *WatcherRepo) Delete(ctx context.Context, companyID, id string) error {
 func (r *WatcherRepo) TouchFired(ctx context.Context, id string, firedAt time.Time) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE watchers SET last_fired_at = $1, updated_at = now() WHERE id = $2`, firedAt, id)
+	return err
+}
+
+// Disable switches a watcher off and records why (T-Z8). `AND enabled` so a
+// watcher somebody paused between the fire's read and this write keeps the pause
+// they made rather than gaining a reason they did not cause.
+func (r *WatcherRepo) Disable(ctx context.Context, id string, reason domain.DisabledReason) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE watchers SET enabled = false, disabled_reason = $2, updated_at = now() WHERE id = $1 AND enabled`,
+		id, string(reason))
 	return err
 }
 

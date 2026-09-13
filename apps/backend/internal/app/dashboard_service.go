@@ -88,7 +88,9 @@ func (s *DashboardService) Update(ctx context.Context, companyID, id string, in 
 	if err != nil {
 		return nil, err
 	}
-	d.ID, d.CreatedBy, d.CreatedAt = current.ID, current.CreatedBy, current.CreatedAt
+	// AccessMode is carried for the caller's answer only; the repository's Update
+	// never writes it, so an edit cannot re-open a dashboard restricted meanwhile.
+	d.ID, d.CreatedBy, d.CreatedAt, d.AccessMode = current.ID, current.CreatedBy, current.CreatedAt, current.AccessMode
 	warnings, rows, err := s.dryRun(ctx, companyID, d)
 	if err != nil {
 		return nil, err

@@ -22,8 +22,13 @@ type DashboardRepo struct{ db *sql.DB }
 
 func NewDashboardRepo(db *sql.DB) *DashboardRepo { return &DashboardRepo{db: db} }
 
+// access_mode is read and never written here: 084 defaults it, and the only
+// statement that changes it is ResourceGrantRepo.SetAccessMode, which revokes a
+// dashboard's share links in the same transaction. An Update that wrote the mode
+// back from a struct read earlier could re-open a dashboard an admin had just
+// restricted.
 const dashboardColumns = `id, company_id, thread_id, source_id, title, description,
-	spec, spec_version, refresh_secs, created_by, created_at, updated_at`
+	spec, spec_version, refresh_secs, created_by, access_mode, created_at, updated_at`
 
 func (r *DashboardRepo) Create(ctx context.Context, d *domain.Dashboard) error {
 	blob, err := json.Marshal(d.Spec)
@@ -33,12 +38,12 @@ func (r *DashboardRepo) Create(ctx context.Context, d *domain.Dashboard) error {
 	const q = `
 		INSERT INTO dashboards (company_id, thread_id, source_id, title, description, spec, spec_version, refresh_secs, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, created_at, updated_at
+		RETURNING id, access_mode, created_at, updated_at
 	`
 	return r.db.QueryRowContext(ctx, q,
 		d.CompanyID, d.ThreadID, d.SourceID, d.Title, d.Description,
 		blob, d.SpecVersion, d.RefreshSecs, d.CreatedBy,
-	).Scan(&d.ID, &d.CreatedAt, &d.UpdatedAt)
+	).Scan(&d.ID, &d.AccessMode, &d.CreatedAt, &d.UpdatedAt)
 }
 
 // Update rewrites a dashboard in place. company_id is in the WHERE clause rather
@@ -118,7 +123,7 @@ func scanDashboard(scan func(...any) error) (*domain.Dashboard, error) {
 	var blob []byte
 	if err := scan(
 		&d.ID, &d.CompanyID, &d.ThreadID, &d.SourceID, &d.Title, &d.Description,
-		&blob, &d.SpecVersion, &d.RefreshSecs, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt,
+		&blob, &d.SpecVersion, &d.RefreshSecs, &d.CreatedBy, &d.AccessMode, &d.CreatedAt, &d.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}

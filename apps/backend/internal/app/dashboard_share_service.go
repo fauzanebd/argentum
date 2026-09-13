@@ -80,6 +80,14 @@ func (s *DashboardShareService) Create(ctx context.Context, companyID, userID st
 	if err != nil {
 		return nil, err
 	}
+	// A restricted dashboard is not shared, whoever asks — an admin holding its
+	// grant included, because a grant is a person's and a link has none (T-Z5).
+	// Refused before anything about the link is checked, so the answer is the
+	// reason rather than a complaint about a pinned filter. The repository asks
+	// again when it writes the row; this read alone would leave a window.
+	if d.AccessMode != domain.AccessModeOpen {
+		return nil, domain.ErrDashboardRestricted
+	}
 
 	days := in.ExpiresInDays
 	if days <= 0 {
@@ -205,6 +213,15 @@ func (s *DashboardShareService) Open(ctx context.Context, token, password string
 	// nothing except the token.
 	d, err := s.dashboards.GetByID(ctx, sh.CompanyID, sh.DashboardID)
 	if err != nil {
+		return nil, ErrShareGone
+	}
+	// A link does not open a restricted dashboard, answered exactly as a revoked
+	// one (T-Z5). Restricting revokes every live link, so this should never find
+	// one — and it is here for the ways one could still exist: a link minted by
+	// the previous release's binary during the rolling deploy that ships the
+	// revoke, which checks nothing, or a row somebody wrote by hand. It asks the
+	// dashboard's mode, not anybody's grant: the visitor is nobody.
+	if d.AccessMode != domain.AccessModeOpen {
 		return nil, ErrShareGone
 	}
 

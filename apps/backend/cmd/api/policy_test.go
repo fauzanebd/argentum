@@ -16,6 +16,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
@@ -107,6 +108,10 @@ func testDeps(cfg *config.Config, signer *auth.TokenSigner) *apiDeps {
 		// in TestGatedRoutesRejectMembers and the member in
 		// TestMemberRoutesAdmitMembers.
 		capabilitySvc: app.NewCapabilityService(&noCapabilities{}),
+		// A grant store in which every object is restricted and nobody holds a
+		// grant (T-Z3), for the same double duty: a route that had quietly
+		// started asking about the object in its path would 403 both roles.
+		resourceAuthz: authz.New(&restrictedEverything{}),
 	}
 }
 
@@ -264,6 +269,12 @@ func TestGatedRoutesRejectMembers(t *testing.T) {
 				if _, gated := capabilityPolicy[key]; gated {
 					continue
 				}
+				// Likewise a route that serves a restricted object: every object
+				// in these deps is restricted and ungranted, and
+				// TestResourceGatedRoutesRefuseAnAdminWithoutAGrant owns that half.
+				if _, gated := resourcePolicy[key]; gated {
+					continue
+				}
 				if role == "admin" && code == http.StatusForbidden {
 					t.Errorf("admin got 403 on a route they are allowed to call")
 				}
@@ -291,6 +302,11 @@ func TestMemberRoutesAdmitMembers(t *testing.T) {
 		// A member route behind a capability is a member route a member
 		// without the grant cannot reach. That is not a role-table failure.
 		if _, gated := capabilityPolicy[key]; gated {
+			continue
+		}
+		// And a member route that serves a restricted object is one a member
+		// without a grant cannot reach, which is not a role-table failure either.
+		if _, gated := resourcePolicy[key]; gated {
 			continue
 		}
 		if role == domain.RoleMember {

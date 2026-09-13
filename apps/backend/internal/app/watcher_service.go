@@ -110,6 +110,11 @@ type WatcherService struct {
 	// watcher:eval tick never passes through ChatEnqueuer.
 	budget BudgetChecker
 
+	// creators re-checks, on every fire, that whoever created the watcher may
+	// still reach the agent its briefings run as (T-Z8). Nil on the API's
+	// instance, which never fires, and nil-safe.
+	creators *CreatorAccess
+
 	// webhooks fans a breach out to the tenant's own subscribers (T-15). Nil on
 	// the API's instance, which never fires, and on any deployment without the
 	// subscription model — Publish is nil-safe either way.
@@ -640,6 +645,13 @@ func (s *WatcherService) HandleFire(ctx context.Context, watcherID string) error
 	if w.Kind.Normalized() == domain.WatcherKindFreshness {
 		return s.handleFreshnessFire(ctx, w)
 	}
+	// Before the metric is read, so a watcher its creator may no longer run is
+	// switched off at this tick rather than at its next breach (T-Z8). A
+	// freshness watcher is not asked, above: it posts its notice without a model
+	// turn, so no agent runs and no grant governs what it says.
+	if stopped, err := s.stopForCreator(ctx, w); stopped || err != nil {
+		return err
+	}
 	m, err := s.metrics.Get(ctx, w.CompanyID, w.MetricID)
 	if err != nil {
 		// The metric FK cascades on delete, so a missing metric is a race, not a
@@ -765,6 +777,47 @@ func (s *WatcherService) HandleFire(ctx context.Context, watcherID string) error
 	s.webhooks.Publish(ctx, w.CompanyID, domain.WebhookWatcherBreached,
 		newWatcherBreachedPayload(w, event, s.now()))
 	return nil
+}
+
+// WithCreatorAccess re-checks a watcher's creator at every fire (T-Z8). The
+// worker's instance takes it; the API's never fires and does not.
+func (s *WatcherService) WithCreatorAccess(c *CreatorAccess) *WatcherService {
+	s.creators = c
+	return s
+}
+
+// stopForCreator switches a watcher off, and records why, when the person who
+// created it may no longer reach the agent it runs as (roadmap 12, decision 11).
+// The reason goes on the watcher and on an event, so the list says it and the
+// events sheet shows the tick that did it — the ticket's "disabled at the next
+// fire, not silently skipped".
+//
+// A check that cannot be made returns its error and fires nothing: asynq retries
+// the tick, and no watcher is switched off because a database blinked.
+func (s *WatcherService) stopForCreator(ctx context.Context, w *domain.Watcher) (bool, error) {
+	reason, err := s.creators.Check(ctx, w.CompanyID, w.CreatedBy, w.ThreadID)
+	if err != nil {
+		return false, fmt.Errorf("watcher %s: %w", w.ID, err)
+	}
+	if reason == "" {
+		return false, nil
+	}
+	// Switched off before the event is written: if this fails the tick is
+	// retried and asks again, rather than leaving an event that says a watcher
+	// stopped when it did not.
+	if err := s.repo.Disable(ctx, w.ID, reason); err != nil {
+		return false, fmt.Errorf("watcher %s: switch off (%s): %w", w.ID, reason, err)
+	}
+	event := &domain.WatcherEvent{WatcherID: w.ID, CompanyID: w.CompanyID, SuppressedReason: string(reason)}
+	if err := s.repo.AppendEvent(ctx, event); err != nil {
+		logrus.WithError(err).WithField("watcher_id", w.ID).
+			Warn("watcher switched off for access; the event saying why was not recorded")
+	}
+	metrics.Default().RecordWatcherFire(string(reason))
+	logrus.WithFields(logrus.Fields{
+		"company_id": w.CompanyID, "watcher_id": w.ID, "reason": reason,
+	}).Info("watcher switched off: its creator may no longer reach the agent it runs as")
+	return true, nil
 }
 
 func (s *WatcherService) inCooldown(w *domain.Watcher) bool {

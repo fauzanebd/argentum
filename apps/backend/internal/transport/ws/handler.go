@@ -34,6 +34,24 @@ type Handler struct {
 	rdb      *redis.Client
 	upgrader websocket.Upgrader
 	threads  domain.ThreadRepository
+	// conversations refuses the dashboard's stream of a conversation the person
+	// may not read (T-Z10). Nil streams every conversation of the company, as
+	// before. Not consulted by EmbedStream, whose visitor has no grants.
+	conversations ConversationReader
+}
+
+// ConversationReader is whether a person may read one conversation (T-Z10).
+// *app.ConversationAccess is the production one, and is nil-safe.
+type ConversationReader interface {
+	MayRead(ctx context.Context, companyID, userID, threadID string) (bool, error)
+}
+
+// WithConversationAccess applies the thread routes' rule to the live stream
+// (T-Z10). Without it, a person the thread list hides a conversation from could
+// still watch its next answer arrive, token by token, by holding its id.
+func (h *Handler) WithConversationAccess(r ConversationReader) *Handler {
+	h.conversations = r
+	return h
 }
 
 // NewHandler builds a WebSocket handler backed by Redis pub/sub.
@@ -73,9 +91,25 @@ func (h *Handler) Stream(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "thread not found"})
 		return
 	}
-	if cid, _ := companyID.(string); thread.CompanyID != cid {
+	cid, _ := companyID.(string)
+	if thread.CompanyID != cid {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
+	}
+	// Before the upgrade, so the refusal is an ordinary HTTP answer — and the
+	// same "thread not found" a missing id gets.
+	if h.conversations != nil {
+		uv, _ := c.Get("user_id")
+		userID, _ := uv.(string)
+		ok, err := h.conversations.MayRead(c.Request.Context(), cid, userID, thread.ID)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to that conversation; try again"})
+			return
+		}
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": "thread not found"})
+			return
+		}
 	}
 
 	h.pump(c, threadID, h.upgrader)

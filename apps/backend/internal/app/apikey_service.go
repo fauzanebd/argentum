@@ -36,7 +36,9 @@ const (
 // APIKeyService mints, lists, revokes and authenticates API keys.
 type APIKeyService struct {
 	repo domain.APIKeyRepository
-	now  func() time.Time
+	// agents checks a submitted agent allowlist against the roster (T-Z8).
+	agents APIKeyAgentReader
+	now    func() time.Time
 
 	mu        sync.Mutex
 	lastTouch map[string]time.Time
@@ -46,6 +48,19 @@ type APIKeyService struct {
 // expiry without sleeping.
 func NewAPIKeyService(repo domain.APIKeyRepository) *APIKeyService {
 	return &APIKeyService{repo: repo, now: time.Now, lastTouch: map[string]time.Time{}}
+}
+
+// APIKeyAgentReader is the roster read that checks an allowlist (T-Z8).
+// domain.AgentRepository satisfies it.
+type APIKeyAgentReader interface {
+	GetByID(ctx context.Context, companyID, id string) (*domain.Agent, error)
+}
+
+// WithAgents checks a key's agent allowlist against the company's roster when
+// the key is minted (T-Z8).
+func (s *APIKeyService) WithAgents(r APIKeyAgentReader) *APIKeyService {
+	s.agents = r
+	return s
 }
 
 // CreatedAPIKey carries the one and only copy of the plaintext token, beside
@@ -61,8 +76,12 @@ type CreatedAPIKey struct {
 // Create mints a key for one company. expiresInDays of 0 means no expiry:
 // a server-to-server credential with no rotation tooling behind it is better
 // off never expiring than expiring unattended at 3am.
+//
+// agentIDs is the agents a turn on the key may run as, empty for every agent —
+// restricted ones included, because a key is not a person and borrows nobody's
+// grants (T-Z8, roadmap 12 decision 9).
 func (s *APIKeyService) Create(
-	ctx context.Context, companyID, createdBy, name string, scopes []string, expiresInDays int,
+	ctx context.Context, companyID, createdBy, name string, scopes, agentIDs []string, expiresInDays int,
 ) (*CreatedAPIKey, error) {
 	name = strings.TrimSpace(name)
 	switch {
@@ -86,6 +105,10 @@ func (s *APIKeyService) Create(
 		// looks exactly like a bug to whoever deploys it.
 		return nil, fmt.Errorf("%w: a key needs at least one scope", domain.ErrInvalidInput)
 	}
+	agents := domain.NormalizeAgentIDs(agentIDs)
+	if err := s.checkAgents(ctx, companyID, agents); err != nil {
+		return nil, err
+	}
 
 	token, prefix, hash, err := auth.NewAPIKey()
 	if err != nil {
@@ -98,6 +121,7 @@ func (s *APIKeyService) Create(
 		KeyPrefix: prefix,
 		KeyHash:   hash,
 		Scopes:    parsed,
+		AgentIDs:  agents,
 		CreatedBy: createdBy,
 	}
 	if expiresInDays > 0 {
@@ -113,9 +137,30 @@ func (s *APIKeyService) Create(
 		"company_id": companyID,
 		"key_prefix": prefix,
 		"scopes":     k.SortedScopeStrings(),
+		"agents":     len(agents),
 	}).Info("api key created")
 
 	return &CreatedAPIKey{Key: k, Token: token}, nil
+}
+
+// checkAgents refuses an allowlist naming an agent this company does not have.
+// Unknown and another company's read the same, for AgentBindingService.Create's
+// reason. With no roster wired the list is stored as given — an id that names no
+// agent of this company admits nothing at turn time, so an unchecked list can
+// only reach less than it says, never more.
+func (s *APIKeyService) checkAgents(ctx context.Context, companyID string, ids []string) error {
+	if s.agents == nil {
+		return nil
+	}
+	for _, id := range ids {
+		if _, err := s.agents.GetByID(ctx, companyID, id); err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return fmt.Errorf("%w: %s is not one of this workspace's agents", domain.ErrInvalidInput, id)
+			}
+			return fmt.Errorf("lookup agent: %w", err)
+		}
+	}
+	return nil
 }
 
 // List returns the company's keys, newest first, revoked ones included.

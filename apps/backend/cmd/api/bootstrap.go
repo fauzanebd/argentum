@@ -17,6 +17,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/apiobs"
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/auth"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
@@ -117,6 +118,15 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// cache rather than carried on the JWT above, whose fifteen-minute lifetime
 	// would make every revoke wait that long.
 	deps.capabilitySvc = app.NewCapabilityService(pgctl.NewCapabilityRepo(controlDB))
+	// Resource grants (T-Z2, T-Z3). One repository, two readers: the admin's
+	// routes change what it holds, and internal/authz decides against it — for
+	// RequireResource now, and for the seams that select an agent from T-Z4.
+	// Uncached, unlike capabilities: a decision is one indexed statement, and
+	// no route asks it yet (resourcePolicy is empty), so a cache would be a
+	// revoke-latency argument with nothing on the other side of it.
+	resourceGrants := pgctl.NewResourceGrantRepo(controlDB)
+	deps.resourceAccessSvc = app.NewResourceAccessService(resourceGrants)
+	deps.resourceAuthz = authz.New(resourceGrants)
 	// The only machine credential in the product (T-13). It authenticates
 	// `/v1`; the dashboard routes beside it are how an admin mints one.
 	deps.apiKeySvc = app.NewAPIKeyService(pgctl.NewAPIKeyRepo(controlDB))
@@ -283,13 +293,23 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.threadParticipantSvc = app.NewThreadParticipantService(
 		pgctl.NewThreadParticipantRepo(controlDB), threadRepo, agentRepo,
 		cfg.ThreadMaxParticipants,
-	)
+	).WithAgentAccess(deps.resourceAuthz)
 	deps.room = app.NewRoom(deps.threadParticipantSvc, agentRepo)
+	// Who may read a conversation (T-Z10): whoever may talk to every agent in
+	// it. The thread repository says which agents those are; authz decides.
+	deps.conversationAccess = app.NewConversationAccess(threadRepo, deps.resourceAuthz, agentRepo)
+	// WithAgentAccess (T-Z4) binds the dashboard's turns to a person's grants,
+	// and since T-Z8 the widget's and the channels' to nobody's — see its
+	// comment. cmd/discord's enqueuer serves a channel and takes it too: a
+	// restricted agent closed on the webhook and open on the gateway would be
+	// one Discord channel with two answers.
 	deps.chatEnq = app.NewChatEnqueuer(threadSvc, messageRepo, companyRepo, deps.enqueuer).
 		WithBudget(deps.usageSvc).
 		WithRoster(agentRepo).
 		WithChannelBindings(bindingRepo).
-		WithRoom(deps.room)
+		WithRoom(deps.room).
+		WithAgentAccess(deps.resourceAuthz, agentRepo).
+		WithConversationAccess(deps.conversationAccess)
 	scheduledRepo := pgctl.NewScheduledTaskRepo(controlDB)
 	// The API process only creates and edits schedules — the worker fires
 	// them — but the service is the same type, and wiring it here keeps the
@@ -463,7 +483,14 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		// (T-M3). The repo satisfies the lister directly, so this needs no
 		// ordering against mcpServerSvc, which is built later.
 		WithMCPServers(pgctl.NewMCPServerRepo(controlDB))
-	deps.agentBindingSvc = app.NewAgentBindingService(bindingRepo, agentRepo)
+	// Binding a restricted agent to a channel asks for an acknowledgement and
+	// writes it to the audit log (T-Z8, decision 8).
+	deps.agentBindingSvc = app.NewAgentBindingService(bindingRepo, agentRepo).
+		WithAccess(deps.resourceAuthz, deps.actionRepo)
+	// A key's agent allowlist is checked against the roster when it is minted
+	// (T-Z8). Here rather than where the key service is built, because the
+	// roster repository did not exist yet there.
+	deps.apiKeySvc.WithAgents(agentRepo)
 	companyProfileRepo := pgctl.NewCompanyProfileRepo(controlDB)
 	sourceProfileRepo := pgctl.NewSourceProfileRepo(controlDB)
 	deps.companyProfileSvc = app.NewCompanyProfileService(companyProfileRepo).

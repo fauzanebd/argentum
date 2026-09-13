@@ -75,6 +75,14 @@ export interface paths {
          *     answers `404 agent_not_found` like any other id this workspace cannot
          *     use.
          *
+         *     A key an admin limited to named agents lists **those agents and no
+         *     others**, because naming any other is the same `404`. If the default is
+         *     not among them, no row carries `is_default: true`, and a call on that key
+         *     has to name its `agent_id`. A key with no list — every key minted before
+         *     the list existed — sees the whole roster, restricted agents included: a
+         *     key is not a person, and the grants an admin gives people do not apply
+         *     to it.
+         *
          *     The whole roster arrives in one page. `has_more` is always `false`; the
          *     envelope is the one every other `/v1` list uses so a client needs no
          *     special case for this one.
@@ -833,6 +841,14 @@ export interface components {
              *     An id this workspace does not have — unknown, deleted, disabled, or
              *     another tenant's — is `404 agent_not_found`, never `403`. A 403
              *     would confirm the row exists to someone guessing uuids.
+             *
+             *     A key an admin limited to named agents answers the same `404` for
+             *     an agent outside its list. It answers `403 agent_not_allowed` when
+             *     the turn would run as an agent the caller did not name: a
+             *     `thread_id` whose conversation runs as one outside the list, or a
+             *     call with no `agent_id` when the workspace default is not on it. The
+             *     fix for both is to send one of the key's agents in `agent_id`. A key
+             *     with no list reaches every agent.
              */
             agent_id?: string;
         };
@@ -1302,6 +1318,10 @@ export interface components {
         /**
          * @description A valid key without the scope this route requires. Scopes are fixed when
          *     a key is minted — mint a new one.
+         *
+         *     On `POST /v1/chat` and `POST /v1/reports` it is also
+         *     `agent_not_allowed`: the key is limited to named agents, and the turn
+         *     would run as another. Name one of the key's agents in `agent_id`.
          */
         Forbidden: {
             headers: {

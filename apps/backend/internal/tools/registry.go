@@ -73,7 +73,12 @@ type RegistryDeps struct {
 	// is not a configuration anybody wants — it is the state T-D22 was written to
 	// end.
 	Dashboards DashboardStore
-	Scheduled  ScheduledTaskCreator
+	// DashboardAccess is who may open which dashboard (T-Z12), asked by
+	// update_dashboard for the person on a dashboard turn. Nil asks nothing,
+	// and is what the API's name-only build and cmd/mcp pass: neither runs the
+	// tool for a person.
+	DashboardAccess DashboardAccess
+	Scheduled       ScheduledTaskCreator
 	// Docs nil means this deployment has no object storage, and
 	// generate_document is left out rather than registered and broken.
 	Docs *docgen.Service
@@ -114,6 +119,11 @@ type RegistryDeps struct {
 	// that has not indexed anything yet should not have a different tool list
 	// from one that has.
 	Documents DocumentSearch
+	// DocumentAccess is who may read which uploaded document (T-Z6), asked by
+	// search_documents for the person on a turn. Nil asks nothing, and is what
+	// the API's name-only build and cmd/mcp pass: neither runs the tool for a
+	// person.
+	DocumentAccess DocumentAccess
 	// Profiles supplies the fiscal year start month to `compute`'s period
 	// references (T-W2). Optional in the way Companies is: nil resolves every
 	// period against a January year, which is what every caller with no
@@ -167,7 +177,8 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// pairs with, because the prompt's argument is a comparison between the
 		// two: a second dashboard leaves the wrong one in the list and breaks a
 		// link already sent, and the model reads them in this order.
-		NewUpdateDashboardTool(d.Dashboards, d.Connections, d.Usage),
+		NewUpdateDashboardTool(d.Dashboards, d.Connections, d.Usage).
+			WithAccess(d.DashboardAccess),
 		NewScheduleTaskTool(d.Scheduled),
 		// Asking, as an action (T-Q4). It has no dependencies at all, which is
 		// the point: the alternative to asking is always a tool call, and a
@@ -185,7 +196,8 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// prompt argues for: a figure that exists in a published table is
 		// better answered by querying it, and a passage is what you fall back
 		// to when the answer is prose.
-		NewSearchDocumentsTool(d.Documents),
+		NewSearchDocumentsTool(d.Documents).
+			WithAccess(d.DocumentAccess),
 		// The workspace's own procedures (T-K4). Last of the read tools and
 		// registered unconditionally: what it returns is instruction rather
 		// than data, so it belongs beside them in the list and nowhere near

@@ -10,6 +10,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/transport/http/apierr"
 	"github.com/fauzanebd/argentum/internal/transport/http/apiv1"
+	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 )
 
 // V1AgentsHandler answers `GET /v1/agents`: the roster, as the integrator's
@@ -156,6 +157,20 @@ func abortAgentNotFound(c *gin.Context) {
 		"No such agent for this company. List them with `GET /v1/agents`.", "agent_id")
 }
 
+// abortAgentNotAllowed is a turn on a key limited to named agents that would run
+// as another (T-Z8): a conversation already running as one, or a call that named
+// no agent when the workspace default is not on the key's list.
+//
+// **403, where a pick outside the list is 404.** That one is an id the caller
+// typed, and a 403 would confirm it is an agent. This one is an agent the caller
+// did not name — the conversation's own, or the default — so the status reveals
+// nothing the caller could not already see, and "name one of your agents" is the
+// fix. Same code on both write doors.
+func abortAgentNotAllowed(c *gin.Context) {
+	apierr.AbortParam(c, apierr.TypePermission, "agent_not_allowed",
+		"This key may only use the agents it was created with, and this would run as another. Name one of them in `agent_id` — `GET /v1/agents` lists them.", "agent_id")
+}
+
 // list is `GET /v1/agents` — the company's roster, default first.
 //
 // It answers in the standard page envelope with `has_more: false`, always. A
@@ -182,8 +197,16 @@ func (h *V1AgentsHandler) list(c *gin.Context) {
 	// integrator would rather see the agents than a 500 because the MCP registry
 	// hiccuped.
 	mcpNames := h.mcpNames(c)
+	// A key limited to named agents lists those and no others (T-Z8). This is
+	// the route an integrator reads to learn what they may send, and an agent the
+	// key may not use is not an offer: naming one is the same 404 as an id that
+	// never existed, so listing it would be listing a 404.
+	allowed := middleware.APIKeyAgents(c)
 	items := make([]agentResponse, 0, len(agents))
 	for _, a := range agents {
+		if !domain.KeyAllowsAgent(allowed, a.ID) {
+			continue
+		}
 		items = append(items, agentBody(a, mcpNames))
 	}
 	c.JSON(http.StatusOK, apiv1.NewPage(items, false, ""))

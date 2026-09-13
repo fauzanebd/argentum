@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -96,8 +97,22 @@ const (
 	DashboardShareMaxRefreshPerHour     = 600
 )
 
+// ErrDashboardRestricted refuses a share link on a restricted dashboard (T-Z5).
+//
+// A share is a bearer door with no person behind it, and a grant is a property
+// of a person, so a restricted dashboard behind a link would be restricted for
+// everyone except whoever the URL reached. It is refused rather than warned
+// about for the reason 2026-09-03's P1 gave: a link has already once served a
+// tenant's panel SQL to a stranger (live-gate-backlog §1s).
+var ErrDashboardRestricted = errors.New("a restricted dashboard cannot be shared")
+
 // DashboardShareRepository persists dashboard share links.
 type DashboardShareRepository interface {
+	// Insert refuses with ErrDashboardRestricted unless the dashboard is open
+	// **when the row is written**, not merely when the service read it: a check
+	// in Go leaves a window in which an admin restricts the dashboard, its live
+	// links are revoked, and a mint that read "open" a moment earlier writes one
+	// more. ErrNotFound when the dashboard is not this company's.
 	Insert(ctx context.Context, s *DashboardShare) error
 	// ByTokenHash resolves the bearer token. It is **not** company-scoped and
 	// cannot be: the visitor is logged out and has no tenant. The token is the

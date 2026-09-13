@@ -135,7 +135,13 @@ type AgentToolInfo struct {
 // route would be a second request on a screen that already has the answer.
 type AgentsResponse struct {
 	Agents []*domain.Agent `json:"agents"`
-	Tools  []AgentToolInfo `json:"tools"`
+	// ReachableAgentIDs is which of Agents the person reading this may talk to
+	// (T-Z4). For a member it is every agent listed, because the ones they may
+	// not reach are not listed. For an admin, Agents is the whole roster —
+	// Settings → Agents manages it from this payload — and this is what the chat
+	// picker filters by. Never null.
+	ReachableAgentIDs []string        `json:"reachable_agent_ids"`
+	Tools             []AgentToolInfo `json:"tools"`
 	// Templates is the create-an-agent gallery (T-B3), already narrowed to the
 	// tools this deployment runs. Empty on a deployment that loaded no gallery,
 	// which the dashboard renders as the blank form and nothing else — the

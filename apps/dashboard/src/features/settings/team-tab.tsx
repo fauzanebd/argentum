@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Check, Trash2 } from "lucide-react";
+import { Copy, Check, ChevronDown, Trash2 } from "lucide-react";
+import type { Agent, AgentsResponse } from "@argentum/api-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,11 @@ import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api-error";
 import { useAuthStore } from "@/store/auth";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import type { AccessResource } from "./access";
+import { PersonAccessPanel } from "./person-access-panel";
+import { ResourceAccessCard } from "./resource-access-card";
+import { useResourceAccess } from "./use-access";
 
 type Role = "admin" | "member";
 type Status = "active" | "pending" | "deactivated";
@@ -79,11 +85,47 @@ export function TeamTab() {
   // that disappears after four seconds.
   const [issued, setIssued] = useState<InviteResponse | null>(null);
   const [copied, setCopied] = useState(false);
+  // Whose access panel is open (T-Z7). One at a time: each panel reads that
+  // person's capabilities, and a page of forty open panels is forty requests
+  // nobody asked to see.
+  const [openAccess, setOpenAccess] = useState<string | null>(null);
 
   const { data: members, isLoading } = useQuery({
     queryKey: ["team"],
     queryFn: async () => (await api.get<{ users: Member[] }>("/users")).data.users ?? [],
   });
+
+  // The roster, under the key Settings → Agents and the chat already share. An
+  // admin is sent every agent here — restricted ones included — which is what
+  // the access matrix needs: an agent the admin may not talk to is still one
+  // they manage (T-Z4).
+  const { data: agentsData } = useQuery({
+    queryKey: ["agents"],
+    queryFn: async () => (await api.get<AgentsResponse>("/agents")).data,
+  });
+  const agents: AccessResource[] = (agentsData?.agents ?? [])
+    .filter((a): a is Agent => !!a)
+    .map((a) => ({ id: a.id, name: a.name, disabled: !a.enabled }));
+
+  // Dashboards by the name the access list carries, **not** from
+  // `GET /api/dashboards` (T-Z5). That list is narrowed by grant for an admin
+  // too, so a dashboard the admin restricted and is not granted would be missing
+  // from it — and so from the one screen where they could open it again.
+  const dashboards: AccessResource[] = useResourceAccess("dashboard").resources.map((v) => ({
+    id: v.resource_id,
+    name: v.name,
+  }));
+  // Sources and documents by the access list's names too (T-Z6). The document
+  // list is narrowed by grant for an admin, like the dashboards list, and the
+  // access read is the one both halves of the matrix already draw from.
+  const connections: AccessResource[] = useResourceAccess("connection").resources.map((v) => ({
+    id: v.resource_id,
+    name: v.name,
+  }));
+  const documents: AccessResource[] = useResourceAccess("document").resources.map((v) => ({
+    id: v.resource_id,
+    name: v.name,
+  }));
 
   const invite = useMutation({
     mutationFn: async () =>
@@ -212,57 +254,89 @@ export function TeamTab() {
           )}
           {list.map((m) => {
             const isMe = m.id === me?.id;
+            const expanded = openAccess === m.id;
             return (
-              <div key={m.id} className="flex items-center justify-between gap-4 py-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium truncate">
-                    {m.email}
-                    {isMe && <span className="text-muted-foreground font-normal"> (you)</span>}
+              <div key={m.id} className="py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {m.email}
+                      {isMe && <span className="text-muted-foreground font-normal"> (you)</span>}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      {statusBadge(m.status)}
+                      {m.status === "pending" && m.invite_expires_at && (
+                        <span className="text-xs text-muted-foreground">
+                          expires {new Date(m.invite_expires_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    {statusBadge(m.status)}
-                    {m.status === "pending" && m.invite_expires_at && (
-                      <span className="text-xs text-muted-foreground">
-                        expires {new Date(m.invite_expires_at).toLocaleDateString()}
-                      </span>
-                    )}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* A removed person reaches nothing whatever they hold, so
+                        their panel would be a list of grants that open nothing. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={m.status === "deactivated"}
+                      aria-expanded={expanded}
+                      aria-label={`Access for ${m.email}`}
+                      onClick={() => setOpenAccess(expanded ? null : m.id)}
+                    >
+                      Access
+                      <ChevronDown className={cn("h-4 w-4 transition-transform", expanded && "rotate-180")} />
+                    </Button>
+                    <Select
+                      value={m.role}
+                      onValueChange={(v) => changeRole.mutate({ id: m.id, next: v as Role })}
+                      disabled={m.status === "deactivated"}
+                    >
+                      <SelectTrigger className="w-32" aria-label={`Role for ${m.email}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="member">Member</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={m.status === "deactivated"}
+                      aria-label={m.status === "pending" ? "Revoke invitation" : "Remove member"}
+                      onClick={() => {
+                        const what =
+                          m.status === "pending"
+                            ? `Revoke the invitation for ${m.email}?`
+                            : `Remove ${m.email}? They lose access within 15 minutes.`;
+                        if (confirm(what)) remove.mutate(m.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Select
-                    value={m.role}
-                    onValueChange={(v) => changeRole.mutate({ id: m.id, next: v as Role })}
-                    disabled={m.status === "deactivated"}
-                  >
-                    <SelectTrigger className="w-32" aria-label={`Role for ${m.email}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="member">Member</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    disabled={m.status === "deactivated"}
-                    aria-label={m.status === "pending" ? "Revoke invitation" : "Remove member"}
-                    onClick={() => {
-                      const what =
-                        m.status === "pending"
-                          ? `Revoke the invitation for ${m.email}?`
-                          : `Remove ${m.email}? They lose access within 15 minutes.`;
-                      if (confirm(what)) remove.mutate(m.id);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
+                {expanded && (
+                  <PersonAccessPanel
+                    person={m}
+                    agents={agents}
+                    dashboards={dashboards}
+                    connections={connections}
+                    documents={documents}
+                    meId={me?.id}
+                  />
+                )}
               </div>
             );
           })}
         </CardContent>
       </Card>
+
+      {/* The other direction of the panels above, from the same reads (T-Z7, T-Z5, T-Z6). */}
+      <ResourceAccessCard kind="agent" resources={agents} people={list} meId={me?.id} />
+      <ResourceAccessCard kind="dashboard" resources={dashboards} people={list} meId={me?.id} />
+      <ResourceAccessCard kind="connection" resources={connections} people={list} meId={me?.id} />
+      <ResourceAccessCard kind="document" resources={documents} people={list} meId={me?.id} />
     </div>
   );
 }

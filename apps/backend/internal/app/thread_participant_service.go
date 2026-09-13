@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -25,6 +26,18 @@ type ThreadParticipantService struct {
 	roster       RosterReader
 	// max is the ceiling on one room. Zero takes domain.MaxThreadParticipants.
 	max int
+	// access refuses an agent the person adding it may not talk to (T-Z4). Nil
+	// admits every agent, which is every room before roadmap 12.
+	access AgentAccess
+}
+
+// WithAgentAccess makes a room refuse an agent the person adding it may not
+// talk to (T-Z4). Optional: a room is the one place a person names an agent
+// without the picker in between, so without this a member could add the HR
+// agent to their conversation by id and then address it.
+func (s *ThreadParticipantService) WithAgentAccess(a AgentAccess) *ThreadParticipantService {
+	s.access = a
+	return s
 }
 
 func NewThreadParticipantService(
@@ -128,6 +141,19 @@ func (s *ThreadParticipantService) Add(ctx context.Context, companyID, threadID,
 	agent, err := s.roster.GetByID(ctx, companyID, agentID)
 	if err != nil {
 		return nil, err
+	}
+	// An agent this person may not talk to cannot join their room (T-Z4), and
+	// it is refused as not found — the picker's rule, because the add menu
+	// never offered it. **Before the disabled check**, so a restricted agent
+	// that is also disabled does not confirm it exists by saying so.
+	if s.access != nil && addedBy != "" {
+		d, err := s.access.Decide(ctx, authz.Subject{CompanyID: companyID, UserID: addedBy}, domain.ResourceKindAgent, agentID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrAccessCheckFailed, err)
+		}
+		if !d.Allowed {
+			return nil, domain.ErrNotFound
+		}
 	}
 	if !agent.Enabled {
 		return nil, ErrAgentDisabled

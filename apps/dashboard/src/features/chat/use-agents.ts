@@ -43,14 +43,37 @@ export function useAgents() {
     for (const t of data?.templates ?? []) {
       if (t?.key) starterQuestions.set(t.key, t.starter_questions ?? []);
     }
+    // Which agents this person may talk to (T-Z4). A member is only ever sent
+    // those; an admin is sent the whole roster — Settings → Agents manages it
+    // from this same query — and told which of it they may use. An API that
+    // predates grants sends no list, which means every agent, as it did.
+    const reachableIds = data?.reachable_agent_ids
+      ? new Set(data.reachable_agent_ids)
+      : null;
+    const usable = agents.filter((a) => !reachableIds || reachableIds.has(a.id));
+    const companyDefault = agents.find((a) => a.is_default) ?? null;
     return {
       isLoading,
-      /** Every agent, including disabled ones — for naming what a thread runs as. */
+      /** Every agent sent, including disabled and restricted ones — for naming
+       *  what a thread runs as, which is not an offer to use it. */
       byId,
       /** What a new conversation may be opened on. */
-      selectable: agents.filter((a) => a.enabled),
-      /** The agent a new conversation runs as when the user picks nothing. */
-      fallback: agents.find((a) => a.is_default) ?? null,
+      selectable: usable.filter((a) => a.enabled),
+      /** What may be added to a room: every agent this person may talk to,
+       *  disabled ones included so the menu can say why they are greyed. */
+      addable: usable,
+      /**
+       * The agent a new conversation runs as when the user picks nothing: the
+       * company default, or — when that is restricted from this person — the
+       * first enabled agent they may use, which is the same fall-through the
+       * backend applies (ChatEnqueuer.openingAgent). Mirrored rather than
+       * fetched so the caption above the composer names the agent that will
+       * actually answer.
+       */
+      fallback:
+        companyDefault && usable.includes(companyDefault)
+          ? companyDefault
+          : (usable.find((a) => a.enabled) ?? null),
       /**
        * What to offer on an empty thread opened on this agent. Empty for an
        * agent created from blank, for one created before templates existed, and

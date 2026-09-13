@@ -145,6 +145,14 @@ export interface AgentToolInfo {
  */
 export interface AgentsResponse {
   agents: (Agent | undefined)[];
+  /**
+   * ReachableAgentIDs is which of Agents the person reading this may talk to
+   * (T-Z4). For a member it is every agent listed, because the ones they may
+   * not reach are not listed. For an admin, Agents is the whole roster —
+   * Settings → Agents manages it from this payload — and this is what the chat
+   * picker filters by. Never null.
+   */
+  reachable_agent_ids: string[];
   tools: AgentToolInfo[];
   /**
    * Templates is the create-an-agent gallery (T-B3), already narrowed to the

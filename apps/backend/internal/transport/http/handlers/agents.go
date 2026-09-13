@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -23,12 +25,82 @@ type AgentsHandler struct {
 	// separate service because it spends money and reads two other tickets'
 	// tables, none of which the roster's CRUD has any business reaching.
 	gen *app.AgentGenerateService
+	// access narrows the roster to the agents the person reading it may talk
+	// to (T-Z4). Nil lists every agent to everybody, as before roadmap 12.
+	access AgentAccess
+}
+
+// AgentAccess is the one read the roster routes make about the person reading
+// them (T-Z4). *authz.Authorizer is the production one.
+type AgentAccess interface {
+	Visible(ctx context.Context, s authz.Subject, kind domain.ResourceKind, ids []string) ([]string, error)
 }
 
 // NewAgentsHandler constructs the handler. svc may be nil in stripped-down
 // wirings; the routes then answer 503 rather than panicking.
 func NewAgentsHandler(svc *app.AgentService) *AgentsHandler {
 	return &AgentsHandler{svc: svc}
+}
+
+// WithAccess narrows the roster by grant (T-Z4).
+//
+// **A member and an admin are shown different rosters, and that is not an admin
+// bypassing a grant.** A grant on an agent gates talking to it and being offered
+// it; configuring the roster is the role table's, and every write on these
+// routes is admin. Settings → Agents reads this same payload to manage the
+// roster, so an admin is sent every agent — with ReachableAgentIDs saying which
+// of them they may talk to, which the chat picker filters by. A member is sent
+// only those, because for a member an agent they may not use is one the product
+// does not show (a picker is a list of things you can do).
+func (h *AgentsHandler) WithAccess(a AgentAccess) *AgentsHandler {
+	h.access = a
+	return h
+}
+
+// reachable answers which of agents the caller may talk to, and the roster the
+// caller is shown. False means the response has been written.
+func (h *AgentsHandler) reachable(c *gin.Context, agents []*domain.Agent) ([]*domain.Agent, []string, bool) {
+	ids := make([]string, 0, len(agents))
+	for _, a := range agents {
+		if a != nil {
+			ids = append(ids, a.ID)
+		}
+	}
+	if h.access == nil {
+		return agents, ids, true
+	}
+	role := c.GetString("role")
+	subject := authz.Subject{CompanyID: companyID(c), UserID: userID(c), Role: domain.Role(role)}
+	open, err := h.access.Visible(c.Request.Context(), subject, domain.ResourceKindAgent, ids)
+	if err != nil {
+		// Refused rather than served unfiltered: the unfiltered roster is the
+		// list of agents this member was not supposed to be shown.
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check agent access; try again"})
+		return nil, nil, false
+	}
+	if open == nil {
+		open = []string{}
+	}
+	return rosterFor(agents, open, role == string(domain.RoleAdmin)), open, true
+}
+
+// rosterFor is the roster one person is shown: all of it for an admin, who
+// manages it, and only the reachable agents for anybody else.
+func rosterFor(agents []*domain.Agent, reachable []string, admin bool) []*domain.Agent {
+	if admin {
+		return agents
+	}
+	allowed := make(map[string]bool, len(reachable))
+	for _, id := range reachable {
+		allowed[id] = true
+	}
+	out := make([]*domain.Agent, 0, len(reachable))
+	for _, a := range agents {
+		if a != nil && allowed[a.ID] {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // WithGenerator installs the generate route's service (T-B4). Optional wiring:
@@ -158,6 +230,10 @@ func agentFail(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, domain.ErrAlreadyExists), errors.Is(err, domain.ErrConflict):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, app.ErrAccessCheckFailed):
+		// A binding to a restricted agent asks internal/authz (T-Z8). A failed
+		// read is a retry, never the database's message.
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": app.ErrAccessCheckFailed.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
@@ -172,8 +248,13 @@ func (h *AgentsHandler) list(c *gin.Context) {
 		agentFail(c, err)
 		return
 	}
+	shown, reachable, ok := h.reachable(c, agents)
+	if !ok {
+		return
+	}
 	c.JSON(http.StatusOK, AgentsResponse{
-		Agents: agents, Tools: h.toolInfo(c), Templates: h.templateInfo(),
+		Agents: shown, ReachableAgentIDs: reachable,
+		Tools: h.toolInfo(c), Templates: h.templateInfo(),
 		Generation: h.generationInfo(c),
 	})
 }
@@ -234,6 +315,18 @@ func (h *AgentsHandler) get(c *gin.Context) {
 	a, err := h.svc.Get(c.Request.Context(), companyID(c), c.Param("id"))
 	if err != nil {
 		agentFail(c, err)
+		return
+	}
+	// The list's rule, one agent at a time (T-Z4): a member is answered about
+	// an agent they may not talk to exactly as about one that does not exist.
+	// This is why the route is exempt from resourcePolicy rather than in it —
+	// the answer depends on the role, and a (kind, param) entry has none.
+	shown, _, ok := h.reachable(c, []*domain.Agent{a})
+	if !ok {
+		return
+	}
+	if len(shown) == 0 {
+		agentFail(c, domain.ErrNotFound)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"agent": a})

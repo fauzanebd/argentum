@@ -525,6 +525,17 @@ route and nothing else reaches it.
 #### `T-W7` Speech in: a question you say out loud
 **Repo:** BE · **Size:** 2.0d · **Deps:** `T-Z1` (was `T-W6`) · **Migration:** `082`
 
+> **Two things handed on by `T-Z7` (2026-09-12)**, which built Settings → Team
+> before any route asked for a capability ([`../coverage/access-grants.md`](../coverage/access-grants.md)
+> §12c–§12d). **Rewrite `voice`'s `today` sentence** in `CAPABILITY_COPY`
+> (`apps/dashboard/src/features/settings/access.ts`) in the commit that adds the
+> `capabilityPolicy` entry — until then the toggle says, truthfully, that it does
+> nothing. And **the member's disabled control is this ticket's**: the voice button
+> is the first thing a capability gates, so it is where *"the control, disabled,
+> with a sentence saying who to ask"* gets built and photographed. (The header's
+> `082` is also stale — `T-W2` took it; claim the number at build time. `T-Z8` took
+> `085` on 2026-09-13, so `086` is the next free one.)
+
 ##### Do
 - `internal/speech`: `Transcriber` (`Transcribe(ctx, audio io.Reader, mime, langHint) (Transcript, error)`),
   one provider implementation, and a `nopTranscriber` that logs once at startup

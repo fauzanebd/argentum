@@ -90,6 +90,12 @@ func (r *fakeWatcherRepo) TouchFired(_ context.Context, id string, at time.Time)
 	}
 	return nil
 }
+func (r *fakeWatcherRepo) Disable(_ context.Context, id string, reason domain.DisabledReason) error {
+	if w, ok := r.watchers[id]; ok && w.Enabled {
+		w.Enabled, w.DisabledReason = false, reason
+	}
+	return nil
+}
 func (r *fakeWatcherRepo) TouchDryRun(_ context.Context, id string, at time.Time) error {
 	r.dryRuns[id] = at
 	return nil

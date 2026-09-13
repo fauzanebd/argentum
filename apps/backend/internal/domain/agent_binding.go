@@ -31,6 +31,31 @@ type AgentChannelBinding struct {
 	// which goes through NormalizePhone for the reason stated there.
 	ExternalID string    `json:"external_id"`
 	CreatedAt  time.Time `json:"created_at"`
+	// AgentAccessMode rides along like AgentName: whether the agent this
+	// address answers as is open or restricted (T-Z8). It is the agent's, not
+	// the binding's, and it is on reads so Settings can show which bindings a
+	// restriction has silenced without a second request.
+	AgentAccessMode AccessMode `json:"agent_access_mode,omitempty"`
+	// RestrictedAcknowledgedAt is when an admin acknowledged, for this address,
+	// that anyone who can post there can use its agent while the agent is
+	// restricted (roadmap 12, decision 8). Nil means nobody has — and then a
+	// restricted agent does not answer here.
+	RestrictedAcknowledgedAt *time.Time `json:"restricted_acknowledged_at,omitempty"`
+	// RestrictedAcknowledgedBy is the admin who acknowledged it, and empty once
+	// that admin's account is deleted; the audit row still names them.
+	RestrictedAcknowledgedBy string `json:"restricted_acknowledged_by,omitempty"`
+}
+
+// ChannelRoute is what an inbound address resolves to: the agent bound to it
+// (T-S4), and whether an admin has cleared the address to reach that agent while
+// it is restricted (T-Z8).
+//
+// Acknowledged is a stored fact, not a decision. Whether the agent is restricted
+// is internal/authz's to answer (roadmap 12, decision 1), and the enqueue path
+// asks it; this only matters once the answer is "restricted".
+type ChannelRoute struct {
+	AgentID      string
+	Acknowledged bool
 }
 
 // BindableChannels are the channels a binding can name.
@@ -77,5 +102,10 @@ type AgentChannelBindingRepository interface {
 	// A binding to a *disabled* agent is ErrNotFound too. Disabling is how an
 	// admin takes an agent out of service, and leaving a channel pointed at one
 	// would make the ops room stop answering with no visible cause.
-	AgentForChannel(ctx context.Context, companyID string, channel Channel, externalID string) (string, error)
+	AgentForChannel(ctx context.Context, companyID string, channel Channel, externalID string) (ChannelRoute, error)
+	// Acknowledge records that actorID acknowledged, for one binding, that
+	// anyone who can post on its address can use its agent while it is
+	// restricted (T-Z8). An existing acknowledgement is kept as it was, with the
+	// admin who made it. ErrNotFound for another company's binding.
+	Acknowledge(ctx context.Context, companyID, id, actorID string, at time.Time) (*AgentChannelBinding, error)
 }

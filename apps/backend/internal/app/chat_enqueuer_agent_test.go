@@ -110,7 +110,7 @@ func TestPickingAnAgentTheCompanyOwns(t *testing.T) {
 	enq := (&ChatEnqueuer{}).WithRoster(
 		rosterWith(&domain.Agent{ID: "ag-ops", CompanyID: "co-1", Enabled: true}))
 
-	got, err := enq.pickAgent(context.Background(), "co-1", "ag-ops")
+	got, err := enq.pickAgent(context.Background(), "co-1", door{}, "ag-ops")
 	if err != nil {
 		t.Fatalf("pickAgent: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestNoPickLeavesTheThreadUnpinned(t *testing.T) {
 	roster.agent = &domain.Agent{ID: "ag-def"}
 	enq := (&ChatEnqueuer{}).WithRoster(roster)
 
-	got, err := enq.pickAgent(context.Background(), "co-1", "")
+	got, err := enq.pickAgent(context.Background(), "co-1", door{}, "")
 	if err != nil {
 		t.Fatalf("pickAgent: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestEveryRefusedPickIsTheSameNotFound(t *testing.T) {
 	}
 	for name, id := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, err := enq.pickAgent(context.Background(), "co-1", id)
+			got, err := enq.pickAgent(context.Background(), "co-1", door{}, id)
 			if !errors.Is(err, domain.ErrNotFound) {
 				t.Fatalf("pickAgent error = %v, want ErrNotFound", err)
 			}
@@ -177,7 +177,7 @@ func TestEveryRefusedPickIsTheSameNotFound(t *testing.T) {
 func TestAnUnreadableRosterIsNotANotFound(t *testing.T) {
 	enq := (&ChatEnqueuer{}).WithRoster(&stubDefaultAgent{byIDErr: errors.New("control DB down")})
 
-	if _, err := enq.pickAgent(context.Background(), "co-1", "ag-ops"); errors.Is(err, domain.ErrNotFound) {
+	if _, err := enq.pickAgent(context.Background(), "co-1", door{}, "ag-ops"); errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("a failed lookup was reported as ErrNotFound: %v", err)
 	} else if err == nil {
 		t.Error("a failed lookup was swallowed")
@@ -187,7 +187,7 @@ func TestAnUnreadableRosterIsNotANotFound(t *testing.T) {
 // A deployment with no roster wired must not refuse a pick, or a dashboard
 // offering a picker against a stripped-down build breaks every new chat.
 func TestNoRosterWiredDropsThePickRatherThanRefusingIt(t *testing.T) {
-	got, err := (&ChatEnqueuer{}).pickAgent(context.Background(), "co-1", "ag-ops")
+	got, err := (&ChatEnqueuer{}).pickAgent(context.Background(), "co-1", door{}, "ag-ops")
 	if err != nil {
 		t.Fatalf("pickAgent: %v", err)
 	}

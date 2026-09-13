@@ -139,7 +139,98 @@ const SCENES = [
       await page.getByText("What your agents will see").waitFor();
     },
   },
+  {
+    // T-Z7's matrix: one person's panel, opened through its own button, above
+    // the per-agent card drawn from the same read. HR is restricted and not
+    // granted to the admin looking at it, which is the line decision 4 needs
+    // on screen rather than in a roadmap.
+    id: "team-access",
+    file: "team-access-matrix.png",
+    height: 1800,
+    async drive(page) {
+      await page.getByRole("button", { name: "Access for rina@tokomaju.id" }).click();
+      await page.getByText("Agents they may talk to").waitFor();
+      // The whole clause, not the name: since T-Z6 the HR warehouse source card
+      // says "You are not granted HR warehouse" too.
+      await page.getByText("You are not granted HR, so you cannot talk to it", { exact: false }).waitFor();
+      // Off the button that was just pressed: the pointer left on it paints the
+      // hover in this app's primary colour, which is red, and the first shot of
+      // this scene read as an Access button in an error state.
+      await page.mouse.move(0, 0);
+    },
+  },
+  {
+    // The flip to restricted, pressed rather than rendered open: the warning is
+    // state the button produces, and a fixture claiming it would photograph
+    // this file.
+    id: "team-access-restrict",
+    file: "team-access-restrict-warning.png",
+    height: 1800,
+    async drive(page) {
+      await page.getByRole("button", { name: "Restrict Ops…" }).click();
+      await page.getByRole("alertdialog", { name: "Restrict Ops" }).waitFor();
+      // T-Z8: the channel count arrives with its own request, and a shot of
+      // "Checking its channel bindings…" would file a warning that says nothing.
+      await page.getByText("1 channel bound to it will stop answering", { exact: false }).waitFor();
+      await page.mouse.move(0, 0);
+    },
+  },
+  {
+    // T-Z6's document warning, pressed like the others. It is the one sentence on
+    // the Team tab that says what an agent will stop finding for somebody.
+    id: "team-access-document-restrict",
+    file: "team-access-document-restrict-warning.png",
+    height: 3600,
+    async drive(page) {
+      await page.getByRole("button", { name: "Restrict Payroll 2026.pdf…" }).click();
+      await page.getByRole("alertdialog", { name: "Restrict Payroll 2026.pdf" }).waitFor();
+      await page
+        .getByText("an agent searching documents for them will find nothing in it", { exact: false })
+        .waitFor();
+      await page.mouse.move(0, 0);
+    },
+  },
+  {
+    // T-Z8's acknowledgement, opened the way an admin opens it — by choosing a
+    // restricted agent in the form. The checkbox is state that choice produces.
+    id: "agent-bindings",
+    file: "agent-bindings-acknowledge.png",
+    height: 900,
+    async drive(page) {
+      await page.getByRole("combobox", { name: "Channel" }).click();
+      await page.getByRole("option", { name: /slack/i }).click();
+      await page.getByRole("combobox", { name: "Agent" }).click();
+      await page.getByRole("option", { name: "HR" }).click();
+      await page.getByText("Anyone who can post here can use this agent", { exact: false }).first().waitFor();
+      await page.mouse.move(0, 0);
+    },
+  },
+  {
+    // T-Z5's confirmation: pressed, and photographed only once the link count
+    // has arrived — the notice reads "Checking…" until its request lands, and a
+    // shot of that would file a warning that says nothing.
+    id: "team-access-dashboard-restrict",
+    file: "team-access-dashboard-restrict-warning.png",
+    height: 2400,
+    async drive(page) {
+      await page.getByRole("button", { name: "Restrict Weekly sales…" }).click();
+      await page.getByRole("alertdialog", { name: "Restrict Weekly sales" }).waitFor();
+      await page.getByText("Its 2 live share links will be revoked", { exact: false }).waitFor();
+      await page.mouse.move(0, 0);
+    },
+  },
 ];
+
+// `pnpm --filter dashboard shots team-access` shoots only the scenes named.
+// With no names every scene is shot, and every PNG re-encoded — a diff in git
+// on screens nobody touched, saying something changed when nothing did.
+const only = process.argv.slice(2);
+const scenes = only.length ? SCENES.filter((s) => only.includes(s.id)) : SCENES;
+if (scenes.length !== only.length && only.length) {
+  const known = new Set(SCENES.map((s) => s.id));
+  console.error(`unknown scene: ${only.filter((id) => !known.has(id)).join(", ")}`);
+  process.exit(1);
+}
 
 const server = await createServer({ configFile: path.join(here, "vite.config.ts") });
 await server.listen();
@@ -149,7 +240,7 @@ const results = [];
 const launched = new Map();
 const skipped = new Map();
 try {
-  for (const scene of SCENES) {
+  for (const scene of scenes) {
     // Most scenes are about layout and one browser answers for them. The player
     // is the exception: T-V4's arm is *three* engines, because "the same
     // compositions run in the browser" is a claim about browsers.

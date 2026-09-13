@@ -141,11 +141,15 @@ type Watcher struct {
 	Channels        []WatcherChannel  `json:"channels"`
 	CooldownMinutes int               `json:"cooldown_minutes"`
 	Enabled         bool              `json:"enabled"`
-	LastFiredAt     *time.Time        `json:"last_fired_at,omitempty"`
-	LastDryRunAt    *time.Time        `json:"last_dry_run_at,omitempty"`
-	CreatedBy       string            `json:"created_by,omitempty"`
-	CreatedAt       time.Time         `json:"created_at"`
-	UpdatedAt       time.Time         `json:"updated_at"`
+	// DisabledReason is set when the product switched the watcher off rather
+	// than a person (T-Z8): its creator lost the agent its briefings run as.
+	// Cleared by enabling it again.
+	DisabledReason DisabledReason `json:"disabled_reason,omitempty"`
+	LastFiredAt    *time.Time     `json:"last_fired_at,omitempty"`
+	LastDryRunAt   *time.Time     `json:"last_dry_run_at,omitempty"`
+	CreatedBy      string         `json:"created_by,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
 // WatcherEvent is one evaluation of a watcher, breached or not (T-08).
@@ -189,6 +193,11 @@ type WatcherRepository interface {
 	// TouchDryRun records a dry-run, which is what a later enable checks the age
 	// of.
 	TouchDryRun(ctx context.Context, id string, at time.Time) error
+	// Disable switches a watcher off with the reason the product did it (T-Z8).
+	// Unscoped like TouchFired: the fire path is its only caller, with an id
+	// this process read off its own queue. An Update that enables it clears the
+	// reason.
+	Disable(ctx context.Context, id string, reason DisabledReason) error
 
 	// GetForFire loads a watcher by id alone — no company scope — for the worker
 	// path, where the id comes from a queue payload this process wrote itself and

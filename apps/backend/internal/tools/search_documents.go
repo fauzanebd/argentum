@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
+	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/taint"
@@ -23,6 +26,15 @@ type DocumentSearch interface {
 	// The bool is `loosened` (T-P14): the lexical half matched nothing with
 	// every term required and answered with a disjunctive re-run.
 	Search(ctx context.Context, companyID, documentID, query string, topK int) ([]*domain.DocumentChunkHit, bool, error)
+}
+
+// DocumentAccess is who may read which uploaded document (T-Z6): one question
+// for a document named by id, one load for the documents a search found.
+// *authz.Authorizer is the production one, and the decision is all
+// internal/authz's (roadmap 12, decision 1).
+type DocumentAccess interface {
+	Decide(ctx context.Context, s authz.Subject, kind domain.ResourceKind, id string) (authz.Decision, error)
+	Visible(ctx context.Context, s authz.Subject, kind domain.ResourceKind, ids []string) ([]string, error)
 }
 
 // SearchDocumentsTool answers questions about what an uploaded document *says*
@@ -47,6 +59,9 @@ type SearchDocumentsTool struct {
 	// unbounded paragraph is a tool that can spend a turn's whole context on
 	// one page of a contract.
 	maxChars int
+	// access narrows what a search returns to the documents the person on the
+	// turn may read (T-Z6). Nil asks nothing.
+	access DocumentAccess
 }
 
 // documentChunkMaxChars is the per-chunk cap. Roughly two thousand characters
@@ -54,8 +69,37 @@ type SearchDocumentsTool struct {
 // clause, short enough that five of them do not crowd out the conversation.
 const documentChunkMaxChars = 2000
 
+// widenedSearchFactor is how much further a second search reaches when the
+// first one's passages included some from a document the person may not read,
+// and widenedSearchMax caps it. A hidden document that dominates a query can
+// still leave fewer passages than asked for; four times as deep is where the
+// ranking's tail stops being worth quoting anyway.
+const (
+	widenedSearchFactor = 4
+	widenedSearchMax    = 80
+)
+
 func NewSearchDocumentsTool(search DocumentSearch) *SearchDocumentsTool {
 	return &SearchDocumentsTool{search: search, maxChars: documentChunkMaxChars}
+}
+
+// WithAccess makes a search return passages only from documents the person on
+// the turn may read (T-Z6).
+//
+// A passage quoted into an answer is a read of the document it came from, so a
+// restricted document refused on Knowledge's routes must not be readable through
+// an agent instead. **The turn does not learn the document exists**: a restricted
+// document named by id is answered exactly as an id that is not a document, and
+// passages from one simply do not appear — no count of what was withheld, and no
+// note that differs from an ordinary search's.
+//
+// **Only a turn with a person asks** (roadmap 12, decision 7). A channel, a `/v1`
+// key, the widget and a watcher carry no user, and search every document as they
+// did; a scheduled task carries its creator and asks as them. Nil asks nothing:
+// the API's name-only build, cmd/mcp, and every deployment before roadmap 12.
+func (t *SearchDocumentsTool) WithAccess(a DocumentAccess) *SearchDocumentsTool {
+	t.access = a
+	return t
 }
 
 func (t *SearchDocumentsTool) Name() string { return "search_documents" }
@@ -94,6 +138,13 @@ func (t *SearchDocumentsTool) Run(ctx context.Context, input string) (string, er
 	return t.Execute(ctx, input)
 }
 
+// searchArgs is what the model sends.
+type searchArgs struct {
+	Query      string `json:"query"`
+	DocumentID string `json:"document_id"`
+	TopK       int    `json:"top_k"`
+}
+
 func (t *SearchDocumentsTool) Execute(ctx context.Context, input string) (string, error) {
 	if t == nil || t.search == nil {
 		// The registered-but-unconfigured state. A sentence rather than an
@@ -106,11 +157,7 @@ func (t *SearchDocumentsTool) Execute(ctx context.Context, input string) (string
 		return "", fmt.Errorf("no tenant in context")
 	}
 
-	var args struct {
-		Query      string `json:"query"`
-		DocumentID string `json:"document_id"`
-		TopK       int    `json:"top_k"`
-	}
+	var args searchArgs
 	if strings.TrimSpace(input) != "" {
 		if err := json.Unmarshal([]byte(input), &args); err != nil {
 			return "", fmt.Errorf("search_documents arguments must be JSON: %w", err)
@@ -120,11 +167,122 @@ func (t *SearchDocumentsTool) Execute(ctx context.Context, input string) (string
 		return "", fmt.Errorf("search_documents needs a query")
 	}
 
+	reader, asks := t.reader(ctx, companyID)
+	if asks && args.DocumentID != "" {
+		d, err := t.access.Decide(ctx, reader, domain.ResourceKindDocument, args.DocumentID)
+		if err != nil {
+			return "", documentCheckFailed(companyID, err)
+		}
+		if !d.Allowed {
+			// Word for word what an id that is not a document gets — no passage,
+			// the note for a document that matched nothing — and nothing is
+			// searched, so no passage of it passes through this process at all.
+			return t.result(ctx, nil, args.DocumentID, false)
+		}
+	}
+
 	hits, loosened, err := t.search.Search(ctx, companyID, args.DocumentID, args.Query, args.TopK)
 	if err != nil {
 		return "", fmt.Errorf("search documents: %w", err)
 	}
+	if asks && args.DocumentID == "" && len(hits) > 0 {
+		hits, loosened, err = t.readable(ctx, reader, companyID, args, hits, loosened)
+		if err != nil {
+			return "", err
+		}
+	}
+	return t.result(ctx, hits, args.DocumentID, loosened)
+}
 
+// reader is who this turn searches for, and whether there is anyone to ask about:
+// false for a turn with no person (see WithAccess) or a tool with no authoriser.
+func (t *SearchDocumentsTool) reader(ctx context.Context, companyID string) (authz.Subject, bool) {
+	userID := tenantctx.UserID(ctx)
+	if t.access == nil || userID == "" {
+		return authz.Subject{}, false
+	}
+	return authz.Subject{CompanyID: companyID, UserID: userID}, true
+}
+
+// readable keeps the passages from documents the person may read.
+//
+// **Nothing changes when nothing was hidden** — the first search's passages come
+// back exactly as they were, in their order, with one grant read for the
+// documents they came from. When something was hidden, the search runs again
+// deeper and is filtered and cut to the size of the first, so the passages a
+// restricted document crowded out take its places rather than the answer simply
+// getting shorter — which is itself a signal a model could read as "something
+// was removed here".
+func (t *SearchDocumentsTool) readable(
+	ctx context.Context, s authz.Subject, companyID string, args searchArgs,
+	hits []*domain.DocumentChunkHit, loosened bool,
+) ([]*domain.DocumentChunkHit, bool, error) {
+	kept, err := t.keepReadable(ctx, s, hits)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(kept) == len(hits) {
+		return hits, loosened, nil
+	}
+	want := args.TopK
+	if want <= 0 || want > len(hits) {
+		want = len(hits)
+	}
+	deeper := min(want*widenedSearchFactor, widenedSearchMax)
+	wider, widerLoosened, err := t.search.Search(ctx, companyID, "", args.Query, deeper)
+	if err != nil {
+		return nil, false, fmt.Errorf("search documents: %w", err)
+	}
+	if kept, err = t.keepReadable(ctx, s, wider); err != nil {
+		return nil, false, err
+	}
+	if len(kept) > want {
+		kept = kept[:want]
+	}
+	return kept, widerLoosened, nil
+}
+
+// keepReadable filters passages to readable documents in one load, in order.
+func (t *SearchDocumentsTool) keepReadable(ctx context.Context, s authz.Subject, hits []*domain.DocumentChunkHit) ([]*domain.DocumentChunkHit, error) {
+	if len(hits) == 0 {
+		return hits, nil
+	}
+	ids := make([]string, 0, len(hits))
+	seen := make(map[string]bool, len(hits))
+	for _, h := range hits {
+		if !seen[h.DocumentID] {
+			seen[h.DocumentID] = true
+			ids = append(ids, h.DocumentID)
+		}
+	}
+	visible, err := t.access.Visible(ctx, s, domain.ResourceKindDocument, ids)
+	if err != nil {
+		return nil, documentCheckFailed(s.CompanyID, err)
+	}
+	allowed := make(map[string]bool, len(visible))
+	for _, id := range visible {
+		allowed[id] = true
+	}
+	out := make([]*domain.DocumentChunkHit, 0, len(hits))
+	for _, h := range hits {
+		if allowed[h.DocumentID] {
+			out = append(out, h)
+		}
+	}
+	return out, nil
+}
+
+// documentCheckFailed refuses a search whose access could not be read — nothing
+// is returned unchecked — and keeps the storage error in the log rather than in
+// the model's context. A Go error, so the model may try again.
+func documentCheckFailed(companyID string, err error) error {
+	logrus.WithError(err).WithField("company_id", companyID).
+		Warn("search_documents: document access check failed; refusing the search")
+	return errors.New("could not check which documents this person may read, so nothing was searched; try again")
+}
+
+// result renders the passages a search returns, and the note beside them.
+func (t *SearchDocumentsTool) result(ctx context.Context, hits []*domain.DocumentChunkHit, documentID string, loosened bool) (string, error) {
 	type passage struct {
 		DocumentID string `json:"document_id"`
 		Filename   string `json:"filename"`
@@ -162,7 +320,7 @@ func (t *SearchDocumentsTool) Execute(ctx context.Context, input string) (string
 	// Encoded with HTML escaping OFF, and that is not cosmetic (found by
 	// T-H8's fence tests). `json.Marshal` escapes `<` and `>` by default, so
 	// every fence marker in a passage reached the model as
-	// `\u003c\u003c\u003cUNTRUSTED_CONTENT` — the boundary the system prompt
+	// `<<<UNTRUSTED_CONTENT` — the boundary the system prompt
 	// names, spelled in a way the prompt's own sentence does not match, and
 	// invisible to any code asking whether a result was already fenced.
 	var buf bytes.Buffer
@@ -173,7 +331,7 @@ func (t *SearchDocumentsTool) Execute(ctx context.Context, input string) (string
 		// Said out loud rather than left as an empty list, because "no passage
 		// matched" and "this organization has uploaded nothing" lead to
 		// different next moves, and a model given a bare `[]` guesses which.
-		"note": resultNote(len(out), args.DocumentID, loosened),
+		"note": resultNote(len(out), documentID, loosened),
 	}); err != nil {
 		return "", fmt.Errorf("encode search result: %w", err)
 	}

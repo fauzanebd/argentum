@@ -22,6 +22,9 @@ const (
 	CtxAPIKeyID     = "api_key_id"
 	CtxAPIKeyName   = "api_key_name"
 	CtxAPIKeyScopes = "api_key_scopes"
+	// CtxAPIKeyAgents is the key's agent allowlist (T-Z8), empty for every
+	// agent.
+	CtxAPIKeyAgents = "api_key_agents"
 )
 
 // APIKeyAuthenticator is the narrow half of app.APIKeyService this middleware
@@ -81,6 +84,7 @@ func APIKeyAuth(a APIKeyAuthenticator) gin.HandlerFunc {
 		c.Set(CtxAPIKeyID, key.ID)
 		c.Set(CtxAPIKeyName, key.Name)
 		c.Set(CtxAPIKeyScopes, key.Scopes)
+		c.Set(CtxAPIKeyAgents, key.AgentIDs)
 
 		ctx := tenantctx.WithCompanyID(c.Request.Context(), key.CompanyID)
 		ctx = tenantctx.WithActor(ctx, string(domain.ActorKindAPIKey), key.ID)
@@ -124,6 +128,20 @@ func bearerToken(c *gin.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+}
+
+// APIKeyAgents returns the authenticated key's agent allowlist, or nil — which,
+// like an empty list, is every agent (T-Z8). Handlers hand it to the enqueue
+// path rather than checking it here: the check belongs beside the ones every
+// other door makes, so that a `/v1` turn and a dashboard turn are refused by the
+// same function for the same kind of reason.
+func APIKeyAgents(c *gin.Context) []string {
+	v, ok := c.Get(CtxAPIKeyAgents)
+	if !ok {
+		return nil
+	}
+	ids, _ := v.([]string)
+	return ids
 }
 
 // APIKeyScopes returns the scopes carried by the authenticated key, or nil.

@@ -227,6 +227,18 @@ func (s *DocumentTableService) upsertWithFreeName(ctx context.Context, row *doma
 	return fmt.Errorf("could not find a free table name for %q", base)
 }
 
+// DocumentOf is the id of the document a table was extracted from (T-Z6), for a
+// route that serves the table under its own id and has to ask about the document
+// behind it. One company-scoped read of the table row, without the re-derivation
+// Get does — the question is asked before anything is served or written.
+func (s *DocumentTableService) DocumentOf(ctx context.Context, companyID, tableID string) (string, error) {
+	row, err := s.tables.GetForCompany(ctx, companyID, tableID)
+	if err != nil {
+		return "", err
+	}
+	return row.DocumentID, nil
+}
+
 // Get is one table with its rows, for the detail view and for Apply.
 func (s *DocumentTableService) Get(ctx context.Context, companyID, tableID string) (*DraftTable, error) {
 	row, err := s.tables.GetForCompany(ctx, companyID, tableID)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/fauzanebd/argentum/internal/domain"
 )
@@ -20,12 +21,21 @@ func (r *AgentBindingRepo) Create(ctx context.Context, b *domain.AgentChannelBin
 	// binding can never name another tenant's agent even if a caller reaches
 	// this layer without the service's validation. Zero rows means that check
 	// failed, which is ErrNotFound rather than a server error.
+	//
+	// The acknowledgement (T-Z8) is written in the same statement as the
+	// binding, so a restricted agent's binding never exists for a moment
+	// without the acknowledgement it was created with.
 	const q = `
-		INSERT INTO agent_channel_bindings (company_id, agent_id, channel, external_id)
-		SELECT $1, a.id, $3, $4 FROM agents a WHERE a.id = $2 AND a.company_id = $1
+		INSERT INTO agent_channel_bindings (company_id, agent_id, channel, external_id, restricted_ack_at, restricted_ack_by)
+		SELECT $1, a.id, $3, $4, $5, NULLIF($6, '')::uuid FROM agents a WHERE a.id = $2 AND a.company_id = $1
 		RETURNING id, created_at
 	`
-	err := r.db.QueryRowContext(ctx, q, b.CompanyID, b.AgentID, string(b.Channel), b.ExternalID).
+	var ackAt any
+	if b.RestrictedAcknowledgedAt != nil {
+		ackAt = *b.RestrictedAcknowledgedAt
+	}
+	err := r.db.QueryRowContext(ctx, q, b.CompanyID, b.AgentID, string(b.Channel), b.ExternalID,
+		ackAt, b.RestrictedAcknowledgedBy).
 		Scan(&b.ID, &b.CreatedAt)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -42,7 +52,7 @@ func (r *AgentBindingRepo) Create(ctx context.Context, b *domain.AgentChannelBin
 // table reads by channel and then by address.
 func (r *AgentBindingRepo) ListByCompany(ctx context.Context, companyID string) ([]*domain.AgentChannelBinding, error) {
 	const q = `
-		SELECT b.id, b.company_id, b.agent_id, a.name, b.channel, b.external_id, b.created_at
+		SELECT ` + bindingColumns + `
 		FROM agent_channel_bindings b
 		JOIN agents a ON a.id = b.agent_id
 		WHERE b.company_id = $1
@@ -55,14 +65,63 @@ func (r *AgentBindingRepo) ListByCompany(ctx context.Context, companyID string) 
 	defer rows.Close()
 	var out []*domain.AgentChannelBinding
 	for rows.Next() {
-		b := &domain.AgentChannelBinding{}
-		if err := rows.Scan(&b.ID, &b.CompanyID, &b.AgentID, &b.AgentName,
-			&b.Channel, &b.ExternalID, &b.CreatedAt); err != nil {
+		b, err := scanBinding(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+// bindingColumns is one binding as Settings reads it, joined to its agent for
+// the name and — since T-Z8 — the agent's access mode, so the table can say
+// which bindings a restriction has silenced.
+const bindingColumns = `b.id, b.company_id, b.agent_id, a.name, b.channel, b.external_id, b.created_at,
+	a.access_mode, b.restricted_ack_at, COALESCE(b.restricted_ack_by::text, '')`
+
+func scanBinding(s rowScanner) (*domain.AgentChannelBinding, error) {
+	b := &domain.AgentChannelBinding{}
+	var mode string
+	var ackAt sql.NullTime
+	if err := s.Scan(&b.ID, &b.CompanyID, &b.AgentID, &b.AgentName,
+		&b.Channel, &b.ExternalID, &b.CreatedAt,
+		&mode, &ackAt, &b.RestrictedAcknowledgedBy); err != nil {
+		return nil, err
+	}
+	b.AgentAccessMode = domain.AccessMode(mode)
+	b.RestrictedAcknowledgedAt = nullTimePtr(ackAt)
+	return b, nil
+}
+
+// Acknowledge records, on one binding, that an admin cleared its address to
+// reach its agent while the agent is restricted (T-Z8).
+//
+// An acknowledgement that already exists is kept, time and admin both: the
+// first person to say "anyone in #hr may use HR" is the one the record should
+// name, and a second press is not a second decision. The UPDATE's SET sees the
+// row as it was, which is what lets one statement say "only if nobody has".
+func (r *AgentBindingRepo) Acknowledge(
+	ctx context.Context, companyID, id, actorID string, at time.Time,
+) (*domain.AgentChannelBinding, error) {
+	const q = `
+		UPDATE agent_channel_bindings b
+		   SET restricted_ack_at = COALESCE(b.restricted_ack_at, $3),
+		       restricted_ack_by = CASE WHEN b.restricted_ack_at IS NULL
+		                                THEN NULLIF($4, '')::uuid
+		                                ELSE b.restricted_ack_by END
+		  FROM agents a
+		 WHERE b.id = $1 AND b.company_id = $2 AND a.id = b.agent_id
+		RETURNING ` + bindingColumns
+	b, err := scanBinding(r.db.QueryRowContext(ctx, q, id, companyID, at, actorID))
+	switch {
+	case errors.Is(err, sql.ErrNoRows), malformedID(err):
+		// A malformed id is a binding that does not exist, not a 500.
+		return nil, domain.ErrNotFound
+	case err != nil:
+		return nil, fmt.Errorf("acknowledge agent binding: %w", err)
+	}
+	return b, nil
 }
 
 func (r *AgentBindingRepo) Delete(ctx context.Context, companyID, id string) error {
@@ -90,18 +149,24 @@ func (r *AgentBindingRepo) Delete(ctx context.Context, companyID, id string) err
 // no visible cause. Falling back to the default is the same answer an unbound
 // channel gets, which is also the answer this returns for a binding the FK
 // cascade already removed.
+//
+// It returns whether the binding carries an acknowledgement (T-Z8), and not the
+// agent's access mode. Whether the agent is restricted is internal/authz's to
+// decide, and the enqueue path asks it; this read stays one indexed lookup that
+// knows nothing about access.
 func (r *AgentBindingRepo) AgentForChannel(
 	ctx context.Context, companyID string, channel domain.Channel, externalID string,
-) (string, error) {
+) (domain.ChannelRoute, error) {
 	const q = `
-		SELECT b.agent_id FROM agent_channel_bindings b
+		SELECT b.agent_id, b.restricted_ack_at IS NOT NULL FROM agent_channel_bindings b
 		JOIN agents a ON a.id = b.agent_id AND a.enabled
 		WHERE b.company_id = $1 AND b.channel = $2 AND b.external_id = $3
 	`
-	var agentID string
-	err := r.db.QueryRowContext(ctx, q, companyID, string(channel), externalID).Scan(&agentID)
+	var route domain.ChannelRoute
+	err := r.db.QueryRowContext(ctx, q, companyID, string(channel), externalID).
+		Scan(&route.AgentID, &route.Acknowledged)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", domain.ErrNotFound
+		return domain.ChannelRoute{}, domain.ErrNotFound
 	}
-	return agentID, err
+	return route, err
 }

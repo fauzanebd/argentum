@@ -221,6 +221,9 @@ func (h *V1ChatHandler) send(c *gin.Context) {
 		AgentID:    strings.TrimSpace(req.AgentID),
 		Message:    req.Message,
 		APIKeyID:   c.GetString(middleware.CtxAPIKeyID),
+		// What this key may run as (T-Z8). Checked in the enqueue path, beside
+		// the grant checks the other doors make.
+		KeyAgentIDs: middleware.APIKeyAgents(c),
 	})
 	if err != nil {
 		h.abortEnqueue(c, err)
@@ -258,6 +261,8 @@ func (h *V1ChatHandler) abortEnqueue(c *gin.Context, err error) {
 	case errors.Is(err, app.ErrAgentChange):
 		apierr.AbortParam(c, apierr.TypeInvalidRequest, "agent_mismatch",
 			"That conversation already runs as a different agent. Start a new one by sending `user_ref` without a `thread_id`.", "agent_id")
+	case errors.Is(err, app.ErrAgentNotAllowed):
+		abortAgentNotAllowed(c)
 	case errors.Is(err, domain.ErrInvalidInput):
 		apierr.AbortParam(c, apierr.TypeInvalidRequest, "invalid_thread",
 			"That `thread_id` is not an API thread for this company.", "thread_id")

@@ -5,6 +5,7 @@ import { ExternalLink, MessageSquarePlus, RefreshCw } from "lucide-react";
 import type { Result } from "@argentum/api-types/dashboard";
 
 import { api } from "@/lib/api";
+import { apiErrorStatus } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
 import { useComposerStore } from "@/store/composer";
 import { DashboardPanel } from "./panel";
@@ -74,9 +75,18 @@ export function DashboardView({
     );
   }
   if (error || !data) {
+    // A 403 here is a restriction (T-Z5), and saying "could not be loaded" about
+    // it would send somebody to report a bug. The dashboard is reached by a link —
+    // often one a chat reply put in front of them — so it is named as restricted
+    // rather than hidden, and the sentence says who can change that.
+    const restricted = apiErrorStatus(error) === 403;
     return (
       <div className={cn("rounded-lg border border-border bg-card/50 p-4", className)}>
-        <p className="text-xs text-destructive">This dashboard could not be loaded.</p>
+        <p className={cn("text-xs", restricted ? "text-muted-foreground" : "text-destructive")}>
+          {restricted
+            ? "This dashboard is restricted, and an admin has not granted it to you. Ask an admin if you need it."
+            : "This dashboard could not be loaded."}
+        </p>
       </div>
     );
   }

@@ -99,7 +99,7 @@ func (r *CapabilityRepo) Grant(ctx context.Context, companyID, userID string, c 
 		)
 		SELECT count(*) FROM target
 	`
-	return r.countTarget(ctx, "grant capability", q, companyID, userID, string(c), grantedBy)
+	return countTarget(ctx, r.db, "grant capability", q, companyID, userID, string(c), grantedBy)
 }
 
 // Revoke deletes the grant if it exists, and is idempotent. Same statement
@@ -115,14 +115,17 @@ func (r *CapabilityRepo) Revoke(ctx context.Context, companyID, userID string, c
 		)
 		SELECT count(*) FROM target
 	`
-	return r.countTarget(ctx, "revoke capability", q, companyID, userID, string(c))
+	return countTarget(ctx, r.db, "revoke capability", q, companyID, userID, string(c))
 }
 
-// countTarget runs a Grant or Revoke statement and maps "no such user in this
-// company" to ErrNotFound.
-func (r *CapabilityRepo) countTarget(ctx context.Context, op, q string, args ...any) error {
+// countTarget runs a grant or revoke statement whose outer query counts its
+// company-scoped `target` CTE, and maps a count of zero — no such user, or no
+// such resource, in this company — to ErrNotFound. Shared by the capability and
+// resource-grant repositories, whose statements have the same shape for the
+// same reason.
+func countTarget(ctx context.Context, db *sql.DB, op, q string, args ...any) error {
 	var n int
-	if err := r.db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+	if err := db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
 		if malformedID(err) {
 			return domain.ErrNotFound
 		}

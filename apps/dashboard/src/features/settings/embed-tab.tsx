@@ -302,7 +302,9 @@ export function EmbedTab() {
             An embed key lets a page you run ask Argentum questions as one of your own people. The
             key's public half ships in your page source; its signing secret stays on your server and
             is what proves who the visitor is. Sessions last{" "}
-            {Math.round(ttl / 60)} minutes and your page re-signs to continue.
+            {Math.round(ttl / 60)} minutes and your page re-signs to continue. The widget never
+            offers or reaches an agent you have restricted: whoever is on your site is not someone
+            this workspace can grant access to.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

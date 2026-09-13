@@ -182,14 +182,16 @@ func (h *SlackWebhookHandler) events(c *gin.Context) {
 		SlackThreadTS:  ev.ThreadTS,
 		Message:        text,
 	}); err != nil {
-		if errors.Is(err, domain.ErrInsufficientCredits) {
+		// The credit refusal, and since T-Z8 a channel whose agent is closed to
+		// it.
+		if refusal, ok := app.SpokenRefusal(err); ok {
 			if h.replier != nil {
 				// Into the thread the question was asked in, so the refusal
 				// appears where the asker is looking.
 				if rerr := h.replier.Reply(c.Request.Context(), cred.CompanyID,
-					ev.Channel, ev.ThreadKey(), app.CreditsExhaustedMessage); rerr != nil {
+					ev.Channel, ev.ThreadKey(), refusal); rerr != nil {
 					logrus.WithError(rerr).WithField("company_id", cred.CompanyID).
-						Warn("slack webhook: could not deliver the credit refusal")
+						Warn("slack webhook: could not deliver the refusal")
 				}
 			}
 			// 200 either way — a non-2xx is a Slack retry, and the tenant's

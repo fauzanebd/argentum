@@ -17,13 +17,16 @@ type APIKeyRepo struct{ db *sql.DB }
 
 func NewAPIKeyRepo(db *sql.DB) *APIKeyRepo { return &APIKeyRepo{db: db} }
 
-const apiKeyColumns = `id, company_id, name, key_prefix, key_hash, scopes,
+// agent_ids is read on the authentication path, beside scopes, because it is
+// the same kind of fact: what this credential may reach, fixed at creation, and
+// wanted on every `/v1` turn without a second query (T-Z8).
+const apiKeyColumns = `id, company_id, name, key_prefix, key_hash, scopes, agent_ids,
 	created_by, last_used_at, expires_at, revoked_at, created_at`
 
 func (r *APIKeyRepo) Create(ctx context.Context, k *domain.APIKey) error {
 	const q = `
-		INSERT INTO api_keys (company_id, name, key_prefix, key_hash, scopes, created_by, expires_at)
-		VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::uuid, $7)
+		INSERT INTO api_keys (company_id, name, key_prefix, key_hash, scopes, created_by, expires_at, agent_ids)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::uuid, $7, $8)
 		RETURNING id, created_at
 	`
 	var expires any
@@ -33,6 +36,9 @@ func (r *APIKeyRepo) Create(ctx context.Context, k *domain.APIKey) error {
 	if err := r.db.QueryRowContext(ctx, q,
 		k.CompanyID, k.Name, k.KeyPrefix, k.KeyHash,
 		pq.Array(k.SortedScopeStrings()), k.CreatedBy, expires,
+		// Normalised here as well as in the service: pq sends a nil slice as
+		// NULL, and the column is NOT NULL.
+		pq.Array(domain.NormalizeAgentIDs(k.AgentIDs)),
 	).Scan(&k.ID, &k.CreatedAt); err != nil {
 		return fmt.Errorf("insert api key: %w", err)
 	}
@@ -109,17 +115,18 @@ func (r *APIKeyRepo) TouchLastUsed(ctx context.Context, id string, at time.Time)
 
 func scanAPIKey(s rowScanner) (*domain.APIKey, error) {
 	k := &domain.APIKey{}
-	var scopes pq.StringArray
+	var scopes, agentIDs pq.StringArray
 	var createdBy sql.NullString
 	var lastUsed, expires, revoked sql.NullTime
 	if err := s.Scan(&k.ID, &k.CompanyID, &k.Name, &k.KeyPrefix, &k.KeyHash,
-		&scopes, &createdBy, &lastUsed, &expires, &revoked, &k.CreatedAt); err != nil {
+		&scopes, &agentIDs, &createdBy, &lastUsed, &expires, &revoked, &k.CreatedAt); err != nil {
 		return nil, err
 	}
 	k.Scopes = make([]domain.Scope, 0, len(scopes))
 	for _, s := range scopes {
 		k.Scopes = append(k.Scopes, domain.Scope(s))
 	}
+	k.AgentIDs = domain.NormalizeAgentIDs(agentIDs)
 	k.CreatedBy = createdBy.String
 	k.LastUsedAt = nullTimePtr(lastUsed)
 	k.ExpiresAt = nullTimePtr(expires)

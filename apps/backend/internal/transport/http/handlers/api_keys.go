@@ -211,6 +211,9 @@ func (h *APIKeysHandler) errors(c *gin.Context) {
 type createAPIKeyReq struct {
 	Name   string   `json:"name" binding:"required"`
 	Scopes []string `json:"scopes" binding:"required"`
+	// AgentIDs limits the key to these agents; omitted or empty is every agent
+	// (T-Z8).
+	AgentIDs []string `json:"agent_ids"`
 	// ExpiresInDays of 0 means no expiry.
 	ExpiresInDays int `json:"expires_in_days"`
 }
@@ -226,7 +229,7 @@ func (h *APIKeysHandler) create(c *gin.Context) {
 		return
 	}
 	res, err := h.svc.Create(c.Request.Context(), companyID(c), userID(c),
-		req.Name, req.Scopes, req.ExpiresInDays)
+		req.Name, req.Scopes, req.AgentIDs, req.ExpiresInDays)
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidInput) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

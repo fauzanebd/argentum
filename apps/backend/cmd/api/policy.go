@@ -53,6 +53,22 @@ var apiPolicy = middleware.RolePolicy{
 	"PUT /api/users/:id/capabilities/:capability":    domain.RoleAdmin,
 	"DELETE /api/users/:id/capabilities/:capability": domain.RoleAdmin,
 
+	// Resource access (T-Z2). Admin on every route, the reads included: the view
+	// is the list of who can reach an agent or a dashboard, which a member has no
+	// use for and an admin needs in order to change it. None of these routes
+	// opens the resource to the caller — they answer who may reach an object,
+	// never what is in it — so an admin manages a restricted dashboard they
+	// cannot themselves open, which is decision 4 working as written.
+	//
+	// The list is the same read for a whole kind (T-Z7): the matrix Settings →
+	// Team draws both of its directions from, and admin for the same reason.
+	"GET /api/access/:kind":                       domain.RoleAdmin,
+	"GET /api/access/:kind/:id":                   domain.RoleAdmin,
+	"PUT /api/access/:kind/:id/mode":              domain.RoleAdmin,
+	"PUT /api/access/:kind/:id/grants/:userID":    domain.RoleAdmin,
+	"DELETE /api/access/:kind/:id/grants/:userID": domain.RoleAdmin,
+	"GET /api/users/:id/grants":                   domain.RoleAdmin,
+
 	// Data sources. Reads are open; everything that writes, tests or spends is
 	// not.
 	"GET /api/connections":         domain.RoleMember,
@@ -109,6 +125,9 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/agent-bindings":        domain.RoleAdmin,
 	"POST /api/agent-bindings":       domain.RoleAdmin,
 	"DELETE /api/agent-bindings/:id": domain.RoleAdmin,
+	// T-Z8: clearing a channel to reach a restricted agent is an admin's
+	// decision, and the audit row names the admin who made it.
+	"PUT /api/agent-bindings/:id/acknowledgement": domain.RoleAdmin,
 
 	// The tenant's MCP servers (T-M1). **Admin on read too**, which is stricter
 	// than the roster above and matches the connections rows instead: a server
@@ -508,6 +527,155 @@ var apiPolicy = middleware.RolePolicy{
 //
 // `voice` has no route yet. Its entry arrives with roadmap 11's T-W7.
 var capabilityPolicy = middleware.CapabilityPolicy{}
+
+// resourcePolicy is the third question a route can ask (T-Z3), and the first
+// about the object in its path rather than about the caller: may this person
+// reach *this* agent, dashboard, source or document. RequireResource asks
+// internal/authz, after RequireCapability, and composes nothing itself.
+//
+// T-04 chose a table over per-route middleware so that "did we remember to gate
+// the new route?" is answered by a test rather than by reading a dozen handlers.
+// A resource check written by hand in each handler would bring that question
+// back one layer down, so this is a table too, and the classification test holds
+// it to more than apiPolicy's property: every route whose path carries a
+// restrictable id sits in exactly one of the three tables here — served through
+// this one, exempt with a written reason, or pending on the ticket that owns its
+// kind — and a route in none of them fails the build.
+//
+// T-Z3 shipped it empty, as the mechanism. T-Z4 decided the agent routes and
+// added nothing here, because talking to an agent is enforced at the enqueuer's
+// seams rather than at a route. **Dashboards are the first entries (T-Z5)**:
+// opening one, running it, and reading its links are all reads of what is in it.
+// **T-Z6 decided sources and documents**, and emptied resourcePending: the
+// three source routes that read what is in a source, and the three document
+// routes that serve one. The lists ask in their handlers, and so do a document's
+// tables, which are served under their own id.
+var resourcePolicy = middleware.ResourcePolicy{
+	// A restricted dashboard refuses these with a 403 that names the kind, where
+	// a restricted agent's picker hides it (T-Z4). The difference is where the
+	// person already is: a dashboard is reached by a URL — a bookmark, the link a
+	// chat reply carries, its own embed in the transcript — so "not found" would
+	// send somebody hunting for a dashboard that exists, and the 403 is what tells
+	// them to ask. The list, which has no id, hides it instead (the handler's
+	// WithAccess).
+	"GET /api/dashboards/:id":      {Kind: domain.ResourceKindDashboard, Param: "id"},
+	"GET /api/dashboards/:id/data": {Kind: domain.ResourceKindDashboard, Param: "id"},
+	// Admin by the role table, and still a read of what is in the dashboard: a
+	// link's pinned filter values are its data's own dimensions — the region it
+	// was narrowed to. Restricting revokes every live link, so an admin refused
+	// here has nothing live left to find and revoke.
+	"GET /api/dashboards/:id/shares": {Kind: domain.ResourceKindDashboard, Param: "id"},
+
+	// Sources (T-Z6). Every connection route is admin, and these three are the
+	// ones that read what is in a source: the freshness test runs its SQL and
+	// reports the answer, the rebuild has a model describe its schema and returns
+	// the description, and the retrieval test returns the schema an agent would be
+	// shown. An admin not granted a restricted source is refused them, like
+	// anyone (decision 4). The nine that configure without revealing are in
+	// resourceExempt; the list a member reaches asks in its handler; and what an
+	// agent may query is agent_sources, which no grant touches.
+	"POST /api/connections/:id/freshness/test":         {Kind: domain.ResourceKindConnection, Param: "id"},
+	"POST /api/connections/:id/regenerate-description": {Kind: domain.ResourceKindConnection, Param: "id"},
+	"POST /api/connections/:id/test-rag":               {Kind: domain.ResourceKindConnection, Param: "id"},
+
+	// Uploaded documents (T-Z6), refused by name like a dashboard: a document is
+	// reached by a URL — Knowledge's review page — so "not found" would send
+	// somebody hunting for a file they were just looking at. The list hides it
+	// instead, in its handler. **A document's tables are served under their own
+	// id**, which no entry here can name the document behind, so
+	// KnowledgeTablesHandler resolves a table to its document and asks there.
+	"GET /api/knowledge/documents/:id":             {Kind: domain.ResourceKindDocument, Param: "id"},
+	"GET /api/knowledge/documents/:id/tables":      {Kind: domain.ResourceKindDocument, Param: "id"},
+	"GET /api/knowledge/documents/:id/pages/:page": {Kind: domain.ResourceKindDocument, Param: "id"},
+}
+
+// resourceExempt are routes that carry a restrictable id and deliberately do not
+// ask about it. The value is the reason. The classification test refuses one
+// shorter than five words, because an exemption is a decision somebody wrote
+// down and a Go comment is something no test can read.
+//
+// What they share: each manages access, takes it away, or configures the object
+// — and none reveals what is in it. A route like that put behind the grant it
+// manages is how an admin restricts a dashboard nobody holds and then cannot
+// undo it — decision 4 permits exactly that lock-out, so the way back out must
+// never be gated.
+//
+// The agent rows are T-Z4's decision, and the line it drew: **a grant on an
+// agent gates talking to it and being offered it; configuring the roster is the
+// role table's.** Talking is enforced at the enqueuer's seams, not at a route
+// (decision 6), and being offered is the roster handler narrowing its answer by
+// role — which is why GET /api/agents/:id is here and not in resourcePolicy: its
+// answer depends on who is asking, and a (kind, param) entry has no role.
+//
+// The four /api/access routes name their kind in a parameter, so the detector
+// in the test cannot see them and ResourcePolicy could not express them anyway.
+// They are listed so that the promise in AccessHandler's comment is held by a
+// test that fails if a route is renamed, rather than by that comment alone.
+var resourceExempt = map[string]string{
+	// Sources (T-Z6): the nine connection routes that configure a source and
+	// return nothing of what is in it. T-Z4's roster line, for sources: a grant
+	// gates what a person is shown, and configuring is the role table's.
+	"PATCH /api/connections/:id":                   "renames or re-describes a source by hand and returns nothing from it",
+	"PUT /api/connections/:id/dsn":                 "rotates the credential and returns nothing from the source",
+	"PUT /api/connections/:id/allowlist":           "sets which tables agents may read and returns nothing from them",
+	"PUT /api/connections/:id/freshness":           "saves the freshness expression without running it or returning anything",
+	"POST /api/connections/:id/default":            "chooses the default source and returns nothing from it",
+	"POST /api/connections/:id/reindex-embeddings": "rebuilds the table index and answers only with counts",
+	"POST /api/connections/:id/test":               "reports whether the source answers, never what is in it",
+	"POST /api/connections/:id/rescan":             "queues a profile rescan and answers only that it was queued",
+	"DELETE /api/connections/:id":                  "removing a source reveals nothing in it and only takes access away",
+	// Deleting a document is admin by the role table, and like deleting a
+	// dashboard it reveals nothing of what it removes.
+	"DELETE /api/knowledge/documents/:id":         "removing a document reveals nothing in it and only takes access away",
+	"GET /api/access/:kind":                       "who may reach each resource of a kind, never what is in one — the matrix a locked-out admin reads",
+	"GET /api/access/:kind/:id":                   "who may reach a resource, never what is in it — and how a locked-out admin finds out",
+	"PUT /api/access/:kind/:id/mode":              "re-opening a resource nobody holds is the way out of the lock-out decision 4 permits",
+	"PUT /api/access/:kind/:id/grants/:userID":    "granting is how an admin who restricted something gives access back, themselves included",
+	"DELETE /api/access/:kind/:id/grants/:userID": "revoking a grant can only take access away",
+	// Revoking has to keep working for an admin the dashboard is restricted
+	// against, or a public link outlives the restriction that was meant to close
+	// it. Restricting revokes every live link (T-Z5), so this should find none —
+	// and the one that could still exist, minted by the previous release's binary
+	// mid-deploy, is exactly the one somebody must be able to take back.
+	"DELETE /api/dashboards/:id/shares/:shareID": "revoking a public link can only close a door, grant or no grant",
+	// Minting is refused on every restricted dashboard whoever asks, by the share
+	// service and again where the row is written (T-Z5). An open dashboard needs
+	// no grant. So the grant could only ever admit what "open" already admits,
+	// and asking would be a database read that decides nothing.
+	"POST /api/dashboards/:id/shares": "a restricted dashboard refuses every mint whoever asks, so a grant would decide nothing here",
+	// The agent roster's line, drawn for dashboards: deleting is admin by the role
+	// table and reveals nothing inside the dashboard. An admin who restricted one
+	// nobody holds must still be able to remove it.
+	"DELETE /api/dashboards/:id": "removing a dashboard is admin by the role table and reveals nothing that is in it",
+	// Adding an agent to a room names it in the body, not the path, and is
+	// T-Z4's check in ThreadParticipantService.Add.
+	"DELETE /api/threads/:id/participants/:agentID": "removing an agent from a room can only take reach away",
+
+	// The roster (T-Z4).
+	"GET /api/agents/:id":         "the handler answers a member as the roster list does — an agent they may not talk to is not found — and an admin, who manages the roster, sees every agent",
+	"PUT /api/agents/:id":         "editing an agent is roster configuration, which the role table gives admins; a grant gates talking to it",
+	"DELETE /api/agents/:id":      "removing an agent from the roster is roster configuration, admin by the role table",
+	"PUT /api/agents/:id/default": "choosing the default is roster configuration; a person not granted it falls through to an agent they may use",
+	"GET /api/agents/:id/skills":  "which procedures an agent follows is roster configuration, admin by the role table",
+	"PUT /api/agents/:id/skills":  "binding procedures to an agent is roster configuration, admin by the role table",
+}
+
+// resourcePending are routes that carry a restrictable id and whose decision
+// belongs to a later ticket of roadmap 12, keyed to that ticket. **None of them
+// asks for a grant**, so this map is the precise meaning of "restricted on
+// paper": a restricted resource is still reachable through every route below.
+//
+// The classification test accepts only tickets it lists as open. The day one of
+// them lands and is struck from that list, every row still keyed to it fails
+// the build — so this is a to-do list that cannot quietly outlive its owner, and
+// a new route cannot be parked here under a ticket that has already shipped.
+//
+// **Empty since T-Z6.** Agents were six rows until T-Z4, dashboards five until
+// T-Z5, and sources and documents sixteen until T-Z6: three went to
+// resourcePolicy for sources and three for documents, and ten to resourceExempt.
+// It stays declared, and the classification test stays able to read it, so a
+// future kind has somewhere to park its routes while its own ticket is open.
+var resourcePending = map[string]string{}
 
 // unpolicedPaths are the routes that legitimately sit outside the policy: they
 // run before or without authentication, or they authenticate as something

@@ -48,6 +48,16 @@ type ScheduledTaskService struct {
 	budget    BudgetChecker
 	// webhooks tells the tenant's subscribers when a run ends (T-15). Nil-safe.
 	webhooks *WebhookSubscriptionService
+	// creators re-checks, at every fire, that the task's creator may still reach
+	// the agent it runs as (T-Z8). Nil on the API's instance, and nil-safe.
+	creators *CreatorAccess
+}
+
+// WithCreatorAccess re-checks a task's creator at every fire (T-Z8). The
+// worker's instance takes it; the API's never fires and does not.
+func (s *ScheduledTaskService) WithCreatorAccess(c *CreatorAccess) *ScheduledTaskService {
+	s.creators = c
+	return s
 }
 
 // WithWebhooks publishes `scheduled_task.completed` for every run that ends,
@@ -306,6 +316,32 @@ func (s *ScheduledTaskService) HandleFire(ctx context.Context, taskID string) er
 			s.failRun(ctx, run, errors.New(CreditsExhaustedMessage))
 			return nil // recorded on the run; an asynq retry would only refuse again
 		}
+	}
+
+	// After the budget, for its two reasons (T-Z8): the run row exists, so the
+	// stop is in the task's history, and no prompt has been appended. A task
+	// whose creator may no longer reach the agent it runs as is switched off and
+	// says why — decision 11's "a cron that keeps working after its author lost
+	// access is a hole with a schedule attached".
+	reason, cerr := s.creators.Check(ctx, t.CompanyID, t.UserID, t.ThreadID)
+	if cerr != nil {
+		// Could not check: this run fails with the retry sentence and the task
+		// stays on, so the next tick asks again. Not handed to asynq, whose
+		// retry would open a second run row for the same tick.
+		logrus.WithError(cerr).WithFields(logrus.Fields{"company_id": t.CompanyID, "task_id": t.ID}).
+			Warn("scheduled fire: access check failed; this run did not start")
+		s.failRun(ctx, run, ErrAccessCheckFailed)
+		return nil
+	}
+	if reason != "" {
+		s.failRun(ctx, run, errors.New(reason.Sentence()))
+		if err := s.repo.DisableTask(ctx, t.ID, reason); err != nil {
+			logrus.WithError(err).WithField("task_id", t.ID).
+				Warn("scheduled fire: refused for access but not switched off; the next tick will refuse again")
+		}
+		logrus.WithFields(logrus.Fields{"company_id": t.CompanyID, "task_id": t.ID, "reason": reason}).
+			Info("scheduled task switched off: its creator may no longer reach the agent it runs as")
+		return nil
 	}
 
 	userMsg, err := s.threads.AppendUserMessage(ctx, t.ThreadID, t.Prompt)

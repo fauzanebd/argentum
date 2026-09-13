@@ -15,20 +15,23 @@ type ScheduledTaskRepo struct{ db *sql.DB }
 func NewScheduledTaskRepo(db *sql.DB) *ScheduledTaskRepo { return &ScheduledTaskRepo{db: db} }
 
 const taskCols = `id, company_id, COALESCE(user_id::text, ''), thread_id, name, prompt,
-		cron_expression, timezone, enabled, last_run_at, next_run_at, created_at, updated_at`
+		cron_expression, timezone, enabled, last_run_at, next_run_at, created_at, updated_at,
+		COALESCE(disabled_reason, '')`
 
 func scanTask(row interface {
 	Scan(dest ...interface{}) error
 }) (*domain.ScheduledTask, error) {
 	t := &domain.ScheduledTask{}
 	var lastRun, nextRun sql.NullTime
+	var reason string
 	if err := row.Scan(
 		&t.ID, &t.CompanyID, &t.UserID, &t.ThreadID, &t.Name, &t.Prompt,
 		&t.CronExpression, &t.Timezone, &t.Enabled, &lastRun, &nextRun,
-		&t.CreatedAt, &t.UpdatedAt,
+		&t.CreatedAt, &t.UpdatedAt, &reason,
 	); err != nil {
 		return nil, err
 	}
+	t.DisabledReason = domain.DisabledReason(reason)
 	if lastRun.Valid {
 		v := lastRun.Time
 		t.LastRunAt = &v
@@ -105,6 +108,9 @@ func (r *ScheduledTaskRepo) UpdateTask(ctx context.Context, t *domain.ScheduledT
 			cron_expression = $3,
 			timezone = $4,
 			enabled = $5,
+			-- Resuming it clears why the product stopped it (T-Z8); if the
+			-- reason still holds, the next fire records it again.
+			disabled_reason = CASE WHEN $5 THEN NULL ELSE disabled_reason END,
 			updated_at = now()
 		WHERE id = $6
 	`
@@ -119,7 +125,21 @@ func (r *ScheduledTaskRepo) DeleteTask(ctx context.Context, id string) error {
 
 func (r *ScheduledTaskRepo) SetTaskEnabled(ctx context.Context, id string, enabled bool) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE scheduled_tasks SET enabled = $1, updated_at = now() WHERE id = $2`, enabled, id)
+		`UPDATE scheduled_tasks
+		    SET enabled = $1,
+		        disabled_reason = CASE WHEN $1 THEN NULL ELSE disabled_reason END,
+		        updated_at = now()
+		  WHERE id = $2`, enabled, id)
+	return err
+}
+
+// DisableTask pauses a task and records why the product did it (T-Z8). `AND
+// enabled`, for WatcherRepo.Disable's reason: a pause somebody made in the
+// meantime is theirs, not an access check's.
+func (r *ScheduledTaskRepo) DisableTask(ctx context.Context, id string, reason domain.DisabledReason) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE scheduled_tasks SET enabled = false, disabled_reason = $2, updated_at = now() WHERE id = $1 AND enabled`,
+		id, string(reason))
 	return err
 }
 

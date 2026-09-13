@@ -168,6 +168,16 @@ the playbook says to avoid when webhooks exist.
 
 ## 7. Gate — outstanding
 
+> **2026-09-13: this gate would have failed on the first message, and nothing
+> below needed a workspace to find out why.** `ChatEnqueuer.Enqueue` switched on
+> WhatsApp, Discord and Lark, and Slack — added everywhere else on the path by this
+> track — fell to its `unknown channel` default, so every event was refused and
+> answered `500`. §5's tests stopped at the webhook and the resolver and never sent
+> Slack through `Enqueue`. Found and fixed by `T-Z8`, with
+> `TestASlackMessageReachesItsBinding` proven failing on the old code
+> ([`access-grants.md`](access-grants.md) §16c item 7). The steps below are unchanged;
+> the prediction for them is now a pass.
+
 Needs a Slack workspace, which no CI job has. To run it:
 
 1. Create an app, add the `app_mentions:read`, `chat:write`, `im:history`,

@@ -25,8 +25,14 @@ type Dashboard struct {
 	SpecVersion int            `json:"spec_version"`
 	RefreshSecs *int           `json:"refresh_secs,omitempty"`
 	CreatedBy   *string        `json:"created_by,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	// AccessMode is whether opening this dashboard needs a grant (084, T-Z5).
+	// No request path decides from this field — internal/authz reads the column
+	// for itself — and it is carried for the two rules that are not about a
+	// person: a restricted dashboard cannot be shared, and a link to one does
+	// not open.
+	AccessMode AccessMode `json:"access_mode"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
 // DashboardRepository is the persistence contract for native dashboards.
@@ -79,6 +85,9 @@ func (d *Dashboard) PublicCopy() *Dashboard {
 	out.SourceID = ""
 	out.ThreadID = nil
 	out.CreatedBy = nil
+	// Who may open it inside the company is the company's business, and a link
+	// only ever serves an open dashboard, so the value would say nothing anyway.
+	out.AccessMode = ""
 
 	// The spec is copied a level deeper because Panels is a slice: assigning
 	// the struct would share the backing array, and blanking a panel's SQL

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -133,7 +134,15 @@ type APIKey struct {
 	KeyPrefix string  `json:"key_prefix"`
 	KeyHash   string  `json:"-"`
 	Scopes    []Scope `json:"scopes"`
-	CreatedBy string  `json:"created_by,omitempty"`
+	// AgentIDs is the agents a turn on this key may run as (T-Z8, roadmap 12
+	// decision 9). **Empty is every agent** — what every key minted before the
+	// field existed reaches — and that includes a restricted one. A key is a
+	// machine, not a person: it does not borrow the grants of whoever minted it,
+	// because a key outlives its minter and an inherited grant would widen every
+	// time theirs did. An admin who wants a key kept away from HR lists the
+	// agents it may use. Fixed at creation, like Scopes, and for their reason.
+	AgentIDs  []string `json:"agent_ids"`
+	CreatedBy string   `json:"created_by,omitempty"`
 	// LastUsedAt is written at most once a minute per key. It answers "is this
 	// key still in use?" before a revoke, which is the only question it needs
 	// to be accurate enough for.
@@ -182,6 +191,35 @@ func (k *APIKey) SortedScopeStrings() []string {
 	out := make([]string, 0, len(k.Scopes))
 	for _, s := range k.Scopes {
 		out = append(out, string(s))
+	}
+	slices.Sort(out)
+	return out
+}
+
+// KeyAllowsAgent reports whether a key whose allowlist is agentIDs may run a
+// turn as agentID (T-Z8). An empty list allows every agent. Ids compare
+// case-insensitively, as internal/authz compares them: Postgres renders a uuid in
+// lower case, and one typed in upper case is the same agent.
+func KeyAllowsAgent(agentIDs []string, agentID string) bool {
+	if len(agentIDs) == 0 {
+		return true
+	}
+	return slices.ContainsFunc(agentIDs, func(id string) bool {
+		return strings.EqualFold(strings.TrimSpace(id), strings.TrimSpace(agentID))
+	})
+}
+
+// NormalizeAgentIDs trims, lower-cases, de-duplicates and sorts a submitted
+// allowlist, and never returns nil — a nil slice reaches the database as NULL,
+// which the column refuses. Sorted for SortedScopeStrings' reason: two keys
+// limited to the same agents store byte-identical arrays.
+func NormalizeAgentIDs(raw []string) []string {
+	out := make([]string, 0, len(raw))
+	for _, id := range raw {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id != "" && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
 	}
 	slices.Sort(out)
 	return out

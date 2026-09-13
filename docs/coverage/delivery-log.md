@@ -6589,6 +6589,520 @@ arm cannot run until a route asks for a capability, so it moves to `T-W7`.
 and the policy suite's three new tests beside the two role sweeps they now run
 through, one of which skips with its reason. `make types` changed one file.
 
+## Phase 3an — A resource can be restricted, and nothing reads it yet (2026-09-12)
+
+`T-Z2`, the second of roadmap 12 and the one `T-Z3`, `T-Z4` and `T-Z7` wait on.
+Record: [`access-grants.md`](access-grants.md) §8.
+
+**What shipped.** `access_mode` (`open` by default) on agents, dashboards, data
+sources and uploaded documents; `resource_grants`; `internal/authz`, whose
+`Decide` and `Visible` are the one place the product will ask *may this person
+reach this object*; and five admin routes under `/api/access` and
+`/api/users/:id/grants` to restrict a resource and say who may reach it.
+
+**The ticket's table could not hold its own foreign key.** It specified
+`(resource_kind, resource_id)` and, two lines later, that *"a grant is dropped
+when its user or its resource is, by foreign key"*. A polymorphic id references
+no table, so deleting an agent would have left its grants naming a uuid nothing
+has. `084` gives each kind its own nullable, cascading column, a CHECK that
+exactly one is set and that it matches `resource_kind`, and one partial unique
+index per kind as the ticket's uniqueness. No generated column, because the
+production database's version is not readable from this machine.
+
+**The rule is three lines and has a twelve-cell table.** Not found beats
+everything; open admits; restricted admits only with a grant; a mode the CHECK
+should have refused is closed. The role is carried on the subject and never
+consulted, so the tests run every cell for an admin and a member and prove the
+answers identical — decision 4 as an assertion. `Visible` over fifty ids with
+duplicates and a capitalised copy asks the loader once; the repository answers
+that with one statement.
+
+**Nothing enforces it yet, and the roadmap's dependency list would hide that.**
+The decision function exists and no seam calls it until `T-Z3`/`T-Z4`. `T-Z7`
+lists only `T-Z1` and `T-Z2` as deps, so as written it could ship an
+open/restricted switch that restricts nothing. The record says `T-Z7` must
+follow `T-Z4`, or render the switch only for kinds whose enforcement has landed.
+
+**Silent in the ticket, decided here:** it defined no routes, and `T-Z7` is
+frontend-only, so the API had to come from this ticket; `Decide` returns an
+error beside its answer, because a load can fail and a caller must refuse on it;
+"document" is `source_documents`, not generated reports; and the domain structs
+do not gain `AccessMode` — `T-Z4` adds it where a page needs it, rather than
+this ticket widening a dozen scans nothing reads. `Migration: 084` was right.
+
+**Gate.** `make check` → `MAKE EXIT: 0`, read from the log rather than the pipe;
+70 Go packages `ok` — one more than Phase 3am, and the one is `internal/authz` —
+zero `FAIL`/`panic` lines, `golangci-lint` 0 issues, and all eight workspace
+builds `Done` with no TypeScript error against the regenerated `api-types`.
+Before it: `gofmt -l` empty, `go build`/`go vet` clean, and 23 new tests green
+under `-race` — nine in `authz`, five in the service, three in the repository
+(the kind-to-table join no fake can see among them), six in the handler.
+`CapabilityRepo`'s not-found helper became the package's shared `countTarget`,
+and `T-Z1`'s tests still pass through it. **Owed:** `084`'s round-trip and the
+repository's statements against two seeded companies
+([`live-gate-backlog.md`](live-gate-backlog.md) §7c) — no money, one database
+sitting shared with `T-Z1`'s arms.
+
+## Phase 3ao — A route that serves a restricted resource has to say so (2026-09-12)
+
+`T-Z3`, the third of roadmap 12 and the end of Track A. Record:
+[`access-grants.md`](access-grants.md) §9.
+
+**What shipped.** `middleware.RequireResource` on the dashboard chain after
+`RequireCapability`; `resourcePolicy`, route → kind and parameter, **empty**;
+and a classification test that holds every route carrying a restrictable id to
+a written decision. No migration, and for once in two roadmaps the ticket's
+*"Migration: none"* was true.
+
+**The ticket had two places for a route and needed three.** Its test forces a
+decision today for the 29 routes it can see carrying a restrictable id. Six
+routes are this ticket's — share revocation, removing an agent from a room, and
+the four `/api/access` routes the detector cannot see but a rename should still
+fail: each can only manage or take away access, so each is exempt with its
+reason. The other 27 are
+`T-Z4`'s, `T-Z5`'s and `T-Z6`'s. Exempting them would have emptied the word;
+gating them would have made three tickets' decisions here and pre-empted the
+roadmap's cut order, which cuts `T-Z6` first. So `resourcePending`, route → owning
+ticket, which the test accepts only while that ticket is open. **It is "restricted
+on paper" as a list of 27 routes**, and it cannot outlive its owners: strike a
+ticket when it lands and every row still keyed to it fails the build.
+
+**Not found passes through to the handler.** Every handler behind a listed route
+looks its object up by company, so the handler answers the 404 it answers today.
+Refusing in the middleware would have turned mistyped URLs into 403s and given a
+cross-tenant probe a second, differently shaped answer.
+
+**Two things the ticket could not have asked for as written.** An exemption
+"without a comment" cannot fail a test — a Go comment is invisible to one — so the
+reason is the map's value and fewer than five words is refused. And the middleware
+order could not be asserted: gin exposes a route's last handler and no chain, so
+the five `Use` calls became `authedChain(d)` and the test reads its links' runtime
+names.
+
+**What the next tickets inherit.** `T-Z4`'s *Do* list omits the six
+`/api/agents/:id` routes. And **`GET /api/knowledge/tables/:tableId` serves a
+document's extracted table under the table's own id**, which no route entry can
+see: `T-Z6` has to resolve table → document, or a restricted document's contents
+stay one URL away. Both are written in the roadmap's status block and beside the
+rows in `policy.go`.
+
+**Gate.** `make check` → `MAKE EXIT: 0`, read from the log rather than the pipe;
+70 Go packages `ok` — the same count as Phase 3an, since every file landed in a
+package that already had tests — zero `FAIL`/`panic` lines, `golangci-lint`
+0 issues, and the workspace builds `Done` with no TypeScript error. Before it:
+`gofmt -l` empty, `go build`/`go vet` clean, `generate.mjs --check` *"11 generated
+files are current"*, and 12 new tests green under `-race` — six in the middleware,
+six in `cmd/api`, one of which skips with its reason until the table has an entry.
+The real router was proven to enforce by a throwaway test that planted one entry
+and was deleted before the gate ran. **Owed:** nothing by this ticket. The live arm — two users, a restrict, a grant, a
+revoke, and a mistyped id still answering the handler's 404 — is filed against
+whichever ticket adds the first entry ([`live-gate-backlog.md`](live-gate-backlog.md)
+§7c), predicted to pass.
+
+## Phase 3ap — Agents: who may talk to which (2026-09-12)
+
+`T-Z4`, the fourth of roadmap 12 and the ticket the backlog's July trigger was
+about. Record: [`access-grants.md`](access-grants.md) §10.
+
+**What shipped.** From the dashboard, nobody without a grant — admins included —
+can talk to a restricted agent: not by picking it, by the company default, by an
+existing conversation, by `@`, or by adding it to a room. A member is not offered
+it: `GET /api/agents` sends them only the agents they may use, and the picker,
+the room's add menu and the new-chat caption filter by a new
+`reachable_agent_ids`. No migration.
+
+**Where the refusals are, and why two different answers.** A new conversation
+is checked before its thread is written; everything after that is one check on
+the list of agents about to be enqueued, so a path added later cannot be the one
+that forgot. An agent the person was never offered is refused as not found, like
+a disabled one. The agent their conversation already runs as, or one in the room
+with them, is refused with a 403 that names it — "no such agent" about answers on
+the screen would be a lie.
+
+**The ticket's fifth seam has no person in it.** `forkForAgent` is reached only
+from `/v1` and the widget, neither of which carries an Argentum user, so its test
+asserts the opposite: a restricted agent is forked to there, and the grant store
+is never read. Those doors are `T-Z8`'s, and the copy says so.
+
+**The roster route is Settings → Agents too.** Filtering it for everyone would
+take a restricted agent off its own admin's page, so an admin is sent the whole
+roster with `reachable_agent_ids` beside it, and is still refused talking to the
+agent at every seam. The line: a grant gates talking and being offered;
+configuring the roster is the role table's. The six `/api/agents/:id` routes are
+exempt on it, so this ticket added no `resourcePolicy` entry and `T-Z3`'s live
+arm moves to `T-Z5`.
+
+**Found, and not in any ticket: every member can read every conversation.**
+`GET /api/threads` lists the whole company's, and the thread and message reads
+check only the company. Restricting HR stops a member asking it about payroll and
+does not stop them reading what it told a granted colleague. Three ways to close
+it and a recommendation — a conversation inherits its agents' restriction on
+read, about a day — are in §10d; it wants deciding before `T-Z7` gives an admin a
+switch. Until then the copy says it, and the feature row stays ❌.
+
+**Decision 13's copy change** replaced "not an access boundary" in both places it
+was printed with decision 4's sentence and the three edges still true: the
+dashboard only, no control to restrict with yet, conversations stay readable.
+
+**Proven failing.** With the four checks switched off together, 8 tests and 3
+subtests failed — among them the assertion that an ordinary turn costs one grant
+read. Reverted, and grepped for before the gate.
+
+**Gate.** `make check` → `MAKE EXIT: 0`, read from the log; 70 Go packages `ok`,
+zero `FAIL`/`panic` lines, `golangci-lint` 0 issues, the dashboard's 62 vitest
+tests passing, and every workspace build done with no TypeScript error against
+the regenerated `api-types` (`reachable_agent_ids`, and `domain.Agent`'s comment).
+The command refused to start if a mutation marker was left in the tree. Before
+it: `gofmt -l` empty, `go vet` clean, 17 new Go tests — eleven in the enqueuer and
+room, five on the roster routes, three new rows in `TestChatFailStatusCodes` —
+plus `pnpm --filter dashboard lint` and `build` clean on their own.
+
+**Owed:** one stack arm — two users, one restricted agent, every refusal, a grant
+and a revoke on the next message, the picker in a browser, and two arms that
+document the holes rather than prove the boundary
+([`live-gate-backlog.md`](live-gate-backlog.md) §7c). No worker and no model key:
+every refusal happens before a run is enqueued.
+
+## Phase 3aq — A conversation is as restricted as the agents in it (2026-09-12)
+
+`T-Z10`, added to roadmap 12 the same day by the owner's decision on the hole
+`T-Z4` found. Record: [`access-grants.md`](access-grants.md) §11.
+
+**What shipped.** A person may read a conversation only if they may talk to
+every agent that is or was in it. Every dashboard route that lists, opens,
+deletes, streams or writes into a conversation asks — the thread list and its
+detail, transcript and room routes, the live stream before its upgrade, the
+per-conversation usage routes and their list (whose rows carry each
+conversation's first question as a title), and `POST /api/chat` naming a thread.
+A hidden conversation is answered exactly as a missing one. With nothing
+restricted, nothing changes. No migration.
+
+**"In it" is three sources.** The conversation's own agent misses a room; the
+room misses an agent that answered and was then removed; the agents that wrote a
+message miss a conversation not yet answered and everything before 077. §10d's
+wording of the option the owner picked named only the first two, which would
+have reopened the hole with one click on "remove". One statement per page reads
+all three; one grant read covers every agent on it.
+
+**A send is refused too, and T-Z4 could not see why.** A conversation running as
+Finance while holding HR's earlier answers passes the agent check — and the turn
+replays those answers into memory, where "what did HR say above?" reads them back.
+
+**Still readable, and written down:** generated documents from a restricted
+conversation (the largest remaining gap, and the next piece of the same rule),
+dashboards an agent created, scheduled-task run rows, the admin's company-wide
+reviews, and every door with no Argentum user.
+
+**Proven failing.** Five checks switched off together failed 12 tests and 9
+subtests across three packages; reverted and grepped for before the gate.
+
+**Gate.** `make check` → `MAKE EXIT: 0`, read from the log; **71** Go packages
+`ok` — one more than Phase 3ap, and the one is `internal/transport/ws`, which had
+no test file until the stream's refusal needed one — zero `FAIL`/`panic` lines,
+`golangci-lint` 0 issues, the dashboard's 62 vitest tests passing and every build
+done with no TypeScript error. Before it: `gofmt -l` empty, `go vet` clean, 17 new
+Go tests (ten on the rule and the send, five on the routes, two on the stream),
+and `pnpm --filter dashboard lint`/`build` clean — one pre-existing
+`exhaustive-deps` warning in `chat-page.tsx:166`, a line this ticket did not touch.
+
+**Owed:** the statement has never run — its `LATERAL` is valid Postgres and the
+kind of line no fake checks — plus two users walking every route, and an
+`EXPLAIN ANALYZE` of a page of long conversations
+([`live-gate-backlog.md`](live-gate-backlog.md) §7c).
+
+## Phase 3ar — The access matrix, and the mechanism gets a control (2026-09-12)
+
+`T-Z7`. Record: [`access-grants.md`](access-grants.md) §12.
+
+**What shipped.** Settings → Team. Each person's row opens a panel: their role,
+the three capabilities as toggles, and every agent as a checkbox. Below the team,
+every agent's card: open or restricted, decision 4's sentence, who is granted it
+with a revoke on each, *Grant to…*, and *Restrict…* — which opens an inline
+warning that counts and names who loses access, the admin pressing it included,
+and writes nothing until confirmed. An admin not granted a restricted agent is
+told so in amber, on the card and in their own row. The Agents tab's *"not yet
+available from this page"* now says where the control is. No migration.
+
+**One query, two renders took a route the ticket did not list.** *Repo: FE* — but
+an agent carries no `access_mode`, and the reads that existed were one per agent
+and one per person, which a grant can land between. `GET /api/access/:kind` is
+`View`'s `LEFT JOIN` over the whole kind in one statement; both halves of the
+screen render that one answer.
+
+**A switch only where a restriction bites.** Agents only: a dashboard, source or
+document restriction is stored and refuses nothing yet, so it gets no switch
+until `T-Z5`/`T-Z6` enforce it. Capabilities are offered, and each says what
+granting it does today — nothing, for all three, because `capabilityPolicy` is
+empty. That is also why the ticket's *"member's disabled control"* could not be
+built: nothing is gated. It is `T-W7`'s, beside voice.
+
+**Proven failing.** Four defects planted — no refetch, pending and removed people
+counted, everyone reaching a restricted agent, a restrict with no confirm — failed
+8 of 15 new dashboard tests; restored and `cmp`'d before the gate.
+
+**Gate.** `make check` → `MAKE EXIT: 0`, read from the log rather than from
+`tail`; **71** Go packages `ok`, zero `FAIL`/`panic` lines, `golangci-lint` 0
+issues, the dashboard's **77** vitest tests passing (62 at Phase 3aq; 15 are this
+ticket's) and every build done. `gofmt -l` empty before it. The dashboard lint's
+12 warnings are all in files this ticket did not touch. Before the gate: three new
+Go tests and four extended, `pnpm lint` exit 0, and both harness scenes shot with
+no page errors.
+
+**Owed:** `ListViews` against Postgres, the screen in a real browser as two
+people, and a narrow viewport ([`live-gate-backlog.md`](live-gate-backlog.md) §7c).
+
+## Phase 3as — A generated document goes with its conversation (2026-09-12)
+
+`T-Z11`, written into roadmap 12 and built the same evening on the owner's
+go-ahead. Record: [`access-grants.md`](access-grants.md) §13.
+
+**What shipped.** A generated document is hidden from anyone who may not read the
+conversation that produced it: omitted from the documents list with its download
+link, not found by its slides or its caption, and not found for minting a link.
+Listing its links answers the empty list a document nobody shared gets. Revoking a
+link is never gated. A document with no conversation is shown to everyone; with
+nothing restricted, nothing changes. No migration.
+
+**Why now.** `T-Z10` hid the question and left the answer on the documents page,
+and `T-Z7` made restricting HR one click — so the gap `T-Z10`'s record called the
+largest went from a paragraph to something an admin would walk into that evening.
+
+**The rule needed no new question.** A document's `thread_id` is its whole input,
+and `T-Z10`'s check answers it — once per page of documents, however many came
+from one conversation. 007 cascades a conversation's deletion into its documents,
+so the deleted-agent case `T-Z10` had to reason about has no document equivalent.
+
+**The ticket was wrong within the hour.** It said listing a hidden document's
+links 404s. The link list never looked a document up, so a 404 would have been the
+only answer confirming the id. Also written down: two surfaces still readable,
+both the owner's decision — a link minted before a restriction still plays, and
+pending actions from a hidden conversation are listed to every member.
+
+**Proven failing.** Three checks off → 4 of 5 new tests failed; revoke gated → the
+share test failed. Restored and `cmp`'d before the gate.
+
+**Gate.** `make check` → `MAKE EXIT: 0`, read from the log; **71** Go packages
+`ok`, zero `FAIL`/`panic` lines, `golangci-lint` 0 issues, the dashboard's 77
+vitest tests passing and all six builds done with no TypeScript error. `gofmt -l`
+empty before it. The dashboard lint's 12 warnings are the same 12 as Phase 3ar,
+none in a touched file. Before the gate: five new handler tests, `pnpm lint` exit
+0, and both `T-Z7` scenes re-shot for the changed copy.
+
+**Owed:** the routes as two people against real rows — a `documents` row suffices,
+no model turn ([`live-gate-backlog.md`](live-gate-backlog.md) §7c).
+
+## Phase 3at — A dashboard an admin can restrict (2026-09-12)
+
+`T-Z5`, next on roadmap 12's floor. Record: [`access-grants.md`](access-grants.md) §14.
+
+**What shipped.** A restricted dashboard answers `403` naming the kind on open, on
+its data and on its link list — the first three entries `resourcePolicy` has ever
+held — and is missing from the dashboards list for anyone not granted it, admins
+included. It cannot be shared: a mint answers `409` with the reason, whoever asks.
+Restricting it revokes its live share links in the same transaction and says how
+many, and a link that survives anyway does not open it. Settings → Team gets a
+dashboard card, a dashboards half in each person's panel, and a warning that
+counts the live links before the press. No migration.
+
+**The ticket was wrong three ways.** The list it asked to narrow is narrowed for
+admins too, so it could not supply the name of a dashboard an admin had locked
+themselves out of — the access read now carries names. A mode check at mint and a
+revoke at restrict race each other; both now take the dashboard's row lock, the
+flip first. And the confirmation it asked to "say so" had nothing to count and
+nowhere to be: there is no dashboard share UI, so the count is in Settings → Team
+and the mode route answers `200` with `revoked_shares`. Its `403`, against
+`T-Z4`'s hide-it rule, was kept: a dashboard is reached by a link already on
+somebody's screen.
+
+**Found and not closed.** `update_dashboard` lists and edits restricted dashboards
+for anyone who asks an agent, and hands the model their panel SQL. The person is on
+the worker's context, so it is ~0.5 day; the card says it meanwhile. Also found:
+`@argentum/api-types`' `DashboardShare` is not the struct — a generator defect
+already on `HEAD`.
+
+**Proven failing.** Six checks off → 6 tests failed across four packages; the
+link's mode check alone → its test failed; four frontend checks off → 4 of 21.
+Restored and `cmp`'d before the gate.
+
+**Gate.** `make check` → `MAKE EXIT: 0`, read from the log; **71** Go packages
+`ok`, zero `FAIL`/`panic` lines, `golangci-lint` 0 issues, the dashboard's **83**
+vitest tests passing (77 + 6 new) and all six builds done with no TypeScript error.
+`gofmt -l` empty before it. The dashboard lint's 12 warnings are the same 12 as
+Phase 3as. Before the gate: `make types` regenerated, and the three Settings → Team
+scenes shot with no page error.
+
+**Owed:** the routes as two people, `T-Z3`'s arm with them, and two `psql` sessions
+racing a restrict against a mint ([`live-gate-backlog.md`](live-gate-backlog.md) §7c).
+
+## Phase 3au — An agent asked to change a dashboard asks first (2026-09-12)
+
+`T-Z12`, the edge Phase 3at found and recommended next. Record:
+[`access-grants.md`](access-grants.md) §15.
+
+**What shipped.** `update_dashboard` asks `internal/authz` for the person on the
+turn. Its *"which one did you mean?"* list omits a dashboard they may not open,
+and a hidden one takes none of the five places. A restricted dashboard reached by
+id, or as the one the conversation built, is refused by name: a result the model
+reads, telling it to send the user to an admin and not to build a replacement. A
+turn with no person asks nothing. Settings → Team's caveat now says where the
+check stops. No migration, no route, no prompt or description change.
+
+**The note that asked for it was wrong once and silent three times.** The tool's
+result never carried a dashboard's spec or SQL. What leaked was panel titles and
+filter names through a bad edit's errors, plus the write itself, so the check runs
+before any edit is read. "Answer a refused id as not found" was not kept: not found
+sends a model to rebuild the dashboard. Silent: the conversation's own dashboard
+must be refused, not swapped for an older one. A refusal without an `error` key
+would have counted as an edit to `T-Q13`'s evidence check. And a scheduled task
+carries its creator, so its turns ask as them.
+
+**Proven failing.** Three sabotages: 7 of 8, 3 and 2 of the new tests failed.
+Restored and `cmp`'d before the gate.
+
+**Gate.** `make check` → `MAKE EXIT: 0`, read from the log. **71** Go packages
+`ok`, zero `FAIL`/`panic` lines, `golangci-lint` 0 issues. The dashboard's **83**
+vitest tests pass, and all six builds finished with no TypeScript error. `gofmt -l`
+was empty before it; it had flagged `stack.go`'s field alignment once, fixed with
+`gofmt -w`. The dashboard lint's 12 warnings are the same 12 as Phase 3at. Before
+the gate, the two Settings → Team scenes that show the card were re-shot.
+
+**Owed:** the only roadmap 12 arm that needs the worker and a model key — a real
+turn in which the model reads the refusal and does not rebuild the dashboard
+([`live-gate-backlog.md`](live-gate-backlog.md) §7c).
+
+## Phase 3av — The doors with no person, decided (2026-09-13)
+
+`T-Z8`, recommended by Phase 3au's status block. Record:
+[`access-grants.md`](access-grants.md) §16. Migration `085`.
+
+**What shipped.** Each way into an agent that carries no Argentum user now has its
+own rule:
+- **API keys** carry an optional agent list. A pick outside it is `404`, a
+  conversation or default outside it is `403 agent_not_allowed`, and
+  `GET /v1/agents` lists only the key's agents. No list is every agent, restricted
+  ones included, by decision 9.
+- **The website widget** never reaches a restricted agent: not by pick, not by
+  conversation, not in its picker. A restricted default opens a visitor on the
+  first open agent.
+- **A channel** answers as a restricted agent only where an admin acknowledged, on
+  the binding, that anyone who can post there can use it. The acknowledgement is
+  stored, checked every turn and audited under the admin's name. A binding made
+  before the restriction sits silent until acknowledged; the refusal is spoken
+  back on all four chat apps.
+- **A watcher or schedule** whose creator is not granted, or no longer in the
+  workspace, is switched off at its next fire with the reason on its row.
+
+In Settings, the key form lists agents and the binding form asks for the
+acknowledgement. The restrict warning counts the channels it will silence, and the
+access card, the agent form and the room's tooltip each say which rule applies on
+which door.
+
+**The ticket was wrong in two places and silent in four.**
+- **Wrong: the widget.** "Refused at save time" had nothing to refuse, because an
+  embed key names no agent.
+- **Wrong: channels.** An acknowledgement asked only on the form would never have
+  covered a binding made before the restriction, which is the obvious way round it.
+- **Silent: watchers and schedules.** Neither has an agent column — both run as the
+  default. "Deleted" usually means deactivated, and grant rows survive that.
+- **Silent: the notice.** There was no notification system to send one through;
+  the notice is the reason on the row.
+- **Silent: `/v1`.** A call naming no agent on a listed key, and what `/v1/agents`
+  returns for one.
+- **Silent: the audit.** The acknowledgement is the first access change audited at
+  all.
+
+**And one defect older than the track.** Slack had answered no message since
+2026-08-08: `Enqueue`'s channel case never named it, so every event was refused as
+an unknown channel. Its feature row said ✅ from unit tests that never crossed that
+switch. Proven failing, fixed, and the row moved to 🟡 until its live gate runs.
+
+**Proven failing.** Every `T-Z8` check off together: 16 top-level tests failed
+across `app` and `handlers`. `app` panicked at the schedule arm, so the creator
+check was isolated twice more, and its watcher tests failed on all four
+assertions. Every file was restored and `cmp`'d before the gate.
+
+**Gate.** `make check` → `MAKE EXIT: 0`, read from the log.
+- **Go:** 71 packages `ok`, zero `FAIL`/`panic` lines; `golangci-lint` `0 issues.`;
+  `gofmt -l` empty before it.
+- **Dashboard:** 86 vitest tests pass, and its build finished. Lint shows the same
+  12 warnings as Phase 3au.
+
+`make types` and `make openapi` were run before the gate and their diffs kept. Four
+Settings scenes were shot before it, one of them new.
+
+**One thing the gate did not cover:** two stale sentences found after it started.
+The agent form and the room's tooltip still said grants bind the dashboard only.
+Both were rewritten once it finished, then re-gated as a frontend change:
+- `make lint-web` → exit 0, 86 tests
+- `pnpm --filter dashboard build` → exit 0
+
+Neither sentence is in a screenshot.
+
+**Owed:** `085` and every arm (live-gate §7c). A database, then the stack and the
+worker with no model key, then a Slack workspace, which also proves the Slack fix.
+
+## Phase 3aw — A source and a document an admin can restrict (2026-09-13)
+
+`T-Z6`, recommended by Phase 3av. Record: [`access-grants.md`](access-grants.md)
+§17. No migration.
+
+**What shipped.**
+- **Sources:** a restricted source leaves a member's source list. Its freshness
+  test, description rebuild and retrieval test refuse anyone not granted it, admins
+  included. The nine routes that only configure a source are exempt with reasons.
+  No agent's reach changes, and a test pins that.
+- **Documents:** a restricted document leaves Knowledge for everyone not granted it,
+  and its page, tables and extracted-table routes answer `403` naming the kind. A
+  table is checked through its document, before a body is read or anything written.
+- **`search_documents`, for a person:** a named restricted document is answered
+  exactly as a missing one, and nothing is searched. Passages from restricted
+  documents are dropped and their places filled from a deeper search. With nothing
+  restricted the result is byte-identical.
+- **Settings → Team:** all four kinds get a switch, a card and a panel section, with
+  a warning each.
+- **`resourcePending`:** empty, and `T-Z6` is struck from the open tickets.
+
+**Where the ticket was wrong, or silent.**
+- **Two of its three source surfaces do not exist** — there is no schema browser and
+  no freshness panel. The member surface is the source list.
+- **"403s by id" has no member route**, because every connection route with an id is
+  admin.
+- **Silent: an admin's list must stay whole.** The agent form saves every ticked
+  source, so narrowing it would untie a restricted source from each agent saved.
+- **Silent: how the tool filters** — a short result is itself a signal.
+- **Silent: a document's tables.** They are served under their own id, which no route
+  entry can name.
+- **Silent: the admin sweep only walked what the policy still held**, so six routes
+  are now named in a test of their own.
+
+**Proven failing.**
+- **Every `T-Z6` check off together:** 10 top-level tests failed across `tools`,
+  `handlers` and `cmd/api`. `handlers` panicked on an unguarded index, which hid the
+  table tests.
+- **The table check alone off, after guarding that index:** both table tests failed.
+
+Every file was restored and `cmp`'d before the gate.
+
+**Gate.** The first `make check` failed at `golangci-lint` in its first minute —
+`ST1020`: `DocumentOf` had been inserted between `Get` and `Get`'s doc comment.
+
+The comment was moved and the second run passed: `MAKE EXIT: 0`, read from the log.
+- **Go:** 71 packages `ok`, zero `FAIL`/`panic` lines, `golangci-lint` `0 issues.`,
+  and `gofmt -l` empty before it.
+- **Dashboard:** 88 vitest tests pass with no TypeScript error, the same 12 lint
+  warnings, and all six builds finished.
+
+Four Settings → Team scenes were shot before it, one of them new.
+
+**Owed:** live-gate §7c's `T-Z6` row.
+- **The stack, no model:** the `connection` and `document` access statements'
+  first run, and both lists and the reading routes as two people, in a browser.
+- **The worker and a model key:** one turn in which a refused member asks about
+  Payroll.
+
+**Prediction: the routes hold. If anything differs, it is the model answering from
+a table already published from the document** — §17c's gap.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

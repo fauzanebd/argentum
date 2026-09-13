@@ -94,6 +94,13 @@ func shareFail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	case errors.Is(err, domain.ErrDashboardRestricted):
+		// 409, not 403: nothing about the caller is refused — the admin minting
+		// it may hold every grant there is. The dashboard's state conflicts with
+		// the request, and the sentence says which state and why (T-Z5).
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "this dashboard is restricted, and a restricted dashboard cannot be shared: a link opens it to anyone holding the URL, and a grant cannot follow it there. Open it to everyone first.",
+		})
 	case errors.Is(err, domain.ErrInvalidInput):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:

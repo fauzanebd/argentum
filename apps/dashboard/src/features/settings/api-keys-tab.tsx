@@ -28,6 +28,7 @@ import {
 import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api-error";
 import { useToast } from "@/hooks/use-toast";
+import { useAgents } from "@/features/chat/use-agents";
 
 // Where the published quickstart lives — the landing app serves it at `/docs/`
 // from `apps/landing/scripts/build-docs.mjs`. It is a full URL because the
@@ -44,6 +45,8 @@ interface APIKey {
   name: string;
   key_prefix: string;
   scopes: string[];
+  /** The agents a turn on this key may run as (T-Z8); empty is every agent. */
+  agent_ids?: string[];
   status: Status;
   last_used_at?: string;
   expires_at?: string;
@@ -202,6 +205,13 @@ export function APIKeysTab() {
   const [name, setName] = useState("");
   const [expiry, setExpiry] = useState("0");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // What a key may run as (T-Z8). Every agent is listed — restricted and
+  // disabled ones too — because this is an admin configuring a machine, not a
+  // picker offering a person what they may use. The roster is the chat's query,
+  // so it is usually already cached.
+  const { byId: agentsById } = useAgents();
+  const agentRoster = [...agentsById.values()];
+  const [agentIds, setAgentIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   // The plaintext exists in exactly one response, ever. It stays on screen
   // until the admin dismisses it rather than living in a toast that vanishes
@@ -235,6 +245,7 @@ export function APIKeysTab() {
         await api.post<CreatedKey>("/api-keys", {
           name: name.trim(),
           scopes: [...selected],
+          agent_ids: [...agentIds],
           expires_in_days: Number(expiry),
         })
       ).data,
@@ -243,6 +254,7 @@ export function APIKeysTab() {
       setCopied(false);
       setName("");
       setSelected(new Set());
+      setAgentIds(new Set());
       setError(null);
       qc.invalidateQueries({ queryKey: ["api-keys"] });
     },
@@ -261,6 +273,15 @@ export function APIKeysTab() {
       const next = new Set(prev);
       if (next.has(scope)) next.delete(scope);
       else next.add(scope);
+      return next;
+    });
+  }
+
+  function toggleAgent(id: string) {
+    setAgentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -365,6 +386,33 @@ export function APIKeysTab() {
             )}
           </div>
 
+          {agentRoster.length > 0 && (
+            <div className="space-y-2">
+              <Label>Agents</Label>
+              <p className="text-xs text-muted-foreground">
+                {agentIds.size === 0
+                  ? "None ticked: a call on this key can run as any agent, including one you have restricted. A key is not a person, so nobody's grants apply to it."
+                  : `Only the ${agentIds.size === 1 ? "agent" : `${agentIds.size} agents`} ticked. A call that would run as any other — by naming it, or through a conversation or the default that runs as it — is refused.`}{" "}
+                Like scopes, this cannot be changed once the key exists.
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {agentRoster.map((a) => (
+                  <label key={a.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={agentIds.has(a.id)}
+                      onChange={() => toggleAgent(a.id)}
+                    />
+                    <span>
+                      {a.name}
+                      {!a.enabled && <span className="text-xs text-muted-foreground"> (disabled)</span>}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           {issued && (
@@ -441,6 +489,11 @@ export function APIKeysTab() {
                         · {stats[k.id]?.failed} failed
                       </span>
                     )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {k.agent_ids && k.agent_ids.length > 0
+                      ? `Runs as: ${k.agent_ids.map((id) => agentsById.get(id)?.name ?? "a deleted agent").join(", ")}`
+                      : "Runs as: any agent"}
                   </div>
                   <div className="flex flex-wrap gap-1 pt-0.5">
                     {k.scopes.map((s) => (

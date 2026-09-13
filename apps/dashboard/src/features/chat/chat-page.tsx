@@ -841,7 +841,7 @@ export function ChatPage() {
                  which is deliberate and argued in agent-picker.tsx. */
               <ParticipantBar
                 participants={room.participants}
-                roster={[...agents.byId.values()]}
+                roster={agents.addable}
                 colorIndex={colorIndex}
                 defaultSpeakerID={
                   threads.find((t) => t.id === activeThreadId)?.agent_id ?? ""

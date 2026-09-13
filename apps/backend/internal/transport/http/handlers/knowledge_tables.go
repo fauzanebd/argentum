@@ -1,15 +1,19 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/doctable"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 )
 
 // KnowledgeTablesHandler is the review surface's API: what was extracted from a
@@ -28,10 +32,38 @@ type KnowledgeTablesHandler struct {
 	// reviewer who cannot see the page cannot review the parse, which is the
 	// ticket's sentence and the reason this handler serves page JSON at all.
 	pages *app.DocumentPageService
+	// access asks about the document behind a table (T-Z6). Nil asks nothing,
+	// as before roadmap 12.
+	access DocumentAccess
+}
+
+// DocumentAccess is who may read which uploaded document (T-Z6), for the two
+// knowledge handlers: one question for a table's document, one load for a page
+// of the list. *authz.Authorizer satisfies it.
+type DocumentAccess interface {
+	Decide(ctx context.Context, s authz.Subject, kind domain.ResourceKind, id string) (authz.Decision, error)
+	Visible(ctx context.Context, s authz.Subject, kind domain.ResourceKind, ids []string) ([]string, error)
 }
 
 func NewKnowledgeTablesHandler(svc *app.DocumentTableService, pages *app.DocumentPageService) *KnowledgeTablesHandler {
 	return &KnowledgeTablesHandler{svc: svc, pages: pages}
+}
+
+// WithAccess makes the table routes ask about the document a table came from
+// (T-Z6).
+//
+// **They cannot ask through resourcePolicy.** A table is served under its own id,
+// so a `(kind, param)` entry has nothing to name, and the classification test
+// cannot see these routes as document routes at all (access-grants §9e item 6).
+// Left alone, restricting a document would leave its tables one URL away. So the
+// handler resolves the table to its document and asks there, before a table is
+// read or written — and answers with the body RequireResource would have.
+//
+// The document routes beside them (`/documents/:id/tables`, `/pages/:page`) carry
+// the document's id and are resourcePolicy's.
+func (h *KnowledgeTablesHandler) WithAccess(a DocumentAccess) *KnowledgeTablesHandler {
+	h.access = a
+	return h
 }
 
 // Register installs the routes. Caller wraps with Auth middleware.
@@ -62,12 +94,46 @@ func (h *KnowledgeTablesHandler) get(c *gin.Context) {
 		h.unavailable(c)
 		return
 	}
+	if !h.mayReachTable(c, c.Param("tableId")) {
+		return
+	}
 	table, err := h.svc.Get(c.Request.Context(), companyID(c), c.Param("tableId"))
 	if err != nil {
 		knowledgeTableFail(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, table)
+}
+
+// mayReachTable answers whether the person may read the document a table was
+// extracted from, and writes the refusal when they may not (T-Z6).
+//
+// The three outcomes are RequireResource's, for its reasons: a table this company
+// does not have gets this handler's own 404; a restricted document not granted is
+// a 403 naming the kind; and a check that fails is a 503 — never the table.
+func (h *KnowledgeTablesHandler) mayReachTable(c *gin.Context, tableID string) bool {
+	if h.access == nil {
+		return true
+	}
+	documentID, err := h.svc.DocumentOf(c.Request.Context(), companyID(c), tableID)
+	if err != nil {
+		knowledgeTableFail(c, err)
+		return false
+	}
+	subject := authz.Subject{CompanyID: companyID(c), UserID: userID(c), Role: domain.Role(c.GetString("role"))}
+	d, err := h.access.Decide(c.Request.Context(), subject, domain.ResourceKindDocument, documentID)
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": companyID(c), "table_id": tableID, "document_id": documentID,
+		}).Warn("document access check failed; refusing the table")
+		middleware.AbortAccessCheckFailed(c)
+		return false
+	}
+	if d.Allowed || d.Reason == authz.ReasonNotFound {
+		return true
+	}
+	middleware.AbortNotGranted(c, domain.ResourceKindDocument)
+	return false
 }
 
 // page serves one page of the parse: its markdown, its word boxes and the
@@ -112,6 +178,12 @@ func (h *KnowledgeTablesHandler) update(c *gin.Context) {
 		h.unavailable(c)
 		return
 	}
+	// Before the body is read, as well as before the write: the answer is the
+	// table re-derived from the document, and a refused person must learn nothing
+	// of it from a validation error either.
+	if !h.mayReachTable(c, c.Param("tableId")) {
+		return
+	}
 	var req updateTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "the request body is not a table update"})
@@ -130,6 +202,11 @@ func (h *KnowledgeTablesHandler) apply(c *gin.Context) {
 		h.unavailable(c)
 		return
 	}
+	// Publishing answers with the table it published, which is the document's
+	// contents; asked before it happens, not after.
+	if !h.mayReachTable(c, c.Param("tableId")) {
+		return
+	}
 	table, err := h.svc.Apply(c.Request.Context(), companyID(c), c.Param("tableId"), userID(c))
 	if err != nil {
 		knowledgeTableFail(c, err)
@@ -138,6 +215,10 @@ func (h *KnowledgeTablesHandler) apply(c *gin.Context) {
 	c.JSON(http.StatusOK, table)
 }
 
+// unpublish does **not** ask about the document (T-Z6). It answers with nothing
+// and only withdraws rows the agent could read, so it can take access away and
+// never grant it — the property resourceExempt's rows share, and the same reason
+// revoking a dashboard's link is never gated.
 func (h *KnowledgeTablesHandler) unpublish(c *gin.Context) {
 	if h.svc == nil {
 		h.unavailable(c)

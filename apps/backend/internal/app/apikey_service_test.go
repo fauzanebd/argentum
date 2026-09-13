@@ -82,7 +82,7 @@ func (s *stubAPIKeys) TouchLastUsed(_ context.Context, id string, at time.Time) 
 // exercise the same round trip a caller does rather than a hand-built record.
 func mintKey(t *testing.T, svc *APIKeyService, repo *stubAPIKeys, scopes []string) (*domain.APIKey, string) {
 	t.Helper()
-	res, err := svc.Create(context.Background(), "co-1", "user-1", "CI", scopes, 0)
+	res, err := svc.Create(context.Background(), "co-1", "user-1", "CI", scopes, nil, 0)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestCreateValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := NewAPIKeyService(newStubAPIKeys())
-			_, err := svc.Create(context.Background(), tc.company, "user-1", tc.keyName, tc.scopes, tc.expiresIn)
+			_, err := svc.Create(context.Background(), tc.company, "user-1", tc.keyName, tc.scopes, nil, tc.expiresIn)
 			if tc.wantErr == nil {
 				if err != nil {
 					t.Fatalf("Create: %v", err)
@@ -136,7 +136,7 @@ func TestCreateReturnsThePlaintextOnceAndStoresOnlyItsHash(t *testing.T) {
 	repo := newStubAPIKeys()
 	svc := NewAPIKeyService(repo)
 
-	res, err := svc.Create(context.Background(), "co-1", "user-1", "CI", []string{"read:usage"}, 0)
+	res, err := svc.Create(context.Background(), "co-1", "user-1", "CI", []string{"read:usage"}, nil, 0)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestCreateExpiry(t *testing.T) {
 	svc := NewAPIKeyService(repo)
 	svc.now = func() time.Time { return time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC) }
 
-	never, err := svc.Create(context.Background(), "co-1", "u", "no expiry", []string{"read:usage"}, 0)
+	never, err := svc.Create(context.Background(), "co-1", "u", "no expiry", []string{"read:usage"}, nil, 0)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestCreateExpiry(t *testing.T) {
 		t.Errorf("expires_at = %v, want nil", never.Key.ExpiresAt)
 	}
 
-	dated, err := svc.Create(context.Background(), "co-1", "u", "30 days", []string{"read:usage"}, 30)
+	dated, err := svc.Create(context.Background(), "co-1", "u", "30 days", []string{"read:usage"}, nil, 30)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

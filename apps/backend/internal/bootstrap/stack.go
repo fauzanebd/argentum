@@ -41,6 +41,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/adapters/storage"
 	"github.com/fauzanebd/argentum/internal/agentbudget"
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/crypto"
@@ -389,7 +390,11 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// This is the construction the worker fires schedules through, so this
 	// WithBudget is the one that actually refuses an unattended tick (T-03).
 	s.ScheduledSvc = app.NewScheduledTaskService(s.ScheduledRepo, s.ThreadSvc, s.Companies, s.scheduledEnq).
-		WithBudget(s.UsageSvc)
+		WithBudget(s.UsageSvc).
+		// And the one that switches a schedule off when its creator loses the
+		// agent it runs as (T-Z8, decision 11). Uncached, like every grant read.
+		WithCreatorAccess(app.NewCreatorAccess(
+			authz.New(pgctl.NewResourceGrantRepo(controlDB)), pgctl.NewUserRepo(controlDB), s.Agents, s.ThreadSvc))
 
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
 	s.Documents = documentRepo
@@ -521,7 +526,11 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// the one that fires: the source lookup names the source in the breach,
 		// and the prober is the evaluation. It shares the tools' prober, so a
 		// watcher and an answer read one cached verdict per source per TTL.
-		WithFreshness(s.Connections, freshnessSvc)
+		WithFreshness(s.Connections, freshnessSvc).
+		// A metric watcher's briefing runs as an agent, so its creator is
+		// re-checked at every fire, as a schedule's is (T-Z8).
+		WithCreatorAccess(app.NewCreatorAccess(
+			authz.New(pgctl.NewResourceGrantRepo(controlDB)), pgctl.NewUserRepo(controlDB), s.Agents, s.ThreadSvc))
 
 	// The action framework (T-10/T-12a/T-12b). send_message and http_action are the
 	// registered kinds; propose_action resolves one at propose time, and the
@@ -625,10 +634,15 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 				WithCache(dashboard.NewPanelCache(s.Redis, time.Duration(cfg.DashboardPanelCacheTTLSecs)*time.Second)).
 				WithQueryLog(pgctl.NewDashboardQueryLogRepo(controlDB)),
 		),
-		Scheduled: s.ScheduledSvc,
-		Docs:      s.Docs,
-		Images:    s.postImageResolver(),
-		Metrics:   s.Metrics,
+		// Who may open which dashboard (T-Z12), so update_dashboard names and
+		// edits only what the person on the turn may open. The grant store the
+		// API's dashboard routes decide against, uncached for the reason
+		// cmd/api's bootstrap gives: a revoke is honoured on the next call.
+		DashboardAccess: authz.New(pgctl.NewResourceGrantRepo(controlDB)),
+		Scheduled:       s.ScheduledSvc,
+		Docs:            s.Docs,
+		Images:          s.postImageResolver(),
+		Metrics:         s.Metrics,
 		// The workspace's own procedures (T-K4). The same repository the index
 		// is composed from, so what `load_skill` opens is what the model was
 		// shown — a tool that could disagree with the index would be the
@@ -646,6 +660,10 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		// — the lexical index needs no credentials — so the tool answers rather
 		// than reporting itself unconfigured.
 		Documents: s.DocumentChunks,
+		// Who may read which uploaded document (T-Z6), so search_documents quotes
+		// only what the person on the turn may read. The grant store Knowledge's
+		// routes decide against, uncached like the dashboards' above.
+		DocumentAccess: authz.New(pgctl.NewResourceGrantRepo(controlDB)),
 	})
 
 	// Every tool runs behind the per-turn budget guard (T-16). Wrapping here

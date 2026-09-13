@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -41,6 +42,28 @@ func TestChatFailStatusCodes(t *testing.T) {
 			err:  fmt.Errorf("%w: a conversation cannot change agent", domain.ErrInvalidInput),
 			want: http.StatusBadRequest,
 			body: "cannot change agent",
+		},
+		{
+			// T-Z4: the conversation's own agent, restricted since. Says why,
+			// and names the agent.
+			name: "an agent the person may no longer talk to",
+			err:  fmt.Errorf("%w: HR", app.ErrAgentRestricted),
+			want: http.StatusForbidden,
+			body: "has restricted this agent and has not granted it to you: HR",
+		},
+		{
+			name: "a new conversation with no agent open to the person",
+			err:  app.ErrNoAgentAvailable,
+			want: http.StatusForbidden,
+			body: "no agent in this workspace is open to you",
+		},
+		{
+			// A grant read that failed is a retry, and the database's own
+			// message does not reach the browser.
+			name: "an access check that could not be made",
+			err:  fmt.Errorf("%w: %w", app.ErrAccessCheckFailed, errors.New("pq: connection refused")),
+			want: http.StatusServiceUnavailable,
+			body: "could not check access to that agent; try again",
 		},
 		{
 			// Everything the enqueue path could already fail with keeps the

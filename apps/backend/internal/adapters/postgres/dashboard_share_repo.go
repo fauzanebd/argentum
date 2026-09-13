@@ -39,6 +39,16 @@ func scanDashboardShare(sc interface{ Scan(...any) error }) (*domain.DashboardSh
 	return &s, nil
 }
 
+// Insert writes a link only while its dashboard is open (T-Z5), and holds the
+// dashboard's row while it does.
+//
+// `FOR SHARE` is what makes "restricting revokes every link" true rather than
+// nearly true. ResourceGrantRepo.SetAccessMode flips the mode and revokes the
+// links in one transaction, flip first. If the flip gets the row first, this
+// read waits for it to commit and then sees `restricted`. If this read gets it
+// first, the flip waits for this insert to commit — and its revoke, a later
+// statement, sees the new link and takes it back. Without the lock a mint that
+// read `open` could write its link after the revoke had already run.
 func (r *DashboardShareRepo) Insert(ctx context.Context, s *domain.DashboardShare) error {
 	locked := []byte("{}")
 	if len(s.LockedParams) > 0 {
@@ -48,13 +58,37 @@ func (r *DashboardShareRepo) Insert(ctx context.Context, s *domain.DashboardShar
 		}
 		locked = b
 	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("insert dashboard share: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var mode string
+	err = tx.QueryRowContext(ctx,
+		`SELECT access_mode FROM dashboards WHERE id = $1 AND company_id = $2 FOR SHARE`,
+		s.DashboardID, s.CompanyID,
+	).Scan(&mode)
+	if errors.Is(err, sql.ErrNoRows) || (err != nil && malformedID(err)) {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("insert dashboard share: %w", err)
+	}
+	// Anything but open is refused, including a value the CHECK should have
+	// stopped — authz.Evaluate's reading of a mode nobody decided.
+	if domain.AccessMode(mode) != domain.AccessModeOpen {
+		return domain.ErrDashboardRestricted
+	}
+
 	const q = `
 		INSERT INTO dashboard_shares
 			(company_id, dashboard_id, token_hash, locked_params, allow_filters,
 			 password_hash, max_refresh_per_hour, created_by, expires_at)
 		VALUES ($1,$2,$3,$4,$5,nullif($6,''),$7,nullif($8,'')::uuid,$9)
 		RETURNING id, created_at`
-	err := r.db.QueryRowContext(ctx, q,
+	err = tx.QueryRowContext(ctx, q,
 		s.CompanyID, s.DashboardID, s.TokenHash, locked, s.AllowFilters,
 		s.PasswordHash, s.MaxRefreshPerHour, s.CreatedBy, s.ExpiresAt,
 	).Scan(&s.ID, &s.CreatedAt)
@@ -62,6 +96,9 @@ func (r *DashboardShareRepo) Insert(ctx context.Context, s *domain.DashboardShar
 		return domain.ErrAlreadyExists
 	}
 	if err != nil {
+		return fmt.Errorf("insert dashboard share: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("insert dashboard share: %w", err)
 	}
 	return nil

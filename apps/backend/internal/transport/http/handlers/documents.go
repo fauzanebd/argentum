@@ -29,10 +29,85 @@ import (
 type DocumentsHandler struct {
 	docs domain.DocumentRepository
 	gen  *docgen.Service
+	// conversations hides a document produced in a conversation the person may
+	// not read (T-Z11). Nil lists every document to every member, as before.
+	conversations ConversationReader
 }
 
 func NewDocumentsHandler(docs domain.DocumentRepository, gen *docgen.Service) *DocumentsHandler {
 	return &DocumentsHandler{docs: docs, gen: gen}
+}
+
+// WithConversationAccess hides a generated document from a person who may not
+// read the conversation that produced it (T-Z11).
+//
+// T-Z10 hid the conversation; this hides what it made. A report HR's
+// conversation generated is that conversation's answer written to a file, and
+// leaving it on the documents page — download link and all — would restrict the
+// question and publish the answer. **Hidden, not refused**, on T-Z10's terms:
+// the list omits it, and every route naming it by id answers exactly as for a
+// document that does not exist. A document with no conversation — what
+// `POST /v1/reports/render` produces — has nothing to inherit a restriction from
+// and is shown to everyone, as before.
+func (h *DocumentsHandler) WithConversationAccess(r ConversationReader) *DocumentsHandler {
+	h.conversations = r
+	return h
+}
+
+// visibleDocuments narrows a page of documents to those whose conversation the
+// caller may read: one readability check for the page, over each conversation
+// once, however many documents it produced. A check that fails is an error, not
+// the unfiltered page — "could not tell" must never read as "everything".
+func visibleDocuments(c *gin.Context, r ConversationReader, docs []*domain.Document) ([]*domain.Document, error) {
+	if r == nil || len(docs) == 0 {
+		return docs, nil
+	}
+	var threads []string
+	seen := map[string]bool{}
+	for _, d := range docs {
+		if d.ThreadID != "" && !seen[d.ThreadID] {
+			seen[d.ThreadID] = true
+			threads = append(threads, d.ThreadID)
+		}
+	}
+	if len(threads) == 0 {
+		return docs, nil
+	}
+	readable, err := r.Readable(c.Request.Context(), companyID(c), userID(c), threads)
+	if err != nil {
+		return nil, err
+	}
+	ok := make(map[string]bool, len(readable))
+	for _, id := range readable {
+		ok[id] = true
+	}
+	out := make([]*domain.Document, 0, len(docs))
+	for _, d := range docs {
+		if d.ThreadID == "" || ok[d.ThreadID] {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
+
+// documentVisible reports whether the caller may open doc, and writes the answer
+// when they may not: the routes' own "document not found", byte for byte, so a
+// hidden document and an id that never existed cannot be told apart — and a 503
+// when the check itself failed, because the document may well be theirs.
+func documentVisible(c *gin.Context, r ConversationReader, doc *domain.Document) bool {
+	if r == nil || doc.ThreadID == "" {
+		return true
+	}
+	ok, err := r.MayRead(c.Request.Context(), companyID(c), userID(c), doc.ThreadID)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to that document; try again"})
+		return false
+	}
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return false
+	}
+	return true
 }
 
 func (h *DocumentsHandler) Register(rg *gin.RouterGroup) {
@@ -69,6 +144,14 @@ func (h *DocumentsHandler) list(c *gin.Context) {
 	docs, _, err := h.docs.ListByCompany(c.Request.Context(), companyID(c), domain.DocumentFilter{Limit: 50})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// Filtered after the page is read, so it can come back shorter than fifty —
+	// the thread list's trade-off (T-Z10), for the same reason: grants are not
+	// pushed into the listing query.
+	docs, err = visibleDocuments(c, h.conversations, docs)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to these documents; try again"})
 		return
 	}
 	out := make([]dashboardDocument, 0, len(docs))
@@ -109,6 +192,11 @@ func (h *DocumentsHandler) page(c *gin.Context) {
 	doc, err := h.docs.GetForCompany(ctx, companyID(c), c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+	// Before the page number is read, so a hidden document's page past its
+	// count and its first page are the same not-found.
+	if !documentVisible(c, h.conversations, doc) {
 		return
 	}
 	page, err := strconv.Atoi(c.Param("page"))
@@ -167,6 +255,9 @@ func (h *DocumentsHandler) carousel(c *gin.Context) {
 	doc, err := h.docs.GetForCompany(ctx, companyID(c), c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+	if !documentVisible(c, h.conversations, doc) {
 		return
 	}
 	if h.gen == nil {

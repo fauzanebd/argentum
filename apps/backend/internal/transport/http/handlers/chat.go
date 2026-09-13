@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -20,6 +21,18 @@ type ChatHandler struct {
 	// other route on this handler behaves exactly as it did before, which is
 	// what keeps this ticket inert until it is wired.
 	members *app.ThreadParticipantService
+	// conversations hides a conversation from a person who may not talk to
+	// every agent in it (T-Z10). Nil shows every conversation to every member,
+	// as before.
+	conversations ConversationReader
+}
+
+// ConversationReader is whether a person may read conversations (T-Z10), for
+// every dashboard route that lists, opens or streams one.
+// *app.ConversationAccess is the production one, and is nil-safe.
+type ConversationReader interface {
+	Readable(ctx context.Context, companyID, userID string, threadIDs []string) ([]string, error)
+	MayRead(ctx context.Context, companyID, userID, threadID string) (bool, error)
 }
 
 func NewChatHandler(chat *app.ChatEnqueuer, threads domain.ThreadRepository, messages domain.MessageRepository) *ChatHandler {
@@ -32,6 +45,38 @@ func NewChatHandler(chat *app.ChatEnqueuer, threads domain.ThreadRepository, mes
 func (h *ChatHandler) WithParticipants(s *app.ThreadParticipantService) *ChatHandler {
 	h.members = s
 	return h
+}
+
+// WithConversationAccess hides conversations by grant (T-Z10).
+//
+// **Hidden, not refused.** The list omits a conversation the person may not
+// read, and every route that names one by id answers it as not found — the
+// same 404, body and all, as an id that never existed. That is T-Z4's picker
+// rule: what the product does not offer a person it does not confirm to them
+// either. It is the same for an admin, who manages grants and does not bypass
+// them (decision 4).
+func (h *ChatHandler) WithConversationAccess(r ConversationReader) *ChatHandler {
+	h.conversations = r
+	return h
+}
+
+// readable reports whether the caller may read threadID, and writes the answer
+// when they may not. A 503 for a read that failed: the conversation may well be
+// theirs, and "not found" would say otherwise.
+func readableConversation(c *gin.Context, r ConversationReader, threadID string) bool {
+	if r == nil {
+		return true
+	}
+	ok, err := r.MayRead(c.Request.Context(), companyID(c), userID(c), threadID)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to that conversation; try again"})
+		return false
+	}
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return false
+	}
+	return true
 }
 
 // Register installs the routes. Caller wraps with Auth middleware.
@@ -71,9 +116,14 @@ func participantFail(c *gin.Context, err error) {
 		errors.Is(err, app.ErrAgentDisabled),
 		errors.Is(err, domain.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, app.ErrAccessCheckFailed):
+		// The sentinel's own sentence, never the wrapped database error.
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": app.ErrAccessCheckFailed.Error()})
 	case errors.Is(err, domain.ErrNotFound):
 		// 404 and not 403 for another company's thread or agent, which is what
-		// chatFail does one function up and for the same reason.
+		// chatFail does one function up and for the same reason — and for an
+		// agent the person may not talk to (T-Z4), which the add menu never
+		// offered them.
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 	case errors.Is(err, domain.ErrInvalidInput):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -83,7 +133,9 @@ func participantFail(c *gin.Context, err error) {
 }
 
 func (h *ChatHandler) listParticipants(c *gin.Context) {
-	if h.participantsUnavailable(c) {
+	// Readability first: a hidden conversation is not found whatever this
+	// deployment has wired, and its room is part of it.
+	if !readableConversation(c, h.conversations, c.Param("id")) || h.participantsUnavailable(c) {
 		return
 	}
 	out, err := h.members.List(c.Request.Context(), companyID(c), c.Param("id"))
@@ -100,7 +152,7 @@ type addParticipantReq struct {
 }
 
 func (h *ChatHandler) addParticipant(c *gin.Context) {
-	if h.participantsUnavailable(c) {
+	if !readableConversation(c, h.conversations, c.Param("id")) || h.participantsUnavailable(c) {
 		return
 	}
 	var req addParticipantReq
@@ -117,7 +169,7 @@ func (h *ChatHandler) addParticipant(c *gin.Context) {
 }
 
 func (h *ChatHandler) removeParticipant(c *gin.Context) {
-	if h.participantsUnavailable(c) {
+	if !readableConversation(c, h.conversations, c.Param("id")) || h.participantsUnavailable(c) {
 		return
 	}
 	err := h.members.Remove(c.Request.Context(), companyID(c), c.Param("id"), c.Param("agentID"))
@@ -135,7 +187,40 @@ func (h *ChatHandler) listThreads(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if h.conversations != nil {
+		// Filtered after the page is read, so a page can come back shorter
+		// than its limit. The list has never paged — it is the latest hundred —
+		// and a sidebar a few conversations short is the honest cost of not
+		// pushing grants into the listing query.
+		ids := make([]string, 0, len(out))
+		for _, t := range out {
+			ids = append(ids, t.ID)
+		}
+		keep, err := h.conversations.Readable(c.Request.Context(), cid, userID(c), ids)
+		if err != nil {
+			// Refused, not served unfiltered: the unfiltered list is the
+			// thing this person was not supposed to see.
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check access to conversations; try again"})
+			return
+		}
+		out = keepThreads(out, keep)
+	}
 	c.JSON(http.StatusOK, gin.H{"threads": out})
+}
+
+// keepThreads is threads narrowed to the ids in keep, in their own order.
+func keepThreads(threads []*domain.ConversationThread, keep []string) []*domain.ConversationThread {
+	allowed := make(map[string]bool, len(keep))
+	for _, id := range keep {
+		allowed[id] = true
+	}
+	out := make([]*domain.ConversationThread, 0, len(keep))
+	for _, t := range threads {
+		if t != nil && allowed[t.ID] {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // createThreadReq is the body of POST /threads. Every field is optional: the
@@ -203,6 +288,21 @@ func chatFail(c *gin.Context, err error) {
 		// one they can take. The message names the agent, because "not in this
 		// conversation" without saying which one is not actionable.
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, app.ErrConversationNotFound):
+		// Before ErrNotFound, which it wraps, so the body names the right
+		// thing: a hidden conversation reads as a missing one (T-Z10), not as
+		// a missing agent.
+		c.JSON(http.StatusNotFound, gin.H{"error": "no such conversation"})
+	case errors.Is(err, app.ErrAgentRestricted), errors.Is(err, app.ErrNoAgentAvailable):
+		// 403 with the sentence (T-Z4). These are refusals about an agent the
+		// person already knows — the one their conversation runs as, or one in
+		// the room — so the message can name it, and a 404 would be a lie about
+		// an agent whose answers are on the screen.
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	case errors.Is(err, app.ErrAccessCheckFailed):
+		// 503, and the sentinel's sentence rather than the wrapped database
+		// error: retry, do not go and ask an admin for a grant you may hold.
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": app.ErrAccessCheckFailed.Error()})
 	case errors.Is(err, domain.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "no such agent"})
 	case errors.Is(err, domain.ErrInvalidInput):
@@ -220,6 +320,9 @@ func (h *ChatHandler) getThread(c *gin.Context) {
 	}
 	if thread.CompanyID != companyID(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	if !readableConversation(c, h.conversations, thread.ID) {
 		return
 	}
 	// The room, on the detail read only (T-N2). The listing route deliberately
@@ -252,6 +355,11 @@ func (h *ChatHandler) deleteThread(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
+	// Deleting what you may not read would destroy the conversation of
+	// somebody who may.
+	if !readableConversation(c, h.conversations, thread.ID) {
+		return
+	}
 	if err := h.threads.Delete(c.Request.Context(), thread.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -267,6 +375,9 @@ func (h *ChatHandler) listMessages(c *gin.Context) {
 	}
 	if thread.CompanyID != companyID(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	if !readableConversation(c, h.conversations, thread.ID) {
 		return
 	}
 	msgs, err := h.messages.ListByThread(c.Request.Context(), thread.ID, 200, 0)

@@ -11,6 +11,7 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useIsAdmin } from "@/store/auth";
 import type { ScheduledTask } from "@argentum/api-types";
+import { DISABLED_REASON_COPY } from "@/features/settings/access";
 import { apiErrorMessage } from "@/lib/api-error";
 
 function humanCron(expr: string): string {
@@ -96,7 +97,9 @@ export function TaskRow({
           <Badge variant="outline" className="font-mono text-[10px]">
             {task.timezone}
           </Badge>
-          {!enabled && <Badge variant="secondary">paused</Badge>}
+          {!enabled && (
+            <Badge variant="secondary">{task.disabled_reason ? "turned off" : "paused"}</Badge>
+          )}
         </div>
         <div className="text-xs text-muted-foreground">
           {humanCron(task.cron_expression)}{" "}
@@ -106,6 +109,13 @@ export function TaskRow({
           Last run {relative(task.last_run_at)} · next {relative(task.next_run_at)}
         </div>
         <p className="text-xs text-muted-foreground line-clamp-2">{task.prompt}</p>
+        {/* Why the product paused it (T-Z8). The failed run in its history
+            carries the longer sentence; this is the one on the list. */}
+        {!enabled && task.disabled_reason && (
+          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            {DISABLED_REASON_COPY[task.disabled_reason]}
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-2 sm:shrink-0">
         <Button

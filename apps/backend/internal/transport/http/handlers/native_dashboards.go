@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -23,10 +26,38 @@ import (
 // is authored by the agent through create_dashboard (T-D11), which is one code
 // path with one set of validation rules; a second authoring surface would be a
 // second place for those rules to drift before there is a UI that needs it.
-type NativeDashboardsHandler struct{ svc *app.DashboardService }
+type NativeDashboardsHandler struct {
+	svc *app.DashboardService
+	// access narrows the list to the dashboards the person reading it may open
+	// (T-Z5). Nil lists every dashboard, as before roadmap 12.
+	access DashboardAccess
+}
+
+// DashboardAccess is the one read the dashboard list makes about the person
+// reading it (T-Z5). *authz.Authorizer is the production one.
+type DashboardAccess interface {
+	Visible(ctx context.Context, s authz.Subject, kind domain.ResourceKind, ids []string) ([]string, error)
+}
 
 func NewNativeDashboardsHandler(svc *app.DashboardService) *NativeDashboardsHandler {
 	return &NativeDashboardsHandler{svc: svc}
+}
+
+// WithAccess narrows the list by grant (T-Z5).
+//
+// **Only the list.** Opening one, and its data, ask through resourcePolicy in
+// cmd/api like any route with a restrictable id, and refuse with a 403 that names
+// the kind. The list cannot, because it carries no id; it asks here, once for the
+// page.
+//
+// **An admin is narrowed exactly like a member**, unlike the agent roster. The
+// roster is also Settings → Agents, so an admin is sent all of it; this list is
+// only somewhere to open a dashboard from, and an entry an admin cannot open is
+// not one. They manage a dashboard they are refused from Settings → Team, which
+// reads its name off the access list rather than off this one.
+func (h *NativeDashboardsHandler) WithAccess(a DashboardAccess) *NativeDashboardsHandler {
+	h.access = a
+	return h
 }
 
 // Register installs the routes. Caller wraps with Auth middleware; the
@@ -73,7 +104,48 @@ func (h *NativeDashboardsHandler) list(c *gin.Context) {
 		dashboardFail(c, err)
 		return
 	}
+	out, ok := h.openable(c, out)
+	if !ok {
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"dashboards": out})
+}
+
+// openable is the dashboards the caller may open, in the order given. False
+// means the response has been written.
+//
+// Nothing about a dashboard but its id goes in: not who created it, because
+// created_by is provenance and not ownership (056:50), and not the caller's role
+// (decision 4).
+func (h *NativeDashboardsHandler) openable(c *gin.Context, all []*domain.Dashboard) ([]*domain.Dashboard, bool) {
+	if h.access == nil || len(all) == 0 {
+		return all, true
+	}
+	ids := make([]string, 0, len(all))
+	for _, d := range all {
+		ids = append(ids, d.ID)
+	}
+	subject := authz.Subject{CompanyID: companyID(c), UserID: userID(c), Role: domain.Role(c.GetString("role"))}
+	visible, err := h.access.Visible(c.Request.Context(), subject, domain.ResourceKindDashboard, ids)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", subject.CompanyID).
+			Warn("dashboard access check failed; refusing the list")
+		// Refused rather than served unfiltered: the unfiltered list names the
+		// dashboards this person was not supposed to be shown.
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not check dashboard access; try again"})
+		return nil, false
+	}
+	allowed := make(map[string]bool, len(visible))
+	for _, id := range visible {
+		allowed[id] = true
+	}
+	out := make([]*domain.Dashboard, 0, len(visible))
+	for _, d := range all {
+		if allowed[d.ID] {
+			out = append(out, d)
+		}
+	}
+	return out, true
 }
 
 func (h *NativeDashboardsHandler) get(c *gin.Context) {

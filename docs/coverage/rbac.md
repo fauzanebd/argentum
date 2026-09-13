@@ -61,6 +61,15 @@ Ordering in `newRouter`: `Auth` → `RequireRole` → rate limiter. The limiter 
 last on purpose — a request a member is not allowed to make should not spend
 their token budget.
 
+**Since 2026-09-12 the chain is five links, not three:** `Auth` → `RequireRole` →
+`RequireCapability` (`T-Z1`) → `RequireResource` (`T-Z3`) → rate limiter, each
+later link only narrowing what the one before it allowed. It is built by
+`authedChain` as a slice, and `TestAuthedChainOrder` asserts it — the order
+used to be held by this paragraph alone. The resource table gets the
+classification property this section describes, and one more: every route
+carrying a restrictable id must be decided, not only every route
+([`access-grants.md`](access-grants.md) §9).
+
 ### Where the line was drawn
 
 The ticket named nine routes. The policy gates more, and the reasoning is

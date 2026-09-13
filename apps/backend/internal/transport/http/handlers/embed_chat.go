@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/transport/http/embedwire"
 	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
@@ -37,6 +40,23 @@ type EmbedChatHandler struct {
 	// supported wiring: the route then serves Argentum's defaults, which is
 	// also what a tenant who has configured nothing gets.
 	config domain.WidgetConfigStore
+	// access narrows the agents the widget offers to the open ones (T-Z8). Nil
+	// offers every enabled agent, as before roadmap 12.
+	access WidgetAgentAccess
+}
+
+// WidgetAgentAccess is which agents are open to nobody, which is who is asking
+// on the widget (T-Z8). *authz.Authorizer satisfies it.
+type WidgetAgentAccess interface {
+	Visible(ctx context.Context, s authz.Subject, kind domain.ResourceKind, ids []string) ([]string, error)
+}
+
+// WithAgentAccess keeps a restricted agent out of the widget's picker (roadmap
+// 12, decision 10). The enqueue path refuses one anyway; this is so the picker
+// never offers what a send would refuse.
+func (h *EmbedChatHandler) WithAgentAccess(a WidgetAgentAccess) *EmbedChatHandler {
+	h.access = a
+	return h
 }
 
 // WithConfig gives the widget the tenant's own appearance and content (T-23).
@@ -111,6 +131,13 @@ func embedChatFail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, domain.ErrInsufficientCredits):
 		c.JSON(http.StatusPaymentRequired, embedwire.ErrorResponse{Error: app.CreditsExhaustedMessage})
+	case errors.Is(err, app.ErrAgentNotClearedHere), errors.Is(err, app.ErrNoAgentAvailable):
+		// 403 with a sentence a visitor can read (T-Z8): the conversation would
+		// run as an agent an admin restricted, or every agent is. There is no
+		// grant a website visitor could ask for, so it does not tell them to.
+		c.JSON(http.StatusForbidden, embedwire.ErrorResponse{Error: "this assistant is not available here right now"})
+	case errors.Is(err, app.ErrAccessCheckFailed):
+		c.JSON(http.StatusServiceUnavailable, embedwire.ErrorResponse{Error: "could not start that turn; try again"})
 	case errors.Is(err, domain.ErrNotFound):
 		// Covers both an agent this workspace cannot use and a thread that is
 		// not this visitor's. One answer for both, deliberately.
@@ -218,10 +245,7 @@ func (h *EmbedChatHandler) getConfig(c *gin.Context) {
 
 	if h.agents != nil {
 		if list, err := h.agents.List(c.Request.Context(), companyID(c)); err == nil {
-			for _, a := range list {
-				if !a.Enabled {
-					continue
-				}
+			for _, a := range h.offerable(c, list) {
 				// Name and id only — see embedwire.Agent, which is where that rule
 				// now lives and where a browser-visible field gets argued for.
 				out.Agents = append(out.Agents, embedwire.Agent{ID: a.ID, Name: a.Name, IsDefault: a.IsDefault})
@@ -229,4 +253,44 @@ func (h *EmbedChatHandler) getConfig(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+// offerable is the agents the widget may offer: the enabled ones, less every
+// one an admin restricted (decision 10, T-Z8), in one question for the roster.
+//
+// A check that fails offers none rather than all. The widget still renders, and
+// a visitor who sends without a pick is opened on an agent the enqueue path
+// checks for itself — so the cost of a failed read is a picker with nothing in
+// it, never a picker with HR in it.
+func (h *EmbedChatHandler) offerable(c *gin.Context, list []*domain.Agent) []*domain.Agent {
+	enabled := make([]*domain.Agent, 0, len(list))
+	for _, a := range list {
+		if a != nil && a.Enabled {
+			enabled = append(enabled, a)
+		}
+	}
+	if h.access == nil || len(enabled) == 0 {
+		return enabled
+	}
+	ids := make([]string, len(enabled))
+	for i, a := range enabled {
+		ids[i] = a.ID
+	}
+	open, err := h.access.Visible(c.Request.Context(), authz.Subject{CompanyID: companyID(c)}, domain.ResourceKindAgent, ids)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID(c)).
+			Warn("widget agent access check failed; offering no agents")
+		return nil
+	}
+	keep := make(map[string]bool, len(open))
+	for _, id := range open {
+		keep[id] = true
+	}
+	out := make([]*domain.Agent, 0, len(open))
+	for _, a := range enabled {
+		if keep[a.ID] {
+			out = append(out, a)
+		}
+	}
+	return out
 }

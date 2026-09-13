@@ -141,10 +141,11 @@ func (h *WebhookHandler) receive(c *gin.Context) {
 		Message:     msg.Body,
 	}); err != nil {
 		// 200 with a spoken refusal, not 500: WhatsApp retries a non-2xx, and
-		// retrying a turn the tenant cannot pay for delivers the same sentence
-		// several times.
-		if errors.Is(err, domain.ErrInsufficientCredits) {
-			_ = h.wa.SendMessage(msg.PhoneNumber, app.CreditsExhaustedMessage)
+		// retrying a turn the tenant cannot pay for — or one whose agent is
+		// closed to this number (T-Z8) — delivers the same sentence several
+		// times.
+		if refusal, ok := app.SpokenRefusal(err); ok {
+			_ = h.wa.SendMessage(msg.PhoneNumber, refusal)
 			c.Status(http.StatusOK)
 			return
 		}

@@ -43,9 +43,12 @@ export function ParticipantBar({
   className,
 }: {
   participants: ThreadParticipant[];
-  /** Every agent, including disabled ones — a disabled agent is offered
-   *  greyed with the reason rather than hidden, so an admin can see why the
-   *  one they are looking for is not available. */
+  /** Every agent this person may talk to, including disabled ones — a
+   *  disabled agent is offered greyed with the reason rather than hidden, so an
+   *  admin can see why the one they are looking for is not available. An agent
+   *  they may **not** talk to is not in this list at all (T-Z4): a disabled
+   *  control says who to ask, and a restricted agent is one the product does
+   *  not show them. */
   roster: Agent[];
   colorIndex: Map<string, number>;
   /** Who answers when nobody is addressed. Marked, and not removable. */
@@ -149,21 +152,29 @@ export function ParticipantBar({
         )}
 
         {participants.length > 1 && (
-          // T-S1's locked decision 1, said out loud where it is now visible.
-          // Four agents in one pane answering one person reads as an org chart,
-          // and therefore as an access boundary. It is not one, and the
-          // dashboard has to say so rather than let a customer infer otherwise.
+          // Roadmap 12's decision 13 (T-Z4). This read "not an access boundary"
+          // until grants existed, and it is replaced rather than deleted: four
+          // agents in one pane still read as an org chart, so what that chart
+          // enforces — and where it stops — still has to be said where it is
+          // seen. Decision 4's sentence, and not the word "secure". The last
+          // clause is T-Z10's: a conversation is hidden from anyone not granted
+          // every agent in it, which is what the room this bar sits in means —
+          // and T-Z11's, since the documents it produced go with it.
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Bot className="size-3" />
-                not an access boundary
+                who can use these agents
               </span>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              Any member of your company can open any agent and ask what it can
-              reach. An agent&rsquo;s sources limit what it can query, not who can
-              talk to it.
+              An admin can restrict an agent to the people granted it, and you
+              are only offered the agents you may use. That is a boundary against
+              accident and casual browsing, not against a determined admin. A
+              channel answers as a restricted agent only where an admin
+              acknowledged it, and the website widget never reaches one. A conversation, and every
+              document it produced, is hidden from anyone not granted every agent
+              in it.
             </TooltipContent>
           </Tooltip>
         )}

@@ -206,11 +206,12 @@ func (h *LarkWebhookHandler) events(c *gin.Context) {
 		LarkMessageID: ev.Message.MessageID,
 		Message:       text,
 	}); err != nil {
-		if errors.Is(err, domain.ErrInsufficientCredits) {
+		// The credit refusal, and since T-Z8 a chat whose agent is closed to it.
+		if refusal, ok := app.SpokenRefusal(err); ok {
 			if h.replier != nil {
-				if rerr := h.replier.Reply(c.Request.Context(), cred.CompanyID, ev.Message.MessageID, app.CreditsExhaustedMessage); rerr != nil {
+				if rerr := h.replier.Reply(c.Request.Context(), cred.CompanyID, ev.Message.MessageID, refusal); rerr != nil {
 					logrus.WithError(rerr).WithField("company_id", cred.CompanyID).
-						Warn("lark webhook: could not deliver the credit refusal")
+						Warn("lark webhook: could not deliver the refusal")
 				}
 			}
 			// 200 either way — Lark retries a non-2xx, and the tenant's

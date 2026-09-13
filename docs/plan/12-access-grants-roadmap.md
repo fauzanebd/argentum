@@ -16,6 +16,189 @@ rejected anyway: this repo has numeric tickets `T-01`→`T-23`, so `T-L1` and
 `T-I1` sit one glyph from `T-11`. `Z` collides with nothing and cannot be
 misread.
 
+> **Status, 2026-09-13, later: `T-Z6` is built, `make check` green, unit-gated — every kind has a
+> switch, and `resourcePending` is empty.** No migration. Record:
+> [`../coverage/access-grants.md`](../coverage/access-grants.md) §17. A restricted source leaves a
+> member's source list and refuses its three reading routes to anyone not granted it, and no
+> agent's reach changes. A restricted document leaves Knowledge, refuses its pages and its tables
+> — checked through their document, since a table is served under its own id — and
+> `search_documents` quotes nothing from it for a person, answering a named one as if it did not
+> exist.
+>
+> **Two of the ticket's three source surfaces do not exist** (no schema browser, no freshness
+> panel), and an admin's source list has to stay whole, or the agent form would untie a restricted
+> source from every agent it saves (§17b).
+>
+> **Still open, written down (§17c):** metrics on a restricted source are listed to members; tables
+> published from a restricted document stay queryable by agents with that source.
+>
+> **Owed:** the stack arms and one model turn (§7c).
+>
+> **Next on the floor, recommended: `T-Z9`** (the negative suite, and the row that says a refusal
+> happened). Every dependency is now built, it is never cut, and its cross-product has three more
+> kinds and three more doors to cover than when it was written. §13d's two owner decisions still
+> stand.
+
+> **Status, 2026-09-13, after `T-Z12`: `T-Z8` is built, `make check` green, unit-gated — the other three doors are
+> decided.** Migration `085`. Record: [`../coverage/access-grants.md`](../coverage/access-grants.md) §16.
+> An API key reaches only the agents it lists; the website widget never reaches a restricted
+> agent; a channel answers as one only where an admin acknowledged it; a watcher or schedule whose
+> creator lost the agent switches itself off at its next fire and says why. Settings states each
+> rule beside the switch, which retires cut order row 3's caveat.
+>
+> **Two findings bigger than the ticket.** Slack has answered no message since 2026-08-08 —
+> `Enqueue` never had its arm — and its feature row said ✅; fixed and moved to 🟡 until its gate
+> runs. And the widget half could not be built as written: an embed key names no agent (§16c).
+>
+> **Owed:** `085` and every arm, most without a model key (§7c).
+>
+> **Next on the floor, recommended: `T-Z6`** (sources and documents) — the last unbuilt
+> dependency of `T-Z9`, which is never cut. If the owner takes cut #1 instead, `T-Z9` is next.
+> §13d's two owner decisions still stand; `T-W7` claims `086`.
+
+> **Status, 2026-09-12, after `T-Z5`: `T-Z12` is built, `make check` green, unit-gated — an agent
+> asked to change a dashboard checks the person's grant.** No migration. Record:
+> [`../coverage/access-grants.md`](../coverage/access-grants.md) §15.
+> `update_dashboard`'s *"which one?"* list omits a restricted dashboard. One reached
+> by id, or as the conversation's own, is refused by name before any edit is read,
+> and never swapped for another. A turn with no person asks nothing. Two of
+> §14d's claims did not hold, both under `T-Z12` below.
+>
+> **Owed:** the track's first live arm that needs the worker and a model key: what
+> the model does with the refusal ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7c).
+>
+> **Next on the floor, recommended: `T-Z8`** (the three doors with no person). It
+> is now the only way a restricted agent *or* dashboard is still reachable, and
+> the card carries its caveat for both. `T-Z6` is cut #1 and adds kinds rather
+> than closing doors. `T-Z8` claims `085` at build time — `T-W7` wanted a number
+> too. §13d's two owner decisions still stand.
+
+> **Status, 2026-09-12, earlier: `T-Z5` is built, `make check` green, unit-gated — a dashboard can be
+> restricted, and a route asks for a grant for the first time.** No migration.
+> Record: [`../coverage/access-grants.md`](../coverage/access-grants.md) §14. A
+> restricted dashboard `403`s on open, data and links, leaves the dashboards list
+> for anyone not granted it, cannot be shared, and takes its live links with it;
+> Settings → Team has its switch. Three corrections are under `T-Z5` below.
+>
+> **One edge found and not closed, recommended next as a small ticket (~0.5d):
+> `update_dashboard`** lists and edits restricted dashboards for anyone who asks an
+> agent (§14d). The card says so meanwhile.
+>
+> **Next on the floor:** that fix, then `T-Z6` (sources and documents, cut #1) or
+> `T-Z8` (the three doors with no person). §13d's two owner decisions still stand.
+
+> **Status, 2026-09-12, later still: `T-Z11` is built, `make check` green, unit-gated — what a
+> restricted agent's conversation produced goes with it.** No migration. Record:
+> [`../coverage/access-grants.md`](../coverage/access-grants.md) §13. Written under
+> Track D's additions and built on the owner's go-ahead: a generated document is
+> omitted from the documents list and not found by its slides, its caption or its
+> link routes for anyone who may not read its conversation. Revoking a link is never
+> gated.
+>
+> **Two surfaces found still readable, and both want the owner rather than a ticket
+> (§13d):** a share link minted before a restriction still plays, and pending
+> actions proposed in a hidden conversation are listed to every member — the second
+> is also a question about who may *approve* one.
+>
+> **Next on the floor is `T-Z5`** (dashboards), which also carries `T-Z3`'s live arm.
+> `T-Z9`'s cross-product now needs a conversation row and a document row.
+
+> **Status, 2026-09-12, late: `T-Z7` is built, `make check` green, unit-gated — the mechanism
+> has a control.** No migration. Record:
+> [`../coverage/access-grants.md`](../coverage/access-grants.md) §12. Settings → Team
+> restricts an agent behind a warning that counts and names who loses access, grants
+> it from the agent's side or the person's — one read, two renders — and shows an
+> admin the agents they themselves are refused.
+>
+> **Two things it got wrong, and three it hands on.** The ticket said *Repo: FE*,
+> but no read answered "one query, two renders": an agent carries no
+> `access_mode`, so the matrix needed `GET /api/access/:kind` (§12b). And *"a
+> member who lacks a capability sees the control, disabled"* has no control to
+> disable — no route asks for a capability (§12d). Handed on: **`T-Z5` and `T-Z6`
+> each add their kind to `ENFORCED_KINDS`** in `apps/dashboard/src/features/settings/access.ts`
+> in the commit that enforces it, because only agents get a switch until then
+> (§12c); **`T-W7` rewrites `voice`'s "does nothing today"** in `CAPABILITY_COPY`
+> beside its policy entry, and owns the member's disabled control.
+>
+> **Next, and not yet a ticket: generated documents.** §11e of the record called
+> them the largest remaining gap before there was a switch; now an admin can
+> restrict HR with one click and reasonably believe its reports went with it.
+> `T-Z5` follows it on the floor's order.
+
+> **Status, 2026-09-12, night: `T-Z10` is built, `make check` green, unit-gated — the hole `T-Z4`
+> found is closed.** No migration. Record:
+> [`../coverage/access-grants.md`](../coverage/access-grants.md) §11. The owner
+> chose §10d's first option: **a conversation is hidden from anyone not granted
+> every agent that is or was in it** — its own, its room's, and every agent that
+> wrote in it, a third source §10d's own wording missed. Every dashboard route that
+> lists, opens, streams or writes into a conversation asks, and answers a hidden
+> one as missing. `T-Z10` is written up under Track D below.
+>
+> **Still company-readable: generated documents** — a report an HR conversation
+> produced is listed to every member (§11e). That is the next piece of this rule
+> to build, and it is not ticketed yet.
+>
+> **Next on the floor is `T-Z7`** (Settings → Team, frontend): the whole mechanism
+> still has no control an admin can press.
+
+> **Status, 2026-09-12, evening: `T-Z4` is built, `make check` green, unit-gated — the first
+> boundary that refuses something.** No migration. Record:
+> [`../coverage/access-grants.md`](../coverage/access-grants.md) §10. Nobody
+> without a grant — admins included — can talk to a restricted agent from the
+> dashboard: not by pick, default, an existing conversation, `@`, or adding it to
+> a room. A member is not offered it.
+>
+> **A hole this roadmap does not close, and it wants the owner before `T-Z7`
+> ships a switch: every member can list and read every conversation in the
+> company.** `GET /api/threads` is `ListByCompany`, and the thread and message
+> reads check only the company — so restricting HR stops a member asking it about
+> payroll and does not stop them reading the answer a granted colleague got.
+> Three options, and a recommendation (a conversation inherits its agents'
+> restriction on read, ~1d), are in §10d. The dashboard's copy says so meanwhile,
+> and the feature row stays ❌.
+>
+> **`forkForAgent` was never a dashboard seam** — only `/v1` and the widget reach
+> it, and neither carries a user — so its test asserts the opposite of the other
+> four. `T-Z4` decided the six `/api/agents/:id` rows as exemptions and added no
+> `resourcePolicy` entry, so `T-Z3`'s live arm moves to `T-Z5`.
+>
+> **Next on the floor is `T-Z7`** (Settings → Team, frontend), without which
+> none of this has a control — once §10d is decided.
+
+> **Status, 2026-09-12, latest: `T-Z3` is built, `make check` green, unit-gated — Track A, the
+> mechanism, is complete.** No migration. Record:
+> [`../coverage/access-grants.md`](../coverage/access-grants.md) §9. **`T-Z4` is
+> next** — it is the ticket the backlog's trigger is about, and §9's sequencing
+> names it; `T-Z5` and `T-Z6` are unblocked beside it.
+>
+> **Still nothing enforces a resource grant, and now it is a list.**
+> `RequireResource` is on the chain and `resourcePolicy` is empty. A third table,
+> `resourcePending`, holds the 27 routes that carry a restrictable id and whose
+> decision is `T-Z4`'s, `T-Z5`'s or `T-Z6`'s; the classification test refuses a
+> row keyed to a ticket that has shipped, so the list cannot outlive its owners.
+> The sentence below saying no seam asks *"until `T-Z3` and `T-Z4`"* was wrong
+> about `T-Z3`: it makes no route ask.
+>
+> **Two things the next tickets must pick up.** `T-Z4`'s *Do* list omits the six
+> `/api/agents/:id` routes. And `GET /api/knowledge/tables/:tableId` serves a
+> document's extracted table under the table's own id, which no route entry can
+> see — **`T-Z6` must resolve table → document, or a restricted document's
+> contents stay one URL away.** `T-Z7` still must not ship ahead of `T-Z4`.
+
+> **Status, 2026-09-12, later: `T-Z2` is built too, `make check` green,
+> unit-gated.** Migration `084`. Record:
+> [`../coverage/access-grants.md`](../coverage/access-grants.md) §8. **`T-Z3` is
+> next**; `T-Z4` is unblocked beside it.
+>
+> **Nothing enforces a resource grant yet.** `internal/authz` decides, and no
+> seam asks it until `T-Z3` and `T-Z4`. The admin routes to restrict and grant
+> exist, so until then a restricted agent is restricted on paper.
+>
+> **`T-Z7`'s dependency list is not enough.** It names `T-Z1` and `T-Z2`, both
+> now met — so as written it could ship a working open/restricted switch that
+> restricts nothing. It should follow `T-Z4`, or render the switch only for the
+> kinds whose enforcement has landed.
+
 > **Status, 2026-09-12: `T-Z1` is built, `make check` green, unit-gated.**
 > Migration `083`. Record: [`../coverage/access-grants.md`](../coverage/access-grants.md).
 > **`T-Z2` is next** — no deps, and `T-Z3`, `T-Z4` and `T-Z7` all wait on it.
@@ -292,6 +475,24 @@ it, with decision 4's sentence in its place.
 #### `T-Z2` A resource can be restricted, and a grant is what opens it
 **Repo:** BE · **Size:** 2.0d · **Deps:** none · **Migration:** `084`
 
+> **Built 2026-09-12, with the table reshaped and five silences decided**
+> ([`../coverage/access-grants.md`](../coverage/access-grants.md) §8d):
+>
+> 1. **`(resource_kind, resource_id)` cannot carry the foreign key the next
+>    bullet demands.** A polymorphic id cascades from nothing. `084` has one
+>    typed, cascading column per kind, CHECKs binding them to `resource_kind`,
+>    and a partial unique index per kind.
+> 2. **No routes were specified, and `T-Z7` is frontend-only.** Five admin
+>    routes under `/api/access` and `/api/users/:id/grants`.
+> 3. **`Decide` needs an error beside its answer.** A load can fail, and a
+>    caller must be able to refuse on "could not check" rather than read it as
+>    "refused" or "allowed".
+> 4. **"document" named two tables.** It is `source_documents`.
+> 5. **Nothing enforces a grant until `T-Z3`/`T-Z4`**, and `T-Z7`'s dependency
+>    list does not say so — see the status block.
+>
+> `Migration: 084` was right.
+
 ##### Do
 - `084_resource_grants`: `(company_id, user_id, resource_kind, resource_id,
   granted_by, granted_at)`, unique on the first four. Plus `access_mode` on the
@@ -324,6 +525,23 @@ it, with decision 4's sentence in its place.
 #### `T-Z3` A route that serves a restricted resource has to say so
 **Repo:** BE · **Size:** 1.0d · **Deps:** `T-Z2` · **Migration:** none
 
+> **Built 2026-09-12, with a third table and four gaps in the text closed**
+> ([`../coverage/access-grants.md`](../coverage/access-grants.md) §9e):
+>
+> 1. **Two places cannot classify 29 routes honestly.** 27 belong to `T-Z4`–`T-Z6`;
+>    exempting them empties the word "exemption", and gating them makes those
+>    tickets' decisions and pre-empts the cut order. `resourcePending` keys each
+>    to its owner, and the test refuses a ticket that has shipped.
+> 2. **A Go comment cannot fail a test.** The exemption's reason is the map's
+>    value, and fewer than five words is refused.
+> 3. **gin exposes no chain to assert an order against.** The chain became
+>    `authedChain(d)`, a slice, and the test reads its links' names.
+> 4. **Silent on not-found.** It passes through to the handler, whose own 404
+>    stands — no second, differently shaped answer for a cross-tenant probe.
+>
+> The detector cannot see `GET /api/knowledge/tables/:tableId` — `T-Z6`'s to
+> resolve. `Migration: none` was right.
+
 ##### Why
 This is the ticket that makes the difference between an access model and a
 sieve. `T-04` chose a table over per-route middleware for exactly one reason:
@@ -343,12 +561,12 @@ in each handler reintroduces that problem one layer down.
   is a decision somebody wrote down rather than an omission.
 
 ##### Acceptance
-- [ ] An entry naming a route that does not exist fails the test
-- [ ] An entry naming a param the route does not declare fails the test
-- [ ] A new route with `:id` on a restrictable resource fails the test until it is
+- [x] An entry naming a route that does not exist fails the test
+- [x] An entry naming a param the route does not declare fails the test
+- [x] A new route with `:id` on a restrictable resource fails the test until it is
       classified or exempted — asserted by adding one in the test
-- [ ] An exemption without a comment fails the test
-- [ ] The middleware order is asserted: `Auth` → `RequireRole` →
+- [x] An exemption without a comment fails the test
+- [x] The middleware order is asserted: `Auth` → `RequireRole` →
       `RequireCapability` → `RequireResource` → rate limiter, keeping `T-04`'s
       rule that a request a member may not make does not spend their tokens
 
@@ -358,6 +576,27 @@ in each handler reintroduces that problem one layer down.
 
 #### `T-Z4` Agents: who may talk to which
 **Repo:** BE + FE · **Size:** 2.0d · **Deps:** `T-Z2` · **Migration:** none
+
+> **Built 2026-09-12** ([`../coverage/access-grants.md`](../coverage/access-grants.md)
+> §10c), with these corrections:
+>
+> 1. **`forkForAgent` is only reached on `/v1` and the widget**, which have no
+>    user. Its test is inverted: a restricted agent is forked to there, and the
+>    grant store is never read. `T-Z8`'s.
+> 2. **The fall-through must pin**, and an *existing* unpinned conversation whose
+>    default became restricted refuses rather than falling through — no agent
+>    switches mid-conversation.
+> 3. **`GET /api/agents` is Settings → Agents too.** A member is sent what they
+>    may use; an admin the whole roster plus `reachable_agent_ids`. Talking is
+>    still refused to the admin. The six `/api/agents/:id` routes are exempt on
+>    that line: a grant gates talking and being offered; configuring the roster is
+>    the role table's.
+> 4. **The copy change needed three more clauses** than decision 4's sentence:
+>    the dashboard only, no control yet, and conversations stay readable.
+> 5. **Not in the ticket and not in the roadmap: conversation reads are
+>    company-wide** (§10d). Needs a decision.
+>
+> `Migration: none` was right.
 
 ##### Why
 The backlog's trigger, stated in July: *"the first tenant who puts genuinely
@@ -381,21 +620,43 @@ the track."*
 - **Decision 13's copy change**, in the same commit.
 
 ##### Acceptance
-- [ ] A member with no grant cannot open a restricted agent by id, by default
+- [x] A member with no grant cannot open a restricted agent by id, by default
       resolution, by thread rehydration, by `@`-addressing, or by fork — **five
       tests, one per seam**, and the fifth is the one a route check would miss
-- [ ] An existing thread whose agent later became restricted refuses on the next
+      *(the fork test is inverted — correction 1 above)*
+- [x] An existing thread whose agent later became restricted refuses on the next
       turn and says why; the transcript stays readable
 - [ ] The picker omits what the caller may not reach, and the count in the UI
-      matches
-- [ ] A room refuses to add a participant the caller may not talk to
-- [ ] Every existing single-agent deployment behaves identically — no agent is
+      matches *(the payload and the hook are tested; no browser has seen it)*
+- [x] A room refuses to add a participant the caller may not talk to
+- [x] Every existing single-agent deployment behaves identically — no agent is
       restricted after `084`
 
 ---
 
 #### `T-Z5` Dashboards: who may open which
 **Repo:** BE + FE · **Size:** 1.0d · **Deps:** `T-Z3` · **Migration:** none
+
+> **Built 2026-09-12** ([`../coverage/access-grants.md`](../coverage/access-grants.md)
+> §14c), with these corrections:
+>
+> 1. **The list is narrowed for admins too, so it cannot name what an admin
+>    manages.** A dashboard the admin restricted and is not granted would be a uuid
+>    on Settings → Team. `ResourceAccessView` gained `name`, read with the mode.
+> 2. **A check at mint and a revoke at restrict race.** Both are transactions on
+>    the dashboard's row — the flip first, the mint under `FOR SHARE`.
+> 3. **"Says so in the confirmation" needed a count and a confirmation.** There is
+>    no dashboard share UI; the count is in Settings → Team's restrict warning, and
+>    the mode route answers `200` with `revoked_shares` where it answered `204`.
+> 4. **Silent: a link minted by the previous binary mid-deploy.** It does not open
+>    a restricted dashboard.
+> 5. **"403s" is kept against `T-Z4`'s hide rule** — a dashboard is reached by a
+>    link already on somebody's screen (§14b); the list hides.
+> 6. **Found, not closed: `update_dashboard`** lists and edits restricted
+>    dashboards for anyone who asks an agent (§14d). ~0.5d; the card says so.
+>    **Closed by `T-Z12`**, below (§15).
+>
+> `Migration: none` was right.
 
 ##### Do
 - `agent`'s sibling for `dashboard`, through `resourcePolicy` rather than by
@@ -410,18 +671,39 @@ the track."*
   — is why it is refused rather than warned about.
 
 ##### Acceptance
-- [ ] A restricted dashboard 403s on read and on `/data` without a grant
-- [ ] The list omits it
-- [ ] Minting a share on a restricted dashboard is refused, and the error names
-      the reason
-- [ ] Restricting a dashboard that already has a live share **revokes the share**
+- [x] A restricted dashboard 403s on read and on `/data` without a grant
+- [x] The list omits it
+- [x] Minting a share on a restricted dashboard is refused, and the error names
+      the reason *(the row lock that closes the race has not run against Postgres)*
+- [x] Restricting a dashboard that already has a live share **revokes the share**
       and says so in the confirmation — the ordering nobody would test for
-- [ ] `created_by` confers nothing (`056:50` — provenance, not ownership)
+      *(the count and the revoke's statement are tested; the transaction is owed)*
+- [x] `created_by` confers nothing (`056:50` — provenance, not ownership)
 
 ---
 
 #### `T-Z6` The "etc": data sources and documents
 **Repo:** BE + FE · **Size:** 1.0d · **Deps:** `T-Z3` · **Migration:** none
+
+> **Built 2026-09-13** ([`../coverage/access-grants.md`](../coverage/access-grants.md) §17b),
+> with these corrections:
+>
+> 1. **Two of the three source surfaces do not exist** — no schema browser, no freshness
+>    panel. The member surface is `GET /api/connections`.
+> 2. **"403s by id" has no member route**; every connection route with an id is admin. The
+>    three that read what is in a source are gated, admins included; nine are exempt.
+> 3. **Silent: an admin's source list stays whole.** The agent form saves the full set of
+>    ticked sources, so narrowing it would untie a restricted source from every agent saved.
+> 4. **A document's tables are served under their own id**, which no route entry can name;
+>    the handler resolves them to their document.
+> 5. **"Filters at the tool's seam" was silent on how**: a named document is answered as a
+>    missing one; hidden passages are replaced from a deeper search only when something was
+>    hidden, so a result with nothing restricted is byte-identical.
+> 6. **Still open, written down (§17c):** metrics on a restricted source are listed to
+>    members; tables published from a restricted document stay queryable by agents with
+>    that source.
+>
+> `Migration: none` was right. `resourcePending` is empty.
 
 ##### Do
 - `connection` and `document` as restrictable kinds, through the same two
@@ -436,13 +718,18 @@ the track."*
   read.
 
 ##### Acceptance
-- [ ] A restricted connection disappears from the source list and 403s by id
-- [ ] An agent's ability to query that source is **unchanged** — the assertion
-      that proves the two concepts did not get conflated
-- [ ] `search_documents` returns no passage from a document the caller may not
+- [x] A restricted connection disappears from the source list and 403s by id
+      *(a member's list; no member route carries an id — the three reading routes
+      refuse an admin, §17d)*
+- [x] An agent's ability to query that source is **unchanged** — the assertion
+      that proves the two concepts did not get conflated *(a pin: nothing here
+      touches resolution)*
+- [x] `search_documents` returns no passage from a document the caller may not
       read, and the turn does not reveal that it exists
-- [ ] A turn on a channel or `/v1`, where there is no caller, is unaffected —
+- [x] A turn on a channel or `/v1`, where there is no caller, is unaffected —
       decision 7, asserted rather than assumed
+
+*Unit-gated; the statements and every live arm are owed — [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7c.*
 
 ---
 
@@ -450,6 +737,25 @@ the track."*
 
 #### `T-Z7` Settings → Team: the access matrix
 **Repo:** FE · **Size:** 1.5d · **Deps:** `T-Z1`, `T-Z2` · **Migration:** none
+
+> **Built 2026-09-12, after `T-Z4` and `T-Z10`** ([`../coverage/access-grants.md`](../coverage/access-grants.md)
+> §12d), with these corrections:
+>
+> 1. **`Repo: FE` could not meet "one query, two renders".** Agents carry no
+>    `access_mode`; the reads that existed were one per agent and one per person.
+>    `GET /api/access/:kind` is one statement for a whole kind, admin, exempt.
+> 2. **The member's disabled control has nothing to disable.** `capabilityPolicy`
+>    is empty and Team is admin-only; the rule is written in `person-access-panel.tsx`,
+>    and the control and its screenshot are `T-W7`'s.
+> 3. **`Deps` omitted `T-Z4`** — built after it, and a switch is rendered only for
+>    agents, the one enforced kind.
+> 4. **Silent on who "loses access"**: people who can sign in and hold no grant,
+>    admins and the person pressing it included; not pending invitations, not the
+>    removed. And "nobody is granted" is worded apart from "0 people".
+> 5. **Silent on what a grant changes off this screen**: the admin's own chat
+>    picker and the conversation list (`T-Z10`), both refetched.
+>
+> `Migration: none` was right.
 
 ##### Do
 - A per-user panel: their role, their capabilities as toggles, and their grants
@@ -479,6 +785,31 @@ the track."*
 #### `T-Z8` The other three doors, decided rather than inherited
 **Repo:** BE + FE · **Size:** 1.5d · **Deps:** `T-Z4` · **Migration:** `085`
 
+> **Built 2026-09-13** ([`../coverage/access-grants.md`](../coverage/access-grants.md) §16c),
+> with these corrections:
+>
+> 1. **"Refused at save time" had nothing to refuse.** An embed key names no agent; the
+>    visitor's browser picks. Decision 10 is enforced at the pick, the conversation, the
+>    default and the picker instead.
+> 2. **An acknowledgement on the form covered only bindings made after a restriction.**
+>    Bind while open, then restrict, and nobody was asked. It is stored on the binding
+>    (`085`) and checked every turn; restricting silences unacknowledged bindings, the
+>    warning counts them, and `PUT /api/agent-bindings/:id/acknowledgement` clears one.
+>    Silent: an unbound channel whose default is restricted — refused, not swapped.
+> 3. **"Writes an audit row" is the first access change audited at all**; grants are
+>    still `T-Z9`'s.
+> 4. **Watchers and schedules already stored their creator**, and have no agent column —
+>    they run as the default. "Deleted" is usually deactivated, with grant rows surviving,
+>    so membership is its own read. Only a restricted agent is checked (decision 3), which
+>    is where the acceptance's deleted-creator line applies. There was no notification
+>    system: the notice is `disabled_reason` (`085`) on the row, a failed run, an event.
+> 5. **`/v1` was silent** on a call naming no agent when the default is not listed (refused
+>    before a thread is opened) and on `GET /v1/agents` (narrowed).
+> 6. **Found: Slack refused as an unknown channel since 2026-08-08** — a missing case in
+>    `Enqueue`. Fixed.
+>
+> `Migration: 085` was right.
+
 ##### Why
 §2's table. Three of four doors carry no Argentum user, and a feature that is a
 boundary on one path and a decoration on three is worse than no feature — it is
@@ -499,16 +830,19 @@ a claim an admin will believe.
   reason about a boundary whose edges are in a roadmap.
 
 ##### Acceptance
-- [ ] A key with an allowlist cannot reach an agent outside it; an empty
+- [x] A key with an allowlist cannot reach an agent outside it; an empty
       allowlist reaches every agent, exactly as today
-- [ ] Binding a restricted agent to a channel without the acknowledgement is
+- [x] Binding a restricted agent to a channel without the acknowledgement is
       refused; with it, the audit row names the admin
-- [ ] Binding a restricted agent to an embed key is refused under every path
-      that can create one
-- [ ] A watcher whose creator lost their grant is disabled at the next fire, not
+- [x] Binding a restricted agent to an embed key is refused under every path
+      that can create one *(no path binds one — every path a widget turn reaches
+      an agent by is refused instead, §16e)*
+- [x] A watcher whose creator lost their grant is disabled at the next fire, not
       silently skipped, and the notice says why
-- [ ] A watcher whose creator was **deleted** is disabled too — the case the
-      previous line does not cover
+- [x] A watcher whose creator was **deleted** is disabled too — the case the
+      previous line does not cover *(on a restricted agent, §16c item 4)*
+
+*Unit-gated; the SQL and every live arm are owed — [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7c.*
 
 ---
 
@@ -544,6 +878,178 @@ that are not are named below.
 - [ ] Filed in the live-gate backlog: two users, one browser, both restricted
       resources — and it needs the stack and nothing else, which is the bucket
       that has paid sixteen out of sixteen
+
+---
+
+### Added 2026-09-12, after `T-Z4`
+
+#### `T-Z10` A conversation is as restricted as the agents in it
+**Repo:** BE + FE (copy) · **Size:** 1.0d · **Deps:** `T-Z4` · **Migration:** none
+
+> Not in the roadmap as written. `T-Z4`'s build found that every member can list
+> and read every conversation in the company, so restricting an agent stopped
+> people *talking* to it and not *reading* what it told somebody who was granted
+> it ([`../coverage/access-grants.md`](../coverage/access-grants.md) §10d). Of the
+> three options there, the owner chose this one on 2026-09-12. It is cut-proof in
+> the same sense `T-Z3` is: without it, `T-Z4` is a boundary with the answers
+> left on the other side of it.
+
+##### Why
+`GET /api/threads` is `ListByCompany`, and the thread, message, participant and
+stream routes check only the company. A payroll answer given to the two people
+granted HR is one click away for the other forty.
+
+##### Do
+- **The rule:** a person may read a conversation when they may talk to every
+  agent that is or was in it — the thread's own agent, its room, and every agent
+  that wrote a message in it. A conversation with none of those runs as the
+  company default and is judged by it. An agent that no longer exists restricts
+  nothing.
+- One statement per page for "which agents are in these conversations", and one
+  grant read over the union — not a round trip per conversation.
+- Every dashboard route that lists or opens a conversation asks: the list, the
+  detail, the transcript, delete, the three room routes, the live stream, and the
+  two per-conversation usage routes plus the usage list (whose rows carry each
+  conversation's title — its first question).
+- **Hidden, not refused**: a conversation the person may not read is omitted from
+  lists and answered as not found by id — `T-Z4`'s picker rule.
+- A send into a conversation the person may not read is refused as not found —
+  or its restricted answers are replayed into the next turn's memory.
+- Decision 4 holds: an admin without the grant is hidden from too.
+- The copy's "conversations stay visible" clause is replaced, not deleted.
+
+##### Acceptance
+> **Built 2026-09-12** ([`../coverage/access-grants.md`](../coverage/access-grants.md)
+> §11). Every box below is unit-gated and was proven failing; none has run
+> against Postgres, and the statement behind all of them is owed (§11h).
+
+- [x] A conversation whose own agent, room or history includes a restricted agent
+      is absent from the list and 404s on every route by id, for a member and an
+      admin without the grant
+- [x] A grant makes it reappear; another person's grant does not
+- [x] With nothing restricted, every conversation is listed and readable exactly
+      as before
+- [x] Sending into a hidden conversation is refused before anything is written,
+      including when the turn would run as an open agent
+- [x] The live stream refuses before the upgrade
+- [x] A page of conversations costs a fixed number of loads, asserted
+- [x] Out of scope, and written down with a reason: generated documents and
+      dashboards a restricted agent produced, scheduled-task run history, and the
+      admin-only company-wide reviews (audit log, export, feedback list)
+
+---
+
+### Added 2026-09-12, after `T-Z7`
+
+#### `T-Z11` A generated document is as restricted as the conversation that made it
+**Repo:** BE + FE (copy) · **Size:** 0.5d · **Deps:** `T-Z10` · **Migration:** none
+
+> **Built 2026-09-12** ([`../coverage/access-grants.md`](../coverage/access-grants.md) §13).
+> One acceptance line was corrected by the build: listing a hidden document's
+> links answers the empty list a document nobody shared gets, not a `404`. The
+> route never looked a document up, so a `404` would have been the one answer
+> that confirmed the id (§13c). `Migration: none` was right.
+
+> Not in the roadmap as written. `T-Z10`'s record named generated documents *"the
+> largest remaining gap"* ([`../coverage/access-grants.md`](../coverage/access-grants.md)
+> §11e), and `T-Z7` made that gap reachable by a click: an admin who restricts HR
+> from Settings → Team reasonably believes its reports went with it. Written and
+> built on the owner's go-ahead the same day.
+
+##### Why
+`GET /api/documents` is `ListByCompany`. A payroll report HR's conversation
+produced — presigned download link included — is listed to every member, and a
+carousel's slides and caption open by id to anyone holding it. Hiding the
+conversation hid the question and left the answer on the documents page.
+
+##### Do
+- **The rule is `T-Z10`'s, through the document's `thread_id`:** a person may see a
+  generated document when they may read the conversation that produced it. A
+  document with no conversation (`POST /v1/reports/render`, 027) restricts
+  nothing. `documents.thread_id` cascades on delete (007), so no document outlives
+  its conversation to be judged by a missing one.
+- One `ConversationAccess.Readable` over a page's conversation ids — not one check
+  per document.
+- Every dashboard route that lists or opens a generated document asks: the list, a
+  carousel's pages, its caption, and listing or minting its share links. **Hidden,
+  not refused** — omitted from the list, not found by id.
+- **Revoking a share is never gated**, for `resourceExempt`'s reason on the
+  dashboard revoke: it can only close a door.
+- The copy that says a restricted agent's conversations are hidden says its
+  documents are too.
+
+##### Acceptance
+- [x] A document from a conversation the person may not read is absent from the
+      list and 404s on its pages, its caption, and minting its shares — for a
+      member and for an admin without the grant *(listing its shares answers the
+      empty list — the correction above)*
+- [x] A document with no conversation, and every document when nothing is
+      restricted, reads exactly as before
+- [x] Revoking a share on a hidden document still works
+- [x] A page of documents costs one readability check, asserted
+- [x] A check that fails serves nothing: `503`, never the unfiltered list
+- [x] Out of scope, written down with a reason: a share link minted before the
+      restriction, `/v1/documents`, and pending actions proposed in a hidden
+      conversation
+
+---
+
+### Added 2026-09-12, after `T-Z5`
+
+#### `T-Z12` An agent asked to change a dashboard checks the person's grant
+**Repo:** BE + FE (copy) · **Size:** 0.5d · **Deps:** `T-Z5` · **Migration:** none
+
+> **Built 2026-09-12** ([`../coverage/access-grants.md`](../coverage/access-grants.md)
+> §15), correcting the note it was written from:
+>
+> 1. **"Its result carries the saved spec, panel SQL included" was wrong.** It
+>    never did. What leaked was panel titles and filter names through a bad edit's
+>    errors, plus the write — hence the check before the edit is read.
+> 2. **"Answer a refused id as not found" was not kept.** Named, for §14b's reason,
+>    and because "not found" sends a model to rebuild the dashboard.
+> 3. **Silent: a refusal without an `error` key counts as an edit** to `T-Q13`'s
+>    evidence check; and **a scheduled task carries its creator**, so it asks as
+>    them.
+>
+> `Migration: none` was right. No prompt or description changed, so no `make eval`.
+
+> Not in the roadmap as written. `T-Z5` found it and did not close it
+> ([`../coverage/access-grants.md`](../coverage/access-grants.md) §14d), and
+> recommended it next. Written and built by `/continue-building` the same day.
+
+##### Why
+`T-Z5` closed a restricted dashboard on every dashboard route and left
+`update_dashboard` open. The tool names a company's five most recent dashboards
+to anyone who asks without an id, and edits any of them by id. So a person
+refused *Payroll* on the dashboards page can ask an agent *"which dashboards are
+there?"*, then *"change Payroll"* — and Settings → Team says so in a sentence,
+which is a boundary with a caveat printed on it.
+
+##### Do
+- The worker has the person on the turn (`tenantctx.UserID`); the tool asks
+  `internal/authz` for them, through the same grant store the routes read.
+- **The ask list hides**, as the dashboards page does: one `Visible` over the
+  company's dashboards, and a restricted one takes none of the five places.
+- **A dashboard reached by id, or as the conversation's own, is refused by
+  name**, as its routes are (§14b) — a result the model reads, never a Go error,
+  and never swapped for an older dashboard from the same conversation.
+- The check comes before the edit is read, so a refused dashboard's panel titles
+  and filter names cannot come back in an error.
+- A turn with no person asks nothing: decision 7, and `T-Z8`'s doors.
+- The Settings card's caveat says where the check stops, not that it is missing.
+
+##### Acceptance
+- [x] By id and by default, a person not granted a restricted dashboard edits
+      nothing, and the answer carries no id, title, panel or filter of it
+- [x] The refusal counts as a failed call, so `T-Q13`'s evidence check cannot
+      read it as an edit
+- [x] The ask list omits what the person may not open, in one load; with nothing
+      openable it is the empty workspace's answer, byte for byte
+- [x] A granted person edits it; a turn with no person is unchanged and asks
+      nothing
+- [x] A check that fails edits and lists nothing, and does not hand the storage
+      error to the model *(what the model then does with a refusal is owed live —
+      §7c)*
 
 ---
 

@@ -16,8 +16,10 @@ import { MentionMenu } from "@/features/chat/mention-menu";
 import { agentColorIndex } from "@/features/chat/agent-colors";
 import { SkillsTab } from "@/features/settings/skills-tab";
 import { SettingsPage } from "@/features/settings/settings-page";
+import { TeamTab } from "@/features/settings/team-tab";
+import { BindingsCard } from "@/features/settings/agents-tab";
 import { SharePage } from "@/features/share/share-page";
-import { Scene, makeAPI, setHarnessAdmin, SKILLS_OK, SKILLS_OVERFLOW } from "./fixtures";
+import { Scene, makeAPI, setHarnessAdmin, SKILLS_OK, SKILLS_OVERFLOW, TEAM } from "./fixtures";
 import { setFixtures } from "./stub-api";
 import "@/index.css";
 
@@ -168,6 +170,45 @@ switch (scene) {
     render(
       <Scene title="Settings → Procedures — the index is over its bound">
         <SkillsTab />
+      </Scene>,
+    );
+    break;
+
+  // Settings → Team's access matrix (T-Z7, T-Z5). One screen, three scenes: the
+  // shooter presses a different one of its buttons in each.
+  case "team-access":
+  case "team-access-restrict":
+  case "team-access-dashboard-restrict":
+  case "team-access-document-restrict":
+    setHarnessAdmin(true);
+    render(
+      <Scene
+        title={
+          scene === "team-access"
+            ? "Settings → Team — one person's access, and who can reach each agent, dashboard, source and document, drawn from one read per kind"
+            : scene === "team-access-restrict"
+              ? "Settings → Team — restricting an agent warns, names who loses access, and waits for a confirm"
+              : scene === "team-access-dashboard-restrict"
+                ? "Settings → Team — restricting a dashboard also counts the live share links it will revoke"
+                : "Settings → Team — restricting a document says what an agent searching for someone will stop finding"
+        }
+      >
+        <TeamTab />
+      </Scene>,
+    );
+    break;
+
+  // Settings → Agents' channel bindings (T-Z8): an acknowledged binding to a
+  // restricted agent, a silenced one with its Acknowledge button, and the form's
+  // acknowledgement, which the shooter opens by choosing HR the way an admin
+  // would.
+  case "agent-bindings":
+    setHarnessAdmin(true);
+    render(
+      <Scene title="Settings → Agents — a restricted agent answers in a channel only where an admin acknowledged it">
+        <div className="max-w-4xl">
+          <BindingsCard agents={TEAM.agents as never[]} />
+        </div>
       </Scene>,
     );
     break;

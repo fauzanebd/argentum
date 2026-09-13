@@ -7,9 +7,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 )
 
 // KnowledgeDocumentsHandler is the upload surface for the PDFs a tenant wants
@@ -32,6 +35,9 @@ type KnowledgeDocumentsHandler struct {
 	// where the service's stops it from being stored. Neither is redundant: the
 	// service is called by tests and by any future non-HTTP path.
 	maxUploadBytes int64
+	// access narrows the list to the documents the person may read (T-Z6). Nil
+	// lists every document, as before roadmap 12.
+	access DocumentAccess
 }
 
 func NewKnowledgeDocumentsHandler(svc *app.DocumentIngestService, maxUploadMB int) *KnowledgeDocumentsHandler {
@@ -39,6 +45,54 @@ func NewKnowledgeDocumentsHandler(svc *app.DocumentIngestService, maxUploadMB in
 		maxUploadMB = 25
 	}
 	return &KnowledgeDocumentsHandler{svc: svc, maxUploadBytes: int64(maxUploadMB) << 20}
+}
+
+// WithAccess narrows the document list by grant (T-Z6), for an admin exactly as
+// for a member.
+//
+// **Admins too**, unlike the source list, because this list is not where
+// documents are configured: it is Knowledge, the page a member reads. A restricted
+// document an admin is not granted is named on Settings → Team by the access
+// read, which is where they grant it back. Opening one by id is resourcePolicy's;
+// a list has no id for an entry to name, so it asks here.
+func (h *KnowledgeDocumentsHandler) WithAccess(a DocumentAccess) *KnowledgeDocumentsHandler {
+	h.access = a
+	return h
+}
+
+// readable narrows a page of documents to the ones the person may read, in one
+// load. A check that fails serves nothing — never the unfiltered page.
+//
+// A page can come back shorter than its limit when something on it is hidden.
+// The dashboard asks for one page and pages nowhere, and filtering in SQL would
+// have put an access rule in the repository rather than in internal/authz.
+func (h *KnowledgeDocumentsHandler) readable(c *gin.Context, all []*domain.SourceDocument) ([]*domain.SourceDocument, bool) {
+	if h.access == nil || len(all) == 0 {
+		return all, true
+	}
+	ids := make([]string, 0, len(all))
+	for _, d := range all {
+		ids = append(ids, d.ID)
+	}
+	subject := authz.Subject{CompanyID: companyID(c), UserID: userID(c), Role: domain.Role(c.GetString("role"))}
+	visible, err := h.access.Visible(c.Request.Context(), subject, domain.ResourceKindDocument, ids)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID(c)).
+			Warn("document access check failed; serving no document list")
+		middleware.AbortAccessCheckFailed(c)
+		return nil, false
+	}
+	keep := make(map[string]bool, len(visible))
+	for _, id := range visible {
+		keep[id] = true
+	}
+	out := make([]*domain.SourceDocument, 0, len(visible))
+	for _, d := range all {
+		if keep[d.ID] {
+			out = append(out, d)
+		}
+	}
+	return out, true
 }
 
 // Register installs the routes. Caller wraps with Auth middleware.
@@ -125,6 +179,10 @@ func (h *KnowledgeDocumentsHandler) list(c *gin.Context) {
 	docs, err := h.svc.List(c.Request.Context(), companyID(c), limit, offset)
 	if err != nil {
 		knowledgeDocumentFail(c, err)
+		return
+	}
+	docs, ok := h.readable(c, docs)
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"documents": docs})

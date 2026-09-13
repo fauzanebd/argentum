@@ -32,6 +32,9 @@ func (h *AgentBindingsHandler) Register(rg *gin.RouterGroup) {
 	rg.GET("/agent-bindings", h.list)
 	rg.POST("/agent-bindings", h.create)
 	rg.DELETE("/agent-bindings/:id", h.remove)
+	// T-Z8: clear a binding's address to reach its agent while the agent is
+	// restricted — how a binding made before a restriction answers again.
+	rg.PUT("/agent-bindings/:id/acknowledgement", h.acknowledge)
 }
 
 func (h *AgentBindingsHandler) unavailable(c *gin.Context) bool {
@@ -66,14 +69,32 @@ func (h *AgentBindingsHandler) create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	b, err := h.svc.Create(c.Request.Context(), companyID(c), in)
+	// The admin is named because binding a restricted agent writes an audit row
+	// saying who acknowledged it (T-Z8).
+	b, err := h.svc.Create(c.Request.Context(), companyID(c), userID(c), in)
 	if err != nil {
 		// agentFail maps ErrAlreadyExists to 409, which is the answer the unique
-		// index produces for a second binding on one address.
+		// index produces for a second binding on one address — and
+		// ErrInvalidInput to 400 with its sentence, which is how a restricted
+		// agent submitted without the acknowledgement is told why.
 		agentFail(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"binding": b})
+}
+
+func (h *AgentBindingsHandler) acknowledge(c *gin.Context) {
+	if h.unavailable(c) {
+		return
+	}
+	b, err := h.svc.Acknowledge(c.Request.Context(), companyID(c), userID(c), c.Param("id"))
+	if err != nil {
+		// 409 for an open agent, which has nothing to acknowledge; 404 for a
+		// binding that is not this company's.
+		agentFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"binding": b})
 }
 
 func (h *AgentBindingsHandler) remove(c *gin.Context) {

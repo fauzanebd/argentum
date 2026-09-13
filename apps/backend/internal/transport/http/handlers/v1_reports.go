@@ -611,6 +611,7 @@ func (h *V1ReportsHandler) createReport(c *gin.Context) {
 		}),
 		APIReportID: rep.ID,
 		APIKeyID:    rep.APIKeyID,
+		KeyAgentIDs: middleware.APIKeyAgents(c),
 	})
 	if err != nil {
 		h.abortEnqueue(c, rep, err)
@@ -657,6 +658,8 @@ func (h *V1ReportsHandler) abortEnqueue(c *gin.Context, rep *domain.APIReport, e
 	case errors.Is(err, app.ErrAgentChange):
 		apierr.AbortParam(c, apierr.TypeInvalidRequest, "agent_mismatch",
 			"That conversation already runs as a different agent. Start a new one by sending `user_ref` without a `thread_id`.", "agent_id")
+	case errors.Is(err, app.ErrAgentNotAllowed):
+		abortAgentNotAllowed(c)
 	case errors.Is(err, domain.ErrInvalidInput):
 		apierr.AbortParam(c, apierr.TypeInvalidRequest, "invalid_thread",
 			"That `thread_id` is not an API thread for this company.", "thread_id")

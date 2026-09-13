@@ -125,12 +125,16 @@ export interface ActionInvocation {
  * incompatible questions of incompatible data through a single prompt. An
  * Agent is persona + tools + sources — a named, tenant-editable configuration
  * of the one pipeline this product runs.
- * It is **not** an access boundary. Company membership remains the
- * authorization boundary, so any member can open any of their company's
- * agents; the Finance agent physically cannot query the HR source, but nothing
- * stops an employee from opening it and asking what it can reach. Per-agent
- * user grants are a follow-on, and this struct is shaped so adding them later
- * changes no field here.
+ * Sources scope what an agent can read; since roadmap 12, grants scope who may
+ * ask it — **on one door**. An admin may restrict an agent (`access_mode`, 084)
+ * and grant it per person (`resource_grants`), and the dashboard enforces that
+ * at every point a turn picks an agent (T-Z4). `/v1`, the website widget and the
+ * chat channels carry no Argentum user, and until T-Z8 decides each of them a
+ * restricted agent is still reachable through them. It is a boundary against
+ * accident and casual browsing, not against a determined admin, who can grant
+ * themselves.
+ * This struct did not change for any of that, as the roster was shaped to
+ * allow: the grant lives beside the agent, not on it.
  * T-S2 is what reads these rows at turn time: the persona is appended to the
  * system prompt, AllowedTools filters the registry the turn is built with, and
  * SourceIDs becomes the scope tools.ResolveSource enforces.
@@ -370,6 +374,37 @@ export interface AgentChannelBinding {
    */
   external_id: string;
   created_at: string;
+  /**
+   * AgentAccessMode rides along like AgentName: whether the agent this
+   * address answers as is open or restricted (T-Z8). It is the agent's, not
+   * the binding's, and it is on reads so Settings can show which bindings a
+   * restriction has silenced without a second request.
+   */
+  agent_access_mode?: AccessMode;
+  /**
+   * RestrictedAcknowledgedAt is when an admin acknowledged, for this address,
+   * that anyone who can post there can use its agent while the agent is
+   * restricted (roadmap 12, decision 8). Nil means nobody has — and then a
+   * restricted agent does not answer here.
+   */
+  restricted_acknowledged_at?: string;
+  /**
+   * RestrictedAcknowledgedBy is the admin who acknowledged it, and empty once
+   * that admin's account is deleted; the audit row still names them.
+   */
+  restricted_acknowledged_by?: string;
+}
+/**
+ * ChannelRoute is what an inbound address resolves to: the agent bound to it
+ * (T-S4), and whether an admin has cleared the address to reach that agent while
+ * it is restricted (T-Z8).
+ * Acknowledged is a stored fact, not a decision. Whether the agent is restricted
+ * is internal/authz's to answer (roadmap 12, decision 1), and the enqueue path
+ * asks it; this only matters once the answer is "restricted".
+ */
+export interface ChannelRoute {
+  AgentID: string;
+  Acknowledged: boolean;
 }
 
 //////////
@@ -1137,6 +1172,14 @@ export interface Dashboard {
   spec_version: number /* int */;
   refresh_secs?: number /* int */;
   created_by?: string;
+  /**
+   * AccessMode is whether opening this dashboard needs a grant (084, T-Z5).
+   * No request path decides from this field — internal/authz reads the column
+   * for itself — and it is carried for the two rules that are not about a
+   * person: a restricted dashboard cannot be shared, and a link to one does
+   * not open.
+   */
+  access_mode: AccessMode;
   created_at: string;
   updated_at: string;
 }
@@ -1332,6 +1375,38 @@ export interface TurnShape {
   unaccounted: boolean;
   turns: number /* int */;
 }
+
+//////////
+// source: disabled_reason.go
+
+/**
+ * DisabledReason is why the product, rather than a person, switched a watcher or
+ * a scheduled task off (T-Z8).
+ * Roadmap 12's decision 11: an unattended job runs as the person who created it
+ * and is re-checked when it fires, and *"a revoked grant disables the task and
+ * says why. A cron that keeps working after its author lost access is a hole with
+ * a schedule attached."* A job that stopped with no reason on it reads exactly
+ * like one that broke, so the reason is stored beside `enabled` and cleared the
+ * moment somebody switches it back on.
+ * Both reasons are about a **restricted** agent. A job on an open agent is not
+ * re-checked at all — open means every member, and decision 3 promises nothing
+ * changes for a workspace with nothing restricted — so a job whose creator left
+ * keeps running on an open agent exactly as it did before this ticket.
+ */
+/**
+ * DisabledReasonCreatorNotGranted — the agent it runs as is restricted, and the
+ * person who created it is not granted it.
+ */
+export const DisabledReasonCreatorNotGranted = "creator_not_granted";
+/**
+ * DisabledReasonCreatorRemoved — the agent it runs as is restricted, and the
+ * person who created it is no longer in the workspace: removed by an admin,
+ * or deleted outright. Checked apart from the grant, because removing a
+ * member deactivates the row rather than deleting it, and their grant rows
+ * survive a deactivation.
+ */
+export const DisabledReasonCreatorRemoved = "creator_removed";
+export type DisabledReason = typeof DisabledReasonCreatorNotGranted | typeof DisabledReasonCreatorRemoved;
 
 //////////
 // source: discord_credential.go
@@ -2468,6 +2543,112 @@ export const ShareMaxDays = 90;
 export type Share = typeof ShareDefaultDays | typeof ShareMaxDays;
 
 //////////
+// source: resource_grant.go
+
+/**
+ * ResourceKind names a kind of object an admin can put behind a grant (T-Z2).
+ * A capability has no object; a resource grant always names one, and the two are
+ * separate mechanisms so a resource id is never nullable (roadmap 12 §1a).
+ * The vocabulary is closed, and a new kind is a migration as well as a constant:
+ * each kind's id lives in its own foreign-key column on resource_grants, which is
+ * what lets deleting the object delete its grants.
+ */
+/**
+ * ResourceKindAgent — who may talk to which agent (T-Z4).
+ */
+export const ResourceKindAgent = "agent";
+/**
+ * ResourceKindDashboard — who may open which native dashboard (T-Z5).
+ */
+export const ResourceKindDashboard = "dashboard";
+/**
+ * ResourceKindConnection — a data source, `db_connections`. A grant on one
+ * gates the surfaces a person reaches it through, **not** what an agent may
+ * query: that is agent_sources and T-H12's allowlist, and treating a user
+ * grant as a data boundary would make it look like one it is not (T-Z6).
+ */
+export const ResourceKindConnection = "connection";
+/**
+ * ResourceKindDocument — an uploaded source document, `source_documents`
+ * (T-P1): the kind search_documents quotes from. Not a generated report in
+ * `documents`, which is output somebody asked for rather than a thing read.
+ */
+export const ResourceKindDocument = "document";
+export type ResourceKind = typeof ResourceKindAgent | typeof ResourceKindDashboard | typeof ResourceKindConnection | typeof ResourceKindDocument;
+/**
+ * AccessMode is whether reaching a resource needs a grant at all.
+ */
+/**
+ * AccessModeOpen — every member of the company may reach it, with no grant
+ * row. The default for every resource that exists and every one created,
+ * because it is what the product did before grants existed (decision 3).
+ */
+export const AccessModeOpen = "open";
+/**
+ * AccessModeRestricted — only people holding a grant may reach it. An admin
+ * is not people-holding-a-grant by rank (decision 4), so restricting a
+ * resource nobody has been granted makes it reachable by nobody, including
+ * whoever created it.
+ */
+export const AccessModeRestricted = "restricted";
+export type AccessMode = typeof AccessModeOpen | typeof AccessModeRestricted;
+/**
+ * ResourceGrant is one person's grant on one resource.
+ */
+export interface ResourceGrant {
+  user_id: string;
+  resource_kind: ResourceKind;
+  resource_id: string;
+  /**
+   * GrantedBy is empty once the admin who granted it has been deleted.
+   */
+  granted_by?: string;
+  granted_at: string;
+}
+/**
+ * ResourceAccessView is one resource's access as an admin reads it: its mode and
+ * everyone granted. The mode travels with the grants so a page cannot show a
+ * list of grants beside a mode read at a different moment.
+ */
+export interface ResourceAccessView {
+  resource_kind: ResourceKind;
+  resource_id: string;
+  /**
+   * Name is what the resource is called — an agent's name, a dashboard's
+   * title, a source's label, a document's filename — and nothing else from
+   * inside it (T-Z5). It is here because the admin managing a restricted
+   * dashboard may be refused it: the dashboard list is narrowed by grant for
+   * admins too, so without a name on this read the dashboard they locked
+   * themselves out of would be an id on Settings → Team with no way to tell
+   * which one to open again.
+   */
+  name: string;
+  access_mode: AccessMode;
+  grants: ResourceGrant[];
+}
+/**
+ * AccessModeChange is what flipping a resource's mode did, beyond the flip.
+ * RevokedShares is the dashboard's share links the flip took back (T-Z5). A
+ * link is a door with no person behind it — a grant cannot follow it to
+ * whoever holds the URL — so restricting a dashboard revokes every live one in
+ * the same transaction, and the count is how the admin who pressed it learns
+ * that it did. Zero for every other kind, and for re-opening: opening a
+ * dashboard brings no revoked link back.
+ */
+export interface AccessModeChange {
+  access_mode: AccessMode;
+  revoked_shares: number /* int */;
+}
+/**
+ * ResourceAccess is what a decision needs to know about one resource for one
+ * person, and nothing more: its mode, and whether that person holds a grant.
+ */
+export interface ResourceAccess {
+  access_mode: AccessMode;
+  granted: boolean;
+}
+
+//////////
 // source: scheduled_task.go
 
 /**
@@ -2501,6 +2682,12 @@ export interface ScheduledTask {
   cron_expression: string;
   timezone: string;
   enabled: boolean;
+  /**
+   * DisabledReason is set when the product switched the task off rather than
+   * a person (T-Z8): its creator lost the agent it runs as. Cleared by
+   * switching it back on.
+   */
+  disabled_reason?: DisabledReason;
   last_run_at?: string;
   next_run_at?: string;
   created_at: string;
@@ -3326,6 +3513,12 @@ export interface Watcher {
   channels: WatcherChannel[];
   cooldown_minutes: number /* int */;
   enabled: boolean;
+  /**
+   * DisabledReason is set when the product switched the watcher off rather
+   * than a person (T-Z8): its creator lost the agent its briefings run as.
+   * Cleared by enabling it again.
+   */
+  disabled_reason?: DisabledReason;
   last_fired_at?: string;
   last_dry_run_at?: string;
   created_by?: string;

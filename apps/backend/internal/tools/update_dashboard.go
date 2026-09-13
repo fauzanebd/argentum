@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/Ingenimax/agent-sdk-go/pkg/interfaces"
 	"github.com/sirupsen/logrus"
 
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/dashboard"
 	"github.com/fauzanebd/argentum/internal/dashboard/spec"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -23,6 +25,15 @@ type DashboardReviser interface {
 	Get(ctx context.Context, companyID, id string) (*domain.Dashboard, error)
 	List(ctx context.Context, companyID string) ([]*domain.Dashboard, error)
 	Update(ctx context.Context, companyID, id string, in dashboard.Input) (*dashboard.SaveResult, error)
+}
+
+// DashboardAccess is the one question this tool asks about the person on the
+// turn (T-Z12): may they open this dashboard, for one and for a page of them.
+// *authz.Authorizer is the production one, and the decision is all of it
+// internal/authz's (roadmap 12, decision 1) — nothing here composes an answer.
+type DashboardAccess interface {
+	Decide(ctx context.Context, s authz.Subject, kind domain.ResourceKind, id string) (authz.Decision, error)
+	Visible(ctx context.Context, s authz.Subject, kind domain.ResourceKind, ids []string) ([]string, error)
 }
 
 // recentDashboardsInAsk is how many dashboards the tool names when it has to ask
@@ -58,6 +69,9 @@ type UpdateDashboardTool struct {
 	svc      DashboardReviser
 	repo     domain.ConnectionRepository
 	recorder UsageRecorder
+	// access narrows what the tool names and edits to what the person on the
+	// turn may open (T-Z12). Nil asks nothing.
+	access DashboardAccess
 }
 
 func NewUpdateDashboardTool(svc DashboardReviser, repo domain.ConnectionRepository, recorder UsageRecorder) *UpdateDashboardTool {
@@ -65,6 +79,28 @@ func NewUpdateDashboardTool(svc DashboardReviser, repo domain.ConnectionReposito
 		recorder = nopRecorder{}
 	}
 	return &UpdateDashboardTool{svc: svc, repo: repo, recorder: recorder}
+}
+
+// WithAccess makes the tool ask, for the person on the turn, whether they may
+// open a dashboard before it names one or edits one (T-Z12).
+//
+// T-Z5 closed a restricted dashboard on every dashboard route and left this tool
+// open: it named a company's recent dashboards to anyone who asked, and edited
+// any of them by id. So a person refused Payroll on the dashboards page could ask
+// an agent which dashboards there are, then change Payroll — and read its panel
+// titles and filter names back out of the errors a bad edit earns.
+//
+// **Only a turn with a person asks.** A channel, a `/v1` key, the widget and a
+// watcher carry no user (roadmap 12, decision 7), and what each of those doors
+// does about a restricted dashboard is T-Z8's decision, not a default this tool
+// supplies. A scheduled task carries the person who created it, and asks as
+// them.
+//
+// Nil asks nothing: the API's name-only build, and every deployment before
+// roadmap 12.
+func (t *UpdateDashboardTool) WithAccess(a DashboardAccess) *UpdateDashboardTool {
+	t.access = a
+	return t
 }
 
 func (t *UpdateDashboardTool) Name() string { return "update_dashboard" }
@@ -178,6 +214,11 @@ func (t *UpdateDashboardTool) Execute(ctx context.Context, args string) (string,
 		// answer to a caller mistake made deepseek re-send the identical call seven
 		// times until the iteration budget ended the turn. A tool result the model
 		// can read is what turns a dead end into a question for the user.
+		//
+		// A refusal (T-Z12) comes back this way for the same reason: re-sending
+		// the call cannot change a grant, and a sentence the model can repeat to
+		// the user can. It carries an `error` key, so it still counts as a failed
+		// call rather than as an edit.
 		return ask, nil
 	}
 
@@ -243,13 +284,20 @@ func (t *UpdateDashboardTool) Execute(ctx context.Context, args string) (string,
 
 // resolve picks the dashboard this call edits.
 //
-// Returns exactly one of: the dashboard, or an `ask` payload naming the recent
-// ones. The second is a tool RESULT rather than an error — see the call site.
+// Returns exactly one of: the dashboard, or a payload to answer with instead —
+// an `ask` naming the recent ones, or a refusal (T-Z12). Both are tool RESULTS
+// rather than errors — see the call site. It runs before the edit is read, so a
+// refused dashboard's panel titles and filter names never reach the model
+// through the errors a bad edit earns.
 func (t *UpdateDashboardTool) resolve(ctx context.Context, companyID, id string) (*domain.Dashboard, string, error) {
+	person, asks := t.person(ctx, companyID)
 	if id != "" {
 		d, err := t.svc.Get(ctx, companyID, id)
 		if err != nil {
 			return nil, "", err
+		}
+		if refusal, err := t.refusal(ctx, person, asks, d.ID); err != nil || refusal != "" {
+			return nil, refusal, err
 		}
 		return d, "", nil
 	}
@@ -265,11 +313,22 @@ func (t *UpdateDashboardTool) resolve(ctx context.Context, companyID, id string)
 	if threadID := tenantctx.ThreadID(ctx); threadID != "" {
 		for _, d := range all { // ListByCompany is created_at DESC, so the first match is the newest
 			if d.ThreadID != nil && *d.ThreadID == threadID {
+				// Refused rather than passed over for an older one this
+				// conversation built. The model means the dashboard it just made,
+				// and an edit that lands on another looks right in the result and
+				// wrong on the grid — findPanel's duplicate-title reason, one level
+				// up.
+				if refusal, err := t.refusal(ctx, person, asks, d.ID); err != nil || refusal != "" {
+					return nil, refusal, err
+				}
 				return d, "", nil
 			}
 		}
 	}
 
+	if all, err = t.openable(ctx, person, asks, all); err != nil {
+		return nil, "", err
+	}
 	recent := make([]map[string]any, 0, recentDashboardsInAsk)
 	for _, d := range all {
 		if len(recent) == recentDashboardsInAsk {
@@ -296,6 +355,100 @@ func (t *UpdateDashboardTool) resolve(ctx context.Context, companyID, id string)
 		"message":   msg,
 	})
 	return nil, string(blob), nil
+}
+
+// person is who this turn asks for, and whether there is anyone to ask about:
+// false for a turn with no person (see WithAccess), or a tool with no authoriser.
+func (t *UpdateDashboardTool) person(ctx context.Context, companyID string) (authz.Subject, bool) {
+	userID := tenantctx.UserID(ctx)
+	if t.access == nil || userID == "" {
+		return authz.Subject{}, false
+	}
+	return authz.Subject{CompanyID: companyID, UserID: userID}, true
+}
+
+// refusal is what the tool answers about a dashboard the person may not open,
+// or "" when they may.
+//
+// **Named, not hidden.** T-Z4 hides from a list what a person may not use and
+// names it where it is already on screen, and T-Z5 kept a 403 on a dashboard's
+// own routes for that second half (access-grants §14b). This tool reaches one
+// dashboard only by an id somebody already holds — from a reply, a link, the
+// dashboard view's "ask for a change" — or as the dashboard this conversation
+// built. "No such dashboard" about either sends the model to build it again, the
+// failure T-D22 exists to end, and sends the user hunting for a bug.
+func (t *UpdateDashboardTool) refusal(ctx context.Context, s authz.Subject, asks bool, id string) (string, error) {
+	if !asks {
+		return "", nil
+	}
+	d, err := t.access.Decide(ctx, s, domain.ResourceKindDashboard, id)
+	if err != nil {
+		return "", accessCheckFailed(s.CompanyID, err)
+	}
+	if d.Allowed {
+		return "", nil
+	}
+	if d.Reason == authz.ReasonNotFound {
+		// Deleted between the read above and this one: answered as that read
+		// would have answered a moment later.
+		return "", domain.ErrNotFound
+	}
+	blob, _ := json.Marshal(map[string]any{
+		// `error` is the key agentbudget reads as a failed call, so T-Q13's
+		// evidence check never counts a refusal as an edit: a reply saying "done"
+		// after one is recorded as unevidenced, which it is.
+		"error":      "this dashboard is restricted, and an admin has not granted it to the person you are talking with",
+		"restricted": true,
+		// Nothing was read from the warehouse, for the ask's reason above.
+		"row_count": 0,
+		// No id and no title. The model already holds whichever it asked with,
+		// and a refusal is not a second place to learn either.
+		"message": "Nothing was changed. Tell the user this dashboard is restricted and that an admin can grant them access to it. " +
+			"Do not build a replacement with create_dashboard, and do not edit a different dashboard instead.",
+	})
+	return string(blob), nil
+}
+
+// openable narrows a list to the dashboards the person may open, in order, with
+// one load however many there are.
+//
+// **Hidden, not refused** — the dashboards page's rule (T-Z5). A list is not
+// somewhere anybody was handed a dashboard, so a restricted one is simply absent,
+// does not take one of the five places, and a person who may open none is
+// answered exactly as an empty workspace is.
+func (t *UpdateDashboardTool) openable(ctx context.Context, s authz.Subject, asks bool, all []*domain.Dashboard) ([]*domain.Dashboard, error) {
+	if !asks || len(all) == 0 {
+		return all, nil
+	}
+	ids := make([]string, 0, len(all))
+	for _, d := range all {
+		ids = append(ids, d.ID)
+	}
+	visible, err := t.access.Visible(ctx, s, domain.ResourceKindDashboard, ids)
+	if err != nil {
+		return nil, accessCheckFailed(s.CompanyID, err)
+	}
+	allowed := make(map[string]bool, len(visible))
+	for _, id := range visible {
+		allowed[id] = true
+	}
+	out := make([]*domain.Dashboard, 0, len(visible))
+	for _, d := range all {
+		if allowed[d.ID] {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
+
+// accessCheckFailed refuses a call whose access could not be read — nothing is
+// edited or listed unchecked — and keeps the storage error in the log rather than
+// in the model's context. A Go error, unlike a refusal: the failure is transient,
+// and the model trying again is the right answer to it.
+func accessCheckFailed(companyID string, err error) error {
+	logrus.WithError(err).WithField("company_id", companyID).
+		Warn("update_dashboard: dashboard access check failed; refusing the call")
+	return errors.New("could not check whether this person may open the dashboard, so nothing was changed; try again")
 }
 
 // applyDashboardEdits merges a patch onto the stored spec.

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, FilePlus2, Pencil, Sparkles, Star, Trash2, Undo2, X } from "lucide-react";
+import { Bot, FilePlus2, Lock, Pencil, Sparkles, Star, Trash2, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +24,7 @@ import {
 import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api-error";
 import { useToast } from "@/hooks/use-toast";
+import { useResourceAccess } from "./use-access";
 import type {
   Agent,
   AgentBindingsResponse,
@@ -474,18 +475,26 @@ export function AgentsTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* The limitation, stated where it is decided rather than discovered.
-              An agent named "HR" implies an access boundary this version does
-              not draw, and a customer who assumes otherwise scopes an agent
-              instead of scoping permissions. */}
+          {/* Roadmap 12's decision 13 (T-Z4): the limitation, restated now that
+              half of it is gone rather than deleted with it. An agent named "HR"
+              implies a boundary, and the edges of the one this version draws —
+              a rule per door since T-Z8, not a determined admin — are exactly
+              what a customer would otherwise assume away. The last sentence
+              said "not yet available from this page" until T-Z7 shipped the
+              controls, and now says where they are. */}
           <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">
-              An agent scopes what it can reach, not who can use it.
+              An agent scopes what it can reach. Who can use it is a separate setting.
             </span>{" "}
-            Everyone in this workspace can open every agent. A Finance agent cannot query the HR
-            database, but any member can still open it and ask what it has access to. Per-agent
-            permissions are not available yet — keep anything that must stay private out of the
-            databases you connect.
+            An admin can restrict an agent to the people granted it, and nobody else is offered
+            it in chat. That is a boundary against accident and casual browsing, not against a
+            determined admin, who can grant themselves. Beyond this dashboard, a channel answers as
+            a restricted agent only where an admin acknowledged it, the website widget never
+            reaches one, and an API key reaches one unless the key lists its agents and this is not
+            among them.
+            Conversations with a restricted agent, and the documents they produced, are hidden from
+            everyone it is not granted to.
+            Restrict an agent, and choose who it is granted to, in Settings → Team.
           </div>
 
           <div className="grid grid-cols-[1fr_1.4fr] gap-4">
@@ -937,6 +946,14 @@ const CHANNEL_COPY: Record<string, { label: string; field: string; hint: string 
     field: "Phone number",
     hint: "The sender's number in E.164 form, e.g. +6281234567890.",
   },
+  // Missing since Slack became bindable (36c0c22): the form fell back to a raw
+  // "slack" and a field called "Identifier". Found photographing T-Z8's
+  // acknowledgement, which names the channel in its sentence.
+  slack: {
+    label: "Slack",
+    field: "Channel id",
+    hint: "Open the channel's details — the id starts with C (a channel) or D (a direct message).",
+  },
 };
 
 function channelCopy(c: Channel | string) {
@@ -945,14 +962,27 @@ function channelCopy(c: Channel | string) {
 
 /** BindingsCard is T-S4: which agent answers in which Discord channel, Lark
  *  chat or WhatsApp number. Everything else in this tab configures an agent;
- *  this is the only thing that decides which one a message reaches. */
-function BindingsCard({ agents }: { agents: Agent[] }) {
+ *  this is the only thing that decides which one a message reaches.
+ *
+ *  Since T-Z8 it is also where a channel is cleared for a restricted agent
+ *  (roadmap 12, decision 8): binding one asks the admin to acknowledge, in the
+ *  decision's words, that anyone who can post there can use it, and a binding
+ *  made before the restriction sits silent, saying so, until somebody does.
+ *  Exported for the harness, which photographs both states. */
+export function BindingsCard({ agents }: { agents: Agent[] }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [channel, setChannel] = useState<Channel | "">("");
   const [externalId, setExternalId] = useState("");
   const [agentId, setAgentId] = useState("");
+  const [acknowledged, setAcknowledged] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Settings → Team's own read of which agents are restricted. The API refuses
+  // an unacknowledged binding to a restricted agent either way; this is so the
+  // form asks before the admin presses Bind rather than after.
+  const access = useResourceAccess("agent");
+  const chosen = agents.find((a) => a.id === agentId);
+  const chosenRestricted = access.byId.get(agentId)?.access_mode === "restricted";
 
   const { data, isLoading } = useQuery({
     queryKey: ["agent-bindings"],
@@ -973,9 +1003,11 @@ function BindingsCard({ agents }: { agents: Agent[] }) {
         channel,
         external_id: externalId.trim(),
         agent_id: agentId,
+        acknowledge_restricted: chosenRestricted && acknowledged,
       }),
     onSuccess: () => {
       setExternalId("");
+      setAcknowledged(false);
       setError(null);
       qc.invalidateQueries({ queryKey: ["agent-bindings"] });
     },
@@ -989,13 +1021,25 @@ function BindingsCard({ agents }: { agents: Agent[] }) {
       toast({ title: "Nothing removed", description: apiErrorMessage(e), variant: "destructive" }),
   });
 
+  // Pressing it is the acknowledgement, and the sentence beside the button is
+  // what is being acknowledged; the audit log records who pressed it.
+  const acknowledge = useMutation({
+    mutationFn: async (id: string) => api.put(`/agent-bindings/${id}/acknowledgement`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agent-bindings"] }),
+    onError: (e: unknown) =>
+      toast({ title: "Not acknowledged", description: apiErrorMessage(e), variant: "destructive" }),
+  });
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Channel bindings</CardTitle>
         <CardDescription>
-          Send a whole Discord channel, Lark chat or WhatsApp number to one agent. Anything not
-          bound here is answered by the default agent, which is what every channel does today.
+          Send a whole Discord or Slack channel, Lark chat or WhatsApp number to one agent. Anything not
+          bound here is answered by the default agent, which is what every channel does today. A
+          restricted agent answers in a channel only once you acknowledge that anyone who can post
+          there can use it — who can post is up to that app, not Argentum — and a channel whose
+          default agent is restricted is not answered at all.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -1022,12 +1066,25 @@ function BindingsCard({ agents }: { agents: Agent[] }) {
               value={externalId}
               disabled={!channel}
               onChange={(e) => setExternalId(e.target.value)}
-              placeholder={channel === "whatsapp" ? "+6281234567890" : "1234567890123456789"}
+              placeholder={
+                channel === "whatsapp"
+                  ? "+6281234567890"
+                  : channel === "slack"
+                    ? "C07ABCDEF12"
+                    : "1234567890123456789"
+              }
             />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="binding-agent">Agent</Label>
-            <Select value={agentId} onValueChange={setAgentId}>
+            <Select
+              value={agentId}
+              onValueChange={(v) => {
+                // An acknowledgement is about one agent; choosing another asks again.
+                setAgentId(v);
+                setAcknowledged(false);
+              }}
+            >
               <SelectTrigger id="binding-agent">
                 <SelectValue placeholder="Choose" />
               </SelectTrigger>
@@ -1044,12 +1101,37 @@ function BindingsCard({ agents }: { agents: Agent[] }) {
           </div>
           <Button
             onClick={() => create.mutate()}
-            disabled={!channel || !externalId.trim() || !agentId || create.isPending}
+            disabled={
+              !channel ||
+              !externalId.trim() ||
+              !agentId ||
+              (chosenRestricted && !acknowledged) ||
+              create.isPending
+            }
           >
             {create.isPending ? "Binding…" : "Bind"}
           </Button>
         </div>
         {copy?.hint && <p className="text-xs text-muted-foreground">{copy.hint}</p>}
+        {chosenRestricted && (
+          <label className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/40">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={acknowledged}
+              onChange={(e) => setAcknowledged(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium">
+                {chosen?.name ?? "This agent"} is restricted. Anyone who can post here can use this
+                agent
+              </span>
+              , whether or not they are granted it — who can post in this{" "}
+              {copy ? copy.label : "channel"} room is decided there, not in Argentum. Your
+              acknowledgement is recorded in the audit log under your name.
+            </span>
+          </label>
+        )}
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         <div className="divide-y divide-border/50 border-t border-border/50">
@@ -1059,27 +1141,60 @@ function BindingsCard({ agents }: { agents: Agent[] }) {
               No bindings. Every channel answers as the default agent.
             </div>
           )}
-          {bindings.map((b) => (
-            <div key={b.id} className="flex items-center justify-between gap-4 py-3">
-              <div className="min-w-0 space-y-1">
-                <div className="text-sm font-medium flex items-center gap-2">
-                  <Badge variant="outline">{channelCopy(b.channel).label}</Badge>
-                  <code className="truncate text-xs">{b.external_id}</code>
+          {bindings.map((b) => {
+            const restricted = b.agent_access_mode === "restricted";
+            // Silenced: the agent is restricted and nobody cleared this address
+            // for it, so the enqueue path refuses every message that arrives.
+            const silenced = restricted && !b.restricted_acknowledged_at;
+            return (
+              <div key={b.id} className="flex items-center justify-between gap-4 py-3">
+                <div className="min-w-0 space-y-1">
+                  <div className="text-sm font-medium flex items-center gap-2">
+                    <Badge variant="outline">{channelCopy(b.channel).label}</Badge>
+                    <code className="truncate text-xs">{b.external_id}</code>
+                    {restricted && (
+                      <Badge variant="secondary" className="gap-1">
+                        <Lock className="h-3 w-3" />
+                        Restricted
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {silenced ? "Bound to" : "Answered by"} {b.agent_name ?? "an agent"}
+                    {restricted &&
+                      !silenced &&
+                      " · acknowledged: anyone who can post here can use this agent"}
+                  </div>
+                  {silenced && (
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                      {b.agent_name ?? "This agent"} is restricted, so nothing is answered here until
+                      you acknowledge that anyone who can post here can use this agent.
+                    </p>
+                  )}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  Answered by {b.agent_name ?? "an agent"}
+                <div className="flex shrink-0 items-center gap-1">
+                  {silenced && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={acknowledge.isPending}
+                      onClick={() => acknowledge.mutate(b.id)}
+                    >
+                      Acknowledge
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Remove the binding for ${b.external_id}`}
+                    onClick={() => remove.mutate(b.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Remove the binding for ${b.external_id}`}
-                onClick={() => remove.mutate(b.id)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>

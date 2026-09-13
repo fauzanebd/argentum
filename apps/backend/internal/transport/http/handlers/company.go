@@ -13,9 +13,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
+	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 )
 
 // CompanyHandler exposes connection + phone management endpoints.
@@ -39,6 +42,31 @@ type CompanyHandler struct {
 	// expression that appears to save and does not would leave an admin
 	// believing their answers are dated when nothing is checking.
 	freshness *app.FreshnessService
+	// access narrows a member's source list to the sources they may see
+	// (T-Z6). Nil lists every source, as before roadmap 12.
+	access ConnectionAccess
+}
+
+// ConnectionAccess is which sources a person may see (T-Z6). *authz.Authorizer
+// satisfies it.
+type ConnectionAccess interface {
+	Visible(ctx context.Context, s authz.Subject, kind domain.ResourceKind, ids []string) ([]string, error)
+}
+
+// WithAccess narrows the source list by grant for a member (T-Z6).
+//
+// **A member, not an admin**, and that is T-Z4's roster line applied to sources
+// rather than an exception to decision 4. For an admin this list is Settings →
+// Data sources, the agent form's source checkboxes and the metric form's source
+// picker — configuration, which is the role table's — and it has to stay whole:
+// the agent form saves the full set of ticked sources, so a restricted source
+// missing from it would be quietly untied from every agent the admin next saves.
+// What a grant on a source takes from an admin is the three routes that read
+// what is in it (resourcePolicy). What it never takes from anybody is an agent's
+// reach, which is agent_sources.
+func (h *CompanyHandler) WithAccess(a ConnectionAccess) *CompanyHandler {
+	h.access = a
+	return h
 }
 
 // NewCompanyHandler wires the company service. embeddingSvc is optional;
@@ -358,7 +386,44 @@ func (h *CompanyHandler) listConnections(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	out, ok := h.visibleSources(c, out)
+	if !ok {
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"connections": out})
+}
+
+// visibleSources is a member's list narrowed to the sources they may see, in
+// one load for the page; an admin's is the whole list (WithAccess). A check that
+// fails serves nothing — never the unfiltered list.
+func (h *CompanyHandler) visibleSources(c *gin.Context, all []*domain.DBConnection) ([]*domain.DBConnection, bool) {
+	role := domain.Role(c.GetString("role"))
+	if h.access == nil || len(all) == 0 || role == domain.RoleAdmin {
+		return all, true
+	}
+	ids := make([]string, 0, len(all))
+	for _, conn := range all {
+		ids = append(ids, conn.ID)
+	}
+	subject := authz.Subject{CompanyID: companyID(c), UserID: userID(c), Role: role}
+	visible, err := h.access.Visible(c.Request.Context(), subject, domain.ResourceKindConnection, ids)
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID(c)).
+			Warn("source access check failed; serving no source list")
+		middleware.AbortAccessCheckFailed(c)
+		return nil, false
+	}
+	keep := make(map[string]bool, len(visible))
+	for _, id := range visible {
+		keep[id] = true
+	}
+	out := make([]*domain.DBConnection, 0, len(visible))
+	for _, conn := range all {
+		if keep[conn.ID] {
+			out = append(out, conn)
+		}
+	}
+	return out, true
 }
 
 type addConnReq struct {
