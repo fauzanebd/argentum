@@ -221,12 +221,13 @@ without object storage the rest of the agent runs unchanged.
 | `MINIO_USE_SSL`             | `false`              | `true` for HTTPS endpoints                         |
 | `DOCUMENT_PRESIGN_TTL_SECS` | `3600`               | TTL on the download URL the tool returns           |
 
-For local dev, add a MinIO service to your compose file (mirroring
-`gochick-be`'s setup):
+For local dev, `docker-compose.yml` already runs one. To add MinIO to a
+compose file of your own, pull it from quay.io — Docker Hub's `minio/minio`
+is gone:
 
 ```yaml
 minio:
-  image: minio/minio
+  image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z.hotfix.7aa24e772
   ports: ["9000:9000", "9001:9001"]
   environment:
     MINIO_ROOT_USER: minioadmin

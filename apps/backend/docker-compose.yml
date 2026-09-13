@@ -104,8 +104,12 @@ services:
   # so one pair configures both ends. Defaults are MinIO's own well-known
   # minioadmin pair, matching the other services here — every credential in this
   # file is a local default and none of them belong in a deployment.
+  #
+  # From quay.io, not Docker Hub: Docker Hub's minio/minio repository is gone,
+  # so the old tag no longer pulls (it broke CI's API examples job the same way).
+  # The hotfix tag is the same release CI pins.
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z.hotfix.7aa24e772
     container_name: argentum_minio
     command: server /data --console-address ":9001"
     environment:
