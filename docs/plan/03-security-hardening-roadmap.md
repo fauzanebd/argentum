@@ -548,6 +548,32 @@ covered without its author knowing
 >
 > Record: [`../coverage/security-hardening.md`](../coverage/security-hardening.md) §17.
 
+> **Filed 2026-09-14, from roadmap 09's `T-N11`: the gate is per turn, and the next
+> turn is not tainted.** The `schedule_task` door above has a shorter sibling that
+> needs no tool at all:
+> 1. In turn one, an agent reads a supplier's PDF and summarises it. The document's
+>    instruction may be in that summary.
+> 2. The summary sits in the conversation's history.
+> 3. In turn two, the person says *"send it"*. Turn two has read no document, so a
+>    `send_message` proposal auto-approves where the workspace allows it.
+>
+> **This was true for one agent from the day `T-H9` shipped.** A room of agents makes it
+> worse, but it does not create it.
+> - **What `T-N5` did:** taint crosses a live hand-off between agents (a nudge).
+> - **What `T-N11` did:** a colleague's history is fenced and recorded as `agent`.
+> - **Neither carries document taint across turns.** The owner decided that on 2026-09-14.
+>   Doing it would put an approval in front of every turn after any document was read,
+>   which is the off switch this ticket already argues against.
+>
+> **Not a ticket yet — a decision this track owes.** Two shapes are worth weighing:
+> - **A window:** document taint lasts *N* turns, or until the person says something
+>   that is not about the document.
+> - **A narrower gate:** any outward action in a thread that has read a document within
+>   its history window needs approval — keyed on the thread, not the turn.
+>
+> Both are cheap to build and expensive to get wrong. Pick one before building.
+> Context: [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §8b, §9f.
+
 ### `T-H10` PII-aware empty-result probe — 0.5d · **built 2026-08-14**
 
 `apps/backend/internal/tools/empty_result_probe.go:182` (`distinctValues`)

@@ -212,10 +212,18 @@ type ChatRunPayload struct {
 	//
 	// Empty means the worker resolves the default itself, which is what a task
 	// queued before this field existed carries.
-	AgentID         string `json:"agent_id,omitempty"`
-	UserMsgID       string `json:"user_msg_id"`
-	CompanyName     string `json:"company_name,omitempty"`
-	DefaultCurrency string `json:"default_currency,omitempty"` // ISO 4217
+	AgentID string `json:"agent_id,omitempty"`
+	// Peer marks this turn as one agent's message to another (T-N5), and is nil
+	// on every other turn — which is every turn until T-N6's nudge writes one.
+	// When it is set, Message is the peer's words rather than a person's, and
+	// ChatRunner delivers them fenced under the author's name.
+	//
+	// A pointer under `omitempty`, so every payload that is not a peer turn
+	// marshals byte-identically to before this field existed.
+	Peer            *PeerOrigin `json:"peer,omitempty"`
+	UserMsgID       string      `json:"user_msg_id"`
+	CompanyName     string      `json:"company_name,omitempty"`
+	DefaultCurrency string      `json:"default_currency,omitempty"` // ISO 4217
 	// Money is the resolved convention that currency is written under (T-W2):
 	// how many decimal places, and which way it rounds at a half.
 	//

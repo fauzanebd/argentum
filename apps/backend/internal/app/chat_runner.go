@@ -27,6 +27,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/lark"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
 	"github.com/fauzanebd/argentum/internal/metrics"
+	"github.com/fauzanebd/argentum/internal/peermemory"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/skill"
 	"github.com/fauzanebd/argentum/internal/slack"
@@ -752,6 +753,16 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	agentRow := r.resolveAgent(ctx, p)
 	ctx = agentscope.WithScope(ctx, scopeOf(agentRow))
 
+	// Another agent's message, if this turn is one (T-N5). Before the small-talk
+	// short-circuit and before anything can call a tool, because both of its
+	// effects have to be in place by then: the author's taint inherited, so the
+	// first audit row already carries it and T-H9 gates on it, and the directive
+	// gone, so no later line of this function can compose one into the system
+	// prompt. After the scope on purpose — the scope came from the recipient's
+	// row, and nothing a peer sent may revisit it.
+	var peerAuthor string
+	p, peerAuthor = r.receivePeer(ctx, taints, p)
+
 	// Cheap small-talk short-circuit: skip the model (and the light-LLM
 	// guardrail/classifier pipeline behind it) when the message is a
 	// greeting or one-word ack. Saves multiple LLM calls per turn.
@@ -905,7 +916,10 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// Prepend organization, currency, source-catalog, and (optionally) the
 	// embedding-based table-picker hint. Order matters: the table hint sits
 	// closest to the top so the agent reads it before the source catalog.
-	agentMsg := withLanguageReminder(p.Message)
+	//
+	// A peer's words enter here fenced, and only here (T-N5): the user turn is
+	// the one channel a peer has into this model, and never the system prompt.
+	agentMsg := withLanguageReminder(peerMessage(p, peerAuthor))
 	agentMsg = withCompanyNameContext(agentMsg, p.CompanyName)
 	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency, p.Money)
 	agentMsg = r.withPeriodContext(ctx, agentMsg, p.CompanyID)
@@ -927,6 +941,13 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// window, which is where the agent would otherwise have forgotten the
 	// opening.
 	agentMsg = r.withThreadSummaryContext(ctx, agentMsg, p.ThreadID)
+
+	// What a colleague in a room may read of this turn's prompt (T-N11): the
+	// words, not the context blocks composed above them. The SDK writes agentMsg
+	// into the thread's shared memory as this turn's user message, and another
+	// agent must not read this agent's source catalog, metrics and prior work as
+	// though they were its own — so the memory records the words beside it.
+	ctx = peermemory.WithQuestion(ctx, peerMessage(p, peerAuthor))
 
 	// Try streaming first; fall back to blocking Run if the LLM doesn't
 	// support it.
@@ -1048,6 +1069,11 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		"document_tainted": taints.Has(taint.KindDocument),
 		"document_sources": strings.Join(taints.Sources(taint.KindDocument), ","),
 		"input_taint":      taint.Join(taints.Kinds()),
+		// Which agents wrote to this turn (T-N5). Beside document_sources so the
+		// sentence a review needs — "a message from the Finance agent, which had
+		// read invoice-4471.pdf" — is one line to read rather than a join: the
+		// document names above include what a peer carried in.
+		"peer_agents": strings.Join(taints.Sources(taint.KindAgent), ","),
 	}).Info("turn completed")
 	return nil
 }
@@ -1091,6 +1117,81 @@ func (r *ChatRunner) resolveAgent(ctx context.Context, p queue.ChatRunPayload) *
 		return nil
 	}
 	return def
+}
+
+// receivePeer installs what another agent's message brings with it (T-N5), and
+// returns the payload the rest of the turn runs on, with the author's name for
+// the fence. A turn that is not a peer turn gets p back untouched and no name.
+//
+// Three things, in the order they have to hold:
+//   - **The author's taint is inherited**, then the turn is marked KindAgent
+//     under the author's name. A turn whose author read a document is
+//     document-tainted before anything can ask, and T-H9's gate — which reads
+//     the context, not the payload — fires on it with no change of its own.
+//   - **The name comes from the roster**, scoped to this company, and never
+//     from the payload. A peer whose row is gone, or is another company's, is
+//     still fenced and still tainted; it is labelled without a name.
+//   - **A directive is dropped.** Directive is composed into the system prompt
+//     (T-A2b), and a peer's words are delivered as a user-turn block and as
+//     nothing else. Enforced here, at the receiving end, rather than trusted of
+//     whatever enqueued the turn, so T-N6's nudge cannot reintroduce it by
+//     accident.
+//
+// What it does not touch is the scope, installed from the recipient's row
+// before this runs. TestAPeerPayloadCannotWidenTheRecipientsScope is the
+// assertion, because today that is a property of line order.
+//
+// The message stays as the peer wrote it. The fence is applied where the
+// model's input is composed ([peerMessage]), because p.Message is also what the
+// small-talk check, the question vector and the refusal's language detection
+// read, and none of them should be reading our markers.
+func (r *ChatRunner) receivePeer(
+	ctx context.Context, taints *taint.Tracker, p queue.ChatRunPayload,
+) (queue.ChatRunPayload, string) {
+	if p.Peer == nil {
+		return p, ""
+	}
+	taints.Inherit(p.Peer.Taint)
+	author := r.peerAuthorName(ctx, p.CompanyID, p.Peer.AgentID)
+	taints.Mark(taint.KindAgent, author)
+	if p.Directive != "" {
+		logrus.WithFields(logrus.Fields{
+			"company_id":    p.CompanyID,
+			"thread_id":     p.ThreadID,
+			"peer_agent_id": p.Peer.AgentID,
+		}).Warn("a peer turn arrived carrying a directive; dropped")
+		p.Directive = ""
+	}
+	return p, author
+}
+
+// peerAuthorName is the roster name of the agent that wrote a peer message, or
+// "" when it cannot be said. Empty is safe in every case: the message is fenced
+// and the turn tainted either way, and only the label loses its name.
+func (r *ChatRunner) peerAuthorName(ctx context.Context, companyID, agentID string) string {
+	if r.roster == nil || agentID == "" {
+		return ""
+	}
+	a, err := r.roster.GetByID(ctx, companyID, agentID)
+	if err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"company_id": companyID, "peer_agent_id": agentID,
+			}).Warn("peer author lookup failed; fencing the message without a name")
+		}
+		return ""
+	}
+	return a.Name
+}
+
+// peerMessage is what the model reads as this turn's input: a person's words as
+// written, or a peer's words fenced under the author's name (T-N5) — in the
+// user turn, never in the system prompt.
+func peerMessage(p queue.ChatRunPayload, author string) string {
+	if p.Peer == nil {
+		return p.Message
+	}
+	return guardrails.FencePeer(author, p.Message)
 }
 
 // companyContext renders the tenant's business profile for this turn (T-B1),
@@ -1926,6 +2027,11 @@ func (r *ChatRunner) rememberToolWork(ctx context.Context, p queue.ChatRunPayloa
 			"turn_msg":   p.UserMsgID,
 			"tool_calls": len(kept),
 		},
+		// Whose work this was (T-N11). A room's digests share one thread, and
+		// priorWork hands them back as "work already done — reuse it"; without
+		// the agent, a colleague's SQL against a source this agent cannot reach
+		// arrives as this agent's own unfinished business.
+		AgentID: agentscope.AgentID(ctx),
 	}
 	if err := r.toolMemory.Append(writeCtx, msg); err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
@@ -1953,8 +2059,18 @@ func (r *ChatRunner) priorWork(ctx context.Context, threadID string) []ToolDiges
 			Warn("tool memory read failed; this turn starts without the earlier turns' work")
 		return nil
 	}
+	// A colleague's work is not this agent's to reuse (T-N11): its queries name
+	// that agent's sources, and this block is framed as our own instruction to
+	// build on them. A row with no agent predates the stamp — and every room,
+	// since production has never run one — so it is kept. The limit above is
+	// applied before this filter, so a busy room gives an agent fewer of its own
+	// digests than priorWorkMax; the cost is a re-read schema, not a wrong answer.
+	reader := agentscope.AgentID(ctx)
 	var out []ToolDigest
 	for _, row := range rows {
+		if reader != "" && row.AgentID != "" && row.AgentID != reader {
+			continue
+		}
 		out = append(out, DecodeDigests(row.Content)...)
 	}
 	// Deduped across turns as well as within one: a conversation that has read
@@ -2336,10 +2452,21 @@ func (r *ChatRunner) hydrateMemory(ctx context.Context, agent *sdkagent.Agent, p
 		if m.Role == domain.MessageRoleTool {
 			continue
 		}
-		sdkMsg := interfaces.Message{
+		// Attributed from the row, explicitly (T-N11). The memory stamps what it
+		// is not told from the turn's scope, and this loop runs inside whichever
+		// agent was addressed — so without this every replayed reply would be
+		// stamped as the reader's own, which is the flattening T-N1's Why named
+		// and this exists to undo. A person's message is stamped with no agent:
+		// it is their words from Postgres, not a turn's composed prompt, and
+		// every agent reads it as written.
+		agentID, agentName := "", ""
+		if m.Role == domain.MessageRoleAssistant {
+			agentID, agentName = m.AgentID, m.AgentName
+		}
+		sdkMsg := peermemory.Stamp(interfaces.Message{
 			Role:    interfaces.MessageRole(m.Role),
 			Content: m.Content,
-		}
+		}, agentID, agentName)
 		if err := mem.AddMessage(ctx, sdkMsg); err != nil {
 			logrus.WithError(err).Warn("hydrate memory: add message")
 		}

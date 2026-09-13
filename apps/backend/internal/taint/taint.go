@@ -52,6 +52,22 @@ const (
 	// gated — see the package comment for why gating this would be an off
 	// switch rather than a control.
 	KindData Kind = "data"
+	// KindAgent is a message another of the tenant's agents wrote (T-N5): a
+	// nudge, a hand-off, a colleague's question arriving as this turn's input.
+	// Its sources are the authors' agent names.
+	//
+	// Recorded and fenced like [KindData], never gated — every hand-off needing
+	// an approval would be an off switch, which is this package's argument about
+	// warehouse rows applied one layer out. **What it is not is a clean slate.**
+	// A peer's words were written by a model that may have read a supplier's
+	// PDF, and they arrive in the shape a model is most inclined to comply with:
+	// a colleague's request. So a turn marked with this kind also
+	// [Tracker.Inherit]s whatever the author's turn carried, and a document the
+	// author read gates this turn exactly as if it had read the file itself.
+	// Without that, one nudge launders a document's instructions into a turn
+	// that read no document and therefore gates nothing — a privilege
+	// escalation with no defect in any single line of code.
+	KindAgent Kind = "agent"
 )
 
 // Tracker is one turn's taint state. Safe for concurrent use: a provider may
@@ -83,6 +99,70 @@ func (t *Tracker) Mark(kind Kind, source string) {
 	// A read with no nameable source still taints. The flag is the load-bearing
 	// half; the names are for whoever reads the row afterwards.
 	t.sources[kind][strings.TrimSpace(source)] = true
+}
+
+// Carry is this turn's taint in a form that can cross the queue to another
+// agent's turn (T-N5): every kind read, with every source it was read from.
+//
+// **It keeps the unnamed read**, which [Tracker.Sources] deliberately omits. A
+// read with no nameable source still taints — T-H9's gate reads [Tracker.Has]
+// before the names for exactly that reason — so a carrier that dropped it would
+// let a document read with no filename cross a hand-off as no read at all. The
+// empty string rides along as a source, and [Tracker.Inherit] marks it back.
+//
+// Nil on a turn that read nothing, so a payload carrying it under `omitempty`
+// is byte-identical to one that never heard of taint.
+func (t *Tracker) Carry() map[Kind][]string {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var out map[Kind][]string
+	for kind, names := range t.sources {
+		if len(names) == 0 {
+			continue
+		}
+		list := make([]string, 0, len(names))
+		for s := range names {
+			list = append(list, s)
+		}
+		sort.Strings(list)
+		if out == nil {
+			out = map[Kind][]string{}
+		}
+		out[kind] = list
+	}
+	return out
+}
+
+// Inherit marks this turn with everything another turn carried (T-N5): a peer
+// agent's taint, arriving with its words.
+//
+// It copies; it does not share. Two agents in a room are two trackers in two
+// turns, and what the recipient reads after inheriting is its own — the author's
+// tracker must not learn about it, and one shared tracker "to keep them in step"
+// would taint the author with reads it never made.
+//
+// Call it **before the recipient's first tool call**, so that call's audit row
+// already carries what was inherited. A lag of one call on this column is the
+// bug T-H8's gate found in the marker decorator's placement, and it would be the
+// same bug here.
+//
+// A kind carried with no sources at all still taints. [Tracker.Carry] never
+// writes that shape — it always names at least the empty source — but it is
+// what a hand-written or truncated payload looks like, and the direction to
+// fail is tainted.
+func (t *Tracker) Inherit(from map[Kind][]string) {
+	for kind, sources := range from {
+		if len(sources) == 0 {
+			t.Mark(kind, "")
+			continue
+		}
+		for _, s := range sources {
+			t.Mark(kind, s)
+		}
+	}
 }
 
 // Has reports whether this turn read content of one kind.

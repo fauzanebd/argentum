@@ -24,6 +24,54 @@ says so explicitly rather than leaving it to be discovered — the one figure th
 plan would most like to have is what a room actually costs per user message, and
 it is owed, not estimated.
 
+> **Status, 2026-09-14: `T-N11` is built and unit-gated.** The owner answered §8b's
+> question: a colleague's earlier turns do not pass their document taint on. No migration.
+> Record: [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §9.
+>
+> **What changed.** An agent in a room now reads a colleague's turn as a colleague's:
+> - **It reads** the person's question, and the reply fenced under the colleague's name,
+>   with the turn recording `agent`.
+> - **It does not read** the colleague's tool calls, raw results or composed prompt.
+> - **The prior-work block** leaves out the colleague's queries.
+>
+> A single agent's history, and an unscoped turn's, are byte-identical to before.
+>
+> **The ticket, written the day before, was short by two leaks.** The shared buffer also
+> held every agent's tool results — rows from sources the reader may not reach — and every
+> agent's composed prompt, source catalog included (§9a).
+>
+> **One condition on deploying it: ship `T-N11` no later than rooms.** Production runs
+> `1.6.0`, which has no rooms, and the rule for unstamped history assumes that (§9d).
+> **Owed:** the paired `make eval`, predicted identical, and §7d's before-and-after room
+> arm. **Next on this track: `T-N8`**, which `T-N6` also waits on.
+
+> **Status, 2026-09-13: `T-N5` is built and unit-gated — the trust boundary that has to
+> exist before any agent talks to any agent.** No migration. Record:
+> [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §8.
+>
+> When a payload says another agent wrote a turn's message, that turn:
+> - inherits the author's taint, so a document the author read gates its actions under
+>   `T-H9`;
+> - records `agent` under the author's roster name;
+> - reads the words fenced, in its user turn;
+> - drops any directive.
+>
+> A payload stuffed with scope-shaped fields leaves the recipient's scope byte-identical.
+> Nothing writes such a payload until `T-N6`. **Owed:** the paired `make eval` (no model
+> key here) and the real-nudge arm, both in
+> [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7d.
+>
+> **The ticket said the laundering path "exists the moment `T-N6` ships". Half of it
+> already exists, in `v1.7.0`.** Every agent in a room shares one conversation memory. So
+> `@Ops`, after Finance read a supplier PDF, puts Finance's reply in Ops' request as Ops'
+> *own* unfenced `assistant` message, with no taint (§8b). Filed below as `T-N11`,
+> **recommended before `T-N6`**. Its taint half needs an owner's decision.
+>
+> **Two corrections to `T-N6`.** Its `NudgeFromAgentID` could not carry a taint, so the
+> carrier is now `ChatRunPayload.Peer`. And skipping the input classifier for peer text
+> moved to `T-N6`, keyed on the payload rather than on the fence markers — a person can
+> type those.
+
 > **Status, 2026-09-11: nothing here is built, and none of it is scheduled.**
 > This is a plan, not a track in flight. Committed work has been at 0.0 days
 > since [`00-sprint-overview.md`](00-sprint-overview.md) §9e (2026-08-10). The
@@ -832,9 +880,21 @@ before/after pair and the grayscale room still.
 
 ### Track C — The trust boundary (1.5d) · before any agent talks to any agent
 
-#### `T-N5` A peer agent's words are untrusted input
+#### `T-N5` A peer agent's words are untrusted input · **built 2026-09-13, unit-gated; `make eval` owed — `coverage/multi-agent.md` §8**
 **Repo:** BE · **Size:** 1.5d · **Deps:** `T-N1` · **Priority:** P0 — **not cuttable**
-**Migration:** none
+**Migration:** none — correct, for once
+
+> **What moved against this ticket ([`../coverage/multi-agent.md`](../coverage/multi-agent.md) §8c):**
+> - **The carrier is `ChatRunPayload.Peer`** (`queue.PeerOrigin{AgentID, Taint}`), because
+>   `T-N6`'s `NudgeFromAgentID` could not carry a taint.
+> - **The author's name is looked up from the roster**, never carried on the payload.
+> - **The input-classifier exemption moved to `T-N6`.** The only safe signal is the payload;
+>   a skip keyed on the fence markers is a guardrail bypass anybody can type.
+> - **The names went on the completion line as `peer_agents`**, because `agent_actions`
+>   has no sources column.
+>
+> **And the *Why* below is half right about timing.** The laundering path does not wait for
+> `T-N6`: a room's shared conversation memory already opens it (§8b, `T-N11`).
 
 ##### Why
 This is `T-K2` one layer out, and the argument is the same one `T-H8` made for
@@ -935,6 +995,80 @@ is not run in the same sitting, and **do not tick the box until it is**.
 
 ---
 
+### Added 2026-09-13, after `T-N5`
+
+#### `T-N11` A room's history is a peer's words too · **built 2026-09-14, unit-gated; `make eval` and the room arm owed — `coverage/multi-agent.md` §9**
+**Repo:** BE · **Size:** ~1.5d · **Deps:** `T-N5` · **Priority:** P0 — **recommended before `T-N6`**
+**Migration:** none — correct
+**Decision first:** whether a document read in a peer's *earlier* turn is inherited — see *Do*.
+**Decided 2026-09-14 by the owner: not inherited**, as recommended. The gap between turns is
+filed against `T-H9`.
+
+> **Where this ticket was wrong** ([`../coverage/multi-agent.md`](../coverage/multi-agent.md) §9d).
+> It was written from a grep, not from reading the SDK.
+> - **The shared buffer held two more leaks than it names:** every agent's tool calls and
+>   raw results — rows from sources the reader may not reach — and every agent's composed
+>   prompt, source catalog included. A colleague's tool plumbing is now dropped, and its
+>   prompt is replaced by the person's words.
+> - **Re-roling an assistant message would have broken requests.** Most assistant messages
+>   in the buffer are empty tool-call carriers, and re-roling them would have orphaned tool
+>   results.
+> - **The unstamped-history rule was not built.** It needs a participant lookup inside
+>   memory, and production has never run a room — which holds **only if this ships no later
+>   than rooms**.
+
+##### Why
+[`../coverage/multi-agent.md`](../coverage/multi-agent.md) §8b.
+- **One buffer per thread.** The SDK's conversation memory is keyed by company and
+  thread, and every agent in a room writes to and reads from that one buffer.
+- **So a colleague's reply reads as the agent's own.** An agent addressed after another
+  sees its colleague's replies as its own `assistant` messages — unfenced, unlabelled,
+  untainted. `hydrateMemory`, the cold path, does the same.
+- **It is already live.** This is `T-N5`'s laundering path with no nudge in it, and it
+  shipped with `T-N3` in `v1.7.0`.
+- **It is also the flattening `T-N1`'s *Why* named,** left open: `T-N1` fixed the record
+  and the transcript, not the replay.
+
+##### Do
+- **Stamp and re-role the warm path.** Put a memory decorator around `buildMemory`'s
+  result (`bootstrap/stack.go`).
+  - On `AddMessage`, stamp `Metadata["agent_id"]` from `agentscope.AgentID(ctx)`.
+  - On `GetMessages`, turn an `assistant` message stamped with *another* agent into a
+    user-role message, `guardrails.FencePeer(name, content)`, and mark
+    `taint.KindAgent` on the turn's tracker.
+  - **Check first that `RedisMemory` round-trips `Metadata`.** The warm path is the one
+    that matters, and a stamp that does not survive Redis is no stamp.
+- **The same rule for the cold path.** `hydrateMemory` reads `messages.agent_id` (`T-N1`)
+  rather than a stamp.
+- **Messages from before the decorator carry no stamp.** Replay them as today on a thread
+  with one participant, and as unattributed peer text in a room.
+- **The decision.**
+  - *Inherit* a document taint from a peer's earlier turn, and every room turn after
+    anyone read a document is gated — `T-H9`'s off switch.
+  - *Do not inherit*, and the room keeps the cross-turn gap a single agent already has,
+    since `T-H9` gates per turn.
+  - **Recommendation: do not inherit, record `agent`, and file the cross-turn gap against
+    `T-H9`**, where it belongs for a single agent too.
+
+##### Notes for the implementer
+- **Consecutive user-role messages will occur:** the person's question, then a fenced
+  peer reply. OpenAI-compatible endpoints accept that. Check the Anthropic interface
+  before assuming it does.
+- **A person's own replies stay `assistant`.** Fence everything and the fence stops
+  meaning anything; `T-H8`'s `trustedResults` comment makes the same argument for tools.
+
+##### Acceptance
+- [ ] In a room, B's provider request carries A's reply fenced under A's name in a
+      user-role message, and B's own earlier replies as `assistant`
+- [ ] A single-agent thread's provider request is byte-identical to today's
+- [ ] B's turn records `agent` with A's name
+- [ ] Proven on both paths: the shared buffer (warm) and `hydrateMemory` (cold)
+- [ ] `make eval` before and after, both rates pasted
+- [ ] [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7d's third
+      arm re-run as the *after*
+
+---
+
 ### Track D — An agent talks to an agent (5.0d)
 
 #### `T-N6` `nudge_agent` — one participant asks another
@@ -985,9 +1119,23 @@ remove and instead relocated.
   blocks a turn while another whole turn runs would spend the asker's wall clock
   on the answerer's work** — the same reasoning `T-V3` used to make video
   rendering asynchronous (`01-tickets.md`, the `generate_document` mp4 note).
-- `ChatRunPayload` gains `NudgeFromAgentID` and `NudgeDepth int`
+- ~~`ChatRunPayload` gains `NudgeFromAgentID` and `NudgeDepth int`
   (`queue/tasks.go:184`), both `omitempty`. `ChatRunner.Run` reads them to
-  install the inherited taint (`T-N5`) and to fence the incoming question.
+  install the inherited taint (`T-N5`) and to fence the incoming question.~~
+  **Revised 2026-09-13 by `T-N5`, which built the receiving half.** The author
+  and its taint already ride `ChatRunPayload.Peer` (`queue.PeerOrigin{AgentID,
+  Taint}`). When `Peer` is set, `ChatRunner.Run` already inherits the taint,
+  marks `agent`, fences the message under the author's roster name and drops any
+  directive. This ticket's part:
+  - **Set `Peer`** from the asker's context: `agentscope.AgentID(ctx)` and
+    `taint.FromContext(ctx).Carry()`, read at the moment the tool runs, so
+    everything the asker had read by then crosses.
+  - **Add the participant row id and the depth** to `PeerOrigin`. Extend
+    `TestThePeerCarrierHoldsNothingThatDecidesATurn`'s list, with the reason
+    beside each.
+  - **Skip the input topic classifier on a peer turn**, keyed on `p.Peer != nil`
+    and **never** on finding a fence marker in the text — a person can type one
+    (`multi-agent.md` §8c).
 - The asker's turn ends normally. The answer arrives as a later message in the
   room, attributed to the answerer by `T-N1`, and the human sees both.
 - **The asker is not automatically resumed.** v1 does not re-run A when B

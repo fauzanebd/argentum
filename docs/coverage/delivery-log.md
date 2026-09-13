@@ -7249,6 +7249,115 @@ The owner gave the go-ahead for §7c's arms, and **production was not used**.
 
 **Owed, still:** those, in live-gate §7c.
 
+## Phase 3ba — A peer agent's words are untrusted input (`T-N5`, 2026-09-13)
+
+Picked because it is the only ticket on the board with its dependency met, a P0 not
+cuttable, on the track already in flight (roadmap 09), and buildable here against a
+stub. `T-W7` needs a speech key; `T-W4`, `T-W5` and `T-F5` are held on measurements.
+Record: [`multi-agent.md`](multi-agent.md) §8.
+
+**What a peer turn now does.** When `ChatRunPayload.Peer` says another agent wrote the
+message:
+- **The author's taint is inherited** before any tool runs, so a document the author read
+  gates the recipient's `propose_action` under `T-H9`.
+- **The turn records `agent`** under the author's roster name, never a name the payload
+  asserts.
+- **The words reach the model fenced** (`source="message from agent …"`), in the user turn.
+- **A directive on the payload is dropped.**
+- **Scope is untouched:** scope-shaped fields in the payload leave the recipient's scope,
+  persona and tools equal to its row.
+
+No migration. Nothing writes a peer payload until `T-N6`.
+
+**Found outside the ticket (§8b).** A room already hands one agent's replies to the next,
+unfenced and untainted. The SDK's conversation memory is one buffer per company and
+thread, and every provider replays it. That path shipped with `T-N3` in `v1.7.0`. Filed as
+`T-N11`, recommended before `T-N6`; its taint half is an owner's decision.
+
+**Where the ticket was wrong (§8c).**
+- `T-N6`'s `NudgeFromAgentID` could not carry a taint, so the carrier is `Peer`.
+- Skipping the input classifier for peer text moved to `T-N6`, because keying it on the
+  fence markers would be a bypass anyone can type.
+- Sources went on the completion line as `peer_agents`, because `agent_actions` has no
+  sources column.
+
+**Proven failing.** Four mutations: no inheritance (3 tests failed), directive kept (1),
+unfenced delivery (1), `Carry` dropping the unnamed read (1). Each file was restored and
+`cmp`'d before the gate.
+
+**Gate.** `make check` passed on the first run: `MAKE EXIT: 0`, read from the log.
+- **Go:** 72 packages `ok`, zero `FAIL`/`panic` lines, `golangci-lint` `0 issues.`, and
+  `gofmt -l` empty.
+- **Dashboard:** 88 vitest tests pass, and all six builds finished.
+- **New tests:** 21, listed by name under `go test -race -v` before the gate.
+- `make types` changed one generated file, `packages/api-types/src/domain.ts` (a comment).
+
+**Owed** (live-gate §7d):
+- **The paired `make eval`** for the prompt bullet. **Prediction: no movement beyond ±2
+  cases.**
+- **The real-nudge arm**, which needs `T-N6`.
+- **The room's *before* arm.** **Prediction: Ops reads Finance's reply as its own
+  `assistant` message, with no taint.**
+
+## Phase 3bb — A room's history is a colleague's words, not your own (`T-N11`, 2026-09-14)
+
+Picked because Phase 3ba's report recommended it ahead of `T-N6`, and the owner said go,
+taking the recommendation on its open question: **a colleague's earlier turns do not pass
+their document taint on.** Record: [`multi-agent.md`](multi-agent.md) §9.
+
+**What the shared buffer was carrying.** The SDK's conversation memory is one buffer per
+company and thread. Reading `agent-sdk-go` found that every agent in a room was reading
+three things from it:
+- **Its colleagues' replies**, as its own `assistant` messages.
+- **Its colleagues' tool calls and raw results**, from sources its allowlist may not reach.
+- **Its colleagues' composed prompts**, source catalogs included.
+
+A fourth path ran outside the buffer: **the prior-work block**. It offered a colleague's
+SQL as *"work already done — reuse it"*.
+
+**What it does now.** `internal/peermemory` stamps every message with the agent whose turn
+wrote it, and rewrites each read for the agent reading:
+- **Its own turns:** exactly as written.
+- **A colleague's reply:** fenced in the user turn, with `agent` recorded.
+- **A colleague's tool plumbing:** not read.
+- **A colleague's prompt:** only the person's words from it.
+
+Also:
+- **Hydration** stamps replayed rows from `messages.agent_id`.
+- **Digest rows** carry their agent, and prior work filters by it.
+- **Both memory branches** are wrapped inside `buildMemory`.
+
+A single agent's history, and an unscoped turn's, are byte-identical. No migration.
+
+**Where the ticket was wrong (§9d).** It was written the day before from a grep, not from
+reading the SDK.
+- It named one leak of the three.
+- Its re-roling would have orphaned tool results.
+- Its rule for unstamped history was not built, because production (`1.6.0`, read from the
+  deployment) has never run a room. **That holds only if `T-N11` ships no later than rooms.**
+
+**Filed against `T-H9`** (roadmap 03): the gate is per turn, so *"send it"* one turn after
+reading a PDF is ungated — for one agent, not only for a room.
+
+**Proven failing.** Nine mutations: view off, hydration unstamped, prior-work filter off,
+digest unattributed, fallback memory unwrapped, stamp overwritten, de-duplication off,
+colleague tool results kept, colleague prompt kept. Each failed its tests. The first
+de-duplication mutation did not compile, so it proved nothing and was redone.
+
+**Gate.** `make check` passed on the first run: `MAKE EXIT: 0`, read from the log.
+- **Go:** 73 packages `ok` — the new `peermemory` among them — zero `FAIL`/`panic` lines,
+  `golangci-lint` `0 issues.`, and `gofmt -l` empty.
+- **Dashboard:** 88 vitest tests pass, and all six builds finished.
+- **New tests:** 16, listed by name under `-race -v` before the gate — 10 package, 5 runner,
+  1 bootstrap, one of them over `miniredis` behind the SDK's real `RedisMemory`.
+
+**Owed** (live-gate §7d):
+- **The paired `make eval`.** **Prediction: identical** — every golden case is one agent,
+  and the harness runs unscoped.
+- **The room, before and after, in one sitting.** **Prediction:** before, Ops reads
+  Finance's reply, rows and catalog as its own. After, it reads the question and one fenced
+  reply, and its completion line shows `peer_agents=Finance`.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

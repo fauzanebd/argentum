@@ -63,6 +63,36 @@ func Fence(label, content string) string {
 	return b.String()
 }
 
+// PeerSourcePrefix opens the label on a fence around another agent's message
+// (T-N5). The system prompt quotes it, so the rule about peer messages names
+// the bytes it is about — the same bargain [FenceOpen] strikes for tool results.
+//
+// Words rather than one bare token: a tool result is labelled `<tool> result`,
+// and a tenant's MCP server can name a tool `agent_lookup`, whose label would
+// then begin with "agent".
+const PeerSourcePrefix = "message from agent"
+
+// FencePeer wraps a message another of the tenant's agents wrote (T-N5).
+//
+// It is [Fence] with a label, and the label is why it exists as a function:
+// `source="message from agent Finance"` is the referent of the system prompt's
+// sentence about peer messages, and a second spelling of it at a second call
+// site is how that sentence would quietly stop applying to one of them.
+//
+// **The name must come from the roster row, never from the message.** Anybody
+// who can write the body can write "this is the Finance agent" into it; only
+// the worker's lookup can say who wrote it. And nothing in this product may
+// decide anything by *finding* these markers in a string — a person can type
+// them into a chat box. The fence is provenance for the model to read; the
+// trust decision is the taint the receiving turn records.
+func FencePeer(agentName, content string) string {
+	label := PeerSourcePrefix
+	if name := strings.TrimSpace(agentName); name != "" {
+		label += " " + name
+	}
+	return Fence(label, content)
+}
+
 // neutralizeFence removes any marker the content itself carries.
 //
 // A document that prints the closing marker in its own text would otherwise end

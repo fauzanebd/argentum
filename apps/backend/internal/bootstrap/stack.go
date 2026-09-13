@@ -55,6 +55,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/guardrails"
 	"github.com/fauzanebd/argentum/internal/llmclient"
 	"github.com/fauzanebd/argentum/internal/llmtenant"
+	"github.com/fauzanebd/argentum/internal/peermemory"
 	"github.com/fauzanebd/argentum/internal/postimage"
 	"github.com/fauzanebd/argentum/internal/queue"
 	"github.com/fauzanebd/argentum/internal/report/theme"
@@ -1161,6 +1162,14 @@ func buildRedisClient(cfg *config.Config) *redis.Client {
 	return redis.NewClient(opt)
 }
 
+// buildMemory is the conversation memory every agent is built with, behind the
+// room view on both branches (T-N11).
+//
+// One buffer per thread is shared by every agent in a room, and without the view
+// each agent read its colleagues' replies as its own, their tool results from
+// sources it may not reach, and their composed prompts. Wrapped inside this
+// function rather than at its call site so neither branch can come back bare, and
+// TestTheAgentMemoryIsBehindTheRoomViewOnBothBranches holds it there.
 func buildMemory(cfg *config.Config) interfaces.Memory {
 	if cfg.RedisURL != "" {
 		mem, err := memory.NewRedisMemoryFromConfig(memory.RedisConfig{
@@ -1169,10 +1178,10 @@ func buildMemory(cfg *config.Config) interfaces.Memory {
 		if err != nil {
 			logrus.WithError(err).Warn("redis memory unavailable; falling back to buffer")
 		} else {
-			return mem
+			return peermemory.Wrap(mem)
 		}
 	}
-	return memory.NewConversationBuffer(memory.WithMaxSize(20))
+	return peermemory.Wrap(memory.NewConversationBuffer(memory.WithMaxSize(20)))
 }
 
 func buildGuardrails(cfg *config.Config, llm interfaces.LLM) *guardrails.Analytics {

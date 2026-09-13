@@ -314,7 +314,10 @@ export interface AgentAction {
    * InputTaint lists every kind of content this turn read that the product
    * did not write, sorted and comma-separated — "data", "document",
    * "data,document" (T-H8). Written from `taint.Join`, so the vocabulary has
-   * one definition.
+   * one definition. "agent" (T-N5) is a message from another of the tenant's
+   * agents, and it arrives with whatever that agent's turn had read: a row
+   * reading "agent,document" is a call made after a colleague handed over a
+   * document's content, and DocumentTainted is true on it.
    * It is the general form of DocumentTainted above rather than a replacement
    * for it: the boolean is indexed and gates an action, this answers the wider
    * question a security review actually asks. Empty on a call whose turn read
