@@ -118,23 +118,26 @@ export const KIND_COPY: Record<
  * What each capability is, and — the half that matters on this screen — what
  * granting it does **today**.
  *
- * `capabilityPolicy` in `cmd/api/policy.go` is empty: no route asks for any of
- * the three yet, and for two of them that is deliberate (gating an existing
- * route without a backfill locks out everyone who uses it). A toggle that did
- * not say so would read as a switch that works. Granting ahead is still the
- * point of offering them (`domain.AllCapabilities`' comment): an admin prepares
- * who has voice before voice ships.
+ * `capabilityPolicy` in `cmd/api/policy.go` gates one route: voice's
+ * transcription (T-W7). The other two ask for nothing yet, and that is
+ * deliberate (gating an existing route without a backfill locks out everyone
+ * who uses it). A toggle that did not say so would read as a switch that works.
+ * Granting ahead is still the point of offering them (`domain.AllCapabilities`'
+ * comment).
+ *
+ * Voice's route exists and its microphone does not — that is T-W9 — so its
+ * `today` says what a grant changes on screen, which is nothing yet.
  *
  * `Record<Capability, …>` so a capability added to the Go vocabulary fails
- * `tsc` here until somebody writes what it does. **T-W7 rewrites `voice`'s
- * `today` in the commit that adds its policy entry**, and so does whichever
- * ticket first gates approving or exporting.
+ * `tsc` here until somebody writes what it does. **T-W9 rewrites `voice`'s
+ * `today` when the microphone ships**, and whichever ticket first gates
+ * approving or exporting rewrites that one's.
  */
 export const CAPABILITY_COPY: Record<Capability, { label: string; what: string; today: string }> = {
   voice: {
     label: "Voice",
     what: "Speak a question and hear the answer.",
-    today: "Voice is not built yet, so this does nothing today — it decides who has it on the day it ships.",
+    today: "The microphone is not in the chat yet, so this changes nothing on screen today — it decides who can speak a question the day it arrives.",
   },
   approve_actions: {
     label: "Approve actions",

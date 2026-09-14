@@ -295,7 +295,11 @@ var apiPolicy = middleware.RolePolicy{
 	"POST /api/threads/:id/participants":            domain.RoleMember,
 	"DELETE /api/threads/:id/participants/:agentID": domain.RoleMember,
 	"GET /api/threads/:id/stream":                   domain.RoleMember,
-	"POST /api/chat":                                domain.RoleMember,
+	// Voice (T-W7): a recording in, a transcript out, nothing posted. Member,
+	// like the thread routes around it — the gate that matters is the `voice`
+	// capability in capabilityPolicy, which an admin needs too.
+	"POST /api/threads/:id/voice": domain.RoleMember,
+	"POST /api/chat":              domain.RoleMember,
 
 	// Answer feedback (T-Q2). Rating is member — deliberately the most open
 	// write in this table — because whoever read the answer is the only person
@@ -514,8 +518,13 @@ var apiPolicy = middleware.RolePolicy{
 // never open one the role table refused — and, unlike a role, an admin holds no
 // capability nobody granted them (roadmap 12, decision 4).
 //
-// **It is empty, and that is the ticket's acceptance rather than an unfinished
-// table.** Two of the three day-one capabilities name things routes already do:
+// **Voice is the only entry (T-W7), and the reason it may be gated when the
+// other two may not is that its route is new.** Nobody could transcribe
+// yesterday, so a table in which nobody holds `voice` locks nobody out of
+// anything — it is the state the feature starts in, and an admin grants it to
+// the people who should have it, themselves included.
+//
+// Two of the three day-one capabilities name things routes already do:
 // `export_data` is GET /api/company/data/export, and `approve_actions` is the
 // approve and reject pair. 083 grants nobody anything. Putting any of those
 // routes here would 403 every admin who exports and every member who approves,
@@ -524,9 +533,9 @@ var apiPolicy = middleware.RolePolicy{
 // grants it to whoever can do it today, and that is a decision for the ticket
 // that wants the gate; TestExistingRoutesAskForNoCapability pins the three so it
 // cannot be made by accident.
-//
-// `voice` has no route yet. Its entry arrives with roadmap 11's T-W7.
-var capabilityPolicy = middleware.CapabilityPolicy{}
+var capabilityPolicy = middleware.CapabilityPolicy{
+	"POST /api/threads/:id/voice": domain.CapabilityVoice,
+}
 
 // resourcePolicy is the third question a route can ask (T-Z3), and the first
 // about the object in its path rather than about the caller: may this person

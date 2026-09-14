@@ -564,3 +564,30 @@ export interface FeedbackSummaryResponse {
    */
   down_rate: number /* float64 */;
 }
+/**
+ * VoiceTranscriptionResponse is the body of `POST /api/threads/:id/voice`
+ * (T-W7): what was heard, and nothing else that happened.
+ * No message was written and no turn was started. The composer puts Transcript
+ * in the text box and the person sends it — or edits it first, which is why it
+ * is not sent for them (roadmap 11, decision 13: "tiga ratus juta" and "tiga
+ * puluh juta" are one syllable apart).
+ */
+export interface VoiceTranscriptionResponse {
+  transcript: string;
+  /**
+   * Language is the hint the provider was sent — "id", "en" — and absent when
+   * the provider was left to detect one.
+   */
+  language?: string;
+  /**
+   * Seconds is the length the clip was billed on.
+   */
+  seconds: number /* float64 */;
+  /**
+   * ClipID and ExpiresAt are absent when the clip could not be recorded. The
+   * transcript is good either way; what is missing is the retained copy of
+   * what it was heard from.
+   */
+  clip_id?: string;
+  expires_at?: string;
+}

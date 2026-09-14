@@ -2406,7 +2406,7 @@ would actually meet.
 | --- | --- | --- |
 | `T-Z1` | `083` up, `down 1`, up. A new table with three foreign keys and a composite primary key; the `down` is a real `DROP TABLE`, not `SELECT 1;`. Worth looking at beyond "clean": delete a user and see their grants go (`CASCADE`), delete the admin who granted and see `granted_by` become `NULL` while the grant stays (`SET NULL`). **Prediction: clean, both cascades as designed** | A control-plane Postgres. §3d's constraint applies — the only one on this machine is production |
 | `T-Z1` | **The three statements, against two seeded companies.** Grant twice → one row, first `granted_by` kept. Grant for company B's user under company A → `ErrNotFound` and no row. Grant with `id = "x"` → `ErrNotFound`, not a 500 (the `22P02` mapping). List for a user holding nothing → `[]`; for a user of another company → `ErrNotFound` (the `LEFT JOIN`'s all-NULL row against no row). Revoke of an unheld capability → success. **Prediction: all pass.** If one fails it will be Grant's, whose `SELECT $1, id, $3, NULLIF($4, '')::uuid` relies on Postgres inferring `$1` as `uuid` from its first use in the `target` CTE — a type error there would be loud, not silent | The same database, the same sitting |
-| `T-Z1` | **Two real users and a revoke, by curl.** Admin `PUT`s `voice` on a member; the member's `GET /api/users/me/capabilities` shows it; admin `DELETE`s; the member's next `GET` is `[]` with no re-login. That proves the routes and the uncached read. **It does not prove the middleware's cache**, which only a capability-gated route reaches — that arm is owed by whichever ticket adds the first entry to `capabilityPolicy` (roadmap 11's `T-W7`), and should be run there: grant, reach the route, revoke, be refused on the very next request. **Prediction: passes; the curl half is uninteresting and the `T-W7` half is the one that could find something** | The stack. No model key |
+| `T-Z1` | **Two real users and a revoke, by curl.** Admin `PUT`s `voice` on a member; the member's `GET /api/users/me/capabilities` shows it; admin `DELETE`s; the member's next `GET` is `[]` with no re-login. That proves the routes and the uncached read. **It does not prove the middleware's cache**, which only a capability-gated route reaches — that arm is owed by whichever ticket adds the first entry to `capabilityPolicy` (roadmap 11's `T-W7`), and should be run there: grant, reach the route, revoke, be refused on the very next request. **Prediction: passes; the curl half is uninteresting and the `T-W7` half is the one that could find something.** **The `T-W7` half ran 2026-09-14 on a scratch stack, as predicted (§7j):** `403` without the grant for a member and an admin, `200` granted, `403` on the member's very next request after the revoke, `200` again re-granted. The curl half is still owed | The stack. No model key |
 | `T-Z2` | `084` up, `down 1`, up. Four `ADD COLUMN … DEFAULT 'open'` and a table whose two CHECKs are the design ([`access-grants.md`](access-grants.md) §8a). Arms worth looking at beyond "clean": an insert naming both `agent_id` and `dashboard_id` is refused; one with `resource_kind = 'agent'` and only `dashboard_id` set is refused; deleting an agent, a dashboard, a source and an uploaded document each removes its grants; deleting a user removes theirs; every existing row reads back `open`. **Prediction: clean, every CHECK and cascade as designed**; the `down` drops the columns, which is fail-open and is argued in its own comment | A control-plane Postgres. §3d's constraint applies |
 | `T-Z2` | **The repository's statements, against two seeded companies.** `LoadAccess` over fifty ids is one statement — `log_statement=all` shows it, the same instrument §1l used for `T-H4`. A grant naming company B's dashboard under company A is not-found and writes nothing; so is a grant to company B's user. Granting twice is one row. `SetAccessMode` on another company's id is not-found and changes nothing. `View` of a resource nobody is granted returns its mode and `[]`; of another company's resource, not-found. **Prediction: all pass.** If one fails it will be Grant's `ON CONFLICT (company_id, user_id, <kind>_id) WHERE <kind>_id IS NOT NULL` — conflict-target inference against a partial unique index has to match the index predicate exactly, and a mismatch is a loud error rather than a duplicate row | The same database, the same sitting |
 | `T-Z3`, run by `T-Z5` — `T-Z4` decided its routes as exemptions and added no `resourcePolicy` entry ([`access-grants.md`](access-grants.md) §10c) | **`RequireResource` against two real users, on the first gated route.** Restrict the resource; the member is refused with `403` and `"resource_kind"` in the body; grant; the next request reaches it; revoke; the next request is refused, with no re-login (`authz` is uncached, [`access-grants.md`](access-grants.md) §9c). Then three arms a fake cannot fake: an admin with no grant is refused (decision 4); a mistyped id and another company's real id both get **the handler's own 404 body, byte-identical to today's** — the not-found pass-through; and with the control database stopped, the gated route answers `503`, not `200`. **Prediction: all pass.** Run it on `GET /api/dashboards/:id` and `/data` — the entries `T-Z5` added. If one fails it will be the 404 arm, on a handler whose not-found body was never the same as the others' | The stack. No model key. **Unblocked by `T-Z5`** (was: blocked on the first entry) |
@@ -2551,6 +2551,71 @@ repository a non-nil list, so the fixture now does the same.
 - **Every arm that needs a model:** §7d–§7h's turns and the paired evals.
 - **The two-worker arm** (§7e).
 - **The quickstart run** (§7g).
+
+## 7j. `T-W7`'s voice route — run 2026-09-14 on a scratch stack, and what a real provider owes
+
+`T-W7` turns a recording into a transcript and nothing else ([`voice.md`](voice.md) §1). **No tool
+and no prompt change, so no `make eval`.** No speech provider key exists on this machine, so the route
+was driven against a stand-in that answers the request Groq and OpenAI share. It is also the first
+entry in `capabilityPolicy`, which makes it the arm §7c's `T-Z1` row left for it.
+
+**Not production.** An embedded Postgres 16 and miniredis on loopback, in `/tmp/tw7-gate`, on ports
+55443 and 56390. The migrations were copied with pgvector swapped out of `011`, `055`, `061` and
+`072`. The working tree's `cmd/api` ran under `env -i`, with `config/` linked and speech pointed at
+`127.0.0.1:18199`. The stand-in (`provider.py`) records each request's fields, filename, part type
+and byte count, and never the audio. No object storage, no worker, no model. Everything was stopped
+before `make check`.
+
+**One thing to do differently next time.** `PORT` binds every interface, so for about two minutes a
+scratch API with a scratch secret and scratch rows was reachable beyond loopback. Nothing in the
+config binds loopback only. Firewall the port, or keep the run as short.
+
+**The database arm** is `internal/adapters/postgres/scratch_voice_clips_test.go`, behind the `scratch`
+tag:
+
+```bash
+SCRATCH_PG_DSN='postgres://argentum:gatepass@127.0.0.1:55443/argentum?sslmode=disable' \
+SCRATCH_MIGRATIONS=/tmp/tw7-gate/migrations \
+go test -tags scratch -run Scratch087 -count=1 -v ./internal/adapters/postgres/
+```
+
+| Arm | Prediction | Result |
+| --- | --- | --- |
+| `087` up, `down 1`, up | Clean; the table gone at 86 | **As predicted.** 87, 86 with no `voice_clips`, 87 |
+| `Create`, every cast in its select list | The row reads back as written; `user_id` NULL from `''` | **As predicted.** `created_at` returned; 3.25 s, 23,456 bytes, NULL user, `id` |
+| `Create` naming another company's conversation, or `x` | `ErrNotFound`, no row | **As predicted**, both |
+| A conversation deleted under a clip | `thread_id` becomes NULL; the row stays | **As predicted** |
+| `Due` across two companies | The expired clip and the orphan, not the live one; no transcript | **As predicted** |
+| `Delete` under the wrong company; under its own; `x` | Row stays; row gone; no error | **As predicted** |
+| `DeleteForCompany(A)` | A's one remaining row; B's two untouched | **As predicted** |
+
+**The route arms** are `/tmp/tw7-gate/arms.sh`: seeded rows, tokens signed with the scratch secret,
+curl.
+
+| Arm | Prediction | Result |
+| --- | --- | --- |
+| A member, then an admin, without the grant | `403 capability: voice`; provider not called | **As predicted.** Both `403`, provider +0 |
+| Grant, then the member | `200`, transcript, `language: id` for an IDR tenant | **As predicted.** `200`, 2.75 s, a `clip_id`, expiry in 7 days |
+| What the provider received | `model`, `verbose_json`, temperature 0, `language`, `clip.webm` as `audio/webm` | **As predicted.** 6,004 bytes, bearer present |
+| What was written | One clip row, one usage row at `ceil(2.75 × 0.04 / 3600 × 10⁶)` = 31 µUSD, no message | **As predicted.** On the conversation, by the member, `object_key` empty (no storage); 31 µUSD; messages 1 → 1 |
+| **Revoke, then the member's very next request** — §7c's middleware cache arm | `403`, with no re-login | **As predicted.** `403`, provider +0. Re-granted: `200` |
+| `language=en-US` from the person | Sent as `en` | **As predicted** |
+| `duration_ms=61000`; a PDF called WebM; `indonesian`; 3.2 MB | `413`, `415`, `400`, `413`; provider +0 each | **As predicted** |
+| A conversation on restricted HR, member not granted; an unknown id | `404` each, before the body is read | **As predicted** |
+| The provider answering `503` | `502` with the sentence; clips and usage unchanged | **As predicted.** Clips 2 → 2, usage 2 → 2 (62 µUSD) |
+| The API log | No line carries the transcript | **As predicted.** Zero. The Warn line carries `speech provider answered 503: over capacity` |
+| `DELETE /api/company/data` | The company's clips gone, the record `completed` | **As predicted.** 2 → 0 |
+
+**Still owed:**
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `T-W7` | **A real provider on Indonesian business speech** — research 08 §6's unknowns 1 and 2, and what decides `SPEECH_PROVIDER`. Twenty questions recorded by a pilot admin, sent to `groq` (`whisper-large-v3-turbo`) and `openai` (`whisper-1`), scored on words and separately on numerals. **Prediction: numerals are where both err, and in two forms — "300 juta" and "tiga ratus juta" — so a transcript is not normalised.** That is decision 13's reason for the edit step, not a defect in it | A provider key (Groq's free tier covers it) and twenty real clips |
+| `T-W7` | **`verbose_json` on a real endpoint.** **Prediction: both providers return `duration` for their Whisper models, so the Info line says `measured: true` and usage is priced on it.** A `gpt-4o-transcribe` model would log `measured: false` | A provider key |
+| `T-W7` | **The audio half, with object storage.** A clip lands at `voice/<company_id>/<clip_id>.webm` and logs `kept_audio: true`. The sweep removes the object, then the row, for an expired clip and for a deleted conversation's. Erasure removes the prefix. **Prediction: as the unit tests.** If something differs it will be `RemovePrefix` over a prefix holding one object, or the content type the bucket stores | Object storage. The scratch stack has none, which is also why §7c's `T-Z13` arm is owed |
+| `T-W7` | **The worker's tick.** `voice:sweep` fires at :17 and logs `voice clip sweep complete` with the deleted count; a due clip is gone within the hour. **Prediction: fires, and deletes exactly `Due`'s list** | A worker process on the stack |
+| `T-W7` | **`087` on the production control database, at deploy.** **Prediction: a new table, applied in milliseconds on boot** | A deploy (§3d) |
+| `T-W9` | **The microphone**, including the disabled control for a member without the grant and for a deployment without a provider | `T-W9` is not built |
 
 ## 7. Needs the paid eval set (added 2026-09-11)
 

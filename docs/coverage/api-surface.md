@@ -81,6 +81,7 @@ three of the four rows in this table are.
 | GET    | `/api/threads/:id/messages`      | JWT  | History                                 |
 | POST   | `/api/chat`                      | JWT  | Enqueue a turn (async). **402** when the tenant is out of credit; `budget_warning` on the 202 when close to it (`T-03`) |
 | GET    | `/api/threads/:id/stream`        | JWT  | **WebSocket**; accepts token via `?at=` |
+| POST   | `/api/threads/:id/voice`         | JWT + `voice` capability | A recording in (`multipart`: `audio`, `duration_ms`, `language`), its transcript out; **no message, no turn** (`T-W7`). Registered only where a speech provider is configured. `403` without the grant, admins included; `413`/`415` before the provider; `402` out of credit; `502` provider failure. `apps/backend/docs/api.md` §Voice |
 
 ## Connections
 

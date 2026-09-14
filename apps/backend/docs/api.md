@@ -235,6 +235,46 @@ jobs, or by the Discord bot, are not in that series.
 | `GET /api/actions/pending` | Omits every proposal raised in a conversation the caller may not read. One with no conversation is listed as before. |
 | `GET /api/actions/:id`, `POST …/approve`, `POST …/reject` | `404 {"error": "no such action proposal"}` for a proposal the caller may not read, before the role check, admins included. `503` when that cannot be checked. |
 
+### Voice (T-W7)
+
+`POST /api/threads/:id/voice` — member, **and** the `voice` capability, granted per
+person (`PUT /api/users/:id/capabilities/voice`). An admin without the grant is
+refused like anybody else. The route exists only on a deployment with
+`SPEECH_ENABLED=true` and a usable provider; everywhere else it is the router's
+`404`.
+
+A recording in, a transcript out. **No message is written and no turn is started**:
+the transcript is sent with `POST /api/chat`, edited or not, like anything typed.
+
+`multipart/form-data`:
+
+| Field | |
+|------|------|
+| `audio` | The recording: `audio/webm`, `audio/ogg`, `audio/mp4`, `audio/x-m4a`, `audio/mpeg`, `audio/wav`, `audio/x-wav` or `audio/flac`, parameters such as `;codecs=opus` allowed. The bytes must be that format. |
+| `duration_ms` | Required. The length as the client measured it. |
+| `language` | Optional ISO-639-1 code (`id`, `en`; `id-ID` is read as `id`). Default: the tenant's document locale, else `id` for a rupiah tenant, else none — the provider detects it. Never English by default. |
+
+`200 {"transcript": "…", "language": "id", "seconds": 3.4, "clip_id": "…", "expires_at": "…"}`.
+`seconds` is what was billed: the provider's measurement where it reports one, else
+`duration_ms`. `clip_id` and `expires_at` are absent when the clip could not be
+recorded; the transcript is good either way.
+
+| Status | When |
+|------|------|
+| `400` | No `audio`, a missing or non-positive `duration_ms`, a `language` that is not a two-letter code |
+| `402` | Out of credits — checked before the provider is called |
+| `403` | `{"error": "an admin has not granted you this", "capability": "voice"}`, before the recording is read |
+| `404` | Another company's conversation, or one hidden from the caller (T-Z10), before the recording is read |
+| `413` | `{"error": "a recording must be 60 seconds or shorter"}` — longer than `SPEECH_MAX_CLIP_SECONDS` by `duration_ms`, or larger than that length at 384 kbit/s. The byte cap is what bounds a bill; the declared length is a client's claim |
+| `415` | Not an accepted format, or bytes that are not the format declared |
+| `502` | `{"error": "the speech service could not transcribe that recording; try again, or type your question"}`. Nothing kept, nothing billed |
+
+The audio is kept under `voice/<company_id>/` for `SPEECH_RETENTION_DAYS` (default 7,
+at most 90). The worker's sweep (`SPEECH_SWEEP_CRON`, hourly) deletes a clip when it
+expires or when its conversation is deleted, and a company's data erasure deletes
+every clip and the whole prefix. Each transcription is one `speech_transcription`
+usage event, priced per second of audio for the model that transcribed it.
+
 ---
 
 ### Documents

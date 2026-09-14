@@ -168,6 +168,12 @@ type apiDeps struct {
 	// mailer is how this product reaches somebody not looking at it (T-F6).
 	// Always non-nil; a deployment with no relay gets the no-op sender.
 	mailer email.Sender
+	// voiceSvc transcribes a spoken question (T-W7), and the route exists only
+	// when it is Enabled. voiceClips is the recordings' lifecycle, which the
+	// erasure uses whether or not voice is on today: a deployment that switched
+	// it off still holds last week's audio.
+	voiceSvc   *app.VoiceService
+	voiceClips *app.VoiceClips
 	// Watchers (T-08): CRUD and the dry-run. The API never fires or delivers —
 	// that is the worker's WatcherService — so this instance carries no delivery
 	// providers and no budget checker.

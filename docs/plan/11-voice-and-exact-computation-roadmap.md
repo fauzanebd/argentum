@@ -17,6 +17,35 @@ P Q S T`. The two obvious mnemonics are both taken: `T-V` is the video track,
 and `T-C1` would sit one character from the finding `C-1`. `W` collides with
 neither list.
 
+> **Status, 2026-09-14: `T-W7` is built, `make check` green, unit-gated, and its free arms ran live on a scratch
+> stack — a question said out loud comes back as text to edit, and nothing is sent.** Migration
+> `087`. No tool and no prompt change, so no eval. Record: [`../coverage/voice.md`](../coverage/voice.md).
+>
+> - **`POST /api/threads/:id/voice`** — member, and the `voice` capability, the first entry in
+>   `capabilityPolicy`. The route exists only where a provider is usable.
+> - **A transcript and nothing else.** No message, no turn. The clip is kept for 7 days, swept
+>   hourly, and erased with the company.
+> - **One client for Groq and OpenAI**, because both speak the same request. Which one is a setting,
+>   waiting on research 08 §6's Indonesian measurement.
+>
+> **Where the ticket was wrong** (record §1d):
+> - **`Migration: 082`** — it is `087`.
+> - **"Duration capped at the route"** — a route cannot read a recording's length. Built as a
+>   declared length checked, a byte cap that bounds the bill, and billing on the provider's measure.
+> - **"`T-H6` erasure removes a user's clips"** — `T-H6` erases companies. Built for a company.
+> - **"The message it became"** — nothing in this ticket can write it. The column is left out.
+> - **"Defaults to the tenant's language"** — there is no such field. The branding locale, then
+>   Indonesian for rupiah, then none. Never English.
+> - **"The member's disabled control is this ticket's"** — it is `T-W9`'s microphone. Only the
+>   toggle's sentence changed.
+>
+> **Live, as predicted** (live-gate §7j): `087` round-tripped with its statements on real rows, and
+> the capability arm §7c left for this ticket — refused without the grant, reached with it, refused
+> on the very next request after the revoke. **Owed:** a real provider on Indonesian speech, the
+> audio half with object storage, and the worker's sweep tick. **Next on this track: `T-W8`**, whose
+> dependency is now met. Research 08 §6's unknown 6 — whether anybody at the pilot wants to talk to
+> it — is still unasked, and is the cheaper thing to find out first.
+
 > **Status, 2026-09-12: `T-W1`, `T-W2` and `T-W3` are built, `make check`
 > green, unit-gated — Track A's 2.5-day floor.** Record:
 > [`../coverage/exact-computation.md`](../coverage/exact-computation.md).
@@ -522,7 +551,7 @@ route and nothing else reaches it.
 
 ### Track C — A question you speak, and an answer you hear (5.5d)
 
-#### `T-W7` Speech in: a question you say out loud
+#### `T-W7` Speech in: a question you say out loud · **built 2026-09-14, unit-gated, free arms run on a scratch stack; a real provider owed — `coverage/voice.md`**
 **Repo:** BE · **Size:** 2.0d · **Deps:** `T-Z1` (was `T-W6`) · **Migration:** `082`
 
 > **Two things handed on by `T-Z7` (2026-09-12)**, which built Settings → Team

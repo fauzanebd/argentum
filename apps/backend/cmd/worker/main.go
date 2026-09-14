@@ -190,6 +190,7 @@ func main() {
 	mux.HandleFunc(queue.TypeCookbookSweep, makeCookbookSweepHandler(stack.Cookbook, cfg.CookbookUnusedAfterDays))
 	mux.HandleFunc(queue.TypeDocumentParse, makeDocumentParseHandler(stack.DocumentParse))
 	mux.HandleFunc(queue.TypeRetentionPurge, makeRetentionPurgeHandler(stack.Retention))
+	mux.HandleFunc(queue.TypeVoiceClipSweep, makeVoiceClipSweepHandler(stack.VoiceClips))
 
 	// --- Periodic task manager ---
 	// Polls scheduled_tasks every SyncInterval and registers/refreshes one
@@ -310,6 +311,29 @@ func main() {
 		}
 	} else {
 		logrus.Warn("retention purge disabled (RETENTION_PURGE_CRON empty); message_retention_days is stored and not enforced")
+	}
+
+	// --- Voice clip sweep (T-W7) ---
+	// Its own entry rather than a step in the retention purge, because the two
+	// promises keep different clocks: a tenant's message window is days and is
+	// enforced nightly, while a recording's is shorter, and the recording of a
+	// conversation somebody deleted is owed deletion within the hour rather than
+	// by tomorrow. Runs whether or not this deployment can transcribe today.
+	// Empty switches it off, and a recording is then kept past its retention —
+	// which the log says, for the retention purge's reason.
+	if cfg.SpeechSweepCron != "" {
+		sched := asynq.NewScheduler(stack.AsynqOpt, nil)
+		if _, err := sched.Register(cfg.SpeechSweepCron,
+			asynq.NewTask(queue.TypeVoiceClipSweep, nil)); err != nil {
+			logrus.WithError(err).Error("voice clip sweep: bad cron; recordings will not be deleted when they expire")
+		} else if err := sched.Start(); err != nil {
+			logrus.WithError(err).Error("voice clip sweep: scheduler failed to start; recordings will not be deleted when they expire")
+		} else {
+			defer sched.Shutdown()
+			logrus.WithField("cron", cfg.SpeechSweepCron).Info("voice clip sweep scheduled")
+		}
+	} else {
+		logrus.Warn("voice clip sweep disabled (SPEECH_SWEEP_CRON empty); recordings are kept past SPEECH_RETENTION_DAYS")
 	}
 
 	// Run blocks until OS signal. Capture signals here so we can shut

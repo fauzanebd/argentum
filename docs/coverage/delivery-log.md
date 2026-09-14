@@ -7693,6 +7693,59 @@ the fix, with CI's exact body. After it:
 it. That covers attaching to a settled thread, and a turn that beat its own subscription. Every other
 stream is unchanged.
 
+## Phase 3bj — A question said out loud comes back as text (`T-W7`, 2026-09-14)
+
+**Why this ticket.** Picked by `/continue-building`. Roadmap 09's one unbuilt ticket, `T-N9`, is
+first in its own cut order, and would be built past two unanswered measurements: `T-N6`'s live room
+and §2c's per-room cost. Every acceptance line of it also needs a chat workspace. `T-W7`'s dependency,
+`T-Z1`, was met and its decisions were locked. Record: [`voice.md`](voice.md).
+
+**What was built.**
+- `POST /api/threads/:id/voice`: a recording in, a transcript out. No message is written and no turn
+  is started.
+- The `voice` capability's first route. An admin without the grant is refused like anybody else. The
+  route is not registered where no provider is usable.
+- `internal/speech`: a nop, and one client for the request Groq and OpenAI share. `Accept` checks the
+  declared type against the file's first bytes.
+- `087_voice_clips`, kept 7 days. The worker's `voice:sweep` deletes expired clips, and those whose
+  conversation was deleted, hourly. A company's erasure takes the rows and the `voice/<company_id>/`
+  prefix, or is recorded as failed.
+- `speech_transcription` usage, per second of the provider's measured length, priced per model.
+
+**Where the ticket was wrong** (record §1d).
+- `Migration: 082` is `087`.
+- A route cannot read a recording's duration. Built as a declared length, a byte cap, and billing on
+  the provider's measure.
+- `T-H6` erases companies, not people.
+- Nothing in this ticket can write "the message it became", so that column is left out.
+- There is no tenant language field. The hint is the branding locale, then Indonesian for rupiah,
+  then none — never English.
+
+**Proven failing.** Eleven mutations, one at a time by a script, each failing its named test and
+restored afterwards. They removed the capability entry, the conversation check, the measured length,
+the erasure's prefix, the byte check, the erasure's clip step, the audio removal on a failed row, and
+the credit check. Three more logged the transcript, registered the route without a provider, and
+dropped the company from a delete.
+
+**Run live, on a scratch stack, as predicted** — not production, which runs `1.6.0` (live-gate §7j).
+- `087` up, down, up, and all four statements on real rows in two companies.
+- The capability arm §7c had left for this ticket: `403` without the grant, `200` with it, and `403`
+  on the very next request after the revoke.
+- The provider was sent `language: id` for a rupiah tenant, `verbose_json` and `clip.webm`. One clip
+  row, 31 µUSD of usage, and no message.
+- Six refusals at the route, with the provider never called; `502` on a provider failure, with nothing
+  kept or billed; no log line carrying the transcript; the clips gone with the erasure.
+
+**Gate.** `make check`, alone, after the scratch stack was stopped: `MAKE EXIT: 0`, 14m36s.
+- **Go:** 74 packages `ok` (one more than Phase 3bi: `internal/speech`), zero `FAIL`/`panic` lines,
+  `golangci-lint` `0 issues.`, `gofmt -l` empty. `TestCapabilityGatedRoutesRefuseAnAdminWithoutAGrant`,
+  skipped since `T-Z1`, now runs.
+- **Dashboard:** 88 vitest tests in 14 files pass. `make types` regenerated `api.ts` and `domain.ts`.
+
+**Still owed:** a real provider on Indonesian speech (research 08 §6, which also decides the
+provider), the audio half with object storage, the worker's tick, `087` at deploy, and `T-W9`'s
+microphone.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

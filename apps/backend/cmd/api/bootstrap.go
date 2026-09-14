@@ -38,6 +38,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/report/spec"
 	"github.com/fauzanebd/argentum/internal/skill"
 	"github.com/fauzanebd/argentum/internal/slack"
+	"github.com/fauzanebd/argentum/internal/speech"
 	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
 	"github.com/fauzanebd/argentum/internal/webhookout"
@@ -383,6 +384,29 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	}
 	deps.brandingSvc = branding.NewService(companyRepo, brandingStore, companyRepo)
 
+	// Voice (T-W7), on the bucket the logos use when there is one; without it a
+	// clip is its transcript alone. Built whether or not speech is enabled,
+	// because the erasure below needs the clips half either way — a deployment
+	// that switched voice off still holds last week's recordings. The route is
+	// registered only when the transcriber is usable (router.go). The same nil
+	// *interface* care as brandingStore above.
+	var voiceStore app.VoiceClipStore
+	if logoStore != nil {
+		voiceStore = logoStore
+	}
+	deps.voiceClips = app.NewVoiceClips(pgctl.NewVoiceClipRepo(controlDB), voiceStore)
+	deps.voiceSvc = app.NewVoiceService(
+		speech.New(speech.Config{
+			Enabled:  cfg.SpeechEnabled,
+			Provider: cfg.SpeechProvider,
+			APIKey:   cfg.SpeechAPIKey,
+			BaseURL:  cfg.SpeechBaseURL,
+			Model:    cfg.SpeechSTTModel,
+			Timeout:  time.Duration(cfg.SpeechTimeoutSecs) * time.Second,
+		}),
+		deps.voiceClips, deps.usageSvc, companyRepo, cfg.SpeechMaxClipSeconds, cfg.SpeechRetentionDays,
+	).WithBudget(deps.usageSvc).WithBranding(deps.brandingSvc)
+
 	// The tenant's picture library (T-G12), on the same bucket and the same
 	// condition as the logo above: a deployment with no object storage has no
 	// library, `Available()` is false, and the promo card renders as type on a
@@ -665,8 +689,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// Retention and erasure (T-H6). The API half: the settings write, the
 	// erasure route, the export and the record. The nightly purge that uses the
 	// same service lives in the worker.
+	// An erasure takes the company's voice clips and their audio with its
+	// conversations (T-W7).
 	deps.retentionSvc = app.NewRetentionService(
-		pgctl.NewRetentionRepo(controlDB), pgctl.NewDataErasureRepo(controlDB), companyRepo)
+		pgctl.NewRetentionRepo(controlDB), pgctl.NewDataErasureRepo(controlDB), companyRepo).
+		WithVoiceClips(deps.voiceClips)
 
 	// Watchers (T-08): CRUD and the dry-run. It shares the metric service above,
 	// so a dry-run evaluates the same number the worker's fire path will. No

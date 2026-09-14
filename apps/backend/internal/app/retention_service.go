@@ -26,7 +26,17 @@ type RetentionService struct {
 	repo      domain.RetentionRepository
 	records   domain.DataErasureRepository
 	companies domain.CompanyRepository
-	now       func() time.Time
+	// voice removes a company's recorded questions with its conversations
+	// (T-W7). Nil on a wiring that has none, which erases exactly what it did
+	// before.
+	voice VoiceClipEraser
+	now   func() time.Time
+}
+
+// VoiceClipEraser removes every voice clip a company has, rows and audio.
+// *VoiceClips is the production one.
+type VoiceClipEraser interface {
+	EraseCompany(ctx context.Context, companyID string) (int, error)
 }
 
 // NewRetentionService wires the service. now is injectable for the same reason
@@ -47,6 +57,17 @@ func (s *RetentionService) WithClock(now func() time.Time) *RetentionService {
 	if now != nil {
 		s.now = now
 	}
+	return s
+}
+
+// WithVoiceClips makes an erasure take the company's voice clips too (T-W7):
+// the recordings a question was asked with are the most identifying thing in
+// the conversation, and wired "from day one rather than discovered by it later"
+// is roadmap 11's decision 16. The purge needs nothing: a clip's own retention
+// is shorter than any window, and the sweep deletes one whose conversation the
+// purge removed.
+func (s *RetentionService) WithVoiceClips(v VoiceClipEraser) *RetentionService {
+	s.voice = v
 	return s
 }
 
@@ -198,6 +219,24 @@ func (s *RetentionService) EraseCompanyData(ctx context.Context, companyID, requ
 				Warn("erasure: could not record the failure; the running row stays open")
 		}
 		return nil, fmt.Errorf("erase company conversations: %w", err)
+	}
+	// The recordings, before the record closes. An erasure that deleted the
+	// conversations and left the audio of the questions behind has not erased
+	// them, so a failure here fails the record — and running the erasure again
+	// deletes no conversations, finds no rows, and retries the audio by prefix.
+	if s.voice != nil {
+		clips, err := s.voice.EraseCompany(ctx, companyID)
+		if err != nil {
+			if ferr := s.records.Fail(ctx, rec.ID, err.Error()); ferr != nil {
+				logrus.WithError(ferr).WithField("company_id", companyID).
+					Warn("erasure: could not record the failure; the running row stays open")
+			}
+			return nil, fmt.Errorf("erase voice clips: %w", err)
+		}
+		if clips > 0 {
+			logrus.WithFields(logrus.Fields{"company_id": companyID, "voice_clips": clips}).
+				Info("erasure: voice clips and their audio removed")
+		}
 	}
 	if err := s.records.Complete(ctx, rec.ID, threads, messages); err != nil {
 		return nil, fmt.Errorf("close erasure record: %w", err)

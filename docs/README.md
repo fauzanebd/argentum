@@ -79,6 +79,7 @@ docs/
 │   ├── freshness.md              T-F1/T-F2 how old is the data behind an answer
 │   ├── metric-coverage.md        T-F4 is the metric layer accumulating
 │   ├── exact-computation.md      T-W1 a derived figure that was computed, not composed
+│   ├── voice.md                  T-W7 a question said out loud, transcribed and handed back to edit
 │   ├── access-grants.md          T-Z1→T-Z11 capabilities per person; restricted agents, their conversations and documents, and dashboards
 │   ├── test-coverage.md          Measured test state + CI gaps
 │   ├── api-surface.md            Endpoint + tool inventory
@@ -141,7 +142,7 @@ docs/
 │   ├── 10-freshness-metrics-email-roadmap.md
 │   │                             T-F1→T-F7 dated data, a measured registry, and email (six of seven built 09-11)
 │   ├── 11-voice-and-exact-computation-roadmap.md
-│   │                             T-W1→T-W9 a figure a program produced, and a question you speak (planned 09-11)
+│   │                             T-W1→T-W9 a figure a program produced, and a question you speak (T-W1→T-W3 built 09-12, T-W7 09-14)
 │   ├── 12-access-grants-roadmap.md
 │   │                             T-Z1→T-Z11 which agent, which dashboard, which feature — per user (T-Z1→T-Z5, T-Z7, T-Z10, T-Z11 built 09-12)
 │   └── backlog.md                Deferred work with rationale

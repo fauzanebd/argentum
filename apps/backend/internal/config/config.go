@@ -446,6 +446,31 @@ type Config struct {
 	// duration, deliberately — see FreshnessService.For.
 	SourceFreshnessTTLSecs int
 
+	// --- Speech (T-W7) ----------------------------------------------------
+	//
+	// A question spoken rather than typed, transcribed and handed back to the
+	// person who spoke it — never sent for them. Off unless SpeechEnabled, a key
+	// and a provider (or a base URL and a model) are all set; without them the
+	// voice route is not registered and the process logs once saying which is
+	// missing. speech.New decides that, not Validate: email's reason, a
+	// deployment must not refuse to boot over an optional input.
+	//
+	// SpeechMaxClipSeconds and SpeechRetentionDays are normalised by
+	// app.NewVoiceService rather than refused here, the constructor convention.
+	SpeechEnabled        bool
+	SpeechProvider       string
+	SpeechAPIKey         string
+	SpeechBaseURL        string
+	SpeechSTTModel       string
+	SpeechTimeoutSecs    int
+	SpeechMaxClipSeconds int
+	SpeechRetentionDays  int
+	// SpeechSweepCron is when the worker deletes recordings past their
+	// retention, and those whose conversation was deleted. Hourly, off the hour.
+	// Read whether or not SpeechEnabled is: switching voice off does not delete
+	// what it already recorded. Empty switches the sweep off.
+	SpeechSweepCron string
+
 	// --- Email (T-F6) -----------------------------------------------------
 	//
 	// The product had no way to reach a person who was not looking at it. A
@@ -790,13 +815,24 @@ func Load() (*Config, error) {
 		WatcherMaxPerCompany:       getEnvAsInt("WATCHER_MAX_PER_COMPANY", 20),
 		SourceFreshnessTTLSecs:     getEnvAsInt("SOURCE_FRESHNESS_TTL_SECS", 60),
 
-		EmailEnabled:          getEnv("EMAIL_ENABLED", "false") == "true",
-		SMTPHost:              getEnv("SMTP_HOST", ""),
-		SMTPPort:              getEnvAsInt("SMTP_PORT", 587),
-		SMTPUsername:          getEnv("SMTP_USERNAME", ""),
-		SMTPPassword:          getEnv("SMTP_PASSWORD", ""),
-		SMTPFrom:              getEnv("SMTP_FROM", ""),
-		EmailTimeout:          getEnvAsInt("EMAIL_TIMEOUT_SECS", 15),
+		EmailEnabled: getEnv("EMAIL_ENABLED", "false") == "true",
+		SMTPHost:     getEnv("SMTP_HOST", ""),
+		SMTPPort:     getEnvAsInt("SMTP_PORT", 587),
+		SMTPUsername: getEnv("SMTP_USERNAME", ""),
+		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:     getEnv("SMTP_FROM", ""),
+		EmailTimeout: getEnvAsInt("EMAIL_TIMEOUT_SECS", 15),
+
+		SpeechEnabled:        getEnv("SPEECH_ENABLED", "false") == "true",
+		SpeechProvider:       getEnv("SPEECH_PROVIDER", "groq"),
+		SpeechAPIKey:         getEnv("SPEECH_API_KEY", ""),
+		SpeechBaseURL:        getEnv("SPEECH_BASE_URL", ""),
+		SpeechSTTModel:       getEnv("SPEECH_STT_MODEL", ""),
+		SpeechTimeoutSecs:    getEnvAsInt("SPEECH_TIMEOUT_SECS", 30),
+		SpeechMaxClipSeconds: getEnvAsInt("SPEECH_MAX_CLIP_SECONDS", 60),
+		SpeechRetentionDays:  getEnvAsInt("SPEECH_RETENTION_DAYS", 7),
+		SpeechSweepCron:      getEnv("SPEECH_SWEEP_CRON", "17 * * * *"),
+
 		AppBaseURL:            strings.TrimRight(getEnv("APP_BASE_URL", ""), "/"),
 		APIV1ObsFlushSeconds:  getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
 		APIV1ObsRetentionDays: getEnvAsInt("API_V1_OBS_RETENTION_DAYS", 30),

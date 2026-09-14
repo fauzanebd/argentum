@@ -3308,6 +3308,13 @@ export const UsageEventMCPCall: UsageEventType = "mcp_call";
  */
 export const UsageEventVideoRender: UsageEventType = "video_render";
 /**
+ * UsageEventSpeechTranscription is seconds of audio sent to a speech
+ * provider (T-W7), priced per model per second. Its own type rather than an
+ * llm_call with a feature label, because it is billed on a length rather
+ * than on tokens, and a summary adding the two would add unlike units.
+ */
+export const UsageEventSpeechTranscription: UsageEventType = "speech_transcription";
+/**
  * UsageEvent is a single billable / observable action taken on behalf of a
  * company. Persisted for usage display today; will back per-call billing in
  * V2.
@@ -3443,6 +3450,42 @@ export interface UserInvite {
   accepted_at?: string;
   invited_by?: string;
   created_at: string;
+}
+
+//////////
+// source: voice_clip.go
+
+/**
+ * VoiceClip is one question somebody spoke (T-W7): what was heard, and — until
+ * ExpiresAt — the audio it was heard from.
+ * It is not a message and never becomes one by itself. The transcript goes back
+ * to the person who spoke, who sends it, edits it or discards it (roadmap 11,
+ * decision 13); what they send is an ordinary message with no link back here
+ * (migration 087 says why the link is not built yet).
+ */
+export interface VoiceClip {
+  id: string;
+  company_id: string;
+  /**
+   * ThreadID is empty once the conversation has been deleted, which is also
+   * what makes the sweep delete the clip.
+   */
+  thread_id?: string;
+  user_id?: string;
+  mime_type: string;
+  size_bytes: number /* int64 */;
+  /**
+   * Seconds is the length the clip was billed on.
+   */
+  seconds: number /* float64 */;
+  transcript: string;
+  /**
+   * Language is the hint the provider was sent, not a detection.
+   */
+  language?: string;
+  model?: string;
+  created_at: string;
+  expires_at: string;
 }
 
 //////////

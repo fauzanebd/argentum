@@ -70,6 +70,15 @@ func newRouter(d *apiDeps) *gin.Engine {
 		WithParticipants(d.threadParticipantSvc).
 		WithConversationAccess(d.conversationAccess).
 		Register(authed)
+	// Voice (T-W7). Registered only where a provider is usable, so on every
+	// other deployment the route is the router's 404 rather than a 403 that
+	// suggests a grant would help. The `voice` capability is capabilityPolicy's
+	// to enforce, ahead of the handler; Enabled is nil-safe.
+	if d.voiceSvc.Enabled() {
+		handlers.NewVoiceHandler(d.voiceSvc, d.threadRepo).
+			WithConversationAccess(d.conversationAccess).
+			Register(authed)
+	}
 	handlers.NewUsageHandler(d.usageSvc).
 		WithConversationAccess(d.conversationAccess).
 		Register(authed)

@@ -216,11 +216,11 @@ describe("TeamTab — who may reach what", () => {
     ).toBeInTheDocument();
   });
 
-  it("toggles a capability for that person, and says nothing asks for it yet", async () => {
+  it("toggles a capability for that person, and says what it changes on screen today", async () => {
     mount();
     fireEvent.click(await screen.findByRole("button", { name: "Access for rina@acme.id" }));
     const voice = await screen.findByRole("checkbox", { name: "Voice for rina@acme.id" });
-    expect(screen.getByText(/Voice is not built yet, so this does nothing today/)).toBeInTheDocument();
+    expect(screen.getByText(/The microphone is not in the chat yet, so this changes nothing on screen today/)).toBeInTheDocument();
 
     fireEvent.click(voice);
     await waitFor(() => expect(put).toHaveBeenCalledWith("/users/u-rina/capabilities/voice"));

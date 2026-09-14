@@ -112,6 +112,10 @@ func testDeps(cfg *config.Config, signer *auth.TokenSigner) *apiDeps {
 		// grant (T-Z3), for the same double duty: a route that had quietly
 		// started asking about the object in its path would 403 both roles.
 		resourceAuthz: authz.New(&restrictedEverything{}),
+		// A transcriber that answers, so the voice route registers (T-W7) and
+		// every classification test here sees it. Without one the route is not
+		// registered at all — TestVoiceRouteIsAbsentWithoutAProvider.
+		voiceSvc: app.NewVoiceService(answeringTranscriber{}, nil, nil, nil, 0, 0),
 	}
 }
 

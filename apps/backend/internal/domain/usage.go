@@ -26,6 +26,11 @@ const (
 	// price is the monetization track's decision; what this event does is make
 	// the number exist before anybody has to price it.
 	UsageEventVideoRender UsageEventType = "video_render"
+	// UsageEventSpeechTranscription is seconds of audio sent to a speech
+	// provider (T-W7), priced per model per second. Its own type rather than an
+	// llm_call with a feature label, because it is billed on a length rather
+	// than on tokens, and a summary adding the two would add unlike units.
+	UsageEventSpeechTranscription UsageEventType = "speech_transcription"
 )
 
 // UsageEvent is a single billable / observable action taken on behalf of a

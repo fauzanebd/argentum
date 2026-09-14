@@ -140,6 +140,12 @@ type Stack struct {
 	// obligation silently is not dischargeable.
 	Retention *app.RetentionService
 
+	// VoiceClips deletes recordings past their retention, and those whose
+	// conversation was deleted (T-W7). Wired unconditionally for Retention's
+	// reason: a deployment that switched voice off still owes the deletion of
+	// what it recorded. Its store is nil without object storage.
+	VoiceClips *app.VoiceClips
+
 	// Cookbook is the tenant's own worked examples (T-Q8): what the harvester
 	// learned from agent_actions, and what a turn is shown before it writes a
 	// query. Both halves are nil on a deployment with no embedding support,
@@ -408,11 +414,17 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	documentRepo := pgctl.NewDocumentRepo(controlDB)
 	s.Documents = documentRepo
 
+	// Voice clips (T-W7), with no store until the branch below finds one. A
+	// worker without object storage still deletes the rows of clips that kept no
+	// audio, and says so about the ones that did.
+	s.VoiceClips = app.NewVoiceClips(pgctl.NewVoiceClipRepo(controlDB), nil)
+
 	// Object storage first, because whether it exists decides whether the
 	// registry below has a generate_document in it.
 	if storageSvc, err := buildStorageService(cfg); err != nil {
 		logrus.WithError(err).Warn("storage disabled; generate_document tool will not be registered")
 	} else if storageSvc != nil {
+		s.VoiceClips = app.NewVoiceClips(pgctl.NewVoiceClipRepo(controlDB), storageSvc)
 		presignTTL := time.Duration(cfg.DocumentPresignTTLSecs) * time.Second
 		// The branding service reads the same bucket it writes logos to, and
 		// the same company row the API's Reports tab writes (T-R5). One

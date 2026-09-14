@@ -503,3 +503,24 @@ type FeedbackSummaryResponse struct {
 	// DownRate is 0..1 over Rated, and 0 when nothing has been rated.
 	DownRate float64 `json:"down_rate"`
 }
+
+// VoiceTranscriptionResponse is the body of `POST /api/threads/:id/voice`
+// (T-W7): what was heard, and nothing else that happened.
+//
+// No message was written and no turn was started. The composer puts Transcript
+// in the text box and the person sends it — or edits it first, which is why it
+// is not sent for them (roadmap 11, decision 13: "tiga ratus juta" and "tiga
+// puluh juta" are one syllable apart).
+type VoiceTranscriptionResponse struct {
+	Transcript string `json:"transcript"`
+	// Language is the hint the provider was sent — "id", "en" — and absent when
+	// the provider was left to detect one.
+	Language string `json:"language,omitempty"`
+	// Seconds is the length the clip was billed on.
+	Seconds float64 `json:"seconds"`
+	// ClipID and ExpiresAt are absent when the clip could not be recorded. The
+	// transcript is good either way; what is missing is the retained copy of
+	// what it was heard from.
+	ClipID    string     `json:"clip_id,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}

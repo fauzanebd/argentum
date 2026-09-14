@@ -212,6 +212,9 @@ In [`live-gate-backlog.md`](live-gate-backlog.md) §7c, with predictions:
    companies — the arms in §4 that only a database can prove.
 3. Two real users and a revoke. The route half can run on the stack today; the
    **middleware** half cannot run anywhere until a route asks for a capability.
+   **That half ran 2026-09-14 with `T-W7`**, on a scratch stack, as predicted: refused without the
+   grant, reached with it, and refused on the very next request after the revoke
+   ([`voice.md`](voice.md) §1f, live-gate §7j).
 
 No `make eval` is owed: nothing here reaches a prompt or a tool.
 

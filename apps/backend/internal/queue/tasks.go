@@ -60,6 +60,10 @@ const (
 	// reason, and one more: a retention promise that has to be told about each
 	// new tenant is a retention promise that quietly does not cover them.
 	TypeRetentionPurge = "retention:purge"
+	// TypeVoiceClipSweep deletes voice clips past their retention, and every
+	// clip whose conversation was deleted (T-W7). Payloadless and
+	// deployment-wide, TypeRetentionPurge's reason.
+	TypeVoiceClipSweep = "voice:sweep"
 )
 
 // WatcherEvalPayload is the body of a `watcher:eval` task (T-08). Only the id,
