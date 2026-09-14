@@ -429,8 +429,17 @@ func (h *V1ChatHandler) stream(c *gin.Context, rec turnRecord, resumeFrom time.T
 	// would hold a connection open waiting for a `final` that was published
 	// into an empty room. The persisted transcript is the durable half of the
 	// stream, and this is where the two are reconciled.
+	//
+	// **The frames come first.** A turn that finished in the moment between the
+	// SUBSCRIBE and this read published its progress into a subscription that was
+	// already live — its tool calls, its deltas, often its own `final` — and those
+	// are on their way to this connection. Ending on the saved answer alone
+	// dropped them: the answer right, the steps that led to it missing. It went
+	// unseen from 2026-07-28 until a test hit the window on CI.
 	if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.scope()); err == nil {
-		h.sendFinal(c, rec, msg, "")
+		if h.forwardInFlight(c, ctx, pubsub, rec) {
+			h.sendFinal(c, rec, msg, "")
+		}
 		return
 	}
 
@@ -459,6 +468,56 @@ func (h *V1ChatHandler) stream(c *gin.Context, rec turnRecord, resumeFrom time.T
 			if !h.forward(c, ctx, rec, &evt) {
 				return
 			}
+		}
+	}
+}
+
+// The wait a stream that already has its answer spends on frames still in flight
+// to it. Every frame a finished turn published before its answer was saved is on
+// the connection already, or a round trip behind; inFlightQuiet is how long a
+// silence counts as there being no more. inFlightMax bounds the whole wait,
+// because in a room the channel also carries a colleague's turn (T-N6), which can
+// stream for as long as it likes after the caller's answer was saved — and the
+// caller's stream skips it frame by frame without ever falling quiet.
+//
+// Both are paid only on this path, by a stream that was about to end: attaching
+// to a settled thread, or a turn that beat its own subscription.
+const (
+	inFlightQuiet = 25 * time.Millisecond
+	inFlightMax   = 250 * time.Millisecond
+)
+
+// forwardInFlight forwards what a live subscription has already been sent, in
+// order, and returns false when one of those frames ended the stream — the
+// turn's own `final`, which then carried the answer itself.
+//
+// It reads the subscription directly rather than through Channel(): the channel
+// has not been started on this path, and starting it only to drain it would
+// leave its goroutine reading a connection this function is about to close.
+func (h *V1ChatHandler) forwardInFlight(c *gin.Context, ctx context.Context, pubsub *redis.PubSub, rec turnRecord) bool {
+	deadline := time.Now().Add(inFlightMax)
+	for {
+		wait := min(inFlightQuiet, time.Until(deadline))
+		if wait <= 0 {
+			return true
+		}
+		received, err := pubsub.ReceiveTimeout(ctx, wait)
+		if err != nil {
+			// Quiet for the whole wait, or the caller hung up. Either way there is
+			// nothing more to forward, and a send to a closed connection fails
+			// harmlessly.
+			return true
+		}
+		msg, ok := received.(*redis.Message)
+		if !ok {
+			continue
+		}
+		var evt app.ChatEvent
+		if err := json.Unmarshal([]byte(msg.Payload), &evt); err != nil {
+			continue
+		}
+		if !h.forward(c, ctx, rec, &evt) {
+			return false
 		}
 	}
 }

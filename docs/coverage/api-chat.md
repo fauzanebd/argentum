@@ -521,3 +521,45 @@ A conversation over `/v1` can hold several agents. The record is
   answer is a colleague's turn (`asked_by`), so it lands in the transcript and
   not in the caller's response. `v1.yaml` has no field for the hand-off; the
   sentence is the whole of it. Unit-gated; the live arm is live-gate §7h.
+
+## 8. A turn that beat its own subscription (fixed 2026-09-14)
+
+**Found by CI, not by a caller.** `331fbcd`'s push ran CI twice. One run failed
+`TestToolFramesCarryTheNameAndNotTheArguments`: the stream body held a `final`
+and no tool frame. The same test passed in the other run, and failed once in 300
+local runs under `-race`. Nothing in `331fbcd` touched the handler. The race
+dates from `489d9f4d` (2026-07-28), `T-A1`'s first stream.
+
+**What was wrong.** `stream` subscribes, waits for the subscription to be live,
+then reads the transcript in case the turn has already answered (§3's
+reconciliation). A turn can finish in the moment between those two steps. Its
+tool calls, its deltas and often its own `final` were published into the live
+subscription, and are on their way to this connection. The stream found the
+saved answer, sent it, and returned. Every one of those frames was dropped.
+- **For a caller** connecting just as a turn finished: the answer is right, and
+  the progress that led to it is missing.
+- **For `GET /v1/threads/{id}/events`** on a thread that settled as it attached:
+  the same.
+- **Not the synchronous door.** It sends only the answer.
+
+**The fix.** When the read finds the answer, `forwardInFlight` first forwards
+what the subscription has already received, in order, through the same
+`forward` every live frame goes through. So a colleague's frames are still
+skipped, and a turn's own `final` still ends the stream. The saved answer is sent
+only if nothing did.
+- **The wait is bounded twice.** It stops after 25 ms of silence, and after
+  250 ms whatever arrives. The second bound is for a room, where a colleague's
+  turn can go on streaming on the same channel after the caller's answer was
+  saved (`T-N6`), and would never fall quiet.
+- **The cost:** at most 250 ms on this path alone, paid by a stream that was
+  about to end.
+
+**Proven.** A hook in the test's message store now publishes a whole turn inside
+the handler's first transcript read, which lands it in the window every time.
+- `TestAStreamWhoseTurnFinishedAsItSubscribedStillSendsTheTurnsFrames` failed
+  both its cases before the fix, with exactly CI's body. The cases are with and
+  without the turn's own `final` already delivered.
+- `TestAStreamThatFoundItsAnswerDoesNotWaitOutAColleaguesTurn` holds the bound.
+- After the fix, the flaky test passed 1,000 runs of 1,000 and the new tests
+  300 of 300, all under `-race`. Mutations are in
+  [`delivery-log.md`](delivery-log.md) Phase 3bi.

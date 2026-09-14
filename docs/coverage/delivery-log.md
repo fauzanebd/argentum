@@ -7656,6 +7656,43 @@ dashboard lint` passes after the export: 88 tests in 14 files. No production Go 
 **Still owed:** dark mode (no dark harness scene exists), and every arm that needs a model or a
 second worker.
 
+## Phase 3bi — A `/v1` stream dropped the frames of a turn that beat its subscription (2026-09-14)
+
+**Found by CI on `331fbcd`**, which ran CI twice. One run failed
+`TestToolFramesCarryTheNameAndNotTheArguments`, the other passed it. The test failed once in 300
+local runs under `-race`. It was a race in `/v1`'s stream handler, present since `489d9f4d`
+(2026-07-28), and not in anything `331fbcd` changed. The owner asked for it fixed and pushed.
+Record: [`api-chat.md`](api-chat.md) §8.
+
+**What was wrong.** The stream subscribes, then reads the transcript in case the turn has already
+answered. A turn that finished between the two had published its tool calls, its deltas and often
+its own `final` into the live subscription. The stream sent the saved answer and returned without
+them. The answer was right; the progress was missing.
+
+**The fix.** When the transcript already has the answer, `forwardInFlight` forwards what the
+subscription has received, through the usual `forward`. The saved answer goes out only if the turn's
+own `final` did not. The wait ends after 25 ms of quiet or 250 ms in all. The second bound is for
+a room, where a colleague's turn can stream on the same channel indefinitely.
+
+**Proven failing.** A hook in the test's message store publishes a whole turn inside the handler's
+first transcript read, which hits the window every time. The new test failed both its cases before
+the fix, with CI's exact body. After it:
+- the flaky test passed 1,000 of 1,000 runs, and the two new tests 300 of 300, under `-race`;
+- three mutations, one at a time by a script, each failing its named test and none only breaking
+  the build, with the file's hash restored after each:
+  - frames in flight not forwarded — the frames test, both cases;
+  - the wait with no bound — `TestAStreamThatFoundItsAnswerDoesNotWaitOutAColleaguesTurn`;
+  - the saved answer sent after the turn's own `final` — the frames test, the `final` case.
+
+**Gate.** `make check`, alone, after the mutation run: `MAKE EXIT: 0`.
+- **Go:** 73 packages `ok`, handlers included, zero `FAIL`/`panic` lines, `golangci-lint` `0 issues.`,
+  `gofmt -l` empty.
+- **Dashboard:** 88 vitest tests in 14 files pass.
+
+**Cost, stated:** a stream that finds its answer already saved now waits up to 250 ms before sending
+it. That covers attaching to a settled thread, and a turn that beat its own subscription. Every other
+stream is unchanged.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

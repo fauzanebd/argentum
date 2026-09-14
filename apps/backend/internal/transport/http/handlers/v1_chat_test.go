@@ -159,6 +159,12 @@ type fakeMessages struct {
 	gotFilt   domain.MessageFilter
 	// gotScopes is every scope an answer lookup was made with, in order.
 	gotScopes []domain.AnswerScope
+	// beforeFirstAnswerLookup runs once, as the first answer lookup begins. In a
+	// stream that is the read straight after the subscription goes live, so a
+	// test that publishes a whole turn here lands it between the SUBSCRIBE and
+	// that read — deterministically, where racing a goroutine against the
+	// handler landed it there once in a few hundred runs.
+	beforeFirstAnswerLookup func()
 }
 
 // persist makes the answer readable, as the worker does before it publishes
@@ -188,6 +194,13 @@ func (f *fakeMessages) LatestByThread(_ context.Context, _ string) (*domain.Mess
 // room the newest answer can be a colleague's, and a fixture that ignored the
 // bounds would let the handler hand it over as the caller's.
 func (f *fakeMessages) LatestAssistantSince(_ context.Context, _ string, since time.Time, scope domain.AnswerScope) (*domain.Message, error) {
+	f.mu.Lock()
+	hook := f.beforeFirstAnswerLookup
+	f.beforeFirstAnswerLookup = nil
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.gotScopes = append(f.gotScopes, scope)
@@ -791,6 +804,80 @@ func TestToolFramesCarryTheNameAndNotTheArguments(t *testing.T) {
 	}
 	if strings.Contains(body, "payroll") {
 		t.Error("the stream leaked a tool's arguments")
+	}
+}
+
+// A turn can finish in the moment between the stream's SUBSCRIBE and its read of
+// the transcript. What it published in that moment was delivered to the
+// subscription — its tool calls, often its own `final` — and the stream used to
+// end on the saved answer without any of it. The test above hit that window once
+// in a few hundred runs, which is how CI went red on 331fbcd. The hook puts the
+// whole turn in the window every time.
+func TestAStreamWhoseTurnFinishedAsItSubscribedStillSendsTheTurnsFrames(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		liveFinal bool
+	}{
+		{"the turn's own final not yet delivered", false},
+		{"the turn's own final already delivered", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newChatFixture(t, 5*time.Second)
+			f.messages.beforeFirstAnswerLookup = func() {
+				f.publish(t, app.ChatEvent{Type: "tool_call", ToolCall: &app.ToolCallEvent{Name: "run_sql"}})
+				f.messages.persist(assistantMessage())
+				if tc.liveFinal {
+					f.publish(t, app.ChatEvent{Type: "final", Content: "done"})
+				}
+			}
+
+			w := f.send(t, sendRequest(t, "text/event-stream", `{"message":"hi","user_ref":"u"}`), nil)
+
+			body := w.Body.String()
+			tool, final := strings.Index(body, `"tool":"run_sql"`), strings.Index(body, "event: final")
+			if tool < 0 || final < 0 || tool > final {
+				t.Fatalf("body = %q, want the tool frame and then the answer", body)
+			}
+			if n := strings.Count(body, "event: final"); n != 1 {
+				t.Errorf("%d final frames, want exactly 1:\n%s", n, body)
+			}
+		})
+	}
+}
+
+// The wait for frames still in flight is bounded. In a room the channel also
+// carries a colleague's turn (T-N6), which can go on streaming long after the
+// caller's answer was saved, and a stream that has its answer must not stay open
+// for it.
+func TestAStreamThatFoundItsAnswerDoesNotWaitOutAColleaguesTurn(t *testing.T) {
+	f := newChatFixture(t, 5*time.Second)
+	stop := make(chan struct{})
+	defer close(stop)
+	f.messages.beforeFirstAnswerLookup = func() {
+		f.messages.persist(assistantMessage())
+		go func() {
+			tick := time.NewTicker(5 * time.Millisecond)
+			defer tick.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-tick.C:
+					raw, _ := json.Marshal(app.ChatEvent{Type: "delta", Content: "…", AskedBy: "ag-ops"})
+					_ = f.rdb.Publish(context.Background(), eventbus.ChannelFor(testThreadID), raw).Err()
+				}
+			}
+		}()
+	}
+
+	start := time.Now()
+	w := f.send(t, sendRequest(t, "text/event-stream", `{"message":"hi","user_ref":"u"}`), nil)
+
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("the stream took %s to end on an answer it already had", elapsed)
+	}
+	if n := strings.Count(w.Body.String(), "event: final"); n != 1 {
+		t.Errorf("%d final frames, want exactly 1", n)
 	}
 }
 
