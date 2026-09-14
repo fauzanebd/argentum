@@ -231,3 +231,52 @@ In [`live-gate-backlog.md`](live-gate-backlog.md) §7j, with predictions:
 - **The byte rate is a guess about browsers.** 384 kbit/s is above every default this document knows
   of. A browser that records voice above it would see `413` at a length under the limit. The first
   `413` in production with a `duration_ms` under the limit is the signal.
+
+---
+
+## 2. The measurement the provider choice rests on (2026-09-14)
+
+Research 08 §6 leaves one criterion standing for `SPEECH_PROVIDER`: how well a provider hears
+**Indonesian business speech**, and whether it keeps the **numbers**. Nothing measured it, and this
+machine has neither a provider key nor a recording. So what was built is the instrument, ready for
+both.
+
+| Piece | Where |
+| --- | --- |
+| The reading script: twenty questions a pilot admin reads aloud, each stating the numbers it holds | `apps/backend/testdata/eval/speech.yaml` |
+| A numeral reader for digits in either separator convention (through `numparse`) and Indonesian number words: *belas*, *puluh*, *ratus*, the magnitudes, *koma*, the *se-* forms | `internal/evalspeech/evalspeech.go` |
+| WER over text whose number runs are reduced to their values; numbers compared as multisets of values | the same file |
+| The runner — each provider built with `speech.New`, so the request scored is the voice route's — and the Markdown report | `internal/evalspeech/run.go`, `cmd/evalspeech` |
+| `make eval-speech CLIPS=/abs/dir` (keys from `GROQ_API_KEY`, `OPENAI_API_KEY`); `make eval-speech-dry` | root `Makefile` |
+| Recordings and reports kept out of the tree | `.gitignore` |
+
+**Two scores, apart, because only one is dangerous.** A transcript writing "300 juta" for a spoken
+"tiga ratus juta" heard every word, so its WER is 0 and its numbers are right. One writing "tiga puluh
+juta" is one word wrong of eight — WER alone reads that as a good transcript — and its number is
+wrong by a factor of ten. That is decision 13's case. The report also counts **pairs**:
+`revenue-300m`/`revenue-30m` and `sold-14`/`sold-40` differ by one syllable, and a pair counts only
+when both halves come back right.
+
+**The script's design.** One question holds no number (`sales-kemang`), so word accuracy can be read
+apart. Figures are written both ways — "300 unit" and "tiga ratus juta" — and the reader is asked to
+say them naturally. There are decimals with *koma*, a year in words, rupiah with a thousands
+separator, and percentages. `TestTheSetStatesWhatItsTextSays` holds each line's stated numbers to
+what its text reads as, so the reference cannot drift from the script.
+
+**Proven.**
+- Five tests pass: the numeral reader over 22 phrasings, the set against itself, the misheard
+  multiplier against a change of form, WER, and the runner over a present, a missing and a non-audio
+  recording.
+- Three mutations were killed: *puluh* read as ×100, numbers compared by count only, and WER over
+  raw rather than normalised numbers.
+- `make eval-speech-dry`: 20 clips, every stated number matches its text.
+- **End to end, against §1f's stand-in provider** (no key, nothing leaves the machine): twenty
+  ffmpeg-made WebM/Opus tones, one per line. All 20 were sent with `language: id` and scored,
+  55.0 s of audio. The stand-in answers one fixed sentence, so the report read *numbers right
+  0 / 19*, *pairs 0 / 2*, and the number-free control right — the plumbing, not a provider.
+
+**What running it for real needs:** a Groq key (the free tier covers twenty clips) and, ideally, an
+OpenAI key for the comparison. And twenty recordings of the script by someone at the pilot, as
+`<id>.webm` — a phone's voice memo converted with ffmpeg is enough. **Prediction, carried from
+live-gate §7j:** numerals are where both providers err, and in two forms, so a transcript is not
+normalised. The pairs row is the one to read first.

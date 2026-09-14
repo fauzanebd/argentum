@@ -7746,6 +7746,104 @@ dropped the company from a delete.
 provider), the audio half with object storage, the worker's tick, `087` at deploy, and `T-W9`'s
 microphone.
 
+## Phase 3bk — The Metabase table goes, and an older API cannot start (`T-D16`, 2026-09-14)
+
+**Why this ticket.** Picked by `/continue-building`, after `T-W7` was pushed. `T-D16`'s second half
+was held on one thing: a deployed release that read nothing from `saved_dashboards`. That had
+happened. Production ran `1.10.1`, whose Go names the table only in a comment. It was half a day, with
+no measurement ahead of it. Record: [`live-gate-backlog.md`](live-gate-backlog.md) §7k.
+
+**What was built.** `088_drop_saved_dashboards`, whose `down` recreates `006`'s schema. A stale
+comment in `policy.go` that still contrasted native dashboards with "the Metabase rows below". A
+build-tagged scratch test.
+
+**Run on a scratch stack, as predicted.**
+- `088` up from 87 with a row in the table, down (back, empty), up.
+- `v1.11.0`'s API, given `088`, served the dashboards list, threads, a thread delete and the company
+  erasure against the dropped table, with no error.
+
+**Found, and not what the arm was for.** The same `v1.11.0` API **with its own migrations** exited
+on boot: `migrate up: no migration found for version 88`.
+- Once any migration applies, no older API image starts. A rollback to the previous image stalls,
+  and the newer pod keeps serving, so the rollback silently does not happen.
+- A normal rollout is unaffected (`maxUnavailable: 0`), and so is the worker, which runs no
+  migrations.
+- `073`'s "previous-release binary serves 200" answered the table question, not the boot one.
+- The fix — warn and serve when the database is ahead — is small, and it is the owner's call.
+  **Filed, not built** (§7k).
+
+**Gate.** `make check`, alone, after the scratch stack was stopped: `MAKE EXIT: 0`, 14m29s. 74 Go
+packages `ok`, zero `FAIL`/`panic` lines, `golangci-lint` `0 issues.`, `gofmt -l` empty, and 88
+dashboard tests in 14 files. GitHub CI on `03d13fc` (`T-W7`) passed on `main` and on the `v1.11.0`
+tag.
+
+**Also found, reading the cluster.** Production ran `1.10.1`, not the `1.6.0` several documents still
+say. Flux takes the `argentum` chart from `main` on every push, but pins the image tag in its own
+values. A push therefore ships chart changes at once, and code only when the tag moves.
+
+## Phase 3bl — A rollback can start again (2026-09-14)
+
+**Why.** Phase 3bk found that an older API image exits on boot once a newer migration has applied
+(`no migration found for version 88`). So a rollback to the previous image stalled, and the newer pod
+kept serving. The owner took the recommended fix the same day. Record:
+[`live-gate-backlog.md`](live-gate-backlog.md) §7k.
+
+**What changed.** `internal/migrate.Up` compares the database's version with the newest `.up.sql`
+the binary holds before golang-migrate runs.
+- **Cleanly ahead:** serve, with one warning naming both versions. The forward-compatible rule every
+  migration follows (`workspace-context.md` §6) is what makes that safe.
+- **Ahead and dirty:** refuse, with a sentence saying a newer release failed part-way.
+- **Behind, level, or fresh:** unchanged.
+
+**It helps only images built from this change on.** A rollback to `1.11.0` or earlier still does not
+start.
+
+**Proven.**
+- Two unit tests, the second over eight cases. One mutation — serving a level database as if ahead —
+  was killed.
+- On a scratch stack, as predicted: migrations truncated at `087` against a database at 88 booted,
+  warned and served (`200`, `200`, `204`) without touching the schema. The full directory said
+  *up to date*. A dirty 88 refused to boot, naming both versions.
+- `docs/agents/verification.md` gained the check that would have caught this: boot the previous
+  release's binary with **its own** migrations directory.
+
+**Gate.** `make check`, alone, after the scratch stack was stopped: `MAKE EXIT: 0`, 13m49s. 75 Go
+packages `ok` — `internal/migrate` has tests for the first time — zero `FAIL`/`panic` lines,
+`golangci-lint` `0 issues.`, `gofmt -l` empty, and 88 dashboard tests in 14 files. This run also
+covers Phase 3bk's `088`.
+
+**Owed:** a real rollback in the cluster, once two releases hold the fix (§7k).
+
+## Phase 3bm — The measurement voice's provider rests on, built and waiting for a voice (2026-09-14)
+
+**Why.** The owner took the recommended next pick: clear `T-W7`'s owed arm on a real provider, which
+is also research 08 §6's unknowns 1 and 2. **This machine has neither input.** There is no speech key
+(`EMBEDDING_API_KEY` is empty, and `LLM_API_KEY` is OpenRouter, which has no audio endpoint), and
+there are no recordings. So the instrument was built, and the arm is now one command. Record:
+[`voice.md`](voice.md) §2.
+
+**What was built.**
+- `testdata/eval/speech.yaml`: a twenty-line reading script of Gelael-shaped questions, each stating
+  its numbers. It holds two one-syllable pairs and a control with no number.
+- `internal/evalspeech`: a numeral reader for digits and Indonesian number words, WER over
+  number-normalised text, and numbers compared as values. A runner builds each provider with
+  `speech.New`, so what is scored is the voice route's own request, and writes a Markdown report.
+- `cmd/evalspeech`, plus `make eval-speech CLIPS=…` and `make eval-speech-dry`. Recordings and reports
+  are gitignored.
+
+**Proven.** Five tests, and three mutations killed. A fourth attempt only broke the build and was
+redone as one that compiled. The dry run passed: 20 clips, every stated number matching its text.
+End to end, twenty ffmpeg tones went through the product's client to the stand-in provider — 20
+requests, all `language: id`, the report written and ignored by git.
+
+**Gate.** The first `make check` stopped at lint before any test ran: `staticcheck` QF1001 on a
+negated condition in the numeral reader. Rewritten, then `make check` ran again alone: `MAKE EXIT: 0`,
+13m38s. 76 Go packages `ok` (`internal/evalspeech` is new), zero `FAIL`/`panic` lines,
+`golangci-lint` `0 issues.`, `gofmt -l` empty, and 88 dashboard tests in 14 files.
+
+**Still owed:** a Groq key and twenty recordings of the script from the pilot. Then `make eval-speech`,
+and its pairs row decides `SPEECH_PROVIDER`.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

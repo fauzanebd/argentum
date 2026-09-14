@@ -1,0 +1,86 @@
+# The speech set — T-W7's owed live arm, and research 08 §6's unknowns 1 and 2:
+# how well a provider hears Indonesian business questions, and whether it keeps
+# the numbers in them.
+#
+# **This file is a reading script, not a recording.** Someone at the pilot reads
+# each `text` aloud, naturally, and saves it as `<id>.<ext>` (webm, ogg, m4a,
+# mp3, wav or flac) in one directory. Recordings are a person's voice and never
+# enter the repository — `testdata/eval/speech-clips/` is gitignored. Then:
+#
+#     GROQ_API_KEY=… OPENAI_API_KEY=… make eval-speech CLIPS=/path/to/clips
+#
+# Read the figures the way you would say them, not digit by digit: "300 juta" is
+# "tiga ratus juta". Scoring does not care which form a transcript uses — it
+# compares the *values* — so a provider that writes "300 juta" and one that
+# writes "tiga ratus juta" are both right, and "tiga puluh juta" is wrong.
+#
+# `numbers` is what each line holds, stated rather than parsed, so a mistake in
+# the numeral reader cannot make the reference agree with itself.
+# TestTheSetStatesWhatItsTextSays checks the reader against every line.
+#
+# The pairs are deliberate. `revenue-300m`/`revenue-30m` and
+# `sold-14`/`sold-40` differ by one syllable and a factor of ten or more: the
+# misheard multiplier decision 13 exists for. `sales-kemang` holds no number, so
+# a provider's word accuracy can be read apart from its numbers.
+language: id
+clips:
+  - id: sales-kemang
+    text: "Berapa total penjualan kemarin di cabang Kemang?"
+    numbers: []
+  - id: stock-under-300
+    text: "Tampilkan produk dengan stok di bawah 300 unit."
+    numbers: [300]
+  - id: revenue-300m
+    text: "Apakah omzet bulan lalu lebih dari tiga ratus juta rupiah?"
+    numbers: [300000000]
+  - id: revenue-30m
+    text: "Apakah omzet bulan lalu lebih dari tiga puluh juta rupiah?"
+    numbers: [30000000]
+  - id: margin-2025
+    text: "Berapa margin kotor kuartal ketiga tahun dua ribu dua puluh lima?"
+    numbers: [2025]
+  - id: top-15-branches
+    text: "Bandingkan penjualan minggu ini dengan minggu lalu untuk 15 cabang teratas."
+    numbers: [15]
+  - id: sold-14
+    text: "Berapa SKU yang terjual kurang dari empat belas kali bulan ini?"
+    numbers: [14]
+  - id: sold-40
+    text: "Berapa SKU yang terjual kurang dari empat puluh kali bulan ini?"
+    numbers: [40]
+  - id: over-2-5m
+    text: "Tunjukkan transaksi di atas Rp 2,5 juta hari Sabtu."
+    numbers: [2500000]
+  - id: round-to-1000
+    text: "Berapa rata-rata nilai belanja per member, dibulatkan ke seribu rupiah terdekat?"
+    numbers: [1000]
+  - id: members-twice-30d
+    text: "Berapa persen member yang belanja lebih dari dua kali dalam 30 hari terakhir?"
+    numbers: [2, 30]
+  - id: target-1-2b
+    text: "Target penjualan tahun ini 1,2 miliar, sudah tercapai berapa persen?"
+    numbers: [1200000000]
+  - id: price-up-12pct
+    text: "Produk apa yang harganya naik lebih dari 12 persen sejak Juli?"
+    numbers: [12]
+  - id: rice-5kg
+    text: "Hitung selisih stok gudang barat dan gudang timur untuk beras lima kilogram."
+    numbers: [5]
+  - id: top-10-points
+    text: "Siapa sepuluh pelanggan dengan poin terbanyak?"
+    numbers: [10]
+  - id: voucher-50k
+    text: "Berapa jumlah voucher Rp 50.000 yang sudah dipakai minggu ini?"
+    numbers: [50000]
+  - id: oil-2l-20k
+    text: "Kapan terakhir kali minyak goreng dua liter terjual di bawah dua puluh ribu?"
+    numbers: [2, 20000]
+  - id: drop-7-5pct
+    text: "Apa penyebab penurunan penjualan sebesar 7,5 persen di bulan Agustus?"
+    numbers: [7.5]
+  - id: returns-150k-3mo
+    text: "Tampilkan retur di atas seratus lima puluh ribu rupiah selama tiga bulan terakhir."
+    numbers: [150000, 3]
+  - id: discount-4200-tx
+    text: "Berapa total diskon yang diberikan untuk 4.200 transaksi kemarin?"
+    numbers: [4200]

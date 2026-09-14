@@ -2610,12 +2610,78 @@ curl.
 
 | Owed by | The gate | Blocker |
 | --- | --- | --- |
-| `T-W7` | **A real provider on Indonesian business speech** — research 08 §6's unknowns 1 and 2, and what decides `SPEECH_PROVIDER`. Twenty questions recorded by a pilot admin, sent to `groq` (`whisper-large-v3-turbo`) and `openai` (`whisper-1`), scored on words and separately on numerals. **Prediction: numerals are where both err, and in two forms — "300 juta" and "tiga ratus juta" — so a transcript is not normalised.** That is decision 13's reason for the edit step, not a defect in it | A provider key (Groq's free tier covers it) and twenty real clips |
+| `T-W7` | **A real provider on Indonesian business speech** — research 08 §6's unknowns 1 and 2, and what decides `SPEECH_PROVIDER`. Twenty questions recorded by a pilot admin, sent to `groq` (`whisper-large-v3-turbo`) and `openai` (`whisper-1`), scored on words and separately on numerals. **Prediction: numerals are where both err, and in two forms — "300 juta" and "tiga ratus juta" — so a transcript is not normalised.** That is decision 13's reason for the edit step, not a defect in it. **The instrument is built (2026-09-14):** `testdata/eval/speech.yaml` is the twenty-line reading script, and `make eval-speech CLIPS=/abs/dir` scores every provider with a key — WER over number-normalised text, numbers as values, and the two one-syllable pairs — through the product's own client. It ran end to end against the stand-in (voice.md §2). **What is left is the two inputs** | A provider key (Groq's free tier covers it), and twenty recordings of the script by someone at the pilot |
 | `T-W7` | **`verbose_json` on a real endpoint.** **Prediction: both providers return `duration` for their Whisper models, so the Info line says `measured: true` and usage is priced on it.** A `gpt-4o-transcribe` model would log `measured: false` | A provider key |
 | `T-W7` | **The audio half, with object storage.** A clip lands at `voice/<company_id>/<clip_id>.webm` and logs `kept_audio: true`. The sweep removes the object, then the row, for an expired clip and for a deleted conversation's. Erasure removes the prefix. **Prediction: as the unit tests.** If something differs it will be `RemovePrefix` over a prefix holding one object, or the content type the bucket stores | Object storage. The scratch stack has none, which is also why §7c's `T-Z13` arm is owed |
 | `T-W7` | **The worker's tick.** `voice:sweep` fires at :17 and logs `voice clip sweep complete` with the deleted count; a due clip is gone within the hour. **Prediction: fires, and deletes exactly `Due`'s list** | A worker process on the stack |
 | `T-W7` | **`087` on the production control database, at deploy.** **Prediction: a new table, applied in milliseconds on boot** | A deploy (§3d) |
 | `T-W9` | **The microphone**, including the disabled control for a member without the grant and for a deployment without a provider | `T-W9` is not built |
+
+## 7k. `T-D16`'s table drop — run 2026-09-14 on a scratch stack, and a finding about every migration
+
+`088_drop_saved_dashboards` drops the table `073` could not. `073` removed the table's last readers
+on 2026-09-03, and the drop waited for a deployed release that read nothing from it. **Production
+ran `1.10.1`**, read with `kubectl` on 2026-09-14, and `git grep -i saved_dashboards v1.10.1 -- '*.go'`
+finds one line, a comment. Run on §7j's scratch stack (Postgres 16 on 55443), stopped before
+`make check`.
+
+The database arm is `internal/adapters/postgres/scratch_saved_dashboards_drop_test.go`, run from
+version 87:
+
+```bash
+SCRATCH_PG_DSN='postgres://argentum:gatepass@127.0.0.1:55443/argentum?sslmode=disable' \
+SCRATCH_MIGRATIONS=/tmp/tw7-gate/migrations \
+go test -tags scratch -run Scratch088 -count=1 -v ./internal/adapters/postgres/
+```
+
+| Arm | Prediction | Result |
+| --- | --- | --- |
+| `088` up from 87, with a row in the table | Table and both indexes gone; native `dashboards` untouched; the conversation the row pointed at still deletes | **As predicted** |
+| `088` down | Table and both indexes back, empty | **As predicted.** The schema round trips, the data does not |
+| Up again | Gone | **As predicted** |
+| `v1.11.0`'s `cmd/api` against the schema at 88, its migrations directory with `088` added — the table question alone | Boots; the dashboards list, the thread list, one thread, a thread delete and the company erasure answer without error | **As predicted.** `200`, `200`, `200`, `204`, `200`. No error-level line, no missing relation |
+| **`v1.11.0`'s `cmd/api` with its own migrations directory** — what a real older pod holds | Boots and serves, as `073`'s gate recorded for its own drop | **Did not boot.** `fatal: control migrations: migrate up: no migration found for version 88: read down for version 88 .: file does not exist` |
+
+**The finding, and it is not about this table.** `internal/migrate.Up` returns golang-migrate's error
+when the database is at a version the binary has no file for, and `cmd/api` exits on it. So once any
+migration has applied, **no older API image can start against that database**:
+- **A normal rollout is unaffected.** The API runs one replica with `maxUnavailable: 0` and
+  `maxSurge: 1`, so the new pod migrates while the old one is already serving.
+- **A rollback cannot take effect.** The previous image's pod exits on boot, every time. The rollout
+  stalls, the newer pod keeps serving, and the rollback silently does not happen.
+- **An older pod restarted mid-rollout** (a crash, an eviction) does not come back.
+- **The worker runs no migrations** and is unaffected.
+
+`073`'s record, "a previous-release binary boots and serves 200 against the new schema", must have
+given the older binary the newer migrations directory. That answers whether the old code reads the
+dropped thing. It does not answer whether the old image starts, which is what a rollback needs.
+
+**The fix was small, and the owner took it the same day.** `internal/migrate.Up` now reads the
+newest `.up.sql` the binary holds before it asks golang-migrate. A database cleanly past that
+version is served on, with a warning naming both versions; the forward-compatible rule every
+migration already follows is what makes that safe. A database past it **and dirty** is still refused,
+with a sentence saying why: a newer release failed part-way, and nothing the older binary holds can
+say what state that left. Behind, level and fresh databases go to golang-migrate exactly as before.
+
+**It helps only images built from this change on.** A rollback to `1.10.1` or `1.11.0` still exits on
+boot, because those images hold the old runner.
+
+**Run on the same scratch stack, with the working tree's `cmd/api`, as predicted:**
+
+| Arm | Prediction | Result |
+| --- | --- | --- |
+| Migrations truncated at `087`, database at 88 — a rollback | Boots; one warning with both versions; serves; the schema is not touched | **As predicted.** `database_version: 88`, `binary_highest: 87`. Dashboards `200`, threads `200`, a thread delete `204`, no error-level line; `schema_migrations` still `88`, clean |
+| The full directory, database at 88 — the ordinary boot | `control DB schema already up to date` | **As predicted** |
+| Version 88 marked dirty, migrations truncated at `087` | Exits, naming both versions and the dirty state | **As predicted.** `…at version 88 and dirty, newer than this binary's highest migration 87…`. The flag was set back to clean afterwards |
+
+Unit-gated too: `TestHighestUpVersionIsTheNewestUpFile`, and `TestSchemaAheadServesOnlyACleanNewerSchema`
+over eight cases. One mutation — serving a database that is level, not ahead — was killed by the
+second test.
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `T-D16` | **`088` on the production control database, at deploy.** **Prediction: applied in milliseconds on boot.** Any rows are pointers to a Metabase that no longer runs | A deploy (§3d) |
+| The boot fix | **A real rollback, in the cluster.** Deploy a release that holds the fix and a migration after it, then set the image tag back one release. **Prediction:** the rolled-back pod logs the warning, turns ready, and the rollout completes. Before the fix the pod would have exited on boot and the rollout would have stalled | Two releases that both hold the fix, and a go-ahead for a production rollback. Rehearsing it in another namespace is the safer first run |
 
 ## 7. Needs the paid eval set (added 2026-09-11)
 

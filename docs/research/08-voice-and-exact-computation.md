@@ -391,7 +391,7 @@ plan; all of them can change a ticket.
 
 | # | The unknown | Why it matters | How it gets closed |
 | - | ----------- | -------------- | ------------------ |
-| 1 | Word-error rate for **Indonesian business speech** on any candidate STT provider | It is the only criterion §2a leaves standing | Twenty recorded questions from a real user, one hour, two providers |
+| 1 | Word-error rate for **Indonesian business speech** on any candidate STT provider | It is the only criterion §2a leaves standing | Twenty recorded questions from a real user, one hour, two providers. **The script and the scorer exist since 2026-09-14** — `make eval-speech` ([`../coverage/voice.md`](../coverage/voice.md) §2); the key and the recordings do not |
 | 2 | Whether **numerals** survive transcription — "tiga ratus juta" vs "tiga puluh juta" | A misheard multiplier is a factor-of-ten wrong answer the agent will then answer correctly | The same twenty clips, scored on the numbers alone |
 | 3 | Whether `decimal` **works** in a CPython-WASI build | The entire compute design rests on it, and the sources are silent | One afternoon: build or download `python.wasm`, run `Decimal('0.1')+Decimal('0.2')` under wazero |
 | 4 | CPython-WASI **cold-start latency and bundle size** (≈150 MB reported for the all-in-one build) | 150 MB in the API image is a deployment fact; a 2-second start is a product fact | The same afternoon, `time` around the first call and the tenth |

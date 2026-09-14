@@ -151,6 +151,18 @@ eval-dry: ## Validate the golden set and seed the eval tenant without calling th
 eval-security: ## Score the agent against the adversarial security set (T-H11)
 	cd $(BACKEND) && go run ./cmd/eval -set testdata/eval/security.yaml $(EVAL_ARGS)
 
+# The speech set (T-W7's live arm; research 08 §6). The set is a reading script:
+# someone at the pilot records each line as <id>.<ext>, and the recordings stay
+# outside the tree. CLIPS must be absolute — the recipe runs from $(BACKEND).
+.PHONY: eval-speech
+eval-speech: ## Score speech providers on Indonesian questions read aloud (T-W7). CLIPS=/abs/dir; GROQ_API_KEY and/or OPENAI_API_KEY
+	@test -n "$(CLIPS)" || (echo "set CLIPS=/absolute/path/to/recordings — one <id>.<ext> per line of $(BACKEND)/testdata/eval/speech.yaml" && exit 1)
+	cd $(BACKEND) && go run ./cmd/evalspeech -set testdata/eval/speech.yaml -clips "$(CLIPS)" -out eval-speech-report.md $(EVAL_ARGS)
+
+.PHONY: eval-speech-dry
+eval-speech-dry: ## Check the speech set against its own text, and CLIPS for missing recordings, calling no provider
+	cd $(BACKEND) && go run ./cmd/evalspeech -set testdata/eval/speech.yaml -dry-run $(if $(CLIPS),-clips "$(CLIPS)")
+
 # Key rotation (T-H14). The full procedure is in cmd/rekey's package comment and
 # in docs/coverage/security-hardening.md; these are steps 2 and 3 of it.
 .PHONY: rekey-check

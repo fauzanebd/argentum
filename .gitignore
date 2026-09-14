@@ -55,5 +55,11 @@ apps/backend/eval-reports/
 # is tracked.
 apps/backend/testdata/eval/documents/*.pdf
 
+# The speech set's recordings (T-W7) are a person's voice, and never belong in
+# the tree. testdata/eval/speech.yaml is the script they are read from; the
+# report holds what was heard, and its figures go into docs/coverage/voice.md.
+apps/backend/testdata/eval/speech-clips/
+apps/backend/eval-speech-report*.md
+
 # Local scratch
 *.log
