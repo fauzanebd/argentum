@@ -173,6 +173,18 @@ schema meets old code. **Every migration must be forward-compatible:** add
 nullable columns or new tables; do not drop or rename anything a running binary
 reads. Add-then-backfill-then-remove across two releases.
 
+**An older binary starts against a newer schema — since 2026-09-14, and not
+before** ([`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7k).
+`migrate.Up` used to exit with `no migration found for version N` whenever the
+database was ahead of the binary's files, so a rollback to an earlier image was a
+pod that never started. It now serves on a database that is cleanly ahead, with
+a warning, and refuses one that is ahead and dirty. **Images built before the fix
+still exit**, so a rollback to `1.11.0` or earlier does not start. This rule is
+what makes serving safe: a migration that is not forward-compatible breaks a
+rollback as well as a rolling deploy. When you prove "the old binary works against
+the new schema", give it its **own** migrations directory, or you have only proven
+the reads.
+
 ### 7. Every authenticated route needs a line in `cmd/api/policy.go`
 
 `middleware.RequireRole(apiPolicy)` gates the whole `/api` authed group by

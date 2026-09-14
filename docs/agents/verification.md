@@ -148,6 +148,10 @@ migrate -path migrations/control -database "$DATABASE_URL" up
 - [ ] Round-trip is clean
 - [ ] Forward-compatible: old code still runs against the new schema (no drops, no
       renames, no new NOT NULL without a default)
+- [ ] When you prove that, boot the previous release's binary with **its own**
+      migrations directory, not this one. Given the new directory it only proves the
+      reads; with its own it proves the image starts, which is what a rollback needs
+      (`coverage/live-gate-backlog.md` §7k)
 - [ ] Foreign keys have the intended `ON DELETE` behaviour
 - [ ] Indexes exist for the query patterns you added
 - [ ] Migration number was not already claimed — `ls migrations/control/ | tail -3`

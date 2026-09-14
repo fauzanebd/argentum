@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -38,6 +40,31 @@ func Up(databaseURL, dir string) error {
 		_, _ = m.Close()
 	}()
 
+	// A database ahead of this binary: a rollback to an earlier image, or an
+	// older pod restarted during a rollout. golang-migrate's Up refuses it with
+	// "no migration found for version N", which made every rollback a pod that
+	// exits on boot while the newer one keeps serving — the rollback silently not
+	// happening (live-gate §7k). Every migration here is forward-compatible by
+	// rule (workspace-context.md §6), and that rule is precisely the promise that
+	// an older binary runs on a newer schema, so this serves on it and says so.
+	//
+	// A dirty newer version is the exception: a newer release failed part-way
+	// through, and nothing this binary holds can say what state that left.
+	if highest, haveAny, herr := highestUpVersion(absDir); herr == nil {
+		v, dirty, verr := m.Version()
+		ahead, err := schemaAhead(v, dirty, verr, highest, haveAny)
+		if err != nil {
+			return err
+		}
+		if ahead {
+			logrus.WithFields(logrus.Fields{
+				"database_version": v,
+				"binary_highest":   highest,
+			}).Warn("control DB schema is newer than this binary; serving on it without migrating")
+			return nil
+		}
+	}
+
 	if err := m.Up(); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
 			logrus.Info("control DB schema already up to date")
@@ -48,6 +75,54 @@ func Up(databaseURL, dir string) error {
 	v, _, _ := m.Version()
 	logrus.Infof("control DB migrated to version %d", v)
 	return nil
+}
+
+// upFile is golang-migrate's file-source name for an up migration.
+var upFile = regexp.MustCompile(`^([0-9]+)_.*\.up\.sql$`)
+
+// highestUpVersion is the newest migration this binary can apply: the largest
+// version with an .up.sql file in dir. ok is false when there is none.
+//
+// Read from the directory rather than from the migrator's source driver,
+// because the driver walks forward from a version it is given and the question
+// here is about the end of the list, not the next step from a known one.
+func highestUpVersion(dir string) (version uint, ok bool, err error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, false, fmt.Errorf("read migrations dir: %w", err)
+	}
+	var highest uint64
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		match := upFile.FindStringSubmatch(e.Name())
+		if match == nil {
+			continue
+		}
+		n, err := strconv.ParseUint(match[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		if !ok || n > highest {
+			highest, ok = n, true
+		}
+	}
+	return uint(highest), ok, nil
+}
+
+// schemaAhead decides, before golang-migrate is asked, whether a booting API
+// serves on a schema it cannot migrate. True only for a database cleanly past
+// this binary's newest file; an error for one past it and dirty. Behind, level,
+// fresh or unreadable is false, and left to m.Up exactly as before.
+func schemaAhead(dbVersion uint, dirty bool, versionErr error, highest uint, haveAny bool) (bool, error) {
+	if versionErr != nil || !haveAny || dbVersion <= highest {
+		return false, nil
+	}
+	if dirty {
+		return false, fmt.Errorf("migrate up: the control database is at version %d and dirty, newer than this binary's highest migration %d; a newer release failed mid-migration and must be repaired with the release that holds it", dbVersion, highest)
+	}
+	return true, nil
 }
 
 func has(s, sub string) bool {
