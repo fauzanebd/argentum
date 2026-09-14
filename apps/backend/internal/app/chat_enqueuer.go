@@ -608,6 +608,12 @@ type EnqueueResult struct {
 	// message that addresses nobody, which is every message on every channel
 	// but the dashboard and most of those.
 	TaskIDs []string
+	// AgentIDs is the agent each queued turn runs as, index for index with
+	// TaskIDs, and "" for a turn the worker will resolve unscoped (T-N10). `/v1`
+	// reads it to know whose answer ends a caller's stream: in a room the
+	// thread's event channel also carries the turn of a colleague asked mid-turn,
+	// and that answer is not the one the caller is waiting for.
+	AgentIDs []string
 	// AddressedAgentIDs is who this message was routed to, or nil when it
 	// addressed nobody and the thread's own agent answered.
 	AddressedAgentIDs []string
@@ -634,6 +640,104 @@ func (s *ChatEnqueuer) CreateDashboardThread(ctx context.Context, companyID, use
 		return nil, err
 	}
 	return s.threads.CreateDashboardThread(ctx, companyID, userID, "", pinned)
+}
+
+// APIThreadInput is `POST /v1/threads` (T-N10): a conversation opened before
+// its first question, so a room can be assembled before anyone speaks in it.
+type APIThreadInput struct {
+	CompanyID  string
+	APIUserRef string
+	// AgentID is the conversation's own agent — the default speaker, who answers
+	// a message that names nobody. Empty is the workspace default, resolved per
+	// turn, as on `POST /v1/chat`.
+	AgentID string
+	// ParticipantIDs are the others in the room. Checked here and added by
+	// ThreadParticipantService, which this path deliberately cannot write to —
+	// RoomReader's reason.
+	ParticipantIDs []string
+	// APIKeyID and KeyAgentIDs are the key's, for what it may reach and for what
+	// a refusal is recorded against (T-Z8, T-Z9).
+	APIKeyID    string
+	KeyAgentIDs []string
+}
+
+// ErrParticipantNotFound is ErrAgentNotFound about an entry in `participant_ids`
+// rather than about `agent_id` (T-N10). `/v1` names the field to go and fix, and
+// those are two different fields. It wraps ErrAgentNotFound, so every caller
+// that maps that one to a 404 keeps doing so.
+var ErrParticipantNotFound = fmt.Errorf("%w: cannot add it to the conversation", ErrAgentNotFound)
+
+// OpenAPIThread checks who a new `/v1` conversation would hold, and opens it
+// (T-N10).
+//
+// **Every agent is checked before the row is written**, by the pick `POST
+// /v1/chat` makes: unknown, another company's, disabled and off the key's list
+// are one not-found. The dashboard's POST /api/threads writes the thread first
+// and leaves it behind when a participant is refused; on `/v1` that thread would
+// sit in `GET /v1/threads` as a conversation the caller never had, and a retry
+// would add a second.
+//
+// Nothing is spent, so there is no budget check: opening a conversation is not a
+// turn, and a tenant at zero may still set one up.
+func (s *ChatEnqueuer) OpenAPIThread(ctx context.Context, in APIThreadInput) (*domain.ConversationThread, error) {
+	if in.CompanyID == "" || strings.TrimSpace(in.APIUserRef) == "" {
+		return nil, fmt.Errorf("%w: user_ref is required", domain.ErrInvalidInput)
+	}
+	gate := s.doorFor(ChatInput{
+		Channel: domain.ChannelAPI, CompanyID: in.CompanyID,
+		APIKeyID: in.APIKeyID, KeyAgentIDs: in.KeyAgentIDs,
+	}, domain.ChannelRoute{})
+
+	pinned, err := s.pickAgent(ctx, in.CompanyID, gate, in.AgentID)
+	if err != nil {
+		return nil, err
+	}
+	if pinned == "" && len(gate.keyAgents) > 0 {
+		// Enqueue's rule for a key limited to named agents that names none, at the
+		// other door that opens a conversation.
+		if def := s.defaultAgent(ctx, in.CompanyID); !domain.KeyAllowsAgent(gate.keyAgents, def) {
+			s.refused(ctx, in.CompanyID, gate, def, authz.ReasonNotOnKey)
+			return nil, ErrAgentNotAllowed
+		}
+	}
+	for _, id := range in.ParticipantIDs {
+		if _, err := s.pickAgent(ctx, in.CompanyID, gate, id); err != nil {
+			if errors.Is(err, ErrAgentNotFound) {
+				return nil, ErrParticipantNotFound
+			}
+			return nil, err
+		}
+	}
+
+	res, err := s.threads.CreateAPIThread(ctx, in.CompanyID, in.APIUserRef, "", pinned)
+	if err != nil {
+		return nil, err
+	}
+	return res.Thread, nil
+}
+
+// roomHolds reports whether agentID is one of a conversation's participants
+// (T-N10). No room wired is a room of one, holding nobody but the conversation's
+// own agent, which the caller has already compared against.
+//
+// **A failed read refuses rather than degrading.** resolveAddressing degrades the
+// same failure to the default speaker, because an unmatched `@` is text. Here
+// the caller named an agent in a field, and answering it as another is the "the
+// answer came from the wrong agent" failure T-S3 refused to ship.
+func (s *ChatEnqueuer) roomHolds(ctx context.Context, companyID, threadID, agentID string) (bool, error) {
+	if s.room == nil {
+		return false, nil
+	}
+	participants, err := s.room.ListParticipants(ctx, companyID, threadID)
+	if err != nil {
+		return false, fmt.Errorf("list participants: %w", err)
+	}
+	for _, p := range participants {
+		if p != nil && p.AgentID == agentID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ErrAgentNotFound is every refusal pickAgent can produce: unknown, another
@@ -974,6 +1078,10 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 	// gate is who this turn's agent is checked against (T-Z8). Each arm sets it,
 	// because each door answers that question differently.
 	var gate door
+	// apiAddressed is the participant a `/v1` caller named in `agent_id` on a
+	// room (T-N10). It stands in for the `@` resolveAddressing reads on the
+	// dashboard alone, and is nil everywhere else.
+	var apiAddressed []string
 
 	switch in.Channel {
 	case domain.ChannelWhatsApp, domain.ChannelDiscord, domain.ChannelLark, domain.ChannelSlack:
@@ -1050,8 +1158,24 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 			// what the thread *runs as* rather than against the stored column,
 			// so naming the company default explicitly on an unpinned
 			// conversation is agreement and not a change.
+			//
+			// **In a room the same field names who answers (T-N10).** A machine
+			// caller has no `@` — addressing is dashboard-only so that a caller's
+			// text is never read for routing — so on `/v1` the explicit field is
+			// the address: an `agent_id` that is one of the conversation's
+			// participants routes this message to it, as `@Finance` does on the
+			// dashboard. One that is not in the room is still a change of agent and
+			// still refused, and a room of one — every conversation that existed
+			// before rooms — holds nobody else, so it answers as it always did.
 			if pinned != "" && pinned != s.agentFor(ctx, thread) {
-				return nil, ErrAgentChange
+				inRoom, rerr := s.roomHolds(ctx, in.CompanyID, thread.ID, pinned)
+				if rerr != nil {
+					return nil, rerr
+				}
+				if !inRoom {
+					return nil, ErrAgentChange
+				}
+				apiAddressed = []string{pinned}
 			}
 			resolved = &ResolveResult{Thread: thread, IsNew: false}
 		} else {
@@ -1181,6 +1305,13 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 	if err != nil {
 		return nil, err
 	}
+	if len(apiAddressed) > 0 {
+		// Never overwrites an `@`: resolveAddressing addresses nobody off the
+		// dashboard, so on `/v1` the explicit field is the whole of the address.
+		// Set here rather than in the arm so the fan-out, the ledger and the key's
+		// list below read one list whichever door produced it.
+		addr.AgentIDs = apiAddressed
+	}
 	// Who runs this turn, and whether the person asking may talk to each of
 	// them (T-Z4) — before the user message for the same reason.
 	targets, err := s.turnTargets(ctx, in, thread, addr.AgentIDs, gate)
@@ -1300,6 +1431,7 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 	out := &EnqueueResult{
 		TaskID:            taskID,
 		TaskIDs:           taskIDs,
+		AgentIDs:          targets,
 		Thread:            thread,
 		IsNewThread:       resolved.IsNew,
 		UserMsgID:         userMsg.ID,

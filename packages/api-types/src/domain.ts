@@ -189,6 +189,19 @@ export interface Agent {
    * which starter questions to offer on an empty thread.
    */
   template_key: string;
+  /**
+   * CanNudge lets this agent ask another agent in its conversation a question
+   * (T-N6, migration 086). **Off unless an admin turns it on** — MCPServerIDs'
+   * rule, not AllowedTools': a nudge spends another agent's budget against
+   * another agent's sources, and a capability that reaches beyond the agent's
+   * own configuration defaults closed (roadmap 09, decision 8).
+   * It is not an entry in AllowedTools and cannot be one, because an empty
+   * allowlist means every tool and the capability would be on for every
+   * unrestricted agent. Nor does it offer anything alone: nudge_agent reaches a
+   * turn only in a conversation with more than one participant (decision 8's
+   * second gate).
+   */
+  can_nudge: boolean;
   is_default: boolean;
   enabled: boolean;
   created_at: string;

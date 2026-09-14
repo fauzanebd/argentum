@@ -95,7 +95,7 @@ export interface ToolCallEvent {
 export interface ChatEvent {
   job_id: string;
   thread_id: string;
-  type: string; // state | started | iteration | delta | thinking | tool_call | tool_result | final | error | render_progress
+  type: string; // state | started | iteration | delta | thinking | tool_call | tool_result | final | error | render_progress | room_event
   content?: string;
   thinking_step?: string;
   tool_call?: ToolCallEvent;

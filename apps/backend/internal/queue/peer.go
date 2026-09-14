@@ -5,7 +5,7 @@ import "github.com/fauzanebd/argentum/internal/taint"
 // PeerOrigin is where a peer turn's message came from (T-N5): which agent wrote
 // it, and what that agent's turn had read by then.
 //
-// **It is deliberately two fields, and a test holds it there**
+// **It is deliberately four fields, and a test holds it there**
 // (`app.TestThePeerCarrierHoldsNothingThatDecidesATurn`). What a turn may reach
 // — its sources, tools, MCP servers, skills, persona, budget — comes from the
 // row ChatRunPayload.AgentID names, and from nothing a peer wrote. A field here
@@ -14,9 +14,10 @@ import "github.com/fauzanebd/argentum/internal/taint"
 // ChatRunner.Run, and an emergent property is one refactor from not being one,
 // which is why it is asserted rather than described.
 //
-// T-N6 adds what a nudge needs in order to be *planned* — the participant row it
-// was planned against, and its depth — and extends that test's list with its
-// reasons. Neither decides what the recipient can do.
+// T-N5 wrote the first two. T-N6 added what a nudge needs in order to be
+// *planned* — the membership it was planned against, and its depth. Those two
+// decide whether the turn runs and whether it may ask in turn; neither decides
+// what the recipient can reach.
 //
 // There is no Directive here, and a peer turn that arrives with one on the
 // payload has it dropped by the runner: that field is composed into the system
@@ -33,4 +34,18 @@ type PeerOrigin struct {
 	// call, so a document the author read gates the recipient's actions under
 	// T-H9 as if it had read the file itself.
 	Taint map[taint.Kind][]string `json:"taint,omitempty"`
+	// ParticipantID is the room membership the question was planned against
+	// (T-N6, decision 7): the thread_participants row that put the recipient in
+	// the room, or "" when the recipient is the room's default speaker, who has
+	// no row. The worker does not run the turn if that membership is gone or now
+	// names a different agent — a room edited while a question sits in the queue
+	// must not hand the question to whoever holds the seat by then.
+	ParticipantID string `json:"participant_id,omitempty"`
+	// Depth is the hop this turn runs at: 1 for a question asked by a turn the
+	// person addressed, 2 for one its colleague asked in turn
+	// (agentbudget.Ask.Depth). It rides the payload rather than the ledger so a
+	// ledger that expires cannot reset it (multi-agent.md §10a), and the runner
+	// reads it to stop offering nudge_agent to a turn whose next ask could only
+	// be refused.
+	Depth int `json:"depth,omitempty"`
 }

@@ -526,6 +526,51 @@
           }
         },
         {
+          "name": "Open a conversation, with more than one agent in it",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text",
+                "disabled": true,
+                "description": "Honoured as on every other write — a repeat under the same key"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_ref\": \"u_42\",\n  \"agent_id\": \"6f1c1f3e-0000-4000-8000-0000000000a1\",\n  \"participant_ids\": [\n    \"6f1c1f3e-0000-4000-8000-0000000000b2\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads"
+              ]
+            },
+            "description": "A conversation before its first question — the way to set up a room of\nseveral agents. You do not need this for one agent: `POST /v1/chat`\nwith a `user_ref` opens a conversation by itself, and that stays the\nsimplest path.\n\n`agent_id` is the conversation's own agent, and it answers a message\nthat names nobody. `participant_ids` are the others. To ask one of\nthem, send its id as `agent_id` on `POST /v1/chat` together with this\nconversation's `thread_id`. An `@name` in the message is text and\naddresses nobody.\n\nEvery agent is checked before anything is written, so a refused call\nopens nothing. An agent that is unknown, disabled, another workspace's,\nor outside the key's agent list is `404` — `agent_not_found` for\n`agent_id`, `participant_not_found` for an entry in `participant_ids`.\nA repeated id, or `agent_id` repeated in `participant_ids`, is dropped\nrather than refused. More agents than this deployment allows in one\nconversation — the conversation's own agent counts — is\n`400 too_many_participants`.\n\nOpening a conversation spends nothing, so `Idempotency-Key` is honoured\nbut not required: a retry without one opens a second, empty\nconversation.\n\nScope: `write:chat`"
+          }
+        },
+        {
           "name": "Delete a conversation",
           "request": {
             "method": "DELETE",

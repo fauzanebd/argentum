@@ -134,6 +134,11 @@ type RegistryDeps struct {
 	// appears in the allowlist checkboxes and the template vocabulary on every
 	// deployment, and answers "not configured" if it is called.
 	Skills domain.SkillRepository
+	// Nudges backs nudge_agent (T-N6): one agent in a room asking another. Nil is
+	// legal and is what the API's name-only build, the eval harness's registry
+	// listing and cmd/mcp pass — the tool still has its name, and answers "not
+	// available" if executed. The worker passes the real service.
+	Nudges Nudger
 }
 
 // Registry returns the tools an agent may call on this deployment, unwrapped.
@@ -186,6 +191,12 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// unconditionally for that reason — a deployment where the agent cannot
 		// ask is a deployment where it guesses.
 		NewAskClarificationTool(),
+		// Asking a colleague, beside asking the person (T-N6). Registered
+		// unconditionally, like the metric tools, so the name exists on every
+		// deployment — but it is never a checkbox (GatedByFlag): the agent form
+		// drops it, and the factory offers it only to a turn whose agent may
+		// nudge and whose conversation holds more than one participant.
+		NewNudgeAgentTool(d.Nudges),
 		// propose_action registers unconditionally, like the metric tools: a nil
 		// proposer still yields the name for the allowlist and the vocabulary, and
 		// reports "not configured" if executed. The one write-capable tool the

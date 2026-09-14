@@ -7422,6 +7422,111 @@ passed: `MAKE EXIT: 0`, read from the log.
 - **§2c's cost per message.** **Prediction: no ordinary question comes within two turns of the
   ceiling.**
 
+## Phase 3bd — One agent asks another (`T-N6`, 2026-09-14)
+
+Picked because roadmap 09's status named it next. Both its dependencies (`T-N5`, `T-N8`) had
+landed, it is P0, and it is the track in flight. Record: [`multi-agent.md`](multi-agent.md) §11.
+
+**What it does.** In a room of more than one, an agent an admin allowed can ask a colleague one
+question with `nudge_agent`:
+- **The question is posted into the room** as the asker's message. **One ordinary `chat:run`**
+  is queued for the colleague, carrying `Peer{asker, taint, seat, depth}`.
+- **The asker does not wait:** 2.3 ms, measured while a stand-in colleague turn was still
+  running.
+- **Refusals name who can be asked:** a non-participant, itself, a disabled agent, another
+  company's. The credit check runs before the ledger. A budget refusal writes one limit line per
+  agent per message.
+- **A colleague whose seat changed is not run**, and the room says so. **A colleague with
+  nothing to add replies `PASS`** and the room shows a settle, drawn differently from a limit.
+- **Offered only** to an agent with `can_nudge`, in a room of more than one, at a hop the ledger
+  could still admit. A single agent's prompt is byte-identical.
+
+Migration `086` (`agents.can_nudge`, off, no backfill). One catalog line and one guideline, both
+rendered only for a turn holding the tool. A `room_event` event, and three dashboard changes: the
+form's checkbox, the event handler, and room lines drawn as lines.
+
+**Where the ticket was wrong (§11d).**
+- **"Migration: none."** `can_nudge` did not exist.
+- **"The scoping checkboxes get it for free"** would have made it an allowlist tool, on for every
+  unrestricted agent. It is kept out of the vocabulary.
+- **The default speaker has no participant row to pin.** Its seat is pinned by the empty id.
+- **"Repo: BE."** The question cannot be published as `final` — that closes the asker's bubble —
+  and nobody could turn the flag on without a checkbox.
+- **Silent on grants**, which came later: a revoke between a message and its nudge is written down,
+  not built.
+
+**Proven failing.** Sixteen mutations, each failing its tests and none only breaking the build.
+All seven files were restored and matched their pre-run hashes before the gate (§11e).
+
+**Gate.** `make check` on the finished tree, with no source edited while it ran: `MAKE EXIT: 0`,
+read from the log.
+- **Go:** 73 packages `ok`, zero `FAIL`/`panic` lines, `golangci-lint` `0 issues.`, `gofmt -l`
+  empty.
+- **Dashboard:** 88 vitest tests pass, and every build finished.
+- **New tests:** 40 — 25 in `app`, 6 in `tools`, 4 in `bootstrap`, 3 in `agentbudget`, 2 in
+  `guardrails`, plus two cases in `TestLeakShapes`. All were listed by name under `go test -race
+  -v` before the gate.
+- **`make types`** regenerated `packages/api-types` (`Agent.can_nudge`, the event-type comment).
+
+**Owed** (live-gate §7f):
+- **The paired `make eval`.** **Prediction: identical** — the harness runs unscoped and is never
+  offered the tool.
+- **The live room, its negative and a colleague that passes.** **Prediction: two `chat:run`s,
+  the asker's turn completing first.**
+- **`086`'s round-trip and the screenshots**, both runnable on this machine and not run beside
+  the gate. **Prediction: clean.**
+
+## Phase 3be — `/v1` sees rooms (`T-N10`, 2026-09-14)
+
+Picked over `T-N7` for three reasons. Roadmap 09's §5 drops `T-N7` second and `T-N10` last; the
+status block had said the reverse. Its files are not the uncommitted `T-N6`'s. And whether a
+hand-off tool is needed at all is what `T-N6`'s live arm answers. Record:
+[`multi-agent.md`](multi-agent.md) §12.
+
+**What it does.**
+- **`POST /v1/threads`** opens a conversation holding named agents. Every agent, and the room's
+  size, is checked before anything is written.
+- **`agent_id` on `POST /v1/chat` names who answers** in a room. Anything that is not a participant
+  is still `agent_mismatch`, and an `@` in the text addresses nobody.
+- **`GET /v1/threads/{id}` lists `participants`.** Messages carry `agent_id`, `agent_name` and
+  `room_event`, and every frame of a scoped turn carries the agent.
+- **The stream and the synchronous door are the asked agent's turn**, even when a colleague
+  answers first on the same channel. The answer lookup is bound to that agent and skips room lines.
+- **A widget conversation cannot become a room**, from any door. Both SDKs gained `threads.create`.
+
+No migration, and no prompt or tool change, so no eval is owed.
+
+**Where the ticket was wrong (§12d).**
+- **`POST /v1/threads` did not exist.** The ticket gave a new field to a route nobody had built.
+- **`agent_id` already existed and meant the opposite** — pin the conversation, refuse another.
+- **"A caller reading only `final` still works"** stopped being true with `T-N6`: a colleague's
+  `final` arrives on the same channel, often first.
+- **The widget label contradicts the widget having no rooms.** Not built. What was open instead
+  was the dashboard turning a widget conversation into a room.
+- **Found in `T-N2`:** an unpinned dashboard room holds one more agent than its cap. Not changed.
+
+**Proven failing.** Sixteen mutations, each failing its named tests and none only breaking the
+build. All three mutated files matched their pre-run hashes before the gate (§12e).
+
+**Gate.** `make check` on the finished tree, alone, with no source edited while it ran:
+`MAKE EXIT: 0`, read from the log.
+- **Go:** 73 packages `ok`, zero `FAIL`/`panic` lines, `golangci-lint` `0 issues.`, `gofmt -l`
+  empty.
+- **Dashboard:** 88 vitest tests in 14 files pass, and every build finished.
+- **New tests:** 24 — 12 in `handlers`, 10 in `app`'s enqueuer, 2 in the participant service —
+  plus two schema-parity cases and one scope case.
+- **`make openapi`:** exit 0. *"a valid OpenAPI 3.1 document (16 paths, 54 schemas)"*;
+  `types.generated.ts`, `types.py` and the Postman collection regenerated; `tsc` compiled the SDK;
+  the quickstart's 13 example files quoted exactly. `api-types`: *"11 generated files are
+  current"*.
+
+**Owed** (live-gate §7g):
+- **`LatestAssistantSince` on a real Postgres.** **Prediction: clean** — the right row for each
+  agent, no cast error on the empty id.
+- **A room over `/v1`, live, and its stream while a colleague answers.** **Prediction: one
+  `chat:run` per call, and no Finance frame in Ops' stream.**
+- **The quickstart run end to end.** **Prediction: unchanged.**
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

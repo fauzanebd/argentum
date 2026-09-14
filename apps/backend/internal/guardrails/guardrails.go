@@ -166,6 +166,33 @@ func (m PIIMode) skips(class string) bool {
 	}
 }
 
+type peerTurnKey struct{}
+
+// WithPeerTurn marks a turn whose input is another agent's question (T-N6), so
+// the input topic rules stand aside for it.
+//
+// **Keyed on the payload, never on the text.** The runner calls this when
+// `ChatRunPayload.Peer` is set, which only the worker's own enqueue writes. A
+// skip decided by finding the peer fence's markers in the input would be a skip a
+// person can buy by typing them into the chat box (multi-agent.md §8c).
+//
+// What stands aside is `require` — the topic classifier — and nothing else. It
+// judges whether a *person* is asking about analytics, and a colleague's
+// question arrives inside a fence and a "[System context: …]" note that the
+// classifier was never shown and fails closed on. It is also a light-tier call
+// the asking turn's own input already paid for. The block rules — prompt
+// injection, SQL mutation, the off-topic patterns — still run: a colleague's
+// words are untrusted input (decision 5), and those rules are the ones about
+// what the words contain rather than who is asking.
+func WithPeerTurn(ctx context.Context) context.Context {
+	return context.WithValue(ctx, peerTurnKey{}, true)
+}
+
+func isPeerTurn(ctx context.Context) bool {
+	v, _ := ctx.Value(peerTurnKey{}).(bool)
+	return v
+}
+
 // ProcessInput checks user input against guardrail rules.
 // Implements interfaces.Guardrails.
 func (a *Analytics) ProcessInput(ctx context.Context, input string) (string, error) {
@@ -243,6 +270,12 @@ func (a *Analytics) process(ctx context.Context, text string, stage string, user
 	for _, cr := range a.compiledRules {
 		// Skip rules scoped to a different stage.
 		if cr.rule.Scope != "" && cr.rule.Scope != stage {
+			continue
+		}
+		// A colleague's question is not a person's (WithPeerTurn): the topic
+		// classifier, which asks whether a person is asking about analytics,
+		// stands aside for it. Every other rule still runs.
+		if stage == "input" && cr.rule.Action == "require" && isPeerTurn(ctx) {
 			continue
 		}
 		// Skip rules this company's PII policy switches off.

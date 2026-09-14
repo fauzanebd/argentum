@@ -414,7 +414,51 @@ redis.call('HSET', KEYS[1], ARGV[5], 1)
 return {1, '', turns, elapsed}
 `
 
+// ClaimNotice reports whether a refused ask by askerID is the first of that
+// agent's refusals in this conversation, and records it (T-N6).
+//
+// It is what keeps a room's limit notices to one line per agent per person's
+// message: a model that keeps asking after it has been told not to must not be
+// able to fill the room with notices, one per attempt. False means the room has
+// already been told about this agent.
+//
+// A key of its own rather than a field on the ledger hash, because a depth
+// refusal never creates the ledger (Admit), and a field written into a hash that
+// did not exist would create one with no expiry. The TTL is the ledger's, so the
+// claim lives exactly as long as a refusal it could deduplicate. A nil ledger, or
+// a Redis error, returns ErrLedgerUnavailable — and the caller decides which way
+// that fails, because this type cannot know whether an unrecorded notice is worse
+// than a repeated one.
+func (c *Conversation) ClaimNotice(ctx context.Context, companyID, userMsgID, askerID string) (bool, error) {
+	if c == nil || c.rdb == nil {
+		return false, ErrLedgerUnavailable
+	}
+	first, err := noticeScript.Run(ctx, c.rdb,
+		[]string{noticeKey(companyID, userMsgID, askerID)}, c.ttl().Milliseconds(),
+	).Int()
+	if err != nil {
+		return false, fmt.Errorf("%w: %w", ErrLedgerUnavailable, err)
+	}
+	return first == 1, nil
+}
+
+func noticeKey(companyID, userMsgID, askerID string) string {
+	return "conv:notice:" + companyID + ":" + userMsgID + ":" + askerID
+}
+
+// noticeLua sets the claim if nobody has. A script rather than SETNX because the
+// ledger holds a redis.Scripter, the narrowest thing its two other scripts need.
+//
+// KEYS[1] = claim key, ARGV[1] = ttl (ms). Returns 1 for the first claim, else 0.
+const noticeLua = `
+if redis.call('SET', KEYS[1], 1, 'NX', 'PX', ARGV[1]) then
+  return 1
+end
+return 0
+`
+
 var (
-	openScript  = redis.NewScript(openLua)
-	admitScript = redis.NewScript(admitLua)
+	openScript   = redis.NewScript(openLua)
+	admitScript  = redis.NewScript(admitLua)
+	noticeScript = redis.NewScript(noticeLua)
 )

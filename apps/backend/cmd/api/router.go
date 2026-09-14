@@ -345,7 +345,12 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewV1ChatHandler(
 		chatEnqueuerOrNil(d.chatEnq), d.threadRepo, d.msgRepo, turnUsageOrNil(d.usageRepo), d.rdb, d.idemStore,
 		time.Duration(cfg.APIV1SyncTimeoutSeconds)*time.Second,
-	).Register(v1)
+	).
+		// The room (T-N10): the same enqueuer checks who a new conversation may
+		// hold, and the same participant service the dashboard's room routes use
+		// adds them, so the two surfaces share one set of rules.
+		WithRooms(threadOpenerOrNil(d.chatEnq), roomOrNil(d.threadParticipantSvc)).
+		Register(v1)
 
 	webhookGroup := r.Group("/webhook")
 	handlers.NewWebhookHandler(d.chatEnq, d.companySvc, d.wa, d.waTransport, cfg.WhatsAppWebhookVerifyToken).
@@ -479,6 +484,23 @@ func chatEnqueuerOrNil(e *app.ChatEnqueuer) handlers.V1ChatEnqueuer {
 		return nil
 	}
 	return e
+}
+
+// threadOpenerOrNil and roomOrNil are chatEnqueuerOrNil for T-N10's two
+// dependencies, and the same trap: a nil pointer inside a non-nil interface
+// would turn `POST /v1/threads`' typed 503 into a panic.
+func threadOpenerOrNil(e *app.ChatEnqueuer) handlers.V1ThreadOpener {
+	if e == nil {
+		return nil
+	}
+	return e
+}
+
+func roomOrNil(s *app.ThreadParticipantService) handlers.V1Room {
+	if s == nil {
+		return nil
+	}
+	return s
 }
 
 // turnUsageOrNil is budgetReaderOrNil for the per-turn usage read (T-A3). The

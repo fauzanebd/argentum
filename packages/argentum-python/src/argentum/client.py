@@ -594,6 +594,28 @@ class Threads:
             "GET", "/v1/threads", params={"limit": limit, "cursor": cursor, "user_ref": user_ref}
         )
 
+    def create(
+        self,
+        *,
+        user_ref: str,
+        agent_id: Optional[str] = None,
+        participant_ids: Optional[List[str]] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> t.Thread:
+        """Open a conversation before its first question — the way to set up a room.
+
+        ``agent_id`` is the conversation's own agent and answers a message that
+        names nobody; ``participant_ids`` are the others. Ask one of them by
+        passing its id as ``agent_id`` to ``chat.send`` with this conversation's
+        ``thread_id``. An ``@name`` in a message is text and addresses nobody.
+        """
+        body: Dict[str, Any] = {"user_ref": user_ref}
+        if agent_id:
+            body["agent_id"] = agent_id
+        if participant_ids:
+            body["participant_ids"] = list(participant_ids)
+        return self._client.request_json("POST", "/v1/threads", json=body, idempotency_key=idempotency_key)
+
     def iter(self, **kwargs: Any) -> Iterator[t.Thread]:
         cursor = kwargs.pop("cursor", None)
         while True:

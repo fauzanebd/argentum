@@ -350,7 +350,33 @@ export interface paths {
          */
         get: operations["listThreads"];
         put?: never;
-        post?: never;
+        /**
+         * Open a conversation, with more than one agent in it
+         * @description A conversation before its first question — the way to set up a room of
+         *     several agents. You do not need this for one agent: `POST /v1/chat`
+         *     with a `user_ref` opens a conversation by itself, and that stays the
+         *     simplest path.
+         *
+         *     `agent_id` is the conversation's own agent, and it answers a message
+         *     that names nobody. `participant_ids` are the others. To ask one of
+         *     them, send its id as `agent_id` on `POST /v1/chat` together with this
+         *     conversation's `thread_id`. An `@name` in the message is text and
+         *     addresses nobody.
+         *
+         *     Every agent is checked before anything is written, so a refused call
+         *     opens nothing. An agent that is unknown, disabled, another workspace's,
+         *     or outside the key's agent list is `404` — `agent_not_found` for
+         *     `agent_id`, `participant_not_found` for an entry in `participant_ids`.
+         *     A repeated id, or `agent_id` repeated in `participant_ids`, is dropped
+         *     rather than refused. More agents than this deployment allows in one
+         *     conversation — the conversation's own agent counts — is
+         *     `400 too_many_participants`.
+         *
+         *     Opening a conversation spends nothing, so `Idempotency-Key` is honoured
+         *     but not required: a retry without one opens a second, empty
+         *     conversation.
+         */
+        post: operations["createThread"];
         delete?: never;
         options?: never;
         head?: never;
@@ -849,6 +875,14 @@ export interface components {
              *     call with no `agent_id` when the workspace default is not on it. The
              *     fix for both is to send one of the key's agents in `agent_id`. A key
              *     with no list reaches every agent.
+             *
+             *     **In a conversation holding several agents it names who answers.**
+             *     Sent with the `thread_id` of a conversation opened by
+             *     `POST /v1/threads`, an `agent_id` that is one of its `participants`
+             *     asks that agent, and omitting it asks the conversation's own agent.
+             *     An agent that is not a participant is still `agent_mismatch`. The
+             *     message text is never read for this: an `@name` in it is text and
+             *     addresses nobody.
              */
             agent_id?: string;
         };
@@ -897,6 +931,27 @@ export interface components {
             /** @enum {string} */
             role: "user" | "assistant" | "system";
             content: string;
+            /**
+             * Format: uuid
+             * @description The agent that wrote an assistant message. Absent on a user message,
+             *     and on an answer from a workspace with no agents configured.
+             */
+            agent_id?: string;
+            /**
+             * @description That agent's name as the roster has it now, so a renamed agent
+             *     renames its past messages.
+             */
+            agent_name?: string;
+            /**
+             * @description Present only on a conversation's own lines, which are assistant
+             *     messages and are not answers. `nudge` is one agent's question to
+             *     another, written as the agent asking; `unasked` is a question the
+             *     conversation's budget refused; `settle` is an asked agent with
+             *     nothing to add; `withdrawn` is a question whose recipient left.
+             *     Show an unknown value as a line, not as an answer.
+             * @example settle
+             */
+            room_event?: string;
             /** Format: date-time */
             created_at?: string;
         };
@@ -924,6 +979,49 @@ export interface components {
             last_message_at: string;
             /** Format: date-time */
             created_at: string;
+            /**
+             * @description The agents in this conversation: its own agent first, then the
+             *     others. Returned by `GET /v1/threads/{id}` and `POST /v1/threads`,
+             *     not by the list. Absent for a conversation that runs as the
+             *     workspace default with nobody added to it.
+             */
+            participants?: components["schemas"]["ThreadParticipant"][];
+        };
+        /**
+         * @description One agent in a conversation. To ask it, send its `agent_id` on
+         *     `POST /v1/chat` together with the conversation's `thread_id`.
+         */
+        ThreadParticipant: {
+            /** @constant */
+            object: "participant";
+            /** Format: uuid */
+            agent_id: string;
+            agent_name?: string;
+            /**
+             * @description True for the conversation's own agent, which answers a message that
+             *     names nobody. False for every other participant, and for every
+             *     participant of a conversation that runs as the workspace default —
+             *     that one names no agent of its own.
+             */
+            default: boolean;
+            /** Format: date-time */
+            added_at: string;
+        };
+        CreateThreadRequest: {
+            /** @description Your own identifier for the person the conversation is for. */
+            user_ref: string;
+            /**
+             * Format: uuid
+             * @description The conversation's own agent, which answers a message that names
+             *     nobody. Omit it for the workspace default. List agents with
+             *     `GET /v1/agents`.
+             */
+            agent_id?: string;
+            /**
+             * @description The other agents in the conversation. Order is kept; a repeat, and
+             *     `agent_id` itself, are dropped.
+             */
+            participant_ids?: string[];
         };
         ThreadPage: {
             data: components["schemas"]["Thread"][];
@@ -941,6 +1039,14 @@ export interface components {
                 /** Format: uuid */
                 thread_id: string;
                 run_id?: string;
+                /**
+                 * Format: uuid
+                 * @description The agent whose answer this turn is waiting for. In a
+                 *     conversation holding several agents, attaching to the thread
+                 *     delivers the newest answer from any of them; this is how to
+                 *     tell whether it is the one you asked.
+                 */
+                agent_id?: string;
                 /** Format: date-time */
                 started_at: string;
             };
@@ -956,6 +1062,12 @@ export interface components {
          *
          *     Treat an unknown event name as ignorable; that is what lets this list
          *     grow without breaking you.
+         *
+         *     Every frame of a turn that runs as an agent carries `agent_id` and
+         *     `agent_name`. In a conversation holding several agents the stream is
+         *     the turn of the agent you asked, and nobody else's: when that agent
+         *     asks a colleague, the colleague answers in the same conversation, and
+         *     that answer is in `GET /v1/threads/{id}/messages` rather than here.
          */
         ChatEvent: components["schemas"]["ChatEventStarted"] | components["schemas"]["ChatEventDelta"] | components["schemas"]["ChatEventThinking"] | components["schemas"]["ChatEventTool"] | components["schemas"]["ChatEventMessage"] | components["schemas"]["ChatEventError"] | components["schemas"]["ChatEventFinal"];
         /**
@@ -968,6 +1080,9 @@ export interface components {
             run_id?: string;
             /** Format: date-time */
             at: string;
+            /** Format: uuid */
+            agent_id?: string;
+            agent_name?: string;
         };
         /**
          * delta
@@ -975,6 +1090,9 @@ export interface components {
          */
         ChatEventDelta: {
             content: string;
+            /** Format: uuid */
+            agent_id?: string;
+            agent_name?: string;
         };
         /**
          * thinking
@@ -982,6 +1100,9 @@ export interface components {
          */
         ChatEventThinking: {
             step: string;
+            /** Format: uuid */
+            agent_id?: string;
+            agent_name?: string;
         };
         /**
          * tool_call / tool_result
@@ -992,6 +1113,9 @@ export interface components {
         ChatEventTool: {
             /** @example run_sql */
             tool?: string;
+            /** Format: uuid */
+            agent_id?: string;
+            agent_name?: string;
         };
         /**
          * message
@@ -1005,6 +1129,9 @@ export interface components {
          */
         ChatEventError: {
             message: string;
+            /** Format: uuid */
+            agent_id?: string;
+            agent_name?: string;
         };
         /**
          * final
@@ -2124,6 +2251,57 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["ServerError"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createThread: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Honoured as on every other write — a repeat under the same key
+                 *     returns the conversation the first request opened. Optional here,
+                 *     because a retry without one costs nothing.
+                 */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "user_ref": "u_42",
+                 *       "agent_id": "6f1c1f3e-0000-4000-8000-0000000000a1",
+                 *       "participant_ids": [
+                 *         "6f1c1f3e-0000-4000-8000-0000000000b2"
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["CreateThreadRequest"];
+            };
+        };
+        responses: {
+            /** @description The conversation, with its `participants`. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    "Idempotent-Replay": components["headers"]["Idempotent-Replay"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Thread"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["ServerError"];
             503: components["responses"]["Unavailable"];

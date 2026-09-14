@@ -204,7 +204,7 @@ func (refusingMessages) ListPageByThread(context.Context, string, domain.Message
 func (refusingMessages) LatestByThread(context.Context, string) (*domain.Message, error) {
 	panic("unexpected LatestByThread")
 }
-func (refusingMessages) LatestAssistantSince(context.Context, string, time.Time) (*domain.Message, error) {
+func (refusingMessages) LatestAssistantSince(context.Context, string, time.Time, string) (*domain.Message, error) {
 	panic("unexpected LatestAssistantSince")
 }
 func (refusingMessages) CountByThread(context.Context, string) (int, error) {

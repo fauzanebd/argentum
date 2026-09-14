@@ -22,7 +22,7 @@ func NewAgentRepo(db *sql.DB) *AgentRepo { return &AgentRepo{db: db} }
 // means unrestricted — and the one a COALESCE around array_agg would have to
 // hand-repair.
 const agentColumns = `a.id, a.company_id, a.name, a.description, a.persona_prompt,
-	a.allowed_tools, a.template_key, a.is_default, a.enabled, a.created_at, a.updated_at,
+	a.allowed_tools, a.template_key, a.can_nudge, a.is_default, a.enabled, a.created_at, a.updated_at,
 	ARRAY(SELECT s.connection_id::text FROM agent_sources s
 		WHERE s.agent_id = a.id ORDER BY s.connection_id) AS source_ids,
 	ARRAY(SELECT m.server_id::text FROM agent_mcp_servers m
@@ -50,13 +50,13 @@ func (r *AgentRepo) Create(ctx context.Context, a *domain.Agent) error {
 	defer tx.Rollback()
 
 	const q = `
-		INSERT INTO agents (company_id, name, description, persona_prompt, allowed_tools, template_key, is_default, enabled)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO agents (company_id, name, description, persona_prompt, allowed_tools, template_key, can_nudge, is_default, enabled)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, created_at, updated_at
 	`
 	if err := tx.QueryRowContext(ctx, q,
 		a.CompanyID, a.Name, a.Description, a.PersonaPrompt,
-		pq.Array(a.AllowedTools), a.TemplateKey, a.IsDefault, a.Enabled,
+		pq.Array(a.AllowedTools), a.TemplateKey, a.CanNudge, a.IsDefault, a.Enabled,
 	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		if uniqueViolation(err) {
 			return domain.ErrAlreadyExists
@@ -143,13 +143,13 @@ func (r *AgentRepo) Update(ctx context.Context, a *domain.Agent) error {
 	const q = `
 		UPDATE agents
 		SET name = $3, description = $4, persona_prompt = $5, allowed_tools = $6,
-			enabled = $7, updated_at = now()
+			enabled = $7, can_nudge = $8, updated_at = now()
 		WHERE id = $1 AND company_id = $2
 		RETURNING updated_at
 	`
 	err = tx.QueryRowContext(ctx, q,
 		a.ID, a.CompanyID, a.Name, a.Description, a.PersonaPrompt,
-		pq.Array(a.AllowedTools), a.Enabled,
+		pq.Array(a.AllowedTools), a.Enabled, a.CanNudge,
 	).Scan(&a.UpdatedAt)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -246,7 +246,7 @@ func scanAgent(s rowScanner) (*domain.Agent, error) {
 	var tools, sources, mcpServers, skills pq.StringArray
 	if err := s.Scan(
 		&a.ID, &a.CompanyID, &a.Name, &a.Description, &a.PersonaPrompt,
-		&tools, &a.TemplateKey, &a.IsDefault, &a.Enabled, &a.CreatedAt, &a.UpdatedAt, &sources,
+		&tools, &a.TemplateKey, &a.CanNudge, &a.IsDefault, &a.Enabled, &a.CreatedAt, &a.UpdatedAt, &sources,
 		&mcpServers, &skills,
 	); err != nil {
 		return nil, err

@@ -91,6 +91,12 @@ type AgentSpec struct {
 	// for every turn with no bound MCP server, which is the common case and
 	// composes to today's exact tool list.
 	CompanyTools []interfaces.Tool
+	// Nudge offers this turn nudge_agent (T-N6) — the one tool ToolNames does
+	// not decide. ChatRunner sets it from the agent's `can_nudge`, the size of the
+	// room and the hop the turn runs at, and the factory adds or withholds the
+	// tool whatever the allowlist says. False for every turn in a conversation of
+	// one, whose tool list is byte-identical to before the tool existed.
+	Nudge bool
 	// MaxIterations is this turn's tool-calling ceiling, which the SDK enforces
 	// and agentbudget reserves the last of for the answer. Per-turn because the
 	// budget is: a document turn gets ForDocument's headroom, and a ceiling
@@ -295,6 +301,12 @@ type ChatRunner struct {
 	actionCat    ActionCatalog
 	outputRules  OutputPolicy
 	companyPol   CompanyPolicyLoader
+
+	// The room a turn runs in (T-N6): who else is in it, and how deep a chain of
+	// asks may go. Nil offers nudge_agent to no turn and checks no colleague's
+	// question before it runs — see WithRoom.
+	participants ParticipantLister
+	nudgeDepth   int
 
 	// Embedding-based table picker. Both must be non-nil to inject hints;
 	// otherwise the runner silently skips and the agent falls back to the
@@ -738,6 +750,20 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	taints := taint.New()
 	ctx = taint.With(ctx, taints)
 
+	// A colleague's question whose recipient has left the room since it was
+	// asked (T-N6, decision 7). Before the agent is resolved, because
+	// resolveAgent falls back to the company default for an agent that has been
+	// deleted — which would hand the question to whoever the default is, the one
+	// outcome pinning the membership exists to prevent.
+	left, pinErr := r.recipientLeft(ctx, p)
+	if pinErr != nil {
+		return pinErr
+	}
+	if left {
+		r.noteWithdrawn(ctx, p)
+		return nil
+	}
+
 	// Which of the tenant's agents this turn runs as (T-S2). Installed beside
 	// the budget tracker and for the same reason: the constraint has to reach
 	// seven tools, and the tools take a context and a JSON string. Before the
@@ -762,6 +788,12 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// row, and nothing a peer sent may revisit it.
 	var peerAuthor string
 	p, peerAuthor = r.receivePeer(ctx, taints, p)
+	if p.Peer != nil {
+		// The input topic classifier stands aside for a colleague's question
+		// (T-N6) — decided here, from the payload, and never from finding the
+		// fence in the text, which a person can type (multi-agent.md §8c).
+		ctx = guardrails.WithPeerTurn(ctx)
+	}
 
 	// Cheap small-talk short-circuit: skip the model (and the light-LLM
 	// guardrail/classifier pipeline behind it) when the message is a
@@ -883,6 +915,11 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		Persona:        personaOf(agentRow),
 		ToolNames:      toolNamesOf(agentRow),
 		CompanyTools:   companyTools,
+		// Whether this turn may ask a colleague (T-N6): the agent's flag, a room of
+		// more than one, and a hop whose next ask could still be admitted. Read
+		// after the peer payload is received, so a colleague's question at the last
+		// hop is not offered a tool that could only refuse.
+		Nudge: r.offersNudge(ctx, p, agentRow),
 		// The same ceiling the tracker installed above. Handing the SDK a
 		// different number is how a document turn's headroom went unused.
 		MaxIterations: budget.MaxIterations,
@@ -919,7 +956,9 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	//
 	// A peer's words enter here fenced, and only here (T-N5): the user turn is
 	// the one channel a peer has into this model, and never the system prompt.
-	agentMsg := withLanguageReminder(peerMessage(p, peerAuthor))
+	// Directly above them, on a colleague's question only, the sentence saying
+	// what the turn is reading and that it may pass (T-N6).
+	agentMsg := withLanguageReminder(withPassOption(p, peerMessage(p, peerAuthor)))
 	agentMsg = withCompanyNameContext(agentMsg, p.CompanyName)
 	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency, p.Money)
 	agentMsg = r.withPeriodContext(ctx, agentMsg, p.CompanyID)
@@ -948,6 +987,10 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// agent must not read this agent's source catalog, metrics and prior work as
 	// though they were its own — so the memory records the words beside it.
 	ctx = peermemory.WithQuestion(ctx, peerMessage(p, peerAuthor))
+	// The turn itself, for nudge_agent (T-N6): a colleague's turn is this payload
+	// re-aimed, and the tool reaches it through nothing but the context. After
+	// receivePeer, so a directive a peer payload arrived with is already gone.
+	ctx = withAskingTurn(ctx, p)
 
 	// Try streaming first; fall back to blocking Run if the LLM doesn't
 	// support it.
@@ -980,6 +1023,15 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 
 	latency := time.Since(start)
 	metrics.Default().RecordTurn(latency)
+	// A colleague with nothing to add (T-N6). Ahead of every gate below, each of
+	// which judges an answer — and a pass is not one: it states nothing, grounds
+	// nothing, and must not be published as the word PASS. Only on a colleague's
+	// question, the only turn offered the sentinel; a person answered "PASS" was
+	// answered.
+	if p.Peer != nil && isPass(response) {
+		r.settle(ctx, p, peerAuthor, latency)
+		return nil
+	}
 	// Kept so the post-turn chain can tell an agent's own answer from one a gate
 	// wrote in its place. Suggesting what to ask next on top of "I could not
 	// complete that" is the product being cheerful about its own failure (T-Q10).
@@ -2252,7 +2304,6 @@ func (r *ChatRunner) completeWith(
 	// replaced (T-W3).
 	grounding *guardrails.GroundingReport,
 ) {
-	now := time.Now()
 	// The suggestions ride the message's metadata column, which already exists
 	// and is already marshalled at both ends (T-Q10). Nil steps produce a nil map
 	// and the row is written exactly as it was before this ticket.
@@ -2262,6 +2313,23 @@ func (r *ChatRunner) completeWith(
 	// stream reaches the widget and `/v1` callers, and a measurement about a
 	// reply is not something either of them asked for.
 	meta := withGroundingRecord(nextStepsMetadata(steps), p.UserMsgID, grounding)
+	r.finish(ctx, p, response, tokensIn, tokensOut, latency, steps, generatedDocID, meta)
+}
+
+// finish is completeWith once the stored metadata is decided: the message
+// written, a scheduled run, report job or watcher briefing closed out, the
+// `final` event published and the reply delivered to its channel.
+//
+// Split out for T-N6's settle, which ends a turn exactly as an answer does — its
+// `final` is what closes the colleague's bubble on the dashboard — and stores a
+// room line's metadata where an answer stores its suggestions and its grounding
+// record.
+func (r *ChatRunner) finish(
+	ctx context.Context, p queue.ChatRunPayload, response string,
+	tokensIn, tokensOut int, latency time.Duration, steps []domain.NextStep,
+	generatedDocID string, meta map[string]any,
+) {
+	now := time.Now()
 	assistantMsg, err := r.threads.AppendAssistantMessage(
 		ctx, p.ThreadID, response, tokensIn, tokensOut, latency.Milliseconds(), meta,
 	)
@@ -2450,6 +2518,11 @@ func (r *ChatRunner) hydrateMemory(ctx context.Context, agent *sdkagent.Agent, p
 		// thread rather than inform it. They reach the model as the context
 		// block RenderPriorWork composes instead.
 		if m.Role == domain.MessageRoleTool {
+			continue
+		}
+		// A room's own lines never enter a model's history (T-N6): each is the
+		// product's sentence, not a turn's words — see RoomEventKey.
+		if isRoomEvent(m.Metadata) {
 			continue
 		}
 		// Attributed from the row, explicitly (T-N11). The memory stamps what it

@@ -150,7 +150,9 @@ func TestChatScopesAreSplitByCost(t *testing.T) {
 	readOnly := routerWithDeps(t, func(d *apiDeps) {
 		d.apiKeyAuth = scopelessKey{scopes: []domain.Scope{domain.ScopeReadThreads}}
 	})
-	for _, key := range []string{"POST /v1/chat", "DELETE /v1/threads/:id"} {
+	// Opening a conversation (T-N10) is a write too: a reporting job's key must
+	// not be able to set up rooms it will never speak in.
+	for _, key := range []string{"POST /v1/chat", "POST /v1/threads", "DELETE /v1/threads/:id"} {
 		method, path, _ := strings.Cut(key, " ")
 		t.Run(key, func(t *testing.T) {
 			req, err := http.NewRequest(method, concreteURL(path), strings.NewReader(`{}`))

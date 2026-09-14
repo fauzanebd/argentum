@@ -106,7 +106,7 @@ func (s *embedMessagesStub) LatestByThread(context.Context, string) (*domain.Mes
 func (s *embedMessagesStub) ListPageByThread(context.Context, string, domain.MessageFilter) ([]*domain.Message, bool, error) {
 	panic("unexpected ListPageByThread")
 }
-func (s *embedMessagesStub) LatestAssistantSince(context.Context, string, time.Time) (*domain.Message, error) {
+func (s *embedMessagesStub) LatestAssistantSince(context.Context, string, time.Time, string) (*domain.Message, error) {
 	panic("unexpected LatestAssistantSince")
 }
 func (s *embedMessagesStub) DeleteByThread(context.Context, string) error {

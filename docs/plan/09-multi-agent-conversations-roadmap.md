@@ -24,6 +24,65 @@ says so explicitly rather than leaving it to be discovered — the one figure th
 plan would most like to have is what a room actually costs per user message, and
 it is owed, not estimated.
 
+> **Status, 2026-09-14, last: `T-N10` is built and unit-gated — `/v1` sees rooms.** No
+> migration, correctly this time; no prompt change, so no eval. Record:
+> [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §12.
+>
+> - **`POST /v1/threads`** opens a conversation holding named agents, all checked before
+>   anything is written.
+> - **`agent_id` on `POST /v1/chat` names who answers** in a room. An `@` in the text is text.
+> - **`participants`** on a thread read. **`agent_id`, `agent_name` and `room_event`** on
+>   messages, and the agent on every frame.
+> - **The stream and the synchronous door are the asked agent's turn**, even when a colleague
+>   answers first in the same thread.
+> - **A widget conversation cannot become a room**, and both SDKs have `threads.create`.
+>
+> **Where the ticket was wrong** (§12d):
+> - **"`POST /v1/threads` accepts `participant_ids`"** — there was no `POST /v1/threads`.
+> - **"`POST /v1/chat` accepts `agent_id`"** — it had since `T-S5`, meaning the opposite: it
+>   pins a conversation and refuses a different agent.
+> - **"A caller reading only `final` still works"** stopped being true with `T-N6`. A
+>   colleague's `final` arrives on the same channel, often first.
+> - **"The widget gets the label"** contradicts "a room is not enabled for widget sessions".
+>   Not built. What was open was a dashboard member turning a widget conversation into a room.
+>
+> **Also corrected:** the block below said the cut order drops `T-N9`/`T-N10` first. §5 drops
+> `T-N9`, then `T-N7`, then `T-N10`. **Owed** (live-gate §7g): the query on a real Postgres, the
+> live room, and the quickstart run. **Left on this track:** `T-N7`, and `T-N9`, which the
+> cut order drops first.
+
+> **Status, 2026-09-14, later still: `T-N6` is built and unit-gated — one agent in a room
+> can ask another.** Migration `086`, where the ticket said none. Record:
+> [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §11.
+>
+> - **`nudge_agent`** posts the question into the room as the asker's message, queues one
+>   ordinary `chat:run` for the colleague, and returns at once — 2 ms, measured while the
+>   colleague's turn was still running.
+> - **It is offered only** to an agent with `can_nudge`, in a room of more than one, at a hop
+>   the ledger could still admit, and it re-checks all three when it runs. Every other
+>   turn's prompt is byte-identical.
+> - **It refuses, and names who can be asked:** a non-participant, itself, a disabled agent,
+>   another company's. The credit check runs before the ledger. A budget refusal is told to
+>   the room once per agent.
+> - **A colleague whose seat changed is not run**, and the room says so. **A colleague with
+>   nothing to add replies `PASS`**, and the room shows a settle drawn differently from a
+>   limit.
+>
+> **Where the ticket was wrong** (§11d):
+> - **"Migration: none."** `agents.can_nudge` did not exist. `086` adds it, off, with no
+>   backfill.
+> - **"The API's scoping checkboxes get it for free"** would have made it an allowlist tool,
+>   where empty means every tool. It is kept out of the vocabulary instead.
+> - **The default speaker has no participant row to pin.** Its seat is pinned by the empty id.
+> - **The visible question cannot be published as `final`**, which would close the asker's
+>   own bubble. A `room_event` event and three dashboard changes were needed; the ticket said
+>   BE only.
+>
+> **Owed** (live-gate §7f): the paired `make eval` (predicted identical), the live room arm
+> and its negative, `086`'s round-trip, the two-worker arm, and a screenshot of the room
+> lines. **Left on this track:** `T-N7`, whose dependency is now met, and `T-N9`/`T-N10`,
+> which the cut order drops first.
+
 > **Status, 2026-09-14, later: `T-N8`'s ledger is built and unit-gated — the
 > conversation budget, with nothing to refuse until `T-N6`.** No migration, no prompt
 > change. Record: [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §10.
@@ -1092,9 +1151,30 @@ filed against `T-H9`.
 
 ### Track D — An agent talks to an agent (5.0d)
 
-#### `T-N6` `nudge_agent` — one participant asks another
-**Repo:** BE · **Size:** 2.5d · **Deps:** `T-N5`, `T-N8` · **Priority:** P0
-**Migration:** none
+#### `T-N6` `nudge_agent` — one participant asks another · **built 2026-09-14, unit-gated; `make eval`, the live arms and `086`'s round-trip owed — `coverage/multi-agent.md` §11**
+**Repo:** BE, and three dashboard changes it did not name · **Size:** 2.5d · **Deps:** `T-N5`, `T-N8` · **Priority:** P0
+**Migration:** ~~none~~ **`086_agent_can_nudge`** — `agents.can_nudge` did not exist
+
+> **What moved against this ticket ([`../coverage/multi-agent.md`](../coverage/multi-agent.md) §11d):**
+> - **"Migration: none" was wrong.** Decision 8 names `agents.can_nudge`, and nothing had
+>   added it. `086` does, default false, with no backfill.
+> - **"The API's scoping checkboxes get it for free" would have broken decision 8.** A
+>   checkbox is an `allowed_tools` entry, and an empty allowlist means every tool. The tool is
+>   dropped from the vocabulary (`tools.GatedByFlag`), and the factory offers it from the flag
+>   and the room alone.
+> - **The default speaker has no participant row** (`T-N2`), so "the participant row id" does
+>   not exist for it. Its seat is pinned by the empty id against `threads.agent_id`.
+> - **The visible question cannot be published as `final`** — that would close the asker's
+>   own bubble mid-stream. It is a `room_event` event, and the dashboard needed a handler for
+>   it, a drawing for the room's own lines, and a checkbox for the flag. The ticket said BE.
+> - **The classifier skip is narrower than "the input topic classifier" could be read.** Only
+>   `require` rules stand aside; injection and off-topic block rules still run on peer text.
+> - **The pass is a sentinel, not a tool.** A tool would change every room turn's schema. The
+>   sentence offering `PASS` rides a colleague's question only.
+> - **The notice is written once per agent per person's message** — the decision `T-N8` left
+>   here.
+> - **Not asked for, and built:** a colleague whose seat changed writes a room line rather than
+>   vanishing (decision 6), and a room's own lines are never replayed into model history.
 
 ##### Why
 The second half of the request. Ops is asked about a stock discrepancy, the
@@ -1508,9 +1588,34 @@ goes to [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md)
 
 ---
 
-#### `T-N10` `/v1`, the widget, the spec and the SDKs
+#### `T-N10` `/v1`, the widget, the spec and the SDKs · **built 2026-09-14, unit-gated; the live room, the quickstart run and the query on a real Postgres owed — `coverage/multi-agent.md` §12**
 **Repo:** BE + PKG · **Size:** 1.5d · **Deps:** `T-N3` · **Priority:** P1
-**Migration:** none
+**Migration:** none — correct
+
+> **What moved against this ticket ([`../coverage/multi-agent.md`](../coverage/multi-agent.md) §12d):**
+> - **"`POST /v1/threads` accepts `participant_ids`" — there was no `POST /v1/threads`.** `/v1`
+>   opened conversations only as a side effect of `POST /v1/chat`. The route was built. Every
+>   agent is checked before the row is written, where the dashboard's `POST /api/threads`
+>   leaves a thread behind.
+> - **"`POST /v1/chat` accepts `agent_id`" — it already did (`T-S5`), meaning the opposite.**
+>   With a `thread_id` it had to match the conversation's agent or answer `agent_mismatch`. In
+>   a room, a participant's id now names who answers. Anything else is still refused, so a
+>   room of one behaves as before.
+> - **"A caller reading only `final` still works" stopped being true with `T-N6`.** A colleague
+>   asked mid-turn answers on the same channel, under the same job id, often first. The stream
+>   would have ended on the colleague's `final`, and the answer lookup could return a room line.
+>   Both doors and the lookup are now scoped to the agent asked. The ticket asked for `agent_id`
+>   on every frame, which this needed as well.
+> - **"The widget gets the label" contradicts "a room is not enabled for widget sessions".**
+>   With no rooms, every bubble would carry the same name, and `T-N4`'s rule draws no name then.
+>   Not built. What *was* open was a dashboard member adding an agent to a widget conversation
+>   by id — company-scoped, so allowed. `ThreadParticipantService.Add` now refuses it.
+> - **Not asked for, and built:** `room_event` on a message, because `T-N6`'s settle and limit
+>   lines are assistant rows a caller could not otherwise tell from answers. `threads.create` in
+>   both SDKs — the hand-written clients, not the generated types.
+> - **Found in `T-N2`:** its cap counts the default speaker's seat only when the conversation is
+>   pinned. An unpinned dashboard room can hold one more than the ceiling. `/v1` counts the seat
+>   either way. The dashboard is not changed here.
 
 ##### Why
 `T-A4` made a route without an OpenAPI entry a red build **in both directions**,

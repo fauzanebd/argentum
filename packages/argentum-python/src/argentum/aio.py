@@ -464,6 +464,22 @@ class AsyncThreads:
             "GET", "/v1/threads", params={"limit": limit, "cursor": cursor, "user_ref": user_ref}
         )
 
+    async def create(
+        self,
+        *,
+        user_ref: str,
+        agent_id: Optional[str] = None,
+        participant_ids: Optional[List[str]] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> t.Thread:
+        """Open a conversation before its first question. See :meth:`argentum.client.Threads.create`."""
+        body: Dict[str, Any] = {"user_ref": user_ref}
+        if agent_id:
+            body["agent_id"] = agent_id
+        if participant_ids:
+            body["participant_ids"] = list(participant_ids)
+        return await self._client.request_json("POST", "/v1/threads", json=body, idempotency_key=idempotency_key)
+
     async def iter(self, **kwargs: Any) -> AsyncIterator[t.Thread]:
         cursor = kwargs.pop("cursor", None)
         while True:

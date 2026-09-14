@@ -114,6 +114,7 @@ func participantFail(c *gin.Context, err error) {
 	case errors.Is(err, app.ErrParticipantLimit),
 		errors.Is(err, app.ErrDefaultSpeaker),
 		errors.Is(err, app.ErrAgentDisabled),
+		errors.Is(err, app.ErrRoomNotOnWidget),
 		errors.Is(err, domain.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, app.ErrAccessCheckFailed):

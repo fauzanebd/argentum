@@ -12,6 +12,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/agenttemplates"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/tools"
 	mcptools "github.com/fauzanebd/argentum/internal/tools/mcp"
 )
 
@@ -79,10 +80,17 @@ type MCPServerLister interface {
 // NewAgentService wires the roster. toolNames comes from tools.Names over the
 // same registry the worker runs, so a deployment without object storage
 // refuses `generate_document` here for the same reason it never offers it.
+//
+// nudge_agent is in that registry and is dropped here (tools.GatedByFlag):
+// `agents.can_nudge` decides it, and a checkbox would be a second switch for one
+// capability — one that could never do anything, because the factory ignores the
+// allowlist for that tool. Dropped from the vocabulary, a submitted allowlist
+// naming it is refused like any other name this deployment does not offer.
 func NewAgentService(
 	repo domain.AgentRepository, conns domain.ConnectionRepository, toolNames []string,
 ) *AgentService {
-	return &AgentService{repo: repo, conns: conns, tools: toolNames}
+	offered := slices.DeleteFunc(slices.Clone(toolNames), tools.GatedByFlag)
+	return &AgentService{repo: repo, conns: conns, tools: offered}
 }
 
 // WithTemplates installs the gallery an agent can be created from (T-B3).
@@ -219,6 +227,11 @@ type AgentInput struct {
 	// A plain bool would silently disable every agent edited by a client that
 	// did not know the field existed.
 	Enabled *bool `json:"enabled"`
+	// CanNudge lets the agent ask its colleagues in a conversation (T-N6). A
+	// pointer for Enabled's reason, pointing the other way: an edit from a client
+	// that has never heard of the field must leave an admin's decision alone, and
+	// a create that omits it gets the default, which is off.
+	CanNudge *bool `json:"can_nudge"`
 }
 
 // List returns the company's roster, default first.
@@ -264,6 +277,9 @@ func (s *AgentService) Create(ctx context.Context, companyID string, in AgentInp
 	}
 	a.IsDefault = len(existing) == 0
 	a.Enabled = in.Enabled == nil || *in.Enabled
+	// Off unless the form says otherwise (decision 8). No template ticks it, and
+	// neither does an API client that has never heard of the field.
+	a.CanNudge = in.CanNudge != nil && *in.CanNudge
 
 	if err := s.repo.Create(ctx, a); err != nil {
 		if errors.Is(err, domain.ErrAlreadyExists) {
@@ -273,7 +289,7 @@ func (s *AgentService) Create(ctx context.Context, companyID string, in AgentInp
 	}
 	logrus.WithFields(logrus.Fields{
 		"company_id": companyID, "agent_id": a.ID, "name": a.Name,
-		"tools": len(a.AllowedTools), "sources": len(a.SourceIDs),
+		"tools": len(a.AllowedTools), "sources": len(a.SourceIDs), "can_nudge": a.CanNudge,
 		// Logged because it is the one question this column exists to answer:
 		// which starting points do tenants actually pick, and how many start
 		// from blank ("").
@@ -302,6 +318,10 @@ func (s *AgentService) Update(ctx context.Context, companyID, id string, in Agen
 	a.Enabled = current.Enabled
 	if in.Enabled != nil {
 		a.Enabled = *in.Enabled
+	}
+	a.CanNudge = current.CanNudge
+	if in.CanNudge != nil {
+		a.CanNudge = *in.CanNudge
 	}
 	// Disabling the default would leave every unspecified turn pointing at an
 	// agent the tenant has switched off, which is a broken product rather than

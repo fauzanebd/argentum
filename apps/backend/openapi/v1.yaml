@@ -663,6 +663,71 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/ServerError' }
         '503': { $ref: '#/components/responses/Unavailable' }
+    post:
+      operationId: createThread
+      tags: [Chat]
+      summary: Open a conversation, with more than one agent in it
+      description: |
+        A conversation before its first question — the way to set up a room of
+        several agents. You do not need this for one agent: `POST /v1/chat`
+        with a `user_ref` opens a conversation by itself, and that stays the
+        simplest path.
+
+        `agent_id` is the conversation's own agent, and it answers a message
+        that names nobody. `participant_ids` are the others. To ask one of
+        them, send its id as `agent_id` on `POST /v1/chat` together with this
+        conversation's `thread_id`. An `@name` in the message is text and
+        addresses nobody.
+
+        Every agent is checked before anything is written, so a refused call
+        opens nothing. An agent that is unknown, disabled, another workspace's,
+        or outside the key's agent list is `404` — `agent_not_found` for
+        `agent_id`, `participant_not_found` for an entry in `participant_ids`.
+        A repeated id, or `agent_id` repeated in `participant_ids`, is dropped
+        rather than refused. More agents than this deployment allows in one
+        conversation — the conversation's own agent counts — is
+        `400 too_many_participants`.
+
+        Opening a conversation spends nothing, so `Idempotency-Key` is honoured
+        but not required: a retry without one opens a second, empty
+        conversation.
+      x-argentum-scope: write:chat
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: |
+            Honoured as on every other write — a repeat under the same key
+            returns the conversation the first request opened. Optional here,
+            because a retry without one costs nothing.
+          schema: { type: string, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateThreadRequest' }
+            example:
+              user_ref: u_42
+              agent_id: 6f1c1f3e-0000-4000-8000-0000000000a1
+              participant_ids: [6f1c1f3e-0000-4000-8000-0000000000b2]
+      responses:
+        '201':
+          description: The conversation, with its `participants`.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+            Idempotent-Replay: { $ref: '#/components/headers/Idempotent-Replay' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Thread' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
 
   /v1/threads/{id}:
     get:
@@ -1490,6 +1555,14 @@ components:
             call with no `agent_id` when the workspace default is not on it. The
             fix for both is to send one of the key's agents in `agent_id`. A key
             with no list reaches every agent.
+
+            **In a conversation holding several agents it names who answers.**
+            Sent with the `thread_id` of a conversation opened by
+            `POST /v1/threads`, an `agent_id` that is one of its `participants`
+            asks that agent, and omitting it asks the conversation's own agent.
+            An agent that is not a participant is still `agent_mismatch`. The
+            message text is never read for this: an `@name` in it is text and
+            addresses nobody.
       additionalProperties: false
     Turn:
       type: object
@@ -1540,6 +1613,27 @@ components:
           type: string
           enum: [user, assistant, system]
         content: { type: string }
+        agent_id:
+          type: string
+          format: uuid
+          description: |
+            The agent that wrote an assistant message. Absent on a user message,
+            and on an answer from a workspace with no agents configured.
+        agent_name:
+          type: string
+          description: |
+            That agent's name as the roster has it now, so a renamed agent
+            renames its past messages.
+        room_event:
+          type: string
+          description: |
+            Present only on a conversation's own lines, which are assistant
+            messages and are not answers. `nudge` is one agent's question to
+            another, written as the agent asking; `unasked` is a question the
+            conversation's budget refused; `settle` is an asked agent with
+            nothing to add; `withdrawn` is a question whose recipient left.
+            Show an unknown value as a line, not as an answer.
+          examples: ['settle']
         created_at: { type: string, format: date-time }
       additionalProperties: false
     MessagePage:
@@ -1570,6 +1664,54 @@ components:
           description: The rolling topic summary the thread resolver keeps.
         last_message_at: { type: string, format: date-time }
         created_at: { type: string, format: date-time }
+        participants:
+          type: array
+          description: |
+            The agents in this conversation: its own agent first, then the
+            others. Returned by `GET /v1/threads/{id}` and `POST /v1/threads`,
+            not by the list. Absent for a conversation that runs as the
+            workspace default with nobody added to it.
+          items: { $ref: '#/components/schemas/ThreadParticipant' }
+      additionalProperties: false
+    ThreadParticipant:
+      type: object
+      description: |
+        One agent in a conversation. To ask it, send its `agent_id` on
+        `POST /v1/chat` together with the conversation's `thread_id`.
+      required: [object, agent_id, default, added_at]
+      properties:
+        object: { type: string, const: participant }
+        agent_id: { type: string, format: uuid }
+        agent_name: { type: string }
+        default:
+          type: boolean
+          description: |
+            True for the conversation's own agent, which answers a message that
+            names nobody. False for every other participant, and for every
+            participant of a conversation that runs as the workspace default —
+            that one names no agent of its own.
+        added_at: { type: string, format: date-time }
+      additionalProperties: false
+    CreateThreadRequest:
+      type: object
+      required: [user_ref]
+      properties:
+        user_ref:
+          type: string
+          description: Your own identifier for the person the conversation is for.
+        agent_id:
+          type: string
+          format: uuid
+          description: |
+            The conversation's own agent, which answers a message that names
+            nobody. Omit it for the workspace default. List agents with
+            `GET /v1/agents`.
+        participant_ids:
+          type: array
+          description: |
+            The other agents in the conversation. Order is kept; a repeat, and
+            `agent_id` itself, are dropped.
+          items: { type: string, format: uuid }
       additionalProperties: false
     ThreadPage:
       type: object
@@ -1596,6 +1738,14 @@ components:
           properties:
             thread_id: { type: string, format: uuid }
             run_id: { type: string }
+            agent_id:
+              type: string
+              format: uuid
+              description: |
+                The agent whose answer this turn is waiting for. In a
+                conversation holding several agents, attaching to the thread
+                delivers the newest answer from any of them; this is how to
+                tell whether it is the one you asked.
             started_at: { type: string, format: date-time }
           additionalProperties: false
       additionalProperties: false
@@ -1612,6 +1762,12 @@ components:
 
         Treat an unknown event name as ignorable; that is what lets this list
         grow without breaking you.
+
+        Every frame of a turn that runs as an agent carries `agent_id` and
+        `agent_name`. In a conversation holding several agents the stream is
+        the turn of the agent you asked, and nobody else's: when that agent
+        asks a colleague, the colleague answers in the same conversation, and
+        that answer is in `GET /v1/threads/{id}/messages` rather than here.
       oneOf:
         - $ref: '#/components/schemas/ChatEventStarted'
         - $ref: '#/components/schemas/ChatEventDelta'
@@ -1629,6 +1785,8 @@ components:
         thread_id: { type: string, format: uuid }
         run_id: { type: string }
         at: { type: string, format: date-time }
+        agent_id: { type: string, format: uuid }
+        agent_name: { type: string }
       additionalProperties: false
     ChatEventDelta:
       type: object
@@ -1637,6 +1795,8 @@ components:
       required: [content]
       properties:
         content: { type: string }
+        agent_id: { type: string, format: uuid }
+        agent_name: { type: string }
       additionalProperties: false
     ChatEventThinking:
       type: object
@@ -1645,6 +1805,8 @@ components:
       required: [step]
       properties:
         step: { type: string }
+        agent_id: { type: string, format: uuid }
+        agent_name: { type: string }
       additionalProperties: false
     ChatEventTool:
       type: object
@@ -1655,6 +1817,8 @@ components:
         where it is redacted on the way in and reachable only by an admin.
       properties:
         tool: { type: string, examples: ['run_sql'] }
+        agent_id: { type: string, format: uuid }
+        agent_name: { type: string }
       additionalProperties: false
     ChatEventMessage:
       title: message
@@ -1669,6 +1833,8 @@ components:
       required: [message]
       properties:
         message: { type: string }
+        agent_id: { type: string, format: uuid }
+        agent_name: { type: string }
       additionalProperties: false
     ChatEventFinal:
       title: final

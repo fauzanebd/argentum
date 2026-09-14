@@ -245,6 +245,46 @@ func TestAnUnsetCapTakesTheDomainDefault(t *testing.T) {
 	}
 }
 
+// T-N10: "a widget session cannot create or address a multi-agent thread". The
+// widget has no participant route, so the door that could make one is a member
+// on the dashboard holding a widget conversation's id — company-scoped, so the
+// tenant check lets it through. Nothing may be written, and the refusal must
+// come before the roster read so it says nothing about the agent.
+func TestAWidgetConversationCannotBecomeARoom(t *testing.T) {
+	roster := &fakeRoster{byID: map[string]*domain.Agent{"ag-ops": agentRow("ag-ops", "Ops")}}
+	repo := newFakeParticipants()
+	threads := oneThreadRepo{
+		fakeThreadRepo: &fakeThreadRepo{},
+		thread: &domain.ConversationThread{
+			ID: "th-w", CompanyID: "co-1", AgentID: "ag-fin", Channel: domain.ChannelWidget,
+			EmbedUserRef: "visitor-9", CreatedAt: time.Now(),
+		},
+	}
+	svc := NewThreadParticipantService(repo, threads, roster, 0)
+
+	_, err := svc.Add(context.Background(), "co-1", "th-w", "ag-ops", "u-1")
+
+	if !errors.Is(err, ErrRoomNotOnWidget) {
+		t.Fatalf("Add = %v, want ErrRoomNotOnWidget", err)
+	}
+	if n, _ := repo.CountByThread(context.Background(), "co-1", "th-w"); n != 0 {
+		t.Errorf("%d participant row(s) written into a widget conversation", n)
+	}
+}
+
+// The ceiling POST /v1/threads checks a room against before opening it is the
+// one Add enforces, not a second number.
+func TestCapacityIsTheCeilingAddEnforces(t *testing.T) {
+	svc, _ := participantFixture(t, "ag-fin")
+	if got := svc.Capacity(); got != domain.MaxThreadParticipants {
+		t.Errorf("Capacity() = %d, want the domain default %d", got, domain.MaxThreadParticipants)
+	}
+	pinned := NewThreadParticipantService(newFakeParticipants(), oneThreadRepo{fakeThreadRepo: &fakeThreadRepo{}}, &fakeRoster{}, 2)
+	if got := pinned.Capacity(); got != 2 {
+		t.Errorf("Capacity() = %d, want the configured 2", got)
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

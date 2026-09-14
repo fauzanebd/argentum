@@ -70,6 +70,19 @@ var ErrDefaultSpeaker = errors.New("this agent answers messages that address nob
 // disabling a suggestion.
 var ErrAgentDisabled = errors.New("that agent is disabled")
 
+// ErrRoomNotOnWidget is an attempt to add an agent to a website widget's
+// conversation (T-N10). A room is not enabled for widget sessions — see Add.
+var ErrRoomNotOnWidget = errors.New("a website widget conversation holds one agent and cannot become a room")
+
+// Capacity is the ceiling on one room, the default speaker's seat included.
+//
+// `POST /v1/threads` checks a whole room against it before the conversation is
+// opened (T-N10), so a room that could never fit leaves nothing behind. Add
+// still checks each insert, which is the check that holds under a race.
+func (s *ThreadParticipantService) Capacity() int {
+	return s.max
+}
+
 // List returns the room: the default speaker, then everyone added to it.
 //
 // **The default speaker is an implicit member and has no row.**
@@ -132,6 +145,16 @@ func (s *ThreadParticipantService) Add(ctx context.Context, companyID, threadID,
 	thread, err := s.ownedThread(ctx, companyID, threadID)
 	if err != nil {
 		return nil, err
+	}
+	// A website widget's conversation holds one agent (T-N10). The person on the
+	// other end is a visitor to somebody else's site rather than staff, and a room
+	// there is the roadmap's §7 — a tenant's customer addressing the HR agent —
+	// arriving through the one door where nobody on it belongs to the company.
+	// The widget has no route that adds a participant; this is what stops a
+	// member adding one from the dashboard, which the tenant check alone allows.
+	// Before the roster read, because the answer does not depend on the agent.
+	if thread.Channel == domain.ChannelWidget {
+		return nil, ErrRoomNotOnWidget
 	}
 
 	// ErrNotFound for another company's agent as much as for one that never

@@ -111,6 +111,14 @@ type Stack struct {
 	// takes the empty-binding fast path.
 	CompanyToolSource *mcptools.Source
 
+	// Nudges is nudge_agent's service (T-N6); room and conversation are what it
+	// shares with the runner — who is in a conversation, and T-N8's ledger. Built
+	// before the registry, because the tool is registered with the service, and
+	// completed with the event bus in NewChatRunner.
+	Nudges       *app.NudgeService
+	room         *app.Room
+	conversation *agentbudget.Conversation
+
 	// Metrics is the registry (T-06/T-07): the tools run through it, and
 	// ChatRunner reads its catalog into each turn so the agent knows which
 	// numbers are defined before it decides how to answer.
@@ -602,7 +610,27 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 		s.AgentActions,
 	)
 
+	// A colleague's question (T-N6): who is in a room, the conversation budget
+	// that bounds a chain of questions, and the service nudge_agent calls. Before
+	// the registry, which registers the tool with the service.
+	//
+	// The ledger is this process's own client over the shared Redis, with the
+	// settings cmd/api opens a person's message under. That is what makes the two
+	// one ledger: T-N8's counter lives in Redis, keyed by the message, and not in
+	// either process.
+	s.room = app.NewRoom(app.NewThreadParticipantService(
+		pgctl.NewThreadParticipantRepo(controlDB), s.Threads, s.Agents, cfg.ThreadMaxParticipants,
+	), s.Agents)
+	s.conversation = agentbudget.NewConversation(s.Redis, agentbudget.Ceilings{
+		MaxAgentTurns: cfg.ConversationMaxAgentTurns,
+		MaxNudgeDepth: cfg.ConversationMaxNudgeDepth,
+		Wall:          time.Duration(cfg.ConversationWallSecs) * time.Second,
+	})
+	s.Nudges = app.NewNudgeService(s.Agents, s.room, s.ThreadSvc, s.scheduledEnq, s.conversation).
+		WithBudget(s.UsageSvc)
+
 	s.Tools = tools.Registry(tools.RegistryDeps{
+		Nudges:      s.Nudges,
 		Pool:        s.TenantPool,
 		Connections: s.Connections,
 		Redis:       s.Redis,
@@ -814,7 +842,7 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 			turnTools = append(append(make([]interfaces.Tool, 0, len(d.tools)+len(spec.CompanyTools)),
 				d.tools...), spec.CompanyTools...)
 		}
-		turnTools = filterTools(turnTools, spec.ToolNames)
+		turnTools = offerNudge(turnTools, spec.ToolNames, spec.Nudge)
 		turnToolNames := tools.Names(turnTools)
 
 		// A per-turn addendum, appended rather than prepended: the shared
@@ -1006,6 +1034,33 @@ func frameCompanyContext(profile string) string {
 		profile
 }
 
+// offerNudge is filterTools with the one tool the allowlist does not decide
+// (T-N6). nudge_agent is taken out before the allowlist is applied and put back
+// only when the turn may nudge — so an unrestricted agent, whose empty allowlist
+// hands filterTools the whole registry, does not get it by default, and a
+// restricted agent whose list could never name it gets it when an admin said so.
+//
+// Withheld, the result is exactly what filterTools returned before the tool
+// existed: the same instances, in the same order. That is what keeps every
+// single-agent turn's tool definitions — and on Anthropic its cached prefix —
+// byte-identical, which is the second reason decision 8 gates on the room.
+func offerNudge(all []interfaces.Tool, allowed []string, nudge bool) []interfaces.Tool {
+	var nudgeTool interfaces.Tool
+	rest := make([]interfaces.Tool, 0, len(all))
+	for _, t := range all {
+		if tools.GatedByFlag(t.Name()) {
+			nudgeTool = t
+			continue
+		}
+		rest = append(rest, t)
+	}
+	out := filterTools(rest, allowed)
+	if nudge && nudgeTool != nil {
+		out = append(out, nudgeTool)
+	}
+	return out
+}
+
 // filterTools narrows the registry to an agent's allowlist, by name (T-S2).
 // Empty allowlist returns the registry untouched — the roster's one rule,
 // stated in domain.Agent.AllowsTool and not restated here.
@@ -1047,6 +1102,11 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 	if s.actionMessenger != nil {
 		s.actionMessenger.SetWhatsApp(wa)
 	}
+	// And complete nudge_agent's service with the bus a room line is published on
+	// (T-N6), for the same reason: the bus arrives here, after the registry.
+	if s.Nudges != nil {
+		s.Nudges.SetBus(bus)
+	}
 	runner := app.NewChatRunner(
 		s.ThreadSvc, s.Messages, s.Threads, s.Connections,
 		s.AgentFactory, s.LLMCache, bus, wa, s.TenantPool,
@@ -1058,7 +1118,11 @@ func (s *Stack) NewChatRunner(bus app.EventBus, wa whatsapp.Provider) *app.ChatR
 		WithCompanyTools(s.CompanyToolSource).
 		WithMetrics(s.Metrics).
 		WithActionCatalog(s.Actions).
-		WithWatchers(s.Watchers)
+		WithWatchers(s.Watchers).
+		// Which turns may ask a colleague, and the membership check a colleague's
+		// question makes before it runs (T-N6). The depth is the ledger's, so the
+		// runner stops offering the tool at exactly the hop Admit would refuse.
+		WithRoom(s.room, s.conversation.Ceilings().MaxNudgeDepth)
 	// Explicitly, not as another chained call: buildGuardrails returns a typed
 	// nil when the deployment configures no path, and a typed nil handed to an
 	// interface parameter is not nil — the runner's own guard would not catch it

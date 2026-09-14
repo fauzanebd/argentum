@@ -75,6 +75,11 @@ interface AgentDraft {
    *  create and ignored on update — the backend treats it as provenance. */
   template_key: string;
   enabled?: boolean;
+  /** May ask another agent in a conversation a question (T-N6). Off by default,
+   *  and not a tool checkbox: an empty tool allowlist means every tool, so the
+   *  capability lives in its own flag. Optional like `enabled` — an edit that
+   *  omits it leaves the admin's decision alone. */
+  can_nudge?: boolean;
 }
 
 const EMPTY_DRAFT: AgentDraft = {
@@ -87,6 +92,7 @@ const EMPTY_DRAFT: AgentDraft = {
   skill_ids: [],
   template_key: "",
   enabled: true,
+  can_nudge: false,
 };
 
 function connectionLabel(c: Connection): string {
@@ -143,6 +149,9 @@ function draftFromTemplate(t: AgentTemplate, sources: Connection[]): AgentDraft 
     mcp_server_ids: [],
     template_key: t.key,
     enabled: true,
+    // No card ticks it (roadmap 09, decision 8): a template describes a job, and
+    // letting an agent spend its colleagues' turns is an admin's call.
+    can_nudge: false,
   };
 }
 
@@ -292,6 +301,7 @@ export function AgentsTab() {
       skill_ids: [...(a.skill_ids ?? [])],
       template_key: a.template_key,
       enabled: a.enabled,
+      can_nudge: a.can_nudge,
     });
     setError(null);
     setShowForm(true);
@@ -736,6 +746,27 @@ export function AgentsTab() {
               </label>
             ))}
           </ScopeGroup>
+
+          {/* T-N6. Its own flag, not a tool checkbox: an empty tool list above
+              means every tool, and this has to stay off until an admin says so.
+              The copy says what a question costs, because each one is a whole
+              turn for the colleague against the colleague's own data. */}
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={draft.can_nudge === true}
+              onChange={(e) => setDraft({ ...draft, can_nudge: e.target.checked })}
+            />
+            <span>
+              May ask other agents
+              <span className="block text-xs text-muted-foreground">
+                In a conversation with more than one agent, this agent can put a question to
+                another one, and the answer appears in the conversation. Each question is a full
+                turn for the other agent, run against that agent&apos;s data sources.
+              </span>
+            </span>
+          </label>
 
           <label className="flex items-center gap-2 text-sm">
             <input

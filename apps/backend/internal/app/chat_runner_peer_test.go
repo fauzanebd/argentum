@@ -235,11 +235,26 @@ func TestThePeerCarrierHoldsNothingThatDecidesATurn(t *testing.T) {
 	for i := range carrier.NumField() {
 		got = append(got, carrier.Field(i).Name)
 	}
-	if want := []string{"AgentID", "Taint"}; !slices.Equal(got, want) {
+	want := []string{
+		// Who wrote the words. It becomes the fence's label through a roster read
+		// scoped to the recipient's company, and nothing else.
+		"AgentID",
+		// What the author had read. It can only add to the recipient's taint,
+		// which gates actions; it never widens what the recipient may reach.
+		"Taint",
+		// T-N6: the membership the question was planned against. It decides
+		// whether the turn runs at all — a recipient who left the room is not
+		// asked — and never what the turn may reach.
+		"ParticipantID",
+		// T-N6: the hop. It decides whether this turn may ask in turn, which
+		// only ever narrows the tool list, and never what the turn may reach.
+		"Depth",
+	}
+	if !slices.Equal(got, want) {
 		t.Fatalf("queue.PeerOrigin fields = %v, want %v.\n"+
 			"A field here is a trust-boundary decision. If it can reach the recipient's sources, tools, MCP servers, "+
-			"skills, persona, budget or system prompt, it must not exist (T-N5; roadmap 09 decision 5). If it cannot — "+
-			"T-N6's participant row id and depth are the expected ones — add it to this list with the reason beside it.",
+			"skills, persona, budget or system prompt, it must not exist (T-N5; roadmap 09 decision 5). If it cannot, "+
+			"add it to this list with the reason beside it.",
 			got, want)
 	}
 

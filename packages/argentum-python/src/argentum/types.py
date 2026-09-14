@@ -57,6 +57,8 @@ class ChatEventDelta(TypedDict, total=False):
     Always present: content.
     """
     content: str
+    agent_id: str
+    agent_name: str
 
 
 class ChatEventError(TypedDict, total=False):
@@ -65,6 +67,8 @@ class ChatEventError(TypedDict, total=False):
     Always present: message.
     """
     message: str
+    agent_id: str
+    agent_name: str
 
 
 class ChatEventStarted(TypedDict, total=False):
@@ -75,6 +79,8 @@ class ChatEventStarted(TypedDict, total=False):
     thread_id: str
     run_id: str
     at: str
+    agent_id: str
+    agent_name: str
 
 
 class ChatEventThinking(TypedDict, total=False):
@@ -83,6 +89,8 @@ class ChatEventThinking(TypedDict, total=False):
     Always present: step.
     """
     step: str
+    agent_id: str
+    agent_name: str
 
 
 class ChatEventTool(TypedDict, total=False):
@@ -91,6 +99,8 @@ class ChatEventTool(TypedDict, total=False):
     where it is redacted on the way in and reachable only by an admin.
     """
     tool: str
+    agent_id: str
+    agent_name: str
 
 
 class ChatRequest(TypedDict, total=False):
@@ -143,6 +153,17 @@ class CreateReportRequest(TypedDict, total=False):
     locale: str
     # An ISO 4217 code.
     currency: str
+
+
+class CreateThreadRequest(TypedDict, total=False):
+    """Always present: user_ref.
+    """
+    # Your own identifier for the person the conversation is for.
+    user_ref: str
+    # The conversation's own agent, which answers a message that names nobody.
+    agent_id: str
+    # The other agents in the conversation.
+    participant_ids: List[str]
 
 
 class Credits(TypedDict, total=False):
@@ -258,6 +279,12 @@ class Message(TypedDict, total=False):
     object: Literal["message"]
     role: Literal["user", "assistant", "system"]
     content: str
+    # The agent that wrote an assistant message.
+    agent_id: str
+    # That agent's name as the roster has it now, so a renamed agent renames its past messages.
+    agent_name: str
+    # Present only on a conversation's own lines, which are assistant messages and are not answers.
+    room_event: str
     created_at: str
 
 
@@ -513,6 +540,8 @@ class Thread(TypedDict, total=False):
     summary: str
     last_message_at: str
     created_at: str
+    # The agents in this conversation: its own agent first, then the others.
+    participants: List[ThreadParticipant]
 
 
 class ThreadPage(TypedDict, total=False):
@@ -521,6 +550,20 @@ class ThreadPage(TypedDict, total=False):
     data: List[Thread]
     has_more: bool
     next_cursor: str
+
+
+class ThreadParticipant(TypedDict, total=False):
+    """One agent in a conversation. To ask it, send its `agent_id` on `POST
+    /v1/chat` together with the conversation's `thread_id`.
+
+    Always present: object, agent_id, default, added_at.
+    """
+    object: Literal["participant"]
+    agent_id: str
+    agent_name: str
+    # True for the conversation's own agent, which answers a message that names nobody.
+    default: bool
+    added_at: str
 
 
 class Turn(TypedDict, total=False):
@@ -644,6 +687,7 @@ __all__ = [
     "ChatRequest",
     "ConflictError",
     "CreateReportRequest",
+    "CreateThreadRequest",
     "Credits",
     "Document",
     "DocumentFormat",
@@ -676,6 +720,7 @@ __all__ = [
     "Scope",
     "Thread",
     "ThreadPage",
+    "ThreadParticipant",
     "Turn",
     "Usage",
     "UsageModelSpend",

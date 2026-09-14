@@ -1,0 +1,30 @@
+-- T-N6: an agent may ask another agent in its room a question — when an admin
+-- says it may.
+--
+-- Roadmap 09, decision 8: nudging is off by default, per agent. It follows the
+-- MCP binding's rule — empty means NONE — and not the tool allowlist's, where
+-- empty means every tool. A capability that reaches only the agent's own
+-- configuration defaults open; one that spends *another* agent's budget against
+-- *another* agent's sources defaults closed, and a nudge is the second kind.
+--
+-- **A column, not a name in `allowed_tools`.** That array is where "which tools
+-- may this agent call" already lives, and extending an existing column is the
+-- house rule. It cannot carry this one. An empty allowlist means every tool, so
+-- the capability would be on for every unrestricted agent the day it shipped —
+-- and ticking the box on an unrestricted agent in the form would narrow that
+-- agent to the one tool. The two rules disagree about what empty means, which is
+-- the whole of decision 8.
+--
+-- Nothing changes on the day this applies. The default is false, so no agent can
+-- ask anybody until an admin ticks it, and even then the tool is offered only in
+-- a room of more than one (decision 8's second gate). A constant default
+-- rewrites no rows.
+--
+-- **The new release reads this column on every roster read** (`agentColumns`),
+-- so it must be applied before a new worker serves a turn — the arrangement
+-- `template_key` (T-B3) shipped under. `cmd/api` applies it on boot.
+--
+-- No backfill, deliberately — the opposite of 043 and 081. Those granted output
+-- tools to agents that already existed, because an agent that cannot make a
+-- document is a gap. An agent that cannot ask a colleague is the decision.
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS can_nudge BOOLEAN NOT NULL DEFAULT false;

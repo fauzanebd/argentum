@@ -40,7 +40,7 @@ type ToolCallEvent struct {
 type ChatEvent struct {
 	JobID        string         `json:"job_id"`
 	ThreadID     string         `json:"thread_id"`
-	Type         string         `json:"type"` // state | started | iteration | delta | thinking | tool_call | tool_result | final | error | render_progress
+	Type         string         `json:"type"` // state | started | iteration | delta | thinking | tool_call | tool_result | final | error | render_progress | room_event
 	Content      string         `json:"content,omitempty"`
 	ThinkingStep string         `json:"thinking_step,omitempty"`
 	ToolCall     *ToolCallEvent `json:"tool_call,omitempty"`

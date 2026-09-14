@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import type { HttpClient } from './http.js';
 import { readSSE } from './sse.js';
-import type { ChatEvent, ChatRequest, Message, MessagePage, Thread, ThreadPage, Turn } from './types.js';
+import type {
+  ChatEvent,
+  ChatRequest,
+  CreateThreadRequest,
+  Message,
+  MessagePage,
+  Thread,
+  ThreadPage,
+  Turn,
+} from './types.js';
 
 export interface SendOptions {
   signal?: AbortSignal;
@@ -101,6 +110,23 @@ export class Chat {
 /** The conversations this integration started. */
 export class Threads {
   constructor(private readonly http: HttpClient) {}
+
+  /**
+   * Open a conversation before its first question — the way to set up a room of
+   * several agents. `agent_id` is the conversation's own agent and answers a
+   * message that names nobody; `participant_ids` are the others. Ask one of them
+   * by passing its id as `agent_id` to `send` with this conversation's
+   * `thread_id`. An `@name` in a message is text and addresses nobody.
+   */
+  async create(body: CreateThreadRequest, options: SendOptions = {}): Promise<Thread> {
+    return this.http.json<Thread>({
+      method: 'POST',
+      path: '/v1/threads',
+      body,
+      ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+  }
 
   async list(options: PageOptions & { user_ref?: string } = {}): Promise<ThreadPage> {
     return this.http.json<ThreadPage>({

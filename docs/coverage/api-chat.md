@@ -480,3 +480,28 @@ fail, and reverting `context.WithoutCancel` makes
 - **`POST /v1/chat` has no cancel.** A caller who starts a turn pays for it.
   Cancellation means reaching into the worker's run loop, which is `T-16`'s
   budget guard's territory and a ticket of its own.
+- **Attaching to a room is not scoped to an agent** (`T-N10`). The attach door
+  has no agent to scope to, so on a conversation holding several it delivers the
+  newest answer from any of them. If the newest row is a room's own line — a
+  settle, a limit — it waits for the next `final` from anyone. The send doors
+  are scoped; see §7.
+
+## 7. Rooms (`T-N10`, 2026-09-14)
+
+A conversation over `/v1` can hold several agents. The record is
+[`multi-agent.md`](multi-agent.md) §12; what changed on this surface:
+
+- **`POST /v1/threads`** opens a conversation before its first question, with
+  `agent_id` as its own agent and `participant_ids` as the others. `write:chat`;
+  `Idempotency-Key` honoured, not required, because nothing is spent.
+- **`agent_id` on `POST /v1/chat` names who answers in a room.** Sent with a room's
+  `thread_id`, a participant's id asks that agent. Anything else is still
+  `agent_mismatch`, as §3's T-S5 rule had it. The text is never read for routing.
+- **`GET /v1/threads/{id}` carries `participants`**; the list does not.
+- **Messages carry `agent_id`, `agent_name` and `room_event`**, and every stream
+  frame of a scoped turn carries the agent.
+- **§3's reconciliation is scoped to the agent asked.** The thread's channel now
+  also carries a colleague's turn (`T-N6`). An unscoped stream would end on
+  whichever `final` came first, and the transcript check could return a room
+  line. Both doors now forward only the asked agent's frames, and the lookup
+  skips room lines. A `PendingTurn`'s `in_flight` names that agent.

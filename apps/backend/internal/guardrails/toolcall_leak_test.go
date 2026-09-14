@@ -42,6 +42,13 @@ func TestLeakShapes(t *testing.T) {
 		{"newline before arguments", "Checking.\nfunctions.list_metrics:0\n{}", true},
 		{"undecoded special tokens", `Checking.<|tool_call_begin|>functions.list_metrics<|tool_call_argument_begin|>{}`, true},
 		{"undecoded section token", `<|tool_calls_section_begin|>`, true},
+		// T-N6. A leaked nudge is the worst-reading one of these: the reply
+		// narrates asking a colleague — "Finance holds the ledger, asking them" —
+		// and the question was never posted and no turn was queued, so the
+		// person waits for an answer that is not coming.
+		{"a leaked nudge", "Finance holds the purchase ledger, so I will ask them." +
+			`functions.nudge_agent:0{"agent":"Finance","question":"Was a goods-in posted for SKU 4471?"}`, true},
+		{"prose about asking a colleague", "I asked Finance whether a goods-in was posted for SKU 4471.", false},
 
 		// The negatives matter more than the positives here: this guard
 		// replaces the entire reply, so a false positive costs a user an

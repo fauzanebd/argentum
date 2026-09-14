@@ -45,6 +45,8 @@ export type Message = Schemas['Message'];
 export type MessagePage = Schemas['MessagePage'];
 export type Thread = Schemas['Thread'];
 export type ThreadPage = Schemas['ThreadPage'];
+export type ThreadParticipant = Schemas['ThreadParticipant'];
+export type CreateThreadRequest = Schemas['CreateThreadRequest'];
 export type Usage = Schemas['Usage'];
 
 /**

@@ -774,7 +774,7 @@ var unpolicedPaths = map[string]bool{
 	// read — and DELETE is a write, because destroying a conversation is not
 	// something a read-only key should be able to do.
 	"/v1/chat":                 true, // write:chat
-	"/v1/threads":              true, // read:threads
+	"/v1/threads":              true, // read:threads (GET), write:chat (POST, T-N10)
 	"/v1/threads/:id":          true, // read:threads (GET), write:chat (DELETE)
 	"/v1/threads/:id/messages": true, // read:threads
 	"/v1/threads/:id/events":   true, // read:threads

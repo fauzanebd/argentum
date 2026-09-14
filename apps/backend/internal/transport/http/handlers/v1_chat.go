@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -49,6 +50,39 @@ type V1ChatHandler struct {
 	// heartbeat is heartbeatEvery in production and is never configured. It is
 	// a field only so a test can watch a beat arrive without sleeping for one.
 	heartbeat time.Duration
+	// opener opens a conversation before its first question, and members is the
+	// room it holds (T-N10). Both nil is legal and is every wiring that predates
+	// rooms: `POST /v1/threads` answers a typed 503, a thread read carries no
+	// `participants`, and every other route behaves exactly as before.
+	opener  V1ThreadOpener
+	members V1Room
+}
+
+// V1ThreadOpener is the one thing `POST /v1/threads` asks of the enqueue path
+// (T-N10): check every agent a new conversation would hold, then open it.
+// *app.ChatEnqueuer is the production one.
+//
+// Separate from V1ChatEnqueuer rather than a second method on it, because the
+// reports handler takes that interface too and has no conversation to open.
+type V1ThreadOpener interface {
+	OpenAPIThread(ctx context.Context, in app.APIThreadInput) (*domain.ConversationThread, error)
+}
+
+// V1Room is the membership half of a conversation `/v1` reads and writes
+// (T-N10). *app.ThreadParticipantService is the production one, and it is the
+// same service the dashboard's room routes use, so the cap, the widget refusal
+// and the tenant check are one set of rules on both surfaces.
+type V1Room interface {
+	List(ctx context.Context, companyID, threadID string) ([]*domain.ThreadParticipant, error)
+	Add(ctx context.Context, companyID, threadID, agentID, addedBy string) (*domain.ThreadParticipant, error)
+	Capacity() int
+}
+
+// WithRooms enables `POST /v1/threads` and the room on a thread read (T-N10).
+// Optional, in the shape ChatHandler.WithParticipants uses and for its reason.
+func (h *V1ChatHandler) WithRooms(opener V1ThreadOpener, members V1Room) *V1ChatHandler {
+	h.opener, h.members = opener, members
+	return h
 }
 
 // V1ChatEnqueuer is the half of app.ChatEnqueuer the `/v1` handlers use:
@@ -128,6 +162,12 @@ func (h *V1ChatHandler) Register(rg *gin.RouterGroup) {
 		h.send)
 
 	rg.GET("/threads", read, h.listThreads)
+	// A conversation opened before its first question, so a room can be set up
+	// (T-N10). `write:chat`, because it writes. The idempotency key is honoured
+	// and not required, which is the other doors' rule read the other way: they
+	// require one because a retry would bill twice, and a retry here opens a
+	// second empty conversation that costs nothing and can be deleted.
+	rg.POST("/threads", write, middleware.Idempotency(h.idem), h.createThread)
 	rg.GET("/threads/:id", read, h.getThread)
 	rg.GET("/threads/:id/messages", read, h.listMessages)
 	// The resume door. A 504 from the synchronous send and a `409
@@ -168,9 +208,17 @@ type chatRequest struct {
 // Without it, re-attaching to a thread that has since answered a later question
 // would hand the caller the wrong answer and call it theirs — the same failure
 // DocumentRepository.NewestForThreadSince exists to avoid.
+//
+// AgentID is the fourth (T-N10): the agent this turn runs as, when there is
+// exactly one. In a room the thread's channel also carries turns this caller
+// did not start — a colleague asked mid-turn answers in the same thread, often
+// first — and this is what tells the stream which `final` is the caller's.
+// Stored with the rest, so a replay after a disconnect is scoped as the
+// original was.
 type turnRecord struct {
 	ThreadID  string    `json:"thread_id"`
 	RunID     string    `json:"run_id,omitempty"`
+	AgentID   string    `json:"agent_id,omitempty"`
 	StartedAt time.Time `json:"started_at"`
 }
 
@@ -231,6 +279,13 @@ func (h *V1ChatHandler) send(c *gin.Context) {
 	}
 
 	rec := turnRecord{ThreadID: res.Thread.ID, RunID: res.UserMsgID, StartedAt: startedAt}
+	if len(res.AgentIDs) == 1 {
+		// One turn, so exactly one answer is the caller's (T-N10). A message that
+		// fanned out has no single answer to scope to and stays unscoped, as every
+		// stream was before rooms; nothing on `/v1` fans out today, because only
+		// the dashboard's `@` addresses more than one agent.
+		rec.AgentID = res.AgentIDs[0]
+	}
 	// Written through to Redis immediately, so a retry arriving while this turn
 	// is still running gets a 409 naming the thread it is already waiting on
 	// rather than starting a second billed turn.
@@ -351,7 +406,7 @@ func (h *V1ChatHandler) stream(c *gin.Context, rec turnRecord, resumeFrom time.T
 	// would hold a connection open waiting for a `final` that was published
 	// into an empty room. The persisted transcript is the durable half of the
 	// stream, and this is where the two are reconciled.
-	if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt); err == nil {
+	if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.AgentID); err == nil {
 		h.sendFinal(c, rec, msg, "")
 		return
 	}
@@ -397,18 +452,29 @@ func (h *V1ChatHandler) stream(c *gin.Context, rec turnRecord, resumeFrom time.T
 // `iteration` is deliberately not forwarded. It is the SDK's own loop counter,
 // it means nothing outside this codebase, and a public contract that leaks it
 // is a public contract that has to keep emitting it.
+//
+// **In a room, only the caller's turn is forwarded (T-N10).** The thread's
+// channel also carries the turn of a colleague the caller's agent asked
+// mid-turn, under the same job id; forwarding it would interleave two answers'
+// deltas in one stream and, whenever the colleague finished first, end the
+// stream on the colleague's `final` and hand it over as the caller's answer.
+// The colleague's answer is still in the transcript, attributed. A room's own
+// lines (`room_event`) are not forwarded either; they are in the transcript too.
 func (h *V1ChatHandler) forward(c *gin.Context, ctx context.Context, rec turnRecord, evt *app.ChatEvent) bool {
+	if rec.AgentID != "" && evt.AgentID != "" && evt.AgentID != rec.AgentID {
+		return true
+	}
 	switch evt.Type {
 	case "started":
-		return sseEvent(c, "", "started", gin.H{
+		return sseEvent(c, "", "started", withAgent(gin.H{
 			"thread_id": rec.ThreadID,
 			"run_id":    firstNonEmpty(rec.RunID, evt.JobID),
 			"at":        evt.Timestamp.UTC().Format(time.RFC3339),
-		})
+		}, evt))
 	case "delta":
-		return sseEvent(c, "", "delta", gin.H{"content": evt.Content})
+		return sseEvent(c, "", "delta", withAgent(gin.H{"content": evt.Content}, evt))
 	case "thinking":
-		return sseEvent(c, "", "thinking", gin.H{"step": evt.ThinkingStep})
+		return sseEvent(c, "", "thinking", withAgent(gin.H{"step": evt.ThinkingStep}, evt))
 	case "tool_call", "tool_result":
 		// The tool's name, never its arguments or its result. Those carry the
 		// SQL the agent ran, and the place for that is T-05's audit log, where
@@ -418,16 +484,16 @@ func (h *V1ChatHandler) forward(c *gin.Context, ctx context.Context, rec turnRec
 		if evt.ToolCall != nil {
 			body["tool"] = evt.ToolCall.Name
 		}
-		return sseEvent(c, "", evt.Type, body)
+		return sseEvent(c, "", evt.Type, withAgent(body, evt))
 	case "error":
-		sseEvent(c, "", "error", gin.H{"message": evt.Error})
+		sseEvent(c, "", "error", withAgent(gin.H{"message": evt.Error}, evt))
 		return false
 	case "final":
 		// The assistant message is persisted before `final` is published, so it
 		// is already readable here. Reading it rather than echoing the event
 		// gives the frame a real message id — which is what a client sends back
 		// as Last-Event-ID — and a usage block the event does not carry.
-		if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt); err == nil {
+		if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.AgentID); err == nil {
 			h.sendFinal(c, rec, msg, evt.JobID)
 			return false
 		}
@@ -435,13 +501,29 @@ func (h *V1ChatHandler) forward(c *gin.Context, ctx context.Context, rec turnRec
 		// `id:` — the client's resume point stays where it was, and a reconnect
 		// replays the message from the log rather than losing it.
 		sseEvent(c, "", "final", turnBody(rec, evt.JobID, messageResponse{
-			Object:  "message",
-			Role:    string(domain.MessageRoleAssistant),
-			Content: evt.Content,
+			Object:    "message",
+			Role:      string(domain.MessageRoleAssistant),
+			Content:   evt.Content,
+			AgentID:   evt.AgentID,
+			AgentName: evt.AgentName,
 		}, nil, ""))
 		return false
 	}
 	return true
+}
+
+// withAgent stamps who is speaking onto a frame (T-N10), and leaves a frame from
+// an unscoped turn exactly as it was. A caller that reads neither field is
+// unaffected — the property T-Q10 relied on when `next_steps` rode in on
+// `final`, and T-N1's when it put the agent on every ChatEvent.
+func withAgent(body gin.H, evt *app.ChatEvent) gin.H {
+	if evt.AgentID != "" {
+		body["agent_id"] = evt.AgentID
+	}
+	if evt.AgentName != "" {
+		body["agent_name"] = evt.AgentName
+	}
+	return body
 }
 
 // sendFinal writes the terminal frame, carrying the persisted message and what
@@ -499,7 +581,7 @@ func (h *V1ChatHandler) wait(c *gin.Context, rec turnRecord) {
 	}
 	// Same reconciliation as the stream: a turn that finished before the
 	// subscription was live published into an empty room.
-	if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt); err == nil {
+	if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.AgentID); err == nil {
 		h.writeTurn(c, rec, msg)
 		return
 	}
@@ -527,19 +609,27 @@ func (h *V1ChatHandler) wait(c *gin.Context, rec turnRecord) {
 			if err := json.Unmarshal([]byte(msg.Payload), &evt); err != nil {
 				continue
 			}
+			// A colleague's turn in the same room is not this caller's (T-N10):
+			// its `final` is not the answer, and its `error` is not this turn
+			// failing. forward's rule, for forward's reason.
+			if rec.AgentID != "" && evt.AgentID != "" && evt.AgentID != rec.AgentID {
+				continue
+			}
 			switch evt.Type {
 			case "error":
 				apierr.Abort(c, apierr.TypeServer, "turn_failed", evt.Error)
 				return
 			case "final":
-				persisted, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt)
+				persisted, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.AgentID)
 				if err != nil {
 					// Answer with what the event carried rather than failing a
 					// turn that demonstrably produced a reply.
 					c.JSON(http.StatusOK, turnBody(rec, evt.JobID, messageResponse{
-						Object:  "message",
-						Role:    string(domain.MessageRoleAssistant),
-						Content: evt.Content,
+						Object:    "message",
+						Role:      string(domain.MessageRoleAssistant),
+						Content:   evt.Content,
+						AgentID:   evt.AgentID,
+						AgentName: evt.AgentName,
 					}, nil, requestIDOf(c)))
 					return
 				}
@@ -662,6 +752,15 @@ type threadResponse struct {
 	Summary       string    `json:"summary,omitempty"`
 	LastMessageAt time.Time `json:"last_message_at"`
 	CreatedAt     time.Time `json:"created_at"`
+	// Participants is the room (T-N10): the conversation's own agent first, then
+	// everyone added to it. On the single-thread read and on create only — the
+	// dashboard's rule, and its reason: a list needs titles, and a second query
+	// per row to fill a field a list does not show is paid on every page.
+	//
+	// Absent, not empty, for a conversation that runs as the workspace default
+	// with nobody added: that one names no agent, because naming today's default
+	// would pin it to an agent it is not pinned to.
+	Participants []participantResponse `json:"participants,omitempty"`
 }
 
 func threadBody(t *domain.ConversationThread) threadResponse {
@@ -676,27 +775,93 @@ func threadBody(t *domain.ConversationThread) threadResponse {
 	}
 }
 
+// participantResponse is one agent in a conversation (T-N10).
+//
+// Not domain.ThreadParticipant: its row id does not exist for the default
+// speaker, which has no row, and `added_by` is a dashboard user's id, which a
+// machine credential has no use for and should not be handed.
+type participantResponse struct {
+	Object    string `json:"object"`
+	AgentID   string `json:"agent_id"`
+	AgentName string `json:"agent_name,omitempty"`
+	// Default marks the agent that answers a message naming nobody — the
+	// conversation's own. Every other participant answers only when named in
+	// `agent_id` on `POST /v1/chat`.
+	Default bool      `json:"default"`
+	AddedAt time.Time `json:"added_at"`
+}
+
+func participantBodies(t *domain.ConversationThread, room []*domain.ThreadParticipant) []participantResponse {
+	out := make([]participantResponse, 0, len(room))
+	for _, p := range room {
+		if p == nil {
+			continue
+		}
+		out = append(out, participantResponse{
+			Object:    "participant",
+			AgentID:   p.AgentID,
+			AgentName: p.AgentName,
+			Default:   t.AgentID != "" && p.AgentID == t.AgentID,
+			AddedAt:   p.AddedAt,
+		})
+	}
+	return out
+}
+
+// createThreadRequest is the body of `POST /v1/threads` (T-N10).
+type createThreadRequest struct {
+	// UserRef is required, for the reason `POST /v1/chat` gives: it is what
+	// makes a conversation's spend attributable, and a conversation opened
+	// without one is one `usage/by-user` can never name.
+	UserRef string `json:"user_ref"`
+	// AgentID is the conversation's own agent. Omitted is the workspace default,
+	// resolved per turn, as on `POST /v1/chat`.
+	AgentID string `json:"agent_id,omitempty"`
+	// ParticipantIDs are the other agents in the room. A repeat, or the
+	// conversation's own agent, is dropped rather than refused: it names someone
+	// who is already there.
+	ParticipantIDs []string `json:"participant_ids,omitempty"`
+}
+
 // messageResponse is the public shape of one turn in a transcript.
 //
 // Token counts and latency are not on it. They are per-message zeros for every
 // streamed turn (see turnUsage), and publishing a field that is honestly zero
 // most of the time is publishing a field integrators will report as a bug.
 type messageResponse struct {
-	ID        string    `json:"id,omitempty"`
-	Object    string    `json:"object"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
+	ID      string `json:"id,omitempty"`
+	Object  string `json:"object"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
+	// AgentID and AgentName are who wrote an assistant message (T-N1, published
+	// by T-N10). Empty on a user message, and on an answer from a turn that ran
+	// unscoped. The name is read from the roster at read time, so a renamed agent
+	// renames its past messages — the dashboard's arrangement.
+	AgentID   string `json:"agent_id,omitempty"`
+	AgentName string `json:"agent_name,omitempty"`
+	// RoomEvent marks a room's own line (T-N6): a question one agent asked
+	// another, a question the conversation budget refused, a colleague with
+	// nothing to add, a question whose recipient left. They are assistant rows,
+	// and without this a caller cannot tell "Finance had nothing to add" from
+	// Finance's answer — the reason the dashboard draws them as lines.
+	RoomEvent string    `json:"room_event,omitempty"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
 }
 
 func messageBody(m *domain.Message) messageResponse {
-	return messageResponse{
+	out := messageResponse{
 		ID:        m.ID,
 		Object:    "message",
 		Role:      string(m.Role),
 		Content:   m.Content,
+		AgentID:   m.AgentID,
+		AgentName: m.AgentName,
 		CreatedAt: m.CreatedAt,
 	}
+	if ev, ok := m.Metadata[app.RoomEventKey].(string); ok {
+		out.RoomEvent = ev
+	}
+	return out
 }
 
 // listThreads is `GET /v1/threads` — the conversations this integration
@@ -739,13 +904,164 @@ func (h *V1ChatHandler) listThreads(c *gin.Context) {
 	c.JSON(http.StatusOK, apiv1.NewPage(items, hasMore, next))
 }
 
+// createThread is `POST /v1/threads` (T-N10): a conversation before its first
+// question, holding the agents the caller names.
+func (h *V1ChatHandler) createThread(c *gin.Context) {
+	if h.opener == nil {
+		apierr.Abort(c, apierr.TypeServer, "rooms_unavailable",
+			"Opening a conversation ahead of its first question is not available on this deployment. `POST /v1/chat` with a `user_ref` opens one.")
+		return
+	}
+	var req createThreadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apierr.Abort(c, apierr.TypeInvalidRequest, "invalid_request",
+			"The request body is not valid JSON.")
+		return
+	}
+	req.UserRef = strings.TrimSpace(req.UserRef)
+	if req.UserRef == "" {
+		abortUserRefRequired(c)
+		return
+	}
+	own := strings.TrimSpace(req.AgentID)
+	others := distinctParticipants(own, req.ParticipantIDs)
+	if len(others) > 0 && h.members == nil {
+		apierr.Abort(c, apierr.TypeServer, "rooms_unavailable",
+			"A conversation holding more than one agent is not available on this deployment.")
+		return
+	}
+	// The whole room against the ceiling, before anything is written. The
+	// conversation's own agent takes a seat whether it is named or is the
+	// workspace default: either way it answers here, and a ceiling that counted
+	// it only when named would let an unnamed default make a room one larger.
+	if len(others) > 0 && len(others)+1 > h.members.Capacity() {
+		apierr.AbortParam(c, apierr.TypeInvalidRequest, "too_many_participants",
+			fmt.Sprintf("A conversation holds at most %d agents, its own agent included.", h.members.Capacity()),
+			"participant_ids")
+		return
+	}
+
+	ctx := c.Request.Context()
+	thread, err := h.opener.OpenAPIThread(ctx, app.APIThreadInput{
+		CompanyID:      companyID(c),
+		APIUserRef:     req.UserRef,
+		AgentID:        own,
+		ParticipantIDs: others,
+		APIKeyID:       c.GetString(middleware.CtxAPIKeyID),
+		KeyAgentIDs:    middleware.APIKeyAgents(c),
+	})
+	if err != nil {
+		abortOpenThread(c, err)
+		return
+	}
+	for _, id := range others {
+		_, err := h.members.Add(ctx, companyID(c), thread.ID, id, "")
+		if err == nil || errors.Is(err, domain.ErrAlreadyExists) {
+			continue
+		}
+		// Every agent was checked a moment ago, so this is a race — one disabled
+		// or deleted in between — or the database. The conversation is left, not
+		// deleted, for the reason the dashboard's POST /api/threads gives: it is a
+		// valid conversation with its own agent, and a compensating delete is a
+		// second write that can also fail. The message names it, so the caller
+		// can delete it or add to it.
+		if errors.Is(err, domain.ErrNotFound) || errors.Is(err, app.ErrAgentDisabled) {
+			apierr.AbortParam(c, apierr.TypeNotFound, "participant_not_found",
+				"An agent in `participant_ids` stopped being available while the conversation was opened. Conversation "+
+					thread.ID+" was opened without it.", "participant_ids")
+			return
+		}
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": companyID(c), "thread_id": thread.ID,
+		}).Error("add a participant to an api thread")
+		apierr.Abort(c, apierr.TypeServer, "open_failed",
+			"Conversation "+thread.ID+" was opened, but not every agent could be added to it.")
+		return
+	}
+
+	body := threadBody(thread)
+	body.Participants = h.room(c, thread)
+	middleware.DeclareIdempotentResult(c, body)
+	c.JSON(http.StatusCreated, body)
+}
+
+// abortOpenThread maps OpenAPIThread's refusals onto the envelope. The
+// participant case goes first: it wraps ErrAgentNotFound, and a caller whose
+// `participant_ids` were wrong must not be sent to look at `agent_id`.
+func abortOpenThread(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, app.ErrParticipantNotFound):
+		apierr.AbortParam(c, apierr.TypeNotFound, "participant_not_found",
+			"An agent in `participant_ids` is not one this key can use in this workspace. List them with `GET /v1/agents`.",
+			"participant_ids")
+	case errors.Is(err, app.ErrAgentNotFound):
+		abortAgentNotFound(c)
+	case errors.Is(err, app.ErrAgentNotAllowed):
+		abortAgentNotAllowed(c)
+	case errors.Is(err, domain.ErrInvalidInput):
+		abortUserRefRequired(c)
+	default:
+		logrus.WithError(err).WithField("company_id", companyID(c)).Error("open api thread")
+		apierr.Abort(c, apierr.TypeServer, "open_failed", "The conversation could not be opened.")
+	}
+}
+
+func abortUserRefRequired(c *gin.Context) {
+	apierr.AbortParam(c, apierr.TypeInvalidRequest, "user_ref_required",
+		"Send a `user_ref` identifying who the conversation is for.", "user_ref")
+}
+
+// distinctParticipants is `participant_ids` trimmed, in the order given, without
+// blanks, repeats or the conversation's own agent. Each of those names someone
+// already in the room, and refusing a list for saying so twice would make every
+// integrator deduplicate a list the server can.
+func distinctParticipants(own string, ids []string) []string {
+	seen := map[string]bool{}
+	if own != "" {
+		seen[own] = true
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
+// room reads a conversation's participants for a response (T-N10).
+//
+// A failed read drops the field rather than failing the response — the
+// dashboard's thread detail makes the same trade, and for its reason:
+// participants make a conversation richer and are never what makes it
+// readable. Logged, because an absent field is otherwise indistinguishable
+// from a conversation nobody was added to.
+func (h *V1ChatHandler) room(c *gin.Context, t *domain.ConversationThread) []participantResponse {
+	if h.members == nil {
+		return nil
+	}
+	ps, err := h.members.List(c.Request.Context(), companyID(c), t.ID)
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": companyID(c), "thread_id": t.ID,
+		}).Warn("thread participants not read; answering without them")
+		return nil
+	}
+	return participantBodies(t, ps)
+}
+
 // getThread is `GET /v1/threads/:id`.
 func (h *V1ChatHandler) getThread(c *gin.Context) {
 	t, ok := h.loadThread(c)
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, threadBody(t))
+	body := threadBody(t)
+	body.Participants = h.room(c, t)
+	c.JSON(http.StatusOK, body)
 }
 
 // listMessages is `GET /v1/threads/:id/messages` — the transcript,

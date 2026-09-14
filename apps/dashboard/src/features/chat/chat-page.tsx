@@ -496,6 +496,13 @@ export function ChatPage() {
         qc.invalidateQueries({ queryKey: ["dashboard-data"] });
         qc.invalidateQueries({ queryKey: ["dashboards"] });
       }
+    } else if (evt.type === "room_event") {
+      // A room's own line (T-N6): an agent's question to a colleague, a limit
+      // that left a question unasked, a colleague with nothing to add. Not a
+      // `final` — the asking agent is usually still streaming, and a `final`
+      // under its id would close its bubble — so no live turn is touched and the
+      // transcript is simply read again.
+      qc.invalidateQueries({ queryKey: ["messages", evt.thread_id] });
     } else if (evt.type === "action_proposed") {
       // The agent proposed a write-capable action (T-11). Refresh the pending
       // list so its approval card appears in the strip above the composer live,
@@ -1040,6 +1047,10 @@ function MessageBubble({
         .slice(0, 2)
         .toUpperCase()
     : "U";
+  // A room's own line is nobody's message (T-N6). After the hooks above, which
+  // must run on every render whatever this bubble turns out to be.
+  const roomKind = isUser ? undefined : roomLineKind(message);
+  if (roomKind) return <RoomLine message={message} kind={roomKind} />;
   return (
     <div
       className={cn(
@@ -1150,6 +1161,40 @@ function MessageBubble({
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── A room's own line (T-N6) ───────────────────────────────────────── */
+/** The room lines that are the product talking about the conversation rather
+ *  than an agent answering in it. An agent's question to a colleague is not one
+ *  of these — it is the asking agent's message and renders as its bubble. */
+const ROOM_LINES = ["unasked", "settle", "withdrawn"] as const;
+type RoomLineKind = (typeof ROOM_LINES)[number];
+
+function roomLineKind(message: Message): RoomLineKind | undefined {
+  const kind = message.metadata?.["room_event"];
+  return ROOM_LINES.find((k) => k === kind);
+}
+
+/**
+ * A quiet centred line instead of a bubble: no avatar, no rating, no next steps,
+ * because nobody answered anything.
+ *
+ * A settle and a limit end a chain in opposite ways — a colleague with nothing
+ * to add, against a question the budget refused — so they must not read the
+ * same (roadmap 09, decision 9). The difference is carried in text, not colour,
+ * the rule T-R3's palette gate set: the limit and the withdrawn question name
+ * what happened before the sentence does.
+ */
+function RoomLine({ message, kind }: { message: Message; kind: RoomLineKind }) {
+  const lead = kind === "unasked" ? "Limit reached" : kind === "withdrawn" ? "Not asked" : undefined;
+  return (
+    <div role="note" className="flex justify-center px-6">
+      <p className="max-w-[78%] text-center text-xs leading-relaxed text-muted-foreground">
+        {lead && <span className="font-semibold">{lead} · </span>}
+        {message.content}
+      </p>
     </div>
   );
 }

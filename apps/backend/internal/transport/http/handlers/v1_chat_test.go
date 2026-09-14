@@ -157,6 +157,8 @@ type fakeMessages struct {
 	persisted bool
 	page      []*domain.Message
 	gotFilt   domain.MessageFilter
+	// gotAgents is every agent bound an answer lookup was made with, in order.
+	gotAgents []string
 }
 
 // persist makes the answer readable, as the worker does before it publishes
@@ -181,10 +183,18 @@ func (f *fakeMessages) LatestByThread(_ context.Context, _ string) (*domain.Mess
 // The `since` bound is honoured rather than ignored, because it is the whole
 // of what the attach path gets wrong when it gets it wrong: an answer one
 // microsecond before the window is an answer the caller never receives.
-func (f *fakeMessages) LatestAssistantSince(_ context.Context, _ string, since time.Time) (*domain.Message, error) {
+//
+// So is the agent (T-N10), for the same reason: in a room the newest answer can
+// be a colleague's, and a fixture that ignored the bound would let the handler
+// hand it over as the caller's.
+func (f *fakeMessages) LatestAssistantSince(_ context.Context, _ string, since time.Time, agentID string) (*domain.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.gotAgents = append(f.gotAgents, agentID)
 	if !f.persisted || f.answer == nil || f.answer.CreatedAt.Before(since) {
+		return nil, domain.ErrNotFound
+	}
+	if agentID != "" && f.answer.AgentID != agentID {
 		return nil, domain.ErrNotFound
 	}
 	return f.answer, nil
@@ -231,6 +241,15 @@ type chatFixture struct {
 
 func newChatFixture(t *testing.T, syncTimeout time.Duration) *chatFixture {
 	t.Helper()
+	return newChatFixtureWith(t, syncTimeout, nil)
+}
+
+// newChatFixtureWith is newChatFixture with a chance to configure the handler
+// before its routes are registered. WithRooms (T-N10) has to run before
+// Register, and a test that swaps the enqueuer for one reporting the agents a
+// turn runs as needs the same hook.
+func newChatFixtureWith(t *testing.T, syncTimeout time.Duration, configure func(*V1ChatHandler)) *chatFixture {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	srv := miniredis.RunT(t)
@@ -258,6 +277,9 @@ func newChatFixture(t *testing.T, syncTimeout time.Duration) *chatFixture {
 	// The production interval is 15 seconds. A test that waited one out would
 	// add fifteen seconds to every run to observe a two-character write.
 	h.heartbeat = 20 * time.Millisecond
+	if configure != nil {
+		configure(h)
+	}
 	h.Register(v1)
 	f.router = r
 	return f

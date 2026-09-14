@@ -222,6 +222,7 @@ allowlist UI.
 | `create_dashboard`     | `title`, `panels[]`, `description?`, `source_id?`, `filters?`, `timezone?` | `metabase_dashboard` — see below | always      |
 | `schedule_task`        | `name`, `prompt`, `cron_expression`, `timezone`   | —                  | always                    |
 | `ask_clarification`    | `question`                                        | —                  | always, and with no dependencies at all (`T-Q4`) |
+| `nudge_agent`          | `agent`, `question`                               | — (the colleague's turn is metered as a turn) | registered always; **offered** only to an agent with `can_nudge` in a room of more than one, and **never a checkbox** — the one exception to the sentence above this table (`tools.GatedByFlag`, `T-N6`) |
 | `propose_action`       | `kind`, `params`                                  | —                  | always; refuses with "not configured" when no registry is wired |
 | `generate_document`    | `format`, `content`, `spec_version?`, `locale?`, `currency?`, `meta?` | `document_generated` | only if `MINIO_ENDPOINT` |
 

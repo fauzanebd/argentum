@@ -48,6 +48,11 @@ var schemaCases = []schemaCase{
 	{schema: "Turn", value: turnResponse{}},
 	{schema: "Message", value: messageResponse{}},
 	{schema: "Thread", value: threadResponse{}},
+	// T-N10's room. A fraction of domain.ThreadParticipant — no row id, which the
+	// default speaker does not have, and no `added_by`, which is a dashboard
+	// user's id and not something a machine credential should read.
+	{schema: "ThreadParticipant", value: participantResponse{}},
+	{schema: "CreateThreadRequest", value: createThreadRequest{}, request: true},
 	{schema: "Usage", value: usageBody{}},
 	{schema: "PendingTurn", value: pendingBody{}},
 	// T-A5's spend report. `Credits` gets a Go type here for the first time:

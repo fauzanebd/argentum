@@ -115,6 +115,15 @@ type MessageRepository interface {
 	// re-attaching to a stream would be handed the *previous* answer and told
 	// it was this one. Same shape, and the same reason, as
 	// DocumentRepository.NewestForThreadSince.
-	LatestAssistantSince(ctx context.Context, threadID string, since time.Time) (*Message, error)
+	//
+	// Two more bounds since a conversation could hold more than one agent
+	// (T-N10), both for the same reason `since` exists — so a turn is not handed
+	// an answer that is not its own:
+	//   - agentID, when non-empty, is the agent the turn runs as. In a room a
+	//     colleague asked mid-turn answers in the same thread, often first.
+	//   - a room's own lines (`metadata.room_event`, T-N6) are never an answer.
+	//     "→ Finance: …" is written as the asking agent while its turn is still
+	//     running, and a settle is a colleague saying it has nothing.
+	LatestAssistantSince(ctx context.Context, threadID string, since time.Time, agentID string) (*Message, error)
 	CountByThread(ctx context.Context, threadID string) (int, error)
 }

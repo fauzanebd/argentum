@@ -4,9 +4,9 @@ The plan is
 [`../plan/09-multi-agent-conversations-roadmap.md`](../plan/09-multi-agent-conversations-roadmap.md)
 (`T-N1`→`T-N10`, ~18.5d); the reference it was checked against is
 [`../research/06-hermes-multi-agent.md`](../research/06-hermes-multi-agent.md).
-**Five of the original ten are built** (`T-N1`→`T-N5`), and so is `T-N11`, filed
-and built since. This file records what landed, what it changed that the ticket did not
-anticipate, and what is owed.
+**Eight of the original ten are built** (`T-N1`→`T-N6`, `T-N8` and `T-N10`), and so is
+`T-N11`, filed and built since. This file records what landed, what it changed that the ticket did
+not anticipate, and what is owed.
 
 | Ticket | Status |
 | --- | --- |
@@ -15,7 +15,10 @@ anticipate, and what is owed.
 | `T-N3` Addressing — `@agent` decides who answers | **built 2026-09-11, unit-gated. One acceptance item struck as unachievable — §5** |
 | `T-N4` The dashboard room | **built 2026-09-11. Visual gate run; three findings — §6** |
 | `T-N5` A peer agent's words are untrusted input | **built 2026-09-13, unit-gated. `make eval` owed; one finding outside the ticket — §8** |
-| `T-N6`→`T-N10` | Not built, not scheduled |
+| `T-N6` `nudge_agent` — one participant asks another | **built 2026-09-14, unit-gated. Migration `086` written, not applied — the ticket said none. `make eval`, the live room and the screenshots owed — §11** |
+| `T-N7`, `T-N9` | Not built, not scheduled |
+| `T-N10` `/v1`, the widget, the spec and the SDKs | **built 2026-09-14, unit-gated. No migration, no prompt change. The live room, the quickstart run and the query on a real Postgres owed; four places the ticket was wrong — §12** |
+| `T-N8` The conversation budget and the loop guard | **ledger built 2026-09-14, unit-gated — §10. Its room half (the notice, the pass) built by `T-N6` — §11** |
 | `T-N11` A room's history is a peer's words too | **filed 2026-09-13 from §8b; built 2026-09-14, unit-gated. `make eval` and the room arm owed; the ticket was short two leaks — §9** |
 
 **As of `T-N3` a room routes.** One user message addressing two agents becomes
@@ -865,16 +868,415 @@ The gate's output is in [`delivery-log.md`](delivery-log.md) Phase 3bc.
 
 ### 10f. What is owed, and what stays open
 
-- **`T-N6`'s part**, carried in its *Do*:
-  - call `Admit`, and write `Notice` into the room;
-  - build the pass and its marker;
-  - put the depth on `PeerOrigin`;
-  - wire the ledger into the worker.
+- ~~**`T-N6`'s part**, carried in its *Do*~~ — built 2026-09-14, §11: `Admit` is called, the
+  notice written, the pass and its marker built, the depth on `PeerOrigin`, and the ledger
+  wired into the worker.
 - **The two Lua scripts on a real Redis** (live-gate §7e). Prediction: identical to
   `miniredis`.
-- **Two workers and an always-nudging room**, with `T-N6` (§7e).
+- **Two workers and an always-nudging room** (§7e) — no longer waiting on code.
 - **§2c's measurement**, before any of the three numbers stops being a placeholder (§7e).
 - **Open: a queue backlog longer than `Wall`** can let an ask open a fresh ledger (§10d).
   Depth still bounds it. If a real backlog ever does this, the fix is a longer TTL, not a
   stored depth.
 - **Open: the ceiling metric is unreadable** until the worker exposes metrics (`T-17`).
+
+## 11. `T-N6`, and a colleague you can ask
+
+**Built 2026-09-14, unit-gated.** Migration `086`, where the ticket said none. The paired
+`make eval`, the live room, `086`'s round-trip and the screenshots are owed (live-gate §7f).
+
+`T-N6` is the sending half of a peer turn. `T-N5` built the receiving end, and `T-N8` built
+the budget. An agent in a room, asked something that needs a colleague's source, asks that
+colleague one question:
+- the question is posted into the room as the asker's message;
+- the colleague answers in a turn of its own;
+- the person reads both.
+
+### 11a. What was built
+
+| Piece | Where |
+| --- | --- |
+| `agents.can_nudge`, default false, no backfill | `migrations/control/086_agent_can_nudge.*`, `domain.Agent`, `postgres.AgentRepo`, `app.AgentInput` |
+| `nudge_agent`, which parses two arguments and hands them over | `internal/tools/nudge_agent.go` |
+| `tools.GatedByFlag`: the one tool the allowlist does not decide, kept out of the checkboxes | the same file; `app.NewAgentService` |
+| `NudgeService`: the gate again, who may be asked, credits, the ledger, the question in the room, the queued turn | `internal/app/nudge_service.go` |
+| `PeerOrigin.ParticipantID` and `PeerOrigin.Depth` | `internal/queue/peer.go` |
+| `offerNudge` in the factory, fed `AgentSpec.Nudge` by the runner | `bootstrap/stack.go`, `app/chat_runner_room.go` |
+| The seat check before a colleague's question runs, and the withdrawn line | `app/chat_runner_room.go`, called at the top of `ChatRunner.Run` |
+| The pass, offered in a colleague's user turn and read back as a settle | `withPassOption`, `isPass`, `settle` in the same file |
+| `guardrails.WithPeerTurn`: the topic classifier stands aside | `internal/guardrails/guardrails.go` |
+| `Conversation.ClaimNotice`: one limit line per agent per message | `internal/agentbudget/conversation.go` |
+| Room lines kept out of hydrated history | `ChatRunner.hydrateMemory` |
+| A catalog line and a guideline, both conditional on holding the tool | `bootstrap/system_prompt.go` |
+| The room, the ledger and the service in the worker's stack | `bootstrap.New`, `Stack.NewChatRunner` |
+| A `room_event` event; the form's checkbox; room lines drawn as lines | `app/event_bus.go`; `settings/agents-tab.tsx`; `chat/chat-page.tsx` |
+
+**The order a nudge is decided in** is the order of the answers the asking model gets:
+
+| Check | Refusal |
+| --- | --- |
+| The turn is on the context and scoped; its agent has `can_nudge`; the room holds more than one | `not_available` |
+| A name and a question, under 500 characters | `missing_agent`, `missing_question`, `question_too_long` |
+| The name is a participant — case-insensitive, a leading `@` ignored | `not_in_conversation` |
+| Not the asker | `cannot_ask_yourself` |
+| The participant's roster row is this company's and enabled | `not_in_conversation`, `agent_disabled` |
+| The credit balance | `credits_exhausted`, `credits_unchecked` |
+| The conversation budget (`T-N8`) | `already_asked` for a repeat; otherwise `budget_exhausted`, and a limit line in the room |
+| The question written into the room, then the turn queued | `not_delivered` if either fails |
+
+Every refusal before the ledger names who *can* be asked. Each is a result carrying `error`,
+not a Go error: the key keeps the call out of the ones that succeeded, so a reply saying "I
+asked Finance" after one is unevidenced (`T-Q13`).
+
+**A colleague's turn is the asking turn's payload, re-aimed:**
+- **Changed:** the agent id, the message, and `Peer` — asker, taint, seat, depth.
+- **Kept:** the person, the channel and its reply refs, the company's name and currency
+  convention, the request id.
+- **Cleared:** what the asking turn was *for* — a directive, a report job, a scheduled run, a
+  watcher event — and the trace.
+
+**The room's own lines**, on `messages.metadata.room_event`:
+
+| `room_event` | Written as | Reads |
+| --- | --- | --- |
+| `nudge` | the asker | `→ Finance: Was a goods-in posted for SKU 4471?`, as the asker's bubble |
+| `unasked` | the asker | `T-N8`'s `Notice`, led "Limit reached" |
+| `settle` | the colleague | `Finance had nothing to add to the question from Ops.` |
+| `withdrawn` | nobody | `Finance left this conversation before answering the question from Ops: "…"`, led "Not asked" |
+
+### 11b. Decisions worth the words
+
+- **A column, not a tool checkbox.** `allowed_tools` is where "which tools" lives, and
+  extending it was the house rule. It cannot hold this one: an empty allowlist means every
+  tool, so the capability would be on for every unrestricted agent. Ticking it on such an
+  agent would also narrow that agent to the one tool. The flag is its own column.
+- **Withheld at a hop the ledger would refuse, not only in a room of one.** The runner
+  reads the ledger's `MaxNudgeDepth`, and does not offer the tool to a turn whose next ask
+  could only be refused. The ticket's argument for the room gate — a tool that always refuses
+  wastes iterations — is the same argument at the last hop.
+- **The question is written before the turn is queued.**
+  - The other order can end with an answer in the room to a question nobody can see: decision
+    6's side channel.
+  - This order can end with a question nobody answers. The asking model is told `not_delivered`.
+- **`room_event`, not `final`.** The dashboard keys a live bubble by job id and agent id. A
+  `final` under the asker's id would close the asker's bubble while it is still streaming.
+- **The pass is a sentinel in the colleague's user turn, not a tool.**
+  - A pass tool would sit in the schema of every turn in every room, and change the asking
+    turns' prompts too.
+  - The sentinel survives a model's decoration (`**PASS**.`) and nothing looser: "I'll pass on
+    that" is an answer.
+- **One limit line per agent per person's message.**
+  - Per refused question lets a looping agent fill the room.
+  - Per message hides the second agent that was cut short.
+  - On a Redis error the line is written anyway, bounded by the per-turn tool-call ceiling.
+- **Room lines are never replayed into a model's history.** An agent that reads "→ Finance: …"
+  as something it once wrote learns to type a hand-off instead of calling the tool. `T-N3`
+  strips `@` from the model's input for the same reason.
+- **Only the topic classifier stands aside for a colleague's question.** The skip is keyed on
+  the payload. The injection and off-topic block rules still run, because a colleague's words
+  are untrusted input (decision 5).
+
+### 11c. The acceptance items, quoted back
+
+- [x] *`nudge_agent` is not in the tool list for an agent with `can_nudge` false, nor in a
+  thread with one participant.*
+  - `TestNudgeIsOfferedOnlyWhereBothGatesHold`, which also shows an agent without the flag
+    costs no room read.
+  - `TestATurnIsOfferedNudgeOnlyInARoomOfMoreThanOne`, through `Run`.
+  - `TestAnAgentThatMayNotNudgeGetsExactlyTheToolsItHadBefore`, at the factory.
+- [x] *A nudge writes one visible assistant message from the asker and enqueues exactly one
+  `chat:run` for the target.* `TestANudgeWritesOneVisibleQuestionAndQueuesOneTurn`.
+- [ ] *The target's answer lands in the same thread, attributed to the target.* The queued
+  payload carries the thread and the target's id, and `T-N1` attributes a turn's message to
+  the agent it ran as; both are proven. The answer landing is the live arm (§7f).
+- [x] *Nudging a non-participant, a disabled agent, another company's agent, or itself is
+  refused with a sentence naming why, and enqueues nothing.*
+  `TestANudgeThatCannotBeAskedIsRefusedAndNamesWhoCan`: eight cases, each asserting nothing
+  queued, nothing written and no ledger key.
+- [x] *The tool is absent from the schema in a room of one even when `can_nudge` is true, and
+  the single-agent tool list is byte-identical to today's.*
+  `TestTheNudgeToolAndItsGuidelineReachOnlyATurnOfferedThem` compares the composed prompt, for
+  equality, with a registry that has no `nudge_agent`.
+- [x] *A nudge whose pinned participant row is removed between enqueue and run does not run.*
+  `TestAQuestionWhoseRecipientLeftIsNotRun` (removed; the seat now another agent's) and
+  `TestAQuestionIsRunWhileItsSeatHolds` (the default speaker replaced). The model is never
+  called.
+- [x] *The asker's turn does not block on the target's turn — measured, not assumed.*
+  `TestTheAskingTurnDoesNotWaitForTheAnswer` stands in a colleague whose turn runs for a
+  second. **`nudge_agent` returned in 2.3 ms** under `-race -v`, with that turn still running.
+  Measured at the service; the live measurement is §7f's arm.
+- [x] *A nudge from a `KindDocument`-tainted turn produces a target turn that gates
+  `propose_action` under `T-H9`.* `TestANudgeFromATurnThatReadADocumentGatesTheColleaguesActions`
+  takes the payload this service queued through `receivePeer` and `ActionService.ProposeAction`
+  itself.
+- [ ] *`make eval` at or above baseline; both rates pasted.* **Owed** — no model key (§7f).
+  **Prediction: identical.**
+- [x] *The leak guard has a `nudge_agent` fixture.* `TestLeakShapes`, "a leaked nudge", with its
+  negative.
+
+**`T-N8`'s items, which moved here:**
+- [x] *A stubbed agent that always nudges terminates, and the room says why.*
+  `TestARoomThatAlwaysNudgesEndsAndSaysWhy` runs a room of three in which every turn asks both
+  colleagues something new. **6 turns ran, 12 questions were asked, and 2 limit lines were
+  written** — one each for People and Ops, the two agents cut short. The ledger is real; the
+  runner and the queue are stand-ins.
+- [x] *Exhaustion produces a visible message naming the unasked question.* The same test, and
+  `TestARefusedQuestionIsToldToTheRoomOncePerAgent`.
+- [x] *A pass ends a chain and renders as a settle, distinguishable in the transcript from a
+  cap being hit.* `TestAColleagueWithNothingToAddSettles`. The two lines carry different
+  `room_event` values and different lead words. **Not yet seen on screen** (§7f).
+- [ ] *The two-worker gate.* Owed (§7e).
+
+**Beyond the ticket:**
+- `TestTheGatesAreCheckedAgainWhenTheToolRuns`, `TestATenantAtZeroReadsTheCreditRefusal`
+- `TestTheSameQuestionToTheSameColleagueIsAskedOnce`, `TestAThirdHopIsRefusedOnDepth`
+- `TestALedgerThatCannotBeReadRefusesAndStillTellsTheRoom`, `TestAQuestionThatCannotBeWrittenIsNotQueued`
+- `TestTheDefaultSpeakerIsPinnedByTheEmptyMembership`, `TestTheToolCanReadTheTurnItRunsIn`
+- `TestAPersonsTurnIsNeitherOfferedNorReadAsAPass`, `TestThePassSentinelSurvivesDecorationAndNothingElse`
+- `TestARoomLineIsNeverReplayedIntoHistory`
+- `TestAColleaguesQuestionIsNotTopicClassified`, `TestAColleaguesQuestionStillMeetsTheInjectionRules`
+- `TestNudgingIsOffUnlessTheFormSaysSo`, `TestAnEditThatOmitsTheFlagLeavesIt`, `TestNudgeIsNeverACheckbox`
+- three `ClaimNotice` tests, and the tool's six
+
+### 11d. Where the ticket was wrong
+
+- **"Migration: none."** Decision 8 names `agents.can_nudge`, and no ticket had added it. `086`
+  does. It has no backfill, deliberately the opposite of `043` and `081`: an agent that cannot
+  ask a colleague is the decision, not a gap.
+- **"Registered in `registry.go` — so the API's scoping checkboxes get it for free."** Getting
+  it for free would have made it an allowlist tool, on for every unrestricted agent — decision
+  8 undone by the paragraph above it. The name is registered, as the prompt-line test needs,
+  and dropped from the vocabulary. A submitted allowlist naming it is refused.
+- **"The participant row id the nudge was planned against."** The default speaker has none
+  (`T-N2`: it is `threads.agent_id`, listed without a row). Its seat is pinned by the empty id,
+  and a question to it does not run once somebody else holds that seat.
+- **"Repo: BE."** Three dashboard changes were needed:
+  - **A checkbox for the flag** — without it no admin can turn nudging on.
+  - **A handler for `room_event`**, because the question cannot be published as `final`.
+  - **Room lines drawn as lines**, because a settle drawn as a bubble cannot be told from an
+    answer.
+- **"Another company's agent"** cannot be a participant: membership is company-scoped. What
+  enforces it is the company-scoped roster read, and a test puts such an agent in the list
+  anyway.
+- **"Skip the input topic classifier"** is built as exactly that and no wider — see §11b.
+- **Silent on grants, because roadmap 12 came after it.** A nudge does not ask whether the
+  person may talk to the colleague. `T-Z10` already refuses a send into a conversation holding
+  an agent the person may not read, so whoever sent the message could reach every participant.
+  What is left is a grant revoked in the seconds between the message and the nudge, inside the
+  five-minute window. Written down, not built.
+
+### 11e. Proven failing
+
+Sixteen mutations, applied one at a time. Each file was restored and hash-checked against its
+pre-run hash before the gate, and no mutation was counted that only broke the build.
+
+| Mutation | Tests that failed |
+| --- | --- |
+| The factory offers `nudge_agent` to every turn | the three `offerNudge` factory tests that withhold it |
+| Dispatch ignores `can_nudge` | `TestTheGatesAreCheckedAgainWhenTheToolRuns`, the flag case |
+| Dispatch ignores the room's size | the same test, the room-of-one case |
+| The asked turn keeps the report job | `TestANudgeWritesOneVisibleQuestionAndQueuesOneTurn` |
+| The asker's taint is not carried | `TestANudgeFromATurnThatReadADocumentGatesTheColleaguesActions` |
+| The notice claim ignored | `TestARefusedQuestionIsToldToTheRoomOncePerAgent`, `TestARoomThatAlwaysNudgesEndsAndSaysWhy` |
+| The credit check off | `TestATenantAtZeroReadsTheCreditRefusal` |
+| The turn queued though the question was never written | `TestAQuestionThatCannotBeWrittenIsNotQueued` |
+| The seat not checked | `TestAQuestionWhoseRecipientLeftIsNotRun` (both), `TestAQuestionIsRunWhileItsSeatHolds` (the replaced speaker) |
+| Offered in a room of one | `TestNudgeIsOfferedOnlyWhereBothGatesHold`, `TestATurnIsOfferedNudgeOnlyInARoomOfMoreThanOne` |
+| Offered at a hop that can only be refused | `TestNudgeIsOfferedOnlyWhereBothGatesHold` |
+| The pass not detected | `TestAColleagueWithNothingToAddSettles` |
+| Room lines replayed into history | `TestARoomLineIsNeverReplayedIntoHistory` |
+| The topic classifier runs on a colleague's question | both `guardrails` peer tests |
+| `nudge_agent` offered as a checkbox | `TestNudgeIsNeverACheckbox` |
+| The notice claim not exclusive (`NX` dropped) | `TestARefusalIsAnnouncedOncePerAgentPerMessage` |
+
+The gate's output is in [`delivery-log.md`](delivery-log.md) Phase 3bd.
+
+### 11f. What is owed, and what stays open
+
+- **The paired `make eval`.** Prediction: identical (§7f).
+- **The live room, its negative arm and a colleague that passes** (§7f).
+- **`086` up, down, up** — runnable on this machine's scratch stack, not run beside the gate.
+- **The room lines and the checkbox on screen** — runnable here (§7f).
+- **Two workers, and §2c's cost per message** (§7e), no longer waiting on code.
+- **Deploy with `T-N11`, and with rooms.** Production runs `1.6.0`, which has neither. A nudge
+  in a room without `T-N11` would hand the colleague's history over unfenced (§9d).
+- **Open: two live bubbles under one key.** A colleague asked while its own addressed turn is
+  still streaming shares a job id and agent id with it (§7f).
+- **Open: a question written whose turn was not queued** stays unanswered in the room. The
+  asking model is told; the room is not.
+- **Open: a grant revoked between a message and its nudge** (§11d).
+
+## 12. `T-N10`, and a public contract that assumed one answer per question
+
+**Built 2026-09-14, unit-gated.** No migration, correctly this time; no prompt or tool changed,
+so no `make eval` is owed. The live room, the quickstart run and the query on a real Postgres are
+owed (live-gate §7g).
+
+`T-N10` puts rooms on `/v1`. Picked over `T-N7` for three reasons:
+- **§5's cut order drops `T-N7` second and `T-N10` last.** The status block said the reverse.
+- **Its files are not `T-N6`'s.** `T-N6` is still uncommitted, and `T-N7` would have layered a
+  second ticket into the same five files.
+- **Whether a hand-off tool is needed at all** is the question `T-N6`'s live arm answers (§7f):
+  does the model narrate a hand-off instead of calling the tool?
+
+### 12a. What was built
+
+| Piece | Where |
+| --- | --- |
+| `POST /v1/threads`: `user_ref`, `agent_id`, `participant_ids` | `handlers/v1_chat.go` `createThread`; `openapi/v1.yaml` `createThread` |
+| Every agent checked before the row is written | `app.ChatEnqueuer.OpenAPIThread`, `ErrParticipantNotFound` |
+| The ceiling checked against the whole room first | `ThreadParticipantService.Capacity`, read by `createThread` |
+| `agent_id` naming a participant addresses it | `ChatEnqueuer.Enqueue`'s `/v1` arm, `roomHolds` |
+| The agent each queued turn runs as | `EnqueueResult.AgentIDs` |
+| `participants` on a thread read and on create | `threadResponse.Participants`, `participantResponse` |
+| `agent_id`, `agent_name`, `room_event` on a message | `messageResponse`, `messageBody` |
+| The agent on every frame | `withAgent` |
+| Both doors scoped to the agent asked | `turnRecord.AgentID`; `forward`; `wait` |
+| The answer lookup bound to that agent, room lines skipped | `MessageRepository.LatestAssistantSince(…, agentID)` |
+| A widget conversation cannot become a room | `ThreadParticipantService.Add`, `ErrRoomNotOnWidget` (409 on the dashboard) |
+| `threads.create` | `argentum-node/src/chat.ts`; `argentum-python` `client.py`, `aio.py` |
+| Generated | `types.generated.ts`, `types.py`, the Postman collection (`make openapi`) |
+
+**Who answers a `/v1` message in a room:**
+
+| The call | Who answers |
+| --- | --- |
+| `thread_id`, no `agent_id` | The conversation's own agent, as before |
+| `thread_id`, `agent_id` = the conversation's own agent | The same — agreement, as before |
+| `thread_id`, `agent_id` = a participant | That participant |
+| `thread_id`, `agent_id` = anyone else | `400 agent_mismatch`, as before |
+| `thread_id`, `agent_id` off the key's list | `404 agent_not_found`, as before |
+| Any of the above with `@Finance` in the text | Unchanged — the text is not read |
+
+### 12b. Decisions worth the words
+
+- **The whole room is checked before the conversation exists.** The dashboard's `POST
+  /api/threads` writes the thread and then adds participants, and leaves the thread behind when
+  one is refused. On `/v1` that thread would be listed by `GET /v1/threads` as a conversation the
+  caller never had, and a retry would add another. So `OpenAPIThread` runs the same pick `POST
+  /v1/chat` runs on every id first, and the handler checks the ceiling first. What remains is a
+  race — an agent disabled between the check and the insert — and that answer names the
+  conversation it left.
+- **The conversation's own agent takes a seat whether named or not.** `T-N2`'s cap counts it
+  only when the conversation is pinned (§12d). On `/v1` a room of `participant_ids` plus the
+  workspace default is refused at the same size as one with `agent_id` named.
+- **A repeat is dropped, not refused.** `participant_ids: [Finance, Finance, Ops]` with `agent_id`
+  Ops names one agent who is not already there.
+- **`Idempotency-Key` is honoured and not required.** The other write doors require one because a
+  retry bills twice. A retry here opens an empty conversation that costs nothing.
+- **A failed room read refuses an addressed message.** `resolveAddressing` degrades the same
+  failure to the default speaker, because an unmatched `@` is text. An explicit `agent_id` is
+  not, and answering it as another agent is the failure `T-S3` refused to ship.
+- **The stream is filtered, not merged.** Forwarding the colleague's frames with `agent_id` on
+  them would be the dashboard's model, one bubble per agent. It would also break every `/v1`
+  client written against "`final` is terminal", and that sentence is in the spec. The colleague's
+  answer is in the transcript, attributed.
+- **Frames with no agent pass the filter.** Only a turn running unscoped publishes one, and such
+  a turn has no agent to scope to either.
+- **`room_event` is a string, not an enum.** The spec tells a caller to show an unknown value as a
+  line. An enum would make a generated client reject the next kind of line `T-N7` adds.
+- **Participants are on the single read and on create, not the list** — `T-N2`'s rule and its
+  reason.
+
+### 12c. The acceptance items, quoted back
+
+- [x] *Every new field is in `v1.yaml` and both parity checks are green.* `TestEveryV1RouteIsSpecced`,
+  `TestEverySpecEntryIsARoute` and `TestSpecScopeIsTheScopeTheRouterEnforces` pass with
+  `POST /v1/threads`. The schema-parity test binds `ThreadParticipant` and `CreateThreadRequest`
+  and passes on the changed `Thread`, `Message` and `PendingTurn`. `make openapi`: *"a valid
+  OpenAPI 3.1 document (16 paths, 54 schemas)"*.
+- [x] *Both SDKs regenerate with no hand edits.* `make openapi` rewrote `types.generated.ts` and
+  `types.py`, and `tsc` compiled the node SDK. The two `threads.create` methods are in the
+  hand-written clients, which is where every other method lives.
+- [x] *A `/v1` caller that ignores participants sees no change.*
+  - `TestAnAgentIDOutsideTheRoomIsStillAChangeOfAgent`: a room of one and no room wired both
+    refuse as before.
+  - `TestAThreadReadWithoutItsRoomIsStillTheThread`.
+  - Every pre-existing `v1_chat_test.go` test passes unchanged.
+  - The fields added to messages and frames are additive; the spec already told callers to
+    ignore unknown ones.
+- [x] *`POST /v1/chat` does not parse `@` from message text.* `TestAddressingIsDashboardOnly`
+  (`T-N3`'s, the parser). `TestAnAgentIDNamingAParticipantAddressesIt` and
+  `TestAnAPIMessageNamingNobodyGoesToTheConversationsOwnAgent` run it through `Enqueue`: the text
+  keeps its `@` and routes nobody.
+- [x] *A widget session cannot create or address a multi-agent thread.*
+  - **Create:** the widget has no participant route, and `TestAWidgetConversationCannotBecomeARoom`
+    closes the dashboard route that could.
+  - **Address:** the widget arm has no `roomHolds`, so an `agent_id` that differs is
+    `ErrAgentChange`, as before. That arm's code is unchanged.
+- [ ] *The quickstart still runs unchanged.* `check-examples` passed (13 example files quoted
+  exactly), and the quickstart never touches a room. Running it end to end needs the stack and a
+  model key — owed (§7g).
+
+### 12d. Where the ticket was wrong
+
+- **"`POST /v1/threads` accepts `participant_ids`."** There was no `POST /v1/threads`. `/v1`
+  opened conversations only inside `POST /v1/chat`. The route had to be built, with its scope,
+  its idempotency rule, its refusals and an SDK method.
+- **"`POST /v1/chat` accepts `agent_id` — explicitly."** It had since `T-S5`, and it meant the
+  opposite: the conversation's agent, refused with `agent_mismatch` if it differed. The ticket
+  read as if the field were new. In a room it now addresses a participant, and everywhere else
+  it keeps its meaning.
+- **"A caller reading only `final` still works and learns nothing."** True when the ticket was
+  written; false once `T-N6` exists. A colleague asked mid-turn answers on the same channel, under
+  the same job id, and a short turn finishes first. Unscoped, the stream would have closed on the
+  colleague's `final`. The synchronous door would have returned the colleague's answer as the
+  caller's. The transcript check could have returned `→ Finance: …`, written as the asking agent
+  while its turn ran.
+- **"The widget's UI gets the label" and "a room is not enabled for widget sessions".** Together,
+  every bubble carries one name, and `T-N4`'s rule draws none then. Not built. **What was
+  actually open:** `ThreadParticipantService.Add` checked only the company, so a member holding a
+  widget conversation's id could add agents to it from the dashboard. And `T-N6` offers
+  `nudge_agent` in any room of more than one — a website visitor's turn could have asked HR.
+- **"The quickstart untouched."** True, and not the gate — `T-A4` wants it *run*, which needs a
+  model key.
+- **Silent on `room_event`.** `T-N6`'s settle, limit and withdrawn lines are assistant rows. A
+  transcript without the field presents "Finance had nothing to add" as Finance's answer.
+- **Found in `T-N2`, not changed:** its cap counts the default speaker only when
+  `conversation_threads.agent_id` is set, so an unpinned dashboard room holds one more agent than
+  `THREAD_MAX_PARTICIPANTS`. `/v1` counts the seat either way.
+
+### 12e. Proven failing
+
+Sixteen mutations, applied one at a time by a script. Each ran only its named tests. Every mutated
+file was restored and matched its pre-run hash before the gate. None only broke the build.
+
+| Mutation | Tests that failed |
+| --- | --- |
+| The stream forwards a colleague's frames | `TestARoomStreamIsTheCallersTurnAndNotAColleagues` |
+| The synchronous door reads a colleague's `final` | `TestTheSyncDoorWaitsForTheCallersAgentInARoom` |
+| The answer lookup is not bound to the agent | `TestARoomStreamIsTheCallersTurnAndNotAColleagues` |
+| `send` does not scope the turn | the stream test, the synchronous test, `TestAPendingTurnInARoomNamesItsAgent` |
+| Frames carry no agent | `TestARoomStreamIsTheCallersTurnAndNotAColleagues` |
+| `room_event` not published | `TestATranscriptSaysWhoWroteEachMessageAndWhichAreRoomLines` |
+| A message's author not published | the same |
+| The ceiling not checked before opening | `TestARoomLargerThanTheCeilingIsRefusedBeforeAnythingOpens`, both cases |
+| `participant_ids` not deduplicated | `TestCreatingAThreadOpensARoomAndReturnsIt` |
+| A thread read carries no room | `TestAThreadReadCarriesItsRoom` |
+| The enqueuer never finds a participant | `TestAnAgentIDNamingAParticipantAddressesIt` |
+| The `/v1` address not merged into the fan-out | the same |
+| Participants not checked before writing | `TestARefusedParticipantLeavesNoConversationBehind`, all four cases |
+| A widget conversation may become a room | `TestAWidgetConversationCannotBecomeARoom` |
+| The result does not report agents | `TestAnAgentIDNamingAParticipantAddressesIt`, `TestAnAPIMessageNamingNobodyGoesToTheConversationsOwnAgent` |
+| The key's default rule skipped when opening | `TestAKeyLimitedToNamedAgentsMustNameOneToOpenAConversation` |
+
+**The two room tests pause for 50 ms between the colleague's `final` and the caller's answer being
+written.** Without the pause, a handler that forwarded the colleague's `final` could read the
+caller's answer while handling it, and pass by luck. With it, M1 and M2 fail every time. **The SQL
+half has no mutation** — its fake honours the bound, and the real query is §7g's arm.
+
+The gate's output is in [`delivery-log.md`](delivery-log.md) Phase 3be.
+
+### 12f. What is owed, and what stays open
+
+- **`LatestAssistantSince` on a real Postgres** — the query both scoped doors rest on (§7g).
+  **Prediction: clean.**
+- **A room over `/v1`, live, and its stream while a colleague answers** (§7g). **Prediction: one
+  `chat:run` per call, and no Finance frame in Ops' stream.**
+- **The quickstart run end to end** (§7g). **Prediction: unchanged.**
+- **Open: attaching to a room is not scoped.** `GET /v1/threads/{id}/events` delivers the newest
+  answer from any agent, and waits on a room line (§7g; `api-chat.md` §6).
+- **Open: `T-N2`'s unpinned cap** (§12d).
+- **Open: no `/v1` route adds or removes a participant after creation.** The ticket asked only for
+  creation. The dashboard's routes act on an API conversation, company-scoped.
+- **Not built, by the ticket's own contradiction: the widget label** (§12d).
