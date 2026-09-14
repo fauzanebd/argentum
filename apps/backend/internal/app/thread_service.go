@@ -609,6 +609,17 @@ func (s *ThreadService) AppendAssistantMessage(
 	tokensIn, tokensOut int, latencyMs int64, metadata map[string]any,
 ) (*domain.Message, error) {
 	now := time.Now()
+	// A colleague's answer records who asked for it (T-N10), read off the context
+	// as the agent is and for the same reason: every row a turn writes agrees by
+	// construction. Copied, so a caller's map is never written into.
+	if by := askedBy(ctx); by != "" {
+		marked := make(map[string]any, len(metadata)+1)
+		for k, v := range metadata {
+			marked[k] = v
+		}
+		marked[AskedByKey] = by
+		metadata = marked
+	}
 	m := &domain.Message{
 		ThreadID:  threadID,
 		Role:      domain.MessageRoleAssistant,

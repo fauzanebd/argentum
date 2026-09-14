@@ -46,6 +46,11 @@ it is owed, not estimated.
 > - **"The widget gets the label"** contradicts "a room is not enabled for widget sessions".
 >   Not built. What was open was a dashboard member turning a widget conversation into a room.
 >
+> **Risk 2, fixed the same day, before any deploy** (§12g). The first cut scoped the stream by
+> the agent a turn was sent to. That hung a turn whose agent was deleted before it ran, and let
+> through a turn Finance asked of Ops as if it were the caller's. A colleague's turn now marks
+> itself `asked_by`, and the send doors skip it.
+>
 > **Also corrected:** the block below said the cut order drops `T-N9`/`T-N10` first. §5 drops
 > `T-N9`, then `T-N7`, then `T-N10`. **Owed** (live-gate §7g): the query on a real Postgres, the
 > live room, and the quickstart run. **Left on this track:** `T-N7`, and `T-N9`, which the

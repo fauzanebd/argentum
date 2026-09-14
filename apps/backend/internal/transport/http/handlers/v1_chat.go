@@ -209,17 +209,37 @@ type chatRequest struct {
 // would hand the caller the wrong answer and call it theirs — the same failure
 // DocumentRepository.NewestForThreadSince exists to avoid.
 //
-// AgentID is the fourth (T-N10): the agent this turn runs as, when there is
-// exactly one. In a room the thread's channel also carries turns this caller
-// did not start — a colleague asked mid-turn answers in the same thread, often
-// first — and this is what tells the stream which `final` is the caller's.
-// Stored with the rest, so a replay after a disconnect is scoped as the
-// original was.
+// AgentID is the fourth (T-N10): the agent the turn was sent to, when there is
+// exactly one, so a 504's `in_flight` can say whose answer is coming. It is not
+// what scopes the stream — see own.
 type turnRecord struct {
 	ThreadID  string    `json:"thread_id"`
 	RunID     string    `json:"run_id,omitempty"`
 	AgentID   string    `json:"agent_id,omitempty"`
 	StartedAt time.Time `json:"started_at"`
+	// own marks a turn this caller sent, as opposed to one they attached to
+	// (T-N10). In a room the thread's channel also carries a colleague's turn,
+	// under the same job id and often finishing first, and a sent turn's stream
+	// must end on the caller's `final`, not the colleague's.
+	//
+	// **Scoped by who asked, not by agent.** The first cut compared agent ids,
+	// and was wrong twice over. A turn whose agent is deleted before it runs runs
+	// as the default, so nothing ever matched and the stream hung. And an agent
+	// asked back by the colleague it asked carries the caller's agent id, so its
+	// `final` matched when it should not. A colleague's turn says so itself
+	// (ChatEvent.AskedBy, `metadata.asked_by`), whatever agent it runs as.
+	//
+	// Not stored: only send and its replay produce a sent turn, and both set it.
+	own bool
+}
+
+// scope is which answer ends this turn: the caller's own on a sent turn, the
+// newest non-room answer when attaching.
+func (rec turnRecord) scope() domain.AnswerScope {
+	if rec.own {
+		return domain.OwnAnswer
+	}
+	return domain.AnyAnswer
 }
 
 // send is `POST /v1/chat`.
@@ -278,12 +298,13 @@ func (h *V1ChatHandler) send(c *gin.Context) {
 		return
 	}
 
-	rec := turnRecord{ThreadID: res.Thread.ID, RunID: res.UserMsgID, StartedAt: startedAt}
+	// A sent turn: its stream ends on the caller's own answer and never on a
+	// colleague's (T-N10). `/v1` never fans out — only the dashboard's `@`
+	// addresses more than one agent — so there is exactly one such answer.
+	rec := turnRecord{ThreadID: res.Thread.ID, RunID: res.UserMsgID, StartedAt: startedAt, own: true}
 	if len(res.AgentIDs) == 1 {
-		// One turn, so exactly one answer is the caller's (T-N10). A message that
-		// fanned out has no single answer to scope to and stays unscoped, as every
-		// stream was before rooms; nothing on `/v1` fans out today, because only
-		// the dashboard's `@` addresses more than one agent.
+		// Named in a 504's `in_flight`, so a caller told to attach knows whose
+		// answer is coming.
 		rec.AgentID = res.AgentIDs[0]
 	}
 	// Written through to Redis immediately, so a retry arriving while this turn
@@ -344,6 +365,8 @@ func (h *V1ChatHandler) replayChat(c *gin.Context, rec *idempotency.Record) bool
 	if err := json.Unmarshal(rec.Result, &stored); err != nil || stored.ThreadID == "" {
 		return false
 	}
+	// Only a send is replayed, so the replay is scoped as the send was (T-N10).
+	stored.own = true
 	resumeFrom, resumeID, ok := h.resumePoint(c)
 	if !ok {
 		return true
@@ -406,7 +429,7 @@ func (h *V1ChatHandler) stream(c *gin.Context, rec turnRecord, resumeFrom time.T
 	// would hold a connection open waiting for a `final` that was published
 	// into an empty room. The persisted transcript is the durable half of the
 	// stream, and this is where the two are reconciled.
-	if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.AgentID); err == nil {
+	if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.scope()); err == nil {
 		h.sendFinal(c, rec, msg, "")
 		return
 	}
@@ -461,7 +484,7 @@ func (h *V1ChatHandler) stream(c *gin.Context, rec turnRecord, resumeFrom time.T
 // The colleague's answer is still in the transcript, attributed. A room's own
 // lines (`room_event`) are not forwarded either; they are in the transcript too.
 func (h *V1ChatHandler) forward(c *gin.Context, ctx context.Context, rec turnRecord, evt *app.ChatEvent) bool {
-	if rec.AgentID != "" && evt.AgentID != "" && evt.AgentID != rec.AgentID {
+	if rec.own && evt.AskedBy != "" {
 		return true
 	}
 	switch evt.Type {
@@ -493,7 +516,7 @@ func (h *V1ChatHandler) forward(c *gin.Context, ctx context.Context, rec turnRec
 		// is already readable here. Reading it rather than echoing the event
 		// gives the frame a real message id — which is what a client sends back
 		// as Last-Event-ID — and a usage block the event does not carry.
-		if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.AgentID); err == nil {
+		if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.scope()); err == nil {
 			h.sendFinal(c, rec, msg, evt.JobID)
 			return false
 		}
@@ -581,7 +604,7 @@ func (h *V1ChatHandler) wait(c *gin.Context, rec turnRecord) {
 	}
 	// Same reconciliation as the stream: a turn that finished before the
 	// subscription was live published into an empty room.
-	if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.AgentID); err == nil {
+	if msg, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.scope()); err == nil {
 		h.writeTurn(c, rec, msg)
 		return
 	}
@@ -612,7 +635,7 @@ func (h *V1ChatHandler) wait(c *gin.Context, rec turnRecord) {
 			// A colleague's turn in the same room is not this caller's (T-N10):
 			// its `final` is not the answer, and its `error` is not this turn
 			// failing. forward's rule, for forward's reason.
-			if rec.AgentID != "" && evt.AgentID != "" && evt.AgentID != rec.AgentID {
+			if rec.own && evt.AskedBy != "" {
 				continue
 			}
 			switch evt.Type {
@@ -620,7 +643,7 @@ func (h *V1ChatHandler) wait(c *gin.Context, rec turnRecord) {
 				apierr.Abort(c, apierr.TypeServer, "turn_failed", evt.Error)
 				return
 			case "final":
-				persisted, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.AgentID)
+				persisted, err := h.messages.LatestAssistantSince(ctx, rec.ThreadID, rec.StartedAt, rec.scope())
 				if err != nil {
 					// Answer with what the event carried rather than failing a
 					// turn that demonstrably produced a reply.

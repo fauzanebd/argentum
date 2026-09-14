@@ -294,18 +294,18 @@ func (r *MessageRepo) LatestByThread(ctx context.Context, threadID string) (*dom
 // pub/sub keeps nothing for a subscriber that was not there, so the persisted
 // message log is the only durable record of a turn's result.
 //
-// The agent and the room-line bounds are the interface's (T-N10). NULLIF rather
-// than `$3::uuid`: Postgres does not promise to short-circuit an OR, and the
-// empty string cast to a uuid is an error rather than false. `metadata ?
-// 'room_event'` is NULL for a row with no metadata, so COALESCE keeps every
-// ordinary answer.
-func (r *MessageRepo) LatestAssistantSince(ctx context.Context, threadID string, since time.Time, agentID string) (*domain.Message, error) {
+// The room-line and colleague bounds are the interface's (T-N10). A `?` test on
+// a row with no metadata is NULL, so each is wrapped in COALESCE to keep every
+// ordinary answer. One query with a boolean rather than two query strings:
+// OwnAnswer is AnyAnswer plus one predicate, and two strings would be two
+// places for the room-line bound to drift apart.
+func (r *MessageRepo) LatestAssistantSince(ctx context.Context, threadID string, since time.Time, scope domain.AnswerScope) (*domain.Message, error) {
 	q := `SELECT ` + messageColumns + messageFrom + `
 		WHERE m.thread_id = $1 AND m.role = 'assistant' AND m.created_at >= $2
-		  AND ($3 = '' OR m.agent_id = NULLIF($3, '')::uuid)
 		  AND NOT COALESCE(m.metadata ? 'room_event', false)
+		  AND (NOT $3::boolean OR NOT COALESCE(m.metadata ? 'asked_by', false))
 		ORDER BY m.created_at DESC, m.id DESC LIMIT 1`
-	m, err := scanMessage(r.db.QueryRowContext(ctx, q, threadID, since, agentID))
+	m, err := scanMessage(r.db.QueryRowContext(ctx, q, threadID, since, scope == domain.OwnAnswer))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
 	}

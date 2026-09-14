@@ -1131,8 +1131,9 @@ owed (live-gate §7g).
 | `participants` on a thread read and on create | `threadResponse.Participants`, `participantResponse` |
 | `agent_id`, `agent_name`, `room_event` on a message | `messageResponse`, `messageBody` |
 | The agent on every frame | `withAgent` |
-| Both doors scoped to the agent asked | `turnRecord.AgentID`; `forward`; `wait` |
-| The answer lookup bound to that agent, room lines skipped | `MessageRepository.LatestAssistantSince(…, agentID)` |
+| Both send doors scoped to the caller's own turn — every frame marked `asked_by` skipped (§12g) | `turnRecord.own`; `forward`; `wait` |
+| The answer lookup skips room lines, and a colleague's answer on a sent turn (§12g) | `MessageRepository.LatestAssistantSince(…, domain.AnswerScope)` |
+| A colleague's turn marks its events and its answer (§12g) | `ChatEvent.AskedBy`, `metadata.asked_by`; `ChatRunner.publish`, `ThreadService.AppendAssistantMessage` |
 | A widget conversation cannot become a room | `ThreadParticipantService.Add`, `ErrRoomNotOnWidget` (409 on the dashboard) |
 | `threads.create` | `argentum-node/src/chat.ts`; `argentum-python` `client.py`, `aio.py` |
 | Generated | `types.generated.ts`, `types.py`, the Postman collection (`make openapi`) |
@@ -1171,8 +1172,9 @@ owed (live-gate §7g).
   them would be the dashboard's model, one bubble per agent. It would also break every `/v1`
   client written against "`final` is terminal", and that sentence is in the spec. The colleague's
   answer is in the transcript, attributed.
-- **Frames with no agent pass the filter.** Only a turn running unscoped publishes one, and such
-  a turn has no agent to scope to either.
+- **The filter asks who asked for a turn, not which agent ran it.** The first cut compared agent
+  ids, and §12g is why that was wrong. A frame with no `asked_by` is the caller's, whatever
+  agent it names or whether it names one.
 - **`room_event` is a string, not an enum.** The spec tells a caller to show an unknown value as a
   line. An enum would make a generated client reject the next kind of line `T-N7` adds.
 - **Participants are on the single read and on create, not the list** — `T-N2`'s rule and its
@@ -1280,3 +1282,68 @@ The gate's output is in [`delivery-log.md`](delivery-log.md) Phase 3be.
 - **Open: no `/v1` route adds or removes a participant after creation.** The ticket asked only for
   creation. The dashboard's routes act on an API conversation, company-scoped.
 - **Not built, by the ticket's own contradiction: the widget label** (§12d).
+
+### 12g. Risk 2 — the stream was scoped by the wrong thing (found after the gate, fixed the same day)
+
+**The first cut scoped a sent turn's stream by the agent it was sent to.** Filed as a risk in the
+report, after `9f656b9` was pushed and before anything was deployed — production runs `1.6.0`, so no
+caller met it. It was wrong in two ways.
+- **A turn whose agent is deleted before it runs runs as the company default**
+  (`ChatRunner.resolveAgent`, `T-S2`). Every frame and the saved answer carry the default's id,
+  so nothing matched. Proven failing before the fix, by
+  `TestATurnWhoseAgentWasDeletedStillEndsWithItsAnswer`:
+  - streamed: *"the handler did not finish within 5s"*;
+  - synchronous: *"status = 504, want 200"*, with `"agent_id":"ag-gone"` in flight, for a turn
+    that had answered.
+- **Found while fixing it: an agent can be asked back by the colleague it asked.** Ops asks
+  Finance, and Finance asks Ops. The second Ops turn carries the caller's own agent id, so its
+  `final` matched and could end the caller's stream with the wrong answer. `T-N8`'s depth of 2
+  admits exactly this hop.
+
+**What decides it now is who asked, not which agent.**
+- **A colleague's turn marks itself.** `Run` installs the mark from `p.Peer` before anything
+  publishes. `ChatRunner.publish` stamps it as `ChatEvent.AskedBy`.
+  `ThreadService.AppendAssistantMessage` writes it as `metadata.asked_by`, onto a copy of the
+  caller's map. Both are read off the context, as the agent is, so every row and event a turn
+  writes agrees by construction.
+- **`LatestAssistantSince` takes a `domain.AnswerScope`**, not an agent id. `OwnAnswer` also
+  leaves out a row marked `asked_by`; `AnyAnswer` leaves out room lines only.
+- **`turnRecord.own` marks a sent turn.** It is not stored in the idempotency record: send and its
+  replay are the only producers of a sent turn, and both set it. Both send doors skip every
+  frame marked `asked_by` and look up `OwnAnswer`. Attaching stays `AnyAnswer` and unscoped,
+  as §12f records.
+- **`in_flight.agent_id` now reads "the agent this turn was sent to"**, which it always was.
+
+**Not published on `/v1`:** `asked_by` is on the internal event and the stored row, not on a
+`/v1` message or frame. The send doors never forward such a frame. The transcript attributes
+the colleague's answer by `agent_name`, beside the `nudge` line that asked for it.
+
+**Generated:** `packages/api-types` (`events.ts` `asked_by`, `domain.ts` `AnswerScope`), the SDK
+types and the Postman collection, from the reworded spec.
+
+**Proven failing.** The deleted-agent test failed on the first cut, as quoted above. Then ten
+mutations, one at a time by a script, after a pre-check that the new tests pass unmutated. Each
+ran only its named tests. None only broke the build, and all three mutated files matched their
+pre-run hashes afterwards.
+
+| Mutation | Tests that failed |
+| --- | --- |
+| The stream forwards a colleague's turn | `TestARoomStreamIsTheCallersTurnAndNotAColleagues` |
+| The synchronous door reads a colleague's turn | `TestTheSyncDoorWaitsForTheCallersAgentInARoom` |
+| A send is not marked as the caller's own | both of the above |
+| A replay is not scoped | `TestARetriedSendInARoomIsScopedAsTheOriginal` |
+| A sent turn looks up any answer | `TestARoomStreamIsTheCallersTurnAndNotAColleagues` |
+| **The first cut's agent comparison, restored** | both room tests, and `TestATurnWhoseAgentWasDeletedStillEndsWithItsAnswer`, streamed and synchronous |
+| Events not stamped | `TestEveryEventOfAColleaguesTurnSaysWhoAsked` |
+| `Run` does not mark a colleague's turn | `TestAColleaguesAnswerRecordsWhoAskedForIt` |
+| The saved answer not marked | that test, and `TestEveryEventOfAColleaguesTurnSaysWhoAsked` |
+| The caller's metadata map written into | `TestMarkingAColleaguesAnswerDoesNotWriteIntoTheCallersMap` |
+
+The room tests now publish Finance asking Ops back, carrying Ops' own id. That is why restoring
+the agent comparison fails them, and not only the deleted-agent test. **The SQL has no
+mutation**: its fake honours both bounds, and the real query is §7g's arm. The gate's output is
+in [`delivery-log.md`](delivery-log.md) Phase 3bf.
+
+**Also owed:** §7g's query arm now seeds a row marked `asked_by`, and its stream arm asks Ops
+back. A deleted agent is proven by unit only — deleting one between a send and its run is not a
+live arm anybody can time.

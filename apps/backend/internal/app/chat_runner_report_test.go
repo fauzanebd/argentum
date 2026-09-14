@@ -53,7 +53,7 @@ func (stubMessages) ListPageByThread(context.Context, string, domain.MessageFilt
 func (stubMessages) LatestByThread(context.Context, string) (*domain.Message, error) {
 	return nil, domain.ErrNotFound
 }
-func (stubMessages) LatestAssistantSince(context.Context, string, time.Time, string) (*domain.Message, error) {
+func (stubMessages) LatestAssistantSince(context.Context, string, time.Time, domain.AnswerScope) (*domain.Message, error) {
 	return nil, domain.ErrNotFound
 }
 func (stubMessages) CountByThread(context.Context, string) (int, error) { return 1, nil }

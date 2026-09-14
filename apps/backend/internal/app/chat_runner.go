@@ -736,6 +736,13 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// to read the phone number from; the tool that enqueues it reads this.
 	ctx = tenantctx.WithReplyTarget(ctx, p.ReplyTarget())
 	ctx = tenantctx.WithMessageID(ctx, p.UserMsgID)
+	// A colleague's turn says so on everything it writes (T-N10), from the first
+	// event. `/v1` tells a caller's turn from this one by it, and a refusal
+	// published without it would end the caller's stream as if their own turn
+	// had failed.
+	if p.Peer != nil {
+		ctx = withAskedBy(ctx, p.Peer.AgentID)
+	}
 	if p.RequestID != "" {
 		ctx = tenantctx.WithRequestID(ctx, p.RequestID)
 	}
@@ -2289,6 +2296,9 @@ func (r *ChatRunner) handleRunError(ctx context.Context, p queue.ChatRunPayload,
 func (r *ChatRunner) publish(ctx context.Context, threadID string, evt ChatEvent) error {
 	sc := agentscope.FromContext(ctx)
 	evt.AgentID, evt.AgentName = sc.AgentID, sc.Name
+	// And whose question a colleague's turn answers (T-N10), stamped here for the
+	// agent's reason: the thirteenth publisher gets it without remembering to.
+	evt.AskedBy = askedBy(ctx)
 	return r.bus.Publish(threadID, evt)
 }
 

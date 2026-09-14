@@ -157,8 +157,8 @@ type fakeMessages struct {
 	persisted bool
 	page      []*domain.Message
 	gotFilt   domain.MessageFilter
-	// gotAgents is every agent bound an answer lookup was made with, in order.
-	gotAgents []string
+	// gotScopes is every scope an answer lookup was made with, in order.
+	gotScopes []domain.AnswerScope
 }
 
 // persist makes the answer readable, as the worker does before it publishes
@@ -184,17 +184,20 @@ func (f *fakeMessages) LatestByThread(_ context.Context, _ string) (*domain.Mess
 // of what the attach path gets wrong when it gets it wrong: an answer one
 // microsecond before the window is an answer the caller never receives.
 //
-// So is the agent (T-N10), for the same reason: in a room the newest answer can
-// be a colleague's, and a fixture that ignored the bound would let the handler
-// hand it over as the caller's.
-func (f *fakeMessages) LatestAssistantSince(_ context.Context, _ string, since time.Time, agentID string) (*domain.Message, error) {
+// So are the room-line and colleague bounds (T-N10), for the same reason: in a
+// room the newest answer can be a colleague's, and a fixture that ignored the
+// bounds would let the handler hand it over as the caller's.
+func (f *fakeMessages) LatestAssistantSince(_ context.Context, _ string, since time.Time, scope domain.AnswerScope) (*domain.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.gotAgents = append(f.gotAgents, agentID)
+	f.gotScopes = append(f.gotScopes, scope)
 	if !f.persisted || f.answer == nil || f.answer.CreatedAt.Before(since) {
 		return nil, domain.ErrNotFound
 	}
-	if agentID != "" && f.answer.AgentID != agentID {
+	if _, room := f.answer.Metadata[app.RoomEventKey]; room {
+		return nil, domain.ErrNotFound
+	}
+	if _, colleague := f.answer.Metadata[app.AskedByKey]; colleague && scope == domain.OwnAnswer {
 		return nil, domain.ErrNotFound
 	}
 	return f.answer, nil

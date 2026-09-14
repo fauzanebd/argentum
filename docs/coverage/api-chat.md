@@ -500,8 +500,15 @@ A conversation over `/v1` can hold several agents. The record is
 - **`GET /v1/threads/{id}` carries `participants`**; the list does not.
 - **Messages carry `agent_id`, `agent_name` and `room_event`**, and every stream
   frame of a scoped turn carries the agent.
-- **§3's reconciliation is scoped to the agent asked.** The thread's channel now
-  also carries a colleague's turn (`T-N6`). An unscoped stream would end on
+- **§3's reconciliation is scoped to the caller's own turn.** The thread's channel
+  now also carries a colleague's turn (`T-N6`). An unscoped stream would end on
   whichever `final` came first, and the transcript check could return a room
-  line. Both doors now forward only the asked agent's frames, and the lookup
-  skips room lines. A `PendingTurn`'s `in_flight` names that agent.
+  line. Both send doors now skip every frame marked `asked_by` — a turn another
+  agent asked for — and the lookup skips room lines and colleague answers. A
+  `PendingTurn`'s `in_flight` names the agent the turn was sent to.
+- **Scoped by who asked, not by agent — the first cut was wrong.** It compared
+  agent ids, and that failed twice. A turn whose agent was deleted before it ran
+  answers as the workspace default, so the stream hung and the synchronous door
+  answered 504. And Finance asking Ops something back produces a turn carrying
+  Ops' id, which matched. Fixed the same day, before any deploy
+  ([`multi-agent.md`](multi-agent.md) §12g).

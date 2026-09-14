@@ -91,6 +91,30 @@ func (r *ChatRunner) recipientLeft(ctx context.Context, p queue.ChatRunPayload) 
 	return true, nil
 }
 
+// AskedByKey is where a colleague's answer records who asked for it, on
+// `messages.metadata` (T-N10). The row is otherwise an ordinary answer, and "the
+// answer to the question a caller sent" has to be able to leave it out.
+const AskedByKey = "asked_by"
+
+type askedByCtxKey struct{}
+
+// withAskedBy marks every event and assistant row the turn on ctx writes as a
+// colleague's, answering agentID's question (T-N10). Installed at the top of Run,
+// from the payload, before anything can publish.
+func withAskedBy(ctx context.Context, agentID string) context.Context {
+	if agentID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, askedByCtxKey{}, agentID)
+}
+
+// askedBy is the agent whose question the turn on ctx answers, or "" for a turn
+// a person started.
+func askedBy(ctx context.Context) string {
+	id, _ := ctx.Value(askedByCtxKey{}).(string)
+	return id
+}
+
 // noteWithdrawn says in the room that a question went unanswered because its
 // recipient left, and runs nothing.
 //

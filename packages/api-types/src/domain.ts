@@ -2051,6 +2051,27 @@ export interface MessageFilter {
   CursorID: string;
   Limit: number /* int */;
 }
+/**
+ * AnswerScope is which assistant rows LatestAssistantSince may return (T-N10).
+ * **Not an agent id, which was tried first.** In a room a colleague asked
+ * mid-turn answers in the same thread, often first, so "this turn's answer"
+ * needs a bound. The agent a turn was sent to is the wrong one: a turn whose
+ * agent was deleted before it ran runs as the company default, and an agent can
+ * be asked back by the colleague it asked. What separates a caller's turn from a
+ * colleague's is whether another agent asked for it, which the row records under
+ * `asked_by`.
+ */
+export type AnswerScope = number /* int */;
+/**
+ * AnyAnswer is the newest assistant row that is not a room's own line — what
+ * attaching to a thread delivers.
+ */
+export const AnyAnswer: AnswerScope = 0;
+/**
+ * OwnAnswer also leaves out a colleague's answer: the answer to the question
+ * a caller sent.
+ */
+export const OwnAnswer: AnswerScope = 1;
 
 //////////
 // source: message_feedback.go

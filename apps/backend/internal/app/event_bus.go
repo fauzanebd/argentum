@@ -60,6 +60,15 @@ type ChatEvent struct {
 	// every event on a thread carries the same pair.
 	AgentID   string `json:"agent_id,omitempty"`
 	AgentName string `json:"agent_name,omitempty"`
+	// AskedBy is the agent whose question this turn answers, on every event of a
+	// colleague's turn (T-N6), and empty on a turn a person started. Stamped by
+	// ChatRunner.publish beside the agent.
+	//
+	// It is what tells a person's turn from a colleague's on one channel. Both
+	// carry the person's message id, and an agent can be asked back by the
+	// colleague it asked, so neither the job id nor the agent separates them.
+	// `/v1` scopes a caller's stream by it (T-N10).
+	AskedBy string `json:"asked_by,omitempty"`
 	// Live is set on — and only on — a `state` event: the turn already in
 	// flight when this socket opened. Every other event describes something
 	// that just happened; this one describes what has happened so far.

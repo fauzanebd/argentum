@@ -397,18 +397,27 @@ func TestATranscriptSaysWhoWroteEachMessageAndWhichAreRoomLines(t *testing.T) {
 
 // --- the stream --------------------------------------------------------
 
-// colleagueFinishesFirst publishes a room's two turns the way T-N6 produces
-// them: the caller's agent starts, asks Finance, and Finance — whose turn is
-// short — answers before Ops does, on the same channel and under the same job
-// id. The pause is what makes the ordering deterministic: without it the
-// handler could read Ops' persisted answer while handling Finance's `final`,
-// and a handler that forwarded that `final` would pass by luck.
+// colleagueFinishesFirst publishes a room's turns the way T-N6 produces them.
+// The caller's agent, Ops, starts and asks Finance. Finance — whose turn is
+// short — asks Ops something back and answers before Ops does. All of it on the
+// same channel, under the same job id.
+//
+// The turn Finance asked for runs as Ops, so it carries the caller's own agent
+// id. Only `asked_by` tells it from the caller's turn, which is why the stream
+// is scoped by that and not by agent (T-N10's risk 2).
+//
+// The pause is what makes the ordering deterministic: without it the handler
+// could read Ops' persisted answer while handling a colleague's `final`, and a
+// handler that forwarded that `final` would pass by luck.
 func colleagueFinishesFirst(t *testing.T, f *chatFixture, answer *domain.Message) {
 	t.Helper()
 	f.publish(t, app.ChatEvent{Type: "started", JobID: testRunID, AgentID: "ag-ops", AgentName: "Ops", Timestamp: testAnswerAt})
-	f.publish(t, app.ChatEvent{Type: "started", JobID: testRunID, AgentID: "ag-fin", AgentName: "Finance", Timestamp: testAnswerAt})
-	f.publish(t, app.ChatEvent{Type: "delta", JobID: testRunID, AgentID: "ag-fin", AgentName: "Finance", Content: "GRN-118 was posted"})
-	f.publish(t, app.ChatEvent{Type: "final", JobID: testRunID, AgentID: "ag-fin", AgentName: "Finance", Content: "GRN-118 was posted"})
+	f.publish(t, app.ChatEvent{Type: "started", JobID: testRunID, AgentID: "ag-fin", AgentName: "Finance", AskedBy: "ag-ops", Timestamp: testAnswerAt})
+	f.publish(t, app.ChatEvent{Type: "started", JobID: testRunID, AgentID: "ag-ops", AgentName: "Ops", AskedBy: "ag-fin", Timestamp: testAnswerAt})
+	f.publish(t, app.ChatEvent{Type: "delta", JobID: testRunID, AgentID: "ag-ops", AgentName: "Ops", AskedBy: "ag-fin", Content: "asked back: 12 units short"})
+	f.publish(t, app.ChatEvent{Type: "final", JobID: testRunID, AgentID: "ag-ops", AgentName: "Ops", AskedBy: "ag-fin", Content: "asked back: 12 units short"})
+	f.publish(t, app.ChatEvent{Type: "delta", JobID: testRunID, AgentID: "ag-fin", AgentName: "Finance", AskedBy: "ag-ops", Content: "GRN-118 was posted"})
+	f.publish(t, app.ChatEvent{Type: "final", JobID: testRunID, AgentID: "ag-fin", AgentName: "Finance", AskedBy: "ag-ops", Content: "GRN-118 was posted"})
 	time.Sleep(50 * time.Millisecond)
 	f.publish(t, app.ChatEvent{Type: "delta", JobID: testRunID, AgentID: "ag-ops", AgentName: "Ops", Content: "IDR 3.863.405.700"})
 	f.messages.persist(answer)
@@ -438,6 +447,11 @@ func TestARoomStreamIsTheCallersTurnAndNotAColleagues(t *testing.T) {
 	if strings.Contains(w.Body.String(), "GRN-118") || strings.Contains(w.Body.String(), "Finance") {
 		t.Fatalf("the colleague's turn reached the caller's stream:\n%s", w.Body.String())
 	}
+	// The turn Finance asked for runs as Ops — the caller's own agent id — and is
+	// still not the caller's turn.
+	if strings.Contains(w.Body.String(), "asked back") || strings.Contains(w.Body.String(), "asked_by") {
+		t.Fatalf("the turn Finance asked of Ops reached the caller's stream:\n%s", w.Body.String())
+	}
 	frames, _ := parseSSE(t, w.Body.String())
 	started := 0
 	for _, fr := range frames {
@@ -465,9 +479,12 @@ func TestARoomStreamIsTheCallersTurnAndNotAColleagues(t *testing.T) {
 	if turn.Message.AgentID != "ag-ops" || turn.Message.Content != "IDR 3.863.405.700" {
 		t.Errorf("final message = %+v, want Ops' answer", turn.Message)
 	}
-	for _, a := range f.messages.gotAgents {
-		if a != "ag-ops" {
-			t.Errorf("an answer was looked up for %q; every lookup should be bound to ag-ops", a)
+	if len(f.messages.gotScopes) == 0 {
+		t.Error("no answer was looked up")
+	}
+	for _, s := range f.messages.gotScopes {
+		if s != domain.OwnAnswer {
+			t.Errorf("an answer was looked up with scope %v; a sent turn looks up its own", s)
 		}
 	}
 }
@@ -490,6 +507,85 @@ func TestTheSyncDoorWaitsForTheCallersAgentInARoom(t *testing.T) {
 	}
 	if turn.Message.AgentID != "ag-ops" || turn.Message.Content != "IDR 3.863.405.700" {
 		t.Errorf("answer = %+v, want Ops' — not the colleague's that finished first", turn.Message)
+	}
+}
+
+// A turn queued for an agent that is deleted before it runs runs as the
+// workspace default (ChatRunner.resolveAgent), so every frame and the answer
+// carry the default's id. Scoping the stream by the agent the turn was sent to
+// would never match either: the stream would hang until the caller hung up, and
+// the synchronous door would answer 504 for a turn that had answered.
+func TestATurnWhoseAgentWasDeletedStillEndsWithItsAnswer(t *testing.T) {
+	for name, accept := range map[string]string{
+		"streamed":    "text/event-stream",
+		"synchronous": "application/json",
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newChatFixtureWith(t, 2*time.Second, func(h *V1ChatHandler) {
+				h.chat = &scopedEnqueuer{agentIDs: []string{"ag-gone"}}
+			})
+			answer := assistantMessage()
+			answer.AgentID, answer.AgentName = "ag-def", "Default"
+
+			w := f.send(t, sendRequest(t, accept, roomSend), func() {
+				f.publish(t, app.ChatEvent{Type: "started", JobID: testRunID, AgentID: "ag-def", AgentName: "Default", Timestamp: testAnswerAt})
+				f.publish(t, app.ChatEvent{Type: "delta", JobID: testRunID, AgentID: "ag-def", AgentName: "Default", Content: "IDR 3.863.405.700"})
+				f.messages.persist(answer)
+				f.publish(t, app.ChatEvent{Type: "final", JobID: testRunID, AgentID: "ag-def", AgentName: "Default", Content: "IDR 3.863.405.700"})
+			})
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+			}
+			body := w.Body.String()
+			if accept == "text/event-stream" {
+				frames, _ := parseSSE(t, body)
+				body = frameOf(t, frames, "final").Data
+			}
+			var turn turnResponse
+			if err := json.Unmarshal([]byte(body), &turn); err != nil {
+				t.Fatalf("turn: %v", err)
+			}
+			if turn.Message.Content != "IDR 3.863.405.700" || turn.Message.AgentID != "ag-def" {
+				t.Errorf("answer = %+v, want the default's answer", turn.Message)
+			}
+		})
+	}
+}
+
+// A retried send replays through the original's doors, and in a room it must be
+// scoped as the original was. The idempotency record stores ids, not the scope,
+// so the replay path has to set it itself.
+func TestARetriedSendInARoomIsScopedAsTheOriginal(t *testing.T) {
+	f := newChatFixtureWith(t, 5*time.Second, func(h *V1ChatHandler) {
+		h.chat = &scopedEnqueuer{agentIDs: []string{"ag-ops"}}
+	})
+
+	first := f.send(t, sendRequest(t, "application/json", roomSend), func() {
+		f.messages.persist(opsAnswer())
+		f.publish(t, app.ChatEvent{Type: "final", JobID: testRunID, AgentID: "ag-ops", AgentName: "Ops", Content: "IDR 3.863.405.700"})
+	})
+	if first.Code != http.StatusOK {
+		t.Fatalf("first send: status = %d: %s", first.Code, first.Body.String())
+	}
+	f.messages.mu.Lock()
+	f.messages.gotScopes = nil
+	f.messages.mu.Unlock()
+
+	replay := f.send(t, sendRequest(t, "application/json", roomSend), nil)
+
+	if replay.Code != http.StatusOK || replay.Header().Get("Idempotent-Replay") != "true" {
+		t.Fatalf("replay: status = %d, replay header %q: %s", replay.Code, replay.Header().Get("Idempotent-Replay"), replay.Body.String())
+	}
+	f.messages.mu.Lock()
+	defer f.messages.mu.Unlock()
+	if len(f.messages.gotScopes) == 0 {
+		t.Fatal("the replay looked no answer up")
+	}
+	for _, s := range f.messages.gotScopes {
+		if s != domain.OwnAnswer {
+			t.Errorf("the replay looked an answer up with scope %v; it is the caller's own turn", s)
+		}
 	}
 }
 

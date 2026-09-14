@@ -116,14 +116,30 @@ type MessageRepository interface {
 	// it was this one. Same shape, and the same reason, as
 	// DocumentRepository.NewestForThreadSince.
 	//
-	// Two more bounds since a conversation could hold more than one agent
-	// (T-N10), both for the same reason `since` exists — so a turn is not handed
-	// an answer that is not its own:
-	//   - agentID, when non-empty, is the agent the turn runs as. In a room a
-	//     colleague asked mid-turn answers in the same thread, often first.
-	//   - a room's own lines (`metadata.room_event`, T-N6) are never an answer.
-	//     "→ Finance: …" is written as the asking agent while its turn is still
-	//     running, and a settle is a colleague saying it has nothing.
-	LatestAssistantSince(ctx context.Context, threadID string, since time.Time, agentID string) (*Message, error)
+	// A room's own lines (`metadata.room_event`, T-N6) are never an answer:
+	// "→ Finance: …" is written as the asking agent while its turn is still
+	// running, and a settle is a colleague saying it has nothing. scope says
+	// whether a colleague's answer counts (T-N10).
+	LatestAssistantSince(ctx context.Context, threadID string, since time.Time, scope AnswerScope) (*Message, error)
 	CountByThread(ctx context.Context, threadID string) (int, error)
 }
+
+// AnswerScope is which assistant rows LatestAssistantSince may return (T-N10).
+//
+// **Not an agent id, which was tried first.** In a room a colleague asked
+// mid-turn answers in the same thread, often first, so "this turn's answer"
+// needs a bound. The agent a turn was sent to is the wrong one: a turn whose
+// agent was deleted before it ran runs as the company default, and an agent can
+// be asked back by the colleague it asked. What separates a caller's turn from a
+// colleague's is whether another agent asked for it, which the row records under
+// `asked_by`.
+type AnswerScope int
+
+const (
+	// AnyAnswer is the newest assistant row that is not a room's own line — what
+	// attaching to a thread delivers.
+	AnyAnswer AnswerScope = iota
+	// OwnAnswer also leaves out a colleague's answer: the answer to the question
+	// a caller sent.
+	OwnAnswer
+)

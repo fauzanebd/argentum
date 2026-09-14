@@ -1041,10 +1041,10 @@ export interface components {
                 run_id?: string;
                 /**
                  * Format: uuid
-                 * @description The agent whose answer this turn is waiting for. In a
-                 *     conversation holding several agents, attaching to the thread
-                 *     delivers the newest answer from any of them; this is how to
-                 *     tell whether it is the one you asked.
+                 * @description The agent this turn was sent to. If that agent is deleted
+                 *     before the turn runs, the answer comes from the workspace
+                 *     default instead. Attaching to a conversation holding several
+                 *     agents delivers the newest answer from any of them.
                  */
                 agent_id?: string;
                 /** Format: date-time */

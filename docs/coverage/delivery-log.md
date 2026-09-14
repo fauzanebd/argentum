@@ -7527,6 +7527,46 @@ build. All three mutated files matched their pre-run hashes before the gate (§1
   `chat:run` per call, and no Finance frame in Ops' stream.**
 - **The quickstart run end to end.** **Prediction: unchanged.**
 
+## Phase 3bf — `T-N10`'s risk 2: a stream scoped by who asked, not by agent (2026-09-14)
+
+Filed as risk 2 in Phase 3be's report, after `9f656b9` was pushed and before any deploy. The owner
+asked for it first. Record: [`multi-agent.md`](multi-agent.md) §12g.
+
+**What was wrong.** `T-N10` scoped a sent turn's stream by the agent it was sent to.
+- **A deleted agent's turn runs as the company default** (`resolveAgent`), so nothing matched.
+  Proven failing before the fix: streamed, *"the handler did not finish within 5s"*; synchronous,
+  *"status = 504, want 200"* with `"agent_id":"ag-gone"` in flight.
+- **Found while fixing it:** Finance asking Ops something back produces a turn carrying Ops' own
+  id. Its `final` matched and could end the caller's stream.
+
+**The fix.** A colleague's turn marks itself `asked_by`: on every event through
+`ChatRunner.publish`, and on its saved answer through `AppendAssistantMessage`, both from a context
+value `Run` installs from `p.Peer`. `LatestAssistantSince` takes `domain.AnswerScope` instead of an
+agent id. A sent turn (`turnRecord.own`, set by send and by its replay) skips `asked_by` frames and
+looks up `OwnAnswer`. Attaching is unchanged. `packages/api-types` and the node SDK's types were
+regenerated.
+
+**Proven failing.** The deleted-agent test, as above, then ten mutations. Each failed its named
+tests, none only broke the build, and all three files matched their pre-run hashes. Restoring the
+agent comparison fails the deleted-agent test and both room tests.
+
+**Gate.**
+- **First run:** `MAKE EXIT: 2`. `lint-web` stopped on `STALE packages/argentum-node/src/types.generated.ts`
+  before any Go test ran. The earlier `make openapi` had regenerated nothing — the shell was in
+  `apps/backend`, whose Makefile has no `openapi` target — though its captured exit code read 0.
+- **Regenerated** from the repo root: *"a valid OpenAPI 3.1 document (16 paths, 54 schemas)"*, the
+  quickstart's 13 example files quoted exactly.
+- **Second run,** alone, with no source edited while it ran: `MAKE EXIT: 0`. 73 Go packages `ok`,
+  zero `FAIL`/`panic` lines, `golangci-lint` `0 issues.`, `gofmt -l` empty. 88 dashboard vitest
+  tests pass, and every build finished.
+- **New tests:** 6 — 4 in `app` (`chat_runner_asked_by_test.go`), and in `handlers` the
+  deleted-agent and replay tests. The room tests now publish an asked-back turn.
+
+**Owed** (live-gate §7g, rewritten for the scope):
+- **The query on a real Postgres, with a row marked `asked_by`.** **Prediction: `OwnAnswer` leaves it
+  out, `AnyAnswer` returns it, and neither returns a room line.**
+- **The live room, asking Ops back.** **Prediction: the stream ends on Ops' own `final`.**
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
