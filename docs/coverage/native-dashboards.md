@@ -520,3 +520,22 @@ happened"* — and left it unticketed. It is `T-Q13` now, P0
 and it is the reason *Native dashboard revision* stays 🟡 in
 [`feature-coverage.md`](feature-coverage.md) with a tool that passes every test
 written for it.
+
+## 6. `T-D16`'s second half — `saved_dashboards` dropped (2026-09-14)
+
+`073` dropped the Metabase column on 2026-09-03 and removed the table's last readers in the same
+commit, which is why the table could not go with it. **`088_drop_saved_dashboards` drops it now.**
+Production ran `1.10.1`, whose Go names the table only in a comment, so no release a rolling deploy
+can meet reads it. The `down` recreates `006`'s schema, empty.
+
+**Run on a scratch Postgres** (live-gate §7k, as predicted):
+- up from 87 with a row in the table, then down and up again;
+- `v1.11.0`'s API, given `088`, answered the dashboards list, threads, a thread delete and the company
+  erasure against the dropped table, with no error.
+
+**Found beside it:** the same API with its **own** migrations exits on boot against a database at 88.
+A rollback to an older image therefore could not take effect, after this migration or any other. `073`'s
+"previous-release binary serves 200" answered the reads and not the boot. **Fixed the same day** for
+images built from then on: the API serves, with a warning, on a database that is cleanly ahead (§7k).
+
+**Owed:** `088` at deploy. With it the track is built: nothing Metabase-shaped is left in the schema.

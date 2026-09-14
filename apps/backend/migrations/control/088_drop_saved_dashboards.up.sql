@@ -1,0 +1,22 @@
+-- T-D16 (part 2 of 2) · `saved_dashboards`, dropped.
+--
+-- `006` made this table to remember which Metabase dashboards the agent built.
+-- T-D15 decommissioned Metabase, and `073` (commit 4f9d1b2, 2026-09-03) removed
+-- the last readers — the archived-list handler, its two routes, and the
+-- thread-delete cascades on `/api` and `/v1` — in the same commit that dropped
+-- the Metabase column. The table could not go with them: `cmd/api` applies
+-- migrations before it serves, so during a rolling deploy the new schema meets
+-- the previous binary, and that binary still read this table.
+--
+-- **That previous binary is gone now, and this was checked rather than assumed.**
+-- Production ran `1.10.1` when this was written, and
+-- `git grep -i saved_dashboards v1.10.1 -- '*.go'` finds one line, a comment. The
+-- releases a rolling deploy can meet from here on read nothing from this table.
+-- The drop was held to the ticket's "one release later" for exactly that
+-- reason, and was written here eleven releases later.
+--
+-- **What is lost:** rows pointing at dashboards on a Metabase instance that no
+-- longer runs — each `public_url` already answers nothing. Nothing references the
+-- table by foreign key. The native dashboards (`056`) are a different table and
+-- are not touched. The two indexes go with it.
+DROP TABLE IF EXISTS saved_dashboards;

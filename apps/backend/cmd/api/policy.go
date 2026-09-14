@@ -335,11 +335,10 @@ var apiPolicy = middleware.RolePolicy{
 
 	// Native dashboards (T-D10). Reads are member: opening a dashboard is what a
 	// member is here to do, and the numbers are the company's own — the same
-	// read=member split the metric registry makes. Deleting is admin, which the
-	// Metabase rows below do not require, and the difference is deliberate: a
-	// native dashboard is a definition this product executes on a schedule
-	// somebody's Monday depends on, where a saved_dashboards row is a link to an
-	// object that still exists in Metabase after the row is gone.
+	// read=member split the metric registry makes. Deleting is admin: a native
+	// dashboard is a definition this product executes on a schedule somebody's
+	// Monday depends on. (It was once contrasted with the Metabase routes, which
+	// T-D15 removed; their table went with T-D16.)
 	"GET /api/dashboards":          domain.RoleMember,
 	"GET /api/dashboards/:id":      domain.RoleMember,
 	"GET /api/dashboards/:id/data": domain.RoleMember,

@@ -42,6 +42,22 @@ tickets in `02-agent-quality-roadmap.md`, or the `S-n` finding codes.
 >
 > ~~**What is left:** `T-D8` (panel cache) and `T-D9` (query log) in Track C…~~
 >
+> **Status, 2026-09-14 — the track is built: `T-D16`'s second half landed as `088`.**
+> `saved_dashboards` is dropped, eleven releases after `073` removed its readers. Production ran
+> `1.10.1`, whose Go names the table only in a comment. Round-tripped on a scratch Postgres with a row
+> in it. `v1.11.0`'s API served dashboards, threads, a thread delete and an erasure against the
+> dropped table (live-gate §7k).
+>
+> **One finding the arm was not looking for.** An older API with its own migrations does not start
+> against a newer database: `migrate up: no migration found for version 88`. So a rollback to a
+> previous image cannot take effect. It is true of every migration, not this one. `073`'s
+> "previous-release binary serves 200" answered the table question, not the boot one. **Fixed the
+> same day, on the owner's go-ahead, outside this ticket:** an API built from then on serves, with a
+> warning, on a database that is cleanly ahead of it (live-gate §7k).
+>
+> **Where the ticket was wrong, once more:** `074` was written into it on 2026-09-03 as the drop's
+> number. Fourteen migrations landed first; it is `088`.
+
 > **Status, 2026-08-25 — the track is built except `T-D16`.** `T-D8`, `T-D9`,
 > `T-D13`, `T-D21` and `T-D15` all landed; `T-D14` does not exist and never did,
 > the numbering skips it. Records in
@@ -1062,9 +1078,9 @@ archived list still renders.
 > `T-H5`** — but that position is not a decision until the owner takes it, and
 > `T-H5` is 1.0d that becomes 0 the moment they do.
 
-### `T-D16` Drop the Metabase columns — 0.5d · **half built and gated 2026-09-03; the table's drop is owed one release later**
+### `T-D16` Drop the Metabase columns — 0.5d · **built: the column in `073` (2026-09-03), the table in `088` (2026-09-14) — live-gate §7k**
 
-*(**059** as filed; landed as **073**, and the second half is **074**.)*
+*(**059** as filed; landed as **073**, and the second half, written below as **074**, landed as **088**.)*
 
 > **Status, 2026-09-03.** `metabase_database_id` and its partial unique index are
 > dropped by `073_drop_metabase_database_id`, gated up/down/up against the real
