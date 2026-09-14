@@ -65,6 +65,7 @@ var promptTools = []promptTool{
 	{"schedule_task", "schedule_task: Create a recurring scheduled task. Each run executes a saved prompt through this agent and writes the result to a dedicated thread. Parameters: name, prompt (the instruction to run), cron_expression (5-field cron, e.g. \"0 7 * * 1\" = Mondays 07:00), timezone (IANA, default UTC). When the user's request is ambiguous about WHAT to run, WHEN, or in WHICH timezone, ASK the user to clarify before calling schedule_task. After it returns, tell the user the task was scheduled and quote the task_id; do not invent a URL — the dashboard renders the task by id."},
 	{"ask_clarification", "ask_clarification: Ask the user ONE question and end the turn, for a request ambiguous enough that guessing would produce a confidently wrong answer. Prefer this over picking a reading and running with it. Not for anything you could look up yourself, and not for a question you can already answer."},
 	{"nudge_agent", "nudge_agent: Ask ONE other agent in this conversation ONE short question, when the answer needs a fact or figure only their data sources hold. Name them exactly as the conversation lists them. It does NOT wait: their answer appears in the conversation after your reply, so finish your own answer without it and never state a figure you asked them for."},
+	{"hand_off_to_agent", "hand_off_to_agent: Pass the person's WHOLE question to ONE other agent in this conversation when it is not yours to answer — its subject belongs to their data sources, and yours answer no real part of it. Give the reason, not the question: they receive the person's own words. Your turn ends with the hand-off. If you can answer and only need one fact from them, that is nudge_agent."},
 	{"propose_action", "propose_action: Propose a write-capable action — one that changes something outside Argentum, such as sending a message. It does NOT perform the action: it records a proposal a human approves from the dashboard. The kinds this workspace has enabled, and the parameters each takes, are listed under \"Actions this workspace has enabled\" in the turn's system context. If the user asks for something no enabled kind covers, say so plainly rather than doing it another way."},
 	{"search_documents", "search_documents: Search the text of PDFs this organization uploaded — contracts, policies, letters, reports — and return the matching passages with their document name and page numbers. Use it for what a document SAYS. For a figure a document CONTAINS in a table, prefer run_sql against the document source in list_sources: those rows are typed, reviewed and checkable, where a passage is prose. Always cite the page."},
 	{"load_skill", "load_skill: Read one of this workspace's written procedures in full, by its exact name. The list under \"Procedures this workspace has written down\" gives each procedure's name and when it applies, but not its steps — this is how you read the steps. Call it when a listed procedure fits the request, then follow it. Only the names in that list exist; do not guess one."},
@@ -169,6 +170,18 @@ var guidelines = []guideline{
    - One question, to one colleague, once. If the result says already_asked, the question is already on its way: do not ask again.
    - Their answer arrives after your reply, never inside your turn. Answer the part you can, say whom you asked and what, and never state the figure you asked them for.
    - If the result carries budget_exhausted or an error, nobody was asked: answer from what you have and say what is left unanswered.`,
+	},
+	{
+		// T-N7. Conditional on the tool, which the factory hands only to a turn
+		// that also holds nudge_agent — so this rule may name it, and every prompt
+		// without a room composes exactly as before.
+		needs: []string{"hand_off_to_agent"},
+		text: `A QUESTION THAT IS NOT YOURS IS HANDED OFF, NOT HALF-ANSWERED. hand_off_to_agent passes the person's whole question to a colleague in this conversation.
+   - Hand off only when the question as a whole belongs to a colleague — their subject, their data sources — and you cannot answer any real part of it. If you can answer it and need one fact from somebody else, keep it and use nudge_agent.
+   - Check first. A question one of your own tools could answer is yours, even when a colleague could answer it too.
+   - The reason is one sentence, in the person's language, saying why the question is theirs. Do not restate the question: they receive the person's own words.
+   - A hand-off that succeeds ends your turn. The conversation already shows that you passed it on, so do not answer it and do not call another tool.
+   - If the result carries an error or budget_exhausted, nothing was handed over: the question is still yours, so answer it and say what you could not do.`,
 	},
 	{
 		needs: []string{"search_documents"},

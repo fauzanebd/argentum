@@ -48,4 +48,21 @@ type PeerOrigin struct {
 	// reads it to stop offering nudge_agent to a turn whose next ask could only
 	// be refused.
 	Depth int `json:"depth,omitempty"`
+	// HandOff is set when the message is not a colleague's question but the
+	// person's own, passed on because it was not the author's to answer (T-N7).
+	// Message then holds the person's words exactly as the handing turn received
+	// them — carried from that turn's payload, never re-typed by its model — and
+	// HandOff holds the one thing the model did write: its reason.
+	//
+	// It decides how the recipient's input is framed and nothing else. The
+	// reason is fenced under the author's name like any peer's words; the scope,
+	// the taint and the depth are what the three fields above already say.
+	HandOff *HandOff `json:"hand_off,omitempty"`
+}
+
+// HandOff is the handing agent's note on a question it passed on (T-N7).
+type HandOff struct {
+	// Reason is why the question belongs to the recipient, in the handing
+	// model's words. Untrusted input: the recipient reads it fenced.
+	Reason string `json:"reason"`
 }

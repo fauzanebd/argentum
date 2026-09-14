@@ -4,7 +4,7 @@ The plan is
 [`../plan/09-multi-agent-conversations-roadmap.md`](../plan/09-multi-agent-conversations-roadmap.md)
 (`T-N1`→`T-N10`, ~18.5d); the reference it was checked against is
 [`../research/06-hermes-multi-agent.md`](../research/06-hermes-multi-agent.md).
-**Eight of the original ten are built** (`T-N1`→`T-N6`, `T-N8` and `T-N10`), and so is
+**Nine of the original ten are built** (`T-N1`→`T-N8` and `T-N10`), and so is
 `T-N11`, filed and built since. This file records what landed, what it changed that the ticket did
 not anticipate, and what is owed.
 
@@ -16,7 +16,8 @@ not anticipate, and what is owed.
 | `T-N4` The dashboard room | **built 2026-09-11. Visual gate run; three findings — §6** |
 | `T-N5` A peer agent's words are untrusted input | **built 2026-09-13, unit-gated. `make eval` owed; one finding outside the ticket — §8** |
 | `T-N6` `nudge_agent` — one participant asks another | **built 2026-09-14, unit-gated. Migration `086` written, not applied — the ticket said none. `make eval`, the live room and the screenshots owed — §11** |
-| `T-N7`, `T-N9` | Not built, not scheduled |
+| `T-N7` `hand_off_to_agent` — "this one isn't mine" | **built 2026-09-14, unit-gated. No migration. `make eval` and the live arms owed; four places the ticket was wrong — §13** |
+| `T-N9` | Not built, not scheduled |
 | `T-N10` `/v1`, the widget, the spec and the SDKs | **built 2026-09-14, unit-gated. No migration, no prompt change. The live room, the quickstart run and the query on a real Postgres owed; four places the ticket was wrong — §12** |
 | `T-N8` The conversation budget and the loop guard | **ledger built 2026-09-14, unit-gated — §10. Its room half (the notice, the pass) built by `T-N6` — §11** |
 | `T-N11` A room's history is a peer's words too | **filed 2026-09-13 from §8b; built 2026-09-14, unit-gated. `make eval` and the room arm owed; the ticket was short two leaks — §9** |
@@ -901,9 +902,9 @@ colleague one question:
 | `tools.GatedByFlag`: the one tool the allowlist does not decide, kept out of the checkboxes | the same file; `app.NewAgentService` |
 | `NudgeService`: the gate again, who may be asked, credits, the ledger, the question in the room, the queued turn | `internal/app/nudge_service.go` |
 | `PeerOrigin.ParticipantID` and `PeerOrigin.Depth` | `internal/queue/peer.go` |
-| `offerNudge` in the factory, fed `AgentSpec.Nudge` by the runner | `bootstrap/stack.go`, `app/chat_runner_room.go` |
+| `offerNudge` in the factory, fed `AgentSpec.Nudge` by the runner — `offerRoomTools` since `T-N7` (§13a) | `bootstrap/stack.go`, `app/chat_runner_room.go` |
 | The seat check before a colleague's question runs, and the withdrawn line | `app/chat_runner_room.go`, called at the top of `ChatRunner.Run` |
-| The pass, offered in a colleague's user turn and read back as a settle | `withPassOption`, `isPass`, `settle` in the same file |
+| The pass, offered in a colleague's user turn and read back as a settle | `withPassOption` (`withPeerFraming` since `T-N7`), `isPass`, `settle` in the same file |
 | `guardrails.WithPeerTurn`: the topic classifier stands aside | `internal/guardrails/guardrails.go` |
 | `Conversation.ClaimNotice`: one limit line per agent per message | `internal/agentbudget/conversation.go` |
 | Room lines kept out of hydrated history | `ChatRunner.hydrateMemory` |
@@ -1095,8 +1096,9 @@ The gate's output is in [`delivery-log.md`](delivery-log.md) Phase 3bd.
 
 - **The paired `make eval`.** Prediction: identical (§7f).
 - **The live room, its negative arm and a colleague that passes** (§7f).
-- **`086` up, down, up** — runnable on this machine's scratch stack, not run beside the gate.
-- **The room lines and the checkbox on screen** — runnable here (§7f).
+- ~~**`086` up, down, up**~~ — **run 2026-09-14 on a scratch stack, as predicted** (live-gate §7i).
+- ~~**The room lines and the checkbox on screen**~~ — **run 2026-09-14 in light and grayscale, as
+  predicted, plus one unpredicted observation** (§13g). Dark not run.
 - **Two workers, and §2c's cost per message** (§7e), no longer waiting on code.
 - **Deploy with `T-N11`, and with rooms.** Production runs `1.6.0`, which has neither. A nudge
   in a room without `T-N11` would hand the colleague's history over unfenced (§9d).
@@ -1271,8 +1273,8 @@ The gate's output is in [`delivery-log.md`](delivery-log.md) Phase 3be.
 
 ### 12f. What is owed, and what stays open
 
-- **`LatestAssistantSince` on a real Postgres** — the query both scoped doors rest on (§7g).
-  **Prediction: clean.**
+- ~~**`LatestAssistantSince` on a real Postgres**~~ — **run 2026-09-14 on a scratch stack: clean, as
+  predicted, and extended to a hand-off row** (§13g, live-gate §7i).
 - **A room over `/v1`, live, and its stream while a colleague answers** (§7g). **Prediction: one
   `chat:run` per call, and no Finance frame in Ops' stream.**
 - **The quickstart run end to end** (§7g). **Prediction: unchanged.**
@@ -1347,3 +1349,226 @@ in [`delivery-log.md`](delivery-log.md) Phase 3bf.
 **Also owed:** §7g's query arm now seeds a row marked `asked_by`, and its stream arm asks Ops
 back. A deleted agent is proven by unit only — deleting one between a send and its run is not a
 live arm anybody can time.
+
+## 13. `T-N7`, and a question that was not the asker's
+
+**Built 2026-09-14, unit-gated.** No migration: `086`'s `can_nudge` gates it. A catalog line and a
+guideline, so the paired `make eval` is owed, as are the live arms (live-gate §7h).
+
+A nudge says *I am answering, and I need one fact from you*. A hand-off says *this is not mine, you
+take it*. Ops, asked what was written off for SKU 4471 last quarter, hands the question to Finance,
+whose ledger holds write-offs:
+- the room shows Ops' reply: "Passed to Finance: Write-offs are booked in Finance's ledger.";
+- Finance answers the person's own words, in a turn of its own;
+- nothing Ops' model writes after handing the question over is published.
+
+### 13a. What was built
+
+| Piece | Where |
+| --- | --- |
+| `hand_off_to_agent(agent, reason)`, and the `HandOffer` it calls | `internal/tools/hand_off_agent.go` |
+| `GatedByFlag` claims it too: never a checkbox, offered by `can_nudge` and the room | `internal/tools/nudge_agent.go` |
+| `NudgeService.HandOff`, sharing `gate`, `colleague` and `credits` with `Nudge` | `internal/app/nudge_service.go` |
+| `PeerOrigin.HandOff{Reason}` | `internal/queue/peer.go` |
+| `AgentSpec.HandOff`, `offersHandOff`, `holdsPersonsQuestion`; `offerRoomTools` in the factory (was `offerNudge`) | `app/chat_runner.go`, `app/chat_runner_room.go`, `bootstrap/stack.go` |
+| The turn ends on its hand-off: `handedOver`, and `finish` split so `deliver` can close a turn on a message already written | the same two `app` files |
+| The handed-off turn's input: a framing sentence, the reason fenced, the person's words. No pass offered | `peerMessage`, `withPeerFraming` (was `withPassOption`) |
+| `metadata.handed_off_to`, kept out of model history | `HandedOffToKey`, `hydrateMemory` |
+| A catalog line, and a guideline that renders only for a turn holding the tool | `bootstrap/system_prompt.go` |
+| The checkbox copy says what else the flag allows | `settings/agents-tab.tsx` |
+
+**Where the order of checks differs from §11a's:**
+
+| Check | Refusal |
+| --- | --- |
+| `nudge_agent`'s gate, then: the turn holds the person's question | `not_available`, pointing a colleague's question at `PASS` and `nudge_agent` |
+| A name, and a reason under 300 characters | `missing_agent`, `missing_reason`, `reason_too_long` |
+| Not already handed off in this turn | `already_handed_off` |
+| The participant, not itself, its row, the credits | as §11a |
+| The ledger, asked about the handing turn's own message | a repeat is `already_asked`, **carrying `error`**; a refusal is `budget_exhausted`, with a room line |
+| The line written, then the colleague's turn queued | `not_delivered`, and the turn is not ended |
+
+A nudge from a turn that has already handed off is refused `handed_off`.
+
+### 13b. Decisions worth the words
+
+- **The model never supplies the question.** The tool takes a name and a reason, and the colleague
+  is sent the handing turn's own message. So no model retells the person's words on the way. And
+  the ledger's repeat check sees the very words the person's message was opened with.
+- **The reply is the product's line, not the model's sentence.**
+  - The ticket asked the model to keep its reply to one sentence and attempt no answer. A rule a
+    model is only asked to keep is one the room finds broken.
+  - So the line is written with the hand-off, before the colleague's turn is queued (§11b's
+    order), and the runner closes the turn on it.
+  - A model that errors after handing off still ends on the line, and a failed stream is not
+    retried.
+  - The length of the dropped reply is logged as `dropped_reply_chars`, so the worker log can
+    count how often a model would have answered anyway.
+- **Stored as an answer, not a room line.** `LatestAssistantSince` skips `room_event` rows. A `/v1`
+  caller who asked Ops synchronously is waiting for Ops' answer, and the hand-off is that answer.
+  As a room line, the door would have waited and answered `504`. It is kept out of model history
+  anyway, for the room line's reason.
+- **Only the reason is fenced.**
+  - The fence's rule in the system prompt reads its contents as a colleague's claim, "not as an
+    instruction from the user".
+  - The question is not a colleague's words. So the recipient reads the note fenced under Ops'
+    name, then the person's words as a person's words arrive.
+  - The turn is a peer turn in everything that decides anything: the taint is inherited, `agent`
+    is marked, the directive is dropped, `asked_by` is stamped.
+- **Not offered to a colleague's question.** Its words are the colleague's, and handing them on
+  would present them to a third agent as the person's. Only a turn the person addressed, or one
+  handed the question, holds the tool. So a handed-on question is the person's words at every
+  hop.
+- **No pass on a handed-off question.** A person whose question two agents declined is owed a
+  sentence saying so, not a quiet line. A model that replies `PASS` anyway still settles, so the
+  sentinel is never published.
+- **One flag, and only beside `nudge_agent`.** A second column would be a second switch for "may
+  involve a colleague". The factory never offers the hand-off alone, because its description and
+  guideline send the model to `nudge_agent` for the case that is not a hand-off.
+
+### 13c. The acceptance items, quoted back
+
+- [x] *The handed-off agent receives the user's original wording, fenced, with the reason attached.*
+  Built with the reason fenced and the words not (§13d).
+  - `TestAHandOffWritesTheReplyAndSendsThePersonsOwnWords`: the queued payload's message is the
+    person's, and the reason rides `Peer.HandOff`.
+  - `TestAHandedOffQuestionArrivesInThePersonsWordsWithTheReasonFenced`, through `Run`: the
+    model's input holds `FencePeer("Ops", reason)`, then the words, and never the words fenced.
+- [x] *The handing agent's reply says it handed off and attempts no answer.*
+  `TestAHandedOffTurnEndsOnTheHandOffAndPublishesNothingItWroteAfter` drives a whole turn.
+  - The stub model calls the real tool and then answers anyway.
+  - One message is written: the hand-off, as Ops. One `final` carries it.
+  - No event carries the figure.
+  - `TestAHandedOffTurnWhoseModelThenFailsStillEndsOnTheHandOff` is the same turn with a model
+    that fails instead.
+- [x] *`threads.agent_id` is unchanged after a hand-off.* By construction.
+  - `domain.ThreadRepository` has no method that writes a thread's agent. Its writers are
+    `Create`, `UpdateSummary`, `Touch`, `Archive` and `Delete`.
+  - `NudgeService` holds no thread repository at all: a read-only roster, a read-only room, an
+    append-only note writer, and the queue.
+- [x] *A hand-off counts against the conversation budget.*
+  `TestAHandOffCountsAgainstTheConversationBudget`: the ledger reads 2 turns, and the next ask
+  from that fan-out is refused.
+- [x] *A hand-off back to the original agent is refused by the depth counter, not by a special
+  case.* Refused by the ledger's repeat check, one hop before the depth counter could refuse it
+  (§13d).
+  - `TestAHandOffBackIsRefusedByTheLedger`: `already_asked`, nothing queued, no second line.
+  - `TestAThirdHopHandOffIsRefusedOnDepth`: a third hop is refused on depth, with a room line
+    quoting the question.
+- [ ] *`make eval` at or above baseline.* **Owed**, with no model key here (§7h). **Prediction:
+  identical.**
+
+**Beyond the ticket:**
+- `TestAHandOffThatCannotBeMadeIsRefusedAndSendsNothing` (six cases)
+- `TestTheHandOffsGatesAreCheckedWhenItRuns`, including a colleague's question
+- `TestATurnHandsItsQuestionOnOnce`: a second hand-off, and a nudge after one
+- `TestAHandOffThatWasNotQueuedLeavesTheQuestionWithTheTurn`, `TestATenantAtZeroCannotHandOff`
+- `TestOnlyATurnHoldingThePersonsQuestionIsOfferedTheHandOff`, `TestAHandOffIsNeverReplayedIntoHistory`
+- `TestTheHandOffIsOfferedOnlyBesideNudge`
+- the tool's six, including `TestTheModelIsNeverAskedForTheQuestion`
+- extended: the prompt-composition test, `TestNudgeIsNeverACheckbox`, the flag-gated tool list,
+  the peer carrier's field list, and a leak-guard fixture with its negative
+
+### 13d. Where the ticket was wrong
+
+- **"A hand-off back to the original agent is refused by the depth counter."** At the default
+  `CONVERSATION_MAX_NUDGE_DEPTH` of 2, Ops → Finance is hop 1 and Finance → Ops is hop 2, which
+  the counter admits. The ledger refuses it anyway, as a repeat: `Open` recorded Ops as asked the
+  person's cleaned message, and a hand-off sends exactly that message. Still `T-N8`'s ledger,
+  still no special case.
+  - The ledger cannot tell "Finance handed it here" from "the person addressed Finance too". So the
+    refusal's sentence covers both.
+  - It carries `error`, unlike a nudge's repeat. A repeated nudge is a question already on its way;
+    a repeated hand-off handed nothing over.
+- **"The asker's own reply is one sentence … It must not also attempt an answer"** was a request to
+  the model. Built as a rule (§13b).
+- **"Receives the user's original wording, fenced"** would have told the recipient to read the
+  person's request as a colleague's claim. Only the reason is fenced (§13b).
+- **Silent on a colleague's question**, and on where the "original wording" comes from at a later
+  hop. Not offered there, which is what keeps the words the person's at every hop.
+- **"Repo: BE"** — plus one line of dashboard copy. **"Migration: none"** was right this time.
+
+### 13e. Proven failing
+
+Seventeen mutations, applied one at a time by a script (`/tmp/tn7_mutate.py`), after a pre-check
+that every named test passes unmutated. Each ran only its named tests. None only broke the build,
+and every mutated file matched its pre-run hash afterwards. One mutation's target string first
+matched twice — `Nudge` and `HandOff` log the same tail — so the script refused to apply it. It
+was rerun alone with a string that matches once.
+
+| Mutation | Tests that failed |
+| --- | --- |
+| The question sent is the model's reason, not the person's words | `TestAHandOffWritesTheReplyAndSendsThePersonsOwnWords`, `TestAHandOffBackIsRefusedByTheLedger` |
+| A colleague's question may be handed on | `TestTheHandOffsGatesAreCheckedWhenItRuns`, `TestOnlyATurnHoldingThePersonsQuestionIsOfferedTheHandOff` (the colleague's-question cases) |
+| The runner does not end a turn on its hand-off | `TestAHandedOffTurnEndsOnTheHandOffAndPublishesNothingItWroteAfter`, `TestAHandedOffTurnWhoseModelThenFailsStillEndsOnTheHandOff` |
+| A model error after a hand-off is handled as a failed turn | `TestAHandedOffTurnWhoseModelThenFailsStillEndsOnTheHandOff` |
+| A hand-off whose turn was not queued still ends the turn | `TestAHandOffThatWasNotQueuedLeavesTheQuestionWithTheTurn` |
+| A second hand-off in one turn is not refused | `TestATurnHandsItsQuestionOnOnce` |
+| A nudge after a hand-off is not refused | `TestATurnHandsItsQuestionOnOnce` |
+| The hand-off is stored as a room line | `TestAHandOffWritesTheReplyAndSendsThePersonsOwnWords`, `TestAHandedOffTurnEndsOnTheHandOffAndPublishesNothingItWroteAfter` |
+| The hand-off is replayed into history | `TestAHandOffIsNeverReplayedIntoHistory` |
+| The person's words are fenced with the reason | `TestAHandedOffQuestionArrivesInThePersonsWordsWithTheReasonFenced` |
+| A handed-off question is framed as a colleague's, with the pass | the same test |
+| The factory offers the hand-off without `nudge_agent` | `TestTheHandOffIsOfferedOnlyBesideNudge` |
+| The hand-off is an allowlist tool | `TestTheRoomToolsAreTheOnlyOnesTheAllowlistDoesNotDecide`, `TestNudgeIsNeverACheckbox` |
+| The handing turn's taint is not carried | `TestAHandOffWritesTheReplyAndSendsThePersonsOwnWords` |
+| A repeated hand-off is not refused as a repeat | `TestAHandOffBackIsRefusedByTheLedger` |
+| The runner offers the hand-off whatever `nudge_agent`'s gates say | `TestOnlyATurnHoldingThePersonsQuestionIsOfferedTheHandOff` (the last-hop case) |
+| The hand-off guideline renders for every turn | `TestTheNudgeToolAndItsGuidelineReachOnlyATurnOfferedThem` |
+
+**Not mutated:** the wiring in `bootstrap.New` (§13f), and the depth refusal, which is `T-N8`'s
+code and already mutated there. The gate's output is in [`delivery-log.md`](delivery-log.md)
+Phase 3bg.
+
+### 13f. What is owed, and what stays open
+
+- **The paired `make eval`.** **Prediction: identical** (§7h).
+- **A hand-off live, its negative, and a hand-back** (§7h). **Prediction:** `hand_off_to_agent`
+  for the write-off question, nothing for the reorder question, and a nudge for the goods-in one.
+- **A `/v1` caller whose agent hands off.** **Prediction: `200` on the hand-off line** (§7h).
+- ~~**The hand-off bubble and the checkbox on screen**~~ — **run 2026-09-14, as predicted** (§13g).
+- **Whether the tool is needed at all.** Phase 3be noted that `T-N6`'s live arm answers it, and
+  that arm has not run. The tool is additive and behind the same flag. If the arm shows `nudge_agent`
+  covers the case, cutting it is two registry lines and a prompt line.
+- **Open: the line is English.** "Passed to Finance:" is the product's, like every room line
+  (`settle`, `withdrawn`, `unasked`), whatever language the person wrote in. The reason is the
+  model's, and the tool asks for it in the person's language.
+- **Open: a line written and a turn not queued.** On a queue failure "Passed to Finance: …" stays in
+  the room, and Ops is told and answers the question itself. This is §11f's open item, in hand-off
+  form.
+- **Open: tool calls after a hand-off.** The result tells the model to stop, and a nudge is refused.
+  Data tools still run until the per-turn ceiling, and their output is dropped with the reply.
+- **Not built: a `/v1` field for the hand-off.** A caller reads the sentence. `metadata.handed_off_to`
+  is on the stored row, and not in `v1.yaml`'s message schema.
+- **The wiring is not unit-proven.** `bootstrap.New` passes the service as `RegistryDeps.HandOffs`.
+  Only the live arm shows the worker's tool reaching it.
+
+### 13g. The free arms, run on a scratch stack (2026-09-14)
+
+Everything in §7f–§7h that needs neither a model nor a worker. Run on an embedded Postgres and
+miniredis, not production; the full record is live-gate §7i.
+
+- **`086` up, down, up**, and the flag carried through an edit: **as predicted.**
+- **`LatestAssistantSince` on a real Postgres**, both scopes: **as predicted.**
+  - Extended for `T-N7` with a hand-off row. `OwnAnswer` returns the hand-off, and keeps returning
+    it after Finance answers.
+  - That is the database half of the `/v1` claim in §13b: a hand-off is found as the caller's
+    answer.
+- **The room on screen**, in light and grayscale: **as predicted.**
+  - The three room lines are centred and unrated.
+  - The limit and the withdrawn line lead with their words; the settle does not.
+  - The hand-off is Ops' bubble, and the checkbox copy fits.
+
+![A room's transcript: a nudge, a settle, a hand-off, a limit and a withdrawn question](assets/room-lines-and-hand-off.png)
+
+**One thing nobody predicted: a nudge and a hand-off can be rated.** Both are stored as the
+asking agent's assistant rows and drawn by `MessageBubble`. So both carry the copy and
+thumbs-up/down controls of an answer.
+- A thumbs-down on "→ Finance: Was a goods-in posted…" rates a question an agent asked, not an
+  answer a person got. It lands in the same feedback as a real answer's rating.
+- The hand-off's rating is at least a rating of Ops' reply.
+- **Open, not fixed.** Withholding the controls on `room_event: nudge` would be a few lines in
+  `MessageBubble`. Whether a hand-off should keep them is a product question.
+
+**Kept for next time:** `internal/adapters/postgres/scratch_rooms_test.go`, behind the `scratch`
+build tag, holds both database arms, with the command in its header.

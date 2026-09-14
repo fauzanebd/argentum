@@ -60,22 +60,25 @@ func TestAnEditThatOmitsTheFlagLeavesIt(t *testing.T) {
 // The registry the API lists carries nudge_agent, because the registry is one
 // construction site. The form must not: a tick there would be a second switch
 // for one capability, and one that could never do anything.
+// And hand_off_to_agent (T-N7), which the same flag decides.
 func TestNudgeIsNeverACheckbox(t *testing.T) {
-	_, repo, conns := newAgentFixture()
-	svc := NewAgentService(repo, conns, append(slices.Clone(registry), tools.NudgeAgentName))
+	for _, name := range []string{tools.NudgeAgentName, tools.HandOffAgentName} {
+		_, repo, conns := newAgentFixture()
+		svc := NewAgentService(repo, conns, append(slices.Clone(registry), name))
 
-	if slices.Contains(svc.ToolNames(), tools.NudgeAgentName) {
-		t.Error("nudge_agent is in the tool vocabulary")
-	}
-	for _, o := range svc.CompanyToolOptions(context.Background(), companyA) {
-		if o.Name == tools.NudgeAgentName {
-			t.Error("nudge_agent is offered as a checkbox")
+		if slices.Contains(svc.ToolNames(), name) {
+			t.Errorf("%s is in the tool vocabulary", name)
 		}
-	}
-	_, err := svc.Create(context.Background(), companyA, AgentInput{
-		Name: "Ops", AllowedTools: []string{"run_sql", tools.NudgeAgentName},
-	})
-	if !errors.Is(err, domain.ErrInvalidInput) {
-		t.Errorf("an allowlist naming nudge_agent = %v, want ErrInvalidInput", err)
+		for _, o := range svc.CompanyToolOptions(context.Background(), companyA) {
+			if o.Name == name {
+				t.Errorf("%s is offered as a checkbox", name)
+			}
+		}
+		_, err := svc.Create(context.Background(), companyA, AgentInput{
+			Name: "Ops", AllowedTools: []string{"run_sql", name},
+		})
+		if !errors.Is(err, domain.ErrInvalidInput) {
+			t.Errorf("an allowlist naming %s = %v, want ErrInvalidInput", name, err)
+		}
 	}
 }

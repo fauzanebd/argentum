@@ -22,14 +22,15 @@ const NudgeQuestionMax = 500
 // GatedByFlag reports whether a registered tool is offered by something other
 // than the agent's tool allowlist, and so must never be one of its checkboxes.
 //
-// One tool today. `agents.allowed_tools` is where "which tools may this agent
-// call" lives, and an empty list there means *every* tool — so a capability that
-// has to default closed (roadmap 09, decision 8) cannot be an entry in it without
-// being on for every unrestricted agent. nudge_agent is offered at turn time by
-// `agents.can_nudge` and a room of more than one participant, and by nothing
-// else: an allowlist naming it grants nothing, and one omitting it takes nothing
-// away.
-func GatedByFlag(name string) bool { return name == NudgeAgentName }
+// Two tools, both a room's. `agents.allowed_tools` is where "which tools may this
+// agent call" lives, and an empty list there means *every* tool — so a capability
+// that has to default closed (roadmap 09, decision 8) cannot be an entry in it
+// without being on for every unrestricted agent. nudge_agent is offered at turn
+// time by `agents.can_nudge` and a room of more than one participant, and by
+// nothing else: an allowlist naming it grants nothing, and one omitting it takes
+// nothing away. hand_off_to_agent (T-N7) is gated by the same flag and the same
+// room — one switch for "may involve a colleague", not a second one per verb.
+func GatedByFlag(name string) bool { return name == NudgeAgentName || name == HandOffAgentName }
 
 // Nudger is what nudge_agent asks of the application (T-N6). *app.NudgeService
 // is the production one; it is declared here, beside the tool, for the

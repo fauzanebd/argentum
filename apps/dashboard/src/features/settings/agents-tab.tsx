@@ -762,8 +762,9 @@ export function AgentsTab() {
               May ask other agents
               <span className="block text-xs text-muted-foreground">
                 In a conversation with more than one agent, this agent can put a question to
-                another one, and the answer appears in the conversation. Each question is a full
-                turn for the other agent, run against that agent&apos;s data sources.
+                another one, or pass on a question that belongs to another one, and the answer
+                appears in the conversation. Each is a full turn for the other agent, run against
+                that agent&apos;s data sources.
               </span>
             </span>
           </label>

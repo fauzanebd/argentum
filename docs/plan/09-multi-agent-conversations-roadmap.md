@@ -24,7 +24,43 @@ says so explicitly rather than leaving it to be discovered — the one figure th
 plan would most like to have is what a room actually costs per user message, and
 it is owed, not estimated.
 
-> **Status, 2026-09-14, last: `T-N10` is built and unit-gated — `/v1` sees rooms.** No
+> **Status, 2026-09-14, after `T-N7`: the free arms ran on a scratch stack, all as predicted.**
+> `086` up, down, up; `LatestAssistantSince` on a real Postgres, extended to a hand-off row; the room
+> lines, the hand-off and the checkbox on screen. **One unpredicted observation:** a nudge line and a
+> hand-off carry an answer's rating controls — open, not fixed
+> ([`../coverage/multi-agent.md`](../coverage/multi-agent.md) §13g). **Still owed:** every arm that
+> needs a model or a second worker, and dark mode (live-gate §7i).
+
+> **Status, 2026-09-14, earlier: `T-N7` is built and unit-gated — an agent can pass the person's
+> question to the colleague it belongs to.** No migration, correctly: `can_nudge` gates it. A
+> catalog line and a guideline, so a paired `make eval` is owed. Record:
+> [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §13.
+>
+> - **`hand_off_to_agent(agent, reason)`** is a sibling of `nudge_agent`, not a flag on it. It has
+>   the same flag, the same room, the same ledger.
+> - **The colleague receives the person's own words**, carried from the handing turn's payload.
+>   The model supplies a name and a reason, and only the reason is fenced.
+> - **The handing agent's reply is "Passed to Finance: …"**, written before the colleague's turn is
+>   queued. Nothing the model writes after the hand-off is published.
+> - **Only a turn holding the person's question can hand it on.** A colleague's question keeps
+>   `PASS` and `nudge_agent`.
+>
+> **Where the ticket was wrong** (§13d):
+> - **"A hand-off back is refused by the depth counter."** At the default depth of 2 that hop is
+>   admitted. The ledger's repeat check refuses it first, because the words handed back are the
+>   words the person's message recorded. Still `T-N8`'s ledger, still no special case.
+> - **"The asker's reply attempts no answer"** was a request to a model. It is built as a rule.
+> - **"The user's original wording, fenced"** would tell the recipient to read the person's
+>   request as a colleague's claim. Only the reason is fenced.
+> - **Silent on a colleague's question**, whose words no person wrote. Not offered there.
+>
+> **Built past a question worth naming.** Phase 3be picked `T-N10` first partly because *"whether a
+> hand-off tool is needed at all is what `T-N6`'s live arm answers"*. That arm has not run. This
+> is additive, behind the same flag, and cuttable if the arm shows `nudge_agent` covers the case.
+> **Owed** (live-gate §7h): the paired eval, a live hand-off and its negative, the `/v1` answer, and
+> the hand-off on screen. **Left on this track:** `T-N9`, which the cut order drops first.
+
+> **Status, 2026-09-14, later again: `T-N10` is built and unit-gated — `/v1` sees rooms.** No
 > migration, correctly this time; no prompt change, so no eval. Record:
 > [`../coverage/multi-agent.md`](../coverage/multi-agent.md) §12.
 >
@@ -1329,9 +1365,29 @@ the boxes stay unticked.
 
 ---
 
-#### `T-N7` `hand_off_to_agent` — "this one isn't mine"
-**Repo:** BE · **Size:** 1.0d · **Deps:** `T-N6` · **Priority:** P1
-**Migration:** none
+#### `T-N7` `hand_off_to_agent` — "this one isn't mine" · **built 2026-09-14, unit-gated; `make eval` and the live arms owed — `coverage/multi-agent.md` §13**
+**Repo:** BE, and one line of dashboard copy · **Size:** 1.0d · **Deps:** `T-N6` · **Priority:** P1
+**Migration:** none — correct; `086`'s `can_nudge` gates it
+
+> **What moved against this ticket ([`../coverage/multi-agent.md`](../coverage/multi-agent.md) §13d):**
+> - **"A hand-off back to the original agent is refused by the depth counter."** Not at the default
+>   depth: `CONVERSATION_MAX_NUDGE_DEPTH` is 2, and handing back is hop 2. What refuses it is the
+>   ledger's other half, the repeat check. The words handed back are the handing turn's own
+>   message, which is what `Open` recorded the first agent as asked. Neither is a special case.
+>   The depth counter refuses a third hop, as proven separately.
+> - **"The asker's own reply is one sentence … It must not also attempt an answer"** was written as
+>   a request to the model. Built as a rule: the reply is the line the hand-off writes, "Passed to
+>   Finance: <reason>", and whatever the model writes after it is dropped.
+> - **"Receives the user's original wording, fenced"** was not built as written. Only the reason is
+>   fenced. The system prompt's rule for that fence reads everything inside it as a colleague's
+>   claim, and the question is the person's words, taken from the payload and typed by no model.
+> - **Silent on who may hand off.** A colleague's question is the colleague's words, and handing
+>   it on would present them to a third agent as the person's. Only a turn the person addressed,
+>   or one handed the question, is offered the tool.
+> - **The reply is stored as an answer, not as a room line.** A room line would have made `/v1`'s
+>   synchronous door wait for an answer that never comes, and time out.
+> - **"Repo: BE"** — plus the "May ask other agents" checkbox, which now says what else the flag
+>   allows.
 
 ##### Why
 A nudge and a hand-off look the same and mean opposite things. A nudge says *I
@@ -1364,14 +1420,16 @@ it should have answered with one lookup.
   stops it; do not add a second mechanism here.
 
 ##### Acceptance
-- [ ] The handed-off agent receives the user's original wording, fenced, with
-      the reason attached
-- [ ] The handing agent's reply says it handed off and attempts no answer
-- [ ] `threads.agent_id` is unchanged after a hand-off
-- [ ] A hand-off counts against the conversation budget
-- [ ] A hand-off back to the original agent is refused by the depth counter, not
-      by a special case
-- [ ] `make eval` at or above baseline
+- [x] The handed-off agent receives the user's original wording, ~~fenced,~~ with
+      the reason attached **— the reason fenced, the words not (§13d)**
+- [x] The handing agent's reply says it handed off and attempts no answer **— enforced, against a
+      model that answers anyway**
+- [x] `threads.agent_id` is unchanged after a hand-off **— by construction: no thread repository
+      method writes it**
+- [x] A hand-off counts against the conversation budget
+- [x] A hand-off back to the original agent is refused ~~by the depth counter~~ **by the ledger's
+      repeat check**, not by a special case **— the depth counter refuses the third hop**
+- [ ] `make eval` at or above baseline **— owed (live-gate §7h)**
 
 ##### Gate
 As `T-N6`, plus one live transcript of each: a question that should be handed

@@ -17,7 +17,9 @@ import { agentColorIndex } from "@/features/chat/agent-colors";
 import { SkillsTab } from "@/features/settings/skills-tab";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { TeamTab } from "@/features/settings/team-tab";
-import { BindingsCard } from "@/features/settings/agents-tab";
+import { AgentsTab, BindingsCard } from "@/features/settings/agents-tab";
+import { MessageBubble } from "@/features/chat/chat-page";
+import { colorForAgent } from "@/features/chat/agent-colors";
 import { SharePage } from "@/features/share/share-page";
 import { Scene, makeAPI, setHarnessAdmin, SKILLS_OK, SKILLS_OVERFLOW, TEAM } from "./fixtures";
 import { setFixtures } from "./stub-api";
@@ -112,6 +114,62 @@ function RoomMentions() {
   );
 }
 
+/* ── The room's own lines, and a hand-off (T-N6, T-N7) ───────────────────── */
+
+/** A transcript holding one of everything a room writes about itself: Ops' question
+ *  to Finance, Finance's answer, a colleague that passed, Ops handing the next
+ *  question to Finance, a question the budget refused and one whose recipient
+ *  left. Rows as the API returns them — `metadata.room_event` and
+ *  `metadata.handed_off_to` — drawn by the page's own bubble. */
+const ROOM_TRANSCRIPT = [
+  { id: "m1", role: "user", content: "We're short on SKU 4471 — what happened?" },
+  { id: "m2", role: "assistant", agent_id: "ag-ops", agent_name: "Ops",
+    content: "→ Finance: Was a goods-in posted for SKU 4471 after Monday?", metadata: { room_event: "nudge" } },
+  { id: "m3", role: "assistant", agent_id: "ag-ops", agent_name: "Ops",
+    content: "Stock for SKU 4471 shows 0 since Tuesday's count. I asked Finance whether a goods-in was posted after Monday." },
+  { id: "m4", role: "assistant", agent_id: "ag-fin", agent_name: "Finance",
+    content: "One goods-in on Tuesday: 200 units, posted to bin C-14 instead of A-02.", metadata: { asked_by: "ag-ops" } },
+  { id: "m5", role: "assistant", agent_id: "ag-people", agent_name: "People",
+    content: "People had nothing to add to the question from Ops.", metadata: { room_event: "settle" } },
+  { id: "m6", role: "user", content: "And what did we write off for it last quarter?" },
+  { id: "m7", role: "assistant", agent_id: "ag-ops", agent_name: "Ops",
+    content: "Passed to Finance: Write-offs are booked in Finance's ledger.", metadata: { handed_off_to: "ag-fin" } },
+  { id: "m8", role: "assistant", agent_id: "ag-fin", agent_name: "Finance",
+    content: "Rp 3.200.000 was written off for SKU 4471 in Q2 — two damaged pallets.", metadata: { asked_by: "ag-ops" } },
+  { id: "m9", role: "assistant", agent_id: "ag-fin", agent_name: "Finance",
+    content: 'Finance\'s question to Ops went unasked — conversation turn budget spent (6 of 6 agent turns from one message): "Which bin were the pallets moved to?"',
+    metadata: { room_event: "unasked" } },
+  { id: "m10", role: "assistant",
+    content: 'Legal left this conversation before answering the question from Ops: "Is the Q2 write-off reportable?"',
+    metadata: { room_event: "withdrawn" } },
+];
+
+function RoomLines({ grayscale = false }: { grayscale?: boolean }) {
+  const colors = agentColorIndex(["ag-fin", "ag-ops", "ag-people", "ag-legal"]);
+  return (
+    <Scene
+      title={
+        grayscale
+          ? "A room's lines in grayscale — a limit, a settle and a withdrawn question are told apart by their words"
+          : "A room's transcript — a question to a colleague, a settle, a hand-off, a limit and a withdrawn question"
+      }
+    >
+      <div className={grayscale ? "grayscale" : undefined}>
+        <div className="max-w-3xl space-y-5 rounded-lg border border-border bg-background p-6">
+          {ROOM_TRANSCRIPT.map((m) => (
+            <MessageBubble
+              key={m.id}
+              message={{ thread_id: "th-1", created_at: "2026-09-14T09:00:00Z", ...m } as never}
+              showAuthor
+              authorColor={colorForAgent(colors.get(m.agent_id ?? "") ?? -1)}
+            />
+          ))}
+        </div>
+      </div>
+    </Scene>
+  );
+}
+
 function render(node: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -135,6 +193,44 @@ switch (scene) {
   case "room-mentions":
     render(<RoomMentions />);
     break;
+
+  case "room-lines":
+    render(<RoomLines />);
+    break;
+
+  case "room-lines-grayscale":
+    render(<RoomLines grayscale />);
+    break;
+
+  // Settings → Agents' form, for its "May ask other agents" flag (T-N6), whose
+  // copy T-N7 widened. The shooter ticks it the way an admin would.
+  case "agent-form-nudge": {
+    setHarnessAdmin(true);
+    // TEAM's agents carry only what the access screens read. The roster reads
+    // every field an agent row has, so this scene serves whole rows.
+    const base = makeAPI(SKILLS_OK);
+    const row = (id: string, name: string, isDefault: boolean) => ({
+      id, company_id: "co-1", name, description: "", persona_prompt: "", template_key: "",
+      allowed_tools: [], source_ids: [], mcp_server_ids: [], skill_ids: [],
+      can_nudge: false, is_default: isDefault, enabled: true,
+      created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z",
+    });
+    setFixtures({
+      ...base,
+      get: (path: string) =>
+        path === "/agents"
+          ? Promise.resolve({ data: { agents: [row("ag-ops", "Ops", true), row("ag-fin", "Finance", false)], tools: [], templates: [] } })
+          : base.get(path),
+    });
+    render(
+      <Scene title="Settings → Agents — the flag that lets an agent ask a colleague, or pass a question on">
+        <div className="max-w-4xl">
+          <AgentsTab />
+        </div>
+      </Scene>,
+    );
+    break;
+  }
 
   case "settings-admin":
     setHarnessAdmin(true);

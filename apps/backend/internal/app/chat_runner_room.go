@@ -66,6 +66,63 @@ func (r *ChatRunner) offersNudge(ctx context.Context, p queue.ChatRunPayload, ag
 	return len(room) > 1
 }
 
+// offersHandOff decides AgentSpec.HandOff (T-N7): every gate nudge_agent has —
+// passed in as nudge, so the room is read once — and one of its own. The turn
+// must be holding the person's question (holdsPersonsQuestion).
+//
+// So a colleague's question at the first hop is offered nudge_agent and not
+// this: it can ask somebody else, or PASS, but the words it would hand on are
+// the colleague's, not the person's.
+func offersHandOff(p queue.ChatRunPayload, nudge bool) bool {
+	return nudge && holdsPersonsQuestion(p)
+}
+
+// holdsPersonsQuestion reports whether a turn's message is the person's own
+// words: a turn the person addressed, or one those words were handed to (T-N7).
+// Anything a hand-off sends is taken from a turn for which this holds, so the
+// words stay the person's however many hands they pass through.
+func holdsPersonsQuestion(p queue.ChatRunPayload) bool {
+	return p.Peer == nil || p.Peer.HandOff != nil
+}
+
+// HandedOffToKey marks a handing agent's reply on `messages.metadata`, holding
+// the id of the agent the question went to (T-N7).
+//
+// **Not a RoomEventKey value, on purpose.** A room line is not an answer, and
+// every reader that looks for one leaves them out — LatestAssistantSince among
+// them. A hand-off is exactly the answer a caller who asked that agent is
+// waiting for: "Passed to Finance: write-offs are booked in their ledger." Were
+// it a room line, `/v1`'s synchronous door would wait for an answer that is never
+// coming and time out on a turn that ended.
+//
+// It is kept out of model history like a room line, for the room line's reason:
+// an agent that reads "Passed to Finance" as its own words learns to write a
+// hand-off instead of making one.
+const HandedOffToKey = "handed_off_to"
+
+// isHandOff reports whether a stored message is a handing agent's reply.
+func isHandOff(meta map[string]any) bool {
+	_, ok := meta[HandedOffToKey]
+	return ok
+}
+
+// handedOver ends a turn whose agent passed the question on (T-N7).
+//
+// The reply is the line HandOff already wrote — "Passed to Finance: …" — and it
+// is delivered as the turn's answer: the `final` that closes the agent's bubble,
+// the report or run the turn belonged to closed out. Nothing the model wrote
+// after the hand-off is published, because the ticket's "the handing agent's
+// reply attempts no answer" is a rule, and a rule a model is only asked to keep
+// is a rule the room finds broken. The length of what was dropped is logged, so
+// how often it would have answered anyway is countable.
+func (r *ChatRunner) handedOver(ctx context.Context, p queue.ChatRunPayload, h *handOff, dropped string, latency time.Duration) {
+	logrus.WithFields(logrus.Fields{
+		"company_id": p.CompanyID, "thread_id": p.ThreadID, "message_id": p.UserMsgID,
+		"handed_to": h.to, "latency_ms": latency.Milliseconds(), "dropped_reply_chars": len(dropped),
+	}).Info("turn handed off; the agent's own reply was not published")
+	r.deliver(ctx, p, h.message, h.content, latency, nil, "")
+}
+
 // recipientLeft reports whether a colleague's question has lost its recipient
 // since it was asked (decision 7): the membership it was planned against is
 // gone, or now names another agent.
@@ -156,18 +213,27 @@ func (r *ChatRunner) noteWithdrawn(ctx context.Context, p queue.ChatRunPayload) 
 // **A sentinel in the reply, not a tool.** A pass tool would sit in the schema of
 // every turn in a room, answering questions nobody asked, and it would change
 // the prompt prefix of the asking turns too. The sentence that offers PASS rides
-// the user turn of a colleague's question and nowhere else (withPassOption), so a
+// the user turn of a colleague's question and nowhere else (withPeerFraming), so a
 // person's turn — and every golden case — is unchanged.
 const peerPass = "PASS"
 
-// withPassOption tells a colleague's turn what it is reading and that it may
-// pass. A person's turn gets msg back unchanged.
+// withPeerFraming tells a peer turn what it is reading. A colleague's question
+// is told it may pass; a question handed on (T-N7) is told it is the person's,
+// and is not offered the pass — it was handed over to be answered, and a person
+// whose question two agents have declined is owed a sentence saying so, not a
+// quiet line. A person's turn gets msg back unchanged.
 //
 // Composed into the model's input only, never into peermemory.WithQuestion: the
 // words a room remembers are the question, not our framing of it.
-func withPassOption(p queue.ChatRunPayload, msg string) string {
+func withPeerFraming(p queue.ChatRunPayload, msg string) string {
 	if p.Peer == nil {
 		return msg
+	}
+	if p.Peer.HandOff != nil {
+		return "[System context: Another agent in this conversation passed the person's question to you, " +
+			"because it is not theirs to answer. Their note saying why is fenced below; the question after the " +
+			"note is the person's own words. Answer it yourself, with your own tools, and your reply is posted " +
+			"for everyone in this conversation to read. If it is not yours to answer either, say so plainly.]\n\n" + msg
 	}
 	return "[System context: The message below is a question from another agent in this conversation, " +
 		"and your reply is posted for everyone in it to read. Answer it with your own tools. If you have " +

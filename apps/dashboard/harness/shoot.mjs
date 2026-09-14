@@ -121,6 +121,23 @@ const SCENES = [
     file: "room-mention-menu.png",
     height: 420,
   },
+  // The room's own lines and a hand-off (T-N6, T-N7), in colour and without it:
+  // a limit and a settle must read differently with every hue removed.
+  { id: "room-lines", file: "room-lines-and-hand-off.png", height: 1100 },
+  { id: "room-lines-grayscale", file: "room-lines-and-hand-off-grayscale.png", height: 1100 },
+  {
+    // The flag is ticked through its own label, as an admin would tick it.
+    id: "agent-form-nudge",
+    file: "agent-form-may-ask.png",
+    height: 720,
+    async drive(page) {
+      // The form is closed until a starting point is picked.
+      await page.getByRole("button", { name: /Start from blank/ }).click();
+      const flag = page.getByText("May ask other agents");
+      await flag.scrollIntoViewIfNeeded();
+      await flag.click();
+    },
+  },
   {
     id: "skills-form",
     file: "skills-form-preview.png",

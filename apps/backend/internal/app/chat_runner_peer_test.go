@@ -249,6 +249,10 @@ func TestThePeerCarrierHoldsNothingThatDecidesATurn(t *testing.T) {
 		// T-N6: the hop. It decides whether this turn may ask in turn, which
 		// only ever narrows the tool list, and never what the turn may reach.
 		"Depth",
+		// T-N7: the handing agent's reason. Words the recipient reads, fenced
+		// under the author's name; it decides which framing the input gets, and
+		// never what the turn may reach.
+		"HandOff",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("queue.PeerOrigin fields = %v, want %v.\n"+

@@ -49,6 +49,11 @@ func TestLeakShapes(t *testing.T) {
 		{"a leaked nudge", "Finance holds the purchase ledger, so I will ask them." +
 			`functions.nudge_agent:0{"agent":"Finance","question":"Was a goods-in posted for SKU 4471?"}`, true},
 		{"prose about asking a colleague", "I asked Finance whether a goods-in was posted for SKU 4471.", false},
+		// T-N7. A leaked hand-off reads as the agent declining and nothing else:
+		// "this is Finance's", and Finance was never given it.
+		{"a leaked hand-off", "Write-offs are not mine to answer." +
+			`functions.hand_off_to_agent:0{"agent":"Finance","reason":"Write-offs are booked in Finance's ledger."}`, true},
+		{"prose about passing a question on", "I have passed your question to Finance, whose ledger holds write-offs.", false},
 
 		// The negatives matter more than the positives here: this guard
 		// replaces the entire reply, so a false positive costs a user an

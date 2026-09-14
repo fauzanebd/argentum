@@ -7567,6 +7567,95 @@ agent comparison fails the deleted-agent test and both room tests.
   out, `AnyAnswer` returns it, and neither returns a room line.**
 - **The live room, asking Ops back.** **Prediction: the stream ends on Ops' own `final`.**
 
+## Phase 3bg — An agent passes on a question that is not its own (`T-N7`, 2026-09-14)
+
+Picked as the last buildable ticket on roadmap 09: its dependency `T-N6` is built, and §5's cut
+order drops `T-N9` first, which also needs provider credentials this machine lacks. **One thing
+argued against it:** Phase 3be says *"whether a hand-off tool is needed at all is what `T-N6`'s
+live arm answers"*, and that arm has not run. It was built anyway because no roadmap gates it on
+that arm, and it is additive and behind the same flag. Record: [`multi-agent.md`](multi-agent.md) §13.
+
+**What it does.**
+- **`hand_off_to_agent(agent, reason)`** is a sibling of `nudge_agent`, gated by the same
+  `can_nudge`, the same room of more than one, and the same conversation ledger.
+- **The colleague receives the person's own words**, from the handing turn's payload. The model
+  gives a name and a reason, and only the reason reaches the colleague fenced.
+- **The handing agent's reply is "Passed to Finance: <reason>"**, written before the colleague's
+  turn is queued. The runner ends the turn on it, and nothing the model writes afterwards is
+  published — a model error after the hand-off included.
+- **Only a turn holding the person's question can hand it on**: one the person addressed, or one
+  handed it. One hand-off per turn, and no nudging after it.
+- **Stored as an answer, not a room line,** so `/v1`'s synchronous door answers with it rather
+  than timing out. Kept out of model history.
+
+No migration. A catalog line and a guideline, so a paired eval is owed.
+
+**Where the ticket was wrong (§13d).**
+- **"Refused by the depth counter"** — handing back is hop 2, which depth 2 admits. The ledger's
+  repeat check refuses it, because the words handed back are the words `Open` recorded.
+- **"The reply attempts no answer"** was asked of a model. It is enforced.
+- **"The user's original wording, fenced"** would make the person's request read as a colleague's
+  claim. Only the reason is fenced.
+- **Silent on a colleague's question**, whose words no person wrote. Not offered there.
+
+**Proven failing.** Seventeen mutations, each failing its named tests and none only breaking the
+build; every mutated file matched its pre-run hash afterwards (§13e).
+
+**Gate.** `make check` on the finished tree, alone, after the mutation runs had finished, with no
+source edited while it ran: `MAKE EXIT: 0`, read from the log.
+- **Go:** 73 packages `ok`, zero `FAIL`/`panic` lines, `golangci-lint` `0 issues.`, `gofmt -l`
+  empty.
+- **Dashboard:** 88 vitest tests in 14 files pass, and every build finished.
+- **New tests:** 21 — 6 for the tool, 9 for the service, 5 through the runner, 1 in the factory.
+  Also extended: the prompt-composition test, `TestNudgeIsNeverACheckbox`, the flag-gated tool
+  list, the peer carrier's field list, and two leak-guard fixtures.
+- **Found by the tests, before the gate:** a test agent that holds a tool asks the model for an
+  execution plan unless `WithRequirePlanApproval(false)` is set, as `newAgentFactory` sets it. The
+  first whole-turn tests failed on that, not on the code.
+
+**Owed** (live-gate §7h):
+- **The paired `make eval`.** **Prediction: identical.**
+- **A hand-off live, its negative, and a hand-back.** **Prediction:** a hand-off for the write-off
+  question, nothing for the reorder question, a nudge for the goods-in question, and
+  `already_asked` for a hand-back.
+- **A `/v1` synchronous call to an agent that hands off.** **Prediction: `200` on the hand-off
+  line, not `504`.**
+- **The hand-off bubble and the checkbox on screen.** **Prediction:** a bubble with no next steps.
+
+## Phase 3bh — Roadmap 09's free arms, on a scratch stack (2026-09-14)
+
+The owner's go-ahead on Phase 3bg's recommendation: run what §7f–§7h owe that needs neither a model
+nor production, before any more code on the track. Record: [`live-gate-backlog.md`](live-gate-backlog.md)
+§7i, [`multi-agent.md`](multi-agent.md) §13g.
+
+**Where.** Postgres 16 (embedded) and miniredis on loopback, in `/tmp/tn7-gate`, stopped afterwards.
+The migrations were copied with pgvector swapped out of four files. Production was not touched.
+
+**What ran, and what it showed.**
+- **`086` up, down, up**, and `can_nudge` saved, carried through an edit and read back: **as
+  predicted.**
+- **`LatestAssistantSince`, both scopes, on a real Postgres:** **as predicted.** Also extended to a
+  hand-off row, which `OwnAnswer` returns before and after the colleague answers.
+- **The room lines, the hand-off and the checkbox on screen**, in light and grayscale: **as
+  predicted.** Unpredicted: a nudge line and a hand-off carry an answer's rating controls. Open, not
+  fixed (§13g).
+
+**What it took.**
+- A build-tagged test, `internal/adapters/postgres/scratch_rooms_test.go`, kept so the arms can
+  be rerun. No default build compiles it.
+- `MessageBubble` exported for the harness.
+- Three harness scenes. The form scene serves whole agent rows: with the access screens' thin
+  fixture agents the tab rendered nothing, and the first two runs timed out.
+- The first database run failed on the test's own fixture (a nil allowlist written as NULL), not on
+  the product.
+
+**Checks.** `go vet -tags scratch` and `gofmt -l` are clean on the tagged file. `pnpm --filter
+dashboard lint` passes after the export: 88 tests in 14 files. No production Go file changed, so
+`make check` was not rerun.
+
+**Still owed:** dark mode (no dark harness scene exists), and every arm that needs a model or a
+second worker.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

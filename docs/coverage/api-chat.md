@@ -512,3 +512,12 @@ A conversation over `/v1` can hold several agents. The record is
   answered 504. And Finance asking Ops something back produces a turn carrying
   Ops' id, which matched. Fixed the same day, before any deploy
   ([`multi-agent.md`](multi-agent.md) §12g).
+- **An agent that hands the question on answers with the hand-off** (`T-N7`,
+  [`multi-agent.md`](multi-agent.md) §13). Ask Ops something that is Finance's,
+  and the synchronous door returns `200` with "Passed to Finance: …" as Ops'
+  answer; the stream ends on that `final`. The row is stored as an answer and
+  deliberately not as a room line, which the lookup skips: as one, this door
+  would have waited for an answer that never comes and answered `504`. Finance's
+  answer is a colleague's turn (`asked_by`), so it lands in the transcript and
+  not in the caller's response. `v1.yaml` has no field for the hand-off; the
+  sentence is the whole of it. Unit-gated; the live arm is live-gate §7h.

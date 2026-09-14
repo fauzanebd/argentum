@@ -90,18 +90,18 @@ func TestANudgeWithNoServiceSaysSo(t *testing.T) {
 	}
 }
 
-// The registry's one flag-gated tool, and the prompt-line test's reason to know
-// about it: it is in AllNames, so it has a catalog line, and it is the only name
-// GatedByFlag claims.
-func TestNudgeIsTheOneToolTheAllowlistDoesNotDecide(t *testing.T) {
+// The registry's flag-gated tools, and the prompt-line test's reason to know
+// about them: they are in AllNames, so each has a catalog line, and they are the
+// only names GatedByFlag claims — a room's two, and nothing else (T-N6, T-N7).
+func TestTheRoomToolsAreTheOnlyOnesTheAllowlistDoesNotDecide(t *testing.T) {
 	var gated []string
 	for _, name := range AllNames() {
 		if GatedByFlag(name) {
 			gated = append(gated, name)
 		}
 	}
-	if !slices.Equal(gated, []string{NudgeAgentName}) {
-		t.Errorf("flag-gated tools = %v, want exactly [%s]", gated, NudgeAgentName)
+	if want := []string{NudgeAgentName, HandOffAgentName}; !slices.Equal(gated, want) {
+		t.Errorf("flag-gated tools = %v, want exactly %v", gated, want)
 	}
 }
 

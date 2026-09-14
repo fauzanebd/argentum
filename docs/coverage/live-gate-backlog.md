@@ -2468,9 +2468,9 @@ written. What `T-N6` owes on top of them ([`multi-agent.md`](multi-agent.md) §1
 | `T-N6` | **`make eval` before and after**, both rates pasted into [`multi-agent.md`](multi-agent.md) §11c. Owed because the catalog line and the guideline are prompt text. **Prediction: identical, not merely within the ±2-case band.** The harness runs unscoped, so no case is offered the tool. The line and the guideline render only for a turn holding it, and a turn not holding it composes the byte-identical prompt (`TestTheNudgeToolAndItsGuidelineReachOnlyATurnOfferedThem`). The pass sentence rides only a colleague's question, which no golden case is | A local stack and ~$0.03 — the model key is the blocker. Can share §7d's sitting |
 | `T-N6` | **The live arm** (`verification.md` §"Added or changed an agent tool"). A room of Ops (the default speaker, `can_nudge` on) and Finance, each scoped to a different source. Ask Ops a question whose answer needs Finance's source: "we're short on SKU 4471 — was a goods-in posted?" **Prediction, in the worker log:** Ops calls `nudge_agent`; `agent asked a colleague` with `depth=1` and `conversation_turns=2`; a second `chat:run` for Finance, whose completion line has `peer_agents=Ops`; Ops' `turn completed` before Finance's. In the thread, `→ Finance: …` under Ops' name, Ops' reply saying it asked and stating no figure from Finance's source, then Finance's answer attributed to Finance. **If something differs,** it is most likely the model answering from a source it cannot reach, or narrating a hand-off in prose instead of calling the tool | The stack with the worker, two agents on two sources, and a model key. §3d's constraint applies |
 | `T-N6` | **The negative arm.** In the same room, ask Ops something its own source answers ("how many SKUs are below their reorder level?"). **Prediction:** no `nudge_agent` call, no room line, one `chat:run`. In a room of one with `can_nudge` on, the `composed system prompt` debug line's `tools` has no `nudge_agent` | The same sitting |
-| `T-N6` | **A colleague that passes.** Ask Ops something neither source holds, and let it ask Finance. **Prediction:** Finance replies `PASS`, and the room shows "Finance had nothing to add to the question from Ops." as a settle line whose row carries `room_event: settle`. **If something differs,** it is the model answering "I don't have that data" in prose — a correct answer drawn as a bubble — and the pass sentence in `withPassOption` is what to revisit | The same sitting |
-| `T-N6` | **`086` up, down, up** against a real Postgres. Then save an agent with `can_nudge: true`, edit it with a body that omits the field, and read it back. **Prediction: clean both ways, and the flag survives the edit.** Runnable here without production — the scratch stack's embedded Postgres — and not run in this sitting only because the full gate was running, and the two compete for 7.4 GiB | The scratch stack. No model key |
-| `T-N6` | **The room lines on screen.** A `harness/` scene holding a nudge bubble, an unasked line, a settle and a withdrawn line, plus the agent form's "May ask other agents" checkbox; `pnpm --filter dashboard shots` in light, dark and grayscale. **Prediction:** the nudge renders as Ops' bubble; the three lines render as centred text with no avatar, rating or chips; the limit and the settle are told apart in grayscale by their lead words | Nothing this machine lacks — the browser is here (§3a). Not run in this sitting |
+| `T-N6` | **A colleague that passes.** Ask Ops something neither source holds, and let it ask Finance. **Prediction:** Finance replies `PASS`, and the room shows "Finance had nothing to add to the question from Ops." as a settle line whose row carries `room_event: settle`. **If something differs,** it is the model answering "I don't have that data" in prose — a correct answer drawn as a bubble — and the pass sentence in `withPeerFraming` (named `withPassOption` until `T-N7`) is what to revisit | The same sitting |
+| `T-N6` | ✅ **Run 2026-09-14 on a scratch stack — exactly as predicted (§7i).** **`086` up, down, up** against a real Postgres. Then save an agent with `can_nudge: true`, edit it with a body that omits the field, and read it back. **Prediction: clean both ways, and the flag survives the edit.** Runnable here without production — the scratch stack's embedded Postgres — and not run in this sitting only because the full gate was running, and the two compete for 7.4 GiB | The scratch stack. No model key |
+| `T-N6` | ✅ **Run 2026-09-14 in light and grayscale — as predicted, plus one unpredicted observation; dark not run (§7i).** **The room lines on screen.** A `harness/` scene holding a nudge bubble, an unasked line, a settle and a withdrawn line, plus the agent form's "May ask other agents" checkbox; `pnpm --filter dashboard shots` in light, dark and grayscale. **Prediction:** the nudge renders as Ops' bubble; the three lines render as centred text with no avatar, rating or chips; the limit and the settle are told apart in grayscale by their lead words | Nothing this machine lacks — the browser is here (§3a). Not run in this sitting |
 | `T-N6` | **A finding to confirm, not a gate to pass: two live bubbles under one key.** The dashboard keys a live turn by job id and agent id. If the person's `@all` reached Finance and Ops then asks Finance something else, Finance has two turns under that one pair. **Prediction: their deltas interleave in one bubble until the first `final`, and the transcript is right after the refetch** | The same live sitting |
 
 ## 7g. `T-N10`'s `/v1` room, and the query it rests on (added 2026-09-14)
@@ -2482,11 +2482,75 @@ changed, so no `make eval` is owed.** What is:
 
 | Owed by | The gate | Blocker |
 | --- | --- | --- |
-| `T-N10` | **`LatestAssistantSince` against a real Postgres.** It is the one query the scoped doors rest on, and nothing has run it. Seed one thread with, a millisecond apart: a user message; Ops' `nudge` line (`metadata.room_event`); Finance's answer carrying `metadata.asked_by = ag-ops`; Finance's settle; Ops' answer with `metadata` NULL. Call it with `since` at the user message, once per scope. **Prediction:** `AnyAnswer` and `OwnAnswer` both return Ops' answer. Delete Ops' answer and call again: `AnyAnswer` returns Finance's answer and never the settle; `OwnAnswer` returns not found. No call errors on the boolean parameter. **If something differs,** it is the `?` operator — `lib/pq` passes it through, but a driver that rewrites `?` placeholders would not | The scratch stack's embedded Postgres. No model key. Runnable here |
+| `T-N10` | ✅ **Run 2026-09-14 on a scratch stack — exactly as predicted, and extended to `T-N7`'s hand-off (§7i).** **`LatestAssistantSince` against a real Postgres.** It is the one query the scoped doors rest on, and nothing has run it. Seed one thread with, a millisecond apart: a user message; Ops' `nudge` line (`metadata.room_event`); Finance's answer carrying `metadata.asked_by = ag-ops`; Finance's settle; Ops' answer with `metadata` NULL. Call it with `since` at the user message, once per scope. **Prediction:** `AnyAnswer` and `OwnAnswer` both return Ops' answer. Delete Ops' answer and call again: `AnyAnswer` returns Finance's answer and never the settle; `OwnAnswer` returns not found. No call errors on the boolean parameter. **If something differs,** it is the `?` operator — `lib/pq` passes it through, but a driver that rewrites `?` placeholders would not | The scratch stack's embedded Postgres. No model key. Runnable here |
 | `T-N10` | **`make openapi` and both parity checks on CI**, and the quickstart run end to end as `T-A4` requires. The spec validates here (16 paths, 54 schemas), both SDKs regenerated, `check-examples` passed, and `cmd/api`'s parity and scope tests pass. **Prediction: the quickstart runs unchanged** — it opens a conversation with `POST /v1/chat` and never names a participant | The stack with the worker, and a model key for the quickstart's turn |
 | `T-N10` | **A room over `/v1`, live.** Open one with `POST /v1/threads` (`agent_id` Ops, `participant_ids` [Finance]). Send `POST /v1/chat` with its `thread_id` and `agent_id` Finance, streamed. **Prediction:** one `chat:run`, for Finance; every frame carries `agent_name: Finance`; `GET /v1/threads/{id}` lists Ops (`default: true`) then Finance; the transcript's answer carries `agent_name: Finance`. Then send `"@Finance …"` with no `agent_id`: **one `chat:run`, for Ops, and the text persisted with its `@`** | The stack with the worker, two agents, a model key. §3d's constraint applies |
 | `T-N10`, with `T-N6` | **The stream is the caller's turn when a colleague answers in it.** In that room, with `can_nudge` on for Ops, ask Ops something Finance's source answers, streamed and then again synchronously. **Prediction:** the SSE response ends on Ops' `final` with Ops' answer and contains no frame naming Finance; the synchronous door answers Ops' message; the transcript holds the `nudge` line (`room_event: nudge`, `agent_name: Ops`), Finance's answer, and Ops' answer. **If something differs,** it is a colleague's turn published without `asked_by` — a publisher that bypasses `ChatRunner.publish`, whose frames the scope cannot tell from the caller's. Then let Finance ask Ops something back: **the stream still ends on Ops' own `final`**, though the asked-back turn carries Ops' id | The same sitting, and `T-N6`'s arms (§7f) |
 | `T-N10` | **A finding to confirm, not a gate to pass: attaching to a room is not scoped.** `GET /v1/threads/{id}/events` has no agent to scope to. **Prediction:** on a settled room it delivers the newest answer from any agent; on a room whose newest row is a settle or a limit line it holds the stream open until the next `final` from anyone, or the caller hangs up | The same sitting |
+
+## 7h. `T-N7`'s hand-off, live (added 2026-09-14)
+
+`T-N7` puts `hand_off_to_agent` beside `nudge_agent` ([`multi-agent.md`](multi-agent.md) §13):
+the same flag, the same room, the same ledger. The colleague receives the person's own words and
+a fenced reason, and the handing agent's reply is the product's line. **No migration. A catalog
+line and a guideline, so a paired `make eval` is owed.** Every arm below can share §7f's sitting.
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `T-N7` | **`make eval` before and after**, both rates pasted into [`multi-agent.md`](multi-agent.md) §13c. **Prediction: identical, not merely within the ±2-case band.** The harness runs unscoped, so no case holds the tool. The line and the guideline render only for a turn holding it, and a turn not holding it composes the byte-identical prompt (`TestTheNudgeToolAndItsGuidelineReachOnlyATurnOfferedThem`, extended to both tools) | A local stack and ~$0.03 — the model key is the blocker |
+| `T-N7` | **A question that should be handed off.** §7f's room: Ops (the default speaker, `can_nudge` on) on the stock source, Finance on the ledger. Ask Ops *"what did we write off for SKU 4471 last quarter?"*. **Prediction, in the worker log:** Ops calls `hand_off_to_agent`; `agent handed a question to a colleague` with `depth=1`; `turn handed off; the agent's own reply was not published` with a small `dropped_reply_chars`; a `chat:run` for Finance whose input carries the reason fenced under Ops and the question verbatim. **In the thread:** "Passed to Finance: …" as Ops' bubble, then Finance's answer. `conversation_threads.agent_id` still Ops. **If something differs,** it is most likely Ops nudging instead — asking Finance for the figure and keeping the question — and the two descriptions' examples are what to revisit | §7f's sitting |
+| `T-N7` | **A question that should not be handed off.** The same room: *"how many SKUs are below their reorder level?"* **Prediction:** no `hand_off_to_agent` call, no hand-off line, one `chat:run`. Then *"we're short on SKU 4471 — was a goods-in posted?"*: **a nudge, not a hand-off** | The same sitting |
+| `T-N7` | **Handed straight back.** Make the question one neither source holds. **Prediction:** if Finance hands it back to Ops, the tool returns `already_asked`, nothing is queued, and Finance tells the person it is not theirs either. If Finance replies `PASS` instead — not offered on a handed-off question, and possible — the room shows a settle | The same sitting |
+| `T-N7` | **A `/v1` caller whose agent hands off.** `POST /v1/chat`, synchronous, to Ops in a `/v1` room. **Prediction: `200` with "Passed to Finance: …" as the answer, not `504`.** The hand-off is stored as an answer and deliberately not as a room line, which `LatestAssistantSince` skips (§13b). Finance's answer lands in the thread afterwards, not in this response | The stack with the worker, and a model key |
+| `T-N7` | ✅ **Run 2026-09-14 — as predicted (§7i).** **The hand-off on screen.** §7f's harness scene, plus a hand-off bubble and the reworded "May ask other agents" checkbox. **Prediction:** the hand-off draws as Ops' bubble with no next steps; the checkbox copy fits on one card in the settings grid | Nothing this machine lacks (§3a) |
+
+## 7i. Run 2026-09-14 on a scratch stack: `086`, the answer query, and the room on screen
+
+**Not production.** Postgres 16 (embedded) and miniredis on loopback, in `/tmp/tn7-gate`, ports 55442
+and 56389. The migrations were copied with pgvector swapped out of `011`, `055`, `061` and `072`.
+The stack was stopped afterwards. There was no model key and no worker, so this is every arm in
+§7f–§7h that needs neither.
+
+**The database arms** live in `internal/adapters/postgres/scratch_rooms_test.go`. It sits behind
+the `scratch` build tag and an explicit DSN, so no ordinary `go test` or `make check` compiles it.
+It is kept so the arms can be run again:
+
+```bash
+SCRATCH_PG_DSN='postgres://argentum:gatepass@127.0.0.1:55442/argentum?sslmode=disable' \
+SCRATCH_MIGRATIONS=/tmp/tn7-gate/migrations \
+go test -tags scratch -run Scratch -count=1 -v ./internal/adapters/postgres/
+```
+
+| Arm | Prediction | Result |
+| --- | --- | --- |
+| §7f: `086` up, down, up; the flag through an edit | Clean both ways; the flag survives the edit | **As predicted.** Version 86 with `agents.can_nudge`, 85 without it, 86 with it. An agent saved with `can_nudge: true` and renamed, with the flag carried from the read as `AgentService` carries it, read back `true`. A row inserted without the column defaults to `false` |
+| §7g: `LatestAssistantSince`, both scopes | Both return Ops' answer. Without it, `AnyAnswer` returns Finance's answer and never the settle, and `OwnAnswer` is not found. No parameter error | **As predicted, every call** |
+| Added for `T-N7`: a hand-off row | Not predicted in §7g | `OwnAnswer` returned "Passed to Finance: …". Once Finance answered it (`asked_by`), `AnyAnswer` returned Finance's answer and `OwnAnswer` still the hand-off. This is the query behind §7h's `/v1` prediction of `200`, not `504` |
+
+**One failure on the way, and it was the test's.** The first run created its agent with a nil tool
+allowlist. `pq.Array` writes that as NULL into a NOT NULL column. `AgentService` always hands the
+repository a non-nil list, so the fixture now does the same.
+
+**The room on screen** — `pnpm --filter dashboard shots room-lines room-lines-grayscale agent-form-nudge`:
+
+| Shot | Prediction | Result |
+| --- | --- | --- |
+| [`room-lines-and-hand-off.png`](assets/room-lines-and-hand-off.png) | The nudge draws as Ops' bubble. The three lines draw as centred text, with no avatar, rating or chips (§7f). The hand-off draws as Ops' bubble with no next steps (§7h) | **As predicted, and one thing that was not.** The nudge line and the hand-off both carry an answer's copy and thumbs-up/down controls, so a person can rate Ops' *question to Finance*. Recorded as open in [`multi-agent.md`](multi-agent.md) §13g, not fixed |
+| [`room-lines-and-hand-off-grayscale.png`](assets/room-lines-and-hand-off-grayscale.png) | The limit and the settle are told apart in grayscale by their lead words | **As predicted.** "Limit reached ·" and "Not asked ·" lead their lines; the settle has no lead word. With the colour gone, Ops and Finance are told apart by name |
+| [`agent-form-may-ask.png`](assets/agent-form-may-ask.png) | The reworded copy fits the card | **As predicted.** Two lines under the ticked checkbox, in the form an admin opens from "Start from blank" |
+
+**What the harness needed:**
+- `MessageBubble` exported from `chat-page.tsx`, for the harness alone.
+- Three scenes, and their rows in the shooter.
+- Whole agent rows served to the form scene. TEAM's fixture agents carry only what the access
+  screens read, and with them the tab rendered nothing — the first two runs of that scene timed
+  out waiting for "Start from blank".
+
+**Still owed from those tables:**
+- **Dark mode.** The harness has no dark scene for any screen.
+- **Every arm that needs a model:** §7d–§7h's turns and the paired evals.
+- **The two-worker arm** (§7e).
+- **The quickstart run** (§7g).
 
 ## 7. Needs the paid eval set (added 2026-09-11)
 

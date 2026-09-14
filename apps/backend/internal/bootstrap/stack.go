@@ -631,6 +631,7 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 
 	s.Tools = tools.Registry(tools.RegistryDeps{
 		Nudges:      s.Nudges,
+		HandOffs:    s.Nudges,
 		Pool:        s.TenantPool,
 		Connections: s.Connections,
 		Redis:       s.Redis,
@@ -842,7 +843,7 @@ func newAgentFactory(d agentFactoryDeps) app.AgentFactory {
 			turnTools = append(append(make([]interfaces.Tool, 0, len(d.tools)+len(spec.CompanyTools)),
 				d.tools...), spec.CompanyTools...)
 		}
-		turnTools = offerNudge(turnTools, spec.ToolNames, spec.Nudge)
+		turnTools = offerRoomTools(turnTools, spec.ToolNames, spec.Nudge, spec.HandOff)
 		turnToolNames := tools.Names(turnTools)
 
 		// A per-turn addendum, appended rather than prepended: the shared
@@ -1034,29 +1035,38 @@ func frameCompanyContext(profile string) string {
 		profile
 }
 
-// offerNudge is filterTools with the one tool the allowlist does not decide
-// (T-N6). nudge_agent is taken out before the allowlist is applied and put back
-// only when the turn may nudge — so an unrestricted agent, whose empty allowlist
-// hands filterTools the whole registry, does not get it by default, and a
-// restricted agent whose list could never name it gets it when an admin said so.
+// offerRoomTools is filterTools with the two tools the allowlist does not decide
+// (T-N6, T-N7). nudge_agent and hand_off_to_agent are taken out before the
+// allowlist is applied and put back only when the turn may use them — so an
+// unrestricted agent, whose empty allowlist hands filterTools the whole registry,
+// does not get them by default, and a restricted agent whose list could never
+// name them gets them when an admin said so.
 //
-// Withheld, the result is exactly what filterTools returned before the tool
+// Withheld, the result is exactly what filterTools returned before either tool
 // existed: the same instances, in the same order. That is what keeps every
 // single-agent turn's tool definitions — and on Anthropic its cached prefix —
 // byte-identical, which is the second reason decision 8 gates on the room.
-func offerNudge(all []interfaces.Tool, allowed []string, nudge bool) []interfaces.Tool {
-	var nudgeTool interfaces.Tool
+func offerRoomTools(all []interfaces.Tool, allowed []string, nudge, handOff bool) []interfaces.Tool {
+	var nudgeTool, handOffTool interfaces.Tool
 	rest := make([]interfaces.Tool, 0, len(all))
 	for _, t := range all {
-		if tools.GatedByFlag(t.Name()) {
+		switch {
+		case t.Name() == tools.HandOffAgentName:
+			handOffTool = t
+		case tools.GatedByFlag(t.Name()):
 			nudgeTool = t
-			continue
+		default:
+			rest = append(rest, t)
 		}
-		rest = append(rest, t)
 	}
 	out := filterTools(rest, allowed)
 	if nudge && nudgeTool != nil {
 		out = append(out, nudgeTool)
+	}
+	// Never without nudge_agent: the hand-off's description and guideline both
+	// send the model to nudge_agent for the case that is not a hand-off.
+	if nudge && handOff && handOffTool != nil {
+		out = append(out, handOffTool)
 	}
 	return out
 }

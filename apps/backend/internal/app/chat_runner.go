@@ -97,6 +97,10 @@ type AgentSpec struct {
 	// tool whatever the allowlist says. False for every turn in a conversation of
 	// one, whose tool list is byte-identical to before the tool existed.
 	Nudge bool
+	// HandOff offers this turn hand_off_to_agent (T-N7), gated like Nudge and
+	// never true without it. ChatRunner withholds it from a colleague's question,
+	// which holds no question of the person's to pass on.
+	HandOff bool
 	// MaxIterations is this turn's tool-calling ceiling, which the SDK enforces
 	// and agentbudget reserves the last of for the answer. Per-turn because the
 	// budget is: a document turn gets ForDocument's headroom, and a ceiling
@@ -908,6 +912,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// of the system prompt below, which is earlier than the two prepended
 	// blocks that were its original callers.
 	questionVec := r.questionVectorOnce(ctx, p.CompanyID, p.Message)
+	nudge := r.offersNudge(ctx, p, agentRow)
 
 	agent, err := r.agentFactory(AgentSpec{
 		Primary:          primaryLLM,
@@ -926,7 +931,10 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 		// more than one, and a hop whose next ask could still be admitted. Read
 		// after the peer payload is received, so a colleague's question at the last
 		// hop is not offered a tool that could only refuse.
-		Nudge: r.offersNudge(ctx, p, agentRow),
+		Nudge: nudge,
+		// And whether it may pass the person's question on (T-N7): the same gates,
+		// on a turn that holds the person's question.
+		HandOff: offersHandOff(p, nudge),
 		// The same ceiling the tracker installed above. Handing the SDK a
 		// different number is how a document turn's headroom went unused.
 		MaxIterations: budget.MaxIterations,
@@ -965,7 +973,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// the one channel a peer has into this model, and never the system prompt.
 	// Directly above them, on a colleague's question only, the sentence saying
 	// what the turn is reading and that it may pass (T-N6).
-	agentMsg := withLanguageReminder(withPassOption(p, peerMessage(p, peerAuthor)))
+	agentMsg := withLanguageReminder(withPeerFraming(p, peerMessage(p, peerAuthor)))
 	agentMsg = withCompanyNameContext(agentMsg, p.CompanyName)
 	agentMsg = withCurrencyContext(agentMsg, p.DefaultCurrency, p.Money)
 	agentMsg = r.withPeriodContext(ctx, agentMsg, p.CompanyID)
@@ -1020,16 +1028,28 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 			logrus.WithError(err).Warn("streaming failed; falling back to blocking run")
 		}
 	}
-	if !streaming {
+	// A turn that handed its question on before streaming failed has already
+	// delivered (T-N7); running it again would only hand the model a second go at
+	// a question it said was not its own.
+	if !streaming && handedOffIn(ctx) == nil {
 		var err error
 		response, err = agent.Run(ctx, agentMsg)
-		if err != nil {
+		if err != nil && handedOffIn(ctx) == nil {
 			return r.handleRunError(ctx, p, err)
 		}
 	}
 
 	latency := time.Since(start)
 	metrics.Default().RecordTurn(latency)
+	// A turn that passed the question on (T-N7). Its reply was written when the
+	// hand-off was delivered, and it ends here, ahead of every gate below: each of
+	// them judges an answer, and whatever the model wrote after handing the
+	// question over is not published at all. Ahead of an error, too — a model that
+	// failed after the colleague's turn was queued has still handed it over.
+	if h := handedOffIn(ctx); h != nil {
+		r.handedOver(ctx, p, h, response, latency)
+		return nil
+	}
 	// A colleague with nothing to add (T-N6). Ahead of every gate below, each of
 	// which judges an answer — and a pass is not one: it states nothing, grounds
 	// nothing, and must not be published as the word PASS. Only on a colleague's
@@ -1246,11 +1266,24 @@ func (r *ChatRunner) peerAuthorName(ctx context.Context, companyID, agentID stri
 // peerMessage is what the model reads as this turn's input: a person's words as
 // written, or a peer's words fenced under the author's name (T-N5) — in the
 // user turn, never in the system prompt.
+//
+// **A question handed on (T-N7) is both**, and each part keeps its own
+// provenance. The reason is the handing model's words, so it is fenced under its
+// name. The question is the person's words, carried from the handing turn's
+// payload rather than typed by any model, so it arrives as a person's words
+// arrive — unfenced. Fencing it too would tell the recipient, in the system
+// prompt's own sentence about that fence, to read the person's request as a
+// colleague's claim. The turn is still a peer turn in every way that decides
+// anything: receivePeer has marked the taint either way.
 func peerMessage(p queue.ChatRunPayload, author string) string {
-	if p.Peer == nil {
+	switch {
+	case p.Peer == nil:
 		return p.Message
+	case p.Peer.HandOff != nil:
+		return guardrails.FencePeer(author, p.Peer.HandOff.Reason) + "\n\n" + p.Message
+	default:
+		return guardrails.FencePeer(author, p.Message)
 	}
-	return guardrails.FencePeer(author, p.Message)
 }
 
 // companyContext renders the tenant's business profile for this turn (T-B1),
@@ -2339,13 +2372,25 @@ func (r *ChatRunner) finish(
 	tokensIn, tokensOut int, latency time.Duration, steps []domain.NextStep,
 	generatedDocID string, meta map[string]any,
 ) {
-	now := time.Now()
 	assistantMsg, err := r.threads.AppendAssistantMessage(
 		ctx, p.ThreadID, response, tokensIn, tokensOut, latency.Milliseconds(), meta,
 	)
 	if err != nil {
 		logrus.WithError(err).Warn("append assistant message")
 	}
+	r.deliver(ctx, p, assistantMsg, response, latency, steps, generatedDocID)
+}
+
+// deliver is finish once the message is written: everything a turn's reply does
+// besides being stored. Split out for T-N7, whose reply is written while the
+// turn is still running — the hand-off line has to be in the room before the
+// colleague's turn is queued — and delivered when it ends. assistantMsg may be
+// nil, when the write failed.
+func (r *ChatRunner) deliver(
+	ctx context.Context, p queue.ChatRunPayload, assistantMsg *domain.Message, response string,
+	latency time.Duration, steps []domain.NextStep, generatedDocID string,
+) {
+	now := time.Now()
 	if p.ScheduledRunID != "" && r.scheduled != nil {
 		var msgID string
 		if assistantMsg != nil {
@@ -2532,7 +2577,9 @@ func (r *ChatRunner) hydrateMemory(ctx context.Context, agent *sdkagent.Agent, p
 		}
 		// A room's own lines never enter a model's history (T-N6): each is the
 		// product's sentence, not a turn's words — see RoomEventKey.
-		if isRoomEvent(m.Metadata) {
+		// Nor does a handing agent's reply (T-N7), which is the product's sentence
+		// too, though it is stored as an answer — see HandedOffToKey.
+		if isRoomEvent(m.Metadata) || isHandOff(m.Metadata) {
 			continue
 		}
 		// Attributed from the row, explicitly (T-N11). The memory stamps what it

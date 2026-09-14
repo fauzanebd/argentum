@@ -1003,7 +1003,9 @@ function ChatHeader({
 }
 
 /* ── Message Bubble ──────────────────────────────────────────────────── */
-function MessageBubble({
+/** Exported for the screenshot harness alone, which draws a room's transcript
+ *  from it; nothing else in the app renders a bubble outside this page. */
+export function MessageBubble({
   message,
   agentName,
   authorColor,

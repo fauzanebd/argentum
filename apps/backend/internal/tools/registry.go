@@ -139,6 +139,9 @@ type RegistryDeps struct {
 	// listing and cmd/mcp pass — the tool still has its name, and answers "not
 	// available" if executed. The worker passes the real service.
 	Nudges Nudger
+	// HandOffs backs hand_off_to_agent (T-N7), and is the same service as Nudges
+	// in the worker. Nil is legal on the same terms.
+	HandOffs HandOffer
 }
 
 // Registry returns the tools an agent may call on this deployment, unwrapped.
@@ -197,6 +200,10 @@ func Registry(d RegistryDeps) []interfaces.Tool {
 		// drops it, and the factory offers it only to a turn whose agent may
 		// nudge and whose conversation holds more than one participant.
 		NewNudgeAgentTool(d.Nudges),
+		// Passing the question on, beside asking about it (T-N7). Directly after
+		// nudge_agent because the two descriptions argue with each other, and the
+		// model reads them in this order. Gated exactly as nudge_agent is.
+		NewHandOffAgentTool(d.HandOffs),
 		// propose_action registers unconditionally, like the metric tools: a nil
 		// proposer still yields the name for the allowlist and the vocabulary, and
 		// reports "not configured" if executed. The one write-capable tool the
