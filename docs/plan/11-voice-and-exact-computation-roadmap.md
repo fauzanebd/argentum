@@ -17,6 +17,43 @@ P Q S T`. The two obvious mnemonics are both taken: `T-V` is the video track,
 and `T-C1` would sit one character from the finding `C-1`. `W` collides with
 neither list.
 
+> **Status, 2026-09-15, later: voice runs on OpenRouter**, the owner's call over research 08 §2e's
+> recommendation. The one key production already holds for its model reaches both halves:
+> - **voice in:** `openai/whisper-large-v3-turbo`, billed at OpenRouter's reported charge;
+> - **voice out:** `google/gemini-3.1-flash-tts-preview`, billed at a stated ceiling.
+>
+> Record: [`../coverage/voice.md`](../coverage/voice.md) §5; owed: live-gate §7n.
+
+> **Status, 2026-09-15: `T-W9` is built, and Track C's code is finished — a question you can say, check and
+> send, and an answer you can press play on.** Gate: `make check` green on its second run (76 Go packages `ok`, lint clean, 121 dashboard tests, every app
+> built), 24 mutations all killed, the new clip lookup run on a scratch Postgres, and the composer photographed in
+> real Chromium. No migration, and the header held — the first on
+> this track since `T-W3`. No tool and no prompt change, so no eval. Record:
+> [`../coverage/voice.md`](../coverage/voice.md) §4.
+>
+> - **Hold the microphone, let go, check the box, send.** The transcript is never sent for anyone
+>   (decision 13). Released on the new-chat screen, the recording makes its conversation first.
+> - **The play button** beside Copy, absent where the deployment cannot read aloud or the person holds no
+>   grant. A refused answer says so and keeps the check's reason.
+> - **A spoken question says so** under it, and whether it was edited before it went out.
+>
+> **Where the ticket was wrong** (record §4c):
+> - **`Repo: FE`** — it needed two backend changes nobody scheduled: a way for the dashboard to know voice is
+>   on (a `voice` field on `GET /api/users/me/capabilities`), and the clip→message link `T-W7` handed on
+>   (`voice_clip_ids` on `POST /api/chat`, recorded in the message's metadata, not on the clip).
+> - **"Hold to record … release to send"** — release puts the transcript in the box. The ticket's own next
+>   bullet, and decision 13, say so.
+> - **Silent on the new-chat screen**, where the voice route has no conversation to file a clip under.
+> - **"A disabled microphone" on a deployment with no provider** (decision 15, as `T-W7` read it) — built
+>   absent, as the ticket already says of the play button: no grant makes a missing provider work.
+>
+> **Found by the screenshot run, and fixed:** headless Chromium answers `getUserMedia` with
+> `NotSupportedError`, which the microphone called "could not start". It now reads as an unsupported browser,
+> and a failure with no known fix names its exception. **Owed** (live-gate §7m): the real page end to end on a
+> scratch stack, Safari's MP4 recording, a phone's long press, and — still — a real provider hearing a real
+> Indonesian voice. **Track C has no ticket left.** What decides whether it was worth it is research 08 §6's
+> unknown 6, now measurable: voice.md §4h has the query.
+
 > **Status, 2026-09-14, later: `T-W8` is built, `make check` green, unit-gated with 16 mutations, and its free arms ran live on a
 > scratch stack that now has object storage — an answer read aloud, whose every spoken figure is one the
 > written answer states.** Migration `089`. No tool and no prompt change, so no eval. Record:
@@ -669,8 +706,8 @@ document is where it is filed.
 
 ---
 
-#### `T-W9` The microphone, the transcript you check, and the player
-**Repo:** FE · **Size:** 1.5d · **Deps:** `T-W7`, `T-W8` · **Migration:** none
+#### `T-W9` The microphone, the transcript you check, and the player · **built 2026-09-15, unit-gated, photographed in real Chromium; the real page end to end owed — `coverage/voice.md` §4**
+**Repo:** ~~FE~~ FE + BE (record §4c) · **Size:** 1.5d · **Deps:** `T-W7`, `T-W8` · **Migration:** none (held)
 
 ##### Do
 - Push-to-talk in the composer: hold to record, a live level meter so a user can

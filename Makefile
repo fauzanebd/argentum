@@ -155,7 +155,7 @@ eval-security: ## Score the agent against the adversarial security set (T-H11)
 # someone at the pilot records each line as <id>.<ext>, and the recordings stay
 # outside the tree. CLIPS must be absolute — the recipe runs from $(BACKEND).
 .PHONY: eval-speech
-eval-speech: ## Score speech providers on Indonesian questions read aloud (T-W7). CLIPS=/abs/dir; GROQ_API_KEY and/or OPENAI_API_KEY
+eval-speech: ## Score speech providers on Indonesian questions read aloud (T-W7). CLIPS=/abs/dir; OPENROUTER_API_KEY, GROQ_API_KEY and/or OPENAI_API_KEY
 	@test -n "$(CLIPS)" || (echo "set CLIPS=/absolute/path/to/recordings — one <id>.<ext> per line of $(BACKEND)/testdata/eval/speech.yaml" && exit 1)
 	cd $(BACKEND) && go run ./cmd/evalspeech -set testdata/eval/speech.yaml -clips "$(CLIPS)" -out eval-speech-report.md $(EVAL_ARGS)
 

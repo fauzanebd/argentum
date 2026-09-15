@@ -35,7 +35,8 @@ func (e *ProviderError) Error() string {
 }
 
 // compatTranscriber speaks the `/audio/transcriptions` request OpenAI defined
-// and Groq copied: one multipart POST, the file and the model, a JSON answer.
+// and Groq and OpenRouter copied: one multipart POST, the file and the model, a
+// JSON answer.
 //
 // One implementation for both, rather than a provider SDK each, for the reason
 // email chose SMTP: the choice of provider is an operator's, and an interface
@@ -62,6 +63,12 @@ func (t *compatTranscriber) Model() string { return t.model }
 // A provider or model that does not return it (OpenAI's gpt-4o transcription
 // models answer `json` only) leaves Seconds at zero, and the caller falls back
 // to the declared length and says so.
+//
+// OpenRouter adds `usage`: `seconds`, which it always returns — `duration` comes
+// back only when the host it routed to supplies one — and `cost`, the charge
+// itself. The seconds stand in for a missing duration, so the clip is still
+// billed on a measure the client did not write; the cost is carried out and
+// billed instead of a rate.
 //
 // Temperature zero, because a transcript is not a place for a model to be
 // creative: the same clip should come back as the same words.
@@ -128,15 +135,29 @@ func (t *compatTranscriber) Transcribe(ctx context.Context, audio io.Reader, med
 		Text     string  `json:"text"`
 		Language string  `json:"language"`
 		Duration float64 `json:"duration"`
+		// Usage is OpenRouter's: the seconds it measured, and what it charged.
+		Usage *struct {
+			Seconds float64  `json:"seconds"`
+			Cost    *float64 `json:"cost"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return Transcript{}, errors.New("speech: provider answer is not the expected JSON")
 	}
-	return Transcript{
+	heard := Transcript{
 		Text:     strings.TrimSpace(out.Text),
 		Language: out.Language,
 		Seconds:  out.Duration,
-	}, nil
+	}
+	if out.Usage != nil {
+		if heard.Seconds <= 0 {
+			heard.Seconds = out.Usage.Seconds
+		}
+		if out.Usage.Cost != nil && *out.Usage.Cost > 0 {
+			heard.CostUSD = *out.Usage.Cost
+		}
+	}
+	return heard, nil
 }
 
 // providerMessage pulls the provider's own sentence out of an error body —

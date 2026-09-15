@@ -22,10 +22,35 @@ func voiceClipStatements(t *testing.T) []string {
 	for _, m := range regexp.MustCompile("(?s)const q = `(.*?)`").FindAllStringSubmatch(code, -1) {
 		out = append(out, m[1])
 	}
-	if len(out) != 4 {
-		t.Fatalf("found %d statements in voice_clip_repo.go, want 4; this test is no longer reading what it thinks it is", len(out))
+	// Five since T-W9 added ForMessage, the one read that returns what was said.
+	if len(out) != 5 {
+		t.Fatalf("found %d statements in voice_clip_repo.go, want 5; this test is no longer reading what it thinks it is", len(out))
 	}
 	return out
+}
+
+// A read that returns a transcript returns the caller's own (T-W9): the ids it
+// is asked about come from a browser, so the company, the person and the
+// conversation are all in the statement, not trusted from the ids.
+func TestVoiceClipTranscriptReadIsTheSendersOwn(t *testing.T) {
+	reads := 0
+	for _, stmt := range voiceClipStatements(t) {
+		// Statements that begin with SELECT: Create is an INSERT … SELECT whose
+		// column list names transcript too, and it writes one rather than reading.
+		if !strings.HasPrefix(strings.TrimSpace(stmt), "SELECT") ||
+			!strings.Contains(strings.SplitN(stmt, "FROM", 2)[0], "transcript") {
+			continue
+		}
+		reads++
+		for _, predicate := range []string{"company_id = $", "user_id = $", "thread_id = $"} {
+			if !strings.Contains(stmt, predicate) {
+				t.Errorf("a read returning transcripts has no %q predicate:\n%s", strings.TrimSuffix(predicate, " = $"), strings.TrimSpace(stmt))
+			}
+		}
+	}
+	if reads != 1 {
+		t.Errorf("%d reads return transcripts, want exactly ForMessage", reads)
+	}
 }
 
 // Every write is scoped by company: a DELETE with no company predicate empties

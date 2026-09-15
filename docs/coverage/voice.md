@@ -7,9 +7,14 @@ exact arithmetic, has its own record in [`exact-computation.md`](exact-computati
 **Status, 2026-09-14:** `T-W7` built, `make check` green (74 Go packages `ok`, lint `0 issues`, 88
 dashboard tests), unit-gated, and its free arms run live on a scratch stack (§1f). **`T-W8` built the
 same day** (§3): `make check` green (76 Go packages `ok`, lint `0 issues`), unit-gated with 16 mutations, `089` and the whole route run live on a scratch stack with
-an in-memory S3 and stand-in providers, which also ran `T-W7`'s owed audio half. `T-W9` is not built. No
-speech or model key exists on this machine, so nothing here has transcribed a real voice or read an
-answer aloud in one.
+an in-memory S3 and stand-in providers, which also ran `T-W7`'s owed audio half.
+
+**Status, 2026-09-15: `T-W9` built** (§4): the microphone in both composers, the transcript in the box, the
+play button on every answer, and the two backend pieces the ticket did not know it needed — the dashboard
+learning whether voice is on, and a sent message recording that it was spoken. Migration none, and it held.
+Unit-gated with 24 mutations, every one killed, the one new statement run on a scratch Postgres, and the composer
+photographed in real Chromium recording from its fake microphone. No speech or model key exists on this
+machine, so nothing here has transcribed a real voice or read an answer aloud in one.
 
 ---
 
@@ -71,9 +76,8 @@ composer, and the person sends it, edits it or throws it away (roadmap 11, decis
   router's `404` says the true thing to everyone.
 - **One implementation, two providers.** Research 08 §2a says to pick on Indonesian accuracy, and §6
   says nobody has measured it. So the client speaks the request both candidates accept, and the
-  measurement changes `SPEECH_PROVIDER`, not code. OpenRouter now accepts the same request.
-  Research 08 §2e (2026-09-15) compares it with Groq: reachable by configuration, but billed at the
-  fallback rate and unable to choose which host hears a clip.
+  measurement changes `SPEECH_PROVIDER`, not code. OpenRouter accepts the same request, and has been
+  the default since 2026-09-15 (§5).
 - **The byte cap is the limit that bounds a bill.** See §1d on duration. It is 384 kbit/s times the
   seconds limit, plus 64 KiB for the container. That is above what a browser writes for a voice, and
   under the 25 MB both providers refuse at, which is also why `SPEECH_MAX_CLIP_SECONDS` stops at 500.
@@ -227,11 +231,10 @@ In [`live-gate-backlog.md`](live-gate-backlog.md) §7j, with predictions:
 5. **`087` at deploy.**
 
 **Open, and not this ticket's to close:**
-- **Nothing links a clip to the message it became** (§1d). It needs `POST /api/chat` to carry the clip
-  id, which is `T-W9`'s.
-- **The dashboard cannot tell whether voice is on.** The route's absence is the only signal. `T-W9`
-  needs a way to draw the microphone disabled on a deployment with no provider (decision 15), and
-  probing a route with a recording is not one. A field on an existing read is the likely shape.
+- ~~**Nothing links a clip to the message it became** (§1d).~~ **Closed by `T-W9`** (§4b): `POST /api/chat`
+  carries `voice_clip_ids`, and the message — not the clip — records it.
+- ~~**The dashboard cannot tell whether voice is on.**~~ **Closed by `T-W9`** (§4b): `GET
+  /api/users/me/capabilities` says, off the same `Enabled` calls that register the routes.
 - **A person's erasure.** A removed member's clips outlive them by up to `SPEECH_RETENTION_DAYS`.
   `T-H6` has no per-person erasure to join.
 - **The byte rate is a guess about browsers.** 384 kbit/s is above every default this document knows
@@ -295,11 +298,9 @@ OpenAI key for the comparison. And twenty recordings of the script by someone at
 live-gate §7j:** numerals are where both providers err, and in two forms, so a transcript is not
 normalised. The pairs row is the one to read first.
 
-**And OpenRouter, if Whisper fails it (2026-09-15).** Research 08 §2e compares OpenRouter with Groq and
-keeps Groq for the first round: no code is needed, and Groq's zero-retention setting covers audio.
-OpenRouter's value is the models beyond Whisper, one key away. Scoring them needs code: the runner reads
-only `GROQ_API_KEY` and `OPENAI_API_KEY` (`cmd/evalspeech/main.go:64`), and `speechPricing` has no rows
-for OpenRouter's `openai/…`-style names.
+**On OpenRouter, the provider since 2026-09-15 (§5).** `OPENROUTER_API_KEY=… make eval-speech CLIPS=…`
+scores the default. `EVAL_ARGS='-providers openrouter,openrouter:openai/gpt-4o-transcribe'` scores other
+models behind the same key, each under its own label.
 
 ---
 
@@ -520,7 +521,7 @@ before the run, and the full table is live-gate §7l. Everything was stopped bef
   2026-09-15 as its own change: the malformed id, and the handler branch that quoted any database
   error ([`live-gate-backlog.md`](live-gate-backlog.md) §7l).
 
-### 3g. What is owed, and what stays open
+### 3g. What is owed, and what stays open (as of `T-W8`; `T-W9` closed two, §4)
 
 In [`live-gate-backlog.md`](live-gate-backlog.md) §7l, with predictions:
 
@@ -535,14 +536,316 @@ In [`live-gate-backlog.md`](live-gate-backlog.md) §7l, with predictions:
 3. **The worker's sweep over spoken answers**, on `SPEECH_SWEEP_CRON`. **Prediction:** an orphaned row and
    its object gone within the hour, the recordings' tick unchanged.
 4. **`089` at deploy.**
-5. **`T-W9`'s player**, and the disabled control.
+5. ~~**`T-W9`'s player**, and the disabled control.~~ Built and photographed (§4).
 
 **Open, and not this ticket's to close:**
-- **The dashboard cannot tell whether an answer can be read aloud.** The route's absence is the only
-  signal, as for the microphone (§1g).
+- ~~**The dashboard cannot tell whether an answer can be read aloud.**~~ Closed by `T-W9` (§4b).
 - **A refusal is remembered for `SPEECH_RETENTION_DAYS`,** and there is no way to ask again sooner.
 - **A count under ten spelled as a word is not checked** (§3b).
 - **One synthesis per press is per replica.**
 - ~~**`GET /api/messages/:id/feedback`** answers a malformed id with `500` and the driver's sentence~~ —
   **fixed 2026-09-15** (§3f). 101 other `500`s across 20 handlers still quote their error, filed in
   [`../plan/backlog.md`](../plan/backlog.md) §Hygiene.
+
+---
+
+## 4. `T-W9`, the microphone and the player
+
+**Built 2026-09-15.** No migration. No tool and no prompt change, so no `make eval`.
+
+A person holds the microphone in the composer, says a question, and lets go. What was heard lands in the
+box. They read it, correct "tiga puluh" to "tiga ratus", and press send — the same send typing uses. Under
+their message it then says *Spoken, then edited*. Beside Copy, under the answer, a play button reads it aloud.
+
+### 4a. What was built
+
+| Piece | Where |
+| --- | --- |
+| The rules as pure functions: `voiceFrom`, the five microphone problems and their copy, `micProblemFor`, `recordingType`, `appendTranscript`, `voiceClipIdsForSend`, `spokenCaption`, the error sentences | `apps/dashboard/src/features/chat/voice.ts` |
+| `useVoice`: one cached read of `GET /api/users/me/capabilities` | `use-voice.ts` |
+| `usePushToTalk`: `getUserMedia`, `MediaRecorder`, the level meter, and every way a recording ends | `push-to-talk.ts` |
+| `MicButton`: hold, let go, cancel, the status above the button, the upload | `mic-button.tsx` |
+| `ListenButton`: fetched on the first press, one answer at a time, a refusal kept | `listen-button.tsx` |
+| The microphone beside Send, the play button beside Copy, the caption, `voice_clip_ids` on the send, the new-chat hand-off | `chat-page.tsx`, `store/composer.ts` |
+| Voice's `today` sentence on Settings → Team | `features/settings/access.ts` |
+| `MyCapabilitiesResponse`, `VoiceAvailability`, `UserHandler.WithVoice`, wired from the two `Enabled` calls that register the routes | `handlers/wire.go`, `handlers/user.go`, `cmd/api/router.go` |
+| `domain.SpokenQuestion` under `metadata.voice`; `VoiceClipRepository.ForMessage`; `VoiceClips.SpokenQuestion` | `domain/voice_clip.go`, `postgres/voice_clip_repo.go`, `app/voice_service.go` |
+| `voice_clip_ids` on the send; `ChatInput.Spoken`; `ThreadService.AppendUserMessageWithMetadata` | `handlers/chat.go`, `app/chat_enqueuer.go`, `app/thread_service.go` |
+| `MyCapabilitiesResponse`, `VoiceAvailability`, `SpokenQuestion` | `packages/api-types` (generated) |
+| Five scenes, and a shooter that can launch Chromium with a fake microphone | `apps/dashboard/harness/` |
+| Both additions documented | `apps/backend/docs/api.md` §Voice |
+
+**How a recording ends:**
+
+| The person | What happens |
+| --- | --- |
+| Lets go on the button | Uploaded; the transcript is added to the end of the box |
+| Holds past the route's limit | Stopped half a second inside it, then as a release |
+| Hides the tab, or the window loses focus | Stopped, then as a release: what was said is kept |
+| Presses Esc, slides off before letting go, or the pointer is cancelled | Thrown away; nothing uploaded |
+| Lets go within half a second | A tap: nothing uploaded, "Hold the button while you speak" |
+| Lets go while the browser's permission prompt is up | Nothing recorded; "The microphone is ready" |
+| Leaves the page | Thrown away |
+
+### 4b. Decisions worth the words
+
+- **Absent where the deployment cannot transcribe; disabled, with a sentence, where the person has no
+  grant.** `T-W7` read decision 15 — *"a dead STT provider yields a disabled button"* — as a disabled
+  microphone on a deployment with no provider. But the 2026-08-04 rule behind *disabled, not hidden* is that
+  a disabled control says who to ask, and there nobody can be asked: no grant makes a missing provider
+  work. So it is absent, as the ticket already says of the play button. A provider failing at the moment
+  of a press is decision 15's case, and gets its sentence: *"…try again, or type your question"*.
+- **The play button is absent for an ungranted person, not disabled.** The microphone's one sentence tells
+  them who to ask; the same sentence beside every answer would be forty of it.
+- **The dashboard asks one existing read.** `GET /api/users/me/capabilities` gained `voice` — `transcribe`,
+  `read_aloud` and the clip limit — set in `cmd/api` from the same `Enabled` calls that decide whether each
+  route is registered, so the screen and the router cannot disagree
+  (`TestMyCapabilitiesSayWhatTheVoiceRoutesAre`). A backend older than this sends no `voice`, which reads as
+  off: a new dashboard on an old API draws nothing, rather than a microphone that answers 404.
+- **The clip→message link is on the message.** `T-W7` left "the message it became" out of `087` (§1d). It is
+  `metadata.voice = {clip_ids, verbatim}` on the user message, written by `POST /api/chat` when
+  `voice_clip_ids` name clips that are the sender's, in that conversation. On the message because the fact
+  must outlive the clip, which is deleted after seven days, and because it is the measurement §4h needs.
+- **An id that does not check out is dropped, not refused.** Decision 15 at the scale of a metadata key: a
+  composer left open past the sweep names a clip that is gone, and the question is still worth sending.
+- **`verbatim` is "the message is the transcripts joined, whitespace aside".** Typing before or after a
+  dictation counts as an edit. It is exact and cheap, and it records whether decision 13's edit step was
+  used without keeping anything else.
+- **The new-chat screen makes its conversation on release, not on press.** The voice route files a clip under
+  a conversation, and that screen has none. It is made when there is a recording to file, with the picked
+  agent, so a cancelled press makes nothing. The page then moves there with the transcript carried by the
+  prefill "Ask for a change" uses. Discarding the transcript afterwards leaves an empty conversation, which
+  `createThread` already treats as costing nothing.
+- **A hidden tab or a blurred window stops and uploads**, as the ticket says. Throwing the recording away
+  when somebody glances at another window would lose a question they had finished saying.
+- **The transcript is appended**, never written over what was typed.
+- **A failure with no known fix names its exception.** Nothing on the client logs, so *"could not start
+  (AbortError)"* read out to support is the only record there is (§4d is why this exists).
+- **The audio is cached in TanStack Query**, not component state, so a second press does not ask whichever
+  bubble re-rendered. One answer plays at a time, held in module state, because it is a handle to a media
+  element and nothing renders from it.
+
+### 4c. Where the ticket was wrong, or silent
+
+- **`Repo: FE`.** It needed two backend changes: the `voice` field, and the link on the send. §1g filed both
+  as `T-W9`'s; the ticket scheduled neither.
+- **"Hold to record … release to send."** Release puts the transcript in the box. The ticket's next bullet
+  and decision 13 both say so.
+- **`Migration: none` held** — the first header on this track to hold since `T-W3`.
+- **Silent on the new-chat screen**, where there is no conversation to file a clip under (§4b).
+- **Silent on a deployment without a provider.** Built absent (§4b).
+- **"Cancelling after recording uploads nothing."** Letting go uploads at once, so there is no *after
+  recording* before an upload. Cancelling is during the hold: Esc, sliding off, a cancelled pointer.
+  Emptying the box after the transcript arrives sends nothing and drops the clip ids — but that clip was
+  uploaded, transcribed, billed and kept for seven days, as every recording is.
+- **"Permission denied, no microphone, and an unsupported browser are three distinct messages."** Five: a
+  microphone another app holds, and a page on plain http, where the browser hides the microphone
+  entirely, each have a fix of their own.
+- **Silent on Safari**, which records MP4. `recordingType` asks for Opus in WebM first and takes MP4.
+
+### 4d. Found by the screenshot run
+
+The first run of the held scene photographed *"The microphone could not start."* Headless Chromium, with the
+page granted `microphone`, answered `getUserMedia` with `NotSupportedError`: only its
+`--use-fake-ui-for-media-stream` flag lets it record, and `=deny` gives its real `NotAllowedError`.
+
+Two fixes. The shooter launches with the flag, and a scene can bring its own. And **in the product**,
+`NotSupportedError` now reads as an unsupported browser — a browser that has the API and will not capture
+with it — and any failure without a known fix names its exception. A screenshot saying only "could not
+start" is how this one nearly went undiagnosed.
+
+### 4e. The acceptance items, quoted back
+
+- [x] *Recording stops and uploads on release, and on tab blur.* `…uploads once on release…`, `…when the window
+  loses focus`, `…when the tab is hidden`, and `…stops itself at the route's limit`. Photographed: a real
+  recording let go (`voice-composer-transcript.png`).
+- [~] *The transcript is editable before sending, and editing it sends the edit.* The transcript is handed to
+  the composer's own box, and the microphone sends nothing (`…hands back the transcript with its clip — it
+  sends nothing`). The send is the one typing uses, and an edit records `verbatim: false`
+  (`TestSpokenQuestionSaysWhetherTheMessageWasSentAsHeard`). **The page itself has no test** — `ChatPage`
+  never had one — so edit-then-send on the real page is live-gate §7m's.
+- [x] *Cancelling after recording uploads nothing* — during the hold (§4c). Esc and a cancelled pointer are
+  tested. Sliding off is not, because jsdom gives a pointer no position.
+- [x] *The play control is absent, not broken, when synthesis is off.* `ListenButton … is absent, not broken,
+  when this deployment cannot read aloud`, and when the person is not granted voice.
+- [x] *Denied permission renders the reason and the fix.* Tested for all five problems; photographed from
+  Chromium's own `NotAllowedError`.
+- [x] *`pnpm --filter dashboard lint` and `build` clean, plus a harness screenshot of the composer in all three
+  states (granted, denied, ungranted).* `make check`, alone, on its second run: `MAKE EXIT: 0`, the dashboard's
+  lint (`tsc`, eslint with no errors, 121 tests) and build clean, 76 Go packages `ok`. Five scenes:
+
+| Granted, held | Let go | Refused by the browser | Not granted |
+| --- | --- | --- | --- |
+| ![](assets/voice-composer-recording.png) | ![](assets/voice-composer-transcript.png) | ![](assets/voice-composer-denied.png) | ![](assets/voice-composer-ungranted.png) |
+
+![Answers read aloud: a play button beside Copy, a refused table, and two spoken questions](assets/voice-listen-and-spoken.png)
+
+The level meter photographed at its floor: the fake microphone beeps, and the frame fell between beeps.
+
+### 4f. Proven failing
+
+Twenty-four mutations, applied one at a time — twenty-three by a script (`/tmp/tw9-gate/mut.py`), the last by
+hand after the first gate run (below) — each file restored from a copy afterwards and the restoration
+checked. **Every one failed its named test; none only broke the build; none survived.**
+
+**The first `make check` failed, and on something this work owed.** `voice_clip_repo_test.go` reads the SQL
+in `voice_clip_repo.go`, and refuses to run when it finds a statement count it was not written for:
+*"found 5 statements, want 4; this test is no longer reading what it thinks it is"*. The targeted runs had
+never reached it. The count became 5, and the new statement got the property that is actually its own —
+a read returning transcripts carries the company, the person *and* the conversation — whose first draft
+also counted `Create`'s `INSERT … SELECT` as a read and failed unmutated, before it was narrowed to
+statements that begin with `SELECT`. That is the twenty-fourth row.
+
+| Mutation | Killed by |
+| --- | --- |
+| `SpokenQuestion` keeps an id the repository did not return | `TestSpokenQuestionKeepsOnlyTheSendersClipsFromThisConversation`, `…NamingNothingOfTheSendersIsNil` |
+| `verbatim` compared without collapsing whitespace | `TestSpokenQuestionSaysWhetherTheMessageWasSentAsHeard` |
+| No bound on the ids one send asks for | `TestSpokenQuestionAsksForABoundedNumberOfClips` |
+| A message naming nothing of the sender's gets an empty record | `TestSpokenQuestionNamingNothingOfTheSendersIsNil` |
+| The enqueuer drops the record | `TestEnqueueWritesASpokenQuestionOntoTheUserMessage` |
+| The send asks with no person | `TestSendAsksAboutTheClipsItNamesAsTheSessionsPerson` |
+| The send looks up clips for a new conversation | `TestSendThatCannotNameAClipDoesNotLook` |
+| `me/capabilities` leaves voice out | `TestMyCapabilitiesSayWhetherThisDeploymentHasVoice` |
+| The router tells the dashboard nothing about voice | `TestMyCapabilitiesSayWhatTheVoiceRoutesAre` |
+| `ForMessage` ignores whose clip it is — **on the scratch Postgres** | `TestScratchVoiceClipsForMessage` |
+| `ForMessage` loses its person predicate — **read from the source** | `TestVoiceClipTranscriptReadIsTheSendersOwn` |
+| The microphone drawn where the deployment cannot transcribe | `MicButton … is absent where this deployment cannot transcribe` |
+| An ungranted press records | `MicButton … is drawn disabled for a person without the grant…` |
+| A cancelled recording is uploaded | `MicButton … uploads nothing when the recording is cancelled` (both ways) |
+| A tap is uploaded | `MicButton … treats a tap as a tap…` |
+| Losing focus does not stop the recording | `MicButton … stops and uploads what was said when the window loses focus` |
+| No stop at the route's limit | `MicButton … stops itself at the route's limit…` |
+| The play button drawn for a person without the grant | `ListenButton … is absent, not broken, when the person is not granted voice` |
+| A second press asks again | `ListenButton … a second press is served from what it has` |
+| A refusal is not remembered | `ListenButton … does not ask again` |
+| A second answer plays over the first | `ListenButton … stops the answer playing when another is started` |
+| A transcript replaces what was typed | `the transcript in the box … goes after what is already typed` |
+| An edited question captioned as sent as heard | `the transcript in the box … captions a question that was dictated…` |
+| Clip ids sent with a send that opens a conversation | `the transcript in the box … sends its clip ids only to a conversation that exists…` |
+
+**Not reached by any mutation:** the router's `WithVoiceClips` wiring on the chat handler, and the new-chat
+hand-off in `chat-page.tsx`. Neither has a test that could fail; both are live-gate §7m's first row.
+
+### 4g. What is owed
+
+In [`live-gate-backlog.md`](live-gate-backlog.md) §7m, with predictions:
+
+1. **The real page against a real API:** edit-then-send, and the new-chat hand-off.
+2. **Safari**, recording MP4.
+3. **A phone's press and hold.**
+4. **Who talks to it** (§4h), once voice is switched on.
+
+And, still, §1g's and §3g's real provider, model and voice.
+
+### 4h. Who talks to it
+
+Research 08 §6's unknown 6 — whether anybody at the pilot wants to talk to it — had no instrument. It has one
+now, and it survives the clips being swept:
+
+```sql
+SELECT count(*)                                                          AS questions,
+       count(*) FILTER (WHERE m.metadata ? 'voice')                      AS spoken,
+       count(*) FILTER (WHERE m.metadata -> 'voice' ->> 'verbatim' = 'false') AS spoken_then_edited
+  FROM messages m
+  JOIN conversation_threads t ON t.id = m.thread_id
+ WHERE t.company_id = $1 AND m.role = 'user'
+   AND m.created_at > now() - interval '30 days';
+```
+
+`spoken_then_edited` over `spoken` is also the only read of transcription accuracy production will ever
+give. A person who corrected a transcript before sending it had a transcript that was wrong, or one they
+did not trust.
+
+---
+
+## 5. OpenRouter as the provider (2026-09-15)
+
+**Decided by the owner**, over research 08 §2e's recommendation of Groq and OpenAI directly: one key the
+deployment already holds, instead of two new accounts. **The trade accepted is §2e's data-path row**:
+OpenRouter cannot be told which host hears a recording, and one of its speech endpoints is on its
+zero-retention list.
+
+### 5a. What changed
+
+| Piece | Where |
+| --- | --- |
+| `openrouter` as a known transcriber: `https://openrouter.ai/api/v1`, `openai/whisper-large-v3-turbo` | `internal/speech/speech.go` |
+| `openrouter` as a known synthesiser: `google/gemini-3.1-flash-tts-preview`, voice `Kore` | `internal/speech/synth.go` |
+| `usage.seconds` stands in for a missing `duration`; `usage.cost` is carried out as `Transcript.CostUSD` | `internal/speech/compat.go` |
+| `RecordTranscription` records a charge the provider reported as it is (`cost_source: provider`), ahead of any rate or minimum | `internal/app/usage_speech.go`, `voice_service.go` |
+| Rows for when no charge comes back: turbo at $0.04 an hour, the dearer of its two hosts; the Gemini voice at a $50-per-million-characters ceiling | `internal/app/usage_speech.go` |
+| `SPEECH_PROVIDER` and `SPEECH_TTS_PROVIDER` default to `openrouter` | `internal/config/config.go`, `.env.example` |
+| `make eval-speech` scores `openrouter` and `openrouter:<model>` with `OPENROUTER_API_KEY` | `cmd/evalspeech`, root `Makefile` |
+
+### 5b. Decisions worth the words
+
+- **A transcription is billed at OpenRouter's charge, not at a rate.** Turbo has two hosts about three times
+  apart in price, and which one heard a clip is OpenRouter's to decide. The charge in `usage.cost` is the
+  invoice line. The row is only for an answer that carries none, and it is the dearer host's price, with no
+  Groq minimum, because the host is unknown.
+- **The Gemini voice is billed at a ceiling.** `/audio/speech` answers audio and no usage, so there is no
+  charge to read. Google's price is per audio token: $20 per million, at 25 tokens a second, which is
+  $500 per million seconds of speech. Per character that depends on how fast the voice reads, which nobody
+  here has measured. At ten characters a second — a slow reading pace — it is $50 per million. A faster
+  voice costs less, so the ledger over-records rather than under.
+- **Not OpenRouter's generation lookup.** `X-Generation-Id` names a record whose `total_cost` is the real
+  charge. But the lookup documents nothing about audio, or about how soon the record exists, and a second
+  request after every synthesis would be a second thing that can fail on a path that is not allowed to.
+  The ceiling is replaced when live-gate §7n has set it against real charges.
+- **The unpriced-voice fallback stays at tts-1-hd's $30.** The Gemini row is higher, but it is a guess about
+  one voice's reading speed, and an unknown voice is not assumed to cost what that guess does.
+- **The defaults moved, not only the documentation.** With both providers defaulting to `openrouter`, a
+  deployment sets `SPEECH_ENABLED` and `SPEECH_API_KEY` and nothing else: `EffectiveSpeechTTSAPIKey` hands
+  the one key to both halves. No deployment had voice switched on, so the change moves nobody.
+- **The Gemini voice is a preview model**, chosen as the one voice on OpenRouter whose maker documents
+  Indonesian. `Kore` is one of its thirty-one voices, picked without listening.
+
+### 5c. What production sets
+
+In `smartsoft-infra`'s HelmRelease values for `argentum`: the Bitwarden entry already mapped to
+`LLM_API_KEY`, mapped a second time, and one variable.
+
+```yaml
+bitwardenSecret:
+  secrets:
+    - bwSecretId: <the id already mapped to LLM_API_KEY>
+      secretKeyName: SPEECH_API_KEY
+extraEnv:
+  - name: SPEECH_ENABLED
+    value: "true"
+```
+
+### 5d. Proven
+
+Ten mutations, applied one at a time by a script (`/tmp/tw9-gate/mut2.py`), each file restored from a copy
+afterwards and the restoration checked. **Every one failed its named test; none only broke the build;
+none survived.**
+
+| Mutation | Killed by |
+| --- | --- |
+| The transcriber ignores OpenRouter's charge | `TestTranscribeReadsWhatOpenRouterMeasuredAndCharged` |
+| The transcriber ignores OpenRouter's seconds | `TestTranscribeReadsWhatOpenRouterMeasuredAndCharged` |
+| A reported charge is priced again | `TestRecordTranscriptionRecordsWhatTheProviderCharged` |
+| The voice service drops the charge | `TestVoicePassesTheProvidersChargeToTheLedger` |
+| No `openrouter` transcriber row | `TestNewTakesTheProvidersDefaults` |
+| No `openrouter` synthesiser row | `TestNewSynthesizerTakesTheProvidersDefaults` |
+| No price row for OpenRouter's turbo | `TestRecordTranscriptionRecordsWhatTheProviderCharged` |
+| No ceiling row for the Gemini voice | `TestRecordSynthesisPricesPerCharacterPerModel` |
+| The transcriber defaults back to `groq` | `TestSpeechDefaultsToOneOpenRouterKey` |
+| The synthesiser defaults back to `openai` | `TestSpeechDefaultsToOneOpenRouterKey` |
+
+**The eval runner, with no key in its environment:** `-providers openrouter,openrouter:openai/gpt-4o-transcribe`
+skipped both, each by its own label, and exited naming `OPENROUTER_API_KEY`. Nothing reached a provider.
+
+**Not proven here:** anything OpenRouter answers. The fake provider answers the shape its documentation
+describes (`usage.seconds`, `usage.cost`); a real answer is §7n's first row.
+
+### 5e. What is owed
+
+In [`live-gate-backlog.md`](live-gate-backlog.md) §7n, with predictions:
+
+1. A real OpenRouter transcription: `usage.cost` present, and which of `duration` and `usage.seconds` came
+   back.
+2. The Gemini voice reading Indonesian figures aloud.
+3. The ceiling set against OpenRouter's own record of what twenty answers cost.
+4. `make eval-speech` on the pilot's recordings, through OpenRouter.

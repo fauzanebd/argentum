@@ -249,6 +249,28 @@ compares OpenRouter with OpenAI direct, which is the current default.
    needs price rows for its model names, or billing on the `usage.cost` it
    returns for a transcription, plus the eval's key. About half a day.
 
+#### Decided, the same day: OpenRouter for both
+
+The owner chose OpenRouter for voice in and voice out, over the recommendation
+above, for a reason this section gave no weight to: the deployment already holds
+an OpenRouter key for its model, and a second and a third account cost a pilot
+in setup, billing and revocation rather than in cents. **The data-path row is the
+trade that was accepted**: OpenRouter cannot be told which host hears a
+recording.
+
+Read before building, on 2026-09-15:
+- OpenAI's voices are not on OpenRouter. `openai/gpt-4o-mini-tts`'s model page
+  answers `404`, with or without its date.
+- `google/gemini-3.1-flash-tts-preview` takes `response_format: mp3` and has
+  thirty-one voices. Google's speech-generation page lists Indonesian, and
+  Google's pricing puts it at $20 per million audio tokens at 25 tokens a second
+  of speech.
+- OpenRouter's `/audio/speech` answers audio and an `X-Generation-Id` header, and
+  no usage. Its generation lookup documents `total_cost`, but nothing about
+  audio or about how soon a cost is there to read.
+
+Built: [`../coverage/voice.md`](../coverage/voice.md) §5.
+
 Sources: Groq [speech-to-text](https://console.groq.com/docs/speech-to-text),
 [text-to-speech](https://console.groq.com/docs/text-to-speech),
 [rate limits](https://console.groq.com/docs/rate-limits),
@@ -261,8 +283,11 @@ Sources: Groq [speech-to-text](https://console.groq.com/docs/speech-to-text),
 [turbo's endpoints](https://openrouter.ai/api/v1/models/openai/whisper-large-v3-turbo/endpoints),
 [ZDR endpoints](https://openrouter.ai/api/v1/endpoints/zdr),
 [ZDR](https://openrouter.ai/docs/features/zdr),
-[logging](https://openrouter.ai/docs/guides/privacy/logging); Google
-[Gemini speech generation](https://ai.google.dev/gemini-api/docs/speech-generation).
+[logging](https://openrouter.ai/docs/guides/privacy/logging),
+[Gemini 3.1 Flash TTS](https://openrouter.ai/google/gemini-3.1-flash-tts-preview),
+[generation lookup](https://openrouter.ai/docs/api-reference/get-a-generation); Google
+[Gemini speech generation](https://ai.google.dev/gemini-api/docs/speech-generation),
+[Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing).
 
 ---
 
@@ -488,7 +513,7 @@ plan; all of them can change a ticket.
 
 | # | The unknown | Why it matters | How it gets closed |
 | - | ----------- | -------------- | ------------------ |
-| 1 | Word-error rate for **Indonesian business speech** on any candidate STT provider | It is the only criterion §2a leaves standing | Twenty recorded questions from a real user, one hour, two providers. **The script and the scorer exist since 2026-09-14** — `make eval-speech` ([`../coverage/voice.md`](../coverage/voice.md) §2); the key and the recordings do not. §2e (2026-09-15) keeps Groq first and makes OpenRouter the second round if Whisper fails |
+| 1 | Word-error rate for **Indonesian business speech** on any candidate STT provider | It is the only criterion §2a leaves standing | Twenty recorded questions from a real user, one hour, two providers. **The script and the scorer exist since 2026-09-14** — `make eval-speech` ([`../coverage/voice.md`](../coverage/voice.md) §2); the key and the recordings do not. §2e: the provider is OpenRouter, the owner's call on 2026-09-15, and the eval scores it with one key |
 | 2 | Whether **numerals** survive transcription — "tiga ratus juta" vs "tiga puluh juta" | A misheard multiplier is a factor-of-ten wrong answer the agent will then answer correctly | The same twenty clips, scored on the numbers alone |
 | 3 | Whether `decimal` **works** in a CPython-WASI build | The entire compute design rests on it, and the sources are silent | One afternoon: build or download `python.wasm`, run `Decimal('0.1')+Decimal('0.2')` under wazero |
 | 4 | CPython-WASI **cold-start latency and bundle size** (≈150 MB reported for the all-in-one build) | 150 MB in the API image is a deployment fact; a 2-second start is a product fact | The same afternoon, `time` around the first call and the tenth |

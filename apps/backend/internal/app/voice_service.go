@@ -59,9 +59,10 @@ type VoiceClipStore interface {
 }
 
 // TranscriptionRecorder meters a transcription. *UsageService is the
-// production one.
+// production one. providerCostUSD is the provider's own charge when it reported
+// one (OpenRouter does), and zero when this process has to price it.
 type TranscriptionRecorder interface {
-	RecordTranscription(ctx context.Context, companyID, threadID, model string, seconds float64)
+	RecordTranscription(ctx context.Context, companyID, threadID, model string, seconds, providerCostUSD float64)
 }
 
 // VoiceCompanyReader is the company row, for its currency.
@@ -102,6 +103,64 @@ func (v *VoiceClips) WithSpokenAnswers(repo domain.SpokenAnswerRepository) *Voic
 	v.answers = repo
 	return v
 }
+
+// maxClipsPerMessage bounds the lookup one send may ask for. A person holds the
+// microphone a few times for one question; hundreds of ids is not dictation.
+const maxClipsPerMessage = 20
+
+// SpokenQuestion is the record a message sent to threadID keeps of the
+// recordings it names (T-W9), or nil when it names none of the sender's.
+//
+// **Only the sender's clips, in that conversation.** The ids come from a browser,
+// so each is checked against the company, the person and the conversation, and
+// one that fails is dropped rather than refused: speech is never the reason a
+// turn fails (decision 15), and a composer left open past the sweep is the
+// ordinary way to name a clip that is gone.
+//
+// Verbatim compares the message with the transcripts joined in the order named,
+// whitespace collapsed — which is what the composer put in the box before the
+// person had a chance to change it.
+func (v *VoiceClips) SpokenQuestion(ctx context.Context, companyID, userID, threadID string, ids []string, sent string) (*domain.SpokenQuestion, error) {
+	if v == nil || v.repo == nil {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	var asked []string
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] || len(asked) == maxClipsPerMessage {
+			continue
+		}
+		seen[id] = true
+		asked = append(asked, id)
+	}
+	if len(asked) == 0 {
+		return nil, nil
+	}
+	clips, err := v.repo.ForMessage(ctx, companyID, userID, threadID, asked)
+	if err != nil {
+		return nil, err
+	}
+	heard := map[string]string{}
+	for _, c := range clips {
+		heard[c.ID] = c.Transcript
+	}
+	out := &domain.SpokenQuestion{}
+	var said []string
+	for _, id := range asked {
+		if t, ok := heard[id]; ok {
+			out.ClipIDs = append(out.ClipIDs, id)
+			said = append(said, t)
+		}
+	}
+	if len(out.ClipIDs) == 0 {
+		return nil, nil
+	}
+	out.Verbatim = collapseSpace(strings.Join(said, " ")) == collapseSpace(sent)
+	return out, nil
+}
+
+func collapseSpace(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // NewVoiceClips wires the store. store may be nil — a deployment with no object
 // storage — and then a clip is its transcript alone. Pass a nil *interface*,
@@ -483,8 +542,11 @@ func (s *VoiceService) Transcribe(ctx context.Context, in VoiceInput) (*VoiceTra
 	}
 	fields["seconds"] = seconds
 	fields["measured"] = measured
+	// Whether the provider said what it charged. Not the amount: it is on the
+	// usage row, and a log line is not a ledger.
+	fields["charge_reported"] = heard.CostUSD > 0
 	if s.usage != nil {
-		s.usage.RecordTranscription(ctx, in.CompanyID, in.ThreadID, model, seconds)
+		s.usage.RecordTranscription(ctx, in.CompanyID, in.ThreadID, model, seconds, heard.CostUSD)
 	}
 	if measured && seconds > float64(s.maxSeconds)+1 {
 		// Already paid for, so refusing now would save nothing. What it is worth

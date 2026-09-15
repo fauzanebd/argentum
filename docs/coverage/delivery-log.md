@@ -7956,6 +7956,74 @@ prediction).
 **Gate.** `make check`, alone: `MAKE EXIT: 0`, 14m46s. 76 Go packages `ok`, zero `FAIL`/`panic` lines,
 `golangci-lint` `0 issues.`, `gofmt -l` empty on the two changed files, and 88 dashboard tests in 14 files.
 
+## Phase 3bq — A question you can say, check and send, and an answer you can play (`T-W9`, 2026-09-15)
+
+**Why.** The owner asked to finish the voice feature. `T-W9` was Track C's last ticket, both its
+dependencies built. Record: [`voice.md`](voice.md) §4.
+
+**What shipped.**
+- **The microphone** in both composers. Hold, let go, and the transcript lands in the box to check; it is
+  never sent for anyone. On the new-chat screen, letting go makes the conversation first.
+- **The play button** beside Copy on every answer.
+- **"Spoken" / "Spoken, then edited"** under a question that was dictated.
+- **Two backend pieces the ticket (`Repo: FE`) did not schedule.** `GET /api/users/me/capabilities` now
+  says whether voice is on. `POST /api/chat` takes `voice_clip_ids` and writes `metadata.voice` onto the
+  message after checking each clip is the sender's, in that conversation.
+- No migration. The link is on the message because it has to outlive the clip.
+
+**Where the ticket was wrong:** its repo, "release to send", silence on the new-chat screen, and a disabled
+microphone where there is no provider — built absent, as the ticket already says of the player (§4c).
+
+**Found by the screenshot run, and fixed in the product.** Headless Chromium refuses `getUserMedia` with
+`NotSupportedError` unless its fake prompt is on, and the microphone said only "could not start". It now
+reads as an unsupported browser, and any failure without a known fix names its exception — nothing on the
+client logs, so that sentence is the only record.
+
+**Proven.**
+- 24 mutations — 11 backend (one on the scratch Postgres, one read from the source) and 13 dashboard —
+  each killed by its named test. None survived, and none only broke the build.
+- **The first `make check` failed** (`MAKE EXIT: 2`, 75 packages `ok`): `voice_clip_repo_test.go` counts
+  the statements in the file it reads, and the new query made five. Updated, with a property of the new
+  query's own, which failed unmutated on its first draft before it was narrowed to `SELECT`s.
+- The clip lookup ran on a scratch Postgres, as predicted.
+- Five scenes photographed in real Chromium recording from its fake microphone.
+- The one stale test, `team-tab.test.tsx` pinning voice's old "not in the chat yet" sentence, was updated:
+  `T-Z7` had written that `T-W9` would rewrite that copy.
+
+**Owed** (live-gate §7m): the real page against a real API, Safari, a phone, and a real voice.
+
+**Gate.** `make check`, alone, second run: `MAKE EXIT: 0`, 13m39s. 76 Go packages `ok`, zero `FAIL`/`panic`
+lines, lint clean, `gofmt -l` empty, 121 dashboard tests in 17 files, and every app built (dashboard 15.17s).
+
+## Phase 3br — Voice on the one key the product already has (2026-09-15)
+
+**Why.** The owner asked whether voice really needed a Groq key and an OpenAI key, and chose OpenRouter,
+whose key production already holds for its model. Research 08 §2e had recommended the two direct
+providers; the data-path trade it names — OpenRouter cannot be told which host hears a recording — was
+accepted. Record: [`voice.md`](voice.md) §5.
+
+**What changed.**
+- `openrouter` is a known provider for both halves, and the default for both, so production sets
+  `SPEECH_ENABLED` and maps its existing key to `SPEECH_API_KEY`.
+- **Voice in:** `openai/whisper-large-v3-turbo`, billed at the `usage.cost` OpenRouter reports.
+- **Voice out:** `google/gemini-3.1-flash-tts-preview`, the one voice there whose maker documents
+  Indonesian. OpenAI's voices are not on OpenRouter. It is billed at a stated ceiling, because
+  `/audio/speech` reports no usage.
+- `make eval-speech` takes `OPENROUTER_API_KEY`, and `openrouter:<model>` labels.
+
+**Proven.**
+- 10 mutations — the charge and seconds read, the charge billed and carried, both provider rows, both price
+  rows, both defaults — each killed by its named test.
+- The eval runner, with no keys, skipped `openrouter` and `openrouter:<model>` by label and asked for
+  `OPENROUTER_API_KEY`.
+- **Nothing has been sent to OpenRouter.**
+
+**Owed** (live-gate §7n): one real request through OpenRouter, the Gemini voice on Indonesian figures, the
+ceiling against the real charge, and the eval.
+
+**Gate.** `make check`, alone: `MAKE EXIT: 0`, 14m37s. 76 Go packages `ok`, zero `FAIL`/`panic` lines,
+`golangci-lint` `0 issues.`, `gofmt -l` empty, 121 dashboard tests in 17 files, and every app built.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

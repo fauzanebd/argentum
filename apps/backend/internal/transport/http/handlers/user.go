@@ -22,6 +22,17 @@ type UserHandler struct {
 	// caps is capability grants (T-Z1). Optional for team's reason: nil
 	// answers 503 rather than panicking.
 	caps *app.CapabilityService
+	// voice is what the caller's own read says this deployment can do (T-W9).
+	// The zero value — nothing — is right for every wiring that did not say.
+	voice VoiceAvailability
+}
+
+// WithVoice states what `me/capabilities` reports about voice. cmd/api passes
+// the same Enabled calls that decide whether each voice route is registered, so
+// the screen and the router cannot disagree.
+func (h *UserHandler) WithVoice(v VoiceAvailability) *UserHandler {
+	h.voice = v
+	return h
 }
 
 // NewUserHandler constructs the handler. team may be nil in stripped-down
@@ -193,27 +204,36 @@ func (h *UserHandler) myCapabilities(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-	h.listCapabilities(c, uid)
+	grants, ok := h.grantsFor(c, uid)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, MyCapabilitiesResponse{Capabilities: grants, Voice: h.voice})
 }
 
 func (h *UserHandler) userCapabilities(c *gin.Context) {
-	h.listCapabilities(c, c.Param("id"))
+	grants, ok := h.grantsFor(c, c.Param("id"))
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"capabilities": grants})
 }
 
-func (h *UserHandler) listCapabilities(c *gin.Context, uid string) {
+// grantsFor reads uid's grants, or writes the refusal and reports false.
+func (h *UserHandler) grantsFor(c *gin.Context, uid string) ([]domain.CapabilityGrant, bool) {
 	if h.caps == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "capabilities are not configured"})
-		return
+		return nil, false
 	}
 	grants, err := h.caps.ListForUser(c.Request.Context(), companyID(c), uid)
 	if err != nil {
 		writeCapabilityError(c, err)
-		return
+		return nil, false
 	}
 	if grants == nil {
 		grants = []domain.CapabilityGrant{}
 	}
-	c.JSON(http.StatusOK, gin.H{"capabilities": grants})
+	return grants, true
 }
 
 // grantCapability is a PUT because granting is idempotent by decision: asking

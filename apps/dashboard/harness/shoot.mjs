@@ -49,6 +49,32 @@ function shareView(plan) {
 
 const ENGINES = { chromium, firefox, webkit };
 
+/**
+ * How each engine is launched unless a scene says otherwise. Chromium gets a
+ * fake microphone and a fake permission prompt that allows it (T-W9), so the
+ * voice scenes record through the browser's own `getUserMedia` and
+ * `MediaRecorder` over a generated tone. Neither flag changes a page that never
+ * asks for a microphone.
+ *
+ * **The prompt flag is not optional**, and a page permission is not a
+ * substitute: headless Chromium granted `microphone` by its context still
+ * answers `getUserMedia` with NotSupportedError, which is how the first run of
+ * these scenes photographed "could not start".
+ */
+const MIC = "--use-fake-device-for-media-stream";
+const LAUNCH = {
+  chromium: { args: [MIC, "--use-fake-ui-for-media-stream"] },
+};
+
+/** Hold the microphone the way a person does: the pointer down on it, and not up. */
+async function holdMicrophone(page) {
+  const mic = page.getByRole("button", { name: "Hold to speak a question" });
+  await mic.waitFor();
+  const box = await mic.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+}
+
 /** The share API call the page makes, and nothing else. */
 const SHARE_ROUTE = /\/share\/harness$/;
 
@@ -236,6 +262,77 @@ const SCENES = [
       await page.mouse.move(0, 0);
     },
   },
+  {
+    // T-W9, granted: photographed with the button still held, which is the
+    // only moment the level meter exists.
+    id: "voice-recording",
+    file: "voice-composer-recording.png",
+    height: 460,
+    async drive(page) {
+      await holdMicrophone(page);
+      await page.getByText(/^Listening\./).waitFor();
+      await page.waitForTimeout(900);
+    },
+  },
+  {
+    // Let go: the recording is uploaded and what was heard lands in the box.
+    // Focus is taken off the textarea before the shot, for the skills-form
+    // scene's reason — a focused field photographs red.
+    id: "voice-transcript",
+    file: "voice-composer-transcript.png",
+    height: 460,
+    async drive(page) {
+      await holdMicrophone(page);
+      await page.getByText(/^Listening\./).waitFor();
+      await page.waitForTimeout(1500);
+      await page.mouse.up();
+      // A string, not a function: this file is linted as Node, where `document`
+      // does not exist, and the expression runs in the page, where it does.
+      await page.waitForFunction('document.querySelector("textarea")?.value.includes("gudang barat")');
+      await page.locator("textarea").blur();
+      await page.mouse.move(0, 0);
+      // The button fades from its recording colour; the first shot of this scene
+      // caught it halfway and read as a microphone still held.
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    // The fake prompt set to refuse: the reason and the fix on screen are the
+    // browser's own NotAllowedError, not a stub's.
+    id: "voice-denied",
+    file: "voice-composer-denied.png",
+    height: 460,
+    launch: { args: [MIC, "--use-fake-ui-for-media-stream=deny"] },
+    async drive(page) {
+      await holdMicrophone(page);
+      await page.getByText("The browser is not allowed to use your microphone.").waitFor();
+      await page.mouse.up();
+      await page.mouse.move(0, 0);
+    },
+  },
+  {
+    id: "voice-ungranted",
+    file: "voice-composer-ungranted.png",
+    height: 460,
+    async drive(page) {
+      await holdMicrophone(page);
+      await page.mouse.up();
+      await page.getByText("An admin has not given you voice", { exact: false }).waitFor();
+      await page.mouse.move(0, 0);
+    },
+  },
+  {
+    // Play pressed on the table, which T-W8's check refuses; the first answer's
+    // button is left as a person first sees it.
+    id: "voice-listen",
+    file: "voice-listen-and-spoken.png",
+    height: 900,
+    async drive(page) {
+      await page.getByRole("button", { name: "Read this answer aloud" }).nth(1).click();
+      await page.getByText("This answer can't be read aloud — read it instead.").waitFor();
+      await page.mouse.move(0, 0);
+    },
+  },
 ];
 
 // `pnpm --filter dashboard shots team-access` shoots only the scenes named.
@@ -262,19 +359,24 @@ try {
     // is the exception: T-V4's arm is *three* engines, because "the same
     // compositions run in the browser" is a claim about browsers.
     for (const name of scene.engines ?? ["chromium"]) {
-      if (!launched.has(name)) {
+      // A scene may launch its engine with its own flags — the microphone's
+      // refusal is a launch flag, not a page setting — so a browser is kept per
+      // engine and flag set, and the scenes that share one still share it.
+      const launch = scene.launch ?? LAUNCH[name];
+      const key = `${name} ${JSON.stringify(launch ?? {})}`;
+      if (!launched.has(key)) {
         // An engine that will not start is reported and skipped, not fatal.
         // WebKit needs system libraries (`libsecret`, `libwoff2dec`) that only
         // root can install, and a harness that aborts the whole run over the
         // third browser is one that stops producing the first two.
         try {
-          launched.set(name, await ENGINES[name].launch());
+          launched.set(key, await ENGINES[name].launch(launch));
         } catch (e) {
-          launched.set(name, null);
+          launched.set(key, null);
           skipped.set(name, e.message.split("\n")[0]);
         }
       }
-      const browser = launched.get(name);
+      const browser = launched.get(key);
       if (!browser) continue;
       const page = await browser.newPage({
         viewport: { width: 1280, height: scene.height },

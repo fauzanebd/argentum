@@ -40,6 +40,10 @@ func TestNewTakesTheProvidersDefaults(t *testing.T) {
 	if got := New(Config{Enabled: true, Provider: "Groq", APIKey: "k"}).Model(); got != "whisper-large-v3-turbo" {
 		t.Errorf("groq model = %q", got)
 	}
+	// The deployment default since 2026-09-15: a key and a name, and nothing else.
+	if tr := New(Config{Enabled: true, Provider: "openrouter", APIKey: "k"}); !tr.Enabled() || tr.Model() != "openai/whisper-large-v3-turbo" {
+		t.Errorf("openrouter: enabled %v, model %q", tr.Enabled(), tr.Model())
+	}
 	if got := New(Config{Enabled: true, Provider: "openai", APIKey: "k", Model: "gpt-4o-transcribe"}).Model(); got != "gpt-4o-transcribe" {
 		t.Errorf("an explicit model was not kept: %q", got)
 	}
@@ -109,6 +113,38 @@ func TestTranscribeSendsTheClipTheModelAndTheHint(t *testing.T) {
 		if got.fields[k] != v {
 			t.Errorf("field %s = %q, want %q", k, got.fields[k], v)
 		}
+	}
+}
+
+// OpenRouter's answer: `usage.seconds` when there is no `duration`, and the
+// charge. A `duration` the host did supply still wins, being the host's measure.
+func TestTranscribeReadsWhatOpenRouterMeasuredAndCharged(t *testing.T) {
+	cases := []struct {
+		name, body  string
+		wantSeconds float64
+		wantCost    float64
+	}{
+		{"no duration", `{"text":"ok","usage":{"seconds":2.5,"cost":0.0000075}}`, 2.5, 0.0000075},
+		{"a duration and usage", `{"text":"ok","duration":2.75,"usage":{"seconds":2.5,"cost":0.00001}}`, 2.75, 0.00001},
+		{"usage with no cost", `{"text":"ok","usage":{"seconds":2.5}}`, 2.5, 0},
+		{"no usage", `{"text":"ok","duration":3}`, 3, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var got seen
+			srv := fakeProvider(t, 200, c.body, &got)
+			tr := New(Config{Enabled: true, Provider: "openrouter", BaseURL: srv.URL, APIKey: "k"})
+			out, err := tr.Transcribe(context.Background(), strings.NewReader("x"), "audio/webm", "id")
+			if err != nil {
+				t.Fatalf("Transcribe: %v", err)
+			}
+			if out.Seconds != c.wantSeconds || out.CostUSD != c.wantCost {
+				t.Errorf("seconds %v, cost %v; want %v, %v", out.Seconds, out.CostUSD, c.wantSeconds, c.wantCost)
+			}
+			if got.fields["model"] != "openai/whisper-large-v3-turbo" {
+				t.Errorf("model sent = %q, want the openrouter default", got.fields["model"])
+			}
+		})
 	}
 }
 

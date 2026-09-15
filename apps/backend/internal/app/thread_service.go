@@ -575,11 +575,24 @@ func (s *ThreadService) GetByID(ctx context.Context, id string) (*domain.Convers
 
 // AppendUserMessage records the user's turn and bumps last_message_at.
 func (s *ThreadService) AppendUserMessage(ctx context.Context, threadID, content string) (*domain.Message, error) {
+	return s.AppendUserMessageWithMetadata(ctx, threadID, content, nil)
+}
+
+// AppendUserMessageWithMetadata is AppendUserMessage with what the message was
+// sent with beside its text — today only a spoken question's record (T-W9).
+//
+// A second method rather than a parameter on the first: every other caller — a
+// watcher's briefing, a scheduled prompt, the eval runner — writes a message
+// nobody dictated, and a nil at each of them would say nothing.
+func (s *ThreadService) AppendUserMessageWithMetadata(
+	ctx context.Context, threadID, content string, metadata map[string]any,
+) (*domain.Message, error) {
 	now := time.Now()
 	m := &domain.Message{
 		ThreadID:  threadID,
 		Role:      domain.MessageRoleUser,
 		Content:   content,
+		Metadata:  metadata,
 		CreatedAt: now,
 	}
 	if err := s.messages.Append(ctx, m); err != nil {

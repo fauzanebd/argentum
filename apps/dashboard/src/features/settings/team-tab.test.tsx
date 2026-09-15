@@ -220,7 +220,8 @@ describe("TeamTab — who may reach what", () => {
     mount();
     fireEvent.click(await screen.findByRole("button", { name: "Access for rina@acme.id" }));
     const voice = await screen.findByRole("checkbox", { name: "Voice for rina@acme.id" });
-    expect(screen.getByText(/The microphone is not in the chat yet, so this changes nothing on screen today/)).toBeInTheDocument();
+    // T-W9 rewrote this sentence when the microphone shipped, as T-Z7 said it would.
+    expect(screen.getByText(/a microphone in the chat that puts what they say in the message box/)).toBeInTheDocument();
 
     fireEvent.click(voice);
     await waitFor(() => expect(put).toHaveBeenCalledWith("/users/u-rina/capabilities/voice"));

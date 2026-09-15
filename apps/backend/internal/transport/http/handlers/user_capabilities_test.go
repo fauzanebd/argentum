@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,6 +176,57 @@ func TestHoldingNothingIsAnEmptyList(t *testing.T) {
 	}
 	if got, want := w.Body.String(), `{"capabilities":[]}`; got != want {
 		t.Errorf("body = %s, want %s", got, want)
+	}
+}
+
+// The caller's own read says what this deployment can do with voice (T-W9), and
+// the admin's read of somebody else's does not. A wiring that never called
+// WithVoice reports nothing available, which is the truth about it.
+func TestMyCapabilitiesSayWhetherThisDeploymentHasVoice(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		voice *VoiceAvailability
+		want  VoiceAvailability
+	}{
+		{"a deployment that hears and does not read aloud",
+			&VoiceAvailability{Transcribe: true, MaxClipSeconds: 60},
+			VoiceAvailability{Transcribe: true, MaxClipSeconds: 60}},
+		{"a wiring that said nothing", nil, VoiceAvailability{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			g := r.Group("/users")
+			g.Use(func(c *gin.Context) {
+				c.Set("company_id", "co-1")
+				c.Set("user_id", "u-1")
+			})
+			h := NewUserHandler(nil, nil, nil).WithCapabilities(app.NewCapabilityService(newMemCapabilities(), nil))
+			if tc.voice != nil {
+				h = h.WithVoice(*tc.voice)
+			}
+			h.Register(g)
+
+			w := serve(r, http.MethodGet, "/users/me/capabilities")
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+			}
+			var body MyCapabilitiesResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if body.Voice != tc.want {
+				t.Errorf("voice = %+v, want %+v", body.Voice, tc.want)
+			}
+			if body.Capabilities == nil {
+				t.Errorf("capabilities decoded as null: %s", w.Body.String())
+			}
+
+			other := serve(r, http.MethodGet, "/users/u-1/capabilities")
+			if strings.Contains(other.Body.String(), `"voice"`) {
+				t.Errorf("the per-person read carries voice: %s", other.Body.String())
+			}
+		})
 	}
 }
 

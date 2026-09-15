@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -25,6 +26,21 @@ type ChatHandler struct {
 	// every agent in it (T-Z10). Nil shows every conversation to every member,
 	// as before.
 	conversations ConversationReader
+	// voice records that a message was dictated (T-W9). Nil sends every message
+	// as typed, whatever clip ids it names.
+	voice SpokenQuestionReader
+}
+
+// SpokenQuestionReader is what the send route needs to record that a message
+// was dictated (T-W9). *app.VoiceClips is the production one.
+type SpokenQuestionReader interface {
+	SpokenQuestion(ctx context.Context, companyID, userID, threadID string, ids []string, sent string) (*domain.SpokenQuestion, error)
+}
+
+// WithVoiceClips lets a send name the recordings it was dictated from.
+func (h *ChatHandler) WithVoiceClips(r SpokenQuestionReader) *ChatHandler {
+	h.voice = r
+	return h
 }
 
 // ConversationReader is whether a person may read conversations (T-Z10), for
@@ -397,6 +413,10 @@ type sendReq struct {
 	// send that names an existing thread it must match what the thread already
 	// runs as, or the enqueuer refuses it.
 	AgentID string `json:"agent_id,omitempty"`
+	// VoiceClipIDs are the recordings this message was dictated from (T-W9), as
+	// `POST /threads/:id/voice` returned them. Only read on a send to an existing
+	// conversation, which is the only place a clip can have been made.
+	VoiceClipIDs []string `json:"voice_clip_ids,omitempty"`
 }
 
 func (h *ChatHandler) sendMessage(c *gin.Context) {
@@ -412,6 +432,7 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 		Message:   req.Message,
 		ThreadID:  req.ThreadID,
 		AgentID:   req.AgentID,
+		Spoken:    h.spokenQuestion(c, req),
 	})
 	if err != nil {
 		// 402 rather than 400: the request was well-formed and the caller can
@@ -435,4 +456,24 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 		UserMsgID:     res.UserMsgID,
 		BudgetWarning: res.BudgetWarning,
 	})
+}
+
+// spokenQuestion is the record of the recordings a send names, or nil.
+//
+// A lookup that fails costs the record, never the message: decision 15 — speech
+// is never the reason a turn fails — at the scale of one metadata key. The
+// sender comes from the session, never from the body, so the lookup can only
+// ever find the caller's own clips.
+func (h *ChatHandler) spokenQuestion(c *gin.Context, req sendReq) *domain.SpokenQuestion {
+	if h.voice == nil || req.ThreadID == "" || len(req.VoiceClipIDs) == 0 {
+		return nil
+	}
+	spoken, err := h.voice.SpokenQuestion(c.Request.Context(), companyID(c), userID(c), req.ThreadID, req.VoiceClipIDs, req.Message)
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": companyID(c), "clips": len(req.VoiceClipIDs),
+		}).Warn("chat: could not record that a message was spoken; sending it without the record")
+		return nil
+	}
+	return spoken
 }

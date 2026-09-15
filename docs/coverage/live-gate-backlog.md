@@ -2610,12 +2610,12 @@ curl.
 
 | Owed by | The gate | Blocker |
 | --- | --- | --- |
-| `T-W7` | **A real provider on Indonesian business speech** — research 08 §6's unknowns 1 and 2, and what decides `SPEECH_PROVIDER`. Twenty questions recorded by a pilot admin, sent to `groq` (`whisper-large-v3-turbo`) and `openai` (`whisper-1`), scored on words and separately on numerals. **Prediction: numerals are where both err, and in two forms — "300 juta" and "tiga ratus juta" — so a transcript is not normalised.** That is decision 13's reason for the edit step, not a defect in it. **The instrument is built (2026-09-14):** `testdata/eval/speech.yaml` is the twenty-line reading script, and `make eval-speech CLIPS=/abs/dir` scores every provider with a key — WER over number-normalised text, numbers as values, and the two one-syllable pairs — through the product's own client. It ran end to end against the stand-in (voice.md §2). **What is left is the two inputs.** **OpenRouter (added 2026-09-15)** is reachable by configuration, but it cannot choose which host hears a clip, and the eval has no key for it. Research 08 §2e makes it the second round, if Whisper fails the pairs row. **Before the first real clip, switch on zero data retention in the Groq organisation** | A provider key (Groq's free tier covers it), and twenty recordings of the script by someone at the pilot |
+| `T-W7` | **A real provider on Indonesian business speech** — research 08 §6's unknowns 1 and 2, and what decides `SPEECH_PROVIDER`. Twenty questions recorded by a pilot admin, sent to `groq` (`whisper-large-v3-turbo`) and `openai` (`whisper-1`), scored on words and separately on numerals. **Prediction: numerals are where both err, and in two forms — "300 juta" and "tiga ratus juta" — so a transcript is not normalised.** That is decision 13's reason for the edit step, not a defect in it. **The instrument is built (2026-09-14):** `testdata/eval/speech.yaml` is the twenty-line reading script, and `make eval-speech CLIPS=/abs/dir` scores every provider with a key — WER over number-normalised text, numbers as values, and the two one-syllable pairs — through the product's own client. It ran end to end against the stand-in (voice.md §2). **What is left is the two inputs.** **OpenRouter has been the provider since 2026-09-15** (voice.md §5): `OPENROUTER_API_KEY` runs it, and `openrouter:<model>` scores other models behind the same key. It cannot choose which host hears a clip — the trade the owner accepted | A provider key (Groq's free tier covers it), and twenty recordings of the script by someone at the pilot |
 | `T-W7` | **`verbose_json` on a real endpoint.** **Prediction: both providers return `duration` for their Whisper models, so the Info line says `measured: true` and usage is priced on it.** A `gpt-4o-transcribe` model would log `measured: false`. **On Groq, also compare a clip under 10 seconds against Groq's usage page** (added 2026-09-15): Groq bills at least 10 seconds, and the ledger now does too (voice.md §1g). **Prediction: a 3-second clip on `whisper-large-v3-turbo` is 112 µUSD in `usage_events` with `billed_seconds: 10`, and Groq's usage page shows 10 seconds.** Through OpenRouter, `duration` comes back only "when the routed provider supports" it, and which of turbo's two hosts supports it is unread | A provider key |
 | `T-W7` | **The audio half, with object storage.** A clip lands at `voice/<company_id>/<clip_id>.webm` and logs `kept_audio: true`. The sweep removes the object, then the row, for an expired clip and for a deleted conversation's. Erasure removes the prefix. **Prediction: as the unit tests.** If something differs it will be `RemovePrefix` over a prefix holding one object, or the content type the bucket stores | Object storage. The scratch stack has none, which is also why §7c's `T-Z13` arm is owed |
 | `T-W7` | **The worker's tick.** `voice:sweep` fires at :17 and logs `voice clip sweep complete` with the deleted count; a due clip is gone within the hour. **Prediction: fires, and deletes exactly `Due`'s list** | A worker process on the stack |
 | `T-W7` | **`087` on the production control database, at deploy.** **Prediction: a new table, applied in milliseconds on boot** | A deploy (§3d) |
-| `T-W9` | **The microphone**, including the disabled control for a member without the grant and for a deployment without a provider | `T-W9` is not built |
+| ~~`T-W9`~~ | ~~**The microphone**, including the disabled control for a member without the grant and for a deployment without a provider~~ — **built 2026-09-15 and photographed in real Chromium** (§7m): granted, refused by the browser, not granted. A deployment without a provider draws no microphone, by decision (voice.md §4b). The real page against a real API is §7m's | — |
 
 ## 7k. `T-D16`'s table drop — run 2026-09-14 on a scratch stack, and a finding about every migration
 
@@ -2765,7 +2765,66 @@ still put `err.Error()` in the body ([`../plan/backlog.md`](../plan/backlog.md) 
 | `T-W8` | **A real synthesiser reading Indonesian figures aloud.** Listen to twenty answers. **Prediction: at least one figure in five is read with English separators — "1,2 juta" as "one comma two" or "1.500" as "one point five hundred" — which no check here can see, because both read text** | An OpenAI key, and someone who speaks Indonesian listening |
 | `T-W8` | **The worker's sweep over spoken answers.** **Prediction: an orphaned row and its object gone within the hour; the recordings' count in the same tick's log** | A worker on the stack |
 | `T-W8` | **`089` on the production control database, at deploy.** **Prediction: a new table, applied in milliseconds on boot** | A deploy (§3d) |
-| `T-W9` | **The player**, absent where the route is, and a refusal's reason shown | `T-W9` is not built |
+| ~~`T-W9`~~ | ~~**The player**, absent where the route is, and a refusal's reason shown~~ — **built 2026-09-15** (§7m): absent is unit-proven, and a refused answer's sentence is photographed, with the check's reason kept as the button's title | — |
+
+## 7m. `T-W9`'s microphone and player — run 2026-09-15, and what the real page owes
+
+`T-W9` puts the microphone in both composers and a play button on every answer ([`voice.md`](voice.md) §4).
+**No tool and no prompt change, so no `make eval`. No migration.** Two arms ran.
+
+**The one new statement, on a scratch Postgres** — never production. The T-W8 stack in `/tmp/tw8-gate`
+(Postgres 16 on `127.0.0.1:55453`), started, used, and stopped by its working directory afterwards.
+`internal/adapters/postgres/scratch_voice_clips_message_test.go`, behind the `scratch` tag:
+
+```bash
+SCRATCH_PG_DSN='postgres://argentum:gatepass@127.0.0.1:55453/argentum?sslmode=disable' \
+SCRATCH_MIGRATIONS=/tmp/tw8-gate/migrations \
+go test -tags scratch -run ScratchVoiceClipsForMessage -count=1 -v ./internal/adapters/postgres/
+```
+
+| Arm | Prediction | Result |
+| --- | --- | --- |
+| `ForMessage` asked for 7 ids as Dewi, in her conversation | Her 2 clips; Rina's, another conversation's, another company's, `x` and an unknown uuid absent; `x` fails nothing | **As predicted.** 2 of 7, transcripts read back |
+| The same ids as Rina; under the wrong company | Rina's 1; none | **As predicted** |
+| A malformed company, person or conversation; no ids | No clips and no error each; no query | **As predicted** |
+
+**The composer, in real Chromium** — `pnpm --filter dashboard shots voice-recording voice-transcript
+voice-denied voice-ungranted voice-listen`. The browser records from its own fake microphone, so
+`getUserMedia`, `MediaRecorder` and the level meter are real; the upload lands on the harness's stub, which
+answers a transcript. Predictions written before the run:
+
+| Scene | Prediction | Result |
+| --- | --- | --- |
+| Held | "Listening", a level meter, the button filled | **Not as predicted, first run: "The microphone could not start."** Headless Chromium granted `microphone` by its page still refused `getUserMedia` with `NotSupportedError`; only its fake prompt flag lets it record. Two fixes: the shooter launches with `--use-fake-ui-for-media-stream`, and **the product** now reads `NotSupportedError` as an unsupported browser, and names the exception of any failure it has no fix for (voice.md §4d). Second run: as predicted |
+| Let go | The transcript in the box, send enabled, nothing sent | **As predicted**, after one reshoot: the first frame caught the button mid-fade from its recording colour |
+| Refused by the browser | The reason and the fix | **As predicted**, from Chromium's own `NotAllowedError` (`--use-fake-ui-for-media-stream=deny`) |
+| Not granted | The microphone greyed; pressing it gives the sentence; nothing recorded | **As predicted** |
+| Answers | A play button beside Copy; pressing it on a table gives "can't be read aloud"; "Spoken" and "Spoken, then edited" under the questions | **As predicted** |
+
+The level meter photographed at its floor. The fake microphone plays a periodic beep, and the frame fell
+between beeps; the meter's movement is not in any picture.
+
+**Still owed:**
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `T-W9` | **The real page against a real API**, on a scratch stack with a stand-in provider: hold on a conversation, edit the transcript, send; the message row's `metadata.voice` is `{"clip_ids": [one], "verbatim": false}`. Then the same from the new-chat screen: a conversation is made on release, the page moves to it with the transcript in the box, and the send records the clip. **Prediction: the conversation half as the unit tests; if anything differs it is the new-chat hand-off, which rests on `/chat` → `/chat/$threadId` remounting the page so the prefill is taken — true of every existing prefill, unproven for this one** | A browser run of the dashboard itself, not the harness, against the scratch API. Everything it needs is on this machine |
+| `T-W9` | **Safari**, which records `audio/mp4`. **Prediction: accepted by `speech.Accept` (an `ftyp` box) and transcribed; the one risk is Safari's MP4 carrying its `ftyp` past the first bytes the check reads** | A Mac or an iPhone |
+| `T-W9` | **A phone's press and hold.** **Prediction: works; `touch-none` and the suppressed context menu are what stop the long-press menu, and a phone that still shows it cancels the recording rather than uploading half of it** | A real phone (§3) |
+| `T-W9` | **Who talks to it** — voice.md §4h's query, on production, a month after voice is switched on for the pilot. **Prediction: none; it is not switched on** | Voice switched on (keys, the pin to `1.13.1`+, and a grant) |
+
+## 7n. OpenRouter as the speech provider — what a real key owes (added 2026-09-15)
+
+Voice runs on OpenRouter by default since 2026-09-15 ([`voice.md`](voice.md) §5). Nothing here has sent
+OpenRouter a request: production holds the key, and this machine does not. Every arm needs voice switched on
+somewhere with that key.
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| voice.md §5 | **One real transcription through OpenRouter.** The API's Info line and the usage row. **Prediction: `charge_reported: true` and a `cost_source: provider` row of a few µUSD; `duration` absent when DeepInfra served it, so `seconds` is `usage.seconds` and `measured: true` either way** | An OpenRouter key on a stack, and a grant |
+| voice.md §5 | **The Gemini voice reading Indonesian figures.** Twenty answers, listened to. **Prediction: it reads Indonesian, and at least one figure in five is said with English separators, `T-W8`'s prediction for `tts-1` unchanged by the voice** | Someone who speaks Indonesian listening |
+| voice.md §5 | **The ceiling against the charge.** Twenty answers read aloud; the sum of their `speech_synthesis` rows against OpenRouter's activity page for the same minutes. **Prediction: the ledger is higher, and within three times — a voice reading faster than ten characters a second** | The same key, and access to its OpenRouter account |
+| voice.md §2 | **`make eval-speech` through OpenRouter** on the pilot's twenty recordings, the default beside `openrouter:openai/gpt-4o-transcribe`. **Prediction: §7j's for Whisper: numerals are where it errs** | The recordings |
 
 ## 7. Needs the paid eval set (added 2026-09-11)
 

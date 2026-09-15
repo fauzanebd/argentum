@@ -37,6 +37,12 @@ func TestNewSynthesizerTakesTheProvidersDefaults(t *testing.T) {
 	if s.Model() != "tts-1" || s.Voice() != "alloy" {
 		t.Errorf("openai defaults = %q, %q", s.Model(), s.Voice())
 	}
+	// The deployment default since 2026-09-15: OpenRouter's one voice whose maker
+	// documents Indonesian.
+	s = NewSynthesizer(SynthConfig{Enabled: true, Provider: "openrouter", APIKey: "k"})
+	if !s.Enabled() || s.Model() != "google/gemini-3.1-flash-tts-preview" || s.Voice() != "Kore" {
+		t.Errorf("openrouter defaults: enabled %v, %q, %q", s.Enabled(), s.Model(), s.Voice())
+	}
 	s = NewSynthesizer(SynthConfig{Enabled: true, BaseURL: "http://127.0.0.1:1", APIKey: "k", Model: "m", Voice: "v"})
 	if !s.Enabled() || s.Model() != "m" || s.Voice() != "v" {
 		t.Errorf("a compatible endpoint with a model and a voice: enabled %v, %q, %q", s.Enabled(), s.Model(), s.Voice())

@@ -143,6 +143,7 @@ packages:
       domain.MetricUnit: "MetricUnit"
       domain.FeedbackWithContext: "FeedbackWithContext"
       domain.AdHocQuestion: "AdHocQuestion"
+      domain.CapabilityGrant: "CapabilityGrant"
     frontmatter: |
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
@@ -155,6 +156,7 @@ packages:
         APIKey,
         APIKeyRequestStats,
         APIRequestError,
+        CapabilityGrant,
         Channel,
         CompanyProfile,
         MCPServer,

@@ -457,6 +457,10 @@ type Config struct {
 	//
 	// SpeechMaxClipSeconds and SpeechRetentionDays are normalised by
 	// app.NewVoiceService rather than refused here, the constructor convention.
+	//
+	// SpeechProvider defaults to "openrouter" since 2026-09-15 (research 08 §2e):
+	// the key this deployment already holds for its model reaches both halves of
+	// voice, so SPEECH_ENABLED and SPEECH_API_KEY are all a deployment sets.
 	SpeechEnabled        bool
 	SpeechProvider       string
 	SpeechAPIKey         string
@@ -471,10 +475,11 @@ type Config struct {
 	// what it already recorded. Empty switches the sweep off.
 	SpeechSweepCron string
 	// SpeechTTS* is the voice out (T-W8): an answer read aloud. Its own provider
-	// rather than SpeechProvider's, because the default transcriber's provider
-	// (Groq) has no voice that speaks Indonesian — speech.SynthConfig says what
-	// was checked. Gated by SpeechEnabled, like the voice in. The key is read
-	// through EffectiveSpeechTTSAPIKey.
+	// rather than SpeechProvider's, because a transcriber on Groq has no voice
+	// that speaks Indonesian beside it — speech.SynthConfig says what was checked.
+	// Both default to "openrouter", so one key serves both. Gated by
+	// SpeechEnabled, like the voice in. The key is read through
+	// EffectiveSpeechTTSAPIKey.
 	SpeechTTSProvider string
 	SpeechTTSAPIKey   string
 	SpeechTTSBaseURL  string
@@ -834,7 +839,7 @@ func Load() (*Config, error) {
 		EmailTimeout: getEnvAsInt("EMAIL_TIMEOUT_SECS", 15),
 
 		SpeechEnabled:        getEnv("SPEECH_ENABLED", "false") == "true",
-		SpeechProvider:       getEnv("SPEECH_PROVIDER", "groq"),
+		SpeechProvider:       getEnv("SPEECH_PROVIDER", "openrouter"),
 		SpeechAPIKey:         getEnv("SPEECH_API_KEY", ""),
 		SpeechBaseURL:        getEnv("SPEECH_BASE_URL", ""),
 		SpeechSTTModel:       getEnv("SPEECH_STT_MODEL", ""),
@@ -842,7 +847,7 @@ func Load() (*Config, error) {
 		SpeechMaxClipSeconds: getEnvAsInt("SPEECH_MAX_CLIP_SECONDS", 60),
 		SpeechRetentionDays:  getEnvAsInt("SPEECH_RETENTION_DAYS", 7),
 		SpeechSweepCron:      getEnv("SPEECH_SWEEP_CRON", "17 * * * *"),
-		SpeechTTSProvider:    getEnv("SPEECH_TTS_PROVIDER", "openai"),
+		SpeechTTSProvider:    getEnv("SPEECH_TTS_PROVIDER", "openrouter"),
 		SpeechTTSAPIKey:      getEnv("SPEECH_TTS_API_KEY", ""),
 		SpeechTTSBaseURL:     getEnv("SPEECH_TTS_BASE_URL", ""),
 		SpeechTTSModel:       getEnv("SPEECH_TTS_MODEL", ""),

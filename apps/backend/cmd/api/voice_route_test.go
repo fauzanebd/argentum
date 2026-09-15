@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -146,5 +147,70 @@ func TestVoiceRouteIsAbsentWithoutAProvider(t *testing.T) {
 		if w.Code != http.StatusNotFound {
 			t.Errorf("%s, speech off: status %d, want 404: %s", name, w.Code, w.Body.String())
 		}
+	}
+}
+
+// T-W9: what `me/capabilities` tells the dashboard about voice is what the router
+// did. With a provider the voice route answers and the read says transcribe, with
+// its limit; without one the route is the router's 404 and the read says no. A
+// microphone drawn from this read cannot offer a route that is not there, or
+// hide one that is.
+func TestMyCapabilitiesSayWhatTheVoiceRoutesAre(t *testing.T) {
+	signer, err := auth.NewTokenSigner("0123456789abcdef0123456789abcdef", 15*time.Minute, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("NewTokenSigner: %v", err)
+	}
+	token, err := signer.IssueAccessToken("user-1", "co-1", "member")
+	if err != nil {
+		t.Fatalf("IssueAccessToken: %v", err)
+	}
+	for _, tc := range []struct {
+		name        string
+		transcriber speech.Transcriber
+		want        bool
+	}{
+		{"a provider", answeringTranscriber{}, true},
+		{"no provider", speech.New(speech.Config{Enabled: false}), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := routerWithDeps(t, func(d *apiDeps) {
+				d.capabilitySvc = app.NewCapabilityService(grantsVoice{}, nil)
+				d.voiceSvc = app.NewVoiceService(tc.transcriber, nil, nil, nil, 45, 0)
+			})
+			var read atomic.Int64
+			route := httptest.NewRecorder()
+			r.ServeHTTP(route, voiceRequest(t, "member", &read))
+			if registered := route.Code != http.StatusNotFound; registered != tc.want {
+				t.Fatalf("voice route registered = %v (status %d), want %v", registered, route.Code, tc.want)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/users/me/capabilities", nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("me/capabilities: status %d: %s", w.Code, w.Body.String())
+			}
+			var body struct {
+				Voice struct {
+					Transcribe     bool `json:"transcribe"`
+					ReadAloud      bool `json:"read_aloud"`
+					MaxClipSeconds int  `json:"max_clip_seconds"`
+				} `json:"voice"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if body.Voice.Transcribe != tc.want {
+				t.Errorf("transcribe = %v, want %v: %s", body.Voice.Transcribe, tc.want, w.Body.String())
+			}
+			wantMax := 0
+			if tc.want {
+				wantMax = 45
+			}
+			if body.Voice.MaxClipSeconds != wantMax {
+				t.Errorf("max_clip_seconds = %d, want %d", body.Voice.MaxClipSeconds, wantMax)
+			}
+		})
 	}
 }

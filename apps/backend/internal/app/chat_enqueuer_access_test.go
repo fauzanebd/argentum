@@ -78,10 +78,14 @@ func (r rosterList) ListByCompany(_ context.Context, companyID string) ([]*domai
 type appendCounter struct {
 	stubMessages
 	appended int
+	// last is the most recent message appended, for the one test that reads
+	// what was written rather than whether anything was (T-W9).
+	last *domain.Message
 }
 
 func (m *appendCounter) Append(ctx context.Context, msg *domain.Message) error {
 	m.appended++
+	m.last = msg
 	return m.stubMessages.Append(ctx, msg)
 }
 

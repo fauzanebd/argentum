@@ -10,8 +10,9 @@ import (
 //
 // It is not a message and never becomes one by itself. The transcript goes back
 // to the person who spoke, who sends it, edits it or discards it (roadmap 11,
-// decision 13); what they send is an ordinary message with no link back here
-// (migration 087 says why the link is not built yet).
+// decision 13). What they send is an ordinary message, which since T-W9 names the
+// clips it was dictated from in its metadata — SpokenQuestion says why the link
+// is on the message and not here.
 type VoiceClip struct {
 	ID        string `json:"id"`
 	CompanyID string `json:"company_id"`
@@ -33,6 +34,28 @@ type VoiceClip struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// SpokenQuestion is what a user message records about the recordings it was
+// dictated from (T-W9), under its metadata's MessageMetadataVoice key.
+//
+// **On the message, not as a column on voice_clips**, because the fact has to
+// outlive the clip. A clip is deleted after SPEECH_RETENTION_DAYS; "this question
+// was spoken, and sent as it was heard" is still true of the message a year later.
+// It is also the read research 08 §6's unknown 6 needs — whether anybody talks to
+// it — which a count of clips cannot answer: a clip says somebody pressed the
+// button, and only a message says they sent what they said.
+type SpokenQuestion struct {
+	// ClipIDs are the recordings, in the order they were dictated. A clip may be
+	// gone already; the id stays as the record that there was one.
+	ClipIDs []string `json:"clip_ids"`
+	// Verbatim says the message is exactly what was heard, whitespace aside.
+	// False means the person changed it before sending — corrected a figure,
+	// added to it, typed around it — which is decision 13's edit step in use.
+	Verbatim bool `json:"verbatim"`
+}
+
+// MessageMetadataVoice is the metadata key a SpokenQuestion is stored under.
+const MessageMetadataVoice = "voice"
+
 // VoiceClipKeyPrefix is where every clip a company has is stored. Erasure
 // removes the prefix rather than walking rows, so a clip whose row was never
 // written — an insert that failed after its upload succeeded — goes with the
@@ -53,4 +76,9 @@ type VoiceClipRepository interface {
 	// DeleteForCompany removes every clip row a company has, and returns how
 	// many.
 	DeleteForCompany(ctx context.Context, companyID string) (int, error)
+	// ForMessage lists the clips among ids that userID recorded in threadID of
+	// companyID: the only clips a message they send there may name. ID and
+	// Transcript are filled. An id that is another person's, another
+	// conversation's, malformed or already swept is absent, not an error.
+	ForMessage(ctx context.Context, companyID, userID, threadID string, ids []string) ([]*VoiceClip, error)
 }

@@ -125,19 +125,21 @@ export const KIND_COPY: Record<
  * Granting ahead is still the point of offering them (`domain.AllCapabilities`'
  * comment).
  *
- * Voice's route exists and its microphone does not — that is T-W9 — so its
- * `today` says what a grant changes on screen, which is nothing yet.
+ * Voice gates two routes and, since T-W9, two controls: the microphone and the
+ * play button. Its `today` says what a grant changes on screen, and that both
+ * depend on the workspace having voice set up — a grant does not make a missing
+ * provider work, and an admin toggling it on a deployment without one should not
+ * be told otherwise.
  *
  * `Record<Capability, …>` so a capability added to the Go vocabulary fails
- * `tsc` here until somebody writes what it does. **T-W9 rewrites `voice`'s
- * `today` when the microphone ships**, and whichever ticket first gates
- * approving or exporting rewrites that one's.
+ * `tsc` here until somebody writes what it does. Whichever ticket first gates
+ * approving or exporting rewrites that one's `today`.
  */
 export const CAPABILITY_COPY: Record<Capability, { label: string; what: string; today: string }> = {
   voice: {
     label: "Voice",
     what: "Speak a question and hear the answer.",
-    today: "The microphone is not in the chat yet, so this changes nothing on screen today — it decides who can speak a question the day it arrives.",
+    today: "Where this workspace has voice set up: a microphone in the chat that puts what they say in the message box to check before sending, and a button that reads an answer aloud. Without the grant, the microphone tells them to ask an admin.",
   },
   approve_actions: {
     label: "Approve actions",

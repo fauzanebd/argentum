@@ -33,6 +33,12 @@ type Transcript struct {
 	// the provider did not say. It is the figure a clip is billed on, because it
 	// is the only one nobody on the client side could have written.
 	Seconds float64
+	// CostUSD is what the provider says this transcription cost, when it says:
+	// OpenRouter answers `usage.cost`, Groq and OpenAI answer nothing. When it is
+	// present it is what is billed, because it is the charge and not a price
+	// table's guess at one — and which host OpenRouter routed a clip to is not
+	// something this process can know.
+	CostUSD float64
 }
 
 // Transcriber is the one thing a caller needs.
@@ -52,11 +58,11 @@ type Transcriber interface {
 // Config is what a deployment sets.
 type Config struct {
 	Enabled bool
-	// Provider names the endpoint's defaults: "groq" or "openai". Both speak the
-	// same `/audio/transcriptions` request, which is the point — the provider is
-	// meant to be chosen on Indonesian accuracy, and that measurement has not been
-	// taken (research 08 §6, unknowns 1 and 2). Changing the answer is a
-	// configuration change, not a new implementation.
+	// Provider names the endpoint's defaults: "openrouter", "groq" or "openai".
+	// All three speak the same `/audio/transcriptions` request, which is the
+	// point — choosing between them is a configuration change, not a new
+	// implementation. Indonesian accuracy (research 08 §6, unknowns 1 and 2) is
+	// still unmeasured on any of them.
 	Provider string
 	APIKey   string
 	// BaseURL overrides the provider's, for a compatible endpoint that is
@@ -90,13 +96,19 @@ type provider struct {
 	model   string
 }
 
-// providers are the endpoints with a default. Groq first because research 08
-// §2a prices it lowest and it is the only one with a free tier — which matters
-// only for the measurement, since at ~$0.04 an hour the price of any of them is
-// three ten-thousandths of the turn a transcript starts.
+// providers are the endpoints with a default.
+//
+// OpenRouter is the deployment default since 2026-09-15, the owner's call
+// (research 08 §2e): the product already holds an OpenRouter key for its model,
+// and one key is one account, one bill and one place to revoke it. What that
+// costs is written down there — OpenRouter cannot be told which host hears a
+// clip, and one of its speech endpoints is on its zero-retention list. Its
+// default model is the same Whisper that Groq serves directly, so the choice
+// changes who is paid, not what is heard.
 var providers = map[string]provider{
-	"groq":   {baseURL: "https://api.groq.com/openai/v1", model: "whisper-large-v3-turbo"},
-	"openai": {baseURL: "https://api.openai.com/v1", model: "whisper-1"},
+	"openrouter": {baseURL: "https://openrouter.ai/api/v1", model: "openai/whisper-large-v3-turbo"},
+	"groq":       {baseURL: "https://api.groq.com/openai/v1", model: "whisper-large-v3-turbo"},
+	"openai":     {baseURL: "https://api.openai.com/v1", model: "whisper-1"},
 }
 
 // New builds a Transcriber from config. It never returns an error: a deployment

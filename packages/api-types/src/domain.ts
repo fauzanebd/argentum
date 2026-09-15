@@ -3514,8 +3514,9 @@ export interface UserInvite {
  * ExpiresAt — the audio it was heard from.
  * It is not a message and never becomes one by itself. The transcript goes back
  * to the person who spoke, who sends it, edits it or discards it (roadmap 11,
- * decision 13); what they send is an ordinary message with no link back here
- * (migration 087 says why the link is not built yet).
+ * decision 13). What they send is an ordinary message, which since T-W9 names the
+ * clips it was dictated from in its metadata — SpokenQuestion says why the link
+ * is on the message and not here.
  */
 export interface VoiceClip {
   id: string;
@@ -3541,6 +3542,33 @@ export interface VoiceClip {
   created_at: string;
   expires_at: string;
 }
+/**
+ * SpokenQuestion is what a user message records about the recordings it was
+ * dictated from (T-W9), under its metadata's MessageMetadataVoice key.
+ * **On the message, not as a column on voice_clips**, because the fact has to
+ * outlive the clip. A clip is deleted after SPEECH_RETENTION_DAYS; "this question
+ * was spoken, and sent as it was heard" is still true of the message a year later.
+ * It is also the read research 08 §6's unknown 6 needs — whether anybody talks to
+ * it — which a count of clips cannot answer: a clip says somebody pressed the
+ * button, and only a message says they sent what they said.
+ */
+export interface SpokenQuestion {
+  /**
+   * ClipIDs are the recordings, in the order they were dictated. A clip may be
+   * gone already; the id stays as the record that there was one.
+   */
+  clip_ids: string[];
+  /**
+   * Verbatim says the message is exactly what was heard, whitespace aside.
+   * False means the person changed it before sending — corrected a figure,
+   * added to it, typed around it — which is decision 13's edit step in use.
+   */
+  verbatim: boolean;
+}
+/**
+ * MessageMetadataVoice is the metadata key a SpokenQuestion is stored under.
+ */
+export const MessageMetadataVoice = "voice";
 
 //////////
 // source: watcher.go

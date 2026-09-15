@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -98,6 +100,47 @@ func (r *VoiceClipRepo) Delete(ctx context.Context, companyID, id string) error 
 		return fmt.Errorf("delete voice clip: %w", err)
 	}
 	return nil
+}
+
+// ForMessage lists the clips a message may name (T-W9).
+//
+// Every predicate the ids have to pass is in the statement — company, person and
+// conversation — because the ids arrive from a browser. The ids are compared as
+// text so one malformed id drops out rather than failing the whole cast; a
+// malformed company, person or conversation is no clips at all.
+func (r *VoiceClipRepo) ForMessage(ctx context.Context, companyID, userID, threadID string, ids []string) ([]*domain.VoiceClip, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	const q = `
+		SELECT id::text, transcript
+		  FROM voice_clips
+		 WHERE company_id = $1 AND user_id = $2 AND thread_id = $3
+		   AND id::text = ANY($4::text[])
+	`
+	rows, err := r.db.QueryContext(ctx, q, companyID, userID, threadID, pq.Array(ids))
+	if err != nil {
+		if malformedID(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list voice clips for a message: %w", err)
+	}
+	defer rows.Close()
+	var out []*domain.VoiceClip
+	for rows.Next() {
+		c := &domain.VoiceClip{CompanyID: companyID, UserID: userID, ThreadID: threadID}
+		if err := rows.Scan(&c.ID, &c.Transcript); err != nil {
+			return nil, fmt.Errorf("scan voice clip for a message: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		if malformedID(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list voice clips for a message: %w", err)
+	}
+	return out, nil
 }
 
 // DeleteForCompany removes every clip row a company has.

@@ -69,6 +69,10 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewChatHandler(d.chatEnq, d.threadRepo, d.msgRepo).
 		WithParticipants(d.threadParticipantSvc).
 		WithConversationAccess(d.conversationAccess).
+		// A message dictated through the microphone says so (T-W9). Wired whether
+		// or not this deployment transcribes today: the clips a message names were
+		// made while it did.
+		WithVoiceClips(d.voiceClips).
 		Register(authed)
 	// Voice (T-W7). Registered only where a provider is usable, so on every
 	// other deployment the route is the router's 404 rather than a 403 that
@@ -102,8 +106,15 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewSuggestionsHandler(d.suggestionSvc).Register(authed)
 	handlers.NewCookbookHandler(d.cookbookSvc).Register(authed)
 	handlers.NewConfigHandler(cfg).Register(authed)
+	// What the dashboard is told about voice (T-W9), off the same two Enabled
+	// calls that registered — or did not register — the voice routes above.
+	voice := handlers.VoiceAvailability{Transcribe: d.voiceSvc.Enabled(), ReadAloud: d.spokenSvc.Enabled()}
+	if voice.Transcribe {
+		voice.MaxClipSeconds = d.voiceSvc.MaxClipSeconds()
+	}
 	handlers.NewUserHandler(d.userRepo, d.companyRepo, d.teamSvc).
 		WithCapabilities(d.capabilitySvc).
+		WithVoice(voice).
 		Register(authed.Group("/users"))
 	// Resource access (T-Z2): restricting a resource and granting it. Agents are
 	// enforced at the enqueuer (T-Z4) and dashboards at their routes and list

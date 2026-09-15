@@ -22,7 +22,7 @@ func TestRecordTranscriptionPricesPerSecondPerModel(t *testing.T) {
 	for _, c := range cases {
 		repo := &fakeUsageRepo{}
 		NewUsageService(repo, &stubCredits{}, DefaultPricing).
-			RecordTranscription(context.Background(), "co-1", "th-1", c.model, 15)
+			RecordTranscription(context.Background(), "co-1", "th-1", c.model, 15, 0)
 		if len(repo.events) != 1 {
 			t.Fatalf("%s: %d events, want 1", c.model, len(repo.events))
 		}
@@ -45,10 +45,32 @@ func TestRecordTranscriptionPricesPerSecondPerModel(t *testing.T) {
 func TestRecordTranscriptionNeverRecordsAFreeClip(t *testing.T) {
 	repo := &fakeUsageRepo{}
 	svc := NewUsageService(repo, &stubCredits{}, DefaultPricing)
-	svc.RecordTranscription(context.Background(), "co-1", "th-1", "whisper-large-v3-turbo", 1)
-	svc.RecordTranscription(context.Background(), "co-1", "th-1", "whisper-large-v3-turbo", 0)
+	svc.RecordTranscription(context.Background(), "co-1", "th-1", "whisper-large-v3-turbo", 1, 0)
+	svc.RecordTranscription(context.Background(), "co-1", "th-1", "whisper-large-v3-turbo", 0, 0)
 	if len(repo.events) != 1 || repo.events[0].CostMicroUSD != 112 {
 		t.Fatalf("events = %d, first cost = %v; want one event at 112 µUSD", len(repo.events), repo.events)
+	}
+}
+
+// OpenRouter says what it charged (research 08 §2e), and that charge is the row:
+// not the rate, and not a minimum. By hand: $0.0000075 is 7.5 µUSD, rounded up
+// to 8. The same clip with no charge reported falls to the OpenRouter row, the
+// dearer of turbo's two hosts: 2.75 s × $0.04/h = 30.6 µUSD, up to 31, with no
+// Groq minimum, because which host heard it is unknown.
+func TestRecordTranscriptionRecordsWhatTheProviderCharged(t *testing.T) {
+	repo := &fakeUsageRepo{}
+	svc := NewUsageService(repo, &stubCredits{}, DefaultPricing)
+	svc.RecordTranscription(context.Background(), "co-1", "th-1", "openai/whisper-large-v3-turbo", 2.75, 0.0000075)
+	svc.RecordTranscription(context.Background(), "co-1", "th-1", "openai/whisper-large-v3-turbo", 2.75, 0)
+	if len(repo.events) != 2 {
+		t.Fatalf("%d events, want 2", len(repo.events))
+	}
+	charged, priced := repo.events[0], repo.events[1]
+	if charged.CostMicroUSD != 8 || charged.Metadata["cost_source"] != "provider" || charged.Metadata["audio_seconds"] != 2.75 {
+		t.Errorf("reported charge recorded as %d µUSD, metadata %v; want 8 from the provider", charged.CostMicroUSD, charged.Metadata)
+	}
+	if priced.CostMicroUSD != 31 || priced.Metadata["cost_source"] != nil || priced.Metadata["billed_seconds"] != nil {
+		t.Errorf("no charge reported: %d µUSD, metadata %v; want 31 at the row's rate, no minimum", priced.CostMicroUSD, priced.Metadata)
 	}
 }
 
@@ -74,7 +96,7 @@ func TestRecordTranscriptionBillsTheProvidersMinimumLength(t *testing.T) {
 	for _, c := range cases {
 		repo := &fakeUsageRepo{}
 		NewUsageService(repo, &stubCredits{}, DefaultPricing).
-			RecordTranscription(context.Background(), "co-1", "th-1", c.model, c.seconds)
+			RecordTranscription(context.Background(), "co-1", "th-1", c.model, c.seconds, 0)
 		if len(repo.events) != 1 {
 			t.Fatalf("%s %.2fs: %d events, want 1", c.model, c.seconds, len(repo.events))
 		}

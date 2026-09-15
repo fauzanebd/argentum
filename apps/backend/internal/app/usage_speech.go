@@ -20,6 +20,11 @@ var speechPricing = map[string]float64{
 	"whisper-large-v3":       0.111,
 	// OpenAI — $0.006 a minute.
 	"whisper-1": 0.36,
+	// OpenRouter — used only when its answer carries no `usage.cost`, which is
+	// billed instead. Its turbo has two hosts, DeepInfra (≈$0.012 an hour) and
+	// Groq ($0.04), and which one heard a clip is OpenRouter's to decide, so the
+	// row is the dearer of the two (research 08 §2e).
+	"openai/whisper-large-v3-turbo": 0.04,
 }
 
 // speechMinimumSeconds is the shortest length a provider bills a clip as, per
@@ -44,18 +49,35 @@ func speechCostPerSecond(model string) float64 {
 	return speechFallbackPerHour / 3600
 }
 
-// RecordTranscription records seconds of audio sent to a speech provider.
+// RecordTranscription records seconds of audio sent to a speech provider, and
+// what the provider charged for them when it said so (providerCostUSD > 0).
 //
-// Billed on the longer of the clip and the model's minimum. The length heard
-// stays in audio_seconds; billed_seconds is added only when the minimum raised
-// it, so a clip that was billed as measured reads exactly as before.
+// **A charge the provider reports is recorded as it is**, ahead of the rate and
+// the minimum below: it is the invoice line, not this table's reconstruction of
+// it. OpenRouter reports one (speech.Transcript.CostUSD); Groq and OpenAI do
+// not, and are priced here. `cost_source` says which a row is.
+//
+// Otherwise billed on the longer of the clip and the model's minimum. The length
+// heard stays in audio_seconds; billed_seconds is added only when the minimum
+// raised it, so a clip that was billed as measured reads exactly as before.
 //
 // Rounded up to a whole micro-dollar. A fifteen-second clip on the cheapest
 // model is 167 µUSD, and rounding down would make a short clip on a model with
 // no minimum free — a metered call at zero cost is invisible in every summary
-// sorted by spend. A clip that reported no length records nothing,
+// sorted by spend. A clip that reported no length and no charge records nothing,
 // RecordRenderSeconds' rule.
-func (s *UsageService) RecordTranscription(ctx context.Context, companyID, threadID, model string, seconds float64) {
+func (s *UsageService) RecordTranscription(ctx context.Context, companyID, threadID, model string, seconds, providerCostUSD float64) {
+	if providerCostUSD > 0 {
+		s.append(ctx, &domain.UsageEvent{
+			CompanyID:    companyID,
+			ThreadID:     threadID,
+			EventType:    domain.UsageEventSpeechTranscription,
+			Model:        model,
+			CostMicroUSD: int64(math.Ceil(providerCostUSD * 1_000_000)),
+			Metadata:     map[string]interface{}{"audio_seconds": seconds, "cost_source": "provider"},
+		})
+		return
+	}
 	if seconds <= 0 {
 		return
 	}
@@ -87,10 +109,22 @@ var synthesisPricing = map[string]float64{
 	"tts-1":           15,
 	"tts-1-hd":        30,
 	"gpt-4o-mini-tts": 15,
+	// OpenRouter's default voice (research 08 §2e) — a ceiling, not a price.
+	// Google bills it $20 per million audio tokens at 25 tokens a second of
+	// speech, which is $500 per million seconds, plus $1 per million text tokens,
+	// under a dollar per million characters. Per character, that depends on how
+	// fast the voice reads, and nobody here has measured it. At ten characters a
+	// second — a slow reading pace — it is $50 per million; a faster voice costs
+	// less. So the row over-records rather than under, until live-gate §7n sets it
+	// against OpenRouter's own activity page.
+	"google/gemini-3.1-flash-tts-preview": 50,
 }
 
-// synthesisFallbackPerMillion is an unpriced model's rate: the highest above,
-// for speechFallbackPerHour's reason.
+// synthesisFallbackPerMillion is an unpriced model's rate, for
+// speechFallbackPerHour's reason: tts-1-hd's, the dearest price per character
+// anybody has published above. The Gemini row is higher, but it is a ceiling of
+// this file's own making rather than a price, and an unknown voice is not
+// assumed to cost what a guess about one voice's reading speed does.
 const synthesisFallbackPerMillion = 30.0
 
 // RecordSynthesis records characters of text sent to a speech synthesiser.

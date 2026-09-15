@@ -10,6 +10,7 @@ import type {
   APIKey,
   APIKeyRequestStats,
   APIRequestError,
+  CapabilityGrant,
   Channel,
   CompanyProfile,
   MCPServer,
@@ -590,4 +591,39 @@ export interface VoiceTranscriptionResponse {
    */
   clip_id?: string;
   expires_at?: string;
+}
+/**
+ * MyCapabilitiesResponse is the body of `GET /api/users/me/capabilities`: what
+ * the caller holds, and what this deployment can do with it.
+ * Voice rides along because the microphone's state needs both, and they are
+ * different facts (T-W9). A grant is a person's; a configured provider is the
+ * deployment's, and no grant makes a missing one work. Before this the dashboard
+ * could only learn voice was off by sending a recording to a route that is not
+ * registered. The admin's read of somebody else's grants does not carry it:
+ * nothing on that screen is drawn from it.
+ */
+export interface MyCapabilitiesResponse {
+  capabilities: CapabilityGrant[];
+  voice: VoiceAvailability;
+}
+/**
+ * VoiceAvailability is whether this deployment hears a question and reads an
+ * answer aloud (T-W9) — exactly whether each voice route was registered.
+ */
+export interface VoiceAvailability {
+  /**
+   * Transcribe is `POST /api/threads/:id/voice`: a provider is usable.
+   */
+  transcribe: boolean;
+  /**
+   * ReadAloud is `GET /api/messages/:id/audio`: a synthesiser, the light model
+   * and object storage all are.
+   */
+  read_aloud: boolean;
+  /**
+   * MaxClipSeconds is the longest recording the voice route admits, so the
+   * microphone stops itself there instead of recording into a 413. Zero when
+   * Transcribe is false.
+   */
+  max_clip_seconds: number /* int */;
 }

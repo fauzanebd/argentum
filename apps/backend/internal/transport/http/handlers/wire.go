@@ -524,3 +524,31 @@ type VoiceTranscriptionResponse struct {
 	ClipID    string     `json:"clip_id,omitempty"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
+
+// MyCapabilitiesResponse is the body of `GET /api/users/me/capabilities`: what
+// the caller holds, and what this deployment can do with it.
+//
+// Voice rides along because the microphone's state needs both, and they are
+// different facts (T-W9). A grant is a person's; a configured provider is the
+// deployment's, and no grant makes a missing one work. Before this the dashboard
+// could only learn voice was off by sending a recording to a route that is not
+// registered. The admin's read of somebody else's grants does not carry it:
+// nothing on that screen is drawn from it.
+type MyCapabilitiesResponse struct {
+	Capabilities []domain.CapabilityGrant `json:"capabilities"`
+	Voice        VoiceAvailability        `json:"voice"`
+}
+
+// VoiceAvailability is whether this deployment hears a question and reads an
+// answer aloud (T-W9) — exactly whether each voice route was registered.
+type VoiceAvailability struct {
+	// Transcribe is `POST /api/threads/:id/voice`: a provider is usable.
+	Transcribe bool `json:"transcribe"`
+	// ReadAloud is `GET /api/messages/:id/audio`: a synthesiser, the light model
+	// and object storage all are.
+	ReadAloud bool `json:"read_aloud"`
+	// MaxClipSeconds is the longest recording the voice route admits, so the
+	// microphone stops itself there instead of recording into a 413. Zero when
+	// Transcribe is false.
+	MaxClipSeconds int `json:"max_clip_seconds"`
+}

@@ -42,12 +42,12 @@ type Synthesizer interface {
 
 // SynthConfig is what a deployment sets.
 //
-// **Its own provider, not Config's.** T-W7's default is Groq, and Groq cannot
-// read Indonesian aloud: its speech models (Orpheus) speak English and Saudi
-// Arabic, take 200 characters a request and answer WAV only. OpenAI's speak the
-// languages Whisper hears, Indonesian among them. So the deployment most likely
-// to exist — Groq transcribing Indonesian — would have no voice out at all if the
-// two shared a setting.
+// **Its own provider, not Config's.** Groq cannot read Indonesian aloud: its
+// speech models (Orpheus) speak English and Saudi Arabic, take 200 characters a
+// request and answer WAV only. So a deployment transcribing on Groq would have no
+// voice out at all if the two shared a setting. Since 2026-09-15 both default to
+// OpenRouter, which serves each (research 08 §2e), and one key reaches both —
+// config.EffectiveSpeechTTSAPIKey's rule for two settings naming one provider.
 type SynthConfig struct {
 	Enabled  bool
 	Provider string
@@ -93,8 +93,18 @@ type voiceProvider struct {
 // be an estimate. A deployment that wants it sets SPEECH_TTS_MODEL, and
 // usage_speech.go says what that estimate is. `alloy` because every OpenAI
 // speech model has it.
+//
+// OpenRouter's is `google/gemini-3.1-flash-tts-preview`, and not for billing: it
+// is the one voice OpenRouter offers whose maker documents Indonesian (Google's
+// speech-generation page lists `id`), and it answers MP3. OpenAI's own voices are
+// not on OpenRouter. It is billed per audio token, so its usage row is an
+// estimate too, and usage_speech.go says how that one was set. It is a preview
+// model, and nobody has yet listened to it read an Indonesian figure (live-gate
+// §7n). `Kore` is one of its thirty-one voices, picked without listening;
+// SPEECH_TTS_VOICE changes it.
 var voiceProviders = map[string]voiceProvider{
-	"openai": {baseURL: "https://api.openai.com/v1", model: "tts-1", voice: "alloy"},
+	"openrouter": {baseURL: "https://openrouter.ai/api/v1", model: "google/gemini-3.1-flash-tts-preview", voice: "Kore"},
+	"openai":     {baseURL: "https://api.openai.com/v1", model: "tts-1", voice: "alloy"},
 }
 
 // NewSynthesizer builds a Synthesizer from config. Like New, it never returns an

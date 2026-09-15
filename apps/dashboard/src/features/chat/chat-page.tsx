@@ -43,6 +43,10 @@ import { PENDING_ACTIONS_KEY } from "@/features/actions/use-actions";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { formatLatencySeconds, formatMessageTimestamp } from "./format";
 import { apiErrorMessage } from "@/lib/api-error";
+import { MicButton } from "./mic-button";
+import { ListenButton } from "./listen-button";
+import { useVoice } from "./use-voice";
+import { appendTranscript, spokenCaption, voiceClipIdsForSend } from "./voice";
 
 /**
  * The assistant turn currently streaming, as this component holds it.
@@ -215,6 +219,17 @@ export function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  /**
+   * The recordings what is in the composer was dictated from (T-W9), in the
+   * order they were spoken. Sent with the message so it records that it was
+   * spoken — and emptied whenever the box is, because a transcript the person
+   * cleared is a transcript they discarded.
+   */
+  const [voiceClipIds, setVoiceClipIds] = useState<string[]>([]);
+  const changeInput = useCallback((v: string) => {
+    setInput(v);
+    if (!v.trim()) setVoiceClipIds([]);
+  }, []);
 
   /**
    * Text put in the composer by something other than typing — a starter
@@ -366,9 +381,13 @@ export function ChatPage() {
    * whatever the reader has started typing.
    */
   const takePrefill = useComposerStore((s) => s.take);
+  const prefillComposer = useComposerStore((s) => s.prefill);
   useEffect(() => {
     const pending = takePrefill();
-    if (pending) fillComposer(pending);
+    if (pending) {
+      fillComposer(pending.text);
+      setVoiceClipIds(pending.voiceClipIds);
+    }
   }, [takePrefill, fillComposer]);
 
   /** Leaving a thread closes the WS (useThreadStream cleanup → ws.close), but
@@ -553,6 +572,9 @@ export function ChatPage() {
         // it, and sending the same one back is a round trip that can only ever
         // agree with itself.
         agent_id: targetThreadId ? undefined : (pickedAgentId ?? undefined),
+        // What the box was dictated from (T-W9). Never on a next-step tap,
+        // which sends a sentence nobody spoke.
+        voice_clip_ids: voiceClipIdsForSend(targetThreadId, override === undefined ? voiceClipIds : []),
       });
 
       setBudgetWarning(res.data.budget_warning ?? null);
@@ -572,6 +594,7 @@ export function ChatPage() {
       ]);
 
       setInput("");
+      setVoiceClipIds([]);
 
       if (newThreadId !== targetThreadId) {
         navigate({ to: "/chat/$threadId", params: { threadId: newThreadId } });
@@ -611,6 +634,56 @@ export function ChatPage() {
   const sendNextStep = (prompt: string) => {
     void send(prompt);
   };
+
+  /**
+   * The microphone's side of this page (T-W9).
+   *
+   * **A new conversation is made when there is something to file in it**, not
+   * on the press: the voice route files a clip under a conversation, and the
+   * new-chat screen has none. So a finished recording makes one — with the
+   * picked agent, exactly as sending would — is transcribed into it, and the
+   * page moves there with the transcript in the composer, carried by the same
+   * prefill "Ask for a change" uses. Throwing the transcript away afterwards
+   * leaves an empty conversation, which `createThread`'s comment already
+   * accepts as a thing that costs nothing.
+   *
+   * The refs: an upload takes a second or two, and the box may have been typed
+   * in meanwhile. The transcript is appended to what is there when it lands, not
+   * to what was there when the button was let go.
+   */
+  const voice = useVoice();
+  const inputRef = useRef(input);
+  inputRef.current = input;
+  const voiceClipIdsRef = useRef(voiceClipIds);
+  voiceClipIdsRef.current = voiceClipIds;
+  const ensureThread = async () => {
+    const res = await api.post<ConversationThread>(
+      "/threads",
+      pickedAgentId ? { agent_id: pickedAgentId } : {},
+    );
+    qc.invalidateQueries({ queryKey: ["threads"] });
+    return res.data.id;
+  };
+  const takeTranscript = (text: string, clipId: string | undefined, threadId: string) => {
+    const ids = clipId ? [...voiceClipIdsRef.current, clipId] : voiceClipIdsRef.current;
+    if (threadId !== activeThreadIdRef.current) {
+      prefillComposer(appendTranscript(inputRef.current, text), ids);
+      navigate({ to: "/chat/$threadId", params: { threadId } });
+      return;
+    }
+    setInput((prev) => appendTranscript(prev, text));
+    setVoiceClipIds(ids);
+    setFocusSignal((n) => n + 1);
+  };
+  const microphone = (
+    <MicButton
+      voice={voice}
+      threadId={activeThreadId}
+      ensureThread={ensureThread}
+      onTranscript={takeTranscript}
+      disabled={sending}
+    />
+  );
 
   const displayedMessages = useMemo(() => {
     const threadOptimistic = optimisticMessages.filter(
@@ -721,9 +794,10 @@ export function ChatPage() {
                 before the conversation has started. */}
             <ChatComposer
               value={input}
-              onChange={setInput}
+              onChange={changeInput}
               onSend={send}
               disabled={sending}
+              voice={microphone}
               focusSignal={focusSignal}
               context={
                 <AgentPicker
@@ -833,9 +907,10 @@ export function ChatPage() {
           </div>
           <ChatComposer
             value={input}
-            onChange={setInput}
+            onChange={changeInput}
             onSend={send}
             disabled={sending}
+            voice={microphone}
             focusSignal={focusSignal}
             // Participants only (T-N3 refuses an @ naming an agent that is not
             // in the room, so offering one would be a menu of refusals).
@@ -1134,6 +1209,13 @@ export function MessageBubble({
             isUser && "text-right",
           )}
         >
+          {/* A question dictated through the microphone says so (T-W9), and
+              whether it went out as heard: somebody reading this later, unsure
+              whether "tiga puluh juta" was said or typed, has no other way to
+              know. */}
+          {isUser && spokenCaption(message.metadata)
+            ? `${spokenCaption(message.metadata)} · `
+            : ""}
           {message.latency_ms
             ? `${formatLatencySeconds(message.latency_ms)} · `
             : ""}
@@ -1147,7 +1229,14 @@ export function MessageBubble({
           <div className="mt-1.5">
             <MessageFeedback
               messageId={message.id}
-              leading={<CopyAnswer content={message.content} />}
+              leading={
+                <>
+                  <CopyAnswer content={message.content} />
+                  {/* Absent, not broken, where this deployment cannot read
+                      aloud or this person is not granted voice (T-W9). */}
+                  <ListenButton messageId={message.id} />
+                </>
+              }
             />
           </div>
         )}
@@ -1375,12 +1464,16 @@ function StreamingCaret() {
  * `context` and `suggestions` are slots because both are new-chat-only. Once a
  * thread exists its agent is fixed and its starter questions have been answered
  * or ignored, so on that screen the bar is the input and nothing else.
+ *
+ * Exported for the screenshot harness alone (T-W9), which photographs the
+ * microphone in the bar it sits in, as `MessageBubble` is for the room.
  */
-function ChatComposer({
+export function ChatComposer({
   value,
   onChange,
   onSend,
   disabled,
+  voice,
   context,
   suggestions,
   mentionable,
@@ -1392,6 +1485,9 @@ function ChatComposer({
   onChange: (v: string) => void;
   onSend: () => void;
   disabled: boolean;
+  /** The microphone (T-W9), beside the send button. MicButton renders nothing
+   *  on a deployment that cannot transcribe, so the bar is unchanged there. */
+  voice?: React.ReactNode;
   context?: React.ReactNode;
   suggestions?: React.ReactNode;
   /** Who `@` may address (T-N4): the room's participants, and nobody else.
@@ -1536,15 +1632,18 @@ function ChatComposer({
                 <span className="ml-1.5">· {models.primary.model}</span>
               )}
             </p>
-            <Button
-              type="submit"
-              size="icon"
-              className="h-8 w-8 shrink-0 rounded-lg bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-              disabled={disabled || !value.trim()}
-              aria-label="Send"
-            >
-              <Send className="size-3.5" />
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              {voice}
+              <Button
+                type="submit"
+                size="icon"
+                className="h-8 w-8 shrink-0 rounded-lg bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+                disabled={disabled || !value.trim()}
+                aria-label="Send"
+              >
+                <Send className="size-3.5" />
+              </Button>
+            </div>
           </div>
         </div>
       </form>

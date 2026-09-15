@@ -18,11 +18,13 @@ import (
 type voiceFakeTranscriber struct {
 	text    string
 	seconds float64
-	err     error
-	calls   int
-	lang    string
-	mt      string
-	audio   []byte
+	// cost is a charge the provider reports, as OpenRouter does.
+	cost  float64
+	err   error
+	calls int
+	lang  string
+	mt    string
+	audio []byte
 }
 
 func (f *voiceFakeTranscriber) Transcribe(_ context.Context, r io.Reader, mt, lang string) (speech.Transcript, error) {
@@ -32,7 +34,7 @@ func (f *voiceFakeTranscriber) Transcribe(_ context.Context, r io.Reader, mt, la
 	if f.err != nil {
 		return speech.Transcript{}, f.err
 	}
-	return speech.Transcript{Text: f.text, Seconds: f.seconds}, nil
+	return speech.Transcript{Text: f.text, Seconds: f.seconds, CostUSD: f.cost}, nil
 }
 func (f *voiceFakeTranscriber) Enabled() bool { return true }
 func (f *voiceFakeTranscriber) Model() string { return "whisper-large-v3-turbo" }
@@ -45,6 +47,29 @@ type voiceFakeRepo struct {
 	deleteErr error
 	erasedFor []string
 	eraseN    int
+	// clips is what ForMessage searches, and askedFor what it was last asked.
+	clips         []*domain.VoiceClip
+	askedFor      []string
+	forMessageErr error
+}
+
+// ForMessage filters on all three predicates the real statement has, so a test
+// that hands it another person's clip is testing the caller's trust, not the
+// fake's.
+func (r *voiceFakeRepo) ForMessage(_ context.Context, companyID, userID, threadID string, ids []string) ([]*domain.VoiceClip, error) {
+	r.askedFor = ids
+	if r.forMessageErr != nil {
+		return nil, r.forMessageErr
+	}
+	var out []*domain.VoiceClip
+	for _, c := range r.clips {
+		for _, id := range ids {
+			if c.ID == id && c.CompanyID == companyID && c.UserID == userID && c.ThreadID == threadID {
+				out = append(out, c)
+			}
+		}
+	}
+	return out, nil
 }
 
 func (r *voiceFakeRepo) Create(_ context.Context, c *domain.VoiceClip) error {
@@ -121,13 +146,13 @@ func (s *voiceFakeStore) RemovePrefix(_ context.Context, prefix string) error {
 
 type voiceUsageCall struct {
 	company, thread, model string
-	seconds                float64
+	seconds, cost          float64
 }
 
 type voiceFakeUsage struct{ calls []voiceUsageCall }
 
-func (u *voiceFakeUsage) RecordTranscription(_ context.Context, companyID, threadID, model string, seconds float64) {
-	u.calls = append(u.calls, voiceUsageCall{companyID, threadID, model, seconds})
+func (u *voiceFakeUsage) RecordTranscription(_ context.Context, companyID, threadID, model string, seconds, cost float64) {
+	u.calls = append(u.calls, voiceUsageCall{companyID, threadID, model, seconds, cost})
 }
 
 type voiceFakeBudget struct{ st BudgetState }
@@ -193,7 +218,7 @@ func TestVoiceTranscribesKeepsAndBillsOnTheMeasuredLength(t *testing.T) {
 		t.Errorf("the provider was sent %d bytes as %q", len(rig.tr.audio), rig.tr.mt)
 	}
 	// Billed on what the provider measured, not on the 11 seconds the client said.
-	if len(rig.usage.calls) != 1 || rig.usage.calls[0] != (voiceUsageCall{"co-1", "th-1", "whisper-large-v3-turbo", 12.5}) {
+	if len(rig.usage.calls) != 1 || rig.usage.calls[0] != (voiceUsageCall{"co-1", "th-1", "whisper-large-v3-turbo", 12.5, 0}) {
 		t.Errorf("usage = %+v", rig.usage.calls)
 	}
 	if out.Clip == nil || len(rig.repo.created) != 1 {
@@ -260,6 +285,20 @@ func TestVoiceLanguageIsTheTenantsAndNeverEnglishByDefault(t *testing.T) {
 				t.Errorf("hint sent %q, reported %q, want %q", rig.tr.lang, out.Language, c.want)
 			}
 		})
+	}
+}
+
+// A charge the provider reported — OpenRouter's `usage.cost` — reaches the
+// ledger as it was reported, beside the seconds, instead of being priced again
+// here (research 08 §2e).
+func TestVoicePassesTheProvidersChargeToTheLedger(t *testing.T) {
+	rig := newVoiceRig("IDR")
+	rig.tr.cost = 0.0000075
+	if _, err := rig.svc.Transcribe(context.Background(), voiceInput()); err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if len(rig.usage.calls) != 1 || rig.usage.calls[0] != (voiceUsageCall{"co-1", "th-1", "whisper-large-v3-turbo", 12.5, 0.0000075}) {
+		t.Errorf("usage = %+v, want the provider's charge carried through", rig.usage.calls)
 	}
 }
 

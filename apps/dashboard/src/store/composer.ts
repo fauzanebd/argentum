@@ -19,18 +19,29 @@ import { create } from "zustand";
  * works in every surface, including the widget and `/v1`, without a second piece
  * of state for anyone to keep in sync.
  *
+ * **The clip ids travel beside it (T-W9).** A question spoken on the new-chat
+ * screen makes its conversation first and is transcribed into it, and the page
+ * then moves to that conversation — which mounts a fresh composer. The
+ * transcript crosses that the way a dashboard's link does, and the recordings it
+ * came from have to cross with it or the message forgets it was spoken.
+ *
  * `take()` is a read-and-clear on purpose: seeding the composer twice from one
  * click would overwrite whatever the reader had started typing.
  */
+export interface ComposerPrefill {
+  text: string;
+  voiceClipIds: string[];
+}
+
 interface ComposerState {
-  pending: string | null;
-  prefill: (text: string) => void;
-  take: () => string | null;
+  pending: ComposerPrefill | null;
+  prefill: (text: string, voiceClipIds?: string[]) => void;
+  take: () => ComposerPrefill | null;
 }
 
 export const useComposerStore = create<ComposerState>((set, get) => ({
   pending: null,
-  prefill: (text) => set({ pending: text }),
+  prefill: (text, voiceClipIds = []) => set({ pending: { text, voiceClipIds } }),
   take: () => {
     const { pending } = get();
     if (pending !== null) set({ pending: null });

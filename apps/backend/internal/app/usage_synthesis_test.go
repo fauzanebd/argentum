@@ -9,7 +9,8 @@ import (
 
 // "Cost per answer read aloud", checked by hand: 600 characters × $15 per
 // million = $0.009 = 9,000 µUSD on tts-1; twice that on tts-1-hd and on a model
-// with no row, which is billed at the highest rate.
+// with no row, which is billed at tts-1-hd's rate. OpenRouter's Gemini voice is
+// its ceiling: 600 × $50 per million = 30,000 µUSD.
 func TestRecordSynthesisPricesPerCharacterPerModel(t *testing.T) {
 	cases := []struct {
 		model string
@@ -18,6 +19,7 @@ func TestRecordSynthesisPricesPerCharacterPerModel(t *testing.T) {
 		{"tts-1", 9_000},
 		{"tts-1-hd", 18_000},
 		{"gpt-4o-mini-tts", 9_000},
+		{"google/gemini-3.1-flash-tts-preview", 30_000},
 		{"some-new-voice", 18_000},
 	}
 	for _, c := range cases {

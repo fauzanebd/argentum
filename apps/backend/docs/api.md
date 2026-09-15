@@ -273,7 +273,38 @@ The audio is kept under `voice/<company_id>/` for `SPEECH_RETENTION_DAYS` (defau
 at most 90). The worker's sweep (`SPEECH_SWEEP_CRON`, hourly) deletes a clip when it
 expires or when its conversation is deleted, and a company's data erasure deletes
 every clip and the whole prefix. Each transcription is one `speech_transcription`
-usage event, priced per second of audio for the model that transcribed it.
+usage event. On OpenRouter, the default, it is the charge OpenRouter reports
+(`cost_source: provider`). Elsewhere it is priced per second of audio for the model
+that transcribed it, or at the model's minimum where its provider bills one (10
+seconds on Groq).
+
+#### Sending what was dictated (T-W9)
+
+`POST /api/chat` takes `voice_clip_ids`: the `clip_id`s of the recordings the message
+was dictated from, in the order they were spoken. Read only with a `thread_id`. Each
+id is checked against the caller's company, the caller, and that conversation; an id
+that fails is dropped, never refused — a message is not refused for its recordings.
+When one or more pass, the user message is written with
+
+```json
+{"metadata": {"voice": {"clip_ids": ["…"], "verbatim": false}}}
+```
+
+`verbatim` is whether the message is exactly the transcripts joined, whitespace aside.
+It stays on the message after the clips themselves are swept.
+
+#### Whether this deployment has voice (T-W9)
+
+`GET /api/users/me/capabilities` answers, beside the caller's grants,
+
+```json
+{"capabilities": [...], "voice": {"transcribe": true, "read_aloud": false, "max_clip_seconds": 60}}
+```
+
+`transcribe` is whether `POST /api/threads/:id/voice` is registered, `read_aloud`
+whether `GET /api/messages/:id/audio` is, and `max_clip_seconds` the voice route's
+limit (0 when `transcribe` is false). The admin's `GET /api/users/:id/capabilities`
+does not carry `voice`.
 
 #### An answer read aloud (T-W8)
 

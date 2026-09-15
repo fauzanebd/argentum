@@ -8,6 +8,7 @@
  * button is the difference between photographing the screen and photographing
  * a reconstruction of it.
  */
+import { useState } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ToolCallCard } from "@/features/chat/tool-call-card";
@@ -18,8 +19,11 @@ import { SkillsTab } from "@/features/settings/skills-tab";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { TeamTab } from "@/features/settings/team-tab";
 import { AgentsTab, BindingsCard } from "@/features/settings/agents-tab";
-import { MessageBubble } from "@/features/chat/chat-page";
+import { ChatComposer, MessageBubble } from "@/features/chat/chat-page";
 import { colorForAgent } from "@/features/chat/agent-colors";
+import { MicButton } from "@/features/chat/mic-button";
+import { useVoice } from "@/features/chat/use-voice";
+import { appendTranscript } from "@/features/chat/voice";
 import { SharePage } from "@/features/share/share-page";
 import { Scene, makeAPI, setHarnessAdmin, SKILLS_OK, SKILLS_OVERFLOW, TEAM } from "./fixtures";
 import { setFixtures } from "./stub-api";
@@ -170,6 +174,123 @@ function RoomLines({ grayscale = false }: { grayscale?: boolean }) {
   );
 }
 
+/* ── Voice (T-W9) ─────────────────────────────────────────────────────── */
+
+/** The bar reads the model name from here, and a composer without it throws. */
+const MODELS = {
+  primary: {
+    role: "primary", model: "moonshotai/kimi-k2.6", interface: "openai",
+    input_per_1k_usd: 0, output_per_1k_usd: 0, pricing_known: true,
+  },
+};
+
+/**
+ * A deployment that can hear a question and read an answer aloud, and a person
+ * who holds voice or does not.
+ *
+ * **What is real in these scenes and what is not.** The recording is real: the
+ * shooter launches Chromium with its fake microphone, so `getUserMedia`, the
+ * `MediaRecorder` and the level meter are the browser's own over a generated
+ * tone, and a scene not granted the microphone gets the browser's own refusal.
+ * The transcript is this file's — the upload lands here rather than at a speech
+ * provider, which is the half `voice.md` §1f proved on the wire.
+ */
+function voiceAPI(granted: boolean) {
+  const base = makeAPI(SKILLS_OK);
+  const ok = (data: unknown) => Promise.resolve({ data });
+  return {
+    ...base,
+    get: (path: string) => {
+      if (path === "/users/me/capabilities") {
+        return ok({
+          capabilities: granted ? [{ user_id: "u-dewi", capability: "voice", granted_at: "2026-09-15T00:00:00Z" }] : [],
+          voice: { transcribe: true, read_aloud: true, max_clip_seconds: 60 },
+        });
+      }
+      if (path === "/config/models") return ok(MODELS);
+      if (path === "/messages/m-refused/audio") {
+        // T-W8's refusal, as the route writes it — a body the audio request
+        // receives as a Blob, which is the case the button has to read back.
+        return Promise.reject({
+          response: {
+            status: 422,
+            data: new Blob(
+              [JSON.stringify({
+                error: "this answer cannot be read aloud; read it instead",
+                reason: "spoken 25 persen, nearest written 18,42%",
+              })],
+              { type: "application/json" },
+            ),
+          },
+        });
+      }
+      return base.get(path);
+    },
+    post: (path: string, body?: unknown) => {
+      if (path === "/threads/th-1/voice") {
+        return ok({
+          transcript: "berapa stok gudang barat minggu ini", language: "id", seconds: 2.4,
+          clip_id: "c-1", expires_at: "2026-09-22T09:00:00Z",
+        });
+      }
+      return base.post(path, body);
+    },
+  };
+}
+
+/** The composer as a conversation has it, with the real microphone in it. */
+function VoiceComposer({ title }: { title: string }) {
+  const [value, setValue] = useState("");
+  const voice = useVoice();
+  return (
+    <Scene title={title}>
+      {/* Room above the bar: the microphone's status sits over it, the way the
+          @ menu does. */}
+      <div className="flex h-72 max-w-3xl items-end rounded-lg border border-border bg-background">
+        <ChatComposer
+          value={value}
+          onChange={setValue}
+          onSend={() => {}}
+          disabled={false}
+          voice={
+            <MicButton
+              voice={voice}
+              threadId="th-1"
+              ensureThread={() => Promise.resolve("th-1")}
+              onTranscript={(text) => setValue((v) => appendTranscript(v, text))}
+            />
+          }
+        />
+      </div>
+    </Scene>
+  );
+}
+
+/** Two spoken questions — one sent as heard, one edited first — and two
+ *  answers: one that can be read aloud, and a table the check will refuse. */
+const VOICE_TRANSCRIPT = [
+  { id: "m-q1", role: "user", content: "berapa stok gudang barat minggu ini",
+    metadata: { voice: { clip_ids: ["c-1"], verbatim: true } } },
+  { id: "m-a1", role: "assistant",
+    content: "Stok gudang barat minggu ini **1.234.567 unit**, naik 4,2% dari minggu lalu." },
+  { id: "m-q2", role: "user", content: "dan margin kotor per cabang berapa persen?",
+    metadata: { voice: { clip_ids: ["c-2"], verbatim: false } } },
+  { id: "m-refused", role: "assistant",
+    content: "| Cabang | Margin kotor |\n|---|---|\n| Barat | 18,42% |\n| Timur | 16,05% |" },
+];
+
+function VoiceListen() {
+  return (
+    <Scene title="Answers read aloud — a play button beside Copy, a refused answer saying so, and questions that say they were spoken">
+      <div className="max-w-3xl space-y-5 rounded-lg border border-border bg-background p-6">
+        {VOICE_TRANSCRIPT.map((m) => (
+          <MessageBubble key={m.id} message={{ thread_id: "th-1", created_at: "2026-09-15T09:00:00Z", ...m } as never} />
+        ))}
+      </div>
+    </Scene>
+  );
+}
+
 function render(node: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -307,6 +428,38 @@ switch (scene) {
         </div>
       </Scene>,
     );
+    break;
+
+  // The microphone (T-W9), in the three states its acceptance names — granted,
+  // refused by the browser, not granted — plus the moment after letting go. The
+  // shooter holds the button the way a person does.
+  case "voice-recording":
+  case "voice-transcript":
+  case "voice-denied":
+  case "voice-ungranted":
+    setHarnessAdmin(false);
+    setFixtures(voiceAPI(scene !== "voice-ungranted"));
+    render(
+      <VoiceComposer
+        title={
+          scene === "voice-recording"
+            ? "The microphone, held — listening, with a level meter, and how to cancel"
+            : scene === "voice-transcript"
+              ? "Let go — what was heard is in the box to check and edit, and nothing has been sent"
+              : scene === "voice-denied"
+                ? "The browser refused the microphone — the reason, and the fix"
+                : "Not granted voice — the microphone is drawn disabled, and says who to ask"
+        }
+      />,
+    );
+    break;
+
+  // The play button (T-W9) over T-W8's route, and the caption a spoken question
+  // carries. The shooter presses play on the table, which the check refuses.
+  case "voice-listen":
+    setHarnessAdmin(false);
+    setFixtures(voiceAPI(true));
+    render(<VoiceListen />);
     break;
 
   // The shared report player (T-V4). No stub module is involved: `share-page`

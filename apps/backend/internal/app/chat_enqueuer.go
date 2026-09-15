@@ -489,6 +489,11 @@ type ChatInput struct {
 	// different tools and sources, which is a decision, not a field.
 	AgentID  string
 	ThreadID string // dashboard and api; if set, bypasses resolver
+	// Spoken is the record of the recordings a dashboard message was dictated
+	// from (T-W9), already checked against the sender and the conversation by
+	// the handler. Nil for every message typed; only the dashboard's send route
+	// sets it, because the dashboard is the only door with a microphone.
+	Spoken *domain.SpokenQuestion
 	// APIReportID ties this turn to the report job `POST /v1/reports` handed
 	// back (T-A2). The worker marks that row terminal when the turn ends.
 	APIReportID string
@@ -1322,7 +1327,11 @@ func (s *ChatEnqueuer) Enqueue(ctx context.Context, in ChatInput) (*EnqueueResul
 	// **The original text, not the cleaned one.** A transcript should read as
 	// what the person typed; the `@` tokens are stripped only from what the
 	// model sees, which is lark.StripMentions' arrangement and its reason.
-	userMsg, err := s.threads.AppendUserMessage(ctx, thread.ID, in.Message)
+	var userMeta map[string]any
+	if in.Spoken != nil {
+		userMeta = map[string]any{domain.MessageMetadataVoice: in.Spoken}
+	}
+	userMsg, err := s.threads.AppendUserMessageWithMetadata(ctx, thread.ID, in.Message, userMeta)
 	if err != nil {
 		return nil, fmt.Errorf("append user message: %w", err)
 	}
