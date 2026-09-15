@@ -1,0 +1,277 @@
+// Command ghperf, second run. The first (bench.out) left two things unexplained:
+// a sequential scan took the same ~2.3 s over 57 MB and 186 MB, and a pg_trgm
+// index took the same time whatever the repository's size. This run reads the
+// plans, tries Postgres's default parallelism, literal search without regex, a
+// GIN index that carries repository_id (btree_gin), and the same index over
+// 200-line chunks instead of whole files. Throwaway; nothing touches production.
+package main
+
+import (
+	"bytes"
+	"database/sql"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/lib/pq"
+)
+
+type file struct {
+	path    string
+	content string
+}
+
+type pattern struct {
+	name    string
+	pg      string
+	ci      bool
+	literal bool
+}
+
+var patterns = []pattern{
+	{"literal, common", "resourcePolicy", false, true},
+	{"regex, rare", `type [A-Za-z]+Tool struct`, false, false},
+	{"case-insensitive", `status\s*=\s*7`, true, false},
+	{"no match (worst)", "zzqx_never_present_q", false, true},
+}
+
+var sizes = []struct{ repo, mult int }{{1, 1}, {2, 4}, {3, 13}}
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func mb(n int) float64 { return float64(n) / (1 << 20) }
+
+func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
+
+func exec1(db *sql.DB, q string) {
+	_, err := db.Exec(q)
+	must(err)
+}
+
+func corpus(root string) []file {
+	out, err := exec.Command("git", "-C", root, "ls-files").Output()
+	must(err)
+	var fs []file
+	for _, p := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.HasSuffix(p, "pnpm-lock.yaml") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, p))
+		if err != nil || len(b) == 0 || len(b) > 512*1024 {
+			continue
+		}
+		head := b
+		if len(head) > 8000 {
+			head = head[:8000]
+		}
+		if bytes.IndexByte(head, 0) >= 0 || !utf8.Valid(b) {
+			continue
+		}
+		fs = append(fs, file{p, string(b)})
+	}
+	return fs
+}
+
+func copyIn(db *sql.DB, table string, cols []string, rows func(emit func(args ...any))) {
+	tx, err := db.Begin()
+	must(err)
+	st, err := tx.Prepare(pq.CopyIn(table, cols...))
+	must(err)
+	rows(func(args ...any) {
+		_, err := st.Exec(args...)
+		must(err)
+	})
+	_, err = st.Exec()
+	must(err)
+	must(st.Close())
+	must(tx.Commit())
+}
+
+func timeQ(db *sql.DB, q string, args ...any) (time.Duration, int) {
+	var ds []time.Duration
+	var n int
+	for i := 0; i < 3; i++ {
+		t := time.Now()
+		must(db.QueryRow(q, args...).Scan(&n))
+		ds = append(ds, time.Since(t))
+	}
+	sort.Slice(ds, func(i, j int) bool { return ds[i] < ds[j] })
+	return ds[1], n
+}
+
+func planTag(db *sql.DB, q string, args ...any) string {
+	rows, err := db.Query("EXPLAIN "+q, args...)
+	must(err)
+	defer rows.Close()
+	var all []string
+	for rows.Next() {
+		var l string
+		must(rows.Scan(&l))
+		all = append(all, l)
+	}
+	j := strings.Join(all, "\n")
+	switch {
+	case strings.Contains(j, "Bitmap Index Scan"):
+		return "gin index"
+	case strings.Contains(j, "Index Scan using"), strings.Contains(j, "Index Only Scan"):
+		return "pk index"
+	case strings.Contains(j, "Parallel Seq Scan"):
+		return "parallel seq scan"
+	case strings.Contains(j, "Seq Scan"):
+		return "seq scan"
+	}
+	return strings.TrimSpace(all[0])
+}
+
+func header() {
+	fmt.Printf("%-20s", "pattern")
+	for _, s := range sizes {
+		fmt.Printf(" | repo %d (x%-2d) ms  hits", s.repo, s.mult)
+	}
+	fmt.Println()
+}
+
+// grid runs one query shape over every pattern and size; build returns false to
+// skip a pattern the shape cannot express.
+func grid(db *sql.DB, build func(p pattern) (string, bool)) {
+	header()
+	for _, p := range patterns {
+		q, ok := build(p)
+		if !ok {
+			continue
+		}
+		fmt.Printf("%-20s", p.name)
+		for _, s := range sizes {
+			d, n := timeQ(db, q, s.repo, p.pg)
+			fmt.Printf(" | %16.0f %5d", ms(d), n)
+		}
+		fmt.Printf("  [%s]\n", planTag(db, q, 3, p.pg))
+	}
+}
+
+func op(p pattern) string {
+	if p.ci {
+		return "~*"
+	}
+	return "~"
+}
+
+func main() {
+	fs := corpus("/home/ubuntu/projects/argentum")
+	raw := 0
+	for _, f := range fs {
+		raw += len(f.content)
+	}
+	fmt.Printf("corpus: %d text files, %.1f MB\n\n", len(fs), mb(raw))
+
+	db, err := sql.Open("postgres", "host=127.0.0.1 port=55999 user=bench dbname=postgres sslmode=disable")
+	must(err)
+	db.SetMaxOpenConns(1)
+	exec1(db, "SET statement_timeout = '240s'")
+	exec1(db, `CREATE TABLE repository_files (
+		repository_id int, path text, content text, PRIMARY KEY (repository_id, path))`)
+	exec1(db, `CREATE TABLE repository_chunks (
+		repository_id int, path text, start_line int, content text, PRIMARY KEY (repository_id, path, start_line))`)
+
+	chunks := 0
+	for _, s := range sizes {
+		copyIn(db, "repository_files", []string{"repository_id", "path", "content"}, func(emit func(...any)) {
+			for m := 0; m < s.mult; m++ {
+				for _, f := range fs {
+					emit(s.repo, fmt.Sprintf("c%d/%s", m, f.path), f.content)
+				}
+			}
+		})
+		copyIn(db, "repository_chunks", []string{"repository_id", "path", "start_line", "content"}, func(emit func(...any)) {
+			for m := 0; m < s.mult; m++ {
+				for _, f := range fs {
+					lines := strings.SplitAfter(f.content, "\n")
+					for i := 0; i < len(lines); i += 200 {
+						end := i + 200
+						if end > len(lines) {
+							end = len(lines)
+						}
+						c := strings.Join(lines[i:end], "")
+						if c == "" {
+							continue
+						}
+						emit(s.repo, fmt.Sprintf("c%d/%s", m, f.path), i+1, c)
+						chunks++
+					}
+				}
+			}
+		})
+	}
+	exec1(db, "ANALYZE")
+	fmt.Printf("loaded: %d files, %d chunks of <= 200 lines\n\n", len(fs)*18, chunks)
+
+	fmt.Println("== A. why 57 MB and 186 MB scanned in the same time: EXPLAIN ANALYZE, regex rare ==")
+	for _, s := range sizes {
+		rows, err := db.Query(`EXPLAIN (ANALYZE, BUFFERS) SELECT count(*) FROM repository_files
+			WHERE repository_id = $1 AND content ~ $2`, s.repo, patterns[1].pg)
+		must(err)
+		var keep []string
+		for rows.Next() {
+			var l string
+			must(rows.Scan(&l))
+			t := strings.TrimSpace(l)
+			if strings.Contains(t, "Scan") || strings.HasPrefix(t, "Buffers") || strings.HasPrefix(t, "Execution Time") || strings.HasPrefix(t, "Rows Removed") {
+				keep = append(keep, t)
+			}
+		}
+		rows.Close()
+		fmt.Printf("repo %d:\n  %s\n", s.repo, strings.Join(keep, "\n  "))
+	}
+
+	fmt.Println("\n== B1. whole files, sequential, no parallel workers ==")
+	grid(db, func(p pattern) (string, bool) {
+		return fmt.Sprintf("SELECT count(*) FROM repository_files WHERE repository_id = $1 AND content %s $2", op(p)), true
+	})
+
+	fmt.Println("\n== B2. the same, max_parallel_workers_per_gather = 2 (Postgres's default) ==")
+	exec1(db, "SET max_parallel_workers_per_gather = 2")
+	grid(db, func(p pattern) (string, bool) {
+		return fmt.Sprintf("SELECT count(*) FROM repository_files WHERE repository_id = $1 AND content %s $2", op(p)), true
+	})
+	exec1(db, "SET max_parallel_workers_per_gather = 0")
+
+	fmt.Println("\n== C. literal patterns without regex: strpos ==")
+	grid(db, func(p pattern) (string, bool) {
+		return "SELECT count(*) FROM repository_files WHERE repository_id = $1 AND strpos(content, $2) > 0", p.literal
+	})
+
+	exec1(db, "CREATE EXTENSION pg_trgm")
+	exec1(db, "CREATE EXTENSION btree_gin")
+	exec1(db, "SET maintenance_work_mem = '256MB'")
+
+	fmt.Println("\n== D. whole files, GIN (repository_id, content gin_trgm_ops) ==")
+	t := time.Now()
+	exec1(db, "CREATE INDEX rf_gin ON repository_files USING gin (repository_id, content gin_trgm_ops)")
+	var sz string
+	must(db.QueryRow(`SELECT pg_size_pretty(pg_relation_size('rf_gin'))`).Scan(&sz))
+	fmt.Printf("build %.1f s, size %s\n", time.Since(t).Seconds(), sz)
+	exec1(db, "ANALYZE repository_files")
+	grid(db, func(p pattern) (string, bool) {
+		return fmt.Sprintf("SELECT count(*) FROM repository_files WHERE repository_id = $1 AND content %s $2", op(p)), true
+	})
+
+	fmt.Println("\n== E. 200-line chunks, GIN (repository_id, content gin_trgm_ops); hits = distinct files ==")
+	t = time.Now()
+	exec1(db, "CREATE INDEX rc_gin ON repository_chunks USING gin (repository_id, content gin_trgm_ops)")
+	var tbl string
+	must(db.QueryRow(`SELECT pg_size_pretty(pg_relation_size('rc_gin')), pg_size_pretty(pg_table_size('repository_chunks'))`).Scan(&sz, &tbl))
+	fmt.Printf("build %.1f s, index %s, chunk table %s\n", time.Since(t).Seconds(), sz, tbl)
+	exec1(db, "ANALYZE repository_chunks")
+	grid(db, func(p pattern) (string, bool) {
+		return fmt.Sprintf("SELECT count(DISTINCT path) FROM repository_chunks WHERE repository_id = $1 AND content %s $2", op(p)), true
+	})
+}

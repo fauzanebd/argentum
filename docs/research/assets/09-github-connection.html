@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How the GitHub connection works — Argentum</title>
+<!--
+  A picture of docs/research/09-github-repository-source.md and
+  docs/plan/13-repository-source-roadmap.md. Nothing drawn here is built.
+  Colours are copied from packages/design-tokens/tokens.json (light palette),
+  because this page is opened straight from the repository and cannot import
+  the generated CSS.
+-->
+<style>
+  :root {
+    --bg: #FAFAFB; --surface: #FFFFFF; --muted-fill: #F4F5F6; --subtle: #F1F2F3;
+    --ink: #1F2124; --muted: #62656B; --faint: #9A9DA3; --line: #ECEDEF; --line-strong: #E0E2E5;
+    --primary: #F25C5C; --primary-tint: #FDECEC; --primary-ink: #C0353C;
+    --pos: #189A4D; --pos-tint: #E8F5ED; --pos-ink: #157F41;
+    --warn: #EF720C; --warn-tint: #FDF1E5; --warn-ink: #A85207;
+    --bad: #E3474C; --bad-tint: #FCECEC; --bad-ink: #C7343A;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 40px 24px 72px; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--primary-ink); font-weight: 600; }
+  h1 { font-size: 34px; line-height: 1.15; margin: 6px 0 10px; letter-spacing: -.01em; }
+  h2 { font-size: 22px; margin: 0 0 6px; }
+  h3 { font-size: 15px; margin: 0 0 6px; }
+  p { margin: 0 0 12px; }
+  .lede { font-size: 17px; color: var(--muted); max-width: 760px; }
+  code { font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--subtle); padding: 1px 5px; border-radius: 5px; }
+  .pill { display: inline-flex; gap: 8px; align-items: center; padding: 6px 12px; border-radius: 999px;
+    background: var(--warn-tint); color: var(--warn-ink); font-size: 13px; font-weight: 600; margin: 8px 0 18px; }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 28px; }
+  nav a { text-decoration: none; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong);
+    border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+  nav a:hover { background: var(--muted-fill); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+    padding: 24px 26px; margin: 0 0 22px; box-shadow: 0 1px 2px rgba(31,33,36,.04); }
+  .card > .head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .tickets { font-size: 12.5px; color: var(--muted); }
+  .summary { color: var(--muted); max-width: 820px; }
+  .diagram { margin: 14px 0 6px; overflow-x: auto; }
+  .diagram svg { display: block; min-width: 760px; }
+  .why { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
+  .why div { background: var(--muted-fill); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+  .why b { display: block; margin-bottom: 2px; }
+  ol.legend { columns: 2 380px; column-gap: 28px; padding-left: 0; list-style: none; margin: 14px 0 0; counter-reset: n; }
+  ol.legend li { break-inside: avoid; display: grid; grid-template-columns: 26px 1fr; gap: 8px; margin-bottom: 10px; font-size: 14px; }
+  ol.legend li::before { counter-increment: n; content: counter(n); width: 22px; height: 22px; border-radius: 50%;
+    background: var(--ink); color: #fff; font-size: 12px; font-weight: 600; display: grid; place-items: center; margin-top: 1px; }
+  ol.legend li.no::before { content: "✕"; background: var(--bad); }
+  ol.legend li span.t { color: var(--faint); font-size: 12.5px; white-space: nowrap; }
+  .keys { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12.5px; margin-top: 8px; }
+  .key { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); }
+  .key i { width: 22px; height: 0; border-top: 2px solid var(--ink); display: inline-block; }
+  .key i.dash { border-top: 2px dashed var(--faint); }
+  .key.check { background: var(--pos-tint); border-color: var(--pos); color: var(--pos-ink); }
+  .key.gate { background: var(--warn-tint); border-color: var(--warn); color: var(--warn-ink); }
+  .key.stop { background: var(--bad-tint); border-color: var(--bad); color: var(--bad-ink); }
+  .key.note { background: var(--muted-fill); }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .box { border-radius: 12px; padding: 14px 16px; }
+  .box.yes { background: var(--pos-tint); }
+  .box.no { background: var(--bad-tint); }
+  .box ul { margin: 6px 0 0; padding-left: 18px; }
+  .box li { margin-bottom: 4px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--subtle); }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+  .fine { font-size: 13px; color: var(--muted); }
+  dl.gloss { display: grid; grid-template-columns: 170px 1fr; gap: 8px 16px; margin: 10px 0 0; font-size: 14px; }
+  dl.gloss dt { font-weight: 600; }
+  dl.gloss dd { margin: 0; color: var(--muted); }
+  footer { font-size: 13px; color: var(--muted); margin-top: 28px; }
+</style>
+</head>
+<body>
+<main>
+
+  <div class="eyebrow">Argentum · design artifact · 2026-09-15</div>
+  <h1>How the GitHub connection works</h1>
+  <p class="lede">Agents read a company's GitHub repositories: the SQL, dbt models and enums that explain
+    their data, and the commits and pull requests that explain why a number moved. Read-only first;
+    pull requests later, behind approval.</p>
+  <div class="pill">Planned — nothing on this page is built yet · roadmap 13, T-J1 → T-J12</div>
+
+  <nav>
+    <a href="#overview">Overview</a>
+    <a href="#connect">1 · Connect</a>
+    <a href="#sync">2 · Keep a copy</a>
+    <a href="#answer">3 · Answer a question</a>
+    <a href="#pr">4 · Later: open a PR</a>
+    <a href="#stored">What is stored</a>
+    <a href="#cost">Cost</a>
+    <a href="#words">Glossary</a>
+  </nav>
+
+  <!-- ─────────────────────────────── Overview ─────────────────────────────── -->
+  <section class="card" id="overview">
+    <div class="head"><h2>The whole picture</h2><span class="tickets">T-J1 · T-J2 · T-J3 · T-J4 · T-J5</span></div>
+    <p class="summary">Three parties. The customer's GitHub, where they install our App and choose repositories.
+      Argentum, which keeps a text copy of those repositories and gives bound agents tools to search it. And
+      the people who connect it and ask the questions.</p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1100 470" width="100%" role="img" aria-label="Overview of the GitHub connection: customer's GitHub, Argentum's API, worker and Postgres, and the people who use it">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#1F2124"/>
+          </marker>
+          <marker id="ahbad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#E3474C"/>
+          </marker>
+        </defs>
+
+        <!-- Panels -->
+        <rect x="20" y="20" width="260" height="430" rx="14" fill="#FFFFFF" stroke="#1F2124" stroke-width="1.2"/>
+        <text x="40" y="52" font-size="15" font-weight="700" fill="#1F2124">Customer's GitHub</text>
+        <rect x="400" y="20" width="380" height="430" rx="14" fill="#FFF8F8" stroke="#F25C5C" stroke-width="1.2"/>
+        <text x="420" y="52" font-size="15" font-weight="700" fill="#C0353C">Argentum</text>
+        <rect x="900" y="20" width="180" height="430" rx="14" fill="#FFFFFF" stroke="#E0E2E5"/>
+        <text x="918" y="52" font-size="15" font-weight="700" fill="#1F2124">People</text>
+
+        <!-- GitHub boxes -->
+        <g font-size="12" fill="#62656B">
+          <rect x="40" y="75" width="220" height="80" rx="10" fill="#1F2124"/>
+          <text x="54" y="104" font-size="14" font-weight="600" fill="#FFFFFF">App “Argentum (read)”</text>
+          <text x="54" y="125" fill="#CACCD1">install page · picks repositories</text>
+          <text x="54" y="141" fill="#CACCD1">sends signed webhooks</text>
+
+          <rect x="40" y="190" width="220" height="80" rx="10" fill="#FFFFFF" stroke="#1F2124"/>
+          <text x="54" y="219" font-size="14" font-weight="600" fill="#1F2124">Repositories</text>
+          <text x="54" y="240">only repos the customer picked</text>
+          <text x="54" y="256">code · commits · PRs · issues</text>
+
+          <rect x="40" y="325" width="220" height="80" rx="10" fill="#FFFFFF" stroke="#1F2124"/>
+          <text x="54" y="354" font-size="14" font-weight="600" fill="#1F2124">Token endpoint</text>
+          <text x="54" y="375">token lives ≤ 1 hour</text>
+          <text x="54" y="391">only the repos needed, read-only</text>
+        </g>
+
+        <!-- Argentum boxes -->
+        <g font-size="12" fill="#62656B">
+          <rect x="420" y="75" width="340" height="80" rx="10" fill="#FFFFFF" stroke="#F25C5C"/>
+          <text x="436" y="104" font-size="14" font-weight="600" fill="#1F2124">API <tspan font-weight="400" fill="#9A9DA3">cmd/api</tspan></text>
+          <text x="436" y="125">Connect flow · POST /webhook/github</text>
+          <text x="436" y="141">Settings → Repositories</text>
+
+          <rect x="420" y="190" width="340" height="80" rx="10" fill="#FFFFFF" stroke="#F25C5C"/>
+          <text x="436" y="219" font-size="14" font-weight="600" fill="#1F2124">Worker <tspan font-weight="400" fill="#9A9DA3">cmd/worker</tspan></text>
+          <text x="436" y="240">repository:sync · reconciler every 60 min</text>
+          <text x="436" y="256">agent turns + repository tools</text>
+
+          <rect x="420" y="325" width="340" height="80" rx="10" fill="#FFFFFF" stroke="#F25C5C"/>
+          <text x="436" y="354" font-size="14" font-weight="600" fill="#1F2124">Postgres <tspan font-weight="400" fill="#9A9DA3">control plane</tspan></text>
+          <text x="436" y="375">repository_installations · repositories</text>
+          <text x="436" y="391">repository_files (text copy) · agent_repositories</text>
+        </g>
+
+        <!-- People boxes -->
+        <g font-size="12" fill="#62656B">
+          <rect x="915" y="75" width="150" height="80" rx="10" fill="#FFFFFF" stroke="#E0E2E5"/>
+          <text x="929" y="104" font-size="14" font-weight="600" fill="#1F2124">Admin</text>
+          <text x="929" y="125">Settings →</text>
+          <text x="929" y="141">Repositories</text>
+
+          <rect x="915" y="190" width="150" height="80" rx="10" fill="#FFFFFF" stroke="#E0E2E5"/>
+          <text x="929" y="219" font-size="14" font-weight="600" fill="#1F2124">Member</text>
+          <text x="929" y="240">dashboard · channel</text>
+          <text x="929" y="256">/v1 · a bound agent</text>
+
+          <rect x="915" y="325" width="150" height="80" rx="10" fill="#FFFFFF" stroke="#E3474C" stroke-dasharray="5 4"/>
+          <text x="929" y="354" font-size="14" font-weight="600" fill="#1F2124">Widget visitor</text>
+          <text x="929" y="375">the company's</text>
+          <text x="929" y="391">own customer</text>
+        </g>
+
+        <!-- Arrows -->
+        <g stroke="#1F2124" stroke-width="1.6" fill="none">
+          <line x1="913" y1="115" x2="764" y2="115" marker-end="url(#ah)"/>                              <!-- 1 -->
+          <line x1="266" y1="100" x2="416" y2="100" marker-start="url(#ah)" marker-end="url(#ah)"/>     <!-- 2 -->
+          <line x1="264" y1="132" x2="416" y2="132" marker-end="url(#ah)"/>                              <!-- 3 -->
+          <line x1="560" y1="157" x2="560" y2="186" marker-end="url(#ah)"/>                              <!-- 4 -->
+          <line x1="418" y1="256" x2="266" y2="352" marker-end="url(#ah)"/>                              <!-- 5 -->
+          <line x1="418" y1="222" x2="266" y2="222" marker-end="url(#ah)"/>                              <!-- 6 -->
+          <line x1="600" y1="274" x2="600" y2="321" marker-start="url(#ah)" marker-end="url(#ah)"/>     <!-- 7 -->
+          <line x1="913" y1="230" x2="764" y2="230" marker-end="url(#ah)"/>                              <!-- 8 -->
+        </g>
+        <line x1="913" y1="365" x2="806" y2="365" stroke="#E3474C" stroke-width="1.6" stroke-dasharray="5 4"/>
+
+        <!-- Badges -->
+        <g font-size="11" font-weight="700" text-anchor="middle">
+          <circle cx="838" cy="115" r="11" fill="#1F2124"/><text x="838" y="119" fill="#FFFFFF">1</text>
+          <circle cx="340" cy="100" r="11" fill="#1F2124"/><text x="340" y="104" fill="#FFFFFF">2</text>
+          <circle cx="340" cy="132" r="11" fill="#1F2124"/><text x="340" y="136" fill="#FFFFFF">3</text>
+          <circle cx="580" cy="172" r="11" fill="#1F2124"/><text x="580" y="176" fill="#FFFFFF">4</text>
+          <circle cx="342" cy="304" r="11" fill="#1F2124"/><text x="342" y="308" fill="#FFFFFF">5</text>
+          <circle cx="340" cy="222" r="11" fill="#1F2124"/><text x="340" y="226" fill="#FFFFFF">6</text>
+          <circle cx="620" cy="298" r="11" fill="#1F2124"/><text x="620" y="302" fill="#FFFFFF">7</text>
+          <circle cx="838" cy="230" r="11" fill="#1F2124"/><text x="838" y="234" fill="#FFFFFF">8</text>
+          <circle cx="796" cy="365" r="11" fill="#E3474C"/><text x="796" y="369" fill="#FFFFFF">✕</text>
+        </g>
+      </svg>
+    </div>
+
+    <ol class="legend">
+      <li><div>An admin presses <b>Connect GitHub</b>. <span class="t">T-J1</span></div></li>
+      <li><div>GitHub installs the App on the repositories the admin picks. Argentum <b>proves the installation belongs to that admin</b> before saving it. <span class="t">T-J1</span></div></li>
+      <li><div>GitHub sends <b>signed webhooks</b>: a push, or the App being removed. <span class="t">T-J1 · T-J2</span></div></li>
+      <li><div>A push queues <b>one sync for that repository</b>. Several pushes in a row become one sync. <span class="t">T-J2</span></div></li>
+      <li><div>The worker asks for a <b>token that lasts at most an hour</b> and covers only the repositories it needs. Tokens are never saved. <span class="t">T-J1</span></div></li>
+      <li><div><b>One download per sync</b> (the repository archive). Commits, PRs and issues are read live and cached with ETags. <span class="t">T-J2 · T-J5</span></div></li>
+      <li><div>Text files go into Postgres. <b>Agent tools search and read line ranges</b> from that copy, not from GitHub. <span class="t">T-J2 · T-J4</span></div></li>
+      <li><div>Someone asks a question of an <b>agent bound to the repository</b>. Every other agent works exactly as it does today. <span class="t">T-J3</span></div></li>
+      <li class="no"><div>The <b>website widget never gets repository tools</b>. The person there is the company's own customer. <span class="t">T-J3</span></div></li>
+    </ol>
+  </section>
+
+  <div class="keys" aria-label="How to read the step diagrams">
+    <span class="key"><i></i> request</span>
+    <span class="key"><i class="dash"></i> reply</span>
+    <span class="key check">✓ check passes</span>
+    <span class="key gate">! decision point</span>
+    <span class="key stop">✕ refused</span>
+    <span class="key note">note</span>
+  </div>
+  <div style="height:14px"></div>
+
+  <!-- ─────────────────────────────── 1 Connect ─────────────────────────────── -->
+  <section class="card" id="connect">
+    <div class="head"><h2>1 · Connecting a GitHub account</h2><span class="tickets">T-J1 · about 3 days</span></div>
+    <p class="summary">This happens once per company. The admin never pastes a token. GitHub's install page is
+      where they choose which repositories Argentum may see, and they can change that later on GitHub.</p>
+    <div class="diagram" data-seq="connect"></div>
+    <div class="why">
+      <div><b>Why a GitHub App, not a personal token</b>A personal token belongs to one employee and stops working
+        when they leave. It also sees everything they can see. An App sees only what the company picks.</div>
+      <div><b>Why step 10 exists</b>The <code>installation_id</code> in the redirect URL can be edited by anyone.
+        Without that check, one company could attach another company's code. This is the most important test in the track.</div>
+      <div><b>What is kept</b>Which installation, which account, which repositories. No token of any kind.</div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── 2 Sync ─────────────────────────────── -->
+  <section class="card" id="sync">
+    <div class="head"><h2>2 · Keeping a copy up to date</h2><span class="tickets">T-J2 · about 3.5 days</span></div>
+    <p class="summary">Argentum keeps a text copy of each enabled repository's default branch. A push makes it update
+      within moments. A background check every hour catches any push GitHub failed to announce.</p>
+    <div class="diagram" data-seq="sync"></div>
+    <div class="why">
+      <div><b>Why a copy, instead of asking GitHub each time</b>GitHub's code search has no regex and allows 10
+        searches a minute. Reading file by file hits its other limits fast. One archive download per push avoids both.</div>
+      <div><b>Why the hourly check</b>GitHub never retries a webhook it failed to deliver. Asking “has the branch
+        moved?” with an ETag costs nothing when the answer is no.</div>
+      <div><b>Why no git clone</b>Argentum runs no external programs, and the worker has 512 MB of memory.
+        The archive is read as a stream, so memory stays flat whatever the repository's size.</div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── 3 Answer ─────────────────────────────── -->
+  <section class="card" id="answer">
+    <div class="head"><h2>3 · Answering a question from the repository</h2><span class="tickets">T-J3 · T-J4 · T-J5 · T-J6</span></div>
+    <p class="summary">The agent searches first, then reads only the lines the search found, and answers with a link
+      to those exact lines at the commit it read. Returning line ranges instead of whole files is what keeps the cost down.</p>
+    <div class="diagram" data-seq="answer"></div>
+    <div class="why">
+      <div><b>The guardrail change (step 4)</b>Today the topic check refuses questions about code. For an agent bound to a
+        repository it asks the same question it always has, “whose data answers this?”, and the company's own code counts.
+        <i>Needs your confirmation.</i></div>
+      <div><b>Text written by outsiders</b>An issue comment from someone outside the company is treated like an uploaded
+        PDF. If the agent has read one, any action it proposes needs approval.</div>
+      <div><b>Every answer is dated</b>Results carry the commit and when it was copied, so “as of commit abc1234, synced
+        14:02” can be stated rather than assumed.</div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── 4 PR ─────────────────────────────── -->
+  <section class="card" id="pr">
+    <div class="head"><h2>4 · Later: opening a pull request</h2><span class="tickets">T-J10 · T-J11 · not scheduled</span></div>
+    <p class="summary">This uses a <b>second App</b> with write access, installed only by companies that want it, on
+      the repositories they choose. The agent proposes a change and a person approves it after reading the exact
+      diff. Nothing reaches GitHub before that approval.</p>
+    <div class="diagram" data-seq="pr"></div>
+    <div class="why">
+      <div><b>Why a second App</b>Adding write access to the first App would make every connected company approve a
+        new permission. Companies that only want reading would never see that request.</div>
+      <div><b>Why step 2</b>It blocks a known attack. A public issue tells an agent to copy private code into a public
+        PR, and approval alone relies on the reviewer spotting it.</div>
+      <div><b>What it does not do</b>It does not run tests. The repository's own CI does, and the agent reads the result
+        back. Changes that need a build loop go to a coding agent the company already runs (spike T-J12).</div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── Stored ─────────────────────────────── -->
+  <section class="card" id="stored">
+    <div class="head"><h2>What is stored, and what never is</h2><span class="tickets">decisions 2, 3, 6, 9, 10</span></div>
+    <div class="two">
+      <div class="box yes">
+        <h3>Stored in Argentum</h3>
+        <ul>
+          <li>Which GitHub installation belongs to which company</li>
+          <li>The repositories enabled, and each one's include/exclude paths</li>
+          <li>A text copy of each enabled default branch, in 200-line chunks under a search index, within limits: 512 KB per file, 50 MB per repository, 200 MB per company</li>
+          <li>Which agents may read which repositories. <b>Empty means none</b></li>
+          <li>When it last synced, and why a sync failed</li>
+        </ul>
+      </div>
+      <div class="box no">
+        <h3>Never stored, never offered</h3>
+        <ul>
+          <li>Any GitHub access token. They are minted when needed and expire within an hour</li>
+          <li>The admin's own GitHub login token. It is used once to prove ownership, then discarded</li>
+          <li>Binaries, images, vendored code, lockfiles</li>
+          <li>Other branches. A file at another branch or commit is read live, one file at a time</li>
+          <li>Repository tools on the website widget</li>
+        </ul>
+      </div>
+    </div>
+    <p class="fine" style="margin-top:12px">Deleting a company's data removes its copies. Disabling a repository deletes its files.
+      Removing the App on GitHub disables everything it granted, either on the webhook or at the next hourly check.</p>
+  </section>
+
+  <!-- ─────────────────────────────── Cost ─────────────────────────────── -->
+  <section class="card" id="cost">
+    <div class="head"><h2>What one repository question costs</h2><span class="tickets">research §5 · measured by T-J7</span></div>
+    <p class="summary">GitHub charges nothing here. The cost is model tokens. Production's model is re-sent everything in
+      the conversation at every step, with no caching, so what matters is how much each tool returns and how many steps
+      the agent needs.</p>
+    <table>
+      <thead><tr><th>Approach</th><th>A typical 4-step question</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><b>This design</b>: search, then read line ranges</td><td class="num">≈ $0.066</td>
+          <td>Three small tools. About 1,500 tokens for a search and 3,000 for each range read.</td></tr>
+        <tr><td>Same tools, reading whole files</td><td class="num">≈ $0.10</td>
+          <td>Two 60 KB files stay in the context for every later step.</td></tr>
+        <tr><td>GitHub's own MCP server</td><td class="num">≈ $0.12+</td>
+          <td>Every tool's definition is re-sent at every step (illustrated at 15,000 tokens). Files over 256 KB fail outright.</td></tr>
+        <tr><td>An agent with no repository bound</td><td class="num">$0 extra</td>
+          <td>The tools, their instructions and the repository summary are simply not there.</td></tr>
+      </tbody>
+    </table>
+    <p class="fine" style="margin-top:10px">Estimates, not measurements: arithmetic on the real price of <code>moonshotai/kimi-k2.6</code>
+      ($0.95 per million input tokens, $4.00 per million output tokens). T-J7 replaces them with numbers read from <code>usage_events</code>.</p>
+  </section>
+
+  <!-- ─────────────────────────────── Glossary ─────────────────────────────── -->
+  <section class="card" id="words">
+    <div class="head"><h2>Words on this page</h2></div>
+    <dl class="gloss">
+      <dt>GitHub App</dt><dd>An integration registered once by Smartsoft. Each company installs it on its own GitHub account and chooses repositories.</dd>
+      <dt>Installation</dt><dd>One company's install of the App. Argentum saves its id, once ownership has been proven.</dd>
+      <dt>Installation token</dt><dd>A key GitHub issues on request. It lasts up to an hour and can be limited to specific repositories and read-only access.</dd>
+      <dt>Webhook</dt><dd>GitHub calling Argentum when something happens, such as a push. Signed, so a forged call is rejected.</dd>
+      <dt>ETag</dt><dd>A fingerprint of a response. Asking “has this changed since this ETag?” returns a free 304 when it hasn't.</dd>
+      <dt>Bound agent</dt><dd>An agent an admin has allowed to read a repository. Only bound agents get repository tools.</dd>
+      <dt>Reconciler</dt><dd>The hourly check that catches any push whose webhook never arrived.</dd>
+    </dl>
+  </section>
+
+  <footer>
+    Source documents: <code>docs/research/09-github-repository-source.md</code> (the evidence) and
+    <code>docs/plan/13-repository-source-roadmap.md</code> (the tickets). Where this page and those disagree, they are right.
+  </footer>
+</main>
+
+<script>
+// Sequence diagrams are drawn from the data below rather than hand-placed, so a
+// step added to a flow cannot leave an arrow pointing at the wrong row.
+const K = {
+  msg:    { stroke: '#1F2124', dash: '',    text: '#1F2124' },
+  reply:  { stroke: '#9A9DA3', dash: '5 4', text: '#62656B' },
+  note:   { fill: '#F4F5F6', stroke: '#E0E2E5', text: '#1F2124', tag: '' },
+  check:  { fill: '#E8F5ED', stroke: '#189A4D', text: '#157F41', tag: '✓ ' },
+  gate:   { fill: '#FDF1E5', stroke: '#EF720C', text: '#A85207', tag: '! ' },
+  stop:   { fill: '#FCECEC', stroke: '#E3474C', text: '#C7343A', tag: '✕ ' },
+};
+
+const SEQ = {
+  connect: {
+    aria: 'Connecting a GitHub installation to a company',
+    lanes: [
+      { id: 'admin', name: 'Admin', sub: 'browser', kind: 'person' },
+      { id: 'api', name: 'Argentum API', sub: 'cmd/api', kind: 'argentum' },
+      { id: 'gh', name: 'GitHub', sub: 'github.com', kind: 'github' },
+      { id: 'db', name: 'Postgres', sub: 'control plane', kind: 'argentum' },
+    ],
+    steps: [
+      { a: 'admin', b: 'api', t: 'Settings → Repositories → Connect GitHub' },
+      { a: 'api', b: 'api', k: 'note', t: 'Create a signed, one-time state\n(which company, which admin)' },
+      { a: 'api', b: 'admin', k: 'reply', t: 'Redirect to the App’s install page' },
+      { a: 'admin', b: 'gh', t: 'Install “Argentum (read)” · pick repositories' },
+      { a: 'gh', b: 'admin', k: 'reply', t: 'Redirect back: installation_id, code, state' },
+      { a: 'admin', b: 'api', t: 'Callback' },
+      { a: 'api', b: 'api', k: 'check', t: 'State is ours and not used before' },
+      { a: 'api', b: 'gh', t: 'Exchange code → the admin’s GitHub token' },
+      { a: 'api', b: 'gh', t: 'GET /user/installations' },
+      { a: 'api', b: 'api', k: 'gate', t: 'Is installation_id in that list?\nNo → refuse and save nothing (the id in the URL can be forged)' },
+      { a: 'api', b: 'db', t: 'Save installation + granted repositories' },
+      { a: 'api', b: 'api', k: 'note', t: 'Discard the admin’s token — nothing is stored' },
+      { a: 'api', b: 'admin', k: 'reply', t: 'Repositories listed; admin enables what agents may read' },
+    ],
+  },
+
+  sync: {
+    aria: 'Keeping a text copy of a repository up to date',
+    lanes: [
+      { id: 'gh', name: 'GitHub', sub: 'github.com', kind: 'github' },
+      { id: 'api', name: 'Argentum API', sub: 'cmd/api', kind: 'argentum' },
+      { id: 'q', name: 'Queue', sub: 'asynq · Redis', kind: 'argentum' },
+      { id: 'w', name: 'Worker', sub: 'cmd/worker', kind: 'argentum' },
+      { id: 'db', name: 'Postgres', sub: 'repository_files', kind: 'argentum' },
+    ],
+    steps: [
+      { a: 'gh', b: 'api', t: 'push to default branch\n(signed webhook)' },
+      { a: 'api', b: 'api', k: 'check', t: 'Signature valid\ndelivery not seen before' },
+      { a: 'api', b: 'q', t: 'enqueue repository:sync\n(one per repository)' },
+      { a: 'q', b: 'w', t: 'run the sync' },
+      { a: 'w', b: 'gh', t: 'Ask for a token: this repository only, read-only' },
+      { a: 'gh', b: 'w', k: 'reply', t: 'Token, valid ≤ 1 hour (held in memory only)' },
+      { a: 'w', b: 'gh', t: 'GET /tarball/main — one request' },
+      { a: 'w', b: 'w', k: 'note', t: 'Read the archive as a stream: text files only\nskip binaries, vendor/, lockfiles · ≤ 512 KB a file, ≤ 50 MB a repo' },
+      { a: 'w', b: 'db', t: 'Write changed files only, as 200-line chunks\nthe search index updates with them' },
+      { a: 'w', b: 'db', t: 'Record synced_sha, synced_at' },
+      { a: 'w', b: 'w', k: 'note', t: 'Every 60 minutes, the reconciler — GitHub never retries a webhook' },
+      { a: 'w', b: 'gh', t: 'GET branch head  If-None-Match: <ETag>' },
+      { a: 'gh', b: 'w', k: 'reply', t: '304 Not Modified (free) · or a new SHA → sync' },
+    ],
+  },
+
+  answer: {
+    aria: 'An agent answering a question from the repository copy',
+    lanes: [
+      { id: 'user', name: 'Member', sub: 'dashboard · channel · /v1', kind: 'person' },
+      { id: 'turn', name: 'Agent turn', sub: 'cmd/worker', kind: 'argentum' },
+      { id: 'db', name: 'Repository copy', sub: 'Postgres', kind: 'argentum' },
+      { id: 'gh', name: 'GitHub API', sub: 'live, cached', kind: 'github' },
+    ],
+    steps: [
+      { a: 'user', b: 'turn', t: '“What does status = 7 mean on our orders?”' },
+      { a: 'turn', b: 'turn', k: 'check', t: 'Is this agent bound to a repository? If not → today’s tools, no extra cost' },
+      { a: 'turn', b: 'turn', k: 'stop', t: 'Widget conversation? → repository tools are never offered' },
+      { a: 'turn', b: 'turn', k: 'gate', t: 'Topic check, repository scope: “whose data answers this?”\n“teach me linked lists” is still refused' },
+      { a: 'turn', b: 'db', t: 'search_repository   STATUS.*7' },
+      { a: 'db', b: 'turn', k: 'reply', t: 'Matches: path:line ± 2 lines · commit abc1234' },
+      { a: 'turn', b: 'db', t: 'read_repository_file   models/orders.sql  L40–L90' },
+      { a: 'db', b: 'turn', k: 'reply', t: 'At most 300 numbered lines' },
+      { a: 'turn', b: 'gh', t: 'repository_activity   PRs merged on 10 Sep' },
+      { a: 'gh', b: 'turn', k: 'reply', t: 'Compact rows · text by outsiders flags the turn' },
+      { a: 'turn', b: 'user', k: 'reply', t: 'Answer + link to …/blob/abc1234/models/orders.sql#L52' },
+    ],
+  },
+
+  pr: {
+    aria: 'Later: proposing, approving and opening a pull request',
+    lanes: [
+      { id: 'person', name: 'Approver', sub: 'dashboard', kind: 'person' },
+      { id: 'turn', name: 'Agent turn', sub: 'proposes', kind: 'argentum' },
+      { id: 'act', name: 'Actions', sub: 'approval framework', kind: 'argentum' },
+      { id: 'gh', name: 'GitHub', sub: 'write App', kind: 'github' },
+    ],
+    steps: [
+      { a: 'turn', b: 'act', t: 'Propose a pull request\nbase commit · branch argentum/… · full file contents' },
+      { a: 'act', b: 'act', k: 'stop', t: 'Read a private repository, targeting a public one? → refused' },
+      { a: 'act', b: 'person', t: 'Approval card showing the exact diff' },
+      { a: 'person', b: 'act', t: 'Approve' },
+      { a: 'act', b: 'act', k: 'check', t: 'Check again now: repository enabled, write App installed, base still exists' },
+      { a: 'act', b: 'gh', t: 'Token: this repository only\ncontents:write · pull_requests:write' },
+      { a: 'act', b: 'gh', t: 'Create branch argentum/… at the base commit' },
+      { a: 'act', b: 'gh', t: 'createCommitOnBranch (fails if the branch moved)\nsigned, shown as Verified' },
+      { a: 'act', b: 'gh', t: 'Open the pull request (draft where the plan allows)' },
+      { a: 'gh', b: 'act', k: 'reply', t: 'PR link · later: CI results read back (T-J11)' },
+      { a: 'act', b: 'act', k: 'note', t: 'Never the default branch. No build or test runs here — the repository’s own CI does.' },
+    ],
+  },
+};
+
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function drawSeq(el) {
+  const name = el.dataset.seq;
+  const { lanes, steps, aria } = SEQ[name];
+  const W = 1040, padL = 130, padR = 96, head = 62, gap = 12, LH = 16;
+  const xs = lanes.map((_, i) => padL + i * (W - padL - padR) / (lanes.length - 1));
+  const at = Object.fromEntries(lanes.map((l, i) => [l.id, xs[i]]));
+
+  let y = head + 22;
+  const rows = steps.map((s) => {
+    const lines = s.t.split('\n');
+    const h = lines.length * LH + 14;
+    const row = { s, lines, self: s.a === s.b, y, h };
+    y += h + gap;
+    return row;
+  });
+  const H = y + 8;
+
+  let g = '<defs>' + ['msg', 'reply'].map((k) =>
+    `<marker id="m-${k}-${name}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">` +
+    `<path d="M0,0 L10,5 L0,10 z" fill="${K[k].stroke}"/></marker>`).join('') + '</defs>';
+
+  lanes.forEach((l, i) => {
+    const x = xs[i], w = 172;
+    const dark = l.kind === 'github', ours = l.kind === 'argentum';
+    g += `<line x1="${x}" y1="${head}" x2="${x}" y2="${H - 4}" stroke="#E0E2E5" stroke-dasharray="3 5"/>`;
+    g += `<rect x="${x - w / 2}" y="6" width="${w}" height="${head - 12}" rx="10" fill="${dark ? '#1F2124' : ours ? '#FDECEC' : '#FFFFFF'}" stroke="${dark ? '#1F2124' : ours ? '#F25C5C' : '#E0E2E5'}"/>`;
+    g += `<text x="${x}" y="28" text-anchor="middle" font-size="13.5" font-weight="600" fill="${dark ? '#FFFFFF' : '#1F2124'}">${esc(l.name)}</text>`;
+    g += `<text x="${x}" y="45" text-anchor="middle" font-size="11.5" fill="${dark ? '#CACCD1' : '#62656B'}">${esc(l.sub)}</text>`;
+  });
+
+  rows.forEach(({ s, lines, self, y, h }, k) => {
+    const cy = y + h / 2;
+    g += `<circle cx="24" cy="${cy}" r="11" fill="#FFFFFF" stroke="#E0E2E5"/>` +
+         `<text x="24" y="${cy + 4}" text-anchor="middle" font-size="11" font-weight="600" fill="#62656B">${k + 1}</text>`;
+    if (self) {
+      const st = K[s.k || 'note'];
+      const txt = lines.map((ln, i) => (i === 0 ? st.tag : '') + ln);
+      // Width and x are filled in by sizeNotes once the text has rendered.
+      g += `<g data-note data-cx="${at[s.a]}"><rect y="${y}" height="${h}" rx="8" fill="${st.fill}" stroke="${st.stroke}"/>`;
+      txt.forEach((t, i) => {
+        g += `<text y="${y + 19 + i * LH}" font-size="12" fill="${st.text}"${i === 0 ? ' font-weight="600"' : ''}>${esc(t)}</text>`;
+      });
+      g += '</g>';
+    } else {
+      const st = K[s.k || 'msg'];
+      const x1 = at[s.a], x2 = at[s.b], dir = x2 > x1 ? 1 : -1;
+      const ly = y + h - 5, mid = (x1 + x2) / 2;
+      lines.forEach((t, i) => {
+        g += `<text x="${mid}" y="${y + 12 + i * LH}" text-anchor="middle" font-size="12" fill="${st.text}" ` +
+             `stroke="#FFFFFF" stroke-width="5" paint-order="stroke">${esc(t)}</text>`;
+      });
+      g += `<line x1="${x1 + dir * 4}" y1="${ly}" x2="${x2 - dir * 5}" y2="${ly}" stroke="${st.stroke}" stroke-width="1.6"` +
+           `${st.dash ? ` stroke-dasharray="${st.dash}"` : ''} marker-end="url(#m-${s.k || 'msg'}-${name})"/>`;
+    }
+  });
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(aria)}">${g}</svg>`;
+
+  // A note is sized from its rendered text. A width guessed from character
+  // counts ran bold text past the edge of its own box.
+  el.querySelectorAll('g[data-note]').forEach((n) => {
+    const texts = [...n.querySelectorAll('text')];
+    const w = Math.max(...texts.map((t) => t.getComputedTextLength())) + 28;
+    const x = Math.max(46, Math.min(Number(n.dataset.cx) - w / 2, W - w - 6));
+    const r = n.querySelector('rect');
+    r.setAttribute('x', x);
+    r.setAttribute('width', w);
+    texts.forEach((t) => t.setAttribute('x', x + 14));
+  });
+}
+
+document.querySelectorAll('[data-seq]').forEach(drawSeq);
+</script>
+</body>
+</html>

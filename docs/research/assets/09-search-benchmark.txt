@@ -1,0 +1,106 @@
+# Repository search benchmark, 2026-09-15 — raw output of both runs
+# Scratch Postgres 16.9 on loopback on the production host (2 CPUs), nice 19. Method: research 09, appendix.
+
+## Run 1 — whole files without an index, Go RE2, trigram index on content alone
+## (its program differed from 09-search-benchmark.go.txt in those three sections)
+
+corpus: 1643 text files, 14.3 MB (argentum's tracked text)
+
+== ingest: COPY, one transaction per repository ==
+repo 1:   14.3 MB,   1643 files,    0.5 s
+repo 2:   57.2 MB,   6572 files,    2.1 s
+repo 3:  185.8 MB,  21359 files,    7.3 s
+on disk: table incl. TOAST 143 MB, with primary key 146 MB
+
+== search: Postgres sequential scan, no parallel workers, median of 3 ==
+pattern              | repo 1 (x1 ) ms  hits | repo 2 (x4 ) ms  hits | repo 3 (x13) ms  hits
+literal, common      |              128    22 |             2277    88 |             2357   286
+regex, rare          |              167    27 |             2479   108 |             2311   351
+case-insensitive     |              128     0 |             2312     0 |             2330     0
+no match (worst)     |              130     0 |             2352     0 |             2339     0
+
+== search: Go RE2 over the same text in memory, one goroutine, median of 3 ==
+pattern              | repo 1 (x1 ) ms  hits | repo 2 (x4 ) ms  hits | repo 3 (x13) ms  hits
+literal, common      |               12    22 |               47    88 |              154   286
+regex, rare          |               12    27 |               47   108 |              166   351
+case-insensitive     |              481     0 |             1890     0 |             6364     0
+no match (worst)     |                2     0 |                7     0 |               21     0
+
+== search: Postgres with a pg_trgm GIN index ==
+index build over all three repositories: 41.1 s
+index size: 55 MB
+pattern              | repo 1 (x1 ) ms  hits | repo 2 (x4 ) ms  hits | repo 3 (x13) ms  hits
+literal, common      |              566    22 |              569    88 |              570   286  [trgm index]
+regex, rare          |             2048    27 |             2118   108 |             2092   351  [trgm index]
+case-insensitive     |             1157     0 |             1170     0 |             1191     0  [trgm index]
+no match (worst)     |                2     0 |                3     0 |                2     0  [trgm index]
+
+== read one file by primary key (the largest), median of 5 ==
+c0/docs/coverage/delivery-log.md (469 KB): 3.1 ms
+EXIT=0
+
+## Run 2 — plans, parallelism, strpos, (repository_id, content) GIN on files and on 200-line chunks
+## (program: 09-search-benchmark.go.txt)
+
+corpus: 1643 text files, 14.3 MB
+
+loaded: 29574 files, 49032 chunks of <= 200 lines
+
+== A. why 57 MB and 186 MB scanned in the same time: EXPLAIN ANALYZE, regex rare ==
+repo 1:
+  Buffers: shared hit=2788 read=1036 written=999
+  ->  Bitmap Heap Scan on repository_files  (cost=88.74..2142.18 rows=1 width=0) (actual time=10.968..152.901 rows=27 loops=1)
+  Rows Removed by Filter: 1616
+  Buffers: shared hit=2788 read=1036 written=999
+  ->  Bitmap Index Scan on repository_files_pkey  (cost=0.00..88.73 rows=1643 width=0) (actual time=0.402..0.403 rows=1643 loops=1)
+  Buffers: shared hit=1 read=17
+  Buffers: shared hit=30 read=3
+  Execution Time: 152.993 ms
+repo 2:
+  Buffers: shared hit=62894 read=5540 written=4344
+  ->  Seq Scan on repository_files  (cost=0.00..2491.61 rows=1 width=0) (actual time=169.205..2418.506 rows=108 loops=1)
+  Rows Removed by Filter: 29466
+  Buffers: shared hit=62894 read=5540 written=4344
+  Execution Time: 2418.664 ms
+repo 3:
+  Buffers: shared hit=68434
+  ->  Seq Scan on repository_files  (cost=0.00..2491.61 rows=2 width=0) (actual time=150.983..2341.397 rows=351 loops=1)
+  Rows Removed by Filter: 29223
+  Buffers: shared hit=68434
+  Execution Time: 2341.729 ms
+
+== B1. whole files, sequential, no parallel workers ==
+pattern              | repo 1 (x1 ) ms  hits | repo 2 (x4 ) ms  hits | repo 3 (x13) ms  hits
+literal, common      |              126    22 |             2265    88 |             2249   286  [seq scan]
+regex, rare          |              132    27 |             2345   108 |             2536   351  [seq scan]
+case-insensitive     |              132     0 |             2321     0 |             2306     0  [seq scan]
+no match (worst)     |              158     0 |             2338     0 |             2277     0  [seq scan]
+
+== B2. the same, max_parallel_workers_per_gather = 2 (Postgres's default) ==
+pattern              | repo 1 (x1 ) ms  hits | repo 2 (x4 ) ms  hits | repo 3 (x13) ms  hits
+literal, common      |              127    22 |             2269    88 |             2280   286  [seq scan]
+regex, rare          |              130    27 |             2320   108 |             2320   351  [seq scan]
+case-insensitive     |              128     0 |             2347     0 |             2333     0  [seq scan]
+no match (worst)     |              131     0 |             2289     0 |             2280     0  [seq scan]
+
+== C. literal patterns without regex: strpos ==
+pattern              | repo 1 (x1 ) ms  hits | repo 2 (x4 ) ms  hits | repo 3 (x13) ms  hits
+literal, common      |               41    22 |              163    88 |              545   286  [seq scan]
+no match (worst)     |               37     0 |              153     0 |              484     0  [seq scan]
+
+== D. whole files, GIN (repository_id, content gin_trgm_ops) ==
+build 39.0 s, size 55 MB
+pattern              | repo 1 (x1 ) ms  hits | repo 2 (x4 ) ms  hits | repo 3 (x13) ms  hits
+literal, common      |               34    22 |              130    88 |              413   286  [gin index]
+regex, rare          |              116    27 |              453   108 |             1468   351  [gin index]
+case-insensitive     |               65     0 |              260     0 |              835     0  [gin index]
+no match (worst)     |                2     0 |                2     0 |                3     0  [gin index]
+
+== E. 200-line chunks, GIN (repository_id, content gin_trgm_ops); hits = distinct files ==
+build 44.6 s, index 75 MB, chunk table 161 MB
+pattern              | repo 1 (x1 ) ms  hits | repo 2 (x4 ) ms  hits | repo 3 (x13) ms  hits
+literal, common      |               12    22 |               47    88 |              137   286  [gin index]
+regex, rare          |              100    27 |              387   108 |             1275   351  [gin index]
+case-insensitive     |               46     0 |              184     0 |              563     0  [gin index]
+no match (worst)     |                2     0 |                2     0 |                4     0  [gin index]
+EXIT=0

@@ -571,6 +571,32 @@ prospects) would never have fired for it either. That is now its own track,
 need a safety model the `Conn` contract does not give them, so whichever lands
 first should be read by whoever builds the second.
 
+### A repository as a source (`T-J1` → `T-J12`) — **planned 2026-09-15, tickets written, not scheduled**
+Agents read a tenant's GitHub repositories — the dbt models and enums that
+explain the warehouse, and the commits and pull requests that explain why a
+number moved — read-only first, pull requests later through the action
+framework. The research is
+[`../research/09-github-repository-source.md`](../research/09-github-repository-source.md),
+the plan [`13-repository-source-roadmap.md`](13-repository-source-roadmap.md):
+~17.0d for the read-only floor (~14.25d after its cut order), two triggered
+tickets, and a 5.5d write phase shaped but not scheduled. **Revised the same day
+after a search benchmark:** an unindexed search cost the whole table rather than
+the repository, so the trigram index moved from `T-J8` into `T-J2`/`T-J4`
+(research §5e).
+**Not "Non-SQL sources" above and not `T-M1`→`T-M4`:** a repository is mirrored
+as text and searched, not queried as rows and not called as a tenant's tools.
+GitHub's own MCP server through `T-M1` works today for BI-worded questions, and
+the research §5b gives five reasons it is not the product.
+**It does not reopen *Explicitly rejected*'s topic row.** The topic rule stays;
+an agent bound to a repository has its test — *whose data answers it* — widened
+by one clause, and every other agent is unchanged. That is the roadmap's
+decision 1 and it is the owner's to confirm.
+**Trigger:** owner-set, like the roster and voice tracks. The cheaper question
+first: whether the pilot's data team keeps SQL or dbt in GitHub.
+**Estimate:** 17.0d read-only (`T-J1` 3.0, `T-J2` 3.5, `T-J3` 1.5, `T-J4` 3.5,
+`T-J5` 2.0, `T-J6` 2.0, `T-J7` 1.5); `T-J8` (Zoekt) 3.0 and `T-J9` 2.0 when triggered;
+`T-J10`→`T-J12` 5.5.
+
 ### Native embeddable dashboards
 **Why deferred:** Metabase share URLs work today.
 **Trigger:** a customer wanting Argentum charts inside their own product.
