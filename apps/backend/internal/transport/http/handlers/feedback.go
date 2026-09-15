@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -136,6 +137,14 @@ func (h *FeedbackHandler) summary(c *gin.Context) {
 // feedbackFail maps the service's errors onto status codes. A message that
 // belongs to another tenant is a 404 for the reason chatFail gives: a 403
 // would confirm the row is real to a caller holding a bare uuid.
+//
+// **The last branch answers a sentence, never the error.** Until 2026-09-15 it
+// wrote err.Error(), and `GET /api/messages/x/feedback` answered with
+// Postgres's own `invalid input syntax for type uuid` as its body — found beside
+// T-W8's gate. A malformed id no longer reaches here, but the next thing that
+// does is a database failure, and a dropped connection's error names the host it
+// could not reach. The log keeps the error, with the company, for the operator;
+// the caller learns only what they can act on.
 func feedbackFail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
@@ -144,6 +153,10 @@ func feedbackFail(c *gin.Context, err error) {
 		errors.Is(err, domain.ErrInvalidInput):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id": companyID(c),
+			"path":       c.FullPath(),
+		}).Error("feedback: request failed; the caller was told to try again")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read or record feedback; try again"})
 	}
 }

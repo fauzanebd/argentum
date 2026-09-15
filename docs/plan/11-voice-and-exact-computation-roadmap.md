@@ -43,8 +43,9 @@ neither list.
 > **Live, as predicted but for one hand-counted character** (live-gate §7l). **Two defects, both fixed:**
 > the audio route shipped from the build without its `voice` gate until its own test failed, and a
 > malformed message id answered `500` — fixed in the shared message lookup, which fixed
-> `suggestion-picked` too. `GET /api/messages/:id/feedback` answers the same `500`, with the driver's
-> sentence in the body, and is filed. **Owed:** a real light model on real answers, a real voice on Indonesian
+> `suggestion-picked` too. `GET /api/messages/:id/feedback` answered the same `500`, with the driver's
+> sentence in the body, through a different repository — **fixed 2026-09-15**, with the handler branch
+> that quoted any database error on the four feedback routes. **Owed:** a real light model on real answers, a real voice on Indonesian
 > figures, the worker's sweep, `089` at deploy. **Next on this track: `T-W9`**, the microphone and the
 > player, both of its dependencies met. Research 08 §6's unknown 6, whether anybody at the pilot wants
 > to talk to it, is still unasked.

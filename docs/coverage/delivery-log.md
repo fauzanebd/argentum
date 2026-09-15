@@ -7897,6 +7897,30 @@ switch in `trailingZeros` that should be tagged. Rewritten. Scratch processes le
 **Still owed** (live-gate §7l): a real light model on real answers, a real voice reading Indonesian figures,
 the worker's sweep over spoken answers, and `089` at deploy.
 
+## Phase 3bo — A feedback route that quoted the database (2026-09-15)
+
+**Why.** Phase 3bn filed it: `GET /api/messages/x/feedback` answered `500` with
+`pq: invalid input syntax for type uuid: "x" (22P02)` as its body. It was the recommended next pick, and
+the owner took it. Two defects shared that one symptom, and each was proven failing before it was
+fixed.
+
+**The id.** `MessageFeedbackRepo.GetByMessage` passed Postgres's cast refusal through. It now answers a
+malformed id with no verdicts, which is what the same route already answered for a well-formed id naming
+no message. `scratch_feedback_malformed_test.go` ran on a scratch Postgres: it failed with `22P02` before
+the fix, and passed after it.
+
+**The body.** `feedbackFail`'s last branch wrote `err.Error()`. So any failure on the four feedback routes
+quoted the driver, and none of them was logged. It now logs the error, the company and the route, and
+answers `could not read or record feedback; try again`. `TestFeedbackFailureNeverQuotesTheDatabase`
+failed before the fix on all four routes, with 0 of 4 logged, and passed after it.
+
+**Not fixed, filed:** the class is wider than feedback. 101 `500` responses across 20 handler files still
+put `err.Error()` in the body ([`../plan/backlog.md`](../plan/backlog.md) §Hygiene, which counts them by
+file).
+
+**Gate.** `make check`, alone: `MAKE EXIT: 0`, 15m05s. 76 Go packages `ok`, zero `FAIL`/`panic` lines,
+`golangci-lint` `0 issues.`, `gofmt -l` empty, and 88 dashboard tests in 14 files.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

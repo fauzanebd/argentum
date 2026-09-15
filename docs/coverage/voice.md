@@ -497,10 +497,11 @@ before the run, and the full table is live-gate §7l. Everything was stopped bef
   answers `404`. **It fixed an older route too.** `POST /api/messages/x/suggestion-picked` went from `500`, with
   Postgres's own sentence in the body, to `404 no such message`. `POST /api/messages/x/feedback` answers
   `404` too; its before was not measured, because the probe sent a malformed body.
-- **A defect beside it, found and not fixed.** `GET /api/messages/x/feedback` still answers `500` with
-  `pq: invalid input syntax for type uuid: "x" (22P02)` in the body. It reads through the feedback
-  repository, not the message lookup. It is `T-Q2`'s route, and it is filed rather than widened into
-  this ticket.
+- **A defect beside it, found that day and fixed the next.** `GET /api/messages/x/feedback` answered
+  `500` with `pq: invalid input syntax for type uuid: "x" (22P02)` in the body. It reads through the
+  feedback repository, not the message lookup, so this ticket's fix did not reach it. It was fixed on
+  2026-09-15 as its own change: the malformed id, and the handler branch that quoted any database
+  error ([`live-gate-backlog.md`](live-gate-backlog.md) §7l).
 
 ### 3g. What is owed, and what stays open
 
@@ -525,4 +526,6 @@ In [`live-gate-backlog.md`](live-gate-backlog.md) §7l, with predictions:
 - **A refusal is remembered for `SPEECH_RETENTION_DAYS`,** and there is no way to ask again sooner.
 - **A count under ten spelled as a word is not checked** (§3b).
 - **One synthesis per press is per replica.**
-- **`GET /api/messages/:id/feedback`** answers a malformed id with `500` and the driver's sentence (§3f).
+- ~~**`GET /api/messages/:id/feedback`** answers a malformed id with `500` and the driver's sentence~~ —
+  **fixed 2026-09-15** (§3f). 101 other `500`s across 20 handlers still quote their error, filed in
+  [`../plan/backlog.md`](../plan/backlog.md) §Hygiene.

@@ -2743,9 +2743,19 @@ go test -tags scratch -run Scratch089 -count=1 -v ./internal/adapters/postgres/
 | The API log | No spoken text, no written answer | **As predicted.** Zero of each; the Warn lines name the refusals' reasons |
 | The company's erasure | Spoken rows 0, clip rows 0, no key under `voice/<co>/`; company B untouched | **As predicted** |
 
-**Found beside the arms, not fixed:** `GET /api/messages/x/feedback` answers `500` with
+**Found beside the arms:** `GET /api/messages/x/feedback` answered `500` with
 `pq: invalid input syntax for type uuid: "x" (22P02)` in the body. It reads through the feedback
-repository. That is `T-Q2`'s, and the same one-line mapping.
+repository, which is `T-Q2`'s. **Fixed 2026-09-15**, in two halves and each proven failing first:
+- **The id.** `MessageFeedbackRepo.GetByMessage` answers a malformed id with no verdicts, as it already
+  answered a well-formed unknown one. `scratch_feedback_malformed_test.go` failed on a scratch Postgres
+  with the `22P02` refusal, then passed after the fix.
+- **The body.** `feedbackFail`'s last branch wrote `err.Error()`, so any database failure on the four
+  feedback routes quoted the driver, and a dropped connection names its host. It now logs the error with
+  the company and answers `could not read or record feedback; try again`.
+  `TestFeedbackFailureNeverQuotesTheDatabase` failed on all four routes, with none logged, then passed.
+
+**The class is wider than feedback, and is filed, not fixed:** 101 `500` responses across 20 handler files
+still put `err.Error()` in the body ([`../plan/backlog.md`](../plan/backlog.md) §Hygiene).
 
 **Still owed:**
 

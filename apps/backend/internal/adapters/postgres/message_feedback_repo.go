@@ -56,11 +56,21 @@ func (r *MessageFeedbackRepo) Upsert(ctx context.Context, f *domain.MessageFeedb
 	).Scan(&f.ID, &f.CreatedAt, &f.UpdatedAt)
 }
 
+// GetByMessage lists the verdicts on one message.
+//
+// An id that is not a uuid names no message, so it has no verdicts: the answer a
+// well-formed id naming no message already gets. Postgres refuses the cast
+// before it looks for a row, and until 2026-09-15 that refusal reached
+// `GET /api/messages/x/feedback` as a 500 quoting the driver.
 func (r *MessageFeedbackRepo) GetByMessage(ctx context.Context, companyID, messageID string) ([]*domain.MessageFeedback, error) {
 	q := `SELECT ` + feedbackColumns + ` FROM message_feedback
 		WHERE company_id = $1 AND message_id = $2
 		ORDER BY created_at DESC`
-	return r.query(ctx, q, companyID, messageID)
+	out, err := r.query(ctx, q, companyID, messageID)
+	if malformedID(err) {
+		return nil, nil
+	}
+	return out, err
 }
 
 // ListByCompany is the "what went wrong lately" list. onlyNegative is the
