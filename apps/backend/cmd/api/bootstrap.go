@@ -394,7 +394,28 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	if logoStore != nil {
 		voiceStore = logoStore
 	}
-	deps.voiceClips = app.NewVoiceClips(pgctl.NewVoiceClipRepo(controlDB), voiceStore)
+	deps.voiceClips = app.NewVoiceClips(pgctl.NewVoiceClipRepo(controlDB), voiceStore).
+		WithSpokenAnswers(pgctl.NewSpokenAnswerRepo(controlDB))
+	// An answer read aloud (T-W8): the light model reduces it, the synthesiser
+	// reads it, the logo bucket keeps it. Without the bucket the service is not
+	// Enabled and its route is not registered — a play button that billed every
+	// press would be worse than none (SpokenAnswerService.Enabled).
+	var spokenStore app.SpokenAudioStore
+	if logoStore != nil {
+		spokenStore = logoStore
+	}
+	deps.spokenSvc = app.NewSpokenAnswerService(
+		speech.NewSynthesizer(speech.SynthConfig{
+			Enabled:  cfg.SpeechEnabled,
+			Provider: cfg.SpeechTTSProvider,
+			APIKey:   cfg.EffectiveSpeechTTSAPIKey(),
+			BaseURL:  cfg.SpeechTTSBaseURL,
+			Model:    cfg.SpeechTTSModel,
+			Voice:    cfg.SpeechTTSVoice,
+			Timeout:  time.Duration(cfg.SpeechTimeoutSecs) * time.Second,
+		}),
+		lightLLMClient, pgctl.NewSpokenAnswerRepo(controlDB), spokenStore, deps.usageSvc, cfg.SpeechRetentionDays,
+	).WithBudget(deps.usageSvc)
 	deps.voiceSvc = app.NewVoiceService(
 		speech.New(speech.Config{
 			Enabled:  cfg.SpeechEnabled,

@@ -174,6 +174,9 @@ type apiDeps struct {
 	// it off still holds last week's audio.
 	voiceSvc   *app.VoiceService
 	voiceClips *app.VoiceClips
+	// spokenSvc reads an answer aloud (T-W8), and its route exists only when it
+	// is Enabled: a synthesiser, a light model and object storage.
+	spokenSvc *app.SpokenAnswerService
 	// Watchers (T-08): CRUD and the dry-run. The API never fires or delivers —
 	// that is the worker's WatcherService — so this instance carries no delivery
 	// providers and no budget checker.

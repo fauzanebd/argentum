@@ -275,6 +275,38 @@ expires or when its conversation is deleted, and a company's data erasure delete
 every clip and the whole prefix. Each transcription is one `speech_transcription`
 usage event, priced per second of audio for the model that transcribed it.
 
+#### An answer read aloud (T-W8)
+
+`GET /api/messages/:id/audio` — member, **and** the `voice` capability. The route exists
+only where `SPEECH_ENABLED=true`, a synthesiser is usable (`SPEECH_TTS_*`) and object
+storage is configured; everywhere else it is the router's `404`.
+
+`200`, `audio/mpeg`, `Cache-Control: private, max-age=3600`. Nothing is synthesised until
+the first request for a message. That request has the light model reduce the answer to a
+few spoken sentences (no table, no markdown, figures rounded), checks the reduction,
+synthesises it and keeps it. Every later request for the message is served from what was
+kept, and billed nothing.
+
+The check is deterministic. Every figure spoken must be one the written answer states,
+rounded no further than the precision it is spoken at: "about 1.2 million" for 1,234,567
+passes, "2 million" does not, and neither does a digit the written answer does not have.
+A figure spelled in words is refused, because it cannot be read. So is a table row, code,
+SQL or a link.
+
+| Status | When |
+|------|------|
+| `402` | Out of credits, before either model is called |
+| `403` | `{"error": "an admin has not granted you this", "capability": "voice"}` |
+| `404` | Another company's message, one in a conversation hidden from the caller (T-Z10), or a message that is not an agent's answer |
+| `422` | `{"error": "this answer cannot be read aloud; read it instead", "reason": "spoken 2 million, nearest written 1,234,567: …"}`. Remembered: the next request answers the same without asking a model again |
+| `502` | `{"error": "the speech service could not read that answer aloud; read it instead, or try again"}`. Nothing kept and no synthesis billed; the next request tries again |
+
+The audio is kept under `voice/<company_id>/answers/` for `SPEECH_RETENTION_DAYS`, deleted
+by the same worker sweep as recordings (and when its message is deleted), and removed by a
+company's erasure. Each synthesis is one `speech_synthesis` usage event, priced per
+character for the model that read it; the reduction is its own `llm_call` on the light
+model.
+
 ---
 
 ### Documents

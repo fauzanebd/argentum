@@ -7844,6 +7844,59 @@ negated condition in the numeral reader. Rewritten, then `make check` ran again 
 **Still owed:** a Groq key and twenty recordings of the script from the pilot. Then `make eval-speech`,
 and its pairs row decides `SPEECH_PROVIDER`.
 
+## Phase 3bn — An answer read aloud, and every figure it says held to the page (`T-W8`, 2026-09-14)
+
+**Why.** `/continue-building` picked the voice track's next ticket. `T-W7`, its dependency, was built that
+morning, and roadmap 11's status block named `T-W8` next. Two things stand against it, and both are in the
+report rather than decided here. Roadmap 11's cut order drops `T-W8` first. And research 08 §6's unknown 6 —
+whether anybody at the pilot wants to talk to it — is still unasked. Record: [`voice.md`](voice.md) §3.
+
+**What was built.**
+- `GET /api/messages/:id/audio`, member **+ `voice`**. Registered only where a synthesiser, the light model
+  and object storage all exist.
+- `app.SpokenAnswerService`, in three steps:
+  - the light model reduces the answer, which is fenced in the prompt;
+  - `speech.Speakable` removes markdown and refuses a table, code, SQL or a link, and
+    `guardrails.CheckSpokenFigures` refuses any figure the written answer does not state at the precision
+    it is spoken;
+  - `tts-1` reads the rest, and the audio is kept per message, so a second press costs nothing.
+- `089_spoken_answers` and `SpokenAnswerRepo`. The sweep and the company erasure take spoken answers too.
+- `speech_synthesis` usage per character, `SPEECH_TTS_*`, `numparse.ParsePlaces`, and api-types
+  regenerated.
+
+**Where the ticket was wrong.**
+- **`Migration: none`.** It is `089`: the cache, the spoken text and the refusal each need a row.
+- **One provider setting.** `T-W7`'s default provider, Groq, cannot speak Indonesian.
+- **The precision rule** was ambiguous.
+- **Spelled figures** cannot be read, so they are refused.
+- **The disabled play button** is `T-W9`'s.
+
+**Proven.** Sixteen mutations: fifteen killed. **One survived.** A clause refusing a spoken figure finer than
+its written one changed nothing, because the rounding already refuses everything it did except zero-padding.
+It was removed. Separately, before any mutation, the build shipped the route without its
+`capabilityPolicy` entry. `TestSpokenAnswerRefusesAnUngrantedPersonBeforeSynthesis` failed on it with a `500`,
+which was an ungranted member reaching the handler.
+
+**Live, on a scratch stack that has object storage for the first time.** MinIO's server download answers
+`410 Gone`. An in-memory S3 in a `/tmp` module served the product's own client unchanged.
+- **The database arm:** `089`'s statements on real rows, as predicted.
+- **The route arms:** every one as predicted, except one hand-counted character (83 characters, 1,245 µUSD).
+- **`T-W7`'s owed audio half** ran in the same sitting.
+
+**One defect, predicted before the run, and fixed.** A malformed message id answered `500`.
+`MessageRepo.GetForCompany` now maps Postgres's invalid-uuid refusal to `ErrNotFound`. The route answers
+`404`, and `POST …/suggestion-picked` went from a `500` quoting Postgres to `404` with it.
+**Filed, not fixed:** `GET /api/messages/:id/feedback` answers the same `500`, with the driver's sentence in
+the body. It is `T-Q2`'s route.
+
+**Gate.** The first `make check` stopped at lint after 56 s, before any test ran: `staticcheck` QF1002, a
+switch in `trailingZeros` that should be tagged. Rewritten. Scratch processes left running were stopped, and
+`make check` ran again alone: `MAKE EXIT: 0`, 14m53s. 76 Go packages `ok`, zero `FAIL`/`panic` lines,
+`golangci-lint` `0 issues.`, `gofmt -l` empty, and 88 dashboard tests in 14 files.
+
+**Still owed** (live-gate §7l): a real light model on real answers, a real voice reading Indonesian figures,
+the worker's sweep over spoken answers, and `089` at deploy.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

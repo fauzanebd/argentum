@@ -417,14 +417,17 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	// Voice clips (T-W7), with no store until the branch below finds one. A
 	// worker without object storage still deletes the rows of clips that kept no
 	// audio, and says so about the ones that did.
-	s.VoiceClips = app.NewVoiceClips(pgctl.NewVoiceClipRepo(controlDB), nil)
+	// Answers read aloud (T-W8) are swept by the same tick.
+	s.VoiceClips = app.NewVoiceClips(pgctl.NewVoiceClipRepo(controlDB), nil).
+		WithSpokenAnswers(pgctl.NewSpokenAnswerRepo(controlDB))
 
 	// Object storage first, because whether it exists decides whether the
 	// registry below has a generate_document in it.
 	if storageSvc, err := buildStorageService(cfg); err != nil {
 		logrus.WithError(err).Warn("storage disabled; generate_document tool will not be registered")
 	} else if storageSvc != nil {
-		s.VoiceClips = app.NewVoiceClips(pgctl.NewVoiceClipRepo(controlDB), storageSvc)
+		s.VoiceClips = app.NewVoiceClips(pgctl.NewVoiceClipRepo(controlDB), storageSvc).
+			WithSpokenAnswers(pgctl.NewSpokenAnswerRepo(controlDB))
 		presignTTL := time.Duration(cfg.DocumentPresignTTLSecs) * time.Second
 		// The branding service reads the same bucket it writes logos to, and
 		// the same company row the API's Reports tab writes (T-R5). One

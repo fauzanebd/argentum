@@ -81,7 +81,12 @@ func (r *MessageRepo) GetForCompany(ctx context.Context, companyID, id string) (
 		LEFT JOIN agents a ON a.id = m.agent_id
 		WHERE m.id = $1 AND t.company_id = $2`
 	m, err := scanMessage(r.db.QueryRowContext(ctx, q, id, companyID))
-	if errors.Is(err, sql.ErrNoRows) {
+	// A malformed id is a message that does not exist, not a failure (T-W8's
+	// gate). Postgres refuses the cast before it looks for a row, and passed
+	// through, that refusal reached callers as an outage: `GET
+	// /api/messages/x/audio` answered 500 where every id it could not find
+	// answered 404.
+	if errors.Is(err, sql.ErrNoRows) || malformedID(err) {
 		return nil, domain.ErrNotFound
 	}
 	return m, err

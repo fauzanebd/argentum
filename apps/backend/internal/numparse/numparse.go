@@ -42,9 +42,24 @@ import (
 //     product's primary language, in an instrument whose whole value is that
 //     its output is worth reading.
 func Parse(raw string) (float64, bool) {
+	v, _, ok := ParsePlaces(raw)
+	return v, ok
+}
+
+// ParsePlaces is Parse, and how many digits the number was written with after
+// its decimal point (T-W8).
+//
+// **Not a second reading of the separators.** A spoken answer is held to the
+// precision its figure was written at — "1,2 juta" to one decimal place, "1.200"
+// to none — and that question is only answerable by the rules that decided
+// which separator was the decimal one. Counting digits after "the last comma"
+// would call "1,234" three places, the opposite of what Parse just read it as.
+// So Parse is this function with the count thrown away, and there is still one
+// set of rules.
+func ParsePlaces(raw string) (float64, int, bool) {
 	raw = strings.Trim(raw, ".,")
 	if raw == "" {
-		return 0, false
+		return 0, 0, false
 	}
 	dots := strings.Count(raw, ".")
 	commas := strings.Count(raw, ",")
@@ -77,9 +92,13 @@ func Parse(raw string) (float64, bool) {
 
 	v, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
-		return 0, false
+		return 0, 0, false
 	}
-	return v, true
+	places := 0
+	if i := strings.IndexByte(raw, '.'); i >= 0 {
+		places = len(raw) - i - 1
+	}
+	return v, places, true
 }
 
 // ParseWithDecimal reads a number when the caller already knows which character

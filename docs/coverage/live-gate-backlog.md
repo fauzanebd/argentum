@@ -2683,6 +2683,80 @@ second test.
 | `T-D16` | **`088` on the production control database, at deploy.** **Prediction: applied in milliseconds on boot.** Any rows are pointers to a Metabase that no longer runs | A deploy (§3d) |
 | The boot fix | **A real rollback, in the cluster.** Deploy a release that holds the fix and a migration after it, then set the image tag back one release. **Prediction:** the rolled-back pod logs the warning, turns ready, and the rollout completes. Before the fix the pod would have exited on boot and the rollout would have stalled | Two releases that both hold the fix, and a go-ahead for a production rollback. Rehearsing it in another namespace is the safer first run |
 
+## 7l. `T-W8`'s answer read aloud — run 2026-09-14 on a scratch stack, and what a real model owes
+
+`T-W8` reads an agent's answer aloud: the light model reduces it, two deterministic checks decide
+whether it may be said, the synthesiser reads it, and the audio is kept per message
+([`voice.md`](voice.md) §3). **No tool and no prompt change, so no `make eval`.** There is no model key or
+speech key on this machine, so both providers were a stand-in.
+
+**Not production.** `/tmp/tw8-gate`:
+- Postgres 16 embedded on `:55453` and miniredis on `:56391`, with the tree's migrations and `T-W7`'s
+  pgvector swaps.
+- **An in-memory S3 on `:19010`** (`gofakes3`). MinIO's server binary download answers `410 Gone`, and the
+  product's own `minio-go` client ran against this one unchanged: bucket creation, uploads, streamed reads,
+  prefix listing and removal.
+- One stand-in on `:18299` (`provider.py`), answering `/chat/completions` with a scripted reduction,
+  `/audio/speech` with MP3-headed bytes, and `/audio/transcriptions` with `T-W7`'s sentence. It logs each
+  request's shape.
+- The working tree's `cmd/api` under `env -i` on `:18181`. It binds every interface, so the run was kept
+  to about two minutes.
+
+The predictions are `/tmp/tw8-gate/predictions.md`, written before `arms.sh` ran. Everything was stopped
+before `make check`.
+
+**The database arm** is `internal/adapters/postgres/scratch_spoken_answers_test.go`, behind the `scratch`
+tag:
+
+```bash
+SCRATCH_PG_DSN='postgres://argentum:gatepass@127.0.0.1:55453/argentum?sslmode=disable' \
+SCRATCH_MIGRATIONS=/tmp/tw8-gate/migrations \
+go test -tags scratch -run Scratch089 -count=1 -v ./internal/adapters/postgres/
+```
+
+| Arm | Prediction | Result |
+| --- | --- | --- |
+| `089` up, `down 1`, up | Clean; the table gone at 88 | **As predicted.** 89, 88 with no `spoken_answers`, 89 |
+| `Save`, then `ForMessage` | Every column reads back; `created_at` returned | **As predicted** |
+| A second `Save` for the same message | Replaced in place: one row, its id kept, the refusal set, the key cleared | **As predicted.** `INSERT … SELECT … JOIN … ON CONFLICT` parses |
+| `Save` under B naming A's message; `ForMessage` across; `x` for both | `ErrNotFound`, nothing written | **As predicted** |
+| A conversation deleted under a spoken answer | Its message cascades; the row stays with `message_id` NULL; `Due` lists it with key and company only | **As predicted** |
+| `Delete` across companies, in its own, `x`; `DeleteForCompany(B)` | Row stays; row gone; no error; B's one row, A's untouched | **As predicted** |
+
+**The route arms** are `/tmp/tw8-gate/arms.sh`.
+
+| Arm | Prediction | Result |
+| --- | --- | --- |
+| Boot | `speech output enabled` (openai, `tts-1`, `alloy`); the bucket created | **As predicted** |
+| A member, then an admin, without the grant | `403 capability: voice`; model +0, synthesiser +0 | **As predicted** |
+| Granted, the first press on a table answer | `200 audio/mpeg`; model +1 with the answer fenced; synthesiser +1 with `tts-1`, `alloy`, `mp3` and the reduction verbatim; one row, one object, seven days; `speech_synthesis` of 84 characters at 1,260 µUSD | **As predicted but for the count.** 4,010 bytes; **83 characters, 1,245 µUSD** = 83 × 15. The prediction's 84 was a hand count. Plus one `llm_call` on the light model |
+| The second press | The same bytes; nothing called; still one synthesis row | **As predicted.** sha256 equal |
+| A reduction saying `25 persen` for a written `18,42%`, pressed twice | `422` naming both figures; model +1, synthesiser +0; again, model +0 | **As predicted.** `spoken 25 persen, nearest written 18,42%: …`; the row holds the refusal and no key |
+| A reduction reciting the table | `422 … contains a table`; synthesiser +0 | **As predicted** |
+| The synthesiser answering `503`, then back | `502` with the sentence; no row; synthesis usage unchanged; then `200` | **As predicted** |
+| A person's question; a room line | `404 only an agent's answer`; model +0 | **As predicted** |
+| A restricted agent's conversation; another company's answer | `404`; nothing called | **As predicted** |
+| **A malformed id, `x`** | **`500` — a defect**: `GetForCompany` passes Postgres's invalid-uuid error through | **As predicted. Fixed** by mapping it to `ErrNotFound`; rebuilt and re-run: `404`. The same lookup took `POST /api/messages/x/suggestion-picked` from `500`, with Postgres's sentence in the body, to `404` |
+| Revoke, then the member's next request | `403` | **As predicted** |
+| An answer spoken, then its conversation deleted | `200`; `message_id` NULL; due | **As predicted** |
+| `T-W7`'s clip, now with a bucket (§7j's owed audio half) | `200`; the clip's key `voice/<co>/<clip>.webm`, stored beside the answers | **As predicted** |
+| The API log | No spoken text, no written answer | **As predicted.** Zero of each; the Warn lines name the refusals' reasons |
+| The company's erasure | Spoken rows 0, clip rows 0, no key under `voice/<co>/`; company B untouched | **As predicted** |
+
+**Found beside the arms, not fixed:** `GET /api/messages/x/feedback` answers `500` with
+`pq: invalid input syntax for type uuid: "x" (22P02)` in the body. It reads through the feedback
+repository. That is `T-Q2`'s, and the same one-line mapping.
+
+**Still owed:**
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `T-W8` | **A real light model reducing real answers**, on the pilot's own Indonesian answers, counted by refusal reason. **Prediction: most refusals are figures spelled in words ("dua juta"), not wrong figures; if more than one answer in ten is refused, the prompt changes next, not the check** | A light-model key on a stack with real answers |
+| `T-W8` | **A real synthesiser reading Indonesian figures aloud.** Listen to twenty answers. **Prediction: at least one figure in five is read with English separators — "1,2 juta" as "one comma two" or "1.500" as "one point five hundred" — which no check here can see, because both read text** | An OpenAI key, and someone who speaks Indonesian listening |
+| `T-W8` | **The worker's sweep over spoken answers.** **Prediction: an orphaned row and its object gone within the hour; the recordings' count in the same tick's log** | A worker on the stack |
+| `T-W8` | **`089` on the production control database, at deploy.** **Prediction: a new table, applied in milliseconds on boot** | A deploy (§3d) |
+| `T-W9` | **The player**, absent where the route is, and a refusal's reason shown | `T-W9` is not built |
+
 ## 7. Needs the paid eval set (added 2026-09-11)
 
 `T-Q18`'s remaining half, and the only half that is about the model rather than

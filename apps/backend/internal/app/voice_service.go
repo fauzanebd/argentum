@@ -84,7 +84,23 @@ type VoiceBrandingReader interface {
 type VoiceClips struct {
 	repo  domain.VoiceClipRepository
 	store VoiceClipStore
-	now   func() time.Time
+	// answers is the spoken answers' table (T-W8), swept and erased beside the
+	// recordings. Nil on a deployment wired before it existed.
+	answers domain.SpokenAnswerRepository
+	now     func() time.Time
+}
+
+// WithSpokenAnswers makes the sweep and the erasure cover answers read aloud
+// (T-W8) as well as questions spoken.
+//
+// Here rather than in a lifecycle of their own, because the two share the one
+// thing a lifecycle is about: where the audio is. Both live under
+// `voice/<company_id>/`, the erasure removes that prefix once for both, and a
+// second type removing the same prefix would be two erasures racing over one
+// bucket.
+func (v *VoiceClips) WithSpokenAnswers(repo domain.SpokenAnswerRepository) *VoiceClips {
+	v.answers = repo
+	return v
 }
 
 // NewVoiceClips wires the store. store may be nil — a deployment with no object
@@ -161,49 +177,39 @@ const (
 // removed is kept so the next tick can find the audio again, where deleting the
 // row first would make the object unfindable by anything but erasure.
 //
-// Bounded at 5,000 clips a tick, so a backlog — a sweep that was switched off
-// for a month — drains over several ticks rather than holding one connection
-// for as long as it takes.
+// Bounded at 5,000 rows a tick per table, so a backlog — a sweep that was
+// switched off for a month — drains over several ticks rather than holding one
+// connection for as long as it takes.
+//
+// Spoken answers (T-W8) are swept the same way, after the recordings, when
+// WithSpokenAnswers wired them: past their expiry, or whose message is gone.
 func (v *VoiceClips) Sweep(ctx context.Context) (VoiceSweepResult, error) {
 	var out VoiceSweepResult
 	if v == nil || v.repo == nil {
 		return out, nil
 	}
-	for i := 0; i < voiceSweepMaxBatches; i++ {
-		due, err := v.repo.Due(ctx, v.now().UTC(), voiceSweepBatch)
-		if err != nil {
-			return out, fmt.Errorf("list due voice clips: %w", err)
-		}
-		deleted, kept := 0, 0
+	clips := func(now time.Time, limit int) ([]dueAudio, error) {
+		due, err := v.repo.Due(ctx, now, limit)
+		rows := make([]dueAudio, 0, len(due))
 		for _, c := range due {
-			if c.ObjectKey != "" {
-				if v.store == nil {
-					kept++
-					continue
-				}
-				if err := v.store.RemoveKey(ctx, c.ObjectKey); err != nil {
-					logrus.WithError(err).WithFields(logrus.Fields{
-						"company_id": c.CompanyID, "clip_id": c.ID,
-					}).Warn("voice sweep: audio not removed; the clip is kept for the next tick")
-					kept++
-					continue
-				}
-			}
-			if err := v.repo.Delete(ctx, c.CompanyID, c.ID); err != nil {
-				logrus.WithError(err).WithFields(logrus.Fields{
-					"company_id": c.CompanyID, "clip_id": c.ID,
-				}).Warn("voice sweep: row not deleted; the next tick tries again")
-				kept++
-				continue
-			}
-			deleted++
+			rows = append(rows, dueAudio{id: c.ID, companyID: c.CompanyID, objectKey: c.ObjectKey})
 		}
-		out.Deleted += deleted
-		out.Kept += kept
-		// A short batch is the end of the list. A batch that deleted nothing
-		// would be read again unchanged, so it is the end of this tick.
-		if len(due) < voiceSweepBatch || deleted == 0 {
-			break
+		return rows, err
+	}
+	if err := v.sweep(ctx, "voice clip", clips, v.repo.Delete, &out); err != nil {
+		return out, fmt.Errorf("list due voice clips: %w", err)
+	}
+	if v.answers != nil {
+		answers := func(now time.Time, limit int) ([]dueAudio, error) {
+			due, err := v.answers.Due(ctx, now, limit)
+			rows := make([]dueAudio, 0, len(due))
+			for _, a := range due {
+				rows = append(rows, dueAudio{id: a.ID, companyID: a.CompanyID, objectKey: a.ObjectKey})
+			}
+			return rows, err
+		}
+		if err := v.sweep(ctx, "spoken answer", answers, v.answers.Delete, &out); err != nil {
+			return out, fmt.Errorf("list due spoken answers: %w", err)
 		}
 	}
 	if out.Kept > 0 && v.store == nil {
@@ -213,6 +219,57 @@ func (v *VoiceClips) Sweep(ctx context.Context) (VoiceSweepResult, error) {
 			Warn("voice sweep: clips with stored audio are due and this worker has no object storage; they are kept")
 	}
 	return out, nil
+}
+
+// dueAudio is one row a sweep deletes: a recording, or a spoken answer.
+type dueAudio struct {
+	id, companyID, objectKey string
+}
+
+// sweep drains one table's due rows, batch by batch: audio before row, and a
+// row whose audio would not delete kept for the next tick. Its error is the
+// list's, which Sweep names.
+func (v *VoiceClips) sweep(
+	ctx context.Context, kind string,
+	due func(now time.Time, limit int) ([]dueAudio, error),
+	del func(ctx context.Context, companyID, id string) error,
+	out *VoiceSweepResult,
+) error {
+	for i := 0; i < voiceSweepMaxBatches; i++ {
+		rows, err := due(v.now().UTC(), voiceSweepBatch)
+		if err != nil {
+			return err
+		}
+		deleted, kept := 0, 0
+		for _, r := range rows {
+			fields := logrus.Fields{"company_id": r.companyID, "id": r.id, "kind": kind}
+			if r.objectKey != "" {
+				if v.store == nil {
+					kept++
+					continue
+				}
+				if err := v.store.RemoveKey(ctx, r.objectKey); err != nil {
+					logrus.WithError(err).WithFields(fields).Warn("voice sweep: audio not removed; the row is kept for the next tick")
+					kept++
+					continue
+				}
+			}
+			if err := del(ctx, r.companyID, r.id); err != nil {
+				logrus.WithError(err).WithFields(fields).Warn("voice sweep: row not deleted; the next tick tries again")
+				kept++
+				continue
+			}
+			deleted++
+		}
+		out.Deleted += deleted
+		out.Kept += kept
+		// A short batch is the end of the list. A batch that deleted nothing
+		// would be read again unchanged, so it is the end of this tick.
+		if len(rows) < voiceSweepBatch || deleted == 0 {
+			break
+		}
+	}
+	return nil
 }
 
 // EraseCompany removes every clip a company has, row and audio (T-H6).
@@ -232,6 +289,13 @@ func (v *VoiceClips) EraseCompany(ctx context.Context, companyID string) (int, e
 	n, err := v.repo.DeleteForCompany(ctx, companyID)
 	if err != nil {
 		return 0, fmt.Errorf("delete voice clips: %w", err)
+	}
+	// The spoken answers' rows go with the recordings' (T-W8), before the prefix
+	// both live under. Not added to n, which the erasure reports as recordings.
+	if v.answers != nil {
+		if _, err := v.answers.DeleteForCompany(ctx, companyID); err != nil {
+			return n, fmt.Errorf("delete spoken answers: %w", err)
+		}
 	}
 	if v.store != nil {
 		if err := v.store.RemovePrefix(ctx, domain.VoiceClipKeyPrefix(companyID)); err != nil {

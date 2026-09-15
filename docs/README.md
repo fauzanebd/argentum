@@ -79,7 +79,7 @@ docs/
 │   ├── freshness.md              T-F1/T-F2 how old is the data behind an answer
 │   ├── metric-coverage.md        T-F4 is the metric layer accumulating
 │   ├── exact-computation.md      T-W1 a derived figure that was computed, not composed
-│   ├── voice.md                  T-W7 a question said out loud, transcribed and handed back to edit
+│   ├── voice.md                  T-W7 a question said out loud, transcribed and handed back to edit; T-W8 an answer read aloud, every spoken figure checked
 │   ├── access-grants.md          T-Z1→T-Z11 capabilities per person; restricted agents, their conversations and documents, and dashboards
 │   ├── test-coverage.md          Measured test state + CI gaps
 │   ├── api-surface.md            Endpoint + tool inventory

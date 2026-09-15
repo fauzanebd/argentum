@@ -116,6 +116,9 @@ func testDeps(cfg *config.Config, signer *auth.TokenSigner) *apiDeps {
 		// every classification test here sees it. Without one the route is not
 		// registered at all — TestVoiceRouteIsAbsentWithoutAProvider.
 		voiceSvc: app.NewVoiceService(answeringTranscriber{}, nil, nil, nil, 0, 0),
+		// And a synthesiser, for the same reason (T-W8) —
+		// TestSpokenAnswerRouteIsAbsentWithoutASynthesizer.
+		spokenSvc: spokenService(speakingSynth{}),
 	}
 }
 

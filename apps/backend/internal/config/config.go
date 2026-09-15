@@ -470,6 +470,16 @@ type Config struct {
 	// Read whether or not SpeechEnabled is: switching voice off does not delete
 	// what it already recorded. Empty switches the sweep off.
 	SpeechSweepCron string
+	// SpeechTTS* is the voice out (T-W8): an answer read aloud. Its own provider
+	// rather than SpeechProvider's, because the default transcriber's provider
+	// (Groq) has no voice that speaks Indonesian — speech.SynthConfig says what
+	// was checked. Gated by SpeechEnabled, like the voice in. The key is read
+	// through EffectiveSpeechTTSAPIKey.
+	SpeechTTSProvider string
+	SpeechTTSAPIKey   string
+	SpeechTTSBaseURL  string
+	SpeechTTSModel    string
+	SpeechTTSVoice    string
 
 	// --- Email (T-F6) -----------------------------------------------------
 	//
@@ -832,6 +842,11 @@ func Load() (*Config, error) {
 		SpeechMaxClipSeconds: getEnvAsInt("SPEECH_MAX_CLIP_SECONDS", 60),
 		SpeechRetentionDays:  getEnvAsInt("SPEECH_RETENTION_DAYS", 7),
 		SpeechSweepCron:      getEnv("SPEECH_SWEEP_CRON", "17 * * * *"),
+		SpeechTTSProvider:    getEnv("SPEECH_TTS_PROVIDER", "openai"),
+		SpeechTTSAPIKey:      getEnv("SPEECH_TTS_API_KEY", ""),
+		SpeechTTSBaseURL:     getEnv("SPEECH_TTS_BASE_URL", ""),
+		SpeechTTSModel:       getEnv("SPEECH_TTS_MODEL", ""),
+		SpeechTTSVoice:       getEnv("SPEECH_TTS_VOICE", ""),
 
 		AppBaseURL:            strings.TrimRight(getEnv("APP_BASE_URL", ""), "/"),
 		APIV1ObsFlushSeconds:  getEnvAsInt("API_V1_OBS_FLUSH_SECONDS", 15),
@@ -893,6 +908,21 @@ func (c *Config) EffectiveLLMInterface() string {
 		return s
 	}
 	return strings.TrimSpace(strings.ToLower(c.LLMProvider))
+}
+
+// EffectiveSpeechTTSAPIKey returns SPEECH_TTS_API_KEY when set, otherwise
+// SPEECH_API_KEY — but only when the voice out and the voice in name the same
+// provider (T-W8). A Groq key sent to OpenAI is a 401 on every press, and a
+// deployment that set one key for its transcriber has not configured a
+// synthesiser by doing so.
+func (c *Config) EffectiveSpeechTTSAPIKey() string {
+	if k := strings.TrimSpace(c.SpeechTTSAPIKey); k != "" {
+		return k
+	}
+	if strings.EqualFold(strings.TrimSpace(c.SpeechTTSProvider), strings.TrimSpace(c.SpeechProvider)) {
+		return strings.TrimSpace(c.SpeechAPIKey)
+	}
+	return ""
 }
 
 // EffectiveLightLLMInterface returns LIGHT_LLM_INTERFACE when set, otherwise LIGHT_LLM_PROVIDER.

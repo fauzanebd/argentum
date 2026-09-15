@@ -31,6 +31,10 @@ const (
 	// llm_call with a feature label, because it is billed on a length rather
 	// than on tokens, and a summary adding the two would add unlike units.
 	UsageEventSpeechTranscription UsageEventType = "speech_transcription"
+	// UsageEventSpeechSynthesis is characters of an answer read aloud (T-W8),
+	// priced per model per character. The reduction that wrote those characters
+	// is an llm_call of its own, on the light model.
+	UsageEventSpeechSynthesis UsageEventType = "speech_synthesis"
 )
 
 // UsageEvent is a single billable / observable action taken on behalf of a

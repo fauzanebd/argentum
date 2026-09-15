@@ -79,6 +79,15 @@ func newRouter(d *apiDeps) *gin.Engine {
 			WithConversationAccess(d.conversationAccess).
 			Register(authed)
 	}
+	// An answer read aloud (T-W8), on voice's terms and with one more condition:
+	// a synthesiser, a light model and object storage all present, because the
+	// cache is what makes a second press free and there is no cache without a
+	// bucket. The same `voice` capability.
+	if d.spokenSvc.Enabled() {
+		handlers.NewSpokenAnswerHandler(d.spokenSvc, d.msgRepo).
+			WithConversationAccess(d.conversationAccess).
+			Register(authed)
+	}
 	handlers.NewUsageHandler(d.usageSvc).
 		WithConversationAccess(d.conversationAccess).
 		Register(authed)

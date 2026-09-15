@@ -17,6 +17,38 @@ P Q S T`. The two obvious mnemonics are both taken: `T-V` is the video track,
 and `T-C1` would sit one character from the finding `C-1`. `W` collides with
 neither list.
 
+> **Status, 2026-09-14, later: `T-W8` is built, `make check` green, unit-gated with 16 mutations, and its free arms ran live on a
+> scratch stack that now has object storage — an answer read aloud, whose every spoken figure is one the
+> written answer states.** Migration `089`. No tool and no prompt change, so no eval. Record:
+> [`../coverage/voice.md`](../coverage/voice.md) §3.
+>
+> - **`GET /api/messages/:id/audio`** — member **+ `voice`**. The route exists only where a synthesiser,
+>   the light model and object storage all do.
+> - **Reduce, check, speak, keep.** The light model reduces; `Speakable` and `CheckSpokenFigures` decide,
+>   deterministically; `tts-1` reads it. The second press is served from what was kept and billed nothing.
+> - **A refusal is remembered; a provider failure is not.**
+>
+> **Where the ticket was wrong** (record §3c):
+> - **`Migration: none`** — it is `089`. The cache needs a row, and so do the spoken text and the refusal.
+>   The third wrong migration header in three tickets on this track.
+> - **One provider setting** — Groq, `T-W7`'s default, cannot speak Indonesian (Orpheus: English and Saudi
+>   Arabic). `SPEECH_TTS_*` is its own, defaulting to OpenAI. Research 08 never compared voices at all.
+> - **"Within that number's own stated precision"** — built as "the written figure rounds to the spoken one
+>   at the precision it was spoken". A second clause refusing finer precision survived its mutation, was
+>   redundant, and was removed.
+> - **"Every number … must round-trip"** — only numbers the check can read. A figure spelled in words is
+>   refused; a count under ten spelled as a word goes unchecked.
+> - **"A disabled play button"** — it is `T-W9`'s.
+>
+> **Live, as predicted but for one hand-counted character** (live-gate §7l). **Two defects, both fixed:**
+> the audio route shipped from the build without its `voice` gate until its own test failed, and a
+> malformed message id answered `500` — fixed in the shared message lookup, which fixed
+> `suggestion-picked` too. `GET /api/messages/:id/feedback` answers the same `500`, with the driver's
+> sentence in the body, and is filed. **Owed:** a real light model on real answers, a real voice on Indonesian
+> figures, the worker's sweep, `089` at deploy. **Next on this track: `T-W9`**, the microphone and the
+> player, both of its dependencies met. Research 08 §6's unknown 6, whether anybody at the pilot wants
+> to talk to it, is still unasked.
+
 > **Status, 2026-09-14: `T-W7` is built, `make check` green, unit-gated, and its free arms ran live on a scratch
 > stack — a question said out loud comes back as text to edit, and nothing is sent.** Migration
 > `087`. No tool and no prompt change, so no eval. Record: [`../coverage/voice.md`](../coverage/voice.md).
@@ -598,8 +630,8 @@ route and nothing else reaches it.
 
 ---
 
-#### `T-W8` Speech out: an answer you can listen to
-**Repo:** BE · **Size:** 2.0d · **Deps:** `T-W7` · **Migration:** none
+#### `T-W8` Speech out: an answer you can listen to · **built 2026-09-14, unit-gated, free arms run on a scratch stack with object storage; a real model and a real voice owed — `coverage/voice.md` §3**
+**Repo:** BE · **Size:** 2.0d · **Deps:** `T-W7` · **Migration:** ~~none~~ `089` (the cache, the spoken text and the refusal need a row — record §3c)
 
 ##### Why
 The request, exactly: *"I want our agent to be able to answer in voice too."*

@@ -299,6 +299,10 @@ var apiPolicy = middleware.RolePolicy{
 	// like the thread routes around it — the gate that matters is the `voice`
 	// capability in capabilityPolicy, which an admin needs too.
 	"POST /api/threads/:id/voice": domain.RoleMember,
+	// An answer read aloud (T-W8). Member, and `voice` in capabilityPolicy: the
+	// same grant as speaking a question, because it is one feature to the person
+	// holding it and one bill to the tenant paying for it.
+	"GET /api/messages/:id/audio": domain.RoleMember,
 	"POST /api/chat":              domain.RoleMember,
 
 	// Answer feedback (T-Q2). Rating is member — deliberately the most open
@@ -517,11 +521,11 @@ var apiPolicy = middleware.RolePolicy{
 // never open one the role table refused — and, unlike a role, an admin holds no
 // capability nobody granted them (roadmap 12, decision 4).
 //
-// **Voice is the only entry (T-W7), and the reason it may be gated when the
-// other two may not is that its route is new.** Nobody could transcribe
-// yesterday, so a table in which nobody holds `voice` locks nobody out of
-// anything — it is the state the feature starts in, and an admin grants it to
-// the people who should have it, themselves included.
+// **Voice is the only capability here (T-W7, T-W8), and the reason it may be
+// gated when the other two may not is that its routes are new.** Nobody could
+// transcribe or listen yesterday, so a table in which nobody holds `voice` locks
+// nobody out of anything — it is the state the feature starts in, and an admin
+// grants it to the people who should have it, themselves included.
 //
 // Two of the three day-one capabilities name things routes already do:
 // `export_data` is GET /api/company/data/export, and `approve_actions` is the
@@ -534,6 +538,7 @@ var apiPolicy = middleware.RolePolicy{
 // cannot be made by accident.
 var capabilityPolicy = middleware.CapabilityPolicy{
 	"POST /api/threads/:id/voice": domain.CapabilityVoice,
+	"GET /api/messages/:id/audio": domain.CapabilityVoice,
 }
 
 // resourcePolicy is the third question a route can ask (T-Z3), and the first

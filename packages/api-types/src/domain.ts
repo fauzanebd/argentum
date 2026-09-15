@@ -3028,6 +3028,54 @@ export const DraftIndustryMax = 120;
 export type Draft = typeof DraftMaxEntities | typeof DraftIndustryMax;
 
 //////////
+// source: spoken_answer.go
+
+/**
+ * SpokenAnswer is an agent's answer as it was read aloud (T-W8): the words a
+ * model reduced it to, and the audio they became — or the reason they were
+ * refused.
+ * A cache and a record at once. The audio is what makes a second press of the
+ * play button free. The spoken text beside it is what makes the reduction
+ * checkable afterwards: roadmap 11's decision 14 makes a spoken figure the
+ * written answer does not state a defect, and a defect nobody can read back is a
+ * defect nobody can show. A refusal is kept for the first reason — it is what a
+ * second press answers without paying a model to be refused again.
+ */
+export interface SpokenAnswer {
+  id: string;
+  company_id: string;
+  /**
+   * MessageID is empty once the message has been deleted, which is also what
+   * makes the sweep delete the row and its audio.
+   */
+  message_id?: string;
+  mime_type?: string;
+  size_bytes: number /* int64 */;
+  /**
+   * SpokenText is what was synthesised — or, on a refusal, what the model wrote
+   * and was refused.
+   */
+  spoken_text: string;
+  /**
+   * Refusal is why the spoken text was not synthesised, naming both figures
+   * when a figure was the reason. Empty when it was synthesised.
+   */
+  refusal?: string;
+  voice?: string;
+  /**
+   * Model is the synthesis model. The reduction's model is on its own
+   * llm_call usage row.
+   */
+  model?: string;
+  /**
+   * Chars is what the synthesis was billed on: the spoken text's length.
+   */
+  chars: number /* int */;
+  created_at: string;
+  expires_at: string;
+}
+
+//////////
 // source: suggestion_pick.go
 
 /**
@@ -3314,6 +3362,12 @@ export const UsageEventVideoRender: UsageEventType = "video_render";
  * than on tokens, and a summary adding the two would add unlike units.
  */
 export const UsageEventSpeechTranscription: UsageEventType = "speech_transcription";
+/**
+ * UsageEventSpeechSynthesis is characters of an answer read aloud (T-W8),
+ * priced per model per character. The reduction that wrote those characters
+ * is an llm_call of its own, on the light model.
+ */
+export const UsageEventSpeechSynthesis: UsageEventType = "speech_synthesis";
 /**
  * UsageEvent is a single billable / observable action taken on behalf of a
  * company. Persisted for usage display today; will back per-call billing in

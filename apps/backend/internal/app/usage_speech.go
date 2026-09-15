@@ -52,3 +52,44 @@ func (s *UsageService) RecordTranscription(ctx context.Context, companyID, threa
 		Metadata:     map[string]interface{}{"audio_seconds": seconds},
 	})
 }
+
+// synthesisPricing is USD per million characters read aloud, per synthesis
+// model (T-W8), from OpenAI's published prices.
+//
+// `gpt-4o-mini-tts` is not really priced this way. It is billed per audio token
+// produced, and `/audio/speech` answers with the audio and no usage, so nothing
+// here can count those tokens. Its row is OpenAI's own conversion of that price
+// to characters, an estimate, and the reason speech.voiceProviders defaults to
+// `tts-1`, whose price per character is the price.
+var synthesisPricing = map[string]float64{
+	"tts-1":           15,
+	"tts-1-hd":        30,
+	"gpt-4o-mini-tts": 15,
+}
+
+// synthesisFallbackPerMillion is an unpriced model's rate: the highest above,
+// for speechFallbackPerHour's reason.
+const synthesisFallbackPerMillion = 30.0
+
+// RecordSynthesis records characters of text sent to a speech synthesiser.
+//
+// A rate per million characters in USD is the same number in µUSD per
+// character, so the cost is characters times the rate, rounded up for
+// RecordTranscription's reason. No text records nothing.
+func (s *UsageService) RecordSynthesis(ctx context.Context, companyID, threadID, model string, chars int) {
+	if chars <= 0 {
+		return
+	}
+	rate := synthesisFallbackPerMillion
+	if r, ok := synthesisPricing[strings.ToLower(strings.TrimSpace(model))]; ok {
+		rate = r
+	}
+	s.append(ctx, &domain.UsageEvent{
+		CompanyID:    companyID,
+		ThreadID:     threadID,
+		EventType:    domain.UsageEventSpeechSynthesis,
+		Model:        model,
+		CostMicroUSD: int64(math.Ceil(float64(chars) * rate)),
+		Metadata:     map[string]interface{}{"characters": chars},
+	})
+}
