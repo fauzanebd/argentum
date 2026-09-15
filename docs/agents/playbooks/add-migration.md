@@ -52,6 +52,12 @@ Then read the target back out of the log before believing it:
 {"msg":"control DB migrated to version 21"}
 ```
 
+> **Read 2026-09-16: this changed.** `apps/backend/.env`'s `DB_HOST` is now
+> `localhost`, a local Docker Postgres at migration 73. **Production** is a
+> separate server whose host and credentials exist only in the k8s secret
+> `argentum-secret` (`smartsoft-product`). The rule stands either way: read the
+> target back before believing it.
+
 and confirm against the container, not against whatever the binary told you:
 
 ```bash
@@ -217,10 +223,50 @@ with company B's id, assert not-found. This is the test that catches the missing
 - [ ] Indexes cover the query patterns added
 - [ ] Number was not already claimed
 
+## A start stopped mid-migration: the dirty flag
+
+**What it looks like.** Every API start exits at once with `the control database is
+dirty at version N` (before 2026-09-16: golang-migrate's `Dirty database version N.
+Fix and force version.`). The running API keeps serving, but **nothing new starts:
+not the new release, and not a rollback** — an older binary refuses a database that is
+ahead of it and dirty (`schemaAhead`).
+
+**How it happens.** golang-migrate marks version N dirty, runs the file, then clears
+the flag. If the process stops in between, the flag stays. On 2026-09-15, `089`
+(`CREATE TABLE` with foreign keys to `messages` and `companies`) waited on a lock. A
+foreign key locks the table it references against writes, so it waits for every open
+transaction that has written to it. The liveness probe killed the start at ~45s. The
+orphaned database session held golang-migrate's advisory lock while it waited, so the
+next starts hung too. When the lock cleared, that session committed `089` — with no
+process left to clear the flag. Delivery log, phase 3bt.
+
+**Why it cannot recur the same way.** Since 2026-09-16 the chart gives the API a
+startup probe of 5 minutes (`api.startupProbe`), and a start logs `control DB migrating`
+with both versions before it begins, so a slow migration is visible and not killed.
+
+**The repair.** It is a production write: get the owner's approval first.
+
+1. **Read, don't guess.** In a `READ ONLY` transaction against the database the pods
+   use — its host and credentials are in `argentum-secret` — read `schema_migrations`,
+   and check that every object migration N creates exists: columns, keys, indexes,
+   constraints, compared with the `.up.sql`.
+2. **A file is one statement batch, so it is whole or absent.** Whole: `UPDATE
+   schema_migrations SET dirty = false WHERE version = N`. Absent: `UPDATE
+   schema_migrations SET version = N-1, dirty = false`, and the next start runs it
+   again. Partial is only possible for a file with its own `BEGIN`/`COMMIT`, and
+   needs finishing or undoing by hand first.
+3. **Guard the write.** One transaction, with `lock_timeout`: confirm the single row
+   is (N, dirty); update; require exactly one row changed; read it back; commit.
+4. **Watch until the worker is running, not just the API.** The worker rolls out
+   stop-first (`maxSurge: 0`) and can stay Pending while a crash-looping API pod holds
+   the node's last CPU request.
+
 ## Common mistakes
 
 | Mistake | Consequence |
 | ------- | ----------- |
+| Assuming a migration is instant because it is additive | A foreign key or index waits for locks on a busy table. Before the startup probe that killed the start and left the version dirty (see above) |
+| Rolling back to clear a dirty version | The older binary refuses a dirty newer database too. Repair the flag |
 | Editing an already-applied migration | Environments desync; no automatic fix |
 | Skipping `.down.sql` | Cannot roll back a bad deploy |
 | `NOT NULL` without a default | Migration fails on a non-empty table |

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -73,5 +74,58 @@ func TestSchemaAheadServesOnlyACleanNewerSchema(t *testing.T) {
 				t.Fatalf("schemaAhead = %v, %v; want %v, error %v", ahead, err, c.wantAhead, c.wantErr)
 			}
 		})
+	}
+}
+
+// A start logs that it is migrating before it does (2026-09-15: 089 was a
+// silent start until a probe killed it). Only a database behind this binary, or a
+// fresh one, is pending; up to date, ahead, unreadable and a binary with no files
+// are not.
+func TestPendingMigrationIsOnlyADatabaseBehindThisBinary(t *testing.T) {
+	boom := errors.New("connection refused")
+	cases := []struct {
+		name        string
+		db          uint
+		versionErr  error
+		highest     uint
+		haveAny     bool
+		wantFrom    uint
+		wantTo      uint
+		wantPending bool
+	}{
+		{name: "one behind", db: 88, highest: 89, haveAny: true, wantFrom: 88, wantTo: 89, wantPending: true},
+		{name: "a fresh database", versionErr: migrate.ErrNilVersion, highest: 89, haveAny: true, wantTo: 89, wantPending: true},
+		{name: "up to date", db: 89, highest: 89, haveAny: true},
+		{name: "ahead", db: 90, highest: 89, haveAny: true},
+		{name: "unreadable", versionErr: boom, highest: 89, haveAny: true},
+		{name: "no files", db: 0, highest: 0, haveAny: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			from, to, pending := pendingMigration(c.db, c.versionErr, c.highest, c.haveAny)
+			if from != c.wantFrom || to != c.wantTo || pending != c.wantPending {
+				t.Fatalf("pendingMigration = %d, %d, %v; want %d, %d, %v", from, to, pending, c.wantFrom, c.wantTo, c.wantPending)
+			}
+		})
+	}
+}
+
+// golang-migrate's "Fix and force version." names no fix. A dirty start names the
+// check and both repairs, with this version and the one before it.
+func TestDirtyErrorNamesTheCheckAndBothRepairs(t *testing.T) {
+	msg := dirtyError(89).Error()
+	for _, want := range []string{
+		"dirty at version 89",
+		"every object migration 89 creates",
+		"UPDATE schema_migrations SET dirty = false WHERE version = 89",
+		"UPDATE schema_migrations SET version = 88, dirty = false",
+		"playbooks/add-migration.md",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("dirty error lacks %q:\n%s", want, msg)
+		}
+	}
+	if got := dirtyError(1).Error(); !strings.Contains(got, "SET version = 0, dirty = false") {
+		t.Errorf("version 1's previous version is 0: %s", got)
 	}
 }

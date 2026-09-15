@@ -185,6 +185,15 @@ rollback as well as a rolling deploy. When you prove "the old binary works again
 the new schema", give it its **own** migrations directory, or you have only proven
 the reads.
 
+**A migration runs before the API listens, so it must never be killed half-way —
+learned from a 3-hour worker outage on 2026-09-15.** `089` waited on a lock, the
+liveness probe killed the start at ~45s, and golang-migrate's dirty flag was left
+set. From then on no API started, and a rollback would not have either. The chart now
+gives the API a 5-minute startup probe, and a start logs `control DB migrating` before
+it begins. **If a start ever reports a dirty version, repair the flag — do not roll
+back**: [`playbooks/add-migration.md`](playbooks/add-migration.md), "A start stopped
+mid-migration".
+
 ### 7. Every authenticated route needs a line in `cmd/api/policy.go`
 
 `middleware.RequireRole(apiPolicy)` gates the whole `/api` authed group by

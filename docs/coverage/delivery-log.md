@@ -8060,6 +8060,80 @@ nothing. `make check` has no secret scan, which is why the gate passed and CI di
 this gate was stopped part-way, to change the test the secret scan flagged; this is the run of the tree
 as committed.
 
+## Phase 3bt — Voice switched on, a migration killed half-way, and three hours without a worker (2026-09-15/16)
+
+**What was deployed.** `smartsoft-infra` `1f0dd96` moved argentum from `1.12.0` to `1.15.0` and set
+`SPEECH_ENABLED=true`, with the owner's approval, once both images were built.
+
+**What went wrong, in order (UTC).**
+- **13:45** The first `1.15.0` API began migration `089`: `spoken_answers`, with foreign keys to
+  `messages` and `companies`. golang-migrate marked version 89 dirty, and the statement waited on a lock.
+- **~13:46** The liveness probe (15s, then 3 × 10s) killed the start mid-migration; nothing had logged.
+  The orphaned database session held golang-migrate's advisory lock while it waited, so the next starts
+  hung too, and were killed too.
+- **Some time later** The lock cleared. The orphaned session committed `089` — all of it — with no
+  process left to clear the flag. Every later start exited: `Dirty database version 89`.
+- **All the while** The worker rolls out stop-first. The node's CPU requests were at 98%, and the
+  crash-looping API pod held 100m, so the `1.15.0` worker stayed Pending. **No worker from ~13:45 to
+  16:59.** The old `1.12.0` API served throughout, to one real request in three hours.
+- Helm marked the upgrade failed at its 5-minute timeout, with `Stalled=RetriesExceeded`, and rolled
+  nothing back. **A rollback would not have fixed it**: `1.12.0` refuses a database that is ahead of it
+  and dirty, so the old API would have failed on its next restart too.
+
+**What held the lock is not known.** There were no writes to `messages` around the deploy (the last
+message is from 2026-09-14), no recent vacuum, and no lock or long transaction when the database was
+read at 16:45. Postgres keeps no history of lock waits.
+
+**The repair (16:57), approved by the owner.**
+- Read-only probe of production. The database is at `103.76.120.171`, not the `.env` one, which turned
+  out to be a local Docker Postgres at migration 73. Found: `schema_migrations` at `89 | dirty`, and
+  `spoken_answers` whole — 13 columns, 2 foreign keys, 4 indexes, 0 rows.
+- One guarded transaction: `UPDATE schema_migrations SET dirty = false WHERE version = 89`, committed
+  only after checking the table was whole and the row was (89, dirty).
+- **16:59** The API started, reached `control DB schema already up to date`, and listened, with both
+  speech halves on OpenRouter using the shared key. The old API stopped, and the worker started: "all
+  stored connections decrypt".
+
+**What this change fixes.**
+- **The chart gives the API a 5-minute startup probe.** Liveness no longer runs during a start, so a
+  migration waiting on a lock is not killed half-way.
+- **A start logs `control DB migrating` with both versions before it begins, and its duration after.**
+  A slow migration is visible instead of silent.
+- **A dirty database now says how to repair it:** the check, and both forms of the fix. golang-migrate
+  said "Fix and force version.", which named no fix.
+- The repair is written down in `docs/agents/playbooks/add-migration.md`, "A start stopped
+  mid-migration", and in `workspace-context.md` §6.
+
+**Not fixed here, and filed** (live-gate §7o): the worker's stop-first rollout on a node whose CPU
+requests are nearly all spoken for, and Flux's `Stalled` release, which the next chart revision clears.
+
+**Proven.**
+- **On a scratch Postgres**, in its own throwaway database (`internal/migrate/scratch_runner_test.go`,
+  `scratch` tag):
+  - a fresh database logs `control DB migrating` from 0 to 2, then `control DB migrated to version 2`
+    in 21ms;
+  - version 2 marked dirty makes the start refuse with the repair sentence, `SET dirty = false WHERE
+    version = 2` in it;
+  - after that update, the next start reports the schema up to date.
+- **Four mutations**, each killed by its named test:
+  - a fresh database not counted as pending;
+  - the repair naming the wrong previous version;
+  - no log before migrating (scratch arm);
+  - no dirty check before golang-migrate (scratch arm).
+
+  The scratch arm's first run failed on its own fixture, a foreign key to a table with no primary key.
+  Mutations reported "killed" on that run were discarded and rerun against the fixed test.
+- **The chart** lints clean. Rendered with the defaults and with production's HelmRelease values, the
+  startup probe (`/health`, 5s × 60) is on `argentum-api` alone; the worker and discord deployments are
+  unchanged. No test renders the chart in `make check` or CI, so this is a manual check.
+- Removed while building: the runner's second dirty check, on golang-migrate's `ErrDirty` after `Up`. It
+  was redundant with the check before `Up` — no test could fail without it — and that check runs before
+  the "migrating" line, so a dirty start never claims to be migrating.
+
+**Gate.** `make check`, alone: `MAKE EXIT: 0`, 13m50s. 76 Go packages `ok`, zero `FAIL`/`panic` lines,
+`golangci-lint` `0 issues.`, `gofmt -l` empty, 121 dashboard tests, and every app built. Local gitleaks
+over the staged change: no leaks.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

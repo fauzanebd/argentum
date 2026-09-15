@@ -857,3 +857,14 @@ In [`live-gate-backlog.md`](live-gate-backlog.md) §7n, with predictions:
 2. The Gemini voice reading Indonesian figures aloud.
 3. The ceiling set against OpenRouter's own record of what twenty answers cost.
 4. `make eval-speech` on the pilot's recordings, through OpenRouter.
+
+### 5f. Switched on in production (2026-09-15)
+
+`smartsoft-infra` `1f0dd96`: argentum at `1.15.0` with `SPEECH_ENABLED=true`. Since 16:59 UTC the API's
+startup log reads `speech enabled` (`openai/whisper-large-v3-turbo`) and `speech output enabled`
+(`google/gemini-3.1-flash-tts-preview`, `Kore`), both with `key: shared`. **Nobody holds the `voice`
+grant yet**, so nobody sees the microphone.
+
+**The deploy took the worker down for three hours** before it got there: migration `089`, which this
+track added, was killed half-way by the API's liveness probe and left the schema version dirty.
+Delivery log, phase 3bt, has the timeline, the repair and the fix; live-gate §7o has what is owed.

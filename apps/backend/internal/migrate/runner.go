@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -63,8 +64,21 @@ func Up(databaseURL, dir string) error {
 			}).Warn("control DB schema is newer than this binary; serving on it without migrating")
 			return nil
 		}
+		if verr == nil && dirty {
+			return dirtyError(v)
+		}
+		// Said before migrating, not only after. A migration waiting on a lock is
+		// otherwise a process that logged "starting" and went silent, which is how
+		// 089 looked on 2026-09-15 until a probe killed it mid-migration and left
+		// the version dirty (playbooks/add-migration.md, "A start stopped
+		// mid-migration").
+		if from, to, pending := pendingMigration(v, verr, highest, haveAny); pending {
+			logrus.WithFields(logrus.Fields{"from_version": from, "to_version": to}).
+				Info("control DB migrating; the API listens once this finishes")
+		}
 	}
 
+	started := time.Now()
 	if err := m.Up(); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
 			logrus.Info("control DB schema already up to date")
@@ -73,8 +87,46 @@ func Up(databaseURL, dir string) error {
 		return fmt.Errorf("migrate up: %w", err)
 	}
 	v, _, _ := m.Version()
-	logrus.Infof("control DB migrated to version %d", v)
+	logrus.WithField("took_ms", time.Since(started).Milliseconds()).Infof("control DB migrated to version %d", v)
 	return nil
+}
+
+// pendingMigration reports whether Up has migrations to apply, and the span it
+// will log: from the database's version (0 for a fresh database) to this
+// binary's highest. An unreadable version and a binary with no files are not
+// pending here; golang-migrate decides those, as before.
+func pendingMigration(dbVersion uint, versionErr error, highest uint, haveAny bool) (from, to uint, pending bool) {
+	if !haveAny {
+		return 0, 0, false
+	}
+	switch {
+	case errors.Is(versionErr, migrate.ErrNilVersion):
+		return 0, highest, true
+	case versionErr != nil:
+		return 0, 0, false
+	case dbVersion < highest:
+		return dbVersion, highest, true
+	}
+	return 0, 0, false
+}
+
+// dirtyError is what a start says when the control database is dirty at
+// version: a migration began, and its process stopped before golang-migrate
+// cleared the flag. golang-migrate's own sentence, "Fix and force version.",
+// names no fix. This one names the check and both repairs, because a migration
+// file runs as one statement batch and so is either whole or absent — and which
+// of the two it is decides the version to force (2026-09-15: it was whole).
+func dirtyError(version uint) error {
+	previous := uint(0)
+	if version > 0 {
+		previous = version - 1
+	}
+	return fmt.Errorf("migrate up: the control database is dirty at version %d: a start stopped mid-migration, "+
+		"and no API starts until it is repaired. Check whether every object migration %d creates exists. "+
+		"If all of them do: UPDATE schema_migrations SET dirty = false WHERE version = %d. "+
+		"If none does: UPDATE schema_migrations SET version = %d, dirty = false, and the next start runs it again. "+
+		"See docs/agents/playbooks/add-migration.md, \"A start stopped mid-migration\"",
+		version, version, version, previous)
 }
 
 // upFile is golang-migrate's file-source name for an up migration.

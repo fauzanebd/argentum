@@ -2826,6 +2826,21 @@ somewhere with that key.
 | voice.md §5 | **The ceiling against the charge.** Twenty answers read aloud; the sum of their `speech_synthesis` rows against OpenRouter's activity page for the same minutes. **Prediction: the ledger is higher, and within three times — a voice reading faster than ten characters a second** | The same key, and access to its OpenRouter account |
 | voice.md §2 | **`make eval-speech` through OpenRouter** on the pilot's twenty recordings, the default beside `openrouter:openai/gpt-4o-transcribe`. **Prediction: §7j's for Whisper: numerals are where it errs** | The recordings |
 
+## 7o. The 2026-09-15 deploy: a migration killed half-way, and what the next one owes
+
+Delivery log, phase 3bt, has the timeline. `1.15.0` went to production with voice switched on. Its first
+start was killed by the liveness probe in the middle of `089`, which left `schema_migrations` dirty, and
+no worker ran from ~13:45 to 16:59 UTC. Repaired by clearing the flag after reading `089` whole. Fixed
+forward: a 5-minute startup probe on the API, and a start that logs before it migrates.
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| phase 3bt | **The next release carrying a migration, watched to the worker.** The API log shows `control DB migrating` with `from_version` and `to_version`, then `control DB migrated to version N` with `took_ms`. The pod is not restarted while it migrates. **Prediction: `took_ms` under a second on this database, and no restart; if a lock holds it up, the startup probe waits up to 5 minutes rather than killing it** | A release with a migration |
+| phase 3bt | **The rendered startup probe on the cluster.** `kubectl get deploy argentum-api -n smartsoft-product -o jsonpath='{.spec.template.spec.containers[0].startupProbe}'`. **Prediction: `/health`, period 5, failureThreshold 60, from the chart default — the HelmRelease sets no probes** | A push to argentum `main` (Flux takes the chart from it) |
+| phase 3bt | **Flux's `Stalled` argentum release clears.** **Prediction: the next chart revision upgrades cleanly and marks Ready `True`; the failed v153 record is superseded** | The same push |
+| phase 3bt | **The worker's rollout on a full node.** The worker is `maxSurge: 0` and asks for 200m, and the node's CPU requests sat at 98%. Whenever the API also rolls, the new worker can wait on the API's surge pod. Not fixed: either the requests shrink or the worker's rollout changes, and both are an operator's call about the whole node | An owner's decision (§4) |
+| phase 3bt | **What held `089`'s lock at 13:45.** Unknowable after the fact. **Prediction: it does not recur while traffic is this low**; the next migration's `took_ms` is the evidence | None — the next migration answers it |
+
 ## 7. Needs the paid eval set (added 2026-09-11)
 
 `T-Q18`'s remaining half, and the only half that is about the model rather than

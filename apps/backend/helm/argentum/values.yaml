@@ -87,6 +87,21 @@ api:
     periodSeconds: 5
     timeoutSeconds: 3
     failureThreshold: 3
+  # The API runs control migrations before it listens (cmd/api bootstrap), so a
+  # start can take as long as a migration waits for its locks. This probe is that
+  # allowance: /health every 5s for up to 5 minutes, with liveness and readiness
+  # not starting until it passes. Without it, liveness killed a start that was
+  # mid-migration at ~45s on 2026-09-15, left schema_migrations dirty, and kept
+  # every later start from running (docs/agents/playbooks/add-migration.md, "A
+  # start stopped mid-migration"). Five minutes is also Flux's default Helm
+  # upgrade timeout: a longer start would still be marked a failed upgrade.
+  startupProbe:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 60
   strategy:
     type: RollingUpdate
     rollingUpdate:
