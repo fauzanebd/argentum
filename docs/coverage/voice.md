@@ -71,11 +71,14 @@ composer, and the person sends it, edits it or throws it away (roadmap 11, decis
   router's `404` says the true thing to everyone.
 - **One implementation, two providers.** Research 08 §2a says to pick on Indonesian accuracy, and §6
   says nobody has measured it. So the client speaks the request both candidates accept, and the
-  measurement changes `SPEECH_PROVIDER`, not code.
+  measurement changes `SPEECH_PROVIDER`, not code. OpenRouter now accepts the same request.
+  Research 08 §2e (2026-09-15) compares it with Groq: reachable by configuration, but billed at the
+  fallback rate and unable to choose which host hears a clip.
 - **The byte cap is the limit that bounds a bill.** See §1d on duration. It is 384 kbit/s times the
   seconds limit, plus 64 KiB for the container. That is above what a browser writes for a voice, and
   under the 25 MB both providers refuse at, which is also why `SPEECH_MAX_CLIP_SECONDS` stops at 500.
-- **Billed on the provider's measured length.** `verbose_json` returns `duration`, which no client
+- **Billed on the provider's measured length** — or on the model's minimum, when the provider bills a
+  short clip as longer (Groq bills at least 10 seconds, §1g, 2026-09-15). `verbose_json` returns `duration`, which no client
   wrote. The declared length is used only when the provider reports none, and the Info line says
   `measured: false` when that happens. A clip measured longer than the limit it was declared under is
   already paid for, so it is logged rather than refused.
@@ -234,6 +237,14 @@ In [`live-gate-backlog.md`](live-gate-backlog.md) §7j, with predictions:
 - **The byte rate is a guess about browsers.** 384 kbit/s is above every default this document knows
   of. A browser that records voice above it would see `413` at a length under the limit. The first
   `413` in production with a `duration_ms` under the limit is the signal.
+- ~~**Groq bills every clip as at least 10 seconds, and the ledger does not**~~ — found and **fixed
+  2026-09-15** (research 08 §2e). `RecordTranscription` recorded the measured length, so §1f's
+  2.75-second clip was 31 µUSD in `usage_events` and 112 µUSD on Groq's invoice. `speechMinimumSeconds`
+  now bills both Groq Whisper models as at least 10 seconds. `audio_seconds` stays the length heard,
+  and `billed_seconds` is added only when the minimum raised it. `whisper-large-v3` gained its own
+  rate ($0.111/hour); it had been billed at the $0.36 fallback. `TestRecordTranscriptionBillsTheProvidersMinimumLength`
+  failed before the fix (31 and 275 µUSD) and passes after it (112 and 309). **Not live-proven:** the
+  invoice side needs a Groq key (live-gate §7j).
 
 ---
 
@@ -283,6 +294,12 @@ OpenAI key for the comparison. And twenty recordings of the script by someone at
 `<id>.webm` — a phone's voice memo converted with ffmpeg is enough. **Prediction, carried from
 live-gate §7j:** numerals are where both providers err, and in two forms, so a transcript is not
 normalised. The pairs row is the one to read first.
+
+**And OpenRouter, if Whisper fails it (2026-09-15).** Research 08 §2e compares OpenRouter with Groq and
+keeps Groq for the first round: no code is needed, and Groq's zero-retention setting covers audio.
+OpenRouter's value is the models beyond Whisper, one key away. Scoring them needs code: the runner reads
+only `GROQ_API_KEY` and `OPENAI_API_KEY` (`cmd/evalspeech/main.go:64`), and `speechPricing` has no rows
+for OpenRouter's `openai/…`-style names.
 
 ---
 

@@ -7921,6 +7921,41 @@ file).
 **Gate.** `make check`, alone: `MAKE EXIT: 0`, 15m05s. 76 Go packages `ok`, zero `FAIL`/`panic` lines,
 `golangci-lint` `0 issues.`, `gofmt -l` empty, and 88 dashboard tests in 14 files.
 
+## Phase 3bp — OpenRouter against Groq, and a short clip billed as Groq bills it (2026-09-15)
+
+**Why.** The owner asked whether `SPEECH_PROVIDER` could be OpenRouter, and then for a comparison with Groq
+in the docs. Research 08 §2e has it, read from both providers' own documentation and API on the day. No
+request was sent to either, because this machine has no key.
+
+**What the comparison found.** OpenRouter now serves `/audio/transcriptions` and `/audio/speech` in the
+shape `internal/speech` already sends, so it is reachable by configuration. It is not recommended yet:
+- It cannot be told which host hears a clip. Whisper turbo has two, DeepInfra and Groq, and routing
+  preferences are not applied to transcription.
+- Its zero-retention list holds one speech endpoint.
+- Its model names bill at `speechPricing`'s fallback rate, 33× its own price.
+- The eval has no key for it.
+
+Groq stays first for voice in, with its organisation's zero retention switched on before the first real
+clip. OpenRouter is the second round of the measurement, if Whisper fails the pairs row. OpenAI direct
+stays the voice out, because Groq's voices speak no Indonesian, and no OpenRouter voice documents
+Indonesian at a price per character.
+
+**The defect it turned up, fixed.** Groq bills every clip as at least 10 seconds, and
+`RecordTranscription` recorded the measured length. So `voice.md` §1f's 2.75-second clip was 31 µUSD in
+`usage_events` and 112 µUSD on the invoice, and most spoken questions are shorter than ten seconds.
+`speechMinimumSeconds` now bills Groq's two Whisper models as at least ten seconds. `audio_seconds` keeps
+the length heard, and `billed_seconds` appears only when the minimum raised it. `whisper-large-v3` gained
+its own rate, $0.111/hour, where it had been billed at the $0.36 fallback.
+`TestRecordTranscriptionBillsTheProvidersMinimumLength` failed before the fix (31 and 275 µUSD) and passes
+after it (112 and 309). `TestRecordTranscriptionNeverRecordsAFreeClip` now expects 112 µUSD for a
+one-second clip, not 12.
+
+**Not proven:** Groq's invoice agreeing with the ledger, which needs a key (live-gate §7j, with a
+prediction).
+
+**Gate.** `make check`, alone: `MAKE EXIT: 0`, 14m46s. 76 Go packages `ok`, zero `FAIL`/`panic` lines,
+`golangci-lint` `0 issues.`, `gofmt -l` empty on the two changed files, and 88 dashboard tests in 14 files.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

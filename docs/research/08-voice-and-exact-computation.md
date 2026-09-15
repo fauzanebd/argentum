@@ -90,6 +90,12 @@ maps a provider string to one of three SDK chat clients (`factory.go:1`), and
 which `llmroute` exists to steer — is a chat router. **Speech is a second
 provider relationship, not a model id.**
 
+> **Revised 2026-09-15:** OpenRouter now serves `/audio/transcriptions` and
+> `/audio/speech` as well (§2e). Speech is still a second client beside
+> `llmclient`, because neither request is a chat completion, but it no longer
+> has to be a second provider account. §2e says why that is not yet a reason
+> to use it.
+
 **Object storage already exists.** `StorageService.StreamKey`
 (`internal/adapters/storage/minio.go:151`) opens an object and reports its size.
 An audio blob needs no new store and no new presigning code.
@@ -166,6 +172,97 @@ nothing in this repository currently checks one restatement against another.
 A spoken answer that rounds 1,234,567 to "about 1.2 million" is fine; one that
 says "about 2 million" is the fabrication class with no instrument pointed at
 it.
+
+### 2e. OpenRouter against Groq, as the speech provider (added 2026-09-15)
+
+Added when the owner asked whether `SPEECH_PROVIDER` could be OpenRouter. Read
+on 2026-09-15 from each provider's own documentation and API, sources below.
+**Nothing here was measured by sending a request**: this machine has neither
+key.
+
+**OpenRouter now accepts both audio requests, in the shape `internal/speech`
+already sends.** So the product's own client reaches it by setting
+`SPEECH_BASE_URL` and `SPEECH_TTS_BASE_URL`, with no code. The question is
+therefore not whether it can, but what sits behind each endpoint.
+
+#### Voice in
+
+| | Groq, direct | OpenRouter |
+| --- | --- | --- |
+| Request | `/openai/v1/audio/transcriptions`: `file`, `model`, `language`, `temperature`, `response_format`, `prompt` | `/api/v1/audio/transcriptions`, the same fields as multipart or base64 JSON. `prompt` is accepted and ignored |
+| Models | `whisper-large-v3-turbo`, `whisper-large-v3` | 21 in its speech-to-text collection: the Whispers, `openai/gpt-4o-transcribe`, `google/chirp-3`, `microsoft/mai-transcribe-2`, `mistralai/voxtral-mini-transcribe`, `deepgram/nova-3`, Qwen3 ASR and others |
+| Price | turbo $0.04/hour, v3 $0.111/hour. **Every clip is billed as at least 10 seconds** | turbo $0.000003/second (≈$0.011/hour); `openai/whisper-1` $0.006/minute; `google/chirp-3` $0.016/minute; `microsoft/mai-transcribe-2` $0.10/hour |
+| Who hears the audio | Groq | **Whichever host OpenRouter picks.** turbo has two endpoints, DeepInfra and Groq. A model on more than one host is load-balanced, and `order`, `only` and `ignore` "are not applied to transcription requests" |
+| `duration` in `verbose_json` | Returned for Whisper | Returned "when the routed provider supports" it. `usage.seconds` and `usage.cost` are always returned |
+| Retention | Up to 30 days, for reliability, by default. **Zero data retention is an organisation setting, and Groq's data page lists the audio endpoints under it** | Its ZDR list, read 2026-09-15, holds **one** speech endpoint: Azure's `microsoft/mai-transcribe-2-20260903`. Its logging page describes the providers' policies, not what OpenRouter keeps of a request |
+| Limits | Free tier: 20 requests/minute, 2,000/day, 7,200 audio seconds/hour, 28,800/day. 25 MB a file free, 100 MB on the dev tier | 25 MB a multipart upload |
+| In this repository today | `SPEECH_PROVIDER=groq`, the default. `make eval-speech` reads `GROQ_API_KEY` | Reachable by configuration, but **billed wrong**. `speechPricing` (`internal/app/usage_speech.go`) is keyed on bare model names, so `openai/whisper-large-v3-turbo` records the $0.36/hour fallback, 33× OpenRouter's price. `make eval-speech` has no key for it |
+
+**What the table decides:**
+
+- **Price decides nothing, again.** §2a's arithmetic holds on every row: a
+  question is a small fraction of a cent.
+- **Accuracy is still unmeasured, and OpenRouter is the cheaper way to measure
+  beyond Whisper.** If §6's pairs row shows Whisper mishearing a multiplier,
+  `gpt-4o-transcribe`, Chirp 3 and MAI-Transcribe 2 are one key away there,
+  and three accounts away otherwise.
+- **The data path is where the two differ, and it favours Groq.** A recording of
+  a business question is among the most sensitive things this product takes in.
+  Groq is one company, with a zero-retention switch that covers audio.
+  OpenRouter adds a hop, cannot be told which host hears the clip, and lists
+  one speech endpoint as zero-retention.
+- **Groq's 10-second minimum means this product's ledger under-records a short
+  clip.** `RecordTranscription` bills the measured length. The 2.75-second clip
+  in [`../coverage/voice.md`](../coverage/voice.md) §1f was recorded at 31 µUSD;
+  Groq bills it as 10 seconds, 112 µUSD. That is noise against the turn, and
+  still wrong in the ledger. **Fixed the same day** with a per-model minimum
+  (voice.md §1g).
+
+#### Voice out
+
+**Groq is not a candidate.** Its two voices, `canopylabs/orpheus-v1-english` and
+`canopylabs/orpheus-arabic-saudi`, speak English and Saudi Arabic, and answer
+WAV. voice.md §3c found that on 2026-09-14, and it still holds. So voice out
+compares OpenRouter with OpenAI direct, which is the current default.
+
+| | OpenAI, direct | OpenRouter |
+| --- | --- | --- |
+| Indonesian | `tts-1` speaks the languages Whisper hears (voice.md §3c) | Documented for **Gemini 3.1 Flash TTS Preview** only: Google's speech-generation page lists `id`. Voxtral Mini TTS says "multilingual", Grok Voice TTS "20+ languages", MAI-Voice-2 "15 languages". None of the pages read names Indonesian |
+| Price | `tts-1` $15 per million characters, which this process counts exactly | Per character for most: Voxtral $16/M, Grok Voice $15/M, MAI-Voice-2 $22/M. Gemini 3.1 Flash TTS is per token, $1/M in and $20/M audio out. That is the same estimate problem `gpt-4o-mini-tts` has (voice.md §3b) |
+| The OpenAI voices | `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` | Its docs use `openai/gpt-4o-mini-tts-2025-12-15` as an example, but it was not in its text-to-speech collection as read, and its model page answered `404`. Not assumed available. `tts-1` is not offered |
+| Format | MP3 | `mp3` or `pcm`, `pcm` by default. The client asks for `mp3`; whether every model honours that is unverified |
+| In this repository | `SPEECH_TTS_PROVIDER=openai`, the default | Reachable by configuration with `SPEECH_TTS_MODEL` and `SPEECH_TTS_VOICE` set. Its model names are unpriced, so they record the $30/M fallback |
+
+#### What this argues for
+
+1. **Voice in: Groq direct, as planned.** It needs no code, its retention switch
+   covers audio, and §6's measurement runs on it today. Switch zero retention
+   on in the Groq organisation before the first real clip.
+2. **OpenRouter as the second round of that measurement, not the first.** If
+   Whisper fails the pairs row, give `make eval-speech` an `OPENROUTER_API_KEY`
+   and score the non-Whisper models through it. If one of them wins, the
+   data-path row becomes the owner's decision, and `microsoft/mai-transcribe-2`
+   is the only candidate with a zero-retention endpoint.
+3. **Voice out: OpenAI direct, as built.** OpenRouter offers no voice documented
+   for Indonesian at a price per character.
+4. **Using OpenRouter for either is a code change, not only configuration.** It
+   needs price rows for its model names, or billing on the `usage.cost` it
+   returns for a transcription, plus the eval's key. About half a day.
+
+Sources: Groq [speech-to-text](https://console.groq.com/docs/speech-to-text),
+[text-to-speech](https://console.groq.com/docs/text-to-speech),
+[rate limits](https://console.groq.com/docs/rate-limits),
+[your data](https://console.groq.com/docs/your-data); OpenRouter
+[speech-to-text](https://openrouter.ai/docs/guides/overview/multimodal/stt),
+[text-to-speech](https://openrouter.ai/docs/guides/overview/multimodal/tts),
+[audio APIs announcement](https://openrouter.ai/blog/announcements/announcing-audio-apis/),
+[speech-to-text models](https://openrouter.ai/collections/speech-to-text-models),
+[text-to-speech models](https://openrouter.ai/collections/text-to-speech-models),
+[turbo's endpoints](https://openrouter.ai/api/v1/models/openai/whisper-large-v3-turbo/endpoints),
+[ZDR endpoints](https://openrouter.ai/api/v1/endpoints/zdr),
+[ZDR](https://openrouter.ai/docs/features/zdr),
+[logging](https://openrouter.ai/docs/guides/privacy/logging); Google
+[Gemini speech generation](https://ai.google.dev/gemini-api/docs/speech-generation).
 
 ---
 
@@ -391,7 +488,7 @@ plan; all of them can change a ticket.
 
 | # | The unknown | Why it matters | How it gets closed |
 | - | ----------- | -------------- | ------------------ |
-| 1 | Word-error rate for **Indonesian business speech** on any candidate STT provider | It is the only criterion §2a leaves standing | Twenty recorded questions from a real user, one hour, two providers. **The script and the scorer exist since 2026-09-14** — `make eval-speech` ([`../coverage/voice.md`](../coverage/voice.md) §2); the key and the recordings do not |
+| 1 | Word-error rate for **Indonesian business speech** on any candidate STT provider | It is the only criterion §2a leaves standing | Twenty recorded questions from a real user, one hour, two providers. **The script and the scorer exist since 2026-09-14** — `make eval-speech` ([`../coverage/voice.md`](../coverage/voice.md) §2); the key and the recordings do not. §2e (2026-09-15) keeps Groq first and makes OpenRouter the second round if Whisper fails |
 | 2 | Whether **numerals** survive transcription — "tiga ratus juta" vs "tiga puluh juta" | A misheard multiplier is a factor-of-ten wrong answer the agent will then answer correctly | The same twenty clips, scored on the numbers alone |
 | 3 | Whether `decimal` **works** in a CPython-WASI build | The entire compute design rests on it, and the sources are silent | One afternoon: build or download `python.wasm`, run `Decimal('0.1')+Decimal('0.2')` under wazero |
 | 4 | CPython-WASI **cold-start latency and bundle size** (≈150 MB reported for the all-in-one build) | 150 MB in the API image is a deployment fact; a 2-second start is a product fact | The same afternoon, `time` around the first call and the tenth |
