@@ -1,0 +1,9 @@
+# Findings the secret scan made that are not secrets, by exact fingerprint.
+#
+# Commit b7a7ba4 set a fake ARGENTUM_JWT_SECRET and ARGENTUM_DSN_KEY — hex
+# counting 0-f, never used anywhere — for a config test to load against. The
+# CI checkout fetches full history, so without these lines the next scan that
+# reads that commit fails again. The test itself now builds its values with
+# strings.Repeat, which leaves nothing for the scan to read.
+b7a7ba478bd31ee1ff7fd86d02126ad8c2a1c4a9:apps/backend/internal/config/speech_defaults_test.go:generic-api-key:22
+b7a7ba478bd31ee1ff7fd86d02126ad8c2a1c4a9:apps/backend/internal/config/speech_defaults_test.go:generic-api-key:23

@@ -404,27 +404,14 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	if logoStore != nil {
 		spokenStore = logoStore
 	}
+	// Both speech clients take the model's key on the model's own host when
+	// they have none of their own (speech_wiring.go).
 	deps.spokenSvc = app.NewSpokenAnswerService(
-		speech.NewSynthesizer(speech.SynthConfig{
-			Enabled:  cfg.SpeechEnabled,
-			Provider: cfg.SpeechTTSProvider,
-			APIKey:   cfg.EffectiveSpeechTTSAPIKey(),
-			BaseURL:  cfg.SpeechTTSBaseURL,
-			Model:    cfg.SpeechTTSModel,
-			Voice:    cfg.SpeechTTSVoice,
-			Timeout:  time.Duration(cfg.SpeechTimeoutSecs) * time.Second,
-		}),
+		speech.NewSynthesizer(synthesizerConfig(cfg)),
 		lightLLMClient, pgctl.NewSpokenAnswerRepo(controlDB), spokenStore, deps.usageSvc, cfg.SpeechRetentionDays,
 	).WithBudget(deps.usageSvc)
 	deps.voiceSvc = app.NewVoiceService(
-		speech.New(speech.Config{
-			Enabled:  cfg.SpeechEnabled,
-			Provider: cfg.SpeechProvider,
-			APIKey:   cfg.SpeechAPIKey,
-			BaseURL:  cfg.SpeechBaseURL,
-			Model:    cfg.SpeechSTTModel,
-			Timeout:  time.Duration(cfg.SpeechTimeoutSecs) * time.Second,
-		}),
+		speech.New(transcriberConfig(cfg)),
 		deps.voiceClips, deps.usageSvc, companyRepo, cfg.SpeechMaxClipSeconds, cfg.SpeechRetentionDays,
 	).WithBudget(deps.usageSvc).WithBranding(deps.brandingSvc)
 

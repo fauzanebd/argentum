@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -17,10 +18,13 @@ func TestSpeechDefaultsToOneOpenRouterKey(t *testing.T) {
 		}
 	}
 	t.Setenv("SPEECH_API_KEY", "sk-or-test")
-	// What Load validates before it answers, none of it about voice.
-	t.Setenv("LLM_API_KEY", "sk-llm-test")
-	t.Setenv("ARGENTUM_JWT_SECRET", "0123456789abcdef0123456789abcdef")
-	t.Setenv("ARGENTUM_DSN_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	// What Load validates before it answers, none of it about voice. Built rather
+	// than written out: the CI secret scan (gitleaks) read the random-looking hex
+	// this test first used as a committed JWT secret and DSN key, and failed the
+	// build. A run of one character is the right length and says it is not a key.
+	t.Setenv("LLM_API_KEY", "test")
+	t.Setenv("ARGENTUM_JWT_SECRET", strings.Repeat("j", 32))
+	t.Setenv("ARGENTUM_DSN_KEY", strings.Repeat("0", 64))
 	t.Setenv("DB_PASSWORD", "test")
 
 	cfg, err := Load()

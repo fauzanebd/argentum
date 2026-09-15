@@ -8024,6 +8024,42 @@ ceiling against the real charge, and the eval.
 **Gate.** `make check`, alone: `MAKE EXIT: 0`, 14m37s. 76 Go packages `ok`, zero `FAIL`/`panic` lines,
 `golangci-lint` `0 issues.`, `gofmt -l` empty, 121 dashboard tests in 17 files, and every app built.
 
+## Phase 3bs — Voice needs no key of its own (2026-09-15)
+
+**Why.** Switching voice on in `smartsoft-infra` meant giving it the OpenRouter key under `SPEECH_API_KEY`.
+The plan was to map the model's Bitwarden entry a second time. Bitwarden's operator source
+(`ApplySecretMap`) rules that out: each secret is written once, under the first mapping whose id matches.
+A second line would silently never exist, and if it came first `LLM_API_KEY` would vanish. The owner chose
+reusing the model's key in code over a duplicate Bitwarden entry: one secret to rotate.
+
+**What changed.** Both speech clients take a `SharedKey` with the base URL it was issued for, and send it
+only when they have no key of their own and their host is that one — `config.EffectiveEmbeddingAPIKey`'s
+rule. `cmd/api/speech_wiring.go` offers `LLM_API_KEY` and `LLM_BASE_URL`. Production now sets
+`SPEECH_ENABLED` and nothing else.
+
+**Proven.** Six mutations (`/tmp/tw9-gate/mut3.py`), each killed by its named test:
+- the host check removed;
+- two URLs with no host counted as one;
+- the shared key preferred over speech's own;
+- the synthesiser sending its own empty key;
+- each wiring line dropping the model's key.
+
+`TestVoiceRunsOnTheModelsOpenRouterKey` builds both clients from this deployment's HelmRelease shape.
+**Nothing has been sent to OpenRouter.**
+
+**And CI's secret scan failed on the previous push (`b7a7ba4`).** `speech_defaults_test.go` set a fake
+`ARGENTUM_JWT_SECRET` and `ARGENTUM_DSN_KEY` as random-looking hex, and gitleaks' `generic-api-key` rule
+read both as committed keys. `main`'s CI went red, and its image build was skipped; the tag's own run
+scanned green and built. None of it was a secret. The test now builds those values with `strings.Repeat`,
+and `.gitleaksignore` lists the two findings by fingerprint, because the scan fetches full history. A local
+gitleaks 8.30.1 over the last three commits, with the ignore file, found nothing; over the staged change,
+nothing. `make check` has no secret scan, which is why the gate passed and CI did not.
+
+**Gate.** `make check`, alone: `MAKE EXIT: 0`, 14m11s. 76 Go packages `ok`, zero `FAIL`/`panic` lines,
+`golangci-lint` `0 issues.`, `gofmt -l` empty, 121 dashboard tests, and every app built. The first run of
+this gate was stopped part-way, to change the test the secret scan flagged; this is the run of the tree
+as committed.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

@@ -52,6 +52,10 @@ type SynthConfig struct {
 	Enabled  bool
 	Provider string
 	APIKey   string
+	// SharedKey and SharedKeyBaseURL are Config's: the deployment's model key,
+	// sent only when there is no APIKey and only to that key's own host.
+	SharedKey        string
+	SharedKeyBaseURL string
 	// BaseURL overrides the provider's, for a compatible endpoint or a test
 	// server. A base URL with no known provider needs Model and Voice as well.
 	BaseURL string
@@ -123,7 +127,8 @@ func NewSynthesizer(c SynthConfig) Synthesizer {
 	if v := strings.TrimSpace(c.Voice); v != "" {
 		p.voice = v
 	}
-	hasKey := strings.TrimSpace(c.APIKey) != ""
+	key, keySource := resolveKey(c.APIKey, c.SharedKey, c.SharedKeyBaseURL, p.baseURL)
+	hasKey := key != ""
 	if !c.Enabled || !known || !hasKey || p.model == "" || p.voice == "" {
 		fields := logrus.Fields{
 			"enabled":   c.Enabled,
@@ -144,13 +149,13 @@ func NewSynthesizer(c SynthConfig) Synthesizer {
 		c.Timeout = 30 * time.Second
 	}
 	logrus.WithFields(logrus.Fields{
-		"provider": name, "base_url": p.baseURL, "model": p.model, "voice": p.voice,
+		"provider": name, "base_url": p.baseURL, "model": p.model, "voice": p.voice, "key": keySource,
 	}).Info("speech output enabled")
 	return &compatSynthesizer{
 		baseURL: p.baseURL,
 		model:   p.model,
 		voice:   p.voice,
-		apiKey:  strings.TrimSpace(c.APIKey),
+		apiKey:  key,
 		client:  newClient(c.Timeout),
 	}
 }

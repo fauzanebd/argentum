@@ -776,6 +776,7 @@ zero-retention list.
 | Rows for when no charge comes back: turbo at $0.04 an hour, the dearer of its two hosts; the Gemini voice at a $50-per-million-characters ceiling | `internal/app/usage_speech.go` |
 | `SPEECH_PROVIDER` and `SPEECH_TTS_PROVIDER` default to `openrouter` | `internal/config/config.go`, `.env.example` |
 | `make eval-speech` scores `openrouter` and `openrouter:<model>` with `OPENROUTER_API_KEY` | `cmd/evalspeech`, root `Makefile` |
+| Both speech clients take `LLM_API_KEY` when they have no key of their own, sent only to `LLM_BASE_URL`'s host | `internal/speech` (`resolveKey`, `sameHost`), `cmd/api/speech_wiring.go` |
 
 ### 5b. Decisions worth the words
 
@@ -799,21 +800,28 @@ zero-retention list.
   the one key to both halves. No deployment had voice switched on, so the change moves nobody.
 - **The Gemini voice is a preview model**, chosen as the one voice on OpenRouter whose maker documents
   Indonesian. `Kore` is one of its thirty-one voices, picked without listening.
+- **Speech takes the model's key, on the model's host only.** With `SPEECH_API_KEY` unset, `cmd/api`
+  offers `LLM_API_KEY` to both speech clients, and `speech.New` sends it only when the client's base URL is
+  the same host and port as `LLM_BASE_URL`. An empty URL, one without a scheme, or one that will not parse
+  matches nothing. That is `config.EffectiveEmbeddingAPIKey`'s rule, written after a fallback without it
+  sent an OpenRouter key to api.openai.com. A key of speech's own always wins. The startup line says
+  `key: shared` or `key: own`, never the key. It is `LLM_API_KEY` and not `LIGHT_LLM_API_KEY` because the
+  owner's decision named the model's key; the two are separate Bitwarden entries today.
 
 ### 5c. What production sets
 
-In `smartsoft-infra`'s HelmRelease values for `argentum`: the Bitwarden entry already mapped to
-`LLM_API_KEY`, mapped a second time, and one variable.
+In `smartsoft-infra`'s HelmRelease values for `argentum`, one variable, and nothing in Bitwarden:
 
 ```yaml
-bitwardenSecret:
-  secrets:
-    - bwSecretId: <the id already mapped to LLM_API_KEY>
-      secretKeyName: SPEECH_API_KEY
 extraEnv:
   - name: SPEECH_ENABLED
     value: "true"
 ```
+
+**Not a second mapping of the model's Bitwarden entry**, which was the first plan. Bitwarden's operator
+(`ApplySecretMap` in `bitwarden/sm-kubernetes`) writes each secret once, under the first mapping whose id
+matches, so a second line for the same id is silently never written — and if it were ever first,
+`LLM_API_KEY` would be the one to vanish. So speech takes the model's key in code instead (§5b).
 
 ### 5d. Proven
 

@@ -49,6 +49,28 @@ func TestNewSynthesizerTakesTheProvidersDefaults(t *testing.T) {
 	}
 }
 
+// The synthesiser takes the model's key on Config's terms: same host only, and
+// never over a key of its own.
+func TestNewSynthesizerSendsASharedKeyOnlyToItsOwnHost(t *testing.T) {
+	var auth atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth.Store(r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte("ID3\x04\x00frames"))
+	}))
+	defer srv.Close()
+
+	s := NewSynthesizer(SynthConfig{Enabled: true, Provider: "openrouter", BaseURL: srv.URL, SharedKey: "sk-or-model", SharedKeyBaseURL: srv.URL + "/api/v1"})
+	if _, err := s.Speak(context.Background(), "halo", ""); err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	if got := auth.Load(); got != "Bearer sk-or-model" {
+		t.Errorf("auth = %v, want the shared key", got)
+	}
+	if NewSynthesizer(SynthConfig{Enabled: true, Provider: "openrouter", SharedKey: "k", SharedKeyBaseURL: "https://api.openai.com/v1"}).Enabled() {
+		t.Error("a key issued for api.openai.com was offered to openrouter.ai")
+	}
+}
+
 func TestSpeakSendsTheRequestAndReturnsMP3(t *testing.T) {
 	var got map[string]string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

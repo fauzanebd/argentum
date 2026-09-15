@@ -460,7 +460,9 @@ type Config struct {
 	//
 	// SpeechProvider defaults to "openrouter" since 2026-09-15 (research 08 §2e):
 	// the key this deployment already holds for its model reaches both halves of
-	// voice, so SPEECH_ENABLED and SPEECH_API_KEY are all a deployment sets.
+	// voice. With SPEECH_API_KEY unset, cmd/api offers LLM_API_KEY to both speech
+	// clients, which send it only to LLM_BASE_URL's host — so a deployment whose
+	// model is on OpenRouter sets SPEECH_ENABLED and nothing else.
 	SpeechEnabled        bool
 	SpeechProvider       string
 	SpeechAPIKey         string

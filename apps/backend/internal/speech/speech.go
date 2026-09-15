@@ -17,6 +17,7 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"net/url"
 	"strings"
 	"time"
 
@@ -65,6 +66,14 @@ type Config struct {
 	// still unmeasured on any of them.
 	Provider string
 	APIKey   string
+	// SharedKey is a key this deployment holds for another endpoint — its
+	// model's — offered for when one account serves both. It is sent only when
+	// APIKey is empty and the transcriber's base URL is on the same host as
+	// SharedKeyBaseURL. The host check is the point of it:
+	// config.EffectiveEmbeddingAPIKey records the day a fallback without one
+	// sent an OpenRouter key to api.openai.com.
+	SharedKey        string
+	SharedKeyBaseURL string
 	// BaseURL overrides the provider's, for a compatible endpoint that is
 	// neither — or a test server.
 	BaseURL string
@@ -125,7 +134,8 @@ func New(c Config) Transcriber {
 	if strings.TrimSpace(c.Model) != "" {
 		p.model = strings.TrimSpace(c.Model)
 	}
-	hasKey := strings.TrimSpace(c.APIKey) != ""
+	key, keySource := resolveKey(c.APIKey, c.SharedKey, c.SharedKeyBaseURL, p.baseURL)
+	hasKey := key != ""
 	if !c.Enabled || !known || !hasKey || p.model == "" {
 		fields := logrus.Fields{
 			"enabled":   c.Enabled,
@@ -147,15 +157,46 @@ func New(c Config) Transcriber {
 	if c.Timeout <= 0 {
 		c.Timeout = 30 * time.Second
 	}
+	// `key` says whose key it is — "own", or "shared" when it is the model's —
+	// and never what it is.
 	logrus.WithFields(logrus.Fields{
-		"provider": name, "base_url": p.baseURL, "model": p.model,
+		"provider": name, "base_url": p.baseURL, "model": p.model, "key": keySource,
 	}).Info("speech enabled")
 	return &compatTranscriber{
 		baseURL: p.baseURL,
 		model:   p.model,
-		apiKey:  strings.TrimSpace(c.APIKey),
+		apiKey:  key,
 		client:  newClient(c.Timeout),
 	}
+}
+
+// resolveKey is the key a client sends, and whose it is: its own, or — when it
+// has none — a key the deployment holds for sharedBaseURL, if and only if
+// baseURL is on that same host. The source is "own", "shared", or "" for none.
+func resolveKey(own, shared, sharedBaseURL, baseURL string) (key, source string) {
+	if k := strings.TrimSpace(own); k != "" {
+		return k, "own"
+	}
+	if k := strings.TrimSpace(shared); k != "" && sameHost(baseURL, sharedBaseURL) {
+		return k, "shared"
+	}
+	return "", ""
+}
+
+// sameHost reports whether two base URLs address the same host and port. An
+// empty URL, one with no scheme, or one that will not parse matches nothing:
+// the question is whether a key may be sent there, and "I cannot tell" is no.
+func sameHost(a, b string) bool {
+	ha, hb := hostOf(a), hostOf(b)
+	return ha != "" && ha == hb
+}
+
+func hostOf(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Host)
 }
 
 // container is one audio format: the extension a provider is told, and the

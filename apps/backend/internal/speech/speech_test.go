@@ -116,6 +116,51 @@ func TestTranscribeSendsTheClipTheModelAndTheHint(t *testing.T) {
 	}
 }
 
+// The deployment's model key is sent only to the host it was issued for — the
+// lesson config.EffectiveEmbeddingAPIKey records — and never over a key of the
+// transcriber's own.
+func TestASharedKeyIsSentOnlyToItsOwnHost(t *testing.T) {
+	var got seen
+	srv := fakeProvider(t, 200, `{"text":"ok"}`, &got)
+	transcribe := func(tr Transcriber) {
+		t.Helper()
+		if _, err := tr.Transcribe(context.Background(), strings.NewReader("x"), "audio/webm", ""); err != nil {
+			t.Fatalf("Transcribe: %v", err)
+		}
+	}
+
+	shared := New(Config{Enabled: true, BaseURL: srv.URL, Model: "m", SharedKey: "sk-or-model", SharedKeyBaseURL: srv.URL + "/api/v1"})
+	if !shared.Enabled() {
+		t.Fatal("a shared key for the same host did not enable the transcriber")
+	}
+	transcribe(shared)
+	if got.auth != "Bearer sk-or-model" {
+		t.Errorf("auth = %q, want the shared key", got.auth)
+	}
+
+	own := New(Config{Enabled: true, BaseURL: srv.URL, Model: "m", APIKey: "sk-own", SharedKey: "sk-or-model", SharedKeyBaseURL: srv.URL})
+	transcribe(own)
+	if got.auth != "Bearer sk-own" {
+		t.Errorf("auth = %q, want the transcriber's own key over the shared one", got.auth)
+	}
+
+	// OpenRouter's default with the model key issued for openrouter.ai: usable.
+	if !New(Config{Enabled: true, Provider: "openrouter", SharedKey: "k", SharedKeyBaseURL: "https://openrouter.ai/api/v1"}).Enabled() {
+		t.Error("the model's OpenRouter key did not reach the OpenRouter transcriber")
+	}
+	// Another host, a URL with no scheme, and no URL at all: nothing is sent.
+	for _, other := range []string{"https://api.openai.com/v1", "openrouter.ai/api/v1", ""} {
+		if New(Config{Enabled: true, Provider: "openrouter", SharedKey: "k", SharedKeyBaseURL: other}).Enabled() {
+			t.Errorf("a key issued for %q was offered to openrouter.ai", other)
+		}
+	}
+	// Two URLs that name no host are not the same host: a custom endpoint written
+	// without a scheme, beside a model with no base URL, gets no key.
+	if New(Config{Enabled: true, BaseURL: "localhost:9000", Model: "m", SharedKey: "k", SharedKeyBaseURL: ""}).Enabled() {
+		t.Error("two URLs with no host were taken for one host")
+	}
+}
+
 // OpenRouter's answer: `usage.seconds` when there is no `duration`, and the
 // charge. A `duration` the host did supply still wins, being the host's measure.
 func TestTranscribeReadsWhatOpenRouterMeasuredAndCharged(t *testing.T) {
