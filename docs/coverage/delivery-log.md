@@ -8134,6 +8134,42 @@ requests are nearly all spoken for, and Flux's `Stalled` release, which the next
 `golangci-lint` `0 issues.`, `gofmt -l` empty, 121 dashboard tests, and every app built. Local gitleaks
 over the staged change: no leaks.
 
+## Phase 3bu — The security job green again: Go 1.26.9 and four module bumps (`RIZ-23`, 2026-10-11)
+
+**Why.** Nothing in the backend changed for the worse, but the advisory database moved. By 2026-10-11
+`govulncheck` reported **13 called vulnerabilities**: 9 in the go1.26.6 standard library (net/http,
+crypto/tls, mime/multipart, html/template), and 4 in x/net, grpc and the otel exporters. They sit on live
+paths: the LLM clients' HTTP/2 transports, MCP egress, outbound webhooks, image-upload multipart parsing,
+warehouse TLS, the MCP server's templates and tracing export. CI's govulncheck step blocks on called
+findings, so every backend push was red.
+
+**What changed.**
+- `go.mod`: `go 1.26.6` → `go 1.26.9`, with the comment rewritten for this reason. No `toolchain` line.
+  CI and the four Dockerfiles still float on `1.26`.
+- x/net → v0.60.0, grpc → v1.83.1, and otel → v1.45.0 across all of its modules. `otlptracegrpc` jumps from
+  v1.38, which §14 of `security-hardening.md` had left behind. `go mod tidy` moved the rest; the list is in
+  `security-hardening.md` §21.
+- `ci.yaml`'s comment no longer says "go 1.26.1". It points at the directive instead of naming a version.
+- **No `.go` file changed.**
+
+**What the plan did not foresee.** `go.mod` on `main` was already untidy: `jackc/pgx/v5` was listed as a
+direct requirement although nothing imports it, plus two of its leaf modules. `go mod tidy -diff` on the
+untouched base shows that hunk alone. It rides along, because the plan's bar is that tidy leaves no diff.
+The uncalled remainder is 3 findings (grpc GO-2026-6443, klauspost/compress GO-2026-5841, x/crypto
+openpgp GO-2026-5932), not the 9 the plan counted. It was not chased, as the plan decided.
+
+**Proven.** `govulncheck ./...` on go1.26.9: *"Your code is affected by 0 vulnerabilities."*
+`go mod tidy -diff`: empty. `tracing.go`'s `semconv/v1.27.0` import still resolves.
+
+**Gate.** `make lint-go`: exit 0. `make check`, alone: `MAKE EXIT: 0`. 76 Go packages `ok`, zero
+`FAIL`/`panic` lines, `golangci-lint` `0 issues.`, `gofmt -l` empty, 121 dashboard tests. A fresh worktree
+needs `@argentum/widget` built before `lint-web`, or `apps/widget` cannot resolve its types.
+
+**Owed.**
+- `docker build --pull` of the four images on 1.26.9: the local Docker daemon was down.
+- The OTLP smoke on `grpc` and `http/protobuf` (QA Q6–Q9).
+- CI's `security` job on the first push.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
