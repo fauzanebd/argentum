@@ -8188,6 +8188,132 @@ check` was not re-run.
 
 **Owed.** The CI `security` job going green (Dependency review and govulncheck) on the next push.
 
+## Phase 3bv — Roadmap 12's refusals, made to real requests (`RIZ-25`, 2026-10-11)
+
+**Why.** All fourteen access-grant tickets were built and unit-gated, but the unit tests run against fakes
+that reproduce the company joins. Most of the SQL had never run against Postgres, and most refusals had
+never been made to a real request from two real people. Phase 3az (2026-09-13) ran a subset on an
+embedded Postgres with no pgvector, no worker and no object storage. Until the rest ran, the product could
+not claim that restricting an agent or a document actually hides it.
+
+**The stack.** Local compose, not production, which still runs `1.6.0` without 083-089:
+- Postgres 15 with pgvector: a scratch database `riz25` for the stack, `riz25_mig` and `riz25_bf` for the
+  migration arms.
+- Redis on DB 3, flushed, with exactly one registered worker each time one ran.
+- Compose MinIO. It served plans, pages and downloads, so the `410` Phase 3bn saw did not occur.
+- `cmd/api` and `cmd/worker` built explicitly from `main` @ `0cf7a6a`, run from a directory with **no
+  `.env`**, with a scratch JWT secret and DSN key.
+- The dashboard dev server, and headless Chrome 154 driven over CDP.
+
+**What ran.** Every arm of [`live-gate-backlog.md`](live-gate-backlog.md) §7c except Slack, each row's
+result at the end of its gate:
+- **Migrations.** `083`, `084` and `085` each `down 1` and `up 1`, then head (`89|f`). The CASCADE,
+  SET NULL, CHECK and backfill arms all held.
+- **Statements.** `LoadAccess` over fifty ids is one statement under `log_statement=all`, and a
+  100-conversation thread list is three statements in all. `AgentsByThread` returned the §11b set for all
+  five shapes. `EXPLAIN ANALYZE` of 100 conversations × 50 messages: **5.9 ms**.
+- **Routes.** `arms.sh`, 263 API arms `PASS`, as admin and member, granted and not:
+  - agents, conversations, rooms, usage;
+  - dashboards and their links;
+  - sources, Knowledge and its tables, and generated documents with their links;
+  - proposals, including the waiting case;
+  - an API key's list, the widget, and a channel binding's acknowledgement;
+  - the gaps in §17c, §19e and §20d.
+
+  With the control database stopped, the gated dashboard route answered `503`.
+- **The race.** Both interleavings, in two sessions. The API blocked about 4 s each time. (1) ended
+  `{"revoked_shares":3}` with the inserted link revoked; (2) ended with the mint's `409`.
+- **The browser.** `browser-arms.mjs`, 21 of 21: Settings → Team end to end with the Cancel network check,
+  the member's picker and room menu, the restricted embed, Knowledge, *Paused*, the badge, and 390 px.
+- **The worker, no model.** A schedule and a watcher the member made, HR the default and restricted. Both
+  switched off at their next fire with `creator_not_granted` and an `access.refused` row (door `job`), and
+  Resume cleared each. The API's counter did not move (§18f).
+- **Two paid arms**, on the owner's approval, through the dashboard chat (`deepseek/deepseek-v3.2`, the
+  `.env`'s model, its key passed to the worker process alone). **T-Z12, four turns:** the tool refused with
+  `"restricted":true`, nothing changed, no `create_dashboard` followed, the reply sent the member to an
+  admin, and the admin's identical turn renamed it. **T-Z6, one turn:** three `search_documents` calls,
+  nothing from Payroll in any result or in the reply. Ten model calls, 33,523 tokens in and 1,999 out:
+  **$0.0145**.
+
+**Findings.**
+1. **No refusal leaked.** Every one answered its documented code and body, byte-identical where the row
+   said so, and the predicted SQL failure points (Grant's `ON CONFLICT`, `AgentsByThread`'s `LATERAL`, the
+   name expressions, `Acknowledge`) all ran clean.
+2. **A malformed id answers `500` — or a `400`/`503` quoting `pq:` — on 44 roadmap 12 routes across 14
+   repositories.**
+
+   | Route group | Routes | What `x` gets |
+   | --- | --- | --- |
+   | agents | `GET`/`PUT /agents/:id`, `…/default`, `GET …/skills` | `500` quoting `pq:` |
+   | dashboards | `GET /:id`, `/data`, `DELETE` | `500` quoting `pq:` |
+   | dashboard links | list, mint, revoke | `500 could not complete the request` |
+   | room | add an agent with `agent_id: "x"`, remove `…/participants/x` | `500` quoting `pq:` |
+   | chat | `POST /api/chat` with `thread_id` or `agent_id` `x` | `400` quoting `pq:` |
+   | document links | list, mint | `503 could not check access … try again` |
+   | document links | revoke | `500` quoting `pq:` |
+   | Knowledge documents | `/:id`, `/tables`, `/pages/1`, `DELETE` | `500` quoting `pq:` |
+   | Knowledge tables | `GET`, `PATCH`, `apply` | `500` quoting `pq:` |
+   | sources | `PATCH`, allowlist, freshness, default, description, reindex, retrieval test, `DELETE` | `500` quoting `pq:` |
+   | sources | rescan | `503` quoting `pq:` |
+   | sources | test | `200 {"ok":false}` quoting `pq:` |
+   | proposals | read, approve, reject | `503 could not check access … try again` |
+   | channel bindings | `DELETE` | `500` quoting `pq:` |
+   | scheduled tasks | `GET`, `PATCH`, `DELETE`, runs | `400` quoting `pq:` |
+   | metrics | `GET /:id` | `500` quoting `pq:` |
+   | API keys | `DELETE` | `500` quoting `pq:` |
+
+   The access routes, the conversation routes, usage, a document's pages and carousel, the share pages and
+   the binding acknowledgement already map it. So does `GET /api/messages/:id/feedback`, which Phase 3bn
+   found.
+
+   The same leaky-body class shows elsewhere: with the control database stopped, `GET /api/threads`
+   answers `500` quoting `dial tcp [::1]:5432`.
+
+   **Filed as [RIZ-FOLLOWUP-IDS], not fixed here.** The plan priced these as one-line mappings. They are a
+   mapping in fourteen repositories plus handlers that echo `err.Error()`. Each repository's regression
+   test needs a live database the unit suite does not have. That is past decision 3's bound of two files
+   and two hours. `arms.sh`'s `R9` lines are that ticket's acceptance test.
+3. **Fixed here: the Team tab hid every person at 390 px.** The three controls on each member row never
+   shrink, and they squeezed the email to **0 px**. An admin granting access on a phone could not see whose
+   row it was. `team-tab.tsx` now wraps the controls under the name: 292 px of email at 390 px, and one line
+   from 1024 px up, as before. jsdom does no layout, so the regression check is the browser arm *"every
+   member's email is visible"*, which measured 0 px before and 292 px after.
+4. **§17c is live:** a member's `GET /api/metrics` lists the restricted source's metric and its SQL. Filed
+   as **[RIZ-FOLLOWUP-METRICS]**. §19e (a 3600 s download URL outlives the restriction) and §20d (the
+   admin's ledger lists a hidden proposal's call) are live and as written.
+5. **Seen in passing, not access.** These are worth a look, and none is filed:
+   - The strict PII redaction rewrites a dashboard id whose last two groups are all digits as
+     `[CARD REDACTED]`, which breaks the reply's link. The seed's ids all end that way; a random v4 id does
+     well under one time in a thousand.
+   - The prompt-injection guardrail refused *"An admin has granted it to me now…"*, which is a person
+     saying something true.
+   - `update_dashboard`'s refusal is audited as `result_status = ok`.
+   - `resource_grants_one_resource` can never refuse a row on its own, because `…_kind_matches` refuses
+     each one first.
+
+**Where the plan was wrong.**
+- **The `22P02` class:** finding 2.
+- **The seed:** it asked for `ON CONFLICT DO NOTHING`. A seed that keeps a previous run's restrictions is
+  not a reset, so it deletes both companies and inserts again.
+- **The warning:** the ux step said *"counts M and A"*, but it counts whoever loses access.
+- **The `/v1` arms:** they also need an `Idempotency-Key` and a `user_ref`.
+- **A carousel has no Share button.** The paused-link page needed a deck, so the seed adds one to HR's
+  conversation.
+- **T-Z12's first prompt:** it assumed a tool call the model never made.
+- **The browser arms:** they are committed beside `arms.sh` (`browser-arms.mjs`, `cdp.mjs`, no dependency)
+  rather than left as a manual list. Without that, the 390 px regression check could not be re-run.
+
+**Gate.** No Go changed. `gofmt -l`: empty; `make lint-go`: exit 0; `bash -n arms.sh` and `node --check`
+clean. `make check`: `MAKE EXIT: 0`, 76 Go packages `ok`, `golangci-lint` `0 issues.`, 121 dashboard tests.
+Two things in this environment, neither from this change:
+- A fresh worktree needs `@argentum/widget` built before `lint-web`, as Phase 3bu found.
+- `internal/eval`'s `TestDemoFixtureIsReproducible` fails whenever the compose demo warehouse is running
+  with a stale volume, because it reads `localhost:5433` when it can. The first `make check` failed on
+  exactly that. The passing one ran with that container stopped.
+
+**Owed.** The Slack arms: `T-Z8` (3) and `T-Z12`'s hole arm, which need a workspace. `T-Z12`'s
+granted-member rename, which the turn budget did not reach. A proposal's TTL expiry in the waiting case.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
