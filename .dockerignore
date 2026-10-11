@@ -1,0 +1,8 @@
+# Keep the root-context landing build lean: never ship installed deps, build
+# output, VCS history, or CI config into the image.
+**/node_modules
+**/dist
+**/dist-ssr
+**/*.tsbuildinfo
+.git
+.github

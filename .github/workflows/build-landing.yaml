@@ -1,0 +1,60 @@
+name: Build & Push Landing
+
+# Publishes the Argentum landing (apps/landing) as a static nginx image on GHCR.
+#
+# Separate from ci.yaml's `docker` job on purpose: that job fires only on `v*`
+# tags minted for apps/backend changes (release.yaml is scoped to apps/backend),
+# so it would never build a landing-only change. This workflow keys on the
+# landing's own inputs instead and tags with the run number.
+#
+# Context is the repo root — apps/landing's build reads docs/api/** and
+# apps/backend/** (scripts/build-docs.mjs).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/landing/**'
+      - 'docs/api/**'
+      - 'apps/backend/openapi/**'
+      - 'apps/backend/docs/postman/**'
+      - 'packages/**'
+      - '.dockerignore'
+      - '.github/workflows/build-landing.yaml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: haritsrizkall
+
+jobs:
+  build-and-push:
+    name: Build & Push Landing Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # GHCR_TOKEN is a PAT belonging to IMAGE_OWNER (haritsrizkall) with
+      # write:packages — same credential the backend `docker` job uses.
+      # secrets.GITHUB_TOKEN cannot be used: it can only write packages in the
+      # repository owner's namespace (fauzanebd), and the image lives under
+      # haritsrizkall.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.IMAGE_OWNER }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/landing/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/argentum-landing:0.1.${{ github.run_number }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/argentum-landing:latest
