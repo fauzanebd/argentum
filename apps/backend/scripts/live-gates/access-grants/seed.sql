@@ -27,6 +27,31 @@
 --     000102…1e1f — a key that exists only so a seed can carry a ciphertext.
 --     Both DSNs are the compose demo warehouse's own `demo/demo`, not a secret.
 
+-- ---------------------------------------------------------------------------
+-- This machine only, like arms.sh and browser-arms.mjs. The seed deletes two
+-- companies and creates admin accounts whose password is in README.md, so it
+-- must not reach a server somewhere else because a shell's PG* variables did.
+--
+-- This asks the client's side of the connection — the host psql dialled —
+-- rather than inet_server_addr(). The compose Postgres runs in a container and
+-- reports its bridge address (172.x), so the server's own view cannot tell the
+-- local stack from a remote host. PGHOSTADDR overrides the host psql reports,
+-- and a service file can carry one, so a run with either set is refused too.
+-- `-v force=1` is the override, and there is no reason to use it.
+-- ---------------------------------------------------------------------------
+\if :{?force}
+\else
+  \set riz25_env `printf '%s|%s' "${PGHOSTADDR:-}" "${PGSERVICE:-}"`
+  SELECT (:'HOST' IN ('localhost', '127.0.0.1', '::1') OR :'HOST' LIKE '/%')
+         AND :'riz25_env' IN ('|', '127.0.0.1|', '::1|') AS riz25_local \gset
+  \if :riz25_local
+  \else
+    \echo 'seed.sql: refusing host' :'HOST' '(PGHOSTADDR|PGSERVICE:' :'riz25_env' ') - it writes, and only runs against this machine (-v force=1 overrides)'
+    DO $$ BEGIN RAISE EXCEPTION 'seed.sql refused a non-local server'; END $$;
+    \quit
+  \endif
+\endif
+
 BEGIN;
 
 -- ---------------------------------------------------------------------------

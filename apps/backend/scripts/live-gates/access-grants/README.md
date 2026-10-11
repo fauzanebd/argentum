@@ -16,6 +16,11 @@ directory is what that cost.
 **Everything here writes, and refuses anything that is not this machine.** Never
 point it at a tenant, the remote control database `apps/backend/.env` names, or
 production.
+- `seed.sql` aborts before writing anything unless psql dialled `localhost`,
+  `127.0.0.1`, `::1` or a socket, with neither `PGHOSTADDR` nor `PGSERVICE` set.
+- The scripts refuse a non-local API or `PGHOST`.
+
+`-v force=1` overrides the seed's check, and `FORCE=1` the scripts'.
 
 ## 1. The stack
 
