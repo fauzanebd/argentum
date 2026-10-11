@@ -1564,3 +1564,99 @@ loses the rows, the retired-keys variable is documented against the rotation
 procedure, and the purge cron says what an empty value costs. **Proven by
 copying the repaired template into an empty directory, filling only the two
 secrets as its own comments instruct, and booting `cmd/api` from it.**
+
+## 21. `RIZ-23` — the scanner moved again, and the security job went red (2026-10-11)
+
+§14 left the backend at **0 called vulnerabilities** on 2026-08-14. Nothing in
+the tree changed for the worse; the advisory database did. By 2026-10-11
+`govulncheck ./...` reported **13 called vulnerabilities**, and because the
+`Vulnerable dependencies (govulncheck)` step blocks on called ones, every
+backend push was red. This is the risk §14 named, arriving on schedule: a
+scanner that blocks is a scanner whose bar rises without a commit.
+
+**The 13, by where the fix lives.**
+
+| ID | Fixed by | Reachable from |
+| -- | -------- | -------------- |
+| GO-2026-6617, 6612, 6611, 6603 | `golang.org/x/net` v0.60.0 (and net/http in go1.26.9) | `llmclient/factory.go` `genai.NewClient` → `http2.ConfigureTransports`; the `otlptracehttp` exporter |
+| GO-2026-6610 | x/net v0.60.0 + net/http go1.26.9 | `mcp/egress.go` `authTransport.RoundTrip` → `http2.Transport.NewClientConn`; `webhookout/sender.go` |
+| GO-2026-6613, 6605 | net/http go1.26.9 | `tracing.go`; `webhookout/sender.go` `CloseIdleConnections` |
+| GO-2026-6608 | mime/multipart go1.26.9 | `handlers/post_images.go` gin `FormFile` → `ReadForm` |
+| GO-2026-6607 | crypto/tls go1.26.9 | `docwarehouse/warehouse.go` `sql.Open` → `Handshake` |
+| GO-2026-6600, 6599 | html/template go1.26.9 | `cmd/mcp` `http.Server.Serve` → `Template.Execute` |
+| GO-2026-6505 | otel otlptrace, otlptracegrpc, otlptracehttp, sdk v1.45.0 | `internal/tracing` exporter construction |
+| GO-2026-6348 | `google.golang.org/grpc` v1.83.1 | `app/chat_runner.go` `Agent.RunStream`; `postimage/service.go`; `openapi.go` |
+
+**What moved.**
+- `go.mod`'s directive: `go 1.26.6` → **`go 1.26.9`**, which closes the nine
+  standard-library findings. No `toolchain` line; the directive is the floor
+  that stops an older toolchain, or a stale cached builder image, from building
+  what CI would refuse.
+- **CI's `GO_VERSION` is now pinned to `'1.26.9'`**, in `ci.yaml` and
+  `nightly.yaml`. The plan kept it floating on `'1.26'`, and the first push
+  proved that wrong. `setup-go` resolves a floating `1.26` to whatever patch the
+  runner image has cached. On 2026-10-11 that was **1.26.8**, and with
+  `GOTOOLCHAIN=local` every Go job (Backend, Deck compatibility, the API
+  types/examples checks) failed with `go.mod requires go >= 1.26.9`. The pin
+  moves with the directive from now on, and the `ci.yaml` comment says why.
+- **The four Dockerfiles still float on `golang:1.26-alpine`.** On 2026-10-11
+  that tag has the same digest as `golang:1.26.9-alpine` (`sha256:30824…`,
+  `GOLANG_VERSION=1.26.9`), so floating already resolves to the fixed
+  toolchain. A builder with a cached older layer still needs `--pull`; without
+  it, the directive makes the build fail rather than ship 1.26.8.
+- Modules: x/net 0.56 → **0.60**, grpc 1.82.1 → **1.83.2** (both still
+  indirect; why grpc went past the planned 1.83.1 is below), and otel 1.44 → **1.45** across `otel`, `sdk`, `trace`, `metric`,
+  `otlptrace` and both exporters. `otlptracegrpc` had been left at **v1.38** by
+  §14's bump — seven minors behind its siblings — and now matches them.
+- Pulled along by the same `go get`, and not asked for: x/crypto 0.53 → 0.57,
+  x/sys 0.47 → 0.48, x/text 0.41 → 0.42, `go.opentelemetry.io/proto/otlp`
+  1.10 → 1.11, the two genproto pseudo-versions, `cloud.google.com/go/auth`,
+  `gax-go`, `enterprise-certificate-proxy` and `logr`. `otelhttp` stays at
+  v0.61.0; `tidy` did not move it and the build did not ask.
+- **No `.go` file changed.** `tracing.go`'s `semconv/v1.27.0` import still
+  resolves under otel v1.45.0.
+
+**One thing that was not this ticket's.** `go.mod` on `main` was not tidy
+before the bump: it listed `github.com/jackc/pgx/v5` as a direct requirement,
+which nothing in the tree imports (it arrives through `pgvector-go`), plus
+`pgpassfile` and `pgservicefile`, which the module graph no longer needs.
+`go mod tidy -diff` on the untouched base shows exactly that hunk, so it is
+drift, not a consequence of the bump; it rides along because the plan's bar is
+*tidy leaves no diff*.
+
+**After: 0 called.** `govulncheck ./...` on go1.26.9 — *"Your code is affected
+by 0 vulnerabilities."* What remains is uncalled, and per the plan was not
+chased:
+
+| ID | Where | Status |
+| -- | ----- | ------ |
+| GO-2026-5841 | `klauspost/compress` v1.18.2, OOB read in `s2` | imported, not called. Fixed in v1.18.7 |
+| GO-2026-5932 | x/crypto `openpgp`, unmaintained by design | required only; no fix exists, and nothing here imports `openpgp` |
+
+The plan expected four imported-only and five required-only findings. The
+bumps above cleared all but these two.
+
+**Dependency review was broken, and once fixed it raised the grpc bar.** The
+`security` job's `Dependency review` step (`actions/dependency-review-action@v4`,
+pull requests only) failed at first with *"Dependency review is not supported
+on this repository. Please ensure that Dependency graph is enabled"*. That is a
+repository setting, not this tree. The step arrived with §14 in `c74a890` on
+2026-08-16. The last green PR run was 2026-08-10, before the step existed, so
+PR #12 was its first run and it had never passed. The owner turned the
+Dependency graph on.
+
+The step then failed on what the plan had deliberately left alone. grpc
+v1.83.1 carries **GHSA-2v4p-qf9q-27wj / GO-2026-6443**, a high-severity DoS in
+grpc's xDS server. govulncheck counts it as uncalled, because nothing here runs
+a grpc server, so it does not block that step. Dependency review gates on
+severity (`fail-on-severity: high`) for any dependency the PR changes, whether
+or not it is reachable. **grpc moved to v1.83.2**, a patch release. Nothing else
+in the module graph moved, `go mod tidy -diff` is empty, and the finding is off
+govulncheck's list too. Lesson for the next bump: the uncalled list can still
+block, through dependency review, for any module the PR touches.
+
+**Owed.** Both the govulncheck and Dependency review steps going green on the
+next push of this branch. The QA half was run on `cdf6d33` and passed:
+`docker build --pull` of all four images on go1.26.9, the OTLP smoke on
+`grpc` and `http/protobuf`, the bogus-protocol error path, and a boot with no
+OTEL env.

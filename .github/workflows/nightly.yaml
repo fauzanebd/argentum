@@ -22,7 +22,9 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: '1.26'
+  # The exact patch in apps/backend/go.mod's `go` directive; see ci.yaml for
+  # why a floating '1.26' fails the build.
+  GO_VERSION: '1.26.9'
   PNPM_VERSION: '10'
   NODE_VERSION: '22'
 

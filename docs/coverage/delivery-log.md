@@ -8134,6 +8134,60 @@ requests are nearly all spoken for, and Flux's `Stalled` release, which the next
 `golangci-lint` `0 issues.`, `gofmt -l` empty, 121 dashboard tests, and every app built. Local gitleaks
 over the staged change: no leaks.
 
+## Phase 3bu — The security job green again: Go 1.26.9 and four module bumps (`RIZ-23`, 2026-10-11)
+
+**Why.** Nothing in the backend changed for the worse, but the advisory database moved. By 2026-10-11
+`govulncheck` reported **13 called vulnerabilities**: 9 in the go1.26.6 standard library (net/http,
+crypto/tls, mime/multipart, html/template), and 4 in x/net, grpc and the otel exporters. They sit on live
+paths: the LLM clients' HTTP/2 transports, MCP egress, outbound webhooks, image-upload multipart parsing,
+warehouse TLS, the MCP server's templates and tracing export. CI's govulncheck step blocks on called
+findings, so every backend push was red.
+
+**What changed.**
+- `go.mod`: `go 1.26.6` → `go 1.26.9`, with the comment rewritten for this reason. No `toolchain` line.
+- CI's `GO_VERSION` is pinned to `'1.26.9'` in `ci.yaml` and `nightly.yaml`. The four Dockerfiles still
+  float on `golang:1.26-alpine`, which has the same digest as `1.26.9-alpine` today.
+- x/net → v0.60.0, grpc → v1.83.2 (the plan said v1.83.1; see below), and otel → v1.45.0 across all of its modules. `otlptracegrpc` jumps from
+  v1.38, which §14 of `security-hardening.md` had left behind. `go mod tidy` moved the rest; the list is in
+  `security-hardening.md` §21.
+- `ci.yaml`'s comment no longer says "go 1.26.1". It says why the version is pinned to the directive.
+- **No `.go` file changed.**
+
+**The plan was wrong about CI, and the first push showed it** (run `38120226745`). The plan kept
+`GO_VERSION: '1.26'` floating, but `setup-go` resolves that to the runner's cached patch, which was 1.26.8.
+Under `GOTOOLCHAIN=local`, Backend, Deck compatibility and the API types/examples jobs all failed:
+`go.mod requires go >= 1.26.9`. Hence the pin. The same run's `security` job also failed at
+`Dependency review`: *"Dependency graph is enabled"* is a repository setting. That step landed on
+2026-08-16 (`c74a890`), after the last green PR run (2026-08-10). This PR was its first run since then. The
+owner enabled the Dependency graph, and the step then failed on grpc v1.83.1: **GHSA-2v4p-qf9q-27wj /
+GO-2026-6443**, a high-severity DoS in grpc's xDS server. govulncheck lists it as uncalled, and the plan
+chose not to chase uncalled findings. Dependency review, though, gates on severity for every dependency
+the PR changes. grpc → **v1.83.2**, a patch bump. Nothing else moved, and `go mod tidy -diff` is empty.
+
+**What the plan did not foresee.** `go.mod` on `main` was already untidy: `jackc/pgx/v5` was listed as a
+direct requirement although nothing imports it, plus two of its leaf modules. `go mod tidy -diff` on the
+untouched base shows that hunk alone. It rides along, because the plan's bar is that tidy leaves no diff.
+The uncalled remainder is 2 findings (klauspost/compress GO-2026-5841, x/crypto openpgp GO-2026-5932),
+not the 9 the plan counted. The third, grpc GO-2026-6443, went once dependency review flagged it.
+
+**Proven.** `govulncheck ./...` on go1.26.9 with grpc v1.83.2: *"Your code is affected by 0
+vulnerabilities."* `go mod tidy -diff`: empty. `tracing.go`'s `semconv/v1.27.0` import still resolves.
+QA at `cdf6d33`, all passing:
+- `docker build --pull` of api, worker, discord and mcp, with `golang:1.26-alpine` on go1.26.9.
+- `otel tracing enabled`, with `argentum-api` traces landing in Jaeger, over both `grpc` and
+  `http/protobuf`.
+- A bogus protocol logs `unsupported OTEL_EXPORTER_OTLP_PROTOCOL` and still serves `/health`.
+- With no OTEL env, `/health` returns 200 and no otel lines are logged.
+
+**Gate.** `make lint-go`: exit 0. `make check`, alone: `MAKE EXIT: 0`. 76 Go packages `ok`, zero
+`FAIL`/`panic` lines, `golangci-lint` `0 issues.`, `gofmt -l` empty, 121 dashboard tests. A fresh worktree
+needs `@argentum/widget` built before `lint-web`, or `apps/widget` cannot resolve its types.
+
+After the grpc bump: `make lint-go` exit 0, `go test ./...` 76 packages `ok`. Only grpc moved, so `make
+check` was not re-run.
+
+**Owed.** The CI `security` job going green (Dependency review and govulncheck) on the next push.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
