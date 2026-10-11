@@ -8234,6 +8234,11 @@ result at the end of its gate:
   admin, and the admin's identical turn renamed it. **T-Z6, one turn:** three `search_documents` calls,
   nothing from Payroll in any result or in the reply. Ten model calls, 33,523 tokens in and 1,999 out:
   **$0.0145**.
+- **QA's re-run at `077e69f`** repeated every arm and closed the one the build left: in four turns the
+  member was refused, the admin renamed Payroll, and the member, once granted, renamed it on their next
+  turn. T-Z6's control turn, the member granted the pdf, returned the Payroll passage the restriction had
+  hidden. Twelve model calls, 51,633 tokens in and 2,041 out: about $0.016, so about **$0.03** in all.
+  QA also saw the refused `update_dashboard` logged with `result_status = ok`, as below.
 
 **Findings.**
 1. **No refusal leaked.** Every one answered its documented code and body, byte-identical where the row
@@ -8311,8 +8316,9 @@ Two things in this environment, neither from this change:
   with a stale volume, because it reads `localhost:5433` when it can. The first `make check` failed on
   exactly that. The passing one ran with that container stopped.
 
-**Owed.** The Slack arms: `T-Z8` (3) and `T-Z12`'s hole arm, which need a workspace. `T-Z12`'s
-granted-member rename, which the turn budget did not reach. A proposal's TTL expiry in the waiting case.
+**Owed.** The Slack arms: `T-Z8` (3) and `T-Z12`'s hole arm, which need a workspace. A proposal's TTL
+expiry in the waiting case. (`T-Z12`'s granted-member rename, which the build's turn budget did not reach,
+was closed by QA.)
 
 ## Feature velocity, measured
 

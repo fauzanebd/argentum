@@ -30,8 +30,8 @@ misread.
 > - **Filed, not fixed:** a malformed id answers `500` (or a `400`/`503` quoting the driver) on 44 routes across
 >   14 repositories — **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)**. The plan had priced these as one-line mappings. And §17c's metrics
 >   on a restricted source, seen live — **[`RIZ-27`](https://linear.app/rizkal-uhuy/issue/RIZ-27/members-no-longer-see-metrics-on-a-source-they-cannot-read)**.
-> - **Still owed:** the Slack arms (`T-Z8` (3), `T-Z12`'s hole arm), `T-Z12`'s granted-member rename (the turn
->   budget ran out on a guardrail refusal), and a waiting proposal's TTL expiry.
+> - **Still owed:** the Slack arms (`T-Z8` (3), `T-Z12`'s hole arm) and a waiting proposal's TTL expiry.
+>   `T-Z12`'s granted-member rename, which the build's turn budget did not reach, was closed by QA's re-run.
 
 > **Status, 2026-09-13, after `T-Z9`: `T-Z13` and `T-Z14` are built, `make check` green, unit-gated — §13d's two owner
 > decisions, made and closed.** No migration. Record:
