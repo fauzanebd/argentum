@@ -37,7 +37,7 @@ the local stack at `0cf7a6a`, not production): migrations, statements, routes, a
 browser, the worker, two paid turns and both races, each as predicted except where
 [`live-gate-backlog.md`](live-gate-backlog.md) §7c says otherwise. Only the Slack
 arms are still owed. It found no leak. It found a malformed id answering `500` on
-44 routes, filed as **[RIZ-FOLLOWUP-IDS]**, and a Team tab that hid every email at
+44 routes, filed as **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)**, and a Team tab that hid every email at
 390 px, fixed there (§12f).
 
 | Ticket | Status |
@@ -558,7 +558,7 @@ the first `resourcePolicy` entry, and is filed against it in
 [`live-gate-backlog.md`](live-gate-backlog.md) §7c with its prediction. No
 `make eval`: nothing here reaches a prompt or a tool.
 
-**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** With `T-Z5`'s arm: the `403` naming the kind, the next-request grant and revoke, company B's id answering the handler's own `404` byte for byte, and `503` — never `200` — with the control database stopped. **Differed:** a malformed id passes through to a handler that `500`s quoting the driver, as it did before this ticket — **[RIZ-FOLLOWUP-IDS]**.
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** With `T-Z5`'s arm: the `403` naming the kind, the next-request grant and revoke, company B's id answering the handler's own `404` byte for byte, and `503` — never `200` — with the control database stopped. **Differed:** a malformed id passes through to a handler that `500`s quoting the driver, as it did before this ticket — **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)**.
 
 ---
 
@@ -1686,7 +1686,7 @@ is empty.
 
 | Surface | Why it is not covered |
 | --- | --- |
-| **Metrics on a restricted source** | `GET /api/metrics` lists every metric, `source_id` and `sql_template` included, to members, and `query_metric` evaluates against the metric's own source whatever the agent's list says. A metric is its own registry, and hiding it by its source's grant is a decision this ticket's *Do* list does not name. **Seen live 2026-10-11 (`RIZ-25`):** with the HR warehouse restricted, a member's list still carried its metric and SQL. Filed as **[RIZ-FOLLOWUP-METRICS]**, which recommends hiding a metric whose source the caller may not read |
+| **Metrics on a restricted source** | `GET /api/metrics` lists every metric, `source_id` and `sql_template` included, to members, and `query_metric` evaluates against the metric's own source whatever the agent's list says. A metric is its own registry, and hiding it by its source's grant is a decision this ticket's *Do* list does not name. **Seen live 2026-10-11 (`RIZ-25`):** with the HR warehouse restricted, a member's list still carried its metric and SQL. Filed as **[`RIZ-27`](https://linear.app/rizkal-uhuy/issue/RIZ-27/members-no-longer-see-metrics-on-a-source-they-cannot-read)**, which recommends hiding a metric whose source the caller may not read |
 | An admin's source list | Shows a restricted source's description, allowlist and freshness SQL — §17b item 3 |
 | Tables already published from a restricted document | Rows in the document-warehouse source, queryable by any agent with that source. Restricting that source hides it from members' lists and never from agents — by the rule this ticket exists to keep |
 | `search_documents` on a turn with no person | A channel, `/v1`, the widget and a watcher search every document — decision 7, asserted. The widget case sits against decision 10, as it does for dashboards (§15d); closing both would be a small ticket |

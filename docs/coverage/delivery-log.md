@@ -8269,7 +8269,7 @@ result at the end of its gate:
    The same leaky-body class shows elsewhere: with the control database stopped, `GET /api/threads`
    answers `500` quoting `dial tcp [::1]:5432`.
 
-   **Filed as [RIZ-FOLLOWUP-IDS], not fixed here.** The plan priced these as one-line mappings. They are a
+   **Filed as [`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres), not fixed here.** The plan priced these as one-line mappings. They are a
    mapping in fourteen repositories plus handlers that echo `err.Error()`. Each repository's regression
    test needs a live database the unit suite does not have. That is past decision 3's bound of two files
    and two hours. `arms.sh`'s `R9` lines are that ticket's acceptance test.
@@ -8279,7 +8279,7 @@ result at the end of its gate:
    from 1024 px up, as before. jsdom does no layout, so the regression check is the browser arm *"every
    member's email is visible"*, which measured 0 px before and 292 px after.
 4. **§17c is live:** a member's `GET /api/metrics` lists the restricted source's metric and its SQL. Filed
-   as **[RIZ-FOLLOWUP-METRICS]**. §19e (a 3600 s download URL outlives the restriction) and §20d (the
+   as **[`RIZ-27`](https://linear.app/rizkal-uhuy/issue/RIZ-27/members-no-longer-see-metrics-on-a-source-they-cannot-read)**. §19e (a 3600 s download URL outlives the restriction) and §20d (the
    admin's ledger lists a hidden proposal's call) are live and as written.
 5. **Seen in passing, not access.** These are worth a look, and none is filed:
    - The strict PII redaction rewrites a dashboard id whose last two groups are all digits as
