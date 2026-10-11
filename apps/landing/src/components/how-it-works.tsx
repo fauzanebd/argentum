@@ -1,57 +1,54 @@
-import { PlugZap, MessageSquareText, Rocket } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { SectionHeading } from "@/components/section-heading";
+import { Reveal } from "@/components/reveal";
 
-const STEPS: { icon: LucideIcon; title: string; body: string }[] = [
+const STEPS = [
   {
-    icon: PlugZap,
+    n: "01",
     title: "Connect",
-    body: "Point Argentum at your database with read-only creds or OAuth. Schema introspected in seconds.",
+    body: "Point Argentum at PostgreSQL, MySQL or SQL Server with read-only credentials. It tests the connection, then learns the schema on its own.",
+    aside: "No modelling, no semantic layer to maintain.",
   },
   {
-    icon: MessageSquareText,
+    n: "02",
     title: "Ask",
-    body: "Type or speak in plain language — from any channel. No SQL, no BI tool, no Jira ticket to the data team.",
+    body: "In English or Bahasa Indonesia, from the dashboard, WhatsApp, Discord, Lark or your own site. No SQL, no ticket to the data team.",
+    aside: "Charts, tables and the SQL come with the answer.",
   },
   {
-    icon: Rocket,
-    title: "Act",
-    body: "Get charts, narratives, anomalies. Schedule recurring reports. Drill deeper. Share with one tap.",
+    n: "03",
+    title: "Keep watching",
+    body: "Pin it to a dashboard, schedule it, or set a watcher — and let Argentum tell you when something moves, with a proposed next step.",
+    aside: "Nothing goes out until someone approves it.",
   },
 ];
 
 export function HowItWorks() {
   return (
-    <section id="how" className="py-24 sm:py-32">
+    <section id="how" className="relative py-28 sm:py-36">
+      <div aria-hidden className="absolute inset-x-0 top-0 hairline" />
       <div className="container-page">
         <SectionHeading
-          eyebrow="How it works"
-          title="From query to insight in"
-          highlight="one breath."
-          description="Three steps. No data engineering. No semantic layer to maintain."
+          title={
+            <>
+              Three steps. <em className="silver-text italic">One afternoon.</em>
+            </>
+          }
         />
 
-        <div className="relative mt-14">
-          <div className="pointer-events-none absolute left-0 right-0 top-[44px] hidden h-px bg-gradient-to-r from-transparent via-red-400/50 to-transparent md:block" />
-          <div className="grid gap-6 md:grid-cols-3">
-            {STEPS.map((s, i) => (
-              <div key={s.title} className="glass relative rounded-2xl p-6">
-                <div className="flex items-center gap-3">
-                  <div className="grid h-11 w-11 place-items-center rounded-xl bg-[linear-gradient(135deg,#F25C5C,#FB7185)] text-white shadow-[0_8px_30px_-10px_rgba(242,92,92,0.7)]">
-                    <s.icon className="h-5 w-5" />
-                  </div>
-                  <span className="font-mono text-xs text-white/40">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                </div>
-                <h3 className="mt-5 text-lg font-semibold">{s.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-white/60">
-                  {s.body}
+        <ol className="mt-16 grid gap-px overflow-hidden rounded-3xl border border-white/[0.07] bg-white/[0.07] md:grid-cols-3">
+          {STEPS.map((s, i) => (
+            <Reveal key={s.n} delay={0.08 * i} className="bg-[var(--color-ink)]">
+              <li className="flex h-full flex-col p-7 sm:p-8">
+                <span className="font-display text-[56px] leading-none text-white/[0.12]">{s.n}</span>
+                <h3 className="mt-4 font-display text-[26px] leading-none text-white">{s.title}</h3>
+                <p className="mt-4 text-[15px] leading-relaxed text-white/60">{s.body}</p>
+                <p className="mt-auto pt-6 text-[13.5px] font-medium text-[var(--color-signal)]/85">
+                  {s.aside}
                 </p>
-              </div>
-            ))}
-          </div>
-        </div>
+              </li>
+            </Reveal>
+          ))}
+        </ol>
       </div>
     </section>
   );

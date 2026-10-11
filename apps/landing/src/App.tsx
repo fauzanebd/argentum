@@ -1,24 +1,29 @@
+import { Capabilities } from "@/components/capabilities";
+import { Channels } from "@/components/channels";
 import { CTA } from "@/components/cta";
-import { Features } from "@/components/features";
+import { Developers } from "@/components/developers";
 import { Footer } from "@/components/footer";
-import { GradientBg } from "@/components/gradient-bg";
 import { Hero } from "@/components/hero";
 import { HowItWorks } from "@/components/how-it-works";
-import { Integrations } from "@/components/integrations";
 import { Nav } from "@/components/nav";
-import { UseCases } from "@/components/use-cases";
+import { Outputs } from "@/components/outputs";
+import { Trust } from "@/components/trust";
+import { Watchers } from "@/components/watchers";
 
 export default function App() {
   return (
     <>
-      <GradientBg />
+      <div aria-hidden className="grain" />
       <Nav />
       <main>
         <Hero />
-        <Features />
-        <Integrations />
+        <Outputs />
+        <Watchers />
+        <Channels />
+        <Trust />
+        <Capabilities />
+        <Developers />
         <HowItWorks />
-        <UseCases />
         <CTA />
       </main>
       <Footer />

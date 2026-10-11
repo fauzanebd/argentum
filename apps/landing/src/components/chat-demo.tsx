@@ -32,7 +32,7 @@ const INITIAL: Message[] = [
     id: "greet",
     role: "assistant",
     content:
-      "Hi — I'm Argentum. I'm reading your demo_sales_db. Ask me anything, or pick a suggestion below.",
+      "Hi — I'm Argentum, connected read-only to demo_sales_db. Ask in English or Bahasa Indonesia, or pick a suggestion below.",
   },
 ];
 
@@ -118,8 +118,8 @@ export function ChatDemo() {
   }
 
   return (
-    <div className="glass-strong gradient-border relative mx-auto w-full max-w-3xl rounded-3xl p-1.5 shadow-[0_30px_120px_-30px_rgba(242,92,92,0.45)]">
-      <div className="rounded-[calc(theme(borderRadius.3xl)-6px)] bg-[rgba(33,36,39,0.6)] backdrop-blur-xl">
+    <div className="glass-strong gradient-border relative mx-auto w-full max-w-4xl rounded-3xl p-1.5 shadow-[0_40px_140px_-40px_rgba(242,92,92,0.5)]">
+      <div className="rounded-[calc(theme(borderRadius.3xl)-6px)] bg-[rgba(27,29,32,0.85)] backdrop-blur-xl">
         {/* header */}
         <div className="flex items-center justify-between border-b border-white/5 px-5 py-3">
           <div className="flex items-center gap-2.5">
@@ -171,7 +171,7 @@ export function ChatDemo() {
             </div>
           </div>
           <span className="hidden text-[10px] uppercase tracking-widest text-white/30 sm:inline">
-            live demo
+            preview
           </span>
         </div>
 

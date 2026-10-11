@@ -74,6 +74,26 @@ export const SUGGESTIONS: ScriptedQuestion[] = [
     },
   },
   {
+    id: "omzet-cabang",
+    prompt: "Omzet per cabang bulan ini",
+    keywords: ["omzet", "cabang", "penjualan", "bulan ini", "toko"],
+    response: {
+      reply:
+        "Oktober sejauh ini: total omzet Rp 6,38 M. Kemang memimpin dengan Rp 1,84 M (+12% vs September). Depok turun 9% — mau saya cek penyebabnya?",
+      viz: {
+        kind: "bar",
+        title: "Omzet per cabang · Oktober 2026 (Rp juta)",
+        data: [
+          { name: "Kemang", value: 1840 },
+          { name: "Senopati", value: 1520 },
+          { name: "Pd. Indah", value: 1310 },
+          { name: "Bintaro", value: 968 },
+          { name: "Depok", value: 742 },
+        ],
+      },
+    },
+  },
+  {
     id: "churn-risk",
     prompt: "Customers at churn risk",
     keywords: ["churn", "risk", "customer", "lost", "leaving", "retention"],
@@ -96,7 +116,7 @@ export const SUGGESTIONS: ScriptedQuestion[] = [
 
 export const FALLBACK_REPLY: ScriptedReply = {
   reply:
-    "I'm running on a sample sales dataset for this demo. Connect your own database and I'll answer questions like that with your real data — try one of the suggestions below to see me in action.",
+    "This preview runs on a sample store database with scripted replies. Connected to your own database, I'd answer that from your real data — in English or Bahasa Indonesia. Try one of the suggestions below.",
 };
 
 export function matchScript(input: string): ScriptedReply {
