@@ -8145,12 +8145,21 @@ findings, so every backend push was red.
 
 **What changed.**
 - `go.mod`: `go 1.26.6` → `go 1.26.9`, with the comment rewritten for this reason. No `toolchain` line.
-  CI and the four Dockerfiles still float on `1.26`.
+- CI's `GO_VERSION` is pinned to `'1.26.9'` in `ci.yaml` and `nightly.yaml`. The four Dockerfiles still
+  float on `golang:1.26-alpine`, which has the same digest as `1.26.9-alpine` today.
 - x/net → v0.60.0, grpc → v1.83.1, and otel → v1.45.0 across all of its modules. `otlptracegrpc` jumps from
   v1.38, which §14 of `security-hardening.md` had left behind. `go mod tidy` moved the rest; the list is in
   `security-hardening.md` §21.
-- `ci.yaml`'s comment no longer says "go 1.26.1". It points at the directive instead of naming a version.
+- `ci.yaml`'s comment no longer says "go 1.26.1". It says why the version is pinned to the directive.
 - **No `.go` file changed.**
+
+**The plan was wrong about CI, and the first push showed it** (run `38120226745`). The plan kept
+`GO_VERSION: '1.26'` floating, but `setup-go` resolves that to the runner's cached patch, which was 1.26.8.
+Under `GOTOOLCHAIN=local`, Backend, Deck compatibility and the API types/examples jobs all failed:
+`go.mod requires go >= 1.26.9`. Hence the pin. The same run's `security` job also failed at
+`Dependency review`: *"Dependency graph is enabled"* is a repository setting. That step landed on
+2026-08-16 (`c74a890`), after the last green PR run (2026-08-10). This PR is the first since, so it fails
+on every PR until an admin enables the setting. It is not changed here.
 
 **What the plan did not foresee.** `go.mod` on `main` was already untidy: `jackc/pgx/v5` was listed as a
 direct requirement although nothing imports it, plus two of its leaf modules. `go mod tidy -diff` on the
@@ -8168,7 +8177,8 @@ needs `@argentum/widget` built before `lint-web`, or `apps/widget` cannot resolv
 **Owed.**
 - `docker build --pull` of the four images on 1.26.9: the local Docker daemon was down.
 - The OTLP smoke on `grpc` and `http/protobuf` (QA Q6–Q9).
-- CI's `security` job on the first push.
+- CI's govulncheck step on the next push.
+- The Dependency graph setting, so `Dependency review` can pass. This needs a repo admin.
 
 ## Feature velocity, measured
 

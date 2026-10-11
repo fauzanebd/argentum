@@ -15,11 +15,15 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_OWNER: haritsrizkall
-  # Floats on the newest 1.26 patch; the `go` directive in apps/backend/go.mod
-  # is the floor, so a patch that closes a stdlib vulnerability is raised
-  # there, not here. Previously pinned to 1.25, which silently triggered a
-  # GOTOOLCHAIN=auto toolchain download on every run.
-  GO_VERSION: '1.26'
+  # Pinned to the exact patch in apps/backend/go.mod's `go` directive, and
+  # raised with it. A floating '1.26' does not mean the newest 1.26: setup-go
+  # takes whatever 1.26.x the runner image has cached, and the jobs run with
+  # GOTOOLCHAIN=local, so when the directive moved to 1.26.9 (RIZ-23) the
+  # cached 1.26.8 refused to build with "go.mod requires go >= 1.26.9" in
+  # every Go job. Same change in nightly.yaml. Before that it was pinned to
+  # 1.25, which silently triggered a GOTOOLCHAIN=auto toolchain download on
+  # every run.
+  GO_VERSION: '1.26.9'
   PNPM_VERSION: '10'
   NODE_VERSION: '22'
 

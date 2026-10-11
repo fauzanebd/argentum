@@ -1589,12 +1589,21 @@ scanner that blocks is a scanner whose bar rises without a commit.
 
 **What moved.**
 - `go.mod`'s directive: `go 1.26.6` → **`go 1.26.9`**, which closes the nine
-  standard-library findings. No `toolchain` line: CI's `GO_VERSION: '1.26'` and
-  the four Dockerfiles' `golang:1.26-alpine` still float to the newest patch,
-  and the directive is the floor that stops an older toolchain — or a stale
-  cached builder image — from building what CI would refuse. The stale
-  `ci.yaml` comment that still said "go 1.26.1" now points at the directive
-  rather than restating a version.
+  standard-library findings. No `toolchain` line; the directive is the floor
+  that stops an older toolchain, or a stale cached builder image, from building
+  what CI would refuse.
+- **CI's `GO_VERSION` is now pinned to `'1.26.9'`**, in `ci.yaml` and
+  `nightly.yaml`. The plan kept it floating on `'1.26'`, and the first push
+  proved that wrong. `setup-go` resolves a floating `1.26` to whatever patch the
+  runner image has cached. On 2026-10-11 that was **1.26.8**, and with
+  `GOTOOLCHAIN=local` every Go job (Backend, Deck compatibility, the API
+  types/examples checks) failed with `go.mod requires go >= 1.26.9`. The pin
+  moves with the directive from now on, and the `ci.yaml` comment says why.
+- **The four Dockerfiles still float on `golang:1.26-alpine`.** On 2026-10-11
+  that tag has the same digest as `golang:1.26.9-alpine` (`sha256:30824…`,
+  `GOLANG_VERSION=1.26.9`), so floating already resolves to the fixed
+  toolchain. A builder with a cached older layer still needs `--pull`; without
+  it, the directive makes the build fail rather than ship 1.26.8.
 - Modules: x/net 0.56 → **0.60**, grpc 1.82.1 → **1.83.1** (both still
   indirect), and otel 1.44 → **1.45** across `otel`, `sdk`, `trace`, `metric`,
   `otlptrace` and both exporters. `otlptracegrpc` had been left at **v1.38** by
@@ -1628,6 +1637,17 @@ chased:
 The plan expected four imported-only and five required-only findings; the
 bumps above cleared all but these three.
 
-**Owed.** The `security` job going green is the first push of this branch;
-`docker build --pull` of the four images on 1.26.9 and an OTLP smoke on both
-`grpc` and `http/protobuf` are the QA half, recorded in the delivery log.
+**The `security` job has a second, unrelated failure.** Its `Dependency review`
+step (`actions/dependency-review-action@v4`, pull requests only) fails with
+*"Dependency review is not supported on this repository. Please ensure that
+Dependency graph is enabled"*. That is a repository setting, not this tree.
+The step arrived with §14 in `c74a890` on 2026-08-16. The last green PR run
+was 2026-08-10, before the step existed. PR #12 (this branch) is the first PR
+run since, so the step has never passed. It will fail every PR until an admin
+enables the Dependency graph (Settings → Code security). It is left unchanged
+here.
+
+**Owed.** The govulncheck step going green on the next push of this branch.
+The dependency-review step, until the setting is enabled. `docker build
+--pull` of the four images and an OTLP smoke on both `grpc` and
+`http/protobuf`, which are the QA half, recorded in the delivery log.

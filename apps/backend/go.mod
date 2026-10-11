@@ -3,13 +3,13 @@ module github.com/fauzanebd/argentum
 // 1.26.9 rather than a floating 1.26: nine of the thirteen called
 // vulnerabilities govulncheck found on 2026-10-11 (RIZ-23) were the standard
 // library at 1.26.6 (net/http, crypto/tls, mime/multipart, html/template), and
-// all of their fixes landed in 1.26.9. The CI jobs and all four Dockerfiles ask
-// for `1.26`, which resolves to the newest patch, so this line is the floor:
-// it is what stops a developer's older toolchain, or a stale cached builder
-// image, from building something the scanner in CI would refuse. Raise it
-// again the next time the scanner names a stdlib fix; do not add a
-// `toolchain` line, which would pin the patch the floating `1.26` is there to
-// track.
+// all of their fixes landed in 1.26.9. This line is the floor: it is what
+// stops a developer's older toolchain, or a stale cached builder image, from
+// building something the scanner in CI would refuse. The four Dockerfiles ask
+// for `golang:1.26-alpine`, which floats to the newest patch. CI's GO_VERSION
+// cannot float, because setup-go takes the runner's cached patch and fails
+// this line under GOTOOLCHAIN=local. It is pinned to the same patch, so raise
+// both together (ci.yaml and nightly.yaml). Do not add a `toolchain` line.
 go 1.26.9
 
 require (
