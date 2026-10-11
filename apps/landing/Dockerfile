@@ -20,9 +20,10 @@ RUN pnpm --filter landing build
 FROM nginx:1.27-alpine
 COPY --from=build /app/apps/landing/dist /usr/share/nginx/html
 
-# SPA fallback: unmatched paths serve index.html so client-side routes resolve
-# on a hard refresh / deep link.
-RUN printf 'server {\n  listen 80;\n  root /usr/share/nginx/html;\n  index index.html;\n  location / { try_files $uri $uri/ /index.html; }\n}\n' > /etc/nginx/conf.d/default.conf
+# gzip, cache headers, security headers and a real 404 — see the file itself.
+# The landing has no client-side routes, so there is no index.html fallback.
+COPY apps/landing/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY apps/landing/nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

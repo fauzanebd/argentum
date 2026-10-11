@@ -80,7 +80,7 @@ export function Watchers() {
 
 /**
  * The scene plays once when it scrolls into view:
- * 0 idle → 1 line draws → 2 breach pulses → 3 alert lands → 4 action proposed → 5 approved
+ * 0 idle → 1 line draws → 2 breach pulses → 3 alert lands → 4 action proposed → 5 approved / 6 dismissed
  */
 function WatcherScene() {
   const ref = useRef<HTMLDivElement>(null);
@@ -208,6 +208,10 @@ function WatcherScene() {
                   <span className="flex items-center gap-1.5 rounded-lg bg-emerald-400/15 px-3 py-1.5 text-[12.5px] font-medium text-emerald-300">
                     <Check className="h-3.5 w-3.5" /> Approved · sent to Depok
                   </span>
+                ) : step === 6 ? (
+                  <span className="rounded-lg bg-white/[0.06] px-3 py-1.5 text-[12.5px] font-medium text-white/60">
+                    Dismissed · nothing was sent
+                  </span>
                 ) : (
                   <>
                     <button
@@ -217,7 +221,11 @@ function WatcherScene() {
                     >
                       Approve
                     </button>
-                    <button type="button" className="rounded-lg px-3 py-1.5 text-[12.5px] text-white/55 hover:text-white/80">
+                    <button
+                      type="button"
+                      onClick={() => setStep(6)}
+                      className="rounded-lg px-3 py-1.5 text-[12.5px] text-white/55 hover:text-white/80"
+                    >
                       Not now
                     </button>
                   </>
