@@ -1604,8 +1604,8 @@ scanner that blocks is a scanner whose bar rises without a commit.
   `GOLANG_VERSION=1.26.9`), so floating already resolves to the fixed
   toolchain. A builder with a cached older layer still needs `--pull`; without
   it, the directive makes the build fail rather than ship 1.26.8.
-- Modules: x/net 0.56 → **0.60**, grpc 1.82.1 → **1.83.1** (both still
-  indirect), and otel 1.44 → **1.45** across `otel`, `sdk`, `trace`, `metric`,
+- Modules: x/net 0.56 → **0.60**, grpc 1.82.1 → **1.83.2** (both still
+  indirect; why grpc went past the planned 1.83.1 is below), and otel 1.44 → **1.45** across `otel`, `sdk`, `trace`, `metric`,
   `otlptrace` and both exporters. `otlptracegrpc` had been left at **v1.38** by
   §14's bump — seven minors behind its siblings — and now matches them.
 - Pulled along by the same `go get`, and not asked for: x/crypto 0.53 → 0.57,
@@ -1630,24 +1630,33 @@ chased:
 
 | ID | Where | Status |
 | -- | ----- | ------ |
-| GO-2026-6443 | grpc v1.83.1, server panic on a missing `:authority`/Host | imported, not called — we run no grpc server. Fixed in v1.83.2, a patch bump for the next pass |
 | GO-2026-5841 | `klauspost/compress` v1.18.2, OOB read in `s2` | imported, not called. Fixed in v1.18.7 |
 | GO-2026-5932 | x/crypto `openpgp`, unmaintained by design | required only; no fix exists, and nothing here imports `openpgp` |
 
-The plan expected four imported-only and five required-only findings; the
-bumps above cleared all but these three.
+The plan expected four imported-only and five required-only findings. The
+bumps above cleared all but these two.
 
-**The `security` job has a second, unrelated failure.** Its `Dependency review`
-step (`actions/dependency-review-action@v4`, pull requests only) fails with
-*"Dependency review is not supported on this repository. Please ensure that
-Dependency graph is enabled"*. That is a repository setting, not this tree.
-The step arrived with §14 in `c74a890` on 2026-08-16. The last green PR run
-was 2026-08-10, before the step existed. PR #12 (this branch) is the first PR
-run since, so the step has never passed. It will fail every PR until an admin
-enables the Dependency graph (Settings → Code security). It is left unchanged
-here.
+**Dependency review was broken, and once fixed it raised the grpc bar.** The
+`security` job's `Dependency review` step (`actions/dependency-review-action@v4`,
+pull requests only) failed at first with *"Dependency review is not supported
+on this repository. Please ensure that Dependency graph is enabled"*. That is a
+repository setting, not this tree. The step arrived with §14 in `c74a890` on
+2026-08-16. The last green PR run was 2026-08-10, before the step existed, so
+PR #12 was its first run and it had never passed. The owner turned the
+Dependency graph on.
 
-**Owed.** The govulncheck step going green on the next push of this branch.
-The dependency-review step, until the setting is enabled. `docker build
---pull` of the four images and an OTLP smoke on both `grpc` and
-`http/protobuf`, which are the QA half, recorded in the delivery log.
+The step then failed on what the plan had deliberately left alone. grpc
+v1.83.1 carries **GHSA-2v4p-qf9q-27wj / GO-2026-6443**, a high-severity DoS in
+grpc's xDS server. govulncheck counts it as uncalled, because nothing here runs
+a grpc server, so it does not block that step. Dependency review gates on
+severity (`fail-on-severity: high`) for any dependency the PR changes, whether
+or not it is reachable. **grpc moved to v1.83.2**, a patch release. Nothing else
+in the module graph moved, `go mod tidy -diff` is empty, and the finding is off
+govulncheck's list too. Lesson for the next bump: the uncalled list can still
+block, through dependency review, for any module the PR touches.
+
+**Owed.** Both the govulncheck and Dependency review steps going green on the
+next push of this branch. The QA half was run on `cdf6d33` and passed:
+`docker build --pull` of all four images on go1.26.9, the OTLP smoke on
+`grpc` and `http/protobuf`, the bogus-protocol error path, and a boot with no
+OTEL env.
