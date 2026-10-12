@@ -161,6 +161,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewAgentsHandler(d.agentSvc).
 		WithGenerator(d.agentGenSvc).
 		WithAccess(agentAccessOrNil(d.resourceAuthz)).
+		// The default agent's starter questions (RIZ-76), narrowed for a member
+		// by the same access read as the roster.
+		WithSourceProfiles(d.sourceProfiles).
 		Register(authed)
 	handlers.NewAgentBindingsHandler(d.agentBindingSvc).Register(authed)
 	handlers.NewCompanyProfileHandler(d.companyProfileSvc).Register(authed)

@@ -17,6 +17,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/config"
 	"github.com/fauzanebd/argentum/internal/docgen"
 	"github.com/fauzanebd/argentum/internal/docwarehouse"
+	"github.com/fauzanebd/argentum/internal/domain"
 	"github.com/fauzanebd/argentum/internal/email"
 	"github.com/fauzanebd/argentum/internal/idempotency"
 	"github.com/fauzanebd/argentum/internal/lark"
@@ -131,6 +132,9 @@ type apiDeps struct {
 	// agentSvc because it spends the tenant's credit and reads the two profile
 	// tables, and the roster's CRUD should be able to reach neither.
 	agentGenSvc *app.AgentGenerateService
+	// sourceProfiles is the per-source inference drafts the worker writes
+	// (T-B2), read here for the default agent's starter questions (RIZ-76).
+	sourceProfiles domain.SourceProfileRepository
 	// The tenant's own MCP servers (T-M1). It holds the egress guard this
 	// process makes outbound requests through, which is why it is built in
 	// bootstrap from config rather than at the handler.

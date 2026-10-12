@@ -2868,6 +2868,26 @@ forward: a 5-minute startup probe on the API, and a start that logs before it mi
 | phase 3bt | **The worker's rollout on a full node.** The worker is `maxSurge: 0` and asks for 200m, and the node's CPU requests sat at 98%. Whenever the API also rolls, the new worker can wait on the API's surge pod. Not fixed: either the requests shrink or the worker's rollout changes, and both are an operator's call about the whole node | An owner's decision (§4) |
 | phase 3bt | **What held `089`'s lock at 13:45.** Unknowable after the fact. **Prediction: it does not recur while traffic is this low**; the next migration's `took_ms` is the evidence | None — the next migration answers it |
 
+## 7p. `RIZ-76`'s walk from sign-up to a first answer — added 2026-10-12, not run
+
+The audit behind it was read from code only: the stack was down, so **nobody
+has walked this path in a browser**, before or after slice 1
+([`onboarding.md`](onboarding.md)). Everything here needs the local compose
+stack and a browser over CDP; only Q8 and Q11 spend. Never against the remote
+DB — do not source `apps/backend/.env`.
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `RIZ-76` Q3 | `/onboarding`: Test a local Postgres, make `POST /api/connections` answer 500 by Fetch interception, press Save. **Prediction: the callout reads *Could not save the connection: … Nothing was saved. Press Save to try again.*, Save is enabled, the URL stays `/onboarding`, `GET /api/connections` is empty** | The stack |
+| `RIZ-76` Q4 | The same with only `PUT /api/settings` failing, Save double-clicked. **Prediction: `/chat` with the currency toast, exactly one connection row, Save disabled and reading *Saving…* while pending** | The stack |
+| `RIZ-76` Q5, Q15 | Sign up fresh, *Skip for now*, then log out and back in. **Prediction: the admin card both times, no pills, its button opens `/onboarding`** | The stack |
+| `RIZ-76` Q6 | A member invited into a zero-connection tenant opens `/chat`. **Prediction: the ask-an-admin card, no button** | The stack |
+| `RIZ-76` Q7 | `GET /api/connections` answering 500, then delayed 3s. **Prediction: no card, no notice, no pills flashing in and out in either** | The stack |
+| `RIZ-76` Q9 | Onboarding with no LLM key, `/chat` left open five minutes. **Prediction: *Reading your schema.* with the generic three, the timeout copy at ~5:00, no `/connections` request after it** | The stack, five minutes |
+| `RIZ-76` Q10, Q12, Q13 | Click each pill (fills, never sends); a tenant whose SourceProfile row is deleted (the generic three, no notice); a templated agent, a blank non-default agent, and a fully described tenant (template questions, none, and no card or notice). **Prediction: all as listed** | The stack |
+| `RIZ-76` Q8 | Onboarding with a working light model, then watch `/chat`. **Prediction: Reading, then Ready, and the pills switch from the generic three to tables of that database without a reload — unless the inference lands after the describer, in which case they switch on the next visit ([`onboarding.md`](onboarding.md) §3)** | Model spend (approved) |
+| `RIZ-76` Q11 | Send the first table-named question. **Prediction: a grounded answer; the fabrication guard does not replace it; the audit row's row count is not null. "Most recent records" on a table with no date column is the weak one** | Model spend (approved) |
+
 ## 7. Needs the paid eval set (added 2026-09-11)
 
 `T-Q18`'s remaining half, and the only half that is about the model rather than

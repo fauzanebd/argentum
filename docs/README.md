@@ -125,6 +125,7 @@ docs/
 │   ├── skills.md                 T-K1→T-K10 the procedures a tenant writes down, and the one line each costs
 │   ├── provider-routing.md       T-Q17 the OpenRouter endpoint that answered with a tool call, and the two halves of the fix
 │   ├── multi-agent.md            T-N1→T-N5, T-N8, T-N11 the room, its trust boundary and its budget; T-N6, T-N7, T-N9, T-N10 unbuilt
+│   ├── onboarding.md             RIZ-76 sign-up to a first answer: the audit's ranked gaps, slice 1 built, slices 2 and 3 queued
 │   └── live-gate-backlog.md      Every acceptance item owed that code cannot close
 ├── plan/
 │   ├── 00-sprint-overview.md     8-week sprint: goal, scope, non-goals

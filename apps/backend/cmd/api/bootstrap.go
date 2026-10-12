@@ -538,6 +538,7 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	deps.apiKeySvc.WithAgents(agentRepo)
 	companyProfileRepo := pgctl.NewCompanyProfileRepo(controlDB)
 	sourceProfileRepo := pgctl.NewSourceProfileRepo(controlDB)
+	deps.sourceProfiles = sourceProfileRepo
 	deps.companyProfileSvc = app.NewCompanyProfileService(companyProfileRepo).
 		// The review panel (T-B2). The drafts are written by the worker; this
 		// side reads them, folds them, and applies one when a human says so.

@@ -79,10 +79,21 @@ export function useAgents() {
        * agent created from blank, for one created before templates existed, and
        * on a deployment with no gallery — all three are the same screen as
        * before, which is why this returns a list and not a placeholder.
+       *
+       * The one blank agent that is offered something is the company default
+       * (RIZ-76): it is the agent every new workspace starts with, so it is
+       * the empty composer a first-time user actually meets, and the backend
+       * sends questions naming that workspace's own tables for it. Only when
+       * `hasData` — the workspace has a source to ask about — because a
+       * question about "my workspace" with nothing connected is a turn that
+       * cannot answer. An API that predates the field sends none, which is
+       * the screen as it was.
        */
-      starterQuestionsFor(agent: Agent | null | undefined): string[] {
-        if (!agent?.template_key) return [];
-        return starterQuestions.get(agent.template_key) ?? [];
+      starterQuestionsFor(agent: Agent | null | undefined, hasData = false): string[] {
+        if (!agent) return [];
+        if (agent.template_key) return starterQuestions.get(agent.template_key) ?? [];
+        if (agent.is_default && hasData) return data?.data_starter_questions ?? [];
+        return [];
       },
     };
   }, [agents, data, isLoading]);

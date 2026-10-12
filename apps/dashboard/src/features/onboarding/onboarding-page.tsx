@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -12,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { apiErrorMessage } from "@/lib/api-error";
+import { toast } from "@/hooks/use-toast";
 import { certVerificationHint, defaultSslMode, sslModeOptions, supportsSslMode } from "@/lib/ssl-modes";
 
 const schema = z.object({
@@ -31,6 +33,7 @@ type FormValues = z.infer<typeof schema>;
 
 export function OnboardingPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [supported, setSupported] = useState<string[]>([]);
   const [currencies, setCurrencies] = useState<string[]>([]);
   const [mode, setMode] = useState<ConnMode>("fields");
@@ -43,6 +46,17 @@ export function OnboardingPage() {
   const [sslMode, setSslMode] = useState(defaultSslMode("postgres"));
   const [testStatus, setTestStatus] = useState<"idle" | "ok" | "error" | "testing">("idle");
   const [testError, setTestError] = useState<string | null>(null);
+  // Why the last Save did not create the connection (RIZ-76). Before this the
+  // failure was an unhandled rejection: no message, and a button that looked
+  // dead.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Set once POST /api/connections has succeeded. A Save after that point must
+  // never post again — a second click, or a retry after the settings call
+  // failed, would otherwise create a second source with the same credentials.
+  const createdRef = useRef(false);
+  // isSubmitting disables the button, but only from the render after the
+  // click; this closes the gap a fast double click falls through.
+  const submittingRef = useRef(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -127,10 +141,46 @@ export function OnboardingPage() {
       setTestError(err);
       return;
     }
-    await api.post("/connections", { ...connectionPayload(), label: values.label, is_default: true });
-    await api.put("/settings", { default_currency: values.default_currency });
-    navigate({ to: "/chat" });
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      setSaveError(null);
+      if (!createdRef.current) {
+        try {
+          await api.post("/connections", { ...connectionPayload(), label: values.label, is_default: true });
+          createdRef.current = true;
+          // /chat reads this list to decide between the connect-your-data card
+          // and the reading-your-schema notice, and a list it cached before
+          // this Save is still fresh for the global staleTime — so without
+          // this, an admin who came here from the card goes back to the card.
+          await qc.invalidateQueries({ queryKey: ["connections"] });
+        } catch (e: unknown) {
+          // The API's own sentence, without the full stop it may end in, so
+          // the copy around it reads as one sentence and not two.
+          const reason = apiErrorMessage(e).replace(/[.\s]+$/, "");
+          setSaveError(`Could not save the connection: ${reason}. Nothing was saved. Press Save to try again.`);
+          return;
+        }
+      }
+      // The source exists from here on, so a failure below is not a reason to
+      // keep the tenant on this page: the currency is one setting with a
+      // default, and Settings → General can change it. Staying would offer a
+      // Save that cannot do anything the first one did not.
+      try {
+        await api.put("/settings", { default_currency: values.default_currency });
+      } catch {
+        toast({
+          title: "Connected, but the default currency was not saved",
+          description: "Set it in Settings → General.",
+        });
+      }
+      navigate({ to: "/chat" });
+    } finally {
+      submittingRef.current = false;
+    }
   }
+
+  const saving = form.formState.isSubmitting;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -306,10 +356,32 @@ export function OnboardingPage() {
                 </p>
               </div>
             </CardContent>
-            <CardFooter>
-              <Button type="submit" disabled={testStatus !== "ok"}>
-                Save and continue
-              </Button>
+            <CardFooter className="flex-col items-stretch gap-3">
+              <div className="flex items-center gap-2">
+                <Button type="submit" disabled={testStatus !== "ok" || saving}>
+                  {saving ? "Saving…" : "Save and continue"}
+                </Button>
+                {/* The way out for a visitor without credentials to hand (RIZ-76).
+                    /chat re-offers this page from its empty-data card, so
+                    skipping loses nothing. */}
+                <Button
+                  type="button"
+                  variant="link"
+                  className="text-muted-foreground underline"
+                  disabled={saving}
+                  onClick={() => navigate({ to: "/chat" })}
+                >
+                  Skip for now
+                </Button>
+              </div>
+              {saveError && (
+                <div
+                  role="alert"
+                  className="rounded-md border border-destructive/25 bg-destructive-tint px-3 py-2 text-xs text-destructive-ink break-words"
+                >
+                  {saveError}
+                </div>
+              )}
             </CardFooter>
           </form>
         </Card>
