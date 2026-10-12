@@ -3,13 +3,16 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 )
 
 // ChatHandler exposes /threads + /chat endpoints to the dashboard.
@@ -177,6 +180,15 @@ func (h *ChatHandler) addParticipant(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// An agent id that cannot be one is the not-found an unknown agent gets
+	// from Add, answered here before the roster query that would otherwise
+	// hand Postgres `x` and the caller its 22P02 (RIZ-26). The path's own
+	// thread id was checked by RequireWellFormedIDs on the way in. Empty is
+	// not intercepted: Add's "agent_id is required" is the better answer.
+	if req.AgentID != "" && !middleware.WellFormedID(req.AgentID) {
+		participantFail(c, domain.ErrNotFound)
+		return
+	}
 	p, err := h.members.Add(c.Request.Context(), companyID(c), c.Param("id"), req.AgentID, userID(c))
 	if err != nil {
 		participantFail(c, err)
@@ -263,6 +275,24 @@ func (h *ChatHandler) createThread(c *gin.Context) {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
+		}
+	}
+	// Ids that cannot be ids answer what unknown ones do, and before anything
+	// is written (RIZ-26). The agent first, because the enqueuer checks it
+	// first. A participant is checked only where the loop below would add one,
+	// and is refused *before* the thread exists rather than after it, which is
+	// where an unknown participant is refused: a conversation left behind by a
+	// typo is the one outcome the ticket rules out.
+	if req.AgentID != "" && !middleware.WellFormedID(req.AgentID) {
+		chatFail(c, app.ErrAgentNotFound)
+		return
+	}
+	if h.members != nil {
+		for _, id := range req.ParticipantIDs {
+			if id != "" && !middleware.WellFormedID(id) {
+				participantFail(c, domain.ErrNotFound)
+				return
+			}
 		}
 	}
 	thread, err := h.chat.CreateDashboardThread(c.Request.Context(), companyID(c), userID(c), req.AgentID)
@@ -425,6 +455,9 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if malformedSendIDs(c, req) {
+		return
+	}
 	res, err := h.chat.Enqueue(c.Request.Context(), app.ChatInput{
 		Channel:   domain.ChannelDashboard,
 		CompanyID: companyID(c),
@@ -456,6 +489,43 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 		UserMsgID:     res.UserMsgID,
 		BudgetWarning: res.BudgetWarning,
 	})
+}
+
+// malformedSendIDs answers a send whose thread_id or agent_id cannot be an id,
+// and reports whether it did (RIZ-26). Until then both reached Postgres, and the
+// 22P02 came back as a 400 reading "lookup thread: pq: invalid input syntax for
+// type uuid" — the driver's name and the column type, to any member.
+//
+// **Each answers what a well-formed id that names nothing answers**, error for
+// error, so a caller cannot tell a typo from a deleted row:
+//
+//   - thread_id: the enqueuer's own wrapped not-found, which chatFail writes as
+//     `404 no such agent` — not "no such conversation", which is only the answer
+//     for a conversation that exists and is hidden (T-Z10). That wording is
+//     today's for an unknown thread, and changing it is not this ticket's.
+//   - agent_id, on a send that opens a conversation: ErrAgentNotFound, the
+//     roster pick's refusal. On a send into an existing thread it is left to the
+//     enqueuer, which compares it with the thread's own agent as a string and
+//     never queries with it — so `x` there is already the 400 any other agent
+//     that is not the thread's gets.
+//
+// A blank message is left to the enqueuer, which refuses it before it looks
+// anything up. The one ordering it cannot keep is the budget check, which also
+// comes first there: a company out of credits hears 404 for a typo'd id rather
+// than 402, which is the right way round — the id would never have worked.
+func malformedSendIDs(c *gin.Context, req sendReq) bool {
+	if strings.TrimSpace(req.Message) == "" {
+		return false
+	}
+	switch {
+	case req.ThreadID != "" && !middleware.WellFormedID(req.ThreadID):
+		chatFail(c, fmt.Errorf("lookup thread: %w", domain.ErrNotFound))
+	case req.ThreadID == "" && req.AgentID != "" && !middleware.WellFormedID(req.AgentID):
+		chatFail(c, app.ErrAgentNotFound)
+	default:
+		return false
+	}
+	return true
 }
 
 // spokenQuestion is the record of the recordings a send names, or nil.
