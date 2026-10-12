@@ -35,8 +35,13 @@ func NewAuthHandler(svc *app.AuthService, team *app.TeamService, secure bool, re
 // The invite routes live here rather than under /users because they are the
 // only two team endpoints an unauthenticated caller must reach: the invitee
 // has no session until the second of them succeeds.
-func (h *AuthHandler) Register(rg *gin.RouterGroup) {
-	rg.POST("/signup", h.signup)
+//
+// signupGuard runs in front of /signup only (RIZ-79's per-address limit). A
+// parameter rather than a group-wide Use because the rest of this group must
+// not share it, and variadic because there is no limiter without Redis.
+func (h *AuthHandler) Register(rg *gin.RouterGroup, signupGuard ...gin.HandlerFunc) {
+	signup := append(append([]gin.HandlerFunc{}, signupGuard...), h.signup)
+	rg.POST("/signup", signup...)
 	rg.POST("/login", h.login)
 	rg.POST("/refresh", h.refresh)
 	rg.POST("/logout", h.logout)

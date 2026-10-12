@@ -55,6 +55,46 @@ func signupRouter(t *testing.T, users signupUsers, companies signupCompanies) *g
 	return r
 }
 
+// RIZ-79 R10: the signup guard sits in front of /signup and nothing else. An
+// office behind one address that has used up its sign-ups still logs in,
+// refreshes and accepts invites.
+func TestTheSignupGuardIsOnSignupOnly(t *testing.T) {
+	signer, err := auth.NewTokenSigner("0123456789abcdef0123456789abcdef", 15*time.Minute, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("NewTokenSigner: %v", err)
+	}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	refuse := func(c *gin.Context) {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "refused"})
+	}
+	NewAuthHandler(app.NewAuthService(signupCompanies{}, signupUsers{}, signer), nil, false, time.Hour).
+		Register(r.Group("/auth"), refuse)
+
+	cases := []struct {
+		method, path string
+		limited      bool
+	}{
+		{http.MethodPost, "/auth/signup", true},
+		{http.MethodPost, "/auth/login", false},
+		{http.MethodPost, "/auth/refresh", false},
+		{http.MethodPost, "/auth/logout", false},
+		{http.MethodGet, "/auth/invite", false},
+		{http.MethodPost, "/auth/accept-invite", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+			if got := w.Code == http.StatusTooManyRequests; got != tc.limited {
+				t.Errorf("%s %s = %d, limited = %v, want %v", tc.method, tc.path, w.Code, got, tc.limited)
+			}
+		})
+	}
+}
+
 func TestSignupFailureBodies(t *testing.T) {
 	driverErr := errors.New(`pq: duplicate key value violates unique constraint "companies_slug_key"`)
 	cases := []struct {

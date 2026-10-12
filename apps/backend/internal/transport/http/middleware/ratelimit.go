@@ -208,6 +208,42 @@ func (r *RateLimiter) ShareMiddleware() gin.HandlerFunc {
 	}
 }
 
+// ctxSignupBucket is where SignupMiddleware leaves the address it limits by,
+// unexported for ctxShareBucket's reason.
+const ctxSignupBucket = "signup_bucket"
+
+// SignupFloodMessage is the whole of a refused signup's body. Exported because
+// the sentence is what the signup page shows under the form, so a test that
+// pins it should not have to copy it.
+const SignupFloodMessage = "Too many sign-ups from this network. Please try again in an hour."
+
+// SignupMiddleware rate-limits `POST /auth/signup` by client address
+// (RIZ-79).
+//
+// Every signup is a new company, and since RIZ-79 every new company is free
+// credit — so before this, a script that could invent email addresses could
+// mint balance at line rate. The address is the weakest identity in the
+// system and it is the only one a visitor without an account has. It does not
+// stop someone with a pool of addresses; it stops one host, which is the
+// cheap and common case. Email verification is the control for the rest and
+// is its own ticket.
+//
+// Mounted on signup alone. Login, refresh and the invite routes are not
+// minting anything, and an office behind one NAT whose members all log in on
+// a Monday morning must not lock each other out.
+//
+// The refusal is a plain JSON body in the dashboard's `{"error": …}` shape,
+// because the reader is the signup page and that is what it prints.
+func (r *RateLimiter) SignupMiddleware() gin.HandlerFunc {
+	limit := r.limitBy("rl:signup:", ctxSignupBucket, func(c *gin.Context) {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": SignupFloodMessage})
+	})
+	return func(c *gin.Context) {
+		c.Set(ctxSignupBucket, c.ClientIP())
+		limit(c)
+	}
+}
+
 // limitBy is the shared body: read the bucket identity off the Gin context,
 // consume a token, and hand the refusal to the caller's own writer so the two
 // surfaces can answer in their own error formats.
