@@ -1660,3 +1660,13 @@ next push of this branch. The QA half was run on `cdf6d33` and passed:
 `docker build --pull` of all four images on go1.26.9, the OTLP smoke on
 `grpc` and `http/protobuf`, the bogus-protocol error path, and a boot with no
 OTEL env.
+
+## 22. `RIZ-26` — a malformed id no longer quotes the driver (2026-10-12)
+
+A non-uuid in any `/api` path id, or in the chat and room bodies' ids, is now a plain
+`404` before Postgres sees it (`middleware.RequireWellFormedIDs`; [`access-grants.md`](access-grants.md)
+§9g), so `pq: invalid input syntax for type uuid … (22P02)` no longer reaches a response body
+from those routes — [`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres). **The class is narrower than the leak:** 251
+handler sites still echo `err.Error()`, so a unique, foreign-key or length violation still
+quotes the driver. That scrub, `/v1`'s malformed ids and uuids inside other bodies are the
+follow-up ticket's.

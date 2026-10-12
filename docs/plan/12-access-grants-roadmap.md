@@ -28,7 +28,7 @@ misread.
 >   `AgentsByThread` over 100 conversations of 50 messages takes 5.9 ms.
 > - **Fixed there:** Settings → Team at 390 px squeezed every member's email to 0 px; the row now wraps.
 > - **Filed, not fixed:** a malformed id answers `500` (or a `400`/`503` quoting the driver) on 44 routes across
->   14 repositories — **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)**. The plan had priced these as one-line mappings. And §17c's metrics
+>   14 repositories — **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)**, since fixed (2026-10-12) by one check at the chain rather than fourteen mappings. The plan had priced these as one-line mappings. And §17c's metrics
 >   on a restricted source, seen live — **[`RIZ-27`](https://linear.app/rizkal-uhuy/issue/RIZ-27/members-no-longer-see-metrics-on-a-source-they-cannot-read)**.
 > - **Still owed:** the Slack arms (`T-Z8` (3), `T-Z12`'s hole arm) and a waiting proposal's TTL expiry.
 >   `T-Z12`'s granted-member rename, which the build's turn budget did not reach, was closed by QA's re-run.

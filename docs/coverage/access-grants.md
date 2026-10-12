@@ -37,14 +37,14 @@ the local stack at `0cf7a6a`, not production): migrations, statements, routes, a
 browser, the worker, two paid turns and both races, each as predicted except where
 [`live-gate-backlog.md`](live-gate-backlog.md) §7c says otherwise. Only the Slack
 arms are still owed. It found no leak. It found a malformed id answering `500` on
-44 routes, filed as **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)**, and a Team tab that hid every email at
+44 routes, filed as **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)** — **fixed by `RIZ-26` (2026-10-12, unit-gated; its live sweep, R9, is owed — §9g)** — and a Team tab that hid every email at
 390 px, fixed there (§12f).
 
 | Ticket | Status |
 | --- | --- |
 | `T-Z1` A capability is a named power, and a user is granted it | **built 2026-09-12, `make check` green, unit-gated. Migration `083`. Live-gated 2026-10-11 (`RIZ-25`), all three arms — §7** |
 | `T-Z2` A resource can be restricted, and a grant is what opens it | **built 2026-09-12, `make check` green, unit-gated. Migration `084` — typed foreign keys, not the ticket's polymorphic id (§8a). Enforced nowhere until `T-Z4`→`T-Z6` (§8c). Live-gated 2026-10-11 (`RIZ-25`) — §8f** |
-| `T-Z3` A route that serves a restricted resource has to say so | **built 2026-09-12, `make check` green, unit-gated. No migration. Three tables, not the ticket's two (§9b); `resourcePolicy` ships empty. Its arm ran with `T-Z5`'s on 2026-10-11 (`RIZ-25`); a malformed id still `500`s behind it — §9g** |
+| `T-Z3` A route that serves a restricted resource has to say so | **built 2026-09-12, `make check` green, unit-gated. No migration. Three tables, not the ticket's two (§9b); `resourcePolicy` ships empty. Its arm ran with `T-Z5`'s on 2026-10-11 (`RIZ-25`); a malformed id `500`ed behind it until `RIZ-26` put `RequireWellFormedIDs` in front of it — §9g** |
 | `T-Z4` Agents: who may talk to which | **built 2026-09-12, `make check` green, unit-gated. No migration. Enforced at the enqueuer, the room and the roster, not at a route (§10a); the fork "seam" has no person (§10c). The transcript hole — §10d. Live-gated 2026-10-11 (`RIZ-25`) — §10g** |
 | `T-Z5` Dashboards: who may open which | **built 2026-09-12, `make check` green, unit-gated. No migration. The first three `resourcePolicy` entries; the list narrowed for admins too, so the access read carries names (§14c). Restricting revokes live links under a row lock the mint shares (§14a). One edge found, `update_dashboard` (§14d) — closed by `T-Z12` (§15). Live-gated 2026-10-11 (`RIZ-25`), both races included — §14g** |
 | `T-Z6` The "etc": data sources and documents | **built 2026-09-13, `make check` green, unit-gated. No migration. Two of the ticket's three source surfaces do not exist, and every source route with an id is admin (§17b); `resourcePending` is empty. A document's tables are checked through their document in the handler. Live-gated 2026-10-11 (`RIZ-25`), the paid search arm included — §17g** |
@@ -559,6 +559,20 @@ the first `resourcePolicy` entry, and is filed against it in
 `make eval`: nothing here reaches a prompt or a tool.
 
 **Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** With `T-Z5`'s arm: the `403` naming the kind, the next-request grant and revoke, company B's id answering the handler's own `404` byte for byte, and `503` — never `200` — with the control database stopped. **Differed:** a malformed id passes through to a handler that `500`s quoting the driver, as it did before this ticket — **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)**.
+
+**Fixed by `RIZ-26` (2026-10-12).** A sixth link, `RequireWellFormedIDs`, sits
+between `RequireCapability` and `RequireResource` and answers a path id that is
+not a uuid with `404 {"error":"not found"}` before the grant store, the handler or
+Postgres sees it — by parameter name (`uuidParams`, `exemptIDParams` and three
+exempt routes in `cmd/api/policy.go`), so it covers all 97 `/api` routes with a
+uuid parameter rather than the 44 the sweep happened to call. The `503` "could
+not check access; try again" this section's predicate produced for `x` is gone
+with it: `RequireResource` is never asked about an id that names nothing. A route
+whose new parameter is in neither table fails `TestEveryIDParamIsClassified`.
+The id-in-a-body routes (`POST /api/chat`, `POST /api/threads`,
+`POST /api/threads/:id/participants`) answer `x` exactly as they answer a
+well-formed unknown id. **Unit-gated; the live re-run of `arms.sh` R9 is owed**
+(`live-gate-backlog.md` §7c) — prediction: 0 FAIL, every path row `404`.
 
 ---
 
