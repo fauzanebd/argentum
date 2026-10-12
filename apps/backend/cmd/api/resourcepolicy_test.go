@@ -381,7 +381,8 @@ func TestEveryResourceKindHasADetector(t *testing.T) {
 
 // TestAuthedChainOrder is the acceptance line "Auth → RequireRole →
 // RequireCapability → RequireResource → rate limiter", read off the chain the
-// router installs. Handler names come from the runtime; each link is a closure
+// router installs, with RIZ-26's RequireWellFormedIDs between the capability and
+// the resource links. Handler names come from the runtime; each link is a closure
 // its factory returns, so the factory's name is inside the closure's.
 //
 // The rate limiter only exists with a Redis client, so this test hands it one
@@ -396,7 +397,7 @@ func TestAuthedChainOrder(t *testing.T) {
 	d.rdb = redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
 	t.Cleanup(func() { _ = d.rdb.Close() })
 
-	want := []string{"Auth", "RequireRole", "RequireCapability", "RequireResource", "limitBy"}
+	want := []string{"Auth", "RequireRole", "RequireCapability", "RequireWellFormedIDs", "RequireResource", "limitBy"}
 	chain := authedChain(d)
 	names := make([]string, len(chain))
 	for i, h := range chain {
@@ -498,14 +499,23 @@ func (l *dashboardGrants) LoadAccess(_ context.Context, companyID, userID string
 	}
 	for _, id := range ids {
 		switch id {
-		case "payroll":
+		case dashPayroll:
 			out[id] = domain.ResourceAccess{Mode: domain.AccessModeRestricted, Granted: userID == "u-rina"}
-		case "sales":
+		case dashSales:
 			out[id] = domain.ResourceAccess{Mode: domain.AccessModeOpen}
 		}
 	}
 	return out, nil
 }
+
+// The dashboards dashboardGrants knows, and one it does not. Uuids since
+// RIZ-26, which refuses a path id that is not one before RequireResource asks.
+const (
+	dashPayroll = "a1a1a1a1-0000-4000-8000-000000000001"
+	dashSales   = "a1a1a1a1-0000-4000-8000-000000000002"
+	dashNope    = "a1a1a1a1-0000-4000-8000-000000000003"
+	dashShare   = "a1a1a1a1-0000-4000-8000-000000000004"
+)
 
 // TestADashboardGrantOpensItsReadDataAndLinks is T-Z5's first acceptance line —
 // "a restricted dashboard 403s on read and on /data without a grant" — against
@@ -529,7 +539,7 @@ func TestADashboardGrantOpensItsReadDataAndLinks(t *testing.T) {
 	}
 
 	budi, rina, dewi := tokenFor(t, "u-budi", "member"), tokenFor(t, "u-rina", "member"), tokenFor(t, "u-dewi", "admin")
-	for _, path := range []string{"/api/dashboards/payroll", "/api/dashboards/payroll/data"} {
+	for _, path := range []string{"/api/dashboards/" + dashPayroll, "/api/dashboards/" + dashPayroll + "/data"} {
 		for who, token := range map[string]string{"a member without the grant": budi, "an admin without the grant": dewi} {
 			code, body := call(token, http.MethodGet, path)
 			if code != http.StatusForbidden || !strings.Contains(body, `"resource_kind":"dashboard"`) {
@@ -539,28 +549,28 @@ func TestADashboardGrantOpensItsReadDataAndLinks(t *testing.T) {
 		if code, body := call(rina, http.MethodGet, path); code != http.StatusServiceUnavailable {
 			t.Errorf("GET %s as the granted member: %d %s, want past the check", path, code, body)
 		}
-		open := strings.Replace(path, "payroll", "sales", 1)
+		open := strings.Replace(path, dashPayroll, dashSales, 1)
 		if code, body := call(budi, http.MethodGet, open); code != http.StatusServiceUnavailable {
 			t.Errorf("GET %s, an open dashboard, as a member: %d %s, want past the check", open, code, body)
 		}
 		// Not found passes through to the handler's own answer (T-Z3 §9c): an id
 		// that is no dashboard of this company is not a 403 that confirms it.
-		missing := strings.Replace(path, "payroll", "nope", 1)
+		missing := strings.Replace(path, dashPayroll, dashNope, 1)
 		if code, body := call(budi, http.MethodGet, missing); code == http.StatusForbidden {
 			t.Errorf("GET %s, no such dashboard: %d %s, want the handler's answer, not a refusal", missing, code, body)
 		}
 	}
 
 	// The links: admin by the role table, then the grant.
-	if code, _ := call(dewi, http.MethodGet, "/api/dashboards/payroll/shares"); code != http.StatusForbidden {
+	if code, _ := call(dewi, http.MethodGet, "/api/dashboards/"+dashPayroll+"/shares"); code != http.StatusForbidden {
 		t.Errorf("listing a restricted dashboard's links as an admin without the grant: %d, want 403", code)
 	}
 	// Revoking and minting never ask: revoking can only close a door, and a mint
 	// on a restricted dashboard is refused whoever asks (resourceExempt).
 	before := store.loads.Load()
-	call(dewi, http.MethodDelete, "/api/dashboards/payroll/shares/sh-1")
-	call(dewi, http.MethodPost, "/api/dashboards/payroll/shares")
-	call(dewi, http.MethodDelete, "/api/dashboards/payroll")
+	call(dewi, http.MethodDelete, "/api/dashboards/"+dashPayroll+"/shares/"+dashShare)
+	call(dewi, http.MethodPost, "/api/dashboards/"+dashPayroll+"/shares")
+	call(dewi, http.MethodDelete, "/api/dashboards/"+dashPayroll)
 	if after := store.loads.Load(); after != before {
 		t.Errorf("revoke, mint and delete read the grant store %d times, want 0", after-before)
 	}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -479,14 +480,31 @@ func statusOf(r *gin.Engine, req *http.Request) int {
 }
 
 // concreteURL substitutes a value for every :param and *catchall so a
-// registered pattern can be requested. The value never matters — every route
-// under test aborts in middleware or fails on a nil service long before the id
-// is read.
+// registered pattern can be requested. A uuid-named parameter gets a
+// well-formed uuid and everything else `x`: since RIZ-26 a malformed id is
+// refused one link ahead of RequireResource, and the tests built on this one
+// are about the role, capability and resource links, which a 404 from the id
+// check would answer for them. Beyond that the value never matters — every
+// route under test aborts in middleware or fails on a nil service long before
+// the id is read.
 func concreteURL(pattern string) string {
+	return concreteURLWith(pattern, func(param string) string {
+		if slices.Contains(uuidParams, param) {
+			return anyUUID
+		}
+		return "x"
+	})
+}
+
+// anyUUID is a well-formed id that names nothing.
+const anyUUID = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b"
+
+// concreteURLWith is concreteURL with the value chosen per parameter name.
+func concreteURLWith(pattern string, value func(param string) string) string {
 	segs := strings.Split(pattern, "/")
 	for i, s := range segs {
 		if strings.HasPrefix(s, ":") || strings.HasPrefix(s, "*") {
-			segs[i] = "x"
+			segs[i] = value(s[1:])
 		}
 	}
 	return strings.Join(segs, "/")

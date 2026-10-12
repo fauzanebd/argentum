@@ -690,6 +690,47 @@ var resourceExempt = map[string]string{
 // future kind has somewhere to park its routes while its own ticket is open.
 var resourcePending = map[string]string{}
 
+// uuidParams are the path parameter names that carry a row id on every route
+// that declares them, and RequireWellFormedIDs answers a value that cannot be
+// one with a 404 before anything reads it (RIZ-26).
+//
+// By name rather than by route, for the reason the ticket was filed: RIZ-25's
+// sweep found 44 routes across 14 repositories turning `x` into a 500, a 503 or
+// a driver message, because each repository had to remember to map 22P02 and
+// most did not. A name is decided once and covers every route that uses it,
+// including the next one. Every table these name has a `UUID PRIMARY KEY`.
+//
+// Spelled as the router spells them — `tableId` and `toolId` beside `agentID`
+// and `userID` — because gin hands the middleware the name as registered.
+var uuidParams = []string{"id", "agentID", "runID", "shareID", "tableId", "toolId", "userID"}
+
+// exemptIDParams are the names that never carry a uuid. The value is what they
+// carry instead. `token` and `app_id` sit on `/share` and `/webhook`, outside
+// both groups the middleware runs on; they are listed so a route that brings
+// one under `/api` is already decided, rather than decided in a hurry.
+var exemptIDParams = map[string]string{
+	"kind":       "a resource kind's name — agent, dashboard, connection, document — read as a word by the access and action-config routes",
+	"capability": "a capability's name, like voice or export_data, which the grant routes validate against the vocabulary",
+	"page":       "a page number, which the page handlers parse and bound themselves",
+	"phone":      "a WhatsApp number in E.164 form, which is the phone table's own key",
+	"token":      "a share link's secret, which is a random string and the whole credential",
+	"app_id":     "a Lark or Slack app's own identifier, assigned by that platform",
+}
+
+// wellFormedIDExempt are routes whose uuid-named parameter is not a uuid on
+// that route. Keyed like apiPolicy, with the reason as the value, and held to
+// resourceExempt's rule: five words at least, because an exemption is a
+// decision somebody wrote down.
+//
+// All three are the chat platforms' allowlists, where `:id` is the platform's
+// user id — the column is TEXT in 016, 019 and 048. Refusing them would make an
+// allowed user impossible to remove.
+var wellFormedIDExempt = map[string]string{
+	"DELETE /api/discord/users/:id": "the id is a Discord user's snowflake, a decimal string and not a uuid",
+	"DELETE /api/lark/users/:id":    "the id is a Lark open_id, which Lark assigns and is not a uuid",
+	"DELETE /api/slack/users/:id":   "the id is a Slack member id like U024BE7LH and not a uuid",
+}
+
 // unpolicedPaths are the routes that legitimately sit outside the policy: they
 // run before or without authentication, or they authenticate as something
 // other than a dashboard session, so there is no role to check. The
