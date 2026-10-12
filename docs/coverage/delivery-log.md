@@ -8380,6 +8380,56 @@ exempt routes (Q7–Q9), and the dashboard's not-found pages for `/dashboards/x`
 The wider scrub — 251 handler sites echo `err.Error()`, `/v1`'s malformed ids, uuids inside other bodies —
 is the follow-up ticket the plan names.
 
+## Phase 3bx — A new workspace is told what is happening between sign-up and its first answer ([`RIZ-76`](https://linear.app/rizkal-uhuy/issue/RIZ-76/a-new-customer-gets-from-sign-up-to-their-first-useful-answer-without) slice 1, 2026-10-12)
+
+**Why.** The onboarding audit ([`onboarding.md`](onboarding.md) §1), read from code: the self-serve path
+after sign-up had four dead ends. Save on `/onboarding` failed silently — `onSubmit` had no try/catch, so
+a refused `POST /api/connections` left a button that looked dead. A tenant who closed the tab before
+connecting logged back in to a `/chat` that looked ready and could not answer. Nothing said the schema
+was still being read after Save. And the default agent is created blank, so a first-time user faced an
+empty composer. Separately, signup's 500 handed an unauthenticated visitor `err.Error()`.
+
+**What changed.**
+- **Onboarding.** Save catches both requests: a failed create shows an inline destructive callout with
+  the API's reason and re-enables Save; a failed currency save still goes to `/chat`, with a toast. A ref
+  records that the connection exists, so nothing posts it twice. *Saving…* while pending, Save and the
+  new *Skip for now* both disabled.
+- **The new-chat slot** (where the budget banner renders) holds at most one of: a connect-your-data card
+  for a workspace with no source — a button to `/onboarding` for an admin, ask-an-admin copy for a member
+  — or a *Reading your schema* notice that polls `GET /api/connections` every 5s while a description is
+  empty, flips to *Ready* when the describer finishes, and gives up with a warning at 5 minutes.
+- **`AgentsResponse.data_starter_questions`**: up to three questions from fixed templates, one inferred
+  table each (default source first, deduplicated, a name over 60 runes or holding a control character
+  dropped), or a generic three while no SourceProfile exists. No model call. The untemplated default agent
+  offers them once a source is connected.
+- **Signup's 500** is a fixed sentence; the error goes to the log.
+- No migration, no flag, no `/v1` change. `packages/api-types` regenerated for the one field.
+
+**Where the plan was wrong.**
+- **It would have shown a member a restricted source's tables.** The plan built the list from
+  `ListByCompany` alone; since `T-Z6` a member's source list is narrowed by grant, and a pill naming a
+  restricted source's table tells them what it holds. The handler narrows a member's profiles with the
+  same `Visible` read as `visibleSources`, and a failed check sends `[]`.
+- **The notice and the questions follow two different jobs.** The notice flips on the describer; the
+  questions come from the business inference. If inference lands second, the pills stay generic until the
+  next visit. Q8 measures it ([`onboarding.md`](onboarding.md) §3).
+- The mockups set the table name apart inside the pill; the wire is `[]string`, so it is plain text.
+
+**Proven, unit.** `TestDataStarterQuestions` (13 cases), `TestRosterCarriesTheDefaultAgentsStarterQuestions`
+(7: the member narrowing and both failure directions, always `200`, never `null`),
+`TestSignupFailureBodies` (500 generic; 409 and 400 byte-for-byte unchanged). Dashboard: 19 new tests —
+the save paths and the double click, the card for both roles, loading and error showing nothing, and on
+fake timers the 5s poll, the flip to Ready and the 5-minute timeout with polling stopped after each.
+
+**Gate.** `gofmt -l`: empty. `make lint-go`: exit 0 (`0 issues.`, after it caught one De Morgan in a
+test fake). `make check`: `MAKE EXIT: 0`, 76 Go packages `ok`, zero `FAIL`/`panic` lines, 140 dashboard
+tests (121 before, 19 new). `make types`: one field in `packages/api-types/src/api.ts`. A fresh worktree
+still needs `@argentum/widget` built before `lint-web` (Phases 3bu–3bw), and `make` needs a `pnpm` on
+`PATH` — here a shim to `corepack pnpm@10.18.0`.
+
+**Owed.** The browser walk from sign-up to a first answer on the local stack — Q3–Q7, Q9, Q10, Q12,
+Q13, Q15 — and the two that spend, Q8 and Q11 (live-gate §7p).
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
