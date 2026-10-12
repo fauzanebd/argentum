@@ -16,7 +16,7 @@ import { useElapsedSeconds } from "@/hooks/use-elapsed";
 import { ThinkingTrace } from "./thinking-trace";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { useAuthStore } from "@/store/auth";
+import { useAuthStore, useIsAdmin } from "@/store/auth";
 import { useComposerStore } from "@/store/composer";
 import { microToUsd } from "@/features/usage/labels";
 import type {
@@ -29,6 +29,8 @@ import type {
 } from "@argentum/api-types";
 import { useModels } from "@/lib/use-models";
 import { useAgents } from "./use-agents";
+import { OnboardingNotice } from "./onboarding-notice";
+import { useOnboardingStatus } from "./use-onboarding-status";
 import { AgentBadge, AgentPicker } from "./agent-picker";
 import { ParticipantBar } from "./participant-bar";
 import { useParticipants } from "./use-participants";
@@ -281,6 +283,16 @@ export function ChatPage() {
   const newChatAgent = pickedAgentId
     ? (agents.byId.get(pickedAgentId) ?? null)
     : agents.fallback;
+
+  /**
+   * Whether this workspace has data to answer from yet (RIZ-76). A tenant who
+   * closed the tab before connecting a source logs back in here — login goes
+   * to /chat — to a screen that looked ready and could not answer, and one who
+   * had just connected was not told the schema was still being read. New-chat
+   * only: a thread with messages is past all of this.
+   */
+  const isAdmin = useIsAdmin();
+  const onboarding = useOnboardingStatus(isNewChat);
 
   /**
    * The credit warning lives in the query cache, not in component state.
@@ -780,6 +792,11 @@ export function ChatPage() {
                 inventory, or trends.
               </p>
             </div>
+            <OnboardingNotice
+              status={onboarding.status}
+              isAdmin={isAdmin}
+              className="w-full"
+            />
             {budgetWarning && (
               <BudgetWarningBanner
                 warning={budgetWarning}
@@ -807,12 +824,19 @@ export function ChatPage() {
                 />
               }
               suggestions={
-                /* What this agent was made to be asked (T-B3). Only an agent
-                   created from a template has any, and clicking one fills the
+                /* What this agent was made to be asked (T-B3), or — for the
+                   untemplated company default — questions about this
+                   workspace's own tables (RIZ-76). Clicking one fills the
                    composer rather than sending: the first turn a customer runs
-                   is the one they should have read first. */
+                   is the one they should have read first. None at all with no
+                   data connected, where the card above is the next step and
+                   every question would be a turn that cannot answer. */
                 <StarterQuestions
-                  questions={agents.starterQuestionsFor(newChatAgent)}
+                  questions={
+                    onboarding.status === "no-data"
+                      ? []
+                      : agents.starterQuestionsFor(newChatAgent, onboarding.hasData)
+                  }
                   onPick={fillComposer}
                 />
               }
@@ -1016,7 +1040,9 @@ function agentNameFor(
  *
  * Renders nothing for an agent created from blank, one created before templates
  * existed, or a deployment with no gallery. All three are the screen exactly as
- * it was.
+ * it was. The exception is the untemplated company default, which since RIZ-76
+ * is offered questions naming the workspace's own tables — see
+ * `starterQuestionsFor`.
  */
 function StarterQuestions({
   questions,

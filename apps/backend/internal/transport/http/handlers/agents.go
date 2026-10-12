@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/authz"
@@ -28,6 +29,9 @@ type AgentsHandler struct {
 	// access narrows the roster to the agents the person reading it may talk
 	// to (T-Z4). Nil lists every agent to everybody, as before roadmap 12.
 	access AgentAccess
+	// profiles is where the default agent's starter questions come from
+	// (RIZ-76). Nil sends an empty list, which the chat shows as no pills.
+	profiles domain.SourceProfileRepository
 }
 
 // AgentAccess is the one read the roster routes make about the person reading
@@ -108,6 +112,14 @@ func rosterFor(agents []*domain.Agent, reachable []string, admin bool) []*domain
 // unavailable rather than as broken.
 func (h *AgentsHandler) WithGenerator(gen *app.AgentGenerateService) *AgentsHandler {
 	h.gen = gen
+	return h
+}
+
+// WithSourceProfiles installs the inferred-table drafts the default agent's
+// starter questions are built from (RIZ-76). Optional wiring: without it the
+// roster still answers, with no questions.
+func (h *AgentsHandler) WithSourceProfiles(p domain.SourceProfileRepository) *AgentsHandler {
+	h.profiles = p
 	return h
 }
 
@@ -255,8 +267,66 @@ func (h *AgentsHandler) list(c *gin.Context) {
 	c.JSON(http.StatusOK, AgentsResponse{
 		Agents: shown, ReachableAgentIDs: reachable,
 		Tools: h.toolInfo(c), Templates: h.templateInfo(),
-		Generation: h.generationInfo(c),
+		Generation:           h.generationInfo(c),
+		DataStarterQuestions: h.dataStarterQuestions(c),
 	})
+}
+
+// dataStarterQuestions is the default agent's new-chat questions for the
+// person reading the roster (RIZ-76).
+//
+// Best-effort in every direction: the roster is what the chat picker and
+// Settings → Agents are built from, and a draft table that could not be read
+// is not a reason to answer either of them with an error. An empty list is the
+// screen as it was before these questions existed.
+//
+// A member is asked only about the sources they may read. The drafts are
+// company-wide, and a question naming a table in a source restricted from them
+// (T-Z6) would tell them what that source holds — the one thing the restriction
+// is for. Same check, same role rule and same failure direction as the
+// connections list's visibleSources, except that a failed check here costs the
+// pills rather than the response.
+func (h *AgentsHandler) dataStarterQuestions(c *gin.Context) []string {
+	if h.profiles == nil {
+		logrus.WithField("company_id", companyID(c)).
+			Debug("no source profile repository wired; sending no data starter questions")
+		return []string{}
+	}
+	ctx := c.Request.Context()
+	profiles, err := h.profiles.ListByCompany(ctx, companyID(c))
+	if err != nil {
+		logrus.WithError(err).WithField("company_id", companyID(c)).
+			Warn("list source profiles failed; sending no data starter questions")
+		return []string{}
+	}
+	role := domain.Role(c.GetString("role"))
+	if h.access != nil && role != domain.RoleAdmin && len(profiles) > 0 {
+		ids := make([]string, 0, len(profiles))
+		for _, p := range profiles {
+			if p != nil {
+				ids = append(ids, p.ConnectionID)
+			}
+		}
+		subject := authz.Subject{CompanyID: companyID(c), UserID: userID(c), Role: role}
+		visible, err := h.access.Visible(ctx, subject, domain.ResourceKindConnection, ids)
+		if err != nil {
+			logrus.WithError(err).WithField("company_id", companyID(c)).
+				Warn("source access check failed; sending no data starter questions")
+			return []string{}
+		}
+		keep := make(map[string]bool, len(visible))
+		for _, id := range visible {
+			keep[id] = true
+		}
+		readable := make([]*domain.SourceProfile, 0, len(profiles))
+		for _, p := range profiles {
+			if p != nil && keep[p.ConnectionID] {
+				readable = append(readable, p)
+			}
+		}
+		profiles = readable
+	}
+	return app.DataStarterQuestions(profiles)
 }
 
 // generationInfo tells the form whether the Generate button can be pressed, and

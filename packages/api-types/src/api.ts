@@ -167,6 +167,18 @@ export interface AgentsResponse {
    * (T-B4), and why not when it may not.
    */
   generation: AgentGenerationInfo;
+  /**
+   * DataStarterQuestions is what the untemplated default agent offers on a
+   * new chat (RIZ-76): up to three questions naming the workspace's own
+   * inferred tables, or a generic three while no source has been inferred.
+   * One list rather than one per agent because only the default agent reads
+   * it — a templated agent has its card's questions, and an agent somebody
+   * wrote by hand has a purpose this cannot guess. A member's names only the
+   * sources they may read (T-Z6). Rides on the roster for the reason
+   * Templates do. Never null; empty when the profiles could not be read,
+   * which the chat renders as no pills at all.
+   */
+  data_starter_questions: string[];
 }
 /**
  * AgentGenerationInfo is the state of the Generate button before it is pressed
