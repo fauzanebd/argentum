@@ -228,6 +228,11 @@ const SignupFloodMessage = "Too many sign-ups from this network. Please try agai
 // cheap and common case. Email verification is the control for the rest and
 // is its own ticket.
 //
+// "The address" is c.ClientIP(), and that is only the client's because the
+// engine is built with TrustProxies. Without it gin believes every peer and
+// returns the leftmost X-Forwarded-For hop, which the client writes — one
+// header per request and this limit never refuses anyone.
+//
 // Mounted on signup alone. Login, refresh and the invite routes are not
 // minting anything, and an office behind one NAT whose members all log in on
 // a Monday morning must not lock each other out.

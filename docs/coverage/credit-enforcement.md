@@ -337,10 +337,20 @@ up a thousand times.
   leftmost `X-Forwarded-For` entry — which the client writes. Measured: a
   request from `10.0.0.9` carrying `X-Forwarded-For: 1.2.3.4, 10.0.0.8`
   reports `1.2.3.4`. A script that sets a random header per request is never
-  limited. This is not new — `/share` and the embed mint are keyed the same
-  way — and the fix (trust only the ingress's addresses, which is a
-  deployment fact) is outside this ticket. Built as specified; recorded here,
-  in the feature row and as a Q6 arm in live-gate §7q.
+  limited. This was not new — `/share` and the embed mint are keyed the same
+  way. **Fixed in review round 1:** `TRUSTED_PROXIES` (default: every private
+  and loopback range, which is where both the compose nginx and the chart's
+  Traefik sit) goes to `SetTrustedProxies`, and only `X-Forwarded-For` is read
+  (`X-Real-IP` would pass through the compose nginx as written). gin now walks
+  the header from the right and stops at the first non-proxy, the hop the
+  proxy appended. `none` trusts nobody, and so does a list gin refuses:
+  closed, not open. `config.Validate` makes a malformed entry fatal.
+  `TestAddressLimitsIgnoreASpoofedHop` drives all three address limits with a
+  fresh spoofed hop per request and gets 429 on the second. The one shape it
+  does not cover is a load balancer that rewrites clients to *private*
+  addresses and also keeps their header. Such a deployment narrows
+  `TRUSTED_PROXIES` to the proxy's own range, which turns the rewritten
+  address into one shared bucket rather than a hole.
 - **A BYO-key tenant now reads $0.50 it will never spend**, as the plan's
   compat note said. Worth repeating because the projection makes it true from
   the first page view, not only after a check.

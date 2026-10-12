@@ -23,6 +23,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
+	// Before any route: every c.ClientIP() below — the address-keyed rate
+	// limits most of all — reads what this decides.
+	middleware.TrustProxies(r, cfg.TrustedProxies)
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestLogging())
 	// /v1 is excluded: it is a machine surface authenticated by an API key,

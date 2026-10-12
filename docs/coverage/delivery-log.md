@@ -8471,6 +8471,14 @@ which hops to trust ([`credit-enforcement.md`](credit-enforcement.md) §6).
 apps/backend/openapi`: empty. As in Phase 3bx, a fresh worktree needed `@argentum/widget` built before
 `lint-web` and a `pnpm` shim to `corepack pnpm@10.18.0` on `PATH`.
 
+**Review round 1 (F1).** The header bypass was a bug against goal 4, not a note. `TRUSTED_PROXIES`
+(default every private and loopback range, where the compose nginx and the chart's Traefik both sit;
+`none` for nobody) now goes to `SetTrustedProxies`. Only `X-Forwarded-For` is read, a list gin refuses
+trusts nobody, and `Validate` rejects a malformed entry. It fixes `/share`, the embed mint and the
+request log at the same time. New tests: 6 address cases, all three limiters refusing a second request
+that changes only its spoofed hop, and a config table. `make lint-go`: `0 issues.` `make check`:
+`MAKE EXIT: 0`, 76 Go packages `ok`, zero `FAIL`/`panic` lines, 152 dashboard tests.
+
 **Owed.** Q1, Q3–Q6, Q8–Q10 on the local stack and in a browser; Q11, the one paid turn; and a read of
 production's `CREDITS_DEFAULT_GRANT_USD` after deploy (live-gate §7q).
 
