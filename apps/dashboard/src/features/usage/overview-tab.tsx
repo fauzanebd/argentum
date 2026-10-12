@@ -38,12 +38,18 @@ export function OverviewTab() {
   if (isLoading) return <div className="text-sm text-muted-foreground">Loading…</div>;
   if (!summary) return null;
 
-  const balanceUsd = credits ? microToUsd(credits.balance_micro_usd) : null;
+  // A balance can go below zero — the budget check is cached and one turn can
+  // cost more than what is left — but "-$0.03" reads as a bill this page has
+  // no way to pay. Shown as $0.00; the used-up line below says what it means.
+  const balanceUsd = credits ? Math.max(0, microToUsd(credits.balance_micro_usd)) : null;
   const grantUsd = credits ? microToUsd(credits.monthly_grant_micro_usd) : null;
   const pct =
     balanceUsd != null && grantUsd != null && grantUsd > 0
       ? Math.max(0, Math.min(100, (balanceUsd / grantUsd) * 100))
       : null;
+  // Only against a grant: with none there is nothing to have used up, and the
+  // API answers that way for a company it has not credited yet.
+  const usedUp = credits != null && credits.balance_micro_usd <= 0 && credits.monthly_grant_micro_usd > 0;
 
   const models = Object.entries(summary.cost_by_model_usd ?? {}).sort(
     (a, b) => b[1] - a[1],
@@ -85,9 +91,16 @@ export function OverviewTab() {
                   style={{ width: `${pct}%` }}
                 />
               </div>
+              {/* "free credit", not "monthly grant": the column is named
+                  monthly_grant_micro_usd but nothing refills it (RIZ-79). */}
               <p className="text-xs text-muted-foreground mt-1.5">
-                of ${grantUsd?.toFixed(2)} monthly grant
+                of ${grantUsd?.toFixed(2)} free credit
               </p>
+              {usedUp && (
+                <p className="text-xs text-destructive mt-1.5">
+                  Free credit used up. New chats, scheduled reports and API calls are paused.
+                </p>
+              )}
             </CardContent>
           )}
         </Card>

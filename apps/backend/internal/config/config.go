@@ -313,7 +313,7 @@ type Config struct {
 	// tenant on the day enforcement is switched on.
 	CreditsEnforcementEnabled  bool
 	CreditsWarningThresholdPct int     // remaining % of the grant that triggers a warning
-	CreditsDefaultGrantUSD     float64 // provisioned once per company, in dollars
+	CreditsDefaultGrantUSD     float64 // a new company's free credit, once, in dollars
 
 	// Public `/v1` API (T-13, extended by T-A1). APIV1RatePerMin is the
 	// per-key request budget; it is deliberately the name T-A1 reserves, so
@@ -801,7 +801,9 @@ func Load() (*Config, error) {
 		// Credit enforcement
 		CreditsEnforcementEnabled:  getEnv("CREDITS_ENFORCEMENT_ENABLED", "true") == "true",
 		CreditsWarningThresholdPct: getEnvAsInt("CREDITS_WARNING_THRESHOLD_PCT", 20),
-		CreditsDefaultGrantUSD:     getEnvAsFloat("CREDITS_DEFAULT_GRANT_USD", 25),
+		// $0.50 since RIZ-79, written at signup; it was $25, provisioned at
+		// the first budget check. A company that already holds a grant keeps it.
+		CreditsDefaultGrantUSD: getEnvAsFloat("CREDITS_DEFAULT_GRANT_USD", 0.5),
 
 		// Public API
 		APIV1RatePerMin:         getEnvAsInt("API_V1_RATE_PER_MIN", 120),

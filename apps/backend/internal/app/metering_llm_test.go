@@ -48,7 +48,10 @@ type fakeCreditsRepo struct{}
 
 func (fakeCreditsRepo) Get(context.Context, string) (*domain.CompanyCredits, error) { return nil, nil }
 func (fakeCreditsRepo) Upsert(context.Context, *domain.CompanyCredits) error        { return nil }
-func (fakeCreditsRepo) Decrement(context.Context, string, int64) error              { return nil }
+func (fakeCreditsRepo) InsertIfAbsent(context.Context, *domain.CompanyCredits) error {
+	return nil
+}
+func (fakeCreditsRepo) Decrement(context.Context, string, int64) error { return nil }
 
 // fakeStreamingLLM emits a fixed event sequence. emitUsage mirrors
 // agent-sdk-go's Anthropic client (usage in stream metadata); tapUsage mirrors

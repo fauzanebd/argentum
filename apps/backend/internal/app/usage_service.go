@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -305,8 +306,33 @@ func (s *UsageService) SummaryForCompany(ctx context.Context, companyID string) 
 }
 
 // CreditsForCompany returns the current soft balance.
+//
+// With enforcement on, a company that has no grant yet — no row, or a row
+// whose grant is zero — is answered with the grant its first budget check
+// will provision (RIZ-79 R6), and nothing is written. Before this the Usage
+// page showed such a company "$0.00" with no bar, which reads as "already
+// spent" to someone who has spent nothing. It projects rather than calling
+// provisionGrant because a page view is not a budget check: writing here
+// would make opening Usage a second place that decides when a pre-grant
+// balance is forgiven.
+//
+// With enforcement off the stored row is the whole answer, as it always was:
+// no check will ever provision anything, so a projected grant would promise a
+// balance that never arrives.
 func (s *UsageService) CreditsForCompany(ctx context.Context, companyID string) (*domain.CompanyCredits, error) {
-	return s.credits.Get(ctx, companyID)
+	c, err := s.credits.Get(ctx, companyID)
+	if !s.credit.Enforce {
+		return c, err
+	}
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return s.projectedGrant(companyID), nil
+	case err != nil:
+		return nil, err
+	case c == nil || c.MonthlyGrantMicroUSD == 0:
+		return s.projectedGrant(companyID), nil
+	}
+	return c, nil
 }
 
 // parseUsageWindow resolves the from/to query params for audit endpoints.

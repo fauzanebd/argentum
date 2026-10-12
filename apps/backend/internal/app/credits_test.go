@@ -18,6 +18,8 @@ type stubCredits struct {
 	gets    int
 	upserts []*domain.CompanyCredits
 	upErr   error
+	inserts []*domain.CompanyCredits
+	insErr  error
 }
 
 func (s *stubCredits) Get(context.Context, string) (*domain.CompanyCredits, error) {
@@ -34,6 +36,20 @@ func (s *stubCredits) Upsert(_ context.Context, c *domain.CompanyCredits) error 
 		return s.upErr
 	}
 	s.record = c
+	return nil
+}
+
+// InsertIfAbsent mirrors the Postgres statement: a record that is already
+// there is left exactly as it is.
+func (s *stubCredits) InsertIfAbsent(_ context.Context, c *domain.CompanyCredits) error {
+	s.inserts = append(s.inserts, c)
+	if s.insErr != nil {
+		return s.insErr
+	}
+	if s.record == nil {
+		s.record = c
+		s.getErr = nil
+	}
 	return nil
 }
 

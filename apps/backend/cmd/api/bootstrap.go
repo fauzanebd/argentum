@@ -215,7 +215,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		deps.llmCache.CloseAll()
 	})
 
-	deps.authSvc = app.NewAuthService(companyRepo, userRepo, signer)
+	// Signup writes the new company's free credit (RIZ-79) through the same
+	// UsageService whose CheckBudget would otherwise provision it lazily, so
+	// both read the one CREDITS_DEFAULT_GRANT_USD.
+	deps.authSvc = app.NewAuthService(companyRepo, userRepo, signer).
+		WithCredits(deps.usageSvc)
 
 	rawLightLLM, err := llmclient.BuildLight(cfg)
 	if err != nil {
