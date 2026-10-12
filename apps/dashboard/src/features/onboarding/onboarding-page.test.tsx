@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -50,9 +51,20 @@ const saveButton = () =>
   screen.getByRole("button", { name: /^(Save and continue|Saving…)$/ }) as HTMLButtonElement;
 const skipButton = () => screen.getByRole("button", { name: "Skip for now" }) as HTMLButtonElement;
 
+let qc: QueryClient;
+
+function mount() {
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <OnboardingPage />
+    </QueryClientProvider>,
+  );
+}
+
 /** Fills a raw DSN and passes Test, which is what enables Save. */
 async function readyToSave() {
-  render(<OnboardingPage />);
+  mount();
   fireEvent.click(screen.getByRole("button", { name: "Raw DSN" }));
   fireEvent.change(screen.getByLabelText("Connection string (DSN)"), {
     target: { value: "postgres://ro:secret@db.local:5432/shop?sslmode=require" },
@@ -139,6 +151,31 @@ describe("OnboardingPage Save", () => {
     expect(connectionPosts()).toBe(1);
   });
 
+  // Review round 1, F1: /chat cached the empty list before the admin came here
+  // from its card, and that list is still fresh when they come back. Unless
+  // the save marks it stale first, /chat shows the card again and never polls.
+  it("marks the cached source list stale before going back to /chat (AC5)", async () => {
+    await readyToSave();
+    qc.setQueryData(["connections"], []);
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/chat" }));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["connections"] });
+    expect(qc.getQueryState(["connections"])?.isInvalidated).toBe(true);
+    expect(invalidate.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
+  });
+
+  it("leaves the cached source list alone when the save failed", async () => {
+    createConnection = async () => {
+      throw apiError("could not reach the database");
+    };
+    await readyToSave();
+    qc.setQueryData(["connections"], []);
+    fireEvent.click(saveButton());
+    await screen.findByRole("alert");
+    expect(qc.getQueryState(["connections"])?.isInvalidated).toBe(false);
+  });
+
   it("sends a successful save to /chat with no toast", async () => {
     await readyToSave();
     fireEvent.click(saveButton());
@@ -150,7 +187,7 @@ describe("OnboardingPage Save", () => {
 
 describe("OnboardingPage Skip for now (R7)", () => {
   it("goes to /chat without saving anything (AC10)", async () => {
-    render(<OnboardingPage />);
+    mount();
     fireEvent.click(skipButton());
     expect(navigate).toHaveBeenCalledWith({ to: "/chat" });
     expect(connectionPosts()).toBe(0);

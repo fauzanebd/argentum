@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -32,6 +33,7 @@ type FormValues = z.infer<typeof schema>;
 
 export function OnboardingPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [supported, setSupported] = useState<string[]>([]);
   const [currencies, setCurrencies] = useState<string[]>([]);
   const [mode, setMode] = useState<ConnMode>("fields");
@@ -147,6 +149,11 @@ export function OnboardingPage() {
         try {
           await api.post("/connections", { ...connectionPayload(), label: values.label, is_default: true });
           createdRef.current = true;
+          // /chat reads this list to decide between the connect-your-data card
+          // and the reading-your-schema notice, and a list it cached before
+          // this Save is still fresh for the global staleTime — so without
+          // this, an admin who came here from the card goes back to the card.
+          await qc.invalidateQueries({ queryKey: ["connections"] });
         } catch (e: unknown) {
           // The API's own sentence, without the full stop it may end in, so
           // the copy around it reads as one sentence and not two.

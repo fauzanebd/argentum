@@ -8427,6 +8427,12 @@ tests (121 before, 19 new). `make types`: one field in `packages/api-types/src/a
 still needs `@argentum/widget` built before `lint-web` (Phases 3bu–3bw), and `make` needs a `pnpm` on
 `PATH` — here a shim to `corepack pnpm@10.18.0`.
 
+**Review round 1 (F1).** A successful Save did not mark the cached `["connections"]` list stale. An admin
+who reached onboarding from the card and saved within the 30s global `staleTime` came back to the cached
+`[]`: the card again, no pills, no polling. Save now invalidates the list before navigating; two tests
+cover it (invalidated before navigate, untouched on a failed save). `make check` re-run: `MAKE EXIT: 0`,
+76 Go packages `ok`, 142 dashboard tests.
+
 **Owed.** The browser walk from sign-up to a first answer on the local stack — Q3–Q7, Q9, Q10, Q12,
 Q13, Q15 — and the two that spend, Q8 and Q11 (live-gate §7p).
 

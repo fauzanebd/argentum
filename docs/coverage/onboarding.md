@@ -91,6 +91,10 @@ character or a line break — and de-duplicates across sources.
 - **The mockups set the table name in the pill apart** (darker, medium
   weight). The wire is `[]string` (R5) and the pills are the existing
   component (R6), so the name renders as plain text in the sentence.
+- **Silent on the cache.** Review round 1 found that a successful Save left
+  `/chat`'s cached empty source list fresh, so an admin who came from the
+  card went back to it. Save now invalidates `["connections"]` before
+  navigating.
 - **A missing repository logs at `Debug`, not `Warn`.** The PRD asks for a
   warning when the repository is nil *or* errors; nil is a stripped-down
   wiring (tests), which conventions log at `Debug`. An error is a `Warn`.
@@ -127,7 +131,7 @@ duplicates, 60/61 runes, newline, NUL, tab, U+2028, blank, nil, a `%s` in a
 name), `TestRosterCarriesTheDefaultAgentsStarterQuestions` (7: member, member
 narrowed, admin whole, no profile, repo error, access error, nil repo — always
 `200`, never null), `TestSignupFailureBodies` (500 generic, 409 and 400
-byte-for-byte unchanged). Dashboard: `onboarding-page.test.tsx` (5),
+byte-for-byte unchanged). Dashboard: `onboarding-page.test.tsx` (7),
 `onboarding-notice.test.tsx` (9, fake timers: the 5s poll, the flip to Ready,
 the 5-minute timeout, polling stopping in both), `use-agents.test.tsx` (5).
 
