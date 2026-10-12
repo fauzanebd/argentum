@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -43,6 +44,10 @@ func (h *AuthHandler) Register(rg *gin.RouterGroup) {
 	rg.POST("/accept-invite", h.acceptInvite)
 }
 
+// signupFailedMessage is the whole of what a visitor is told when signup fails
+// for a reason that is not theirs to fix.
+const signupFailedMessage = "could not create the account, please try again"
+
 type signupReq struct {
 	CompanyName string `json:"company_name" binding:"required"`
 	Email       string `json:"email" binding:"required,email"`
@@ -63,7 +68,16 @@ func (h *AuthHandler) signup(c *gin.Context) {
 		case errors.Is(err, domain.ErrInvalidInput):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			// The only unauthenticated 500 in the product, so the one most
+			// likely to be read by a stranger: what reaches here is a wrapped
+			// driver or hashing error ("create company: pq: …"), which names
+			// tables and constraints and tells the visitor nothing they can act
+			// on (RIZ-76). The real error goes to the log and nothing from the
+			// request goes with it: the password obviously, and the email too,
+			// since no other log line in this service carries one and a failed
+			// signup is not the place to start.
+			logrus.WithError(err).Error("signup failed; answered with the generic message")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": signupFailedMessage})
 		}
 		return
 	}
