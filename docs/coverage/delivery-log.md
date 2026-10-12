@@ -8320,6 +8320,66 @@ Two things in this environment, neither from this change:
 expiry in the waiting case. (`T-Z12`'s granted-member rename, which the build's turn budget did not reach,
 was closed by QA.)
 
+## Phase 3bw — A malformed id is a 404, on every route at once ([`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres), 2026-10-12)
+
+**Why.** Phase 3bv's finding 2: `x` in a path answered `500` quoting `pq: invalid input syntax for type
+uuid` on 27 routes, a generic `500` on 3, `503 could not check access; try again` on 5, and a `400`, a
+`200` or a `503` quoting the driver on the rest — 44 routes, 14 repositories. A typo in a URL looked like
+an outage to whoever watches 5xx, and told any caller which database we run.
+
+**What changed.**
+- **`middleware.RequireWellFormedIDs`**, a sixth link in `authedChain` between `RequireCapability` and
+  `RequireResource`, and a link on the widget's `/api/embed` group after `EmbedAuth`. A parameter named in
+  `uuidParams` (`id`, `agentID`, `runID`, `shareID`, `tableId`, `toolId`, `userID`) whose value is not a
+  uuid aborts with `404 {"error":"not found"}`; nothing below it runs. `exemptIDParams` (`kind`,
+  `capability`, `page`, `phone`, `token`, `app_id`) and `wellFormedIDExempt` (the Discord, Lark and Slack
+  allowlist deletes, whose `:id` is the platform's user id) sit beside `apiPolicy` in `policy.go`.
+- **By name, not by repository.** That is how 14 got missed: each had to remember to map `22P02`. A name
+  is decided once; `TestEveryIDParamIsClassified` fails the build on a route whose parameter is in neither
+  table, and `TestIDClassificationCatchesEachDefect` plants that route (and five other defects) to prove it.
+- **The body ids.** `POST /api/chat` (`thread_id`, `agent_id`), `POST /api/threads` (`agent_id`,
+  `participant_ids`) and `POST /api/threads/:id/participants` (`agent_id`) answer `x` with the error the
+  enqueuer or the room returns for an unknown id, before either is called — and a malformed participant
+  is refused before the thread exists, where an unknown one is refused after.
+- **`arms.sh` R9** requires the `404` itself, compares the body ids byte for byte with an unknown uuid's,
+  and grows from 82 rows to 121 with the `/api` id routes outside roadmap 12.
+- No migration, no `/v1` change, no OpenAPI, no generated file.
+
+**Where the plan was wrong.**
+- **AC3's example body.** It says `thread_id: "x"` should answer like an unknown id, *"`404 no such
+  conversation`"*. An unknown thread answers **`404 no such agent`** today: the enqueuer wraps the
+  repository's `ErrNotFound` as `lookup thread: …`, and `chatFail` only says "no such conversation" for
+  `ErrConversationNotFound`, the hidden-conversation sentinel (T-Z10). The rule — *same as an unknown id*
+  — is what was built, and the test compares against the real enqueuer rather than a pinned string, so
+  `x` answers `no such agent` too. The wording is a pre-existing oddity, out of scope (*"changing what a
+  well-formed unknown id answers"* is a non-goal).
+- **"`uuid.Parse` accepts every form Postgres accepts."** It also accepts the `urn:uuid:` prefix, which
+  Postgres refuses with the same `22P02`. `middleware.WellFormedID` refuses it, and the handlers use the
+  same function, so "well-formed" means one thing on both sides.
+- **The existing route tests used words as ids** (`payroll`, `obj-1`, and `concreteURL`'s `x`), so the
+  negative suite and the dashboard-grant test would have been answering the new link instead of the one
+  they test. `concreteURL` now puts a uuid in a uuid parameter.
+
+**Proven, unit.** Every `/api` route with a uuid parameter — 97, the widget's two included, walked off the
+real router — answers `x` with `404 {"error":"not found"}`, and the grant store is read zero times
+(`TestAMalformedIDIsNotFoundOnEveryRoute`). Without the link the same test fails on all 97: the 500s,
+503s and "not configured" answers the sweep found. No session is still `401`, a member on an admin route
+still `403`; uppercase, braced and bare-hex uuids, the exempt parameters and the platform user ids all get
+past it. The body-id pairs, through the real enqueuer and participant service over fakes that answer `x`
+the way Postgres does, are identical to the unknown id's, with no query and no write; with the checks
+disabled they reproduce RIZ-25's `lookup thread: pq: …` exactly.
+
+**Gate.** `gofmt -l`: empty. `make lint-go`: exit 0 (`0 issues.`; it caught one error var named `pqUUIDError`
+first). `make check`: `MAKE EXIT: 0`, 76 Go packages `ok`, zero `FAIL`/`panic` lines, 121 dashboard tests.
+A fresh worktree still needs `@argentum/widget` built before `lint-web` (Phases 3bu, 3bv); the first run
+failed there and nowhere else. `bash -n arms.sh`: clean.
+
+**Owed.** `arms.sh` on a fresh seed with no worker on the stack's Redis (Q6) — prediction: 0 `FAIL`, the
+two voice rows `SKIP` where speech is unconfigured. The `curl` checks of 401/403, valid-id regressions and
+exempt routes (Q7–Q9), and the dashboard's not-found pages for `/dashboards/x` and a proposal link (Q11).
+The wider scrub — 251 handler sites echo `err.Error()`, `/v1`'s malformed ids, uuids inside other bodies —
+is the follow-up ticket the plan names.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

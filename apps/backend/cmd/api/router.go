@@ -251,12 +251,16 @@ func newRouter(d *apiDeps) *gin.Engine {
 	//   Enabled    — the same kill switch, so switching embedding off takes the
 	//                whole surface and not only new sessions
 	//   EmbedAuth  — who this visitor is, per T-19's token
+	//   well-formed ids — the dashboard chain's RIZ-26 link, after the
+	//                identity for the same reason it sits after RequireRole
+	//                there: a visitor with no session still hears 401
 	//   rate limit — per (company, embed_user_ref), which needs the identity
 	//                above and is therefore below it
 	embedAPI := r.Group("/api/embed")
 	embedAPI.Use(middleware.EmbedCORS())
 	embedAPI.Use(middleware.Enabled(cfg.EmbedEnabled))
 	embedAPI.Use(middleware.EmbedAuth(d.signer))
+	embedAPI.Use(middleware.RequireWellFormedIDs(uuidParams, exemptIDParams, wellFormedIDExempt))
 	if turnLimiter := middleware.NewRateLimiter(
 		d.rdb, cfg.EmbedMaxTurnsPerHour, float64(cfg.EmbedMaxTurnsPerHour)/3600.0,
 	); turnLimiter != nil {
@@ -403,7 +407,7 @@ func newRouter(d *apiDeps) *gin.Engine {
 }
 
 // authedChain is the middleware every dashboard route runs, in the order it runs
-// them. It is a function returning a slice rather than five Use calls so that the
+// them. It is a function returning a slice rather than six Use calls so that the
 // order is a value a test can read: gin's RouteInfo exposes a route's last
 // handler and never its chain, and T-Z3's acceptance asks for the order to be
 // asserted rather than described (TestAuthedChainOrder).
@@ -419,7 +423,14 @@ func authedChain(d *apiDeps) []gin.HandlerFunc {
 		// refused, and before the rate limiter for RequireRole's own reason: a
 		// request refused for a missing grant spends nothing.
 		middleware.RequireCapability(capabilityPolicy, d.capabilitySvc),
-		// RequireResource (T-Z3) runs after both, on the same argument one layer
+		// RequireWellFormedIDs (RIZ-26) answers a path id that cannot be an id
+		// with the 404 a missing one gets. After the role and capability links,
+		// so a caller with no session or no permission is refused exactly as
+		// before and learns nothing from the id; before RequireResource, which
+		// otherwise asks the grant store about `x`, gets a driver error back and
+		// answers 503 "try again" for a typo.
+		middleware.RequireWellFormedIDs(uuidParams, exemptIDParams, wellFormedIDExempt),
+		// RequireResource (T-Z3) runs after those, on the same argument one layer
 		// further down: a grant on an object can only narrow what the role and
 		// capability tables allowed, and a database read about the object in
 		// the path is only worth making once the caller may make the request at

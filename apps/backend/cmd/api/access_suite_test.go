@@ -46,7 +46,9 @@ func TestTheNegativeSuite(t *testing.T) {
 func routeProbe(key string, route middleware.ResourceRoute) authztest.Probe {
 	method, pattern, _ := strings.Cut(key, " ")
 	return func(t *testing.T, c authztest.Cell, rec *authztest.Recorder) bool {
-		const target = "obj-1"
+		// A uuid, because since RIZ-26 a path id that is not one is refused as
+		// not found before the grant is ever asked about.
+		const target = "0b7e3c1a-2f4d-4a6b-9c8e-1d2f3a4b5c6d"
 		r := routerWithDeps(t, func(d *apiDeps) {
 			d.resourceAuthz = rec.Authorizer(authztest.World{Kind: route.Kind, Target: target, Cell: c})
 		})

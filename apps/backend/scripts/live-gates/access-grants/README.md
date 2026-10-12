@@ -99,10 +99,12 @@ PGDATABASE=riz25 METRICS_TOKEN=riz25-metrics ADMIN2_TOKEN=$(login riz25-admin2@e
 ```
 
 A run takes about four minutes, most of it waiting out the API's own rate limit.
-**On the commit this landed with, every line passes except the 44 `R9` lines**
-— the malformed-id 500s RIZ-25 found and filed as one follow-up (§7c's `T-Z1`
-row). Those lines are that follow-up's acceptance test. Reseed before a second
-run.
+RIZ-25's run passed every line except 44 `R9` lines — the malformed-id 500s it
+filed as RIZ-26. **Since RIZ-26 every line should pass**: `R9` requires the
+`404 {"error":"not found"}` itself on every path id, compares the body ids with
+an unknown uuid's byte for byte, and covers the `/api` id routes outside roadmap
+12 too. The two voice rows `SKIP` on a stack with no speech provider. Reseed
+before a second run.
 
 ## 3. The arms a script cannot make
 

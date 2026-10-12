@@ -723,35 +723,71 @@ mode connection "$HR_SRC" open
 expect "T-Z6 re-open the source" 200
 
 # ===========================================================================
-# R9 / Q13 — every roadmap 12 route with an id parameter, called with `x`.
-# No 500, and no driver text in any body.
+# R9 / Q13 — every route with an id parameter, called with `x`.
 #
-# **These FAIL on the commit this script landed with**, and that is the finding,
-# not a broken arm: RIZ-25's run found the malformed-id 500s on 44 routes across
-# fourteen repositories, and filed them as one follow-up rather than fixing them
-# in a gate (live-gate-backlog.md §7c, the T-Z1 row). The access routes, the
-# thread routes and the share pages already pass. When the follow-up lands, this
-# section is its acceptance test.
+# RIZ-25 wrote this section as the acceptance test for a follow-up: its run found
+# a malformed id answering 500, 503 or a body quoting the driver on 44 routes
+# across fourteen repositories (live-gate-backlog.md §7c, the T-Z1 row). RIZ-26
+# is that follow-up — one check at the chain, RequireWellFormedIDs — so the rule
+# here tightened from "no 5xx and no driver text" to the answer itself:
+#
+#   sweep         a path id: exactly `404 {"error":"not found"}`, the
+#                 middleware's, before any access check, handler or query
+#   sweep_body    an id in the body: byte-identical to a well-formed id that
+#                 names nothing ($NOBODY), so a typo reads as a deleted row
+#   sweep_keyless the share pages, whose `:token` is not an id: the old rule
+#
+# It also covers the `/api` id routes RIZ-25's sweep did not reach (RIZ-26 R9).
 # ===========================================================================
 sweep() {
   local method=$1 path=$2 token=$3 body=${4:-}
   call "$method" "$path" "$token" "$body"
-  # A 503 that says the deployment lacks a piece (the document warehouse) is the
-  # route's own answer before it reads any id. Every other 5xx is the defect this
-  # sweep exists for — a 500, or an access check answering "try again" to a typo.
+  if [ "$CODE" = 404 ] && [ "$BODY" = '{"error":"not found"}' ]; then
+    pass "R9 $method $path → 404"
+  else
+    fail "R9 $method $path" "want 404 {\"error\":\"not found\"}, got $CODE ${BODY:0:160}"
+  fi
+}
+# sweep_optional is sweep for a route that exists only where a provider is
+# configured (voice, read-aloud). Absent, it is the router's own plain-text 404,
+# which says nothing about ids and is reported as such rather than as a pass of
+# the check.
+sweep_optional() {
+  call "$1" "$2" "$3" "${4:-}"
+  if [ "$CODE" = 404 ] && [ "$BODY" = '404 page not found' ]; then
+    skip "R9 $1 $2" "not registered on this deployment"
+    return
+  fi
+  sweep "$@"
+}
+sweep_keyless() {
+  local path=$1
+  anon "$path"
   case "$CODE:$BODY" in
-    503:*"not configured on this deployment"*) pass "R9 $method $path → $CODE (unconfigured here)"; return ;;
-  esac
-  case "$CODE" in
-    5??) fail "R9 $method $path" "$CODE ${BODY:0:160} (malformed-id follow-up)" ;;
-    *)
-      case "$BODY" in
-        *pq:* | *22P02*) fail "R9 $method $path" "$CODE body names the driver: ${BODY:0:160} (malformed-id follow-up)" ;;
-        *) pass "R9 $method $path → $CODE" ;;
-      esac
-      ;;
+    5??:*) fail "R9 GET $path" "$CODE ${BODY:0:160}" ;;
+    *pq:* | *22P02*) fail "R9 GET $path" "$CODE body names the driver: ${BODY:0:160}" ;;
+    *) pass "R9 GET $path → $CODE" ;;
   esac
 }
+# sweep_body ARM METHOD PATH TOKEN TEMPLATE — TEMPLATE with @ID@ as `x`, then as
+# $NOBODY; status and body must match, and neither may name the driver. The `x`
+# call goes first so a write the unknown id is allowed to make (a room's thread
+# is created before its participants are refused) cannot hide one `x` made.
+sweep_body() {
+  local arm=$1 method=$2 path=$3 token=$4 template=$5 bad_code bad_body
+  call "$method" "$path" "$token" "${template//@ID@/x}"
+  bad_code=$CODE bad_body=$BODY
+  call "$method" "$path" "$token" "${template//@ID@/$NOBODY}"
+  case "$bad_body" in
+    *pq:* | *22P02*) fail "R9 $arm" "body names the driver: ${bad_body:0:160}"; return ;;
+  esac
+  if [ "$bad_code" = "$CODE" ] && [ "$bad_body" = "$BODY" ]; then
+    pass "R9 $arm → $CODE, as an unknown id"
+  else
+    fail "R9 $arm" "x: $bad_code ${bad_body:0:100} | unknown: $CODE ${BODY:0:100}"
+  fi
+}
+
 for kind in agent dashboard connection document; do
   sweep GET "/api/access/$kind/x" "$TA"
   sweep PUT "/api/access/$kind/x/mode" "$TA" '{"access_mode":"restricted"}'
@@ -764,29 +800,29 @@ sweep GET /api/users/x/grants "$TA"
 sweep GET /api/users/x/capabilities "$TA"
 sweep PUT /api/users/x/capabilities/voice "$TA"
 sweep DELETE /api/users/x/capabilities/voice "$TA"
+sweep PATCH /api/users/x "$TA" '{"role":"member"}'
+sweep DELETE /api/users/x "$TA"
 sweep GET /api/agents/x "$TM"
 sweep PUT /api/agents/x "$TA" '{"name":"x"}'
 sweep DELETE /api/agents/x "$TA"
 sweep PUT /api/agents/x/default "$TA"
 sweep GET /api/agents/x/skills "$TA"
+sweep PUT /api/agents/x/skills "$TA" '{"skill_ids":[]}'
 sweep GET /api/dashboards/x "$TM"
 sweep GET /api/dashboards/x/data "$TM"
 sweep DELETE /api/dashboards/x "$TA"
 sweep GET /api/dashboards/x/shares "$TA"
 sweep POST /api/dashboards/x/shares "$TA" '{}'
 sweep DELETE "/api/dashboards/$SALES/shares/x" "$TA"
-sweep GET /share/dashboard/x "$TM"
-sweep GET /share/x "$TM"
+sweep_keyless /share/dashboard/x
+sweep_keyless /share/x
 sweep GET /api/threads/x "$TM"
 sweep DELETE /api/threads/x "$TM"
 sweep GET /api/threads/x/messages "$TM"
 sweep GET /api/threads/x/participants "$TM"
 sweep POST /api/threads/x/participants "$TM" '{"agent_id":"'"$FIN"'"}'
-sweep POST "/api/threads/$T_FIN/participants" "$TM" '{"agent_id":"x"}'
 sweep DELETE "/api/threads/$T_FIN/participants/x" "$TM"
 sweep GET /api/threads/x/stream "$TM"
-sweep POST /api/chat "$TM" '{"message":"hi","thread_id":"x"}'
-sweep POST /api/chat "$TM" '{"message":"hi","agent_id":"x"}'
 sweep GET /api/usage/threads/x "$TM"
 sweep GET /api/usage/threads/x/events "$TM"
 sweep GET /api/documents/x/pages/1 "$TM"
@@ -803,6 +839,7 @@ sweep PATCH /api/knowledge/tables/x "$TA" '{"title":"y"}'
 sweep POST /api/knowledge/tables/x/apply "$TA"
 sweep POST /api/knowledge/tables/x/unpublish "$TA"
 sweep PATCH /api/connections/x "$TA" '{"label":"y"}'
+sweep PUT /api/connections/x/dsn "$TA" '{}'
 sweep PUT /api/connections/x/allowlist "$TA" '{}'
 sweep PUT /api/connections/x/freshness "$TA" '{}'
 sweep POST /api/connections/x/freshness/test "$TA" '{"sql":"SELECT now()"}'
@@ -822,8 +859,77 @@ sweep GET /api/scheduled-tasks/x "$TM"
 sweep PATCH /api/scheduled-tasks/x "$TM" '{"enabled":true}'
 sweep DELETE /api/scheduled-tasks/x "$TA"
 sweep GET /api/scheduled-tasks/x/runs "$TM"
+sweep GET "/api/scheduled-tasks/$NOBODY/runs/x" "$TM"
 sweep GET /api/metrics/x "$TM"
+sweep PUT /api/metrics/x "$TA" '{}'
+sweep DELETE /api/metrics/x "$TA"
 sweep DELETE /api/api-keys/x "$TA"
+
+# RIZ-26's additions: the `/api` id routes outside roadmap 12.
+sweep GET /api/watchers/x "$TA"
+sweep PUT /api/watchers/x "$TA" '{}'
+sweep DELETE /api/watchers/x "$TA"
+sweep GET /api/watchers/x/events "$TA"
+sweep POST /api/watchers/x/dry-run "$TA"
+sweep GET /api/mcp-servers/x "$TA"
+sweep PUT /api/mcp-servers/x "$TA" '{}'
+sweep DELETE /api/mcp-servers/x "$TA"
+sweep POST /api/mcp-servers/x/refresh "$TA"
+sweep PUT "/api/mcp-servers/$NOBODY/tools/x" "$TA" '{"enabled":false}'
+sweep PUT /api/webhooks/x "$TA" '{}'
+sweep DELETE /api/webhooks/x "$TA"
+sweep PUT /api/embed-keys/x "$TA" '{}'
+sweep DELETE /api/embed-keys/x "$TA"
+sweep GET /api/skills/x "$TA"
+sweep PUT /api/skills/x "$TA" '{}'
+sweep DELETE /api/skills/x "$TA"
+sweep DELETE /api/http-endpoints/x "$TA"
+sweep GET /api/post-images/x/content "$TA"
+sweep DELETE /api/post-images/x "$TA"
+sweep GET /api/messages/x/feedback "$TM"
+sweep POST /api/messages/x/feedback "$TM" '{"rating":"up"}'
+sweep POST /api/messages/x/suggestion-picked "$TM" '{}'
+# The two voice routes ask for the `voice` capability one link ahead of the id,
+# so A holds it for these two rows and gives it back after.
+call PUT "/api/users/$U_A/capabilities/voice" "$TA"
+sweep_optional POST /api/threads/x/voice "$TA"
+sweep_optional GET /api/messages/x/audio "$TA"
+call DELETE "/api/users/$U_A/capabilities/voice" "$TA"
+# The widget's own group runs the same check after its session.
+if [ -n "${ET:-}" ]; then
+  EXTRA_HEADER="Origin: $ORIGIN"
+  call GET /api/embed/threads/x/messages "$ET"
+  if [ "$CODE" = 401 ]; then
+    skip "R9 GET /api/embed/threads/x/messages" "the widget session minted above has expired"
+  else
+    sweep GET /api/embed/threads/x/messages "$ET"
+  fi
+  EXTRA_HEADER=
+fi
+
+# Ids in a body, where no path check can see them (RIZ-26 R5, R6). Each is the
+# answer an unknown id gets, and leaves nothing behind.
+msgs_before=$(sql "SELECT count(*) FROM messages m JOIN conversation_threads t ON t.id = m.thread_id WHERE t.company_id = '$CO_A'")
+threads_before=$(sql "SELECT count(*) FROM conversation_threads WHERE company_id = '$CO_A'")
+sweep_body "POST /api/chat thread_id" POST /api/chat "$TM" '{"message":"hi","thread_id":"@ID@"}'
+sweep_body "POST /api/chat agent_id" POST /api/chat "$TM" '{"message":"hi","agent_id":"@ID@"}'
+sweep_body "POST /api/threads/:id/participants agent_id" POST "/api/threads/$T_FIN/participants" "$TM" '{"agent_id":"@ID@"}'
+sweep_body "POST /api/threads agent_id" POST /api/threads "$TM" '{"agent_id":"@ID@"}'
+dbcheck "R9 …no message written by a malformed or unknown body id" \
+  "SELECT count(*) FROM messages m JOIN conversation_threads t ON t.id = m.thread_id WHERE t.company_id = '$CO_A'" "$msgs_before"
+dbcheck "R9 …and no thread" "SELECT count(*) FROM conversation_threads WHERE company_id = '$CO_A'" "$threads_before"
+# A participant that is no agent is refused after its thread exists — today's
+# behaviour for an unknown id — and before it for `x`, so `x` alone is counted.
+call POST /api/threads "$TM" '{"participant_ids":["x"]}'
+X_CODE=$CODE X_BODY=$BODY
+dbcheck "R9 POST /api/threads participant_ids [x] writes no thread" \
+  "SELECT count(*) FROM conversation_threads WHERE company_id = '$CO_A'" "$threads_before"
+call POST /api/threads "$TM" '{"participant_ids":["'"$NOBODY"'"]}'
+if [ "$X_CODE" = "$CODE" ] && [ "$X_BODY" = "$BODY" ]; then
+  pass "R9 POST /api/threads participant_ids → $CODE, as an unknown id"
+else
+  fail "R9 POST /api/threads participant_ids" "x: $X_CODE ${X_BODY:0:100} | unknown: $CODE ${BODY:0:100}"
+fi
 
 # Leave no key behind that a later run would not expect.
 [ -n "${KEY_ID:-}" ] && call DELETE "/api/api-keys/$KEY_ID" "$TA"
