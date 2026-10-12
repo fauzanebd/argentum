@@ -16,6 +16,23 @@ rejected anyway: this repo has numeric tickets `T-01`→`T-23`, so `T-L1` and
 `T-I1` sit one glyph from `T-11`. `Z` collides with nothing and cannot be
 misread.
 
+> **Status, 2026-10-11 (`RIZ-25`): live-gated, except the Slack arms.** Every arm of
+> [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7c was run against the local stack at
+> `0cf7a6a` — not production, which still has to apply `083`-`089` on its next deploy. That covers migrations,
+> statements, routes as admin and member, a browser, the worker, both of `T-Z5`'s races and two paid model turns.
+> The seed and the arms are committed under `apps/backend/scripts/live-gates/access-grants/` and re-run from
+> its README. Delivery: [`../coverage/delivery-log.md`](../coverage/delivery-log.md) Phase 3bv.
+>
+> - **No refusal leaked.** Each answered its documented code and body, and the SQL every row predicted could
+>   fail — Grant's partial-index `ON CONFLICT`, `AgentsByThread`'s `LATERAL`, the name expressions — ran clean.
+>   `AgentsByThread` over 100 conversations of 50 messages takes 5.9 ms.
+> - **Fixed there:** Settings → Team at 390 px squeezed every member's email to 0 px; the row now wraps.
+> - **Filed, not fixed:** a malformed id answers `500` (or a `400`/`503` quoting the driver) on 44 routes across
+>   14 repositories — **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)**. The plan had priced these as one-line mappings. And §17c's metrics
+>   on a restricted source, seen live — **[`RIZ-27`](https://linear.app/rizkal-uhuy/issue/RIZ-27/members-no-longer-see-metrics-on-a-source-they-cannot-read)**.
+> - **Still owed:** the Slack arms (`T-Z8` (3), `T-Z12`'s hole arm) and a waiting proposal's TTL expiry.
+>   `T-Z12`'s granted-member rename, which the build's turn budget did not reach, was closed by QA's re-run.
+
 > **Status, 2026-09-13, after `T-Z9`: `T-Z13` and `T-Z14` are built, `make check` green, unit-gated — §13d's two owner
 > decisions, made and closed.** No migration. Record:
 > [`../coverage/access-grants.md`](../coverage/access-grants.md) §19 and §20.

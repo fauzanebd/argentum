@@ -32,23 +32,30 @@ since **`T-Z6` gave the last two kinds their switch** (§17): a restricted sourc
 leaves a member's source list and refuses its three reading routes, with no
 agent's reach changed, and a restricted document leaves Knowledge, refuses its
 pages and tables, and quotes nothing into an answer for a person not granted it.
+**Every refusal above has now been made to a real request** (`RIZ-25`, 2026-10-11,
+the local stack at `0cf7a6a`, not production): migrations, statements, routes, a
+browser, the worker, two paid turns and both races, each as predicted except where
+[`live-gate-backlog.md`](live-gate-backlog.md) §7c says otherwise. Only the Slack
+arms are still owed. It found no leak. It found a malformed id answering `500` on
+44 routes, filed as **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)**, and a Team tab that hid every email at
+390 px, fixed there (§12f).
 
 | Ticket | Status |
 | --- | --- |
-| `T-Z1` A capability is a named power, and a user is granted it | **built 2026-09-12, `make check` green, unit-gated. Migration `083`. Three gates owed — §7** |
-| `T-Z2` A resource can be restricted, and a grant is what opens it | **built 2026-09-12, `make check` green, unit-gated. Migration `084` — typed foreign keys, not the ticket's polymorphic id (§8a). Enforced nowhere until `T-Z4`→`T-Z6` (§8c). Two gates owed — §8f** |
-| `T-Z3` A route that serves a restricted resource has to say so | **built 2026-09-12, `make check` green, unit-gated. No migration. Three tables, not the ticket's two (§9b); `resourcePolicy` ships empty. Nothing live owed by this ticket — §9g** |
-| `T-Z4` Agents: who may talk to which | **built 2026-09-12, `make check` green, unit-gated. No migration. Enforced at the enqueuer, the room and the roster, not at a route (§10a); the fork "seam" has no person (§10c). The transcript hole — §10d. One live arm owed — §10g** |
-| `T-Z5` Dashboards: who may open which | **built 2026-09-12, `make check` green, unit-gated. No migration. The first three `resourcePolicy` entries; the list narrowed for admins too, so the access read carries names (§14c). Restricting revokes live links under a row lock the mint shares (§14a). One edge found, `update_dashboard` (§14d) — closed by `T-Z12` (§15). One live arm owed, and `T-Z3`'s with it — §14g** |
-| `T-Z6` The "etc": data sources and documents | **built 2026-09-13, `make check` green, unit-gated. No migration. Two of the ticket's three source surfaces do not exist, and every source route with an id is admin (§17b); `resourcePending` is empty. A document's tables are checked through their document in the handler. Live arms owed — §17g** |
-| `T-Z7` Settings → Team: the access matrix | **built 2026-09-12, `make check` green, unit-gated. No migration, and one read route the ticket did not list (§12b). Agents only — no switch for a kind nothing enforces (§12c). The member's disabled control has nothing to disable yet (§12d). One live arm owed — §12f** |
-| `T-Z8` The other three doors, decided rather than inherited | **built 2026-09-13, `make check` green, unit-gated. Migration `085`. An embed key names no agent, so the widget refuses at the pick and the turn (§16c); a channel's acknowledgement is stored and checked per turn, because a binding made before a restriction was the bypass (§16c). Found Slack refused as an unknown channel since 2026-08-08, and fixed it (§16c item 7). Live arms owed — §16g** |
-| `T-Z9` The negative suite, and the row that says a refusal happened | **built 2026-09-13, `make check` green, unit-gated. No migration. The cross product is per kind, door and surface — 38 surfaces × 8 cells — not per door, because one door does different things to different kinds (§18b). Refusals counted and audited at 15 call sites; grant changes audited by direction (§18d). The worker's refusals are counted where nothing scrapes them (§18f). API arms run on a scratch stack, as predicted; the widget and worker arms owed — §18j** |
-| `T-Z10` A conversation is as restricted as the agents in it | **built 2026-09-12, `make check` green, unit-gated. No migration. Added to the roadmap by the owner's decision on §10d. One live arm owed — §11h** |
-| `T-Z11` A generated document is as restricted as the conversation that made it | **built 2026-09-12, `make check` green, unit-gated. No migration. Added after `T-Z7` on the owner's go-ahead. Two surfaces found still readable, both the owner's (§13d). One live arm owed — §13f** |
-| `T-Z12` An agent asked to change a dashboard checks the person's grant | **built 2026-09-12, `make check` green, unit-gated. No migration. Added after `T-Z5`, which found it (§14d). Refused by name, not as not-found (§15b); §14d's "panel SQL in the result" was wrong (§15c). One live arm owed, and it is the track's only one that needs a model — §15g** |
-| `T-Z13` A public link does not open what a restricted agent's conversation produced | **built 2026-09-13, `make check` green, unit-gated. No migration. The owner's decision on §13d: refused at open and at mint, nothing revoked, so re-opening the agent opens the link again (§19b). The share list says *paused*. A presigned download URL handed out earlier still works until it expires (§19e). Stack arm owed — §19g** |
-| `T-Z14` A pending action is as hidden as the conversation that raised it | **built 2026-09-13, `make check` green, unit-gated. No migration. The owner's decision on §13d: hidden from the list, not found by id, and decided only by people who may read the conversation — before the role check (§20a). An admin-only kind raised where no admin is granted waits (§20b). The negative suite gains a `pending_action` row. API arm run on a scratch stack, as predicted; the browser badge and the waiting case owed — §20f** |
+| `T-Z1` A capability is a named power, and a user is granted it | **built 2026-09-12, `make check` green, unit-gated. Migration `083`. Live-gated 2026-10-11 (`RIZ-25`), all three arms — §7** |
+| `T-Z2` A resource can be restricted, and a grant is what opens it | **built 2026-09-12, `make check` green, unit-gated. Migration `084` — typed foreign keys, not the ticket's polymorphic id (§8a). Enforced nowhere until `T-Z4`→`T-Z6` (§8c). Live-gated 2026-10-11 (`RIZ-25`) — §8f** |
+| `T-Z3` A route that serves a restricted resource has to say so | **built 2026-09-12, `make check` green, unit-gated. No migration. Three tables, not the ticket's two (§9b); `resourcePolicy` ships empty. Its arm ran with `T-Z5`'s on 2026-10-11 (`RIZ-25`); a malformed id still `500`s behind it — §9g** |
+| `T-Z4` Agents: who may talk to which | **built 2026-09-12, `make check` green, unit-gated. No migration. Enforced at the enqueuer, the room and the roster, not at a route (§10a); the fork "seam" has no person (§10c). The transcript hole — §10d. Live-gated 2026-10-11 (`RIZ-25`) — §10g** |
+| `T-Z5` Dashboards: who may open which | **built 2026-09-12, `make check` green, unit-gated. No migration. The first three `resourcePolicy` entries; the list narrowed for admins too, so the access read carries names (§14c). Restricting revokes live links under a row lock the mint shares (§14a). One edge found, `update_dashboard` (§14d) — closed by `T-Z12` (§15). Live-gated 2026-10-11 (`RIZ-25`), both races included — §14g** |
+| `T-Z6` The "etc": data sources and documents | **built 2026-09-13, `make check` green, unit-gated. No migration. Two of the ticket's three source surfaces do not exist, and every source route with an id is admin (§17b); `resourcePending` is empty. A document's tables are checked through their document in the handler. Live-gated 2026-10-11 (`RIZ-25`), the paid search arm included — §17g** |
+| `T-Z7` Settings → Team: the access matrix | **built 2026-09-12, `make check` green, unit-gated. No migration, and one read route the ticket did not list (§12b). Agents only — no switch for a kind nothing enforces (§12c). The member's disabled control has nothing to disable yet (§12d). Live-gated 2026-10-11 (`RIZ-25`), which fixed its 390 px rows — §12f** |
+| `T-Z8` The other three doors, decided rather than inherited | **built 2026-09-13, `make check` green, unit-gated. Migration `085`. An embed key names no agent, so the widget refuses at the pick and the turn (§16c); a channel's acknowledgement is stored and checked per turn, because a binding made before a restriction was the bypass (§16c). Found Slack refused as an unknown channel since 2026-08-08, and fixed it (§16c item 7). Live-gated 2026-10-11 (`RIZ-25`) except the Slack arm — §16g** |
+| `T-Z9` The negative suite, and the row that says a refusal happened | **built 2026-09-13, `make check` green, unit-gated. No migration. The cross product is per kind, door and surface — 38 surfaces × 8 cells — not per door, because one door does different things to different kinds (§18b). Refusals counted and audited at 15 call sites; grant changes audited by direction (§18d). The worker's refusals are counted where nothing scrapes them (§18f). Every arm run: the API's on 2026-09-13, the widget's and the worker's on 2026-10-11 (`RIZ-25`) — §18j** |
+| `T-Z10` A conversation is as restricted as the agents in it | **built 2026-09-12, `make check` green, unit-gated. No migration. Added to the roadmap by the owner's decision on §10d. Live-gated 2026-10-11 (`RIZ-25`): 5.9 ms for 100 conversations × 50 messages — §11h** |
+| `T-Z11` A generated document is as restricted as the conversation that made it | **built 2026-09-12, `make check` green, unit-gated. No migration. Added after `T-Z7` on the owner's go-ahead. Two surfaces found still readable, both the owner's (§13d). Live-gated 2026-10-11 (`RIZ-25`) — §13f** |
+| `T-Z12` An agent asked to change a dashboard checks the person's grant | **built 2026-09-12, `make check` green, unit-gated. No migration. Added after `T-Z5`, which found it (§14d). Refused by name, not as not-found (§15b); §14d's "panel SQL in the result" was wrong (§15c). Live-gated 2026-10-11 (`RIZ-25`) with a model, the granted-member rename closed by QA; only the Slack arm owed — §15g** |
+| `T-Z13` A public link does not open what a restricted agent's conversation produced | **built 2026-09-13, `make check` green, unit-gated. No migration. The owner's decision on §13d: refused at open and at mint, nothing revoked, so re-opening the agent opens the link again (§19b). The share list says *paused*. A presigned download URL handed out earlier still works until it expires (§19e). Live-gated 2026-10-11 (`RIZ-25`) with MinIO — §19g** |
+| `T-Z14` A pending action is as hidden as the conversation that raised it | **built 2026-09-13, `make check` green, unit-gated. No migration. The owner's decision on §13d: hidden from the list, not found by id, and decided only by people who may read the conversation — before the role check (§20a). An admin-only kind raised where no admin is granted waits (§20b). The negative suite gains a `pending_action` row. Live-gated: the API half on 2026-09-13, the badge and the waiting case on 2026-10-11 (`RIZ-25`) — §20f** |
 
 ---
 
@@ -218,6 +225,8 @@ In [`live-gate-backlog.md`](live-gate-backlog.md) §7c, with predictions:
 
 No `make eval` is owed: nothing here reaches a prompt or a tool.
 
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** The `083` round trip, the three statements and the curl half all ran as predicted ([`live-gate-backlog.md`](live-gate-backlog.md) §7c). Nothing from this section is still owed.
+
 ---
 
 ## 8. `T-Z2` — a resource can be restricted, and a grant is what opens it
@@ -368,6 +377,8 @@ round-trip with its CHECKs and cascades, and the repository's statements against
 two seeded companies. **No live user-facing arm is owed by this ticket**, because
 nothing a user does reaches the decision yet; the first one belongs to `T-Z4`.
 No `make eval`.
+
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** `084` up, down, up; both CHECKs refusing; every cascade; the backfill; and the statements, with `LoadAccess` over fifty ids one statement under `log_statement=all`. As predicted, with one footnote: `resource_grants_kind_matches` refuses every row `resource_grants_one_resource` would, first, so the second never fires alone — harmless, left as it is.
 
 ---
 
@@ -547,6 +558,8 @@ the first `resourcePolicy` entry, and is filed against it in
 [`live-gate-backlog.md`](live-gate-backlog.md) §7c with its prediction. No
 `make eval`: nothing here reaches a prompt or a tool.
 
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** With `T-Z5`'s arm: the `403` naming the kind, the next-request grant and revoke, company B's id answering the handler's own `404` byte for byte, and `503` — never `200` — with the control database stopped. **Differed:** a malformed id passes through to a handler that `500`s quoting the driver, as it did before this ticket — **[`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-malformed-id-answers-404-not-a-500-that-quotes-postgres)**.
+
 ---
 
 ## 10. `T-Z4` — agents: who may talk to which
@@ -718,6 +731,8 @@ the boundary: `/v1` still reaching the agent, and a member reading a granted
 colleague's conversation. **No worker and no model key are needed**: every refusal
 happens before a run is enqueued. No `make eval` — no prompt or tool changed.
 
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** Every refusal as §10a lists, for the member and the ungranted admin, and the fall-through to Finance through the repository's real ordering; in a browser, no HR in the picker or the room's menu. A conversation opened on HR before the restriction is now `404 no such conversation`, not `403`: `T-Z10` hides it, and both of this section's holes are closed (§11, §16).
+
 ---
 
 ## 11. `T-Z10` — a conversation is as restricted as the agents in it
@@ -858,6 +873,8 @@ which is valid Postgres and is also exactly the kind of line a fake cannot check
 plus two users walking every route in §11a, and an `EXPLAIN ANALYZE` of a page of
 long conversations. No worker, no model key, no `make eval`.
 
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** The statement's first full run returned §11b's set for all five shapes — the removed-but-answered one through the messages arm — and left company B's id and an unknown one out. Every route in §11a refused as listed, and a grant brought all of it back. **`EXPLAIN ANALYZE`, 100 conversations × 50 messages: 5.9 ms**, through 002's index; 077 needs no index on `agent_id` at this scale.
+
 ---
 
 ## 12. `T-Z7` — Settings → Team: the access matrix
@@ -974,6 +991,8 @@ verification checklist's mobile line is unrun. **Prediction: the data arms pass 
 anything wrong is layout.** No worker, no model key, no `make eval`: no prompt or
 tool changed.
 
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** Every data arm as predicted, and the prediction about layout was right. At 390 px each member row's email measured **0 px** wide: the three controls never shrink and took the row, so an admin could not see whose access they were changing. `team-tab.tsx` now lets the row wrap, so the controls drop under the name when both do not fit. At 390 px the email is 292 px wide; at 1024 px and wider, the row is one line as before. There is no unit test: jsdom does no layout. The regression check is the browser arm itself, which measured 0 px before and 292 px after (`browser-arms.mjs`, *"every member's email is visible"*). The warning counts whoever loses access, so with M just granted it named the admin and the second admin, not *"M and A"* as the backlog row put it.
+
 ---
 
 ## 13. `T-Z11` — a generated document is as restricted as the conversation that made it
@@ -1072,6 +1091,8 @@ slides, which want object storage; **no model turn is needed** to produce one. P
 the arm that documents the hole — the link minted before the restriction still
 playing. **Prediction: every arm as §13a lists.** No worker, no model key, no
 `make eval`.
+
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** As predicted, with MinIO serving pages and carousels: HR's documents left the list, their pages and carousel answered byte-identically to a random uuid's, the share list was empty although two links were live, minting was refused and revoking was not. A grant brought them back. The link that still played is `T-Z13`'s to close, and it does (§19g).
 
 ---
 
@@ -1233,6 +1254,8 @@ dashboard.** If something fails it will be `ListViews`'s new name expression for
 connections, the only one that is not a bare column. No worker, no model key, no
 `make eval`: no prompt or tool changed.
 
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** As predicted: `{"revoked_shares":2}` revoking exactly the two live links, the old token's `404`, the `403`s naming the kind, `409` on mint for a granted admin too, and both interleavings ending with no live link — the API blocked about four seconds on session 1's lock each time. In a browser the warning counted the two links and the chat's embed said *restricted*.
+
 ---
 
 ## 15. `T-Z12` — an agent asked to change a dashboard checks the person's grant
@@ -1357,6 +1380,14 @@ needs the worker and a model key**, because what it has to prove is what the
 dashboard or edit another. **Prediction: the tool behaves as §15a lists every
 time, and the reply sends the user to an admin; if something differs it will be
 the model calling `create_dashboard` after the refusal in spite of the message.**
+
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** Four turns, `deepseek/deepseek-v3.2`, through the dashboard chat. **The tool behaved exactly as §15a lists:** `"restricted":true` and its instruction, `updated_at` unmoved, no `create_dashboard`, a reply sending the member to an admin, and an `access.refused` row from the worker. The admin's identical turn renamed Payroll. **What differed was the model and a guardrail, not the tool.**
+- *"Which dashboards can I edit?"* made no tool call. The model said it cannot list dashboards, so the predicted listing never ran.
+- The granted member's rename was not reached in the build. *"An admin has granted it to me now…"* was refused as an instruction override by the prompt-injection guardrail, and the four-turn budget was spent. **QA closed it at `077e69f`:** in four turns the member was refused, the admin renamed Payroll to *Gaji*, and the member, once granted, renamed it to *Penggajian* on their next turn.
+- In both replies the strict PII redaction rewrote the dashboard's id as `a0000000-0003-4000-[CARD REDACTED]`, which broke the link. The seed's ids end in two all-digit groups. A random v4 id does so well under one time in a thousand, but when it does, the reply's dashboard link breaks the same way. Worth its own ticket; not access.
+- `update_dashboard`'s refusal is audited with `result_status = ok` and `rows_returned = 0`, at the same second as the `blocked` `access.refused` row, because the tool returned an answer rather than an error. A reader of the tool ledger alone cannot tell it from a success; the `access.refused` row is the record of the refusal. QA saw the same; recorded, not changed.
+
+Still owed: the Slack hole arm.
 
 ---
 
@@ -1561,6 +1592,8 @@ decision** — most likely `Acknowledge`'s `UPDATE … FROM agents … RETURNING
 names joined columns in a `RETURNING`, or `scanAPIKey` reading `UUID[]` into
 `pq.StringArray`. No `make eval`: no prompt, tool or template changed.
 
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** Doors (1) and (2) and the worker, as §16a lists: the key's three refusals and its `202`, no thread written on the `403`, the widget's omission, `404` and fall-through, the binding's `400`/`201` and its audit row, `Acknowledge` keeping the first admin, and a schedule and a watcher switching themselves off with `creator_not_granted` and back on through Resume. Still owed: **(3)**, a Slack workspace.
+
 ---
 
 ## 17. `T-Z6` — data sources and documents
@@ -1653,7 +1686,7 @@ is empty.
 
 | Surface | Why it is not covered |
 | --- | --- |
-| **Metrics on a restricted source** | `GET /api/metrics` lists every metric, `source_id` and `sql_template` included, to members, and `query_metric` evaluates against the metric's own source whatever the agent's list says. A metric is its own registry, and hiding it by its source's grant is a decision this ticket's *Do* list does not name |
+| **Metrics on a restricted source** | `GET /api/metrics` lists every metric, `source_id` and `sql_template` included, to members, and `query_metric` evaluates against the metric's own source whatever the agent's list says. A metric is its own registry, and hiding it by its source's grant is a decision this ticket's *Do* list does not name. **Seen live 2026-10-11 (`RIZ-25`):** with the HR warehouse restricted, a member's list still carried its metric and SQL. Filed as **[`RIZ-27`](https://linear.app/rizkal-uhuy/issue/RIZ-27/members-no-longer-see-metrics-on-a-source-they-cannot-read)**, which recommends hiding a metric whose source the caller may not read |
 | An admin's source list | Shows a restricted source's description, allowlist and freshness SQL — §17b item 3 |
 | Tables already published from a restricted document | Rows in the document-warehouse source, queryable by any agent with that source. Restricting that source hides it from members' lists and never from agents — by the rule this ticket exists to keep |
 | `search_documents` on a turn with no person | A channel, `/v1`, the widget and a watcher search every document — decision 7, asserted. The widget case sits against decision 10, as it does for dashboards (§15d); closing both would be a small ticket |
@@ -1724,6 +1757,8 @@ One row in [`live-gate-backlog.md`](live-gate-backlog.md) §7c, in two sittings:
 **Prediction: every arm as §17a lists. If one differs, it will be the model, which
 may still answer from a published Payroll table through `run_sql`** — §17c's first
 honest gap, arriving in a live turn rather than in a table.
+
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** (1) as §17a lists for the member and the ungranted admin, in the API and in Knowledge. (2): one turn, three `search_documents` calls, and nothing from Payroll in any result the model saw or in the reply. §17c's metrics gap is live and filed (§17c).
 
 ---
 
@@ -1934,6 +1969,12 @@ this code.
 
 Results are in [`live-gate-backlog.md`](live-gate-backlog.md) §7c.
 
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** **Arm (3) and the worker half, as predicted.**
+- **Arm (3):** a widget send picking restricted HR moved `{kind="agent",reason="not_cleared"}` by exactly 1, and wrote one `access.refused` row whose actor is `embed` and the visitor's ref.
+- **The worker half:** `update_dashboard` on Payroll, a scheduled task and a watcher each wrote their row (doors `dashboard` and `job`). The schedule's refusal left the API's `{kind="agent",reason="not_granted"}` at 25 before and after, which is §18f seen live.
+
+Nothing from this section is still owed.
+
 ---
 
 ## 19. `T-Z13` — a public link does not open what a restricted agent's conversation produced
@@ -2015,7 +2056,7 @@ none of them.
 
 | Surface | Why it is not covered |
 | --- | --- |
-| **A presigned download URL handed out before the restriction** | `GET /api/documents` mints one per read, and a video's share page offers one. It is a storage URL, not a route, and works until its own expiry |
+| **A presigned download URL handed out before the restriction** | `GET /api/documents` mints one per read, and a video's share page offers one. It is a storage URL, not a route, and works until its own expiry. **Seen live 2026-10-11 (`RIZ-25`):** `DOCUMENT_PRESIGN_TTL_SECS` defaults to 3600 and the stack sets none; a URL minted with HR open (`X-Amz-Expires=3600`) still downloaded after HR was restricted, while the share link to the same document answered `404` |
 | A document already sent to a channel as an attachment | Delivered; nothing can take it back |
 | `/v1/documents` | No person — `T-Z8`, and §13d's own row |
 
@@ -2037,6 +2078,11 @@ no conversation.
 One row in [`live-gate-backlog.md`](live-gate-backlog.md) §7c. **Prediction: every arm as §19a
 lists; if one differs, it is `AgentsByThread`'s first run — `T-Z10`'s owed statement — failing
 closed.** No `make eval`.
+
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** **Every arm as §19a lists, with compose MinIO.** It served the plan, so the risk the backlog named, a `410` on download, did not occur.
+- **HR restricted:** the token answered byte-identically to a random one's, with no view and no audit row. The list said `live: true, paused: true`. A granted admin's mint was `409`, and the documents page said *Paused*.
+- **HR re-opened:** the same token played and was counted, and `revoked_at` was never set.
+- **§19e, live:** the presigned URL outlived the restriction, as written.
 
 ---
 
@@ -2087,7 +2133,7 @@ over a redacted card that nobody could act on anyway.
 
 | Surface | Why it is not covered |
 | --- | --- |
-| **`GET /api/audit/actions`** — the admin's company-wide ledger, parameters included | An admin review, left out by §11e's reasoning. Whether an admin without HR's grant should read HR's proposals there is a decision about what that screen is for |
+| **`GET /api/audit/actions`** — the admin's company-wide ledger, parameters included | An admin review, left out by §11e's reasoning. Whether an admin without HR's grant should read HR's proposals there is a decision about what that screen is for. **Seen live 2026-10-11 (`RIZ-25`):** an admin not granted HR read the `propose_action` call from HR's hidden conversation there, its message text included, while the same proposal was `404` to them by id |
 | An executed action's outcome — the email already sent | Outside the product once it has run |
 
 ### 20e. Acceptance, quoted back
@@ -2119,3 +2165,8 @@ One row in [`live-gate-backlog.md`](live-gate-backlog.md) §7c, including the wa
   conversation refusal.
 - **Granted:** the member saw the proposal and approved it.
 - **Not run:** the badge in a browser, and the waiting case.
+
+**Run 2026-10-11 (`RIZ-25`), on the local stack at `0cf7a6a` — not production.** **The rest, as predicted.**
+- **The badge:** it counted 1 for the member and for the admin.
+- **The waiting case:** HR was granted to the member alone, with `send_message` decided by admins only. The member saw the proposal with `can_decide: false` and was refused by role. The admin did not see it, and it stayed `proposed`. Its TTL expiry was not waited out.
+- **§20d, live:** the admin's ledger lists the hidden proposal's call, as written.

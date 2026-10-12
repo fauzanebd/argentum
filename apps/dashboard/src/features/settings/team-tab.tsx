@@ -257,8 +257,14 @@ export function TeamTab() {
             const expanded = openAccess === m.id;
             return (
               <div key={m.id} className="py-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
+                {/* Wraps rather than squeezing (RIZ-25). Since T-Z7 a row carries
+                    three controls that never shrink, and on a phone they took the
+                    whole width: the live gate measured every email at 0 px wide at
+                    390 px, so an admin granting access could not see whose row it
+                    was. The name keeps a floor of its own and the controls drop
+                    to a second line when both cannot fit. */}
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <div className="min-w-0 flex-1 basis-56">
                     <div className="text-sm font-medium truncate">
                       {m.email}
                       {isMe && <span className="text-muted-foreground font-normal"> (you)</span>}
