@@ -8479,8 +8479,18 @@ request log at the same time. New tests: 6 address cases, all three limiters ref
 that changes only its spoofed hop, and a config table. `make lint-go`: `0 issues.` `make check`:
 `MAKE EXIT: 0`, 76 Go packages `ok`, zero `FAIL`/`panic` lines, 152 dashboard tests.
 
-**Owed.** Q1, Q3–Q6, Q8–Q10 on the local stack and in a browser; Q11, the one paid turn; and a read of
-production's `CREDITS_DEFAULT_GRANT_USD` after deploy (live-gate §7q).
+**QA round 1.** 11 of 12 passed, including the spoofed-hop check. Q11 failed on a T-03 bug: the
+debit statement's untyped `-$2` was refused by Postgres on every call and the error was discarded, so
+no balance had ever gone down. The parameter is now typed, and a failed debit logs and counts on
+`credit_debit_failures_total`; a scratch test shows both arms landing on the local Postgres. The
+signup bucket expired after 10 idle minutes (about 30 signups an hour); a bucket now lives until it
+would be full again. A 402 on the first message of a new chat was never drawn; it is now. B4 (a
+taken slug answers 500) predates this ticket and was left as found
+([`credit-enforcement.md`](credit-enforcement.md) §6). `make lint-go`: `0 issues.` `make check`:
+`MAKE EXIT: 0`, 76 Go packages `ok`, zero `FAIL`/`panic` lines, 154 dashboard tests (2 new).
+
+**Owed.** Q11 again, now that a debit lands; and a read of production's `CREDITS_DEFAULT_GRANT_USD`
+after deploy (live-gate §7q).
 
 ## Feature velocity, measured
 

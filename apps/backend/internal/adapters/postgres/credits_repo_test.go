@@ -45,3 +45,16 @@ func TestTheSignupGrantInsertNeverUpdates(t *testing.T) {
 		t.Error("Upsert lost its DO UPDATE arm; the lazy grant in CheckBudget depends on it")
 	}
 }
+
+// RIZ-79 QA B1. `make check` has no Postgres, so this is the part of the
+// decrement fix it can hold: the parameter is typed wherever it is negated or
+// subtracted. An untyped `-$2` is refused by Postgres on every call; the live
+// arm is TestScratchCreditsDecrementLands.
+func TestTheDecrementTypesItsParameter(t *testing.T) {
+	stmt := creditsStatement(t, "Decrement")
+	uses, typed := strings.Count(stmt, "$2"), strings.Count(stmt, "$2::bigint")
+	if uses != 2 || typed != uses {
+		t.Errorf("Decrement uses $2 %d times and types it %d, want 2 and 2 — an untyped `-$2` is refused:\n%s",
+			uses, typed, strings.TrimSpace(stmt))
+	}
+}

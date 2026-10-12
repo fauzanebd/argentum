@@ -379,3 +379,40 @@ lands at 500000 / 500000, the row is set to -120000, a second
 
 Owed (live-gate §7q): the stack and browser arms Q1, Q3–Q6, Q8–Q10, the paid
 turn Q11, and a read of production's `CREDITS_DEFAULT_GRANT_USD` after deploy.
+
+### QA round 1 — the balance had never gone down
+
+QA ran Q1–Q12 on a local stack; 11 passed. Q11 failed, and the cause is
+older than this ticket and larger than it.
+
+- **No debit ever landed (B1).** `CreditsRepo.Decrement` wrote `-$2` in
+  `VALUES`. Postgres cannot choose a unary minus for an untyped parameter and
+  refuses the statement with `operator is not unique: - unknown`, on every
+  call, and `UsageService.append` discarded the error with `_ =`. So since
+  T-03 `usage_events` recorded every cost, and `company_credits` never moved.
+  §3's live gate set balances by hand with SQL, which is why it never saw
+  this; §5's "`RecordLLM` still decrements past zero" was never true either,
+  because it never decremented at all. A company could only reach the 402 if
+  someone wrote its balance by hand. The parameter is now typed
+  (`$2::bigint` in both places). A failed debit is a `Warn` with the company,
+  the event type and the cost, plus one count on a new
+  `credit_debit_failures_total` metric. The turn is still not failed: it has
+  already run, and its `usage_events` row is what a reconciliation would read.
+  `TestScratchCreditsDecrementLands` proves both arms on the local Postgres:
+  `-1333` minted on a company with no row, and `500000 → 498667` on a granted
+  one. `TestTheDecrementTypesItsParameter` keeps the cast in `make check`.
+- **The signup window was ten minutes (B3).** The token-bucket script expired
+  every key after 600 s idle, whatever the rate, so an exhausted bucket came
+  back full ten minutes later: about 30 signups an hour, not 5. The idle
+  lifetime is now the time an empty bucket takes to refill completely, never
+  less than the old 600 s. Past that point an expired key and a kept one are
+  the same full bucket, so no limiter behaves differently except that the
+  early reset is gone. The widget's per-visitor turn budget (N an hour) had the
+  same hole and is fixed by the same change.
+- **A refused first message showed nothing (B2).** On the new-chat screen
+  the 402 was set as `error` and never drawn: the thread view had the error
+  line, the welcome screen did not. That screen is exactly where a workspace
+  that has just run out lands. It now shows the line above the composer.
+- Left as found: a second signup whose company name gives a slug that is
+  already taken answers the generic 500 (B4). That is RIZ-76's signup path,
+  and it predates this ticket.

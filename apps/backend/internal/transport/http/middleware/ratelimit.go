@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,6 +21,31 @@ type RateLimiter struct {
 	rdb          *redis.Client
 	capacity     int
 	refillPerSec float64
+	// ttlSec is how long an idle bucket is kept — see bucketTTL.
+	ttlSec int
+}
+
+// minBucketTTL is the idle lifetime every bucket had when the script hard-coded
+// it. Kept as the floor so no limiter that was correct before keeps its keys
+// for less time now.
+const minBucketTTL = 600
+
+// bucketTTL is how long an idle bucket must survive for forgetting it to be
+// harmless: the time an empty bucket takes to refill completely. A key that
+// expires sooner hands back a full bucket early, which is a reset nobody
+// asked for. The script used to say 600 seconds for every limiter, which was
+// right for the ones that refill within ten minutes and wrong for the two
+// measured in hours: signup (5 an hour) was really 5 every ten minutes, about
+// 30 an hour (RIZ-79 QA B3), and the widget's per-visitor turn budget had the
+// same hole. Past the full refill time an expired key and a kept one are the
+// same full bucket, so this changes nothing a limiter could observe except
+// that the early reset is gone.
+func bucketTTL(capacity int, refillPerSec float64) int {
+	full := int(math.Ceil(float64(capacity) / refillPerSec))
+	if full < minBucketTTL {
+		return minBucketTTL
+	}
+	return full
 }
 
 // NewRateLimiter constructs a RateLimiter. capacity is the burst budget;
@@ -37,7 +63,8 @@ func NewRateLimiter(rdb *redis.Client, capacity int, refillPerSec float64) *Rate
 	if refillPerSec <= 0 {
 		refillPerSec = 1.0
 	}
-	return &RateLimiter{rdb: rdb, capacity: capacity, refillPerSec: refillPerSec}
+	return &RateLimiter{rdb: rdb, capacity: capacity, refillPerSec: refillPerSec,
+		ttlSec: bucketTTL(capacity, refillPerSec)}
 }
 
 // TokenBucketLua atomically refills the bucket and consumes one token.
@@ -55,11 +82,13 @@ func NewRateLimiter(rdb *redis.Client, capacity int, refillPerSec float64) *Rate
 // ARGV[1] = capacity
 // ARGV[2] = refill_per_sec
 // ARGV[3] = now (unix seconds, integer)
+// ARGV[4] = idle lifetime of the key in seconds (bucketTTL)
 const tokenBucketLua = `
 local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
 local refill = tonumber(ARGV[2])
 local now = tonumber(ARGV[3])
+local ttl = tonumber(ARGV[4])
 
 local data = redis.call('HMGET', key, 'tokens', 'updated')
 local tokens = tonumber(data[1])
@@ -79,7 +108,7 @@ if tokens >= 1 then
 end
 
 redis.call('HMSET', key, 'tokens', tokens, 'updated', now)
-redis.call('EXPIRE', key, 600)
+redis.call('EXPIRE', key, ttl)
 
 local reset = 0
 if tokens < 1 then
@@ -275,7 +304,7 @@ func (r *RateLimiter) limitBy(prefix, ctxKey string, refuse func(*gin.Context)) 
 		defer cancel()
 
 		res, err := script.Run(ctx, r.rdb, []string{prefix + id},
-			r.capacity, r.refillPerSec, time.Now().Unix(),
+			r.capacity, r.refillPerSec, time.Now().Unix(), r.ttlSec,
 		).Int64Slice()
 		if err != nil || len(res) != 3 {
 			// Fail-open: don't block traffic if Redis is unhealthy.

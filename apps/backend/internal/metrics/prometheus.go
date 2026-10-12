@@ -56,6 +56,9 @@ func (s MetricsSnapshot) WriteProm(w io.Writer) error {
 	p.counter("llm_stream_turns_without_usage_total",
 		"Streaming turns that reported no usage — an unbilled turn, and the shape of finding C-2.",
 		nil, float64(s.LLM.StreamTurnsWithoutUsage))
+	p.counter("credit_debit_failures_total",
+		"Recorded costs that were not subtracted from the company's credit balance — free usage (RIZ-79).",
+		nil, float64(s.LLM.CreditDebitFailures))
 
 	// --- cache, jobs, conversations ---
 	p.counter("cache_hits_total", "Schema/embedding cache hits.", nil, float64(s.Cache.Hits))

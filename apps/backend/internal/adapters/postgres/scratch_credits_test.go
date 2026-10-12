@@ -22,9 +22,10 @@ import (
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
-// An overdrawn company stays overdrawn when the signup grant's write runs for
-// it again: InsertIfAbsent conflicts and does nothing.
-func TestScratchCreditsInsertIfAbsentLeavesAnExistingRowAlone(t *testing.T) {
+// scratchCompany seeds one company on the scratch database and removes it
+// afterwards; company_credits cascades with it.
+func scratchCompany(t *testing.T) (*sql.DB, string) {
+	t.Helper()
 	dsn := os.Getenv("SCRATCH_PG_DSN")
 	if dsn == "" {
 		t.Skip("SCRATCH_PG_DSN is not set")
@@ -34,18 +35,61 @@ func TestScratchCreditsInsertIfAbsentLeavesAnExistingRowAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	ctx := context.Background()
 
 	var companyID string
-	if err := db.QueryRowContext(ctx,
+	if err := db.QueryRow(
 		// The slug is unique; a run whose cleanup never happened must not
 		// make every later run fail on the seed.
-		`INSERT INTO companies (name, slug) VALUES ('RIZ-79 Q2 scratch', 'riz-79-q2-' || gen_random_uuid()) RETURNING id`,
+		`INSERT INTO companies (name, slug) VALUES ('RIZ-79 scratch', 'riz-79-' || gen_random_uuid()) RETURNING id`,
 	).Scan(&companyID); err != nil {
 		t.Fatalf("seed company: %v", err)
 	}
-	// company_credits cascades with the company.
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM companies WHERE id = $1`, companyID) })
+	return db, companyID
+}
+
+// RIZ-79 QA B1: a debit lands. Until the casts, Decrement failed on every call
+// with `operator is not unique: - unknown`, on both arms — the INSERT a
+// company with no row takes, and the UPDATE one with a row takes.
+func TestScratchCreditsDecrementLands(t *testing.T) {
+	db, companyID := scratchCompany(t)
+	ctx := context.Background()
+	repo := postgres.NewCreditsRepo(db)
+
+	// No row yet: the INSERT arm mints a negative balance.
+	if err := repo.Decrement(ctx, companyID, 1_333); err != nil {
+		t.Fatalf("Decrement with no row: %v", err)
+	}
+	got, err := repo.Get(ctx, companyID)
+	if err != nil || got.BalanceMicroUSD != -1_333 {
+		t.Fatalf("after the INSERT arm: %+v, %v; want -1333", got, err)
+	}
+
+	// The signup grant, then a turn's cost: the UPDATE arm.
+	if _, err := db.ExecContext(ctx, `DELETE FROM company_credits WHERE company_id = $1`, companyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.InsertIfAbsent(ctx, &domain.CompanyCredits{CompanyID: companyID, BalanceMicroUSD: 500_000, MonthlyGrantMicroUSD: 500_000}); err != nil {
+		t.Fatalf("InsertIfAbsent: %v", err)
+	}
+	if err := repo.Decrement(ctx, companyID, 1_333); err != nil {
+		t.Fatalf("Decrement on a granted row: %v", err)
+	}
+	got, err = repo.Get(ctx, companyID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.BalanceMicroUSD != 498_667 || got.MonthlyGrantMicroUSD != 500_000 {
+		t.Errorf("after the UPDATE arm: %d / %d, want 498667 / 500000", got.BalanceMicroUSD, got.MonthlyGrantMicroUSD)
+	}
+	t.Logf("company %s: -1333 minted with no row; 500000 → 498667 on a granted row", companyID)
+}
+
+// An overdrawn company stays overdrawn when the signup grant's write runs for
+// it again: InsertIfAbsent conflicts and does nothing.
+func TestScratchCreditsInsertIfAbsentLeavesAnExistingRowAlone(t *testing.T) {
+	db, companyID := scratchCompany(t)
+	ctx := context.Background()
 
 	repo := postgres.NewCreditsRepo(db)
 	fresh := &domain.CompanyCredits{CompanyID: companyID, BalanceMicroUSD: 500_000, MonthlyGrantMicroUSD: 500_000}

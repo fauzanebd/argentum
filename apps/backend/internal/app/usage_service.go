@@ -9,6 +9,7 @@ import (
 
 	"github.com/fauzanebd/argentum/internal/agentscope"
 	"github.com/fauzanebd/argentum/internal/domain"
+	"github.com/fauzanebd/argentum/internal/metrics"
 )
 
 // Pricing is the per-1000-token / per-event cost model used to convert raw
@@ -293,7 +294,19 @@ func (s *UsageService) append(ctx context.Context, e *domain.UsageEvent) {
 		return
 	}
 	if e.CostMicroUSD > 0 {
-		_ = s.credits.Decrement(ctx, e.CompanyID, e.CostMicroUSD)
+		// Not fatal to the turn: it has already run and been recorded, and
+		// failing it now would not unspend anything. But never silent again —
+		// this error was discarded with `_ =` while the statement failed on
+		// every call, and nothing said the balance had stopped moving (RIZ-79
+		// QA). The usage_events row above is the record to reconcile from.
+		if err := s.credits.Decrement(ctx, e.CompanyID, e.CostMicroUSD); err != nil {
+			metrics.Default().RecordCreditDebitFailure()
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"company_id":     e.CompanyID,
+				"event_type":     e.EventType,
+				"cost_micro_usd": e.CostMicroUSD,
+			}).Warn("credit debit failed; the cost is recorded in usage_events but the balance did not move")
+		}
 	}
 }
 
