@@ -8436,6 +8436,44 @@ cover it (invalidated before navigate, untouched on a failed save). `make check`
 **Owed.** The browser walk from sign-up to a first answer on the local stack — Q3–Q7, Q9, Q10, Q12,
 Q13, Q15 — and the two that spend, Q8 and Q11 (live-gate §7p).
 
+## Phase 3by — A new workspace starts with $0.50 of free credit ([`RIZ-79`](https://linear.app/rizkal-uhuy/issue/RIZ-79/new-users-get-dollar050-free-credit-on-first-sign-up), 2026-10-12)
+
+**Why.** The owner wanted every signup to get exactly $0.50. The credit system already existed (`T-03`),
+but its grant was $25 and lazy — written at a company's first budget check, so a new workspace's Usage
+page read `$0.00` and `—` until it had spent something. The card called a one-time grant a "monthly
+grant", and nothing stopped a script from signing up as often as it liked.
+
+**What changed.**
+- **Signup writes the grant**, after the admin exists, through `CreditsRepository.InsertIfAbsent`
+  (`ON CONFLICT (company_id) DO NOTHING`): insert-only, regardless of the kill switch, nothing at a grant
+  of 0, and a failed write is a `Warn` on a successful signup, which the lazy path then covers.
+- **`CREDITS_DEFAULT_GRANT_USD` defaults to `0.5`** (was `25`), still the one number both writers read.
+  Companies that already hold a grant keep it.
+- **`GET /usage/credits`** answers a company with no grant yet with the grant it will get, without
+  writing, while enforcement is on.
+- **The Usage card** says "of $X free credit", clamps a negative balance to `$0.00`, and says when the
+  credit is used up. **The signup page** says new workspaces start with free credit.
+- **`POST /auth/signup` is limited to 5 per address an hour**, with the sentence the form shows.
+- No migration, no `/v1` change, no `make types`, no prompt change.
+
+**Where the plan was wrong.** It feared `c.ClientIP()` would return the proxy's address and put every
+visitor in one bucket. The opposite holds: no trusted proxies are configured, so gin returns the
+leftmost `X-Forwarded-For` entry, which the client writes — the per-address limit (like `/share`'s and
+the embed mint's) is dodged by a header. Built as specified; fixing it is a deployment decision about
+which hops to trust ([`credit-enforcement.md`](credit-enforcement.md) §6).
+
+**Proven.** 10 new Go tests across `internal/app`, `internal/adapters/postgres`,
+`internal/transport/http/middleware` and `handlers`; 10 dashboard tests. Q2 ran against the local
+`argentum_postgres` behind the `scratch` tag: an overdrawn row survives a second `InsertIfAbsent`.
+
+**Gate.** `gofmt -l`: empty. `make lint-go`: `0 issues.` `make check`: `MAKE EXIT: 0`, 76 Go packages
+`ok`, zero `FAIL`/`panic` lines, 152 dashboard tests (142 before, 10 new). `git diff packages/api-types
+apps/backend/openapi`: empty. As in Phase 3bx, a fresh worktree needed `@argentum/widget` built before
+`lint-web` and a `pnpm` shim to `corepack pnpm@10.18.0` on `PATH`.
+
+**Owed.** Q1, Q3–Q6, Q8–Q10 on the local stack and in a browser; Q11, the one paid turn; and a read of
+production's `CREDITS_DEFAULT_GRANT_USD` after deploy (live-gate §7q).
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

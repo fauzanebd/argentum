@@ -2888,6 +2888,24 @@ DB — do not source `apps/backend/.env`.
 | `RIZ-76` Q8 | Onboarding with a working light model, then watch `/chat`. **Prediction: Reading, then Ready, and the pills switch from the generic three to tables of that database without a reload — unless the inference lands after the describer, in which case they switch on the next visit ([`onboarding.md`](onboarding.md) §3)** | Model spend (approved) |
 | `RIZ-76` Q11 | Send the first table-named question. **Prediction: a grounded answer; the fabrication guard does not replace it; the audit row's row count is not null. "Most recent records" on a table with no date column is the weak one** | Model spend (approved) |
 
+## 7q. `RIZ-79`'s signup credit — added 2026-10-12
+
+The unit and repository arms are run ([`credit-enforcement.md`](credit-enforcement.md)
+§6): Q2 against the local `argentum_postgres` with the `scratch` tag, Q7 and
+Q12 in `make check`. What is left needs the local compose stack (never
+`apps/backend/.env`), a browser over CDP for the screens, and — for Q11 only —
+model spend, which the owner approved. Run with `CREDITS_DEFAULT_GRANT_USD`
+**unset**, so the code default is what is proven.
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `RIZ-79` Q1, Q3 | Sign up, `GET /api/usage/credits` before any turn, count `company_credits` rows; invite and accept a teammate, count again. **Prediction: 201; 500000 / 500000; one row, unchanged by the invite** | The stack |
+| `RIZ-79` Q4, Q5, Q10 | Usage → Overview fresh, then with the balance set to -30000 (flush `credits:budget:<id>`), then `/signup`. **Prediction: `$0.50`, full bar, *of $0.50 free credit*; then `$0.00`, empty bar, the used-up line in red and a 402 on chat with no `usage_events` row; the signup card's second line** | The stack, a browser |
+| `RIZ-79` Q6 | Six sign-ups from one address inside a minute, then the form, then a login. **Prediction: 5 × 201, then 429 with the exact sentence and `Retry-After` near 720; the form prints it; login still 200.** Then once more with a different `X-Forwarded-For` on each request — **prediction: all 201, because the API trusts every proxy and `ClientIP()` reads the header** (§6 finding) | The stack, Redis |
+| `RIZ-79` Q8, Q9 | A company seeded at 18000000 / 25000000; a company whose row is deleted, with enforcement on and off. **Prediction: unchanged and captioned *of $25.00 free credit*; 500000 / 500000 with zero rows written, and `{"balance_micro_usd":0}` with enforcement off** | The stack |
+| `RIZ-79` Q11 | One short chat question on a fresh workspace on platform keys. **Prediction: answered; balance below 500000 and above 0; verdict `ok` or `warning`** — the first real number for how many turns $0.50 buys | Model spend (approved) |
+| `RIZ-79` rollout | After the production deploy, read the api's env: `CREDITS_DEFAULT_GRANT_USD` must be `0.5` or unset. **No prediction from the repo:** no committed file outside `apps/backend` names the variable, but the deployment's secrets are not in the repo. If it says `25`, every new workspace still gets $25 | Production access |
+
 ## 7. Needs the paid eval set (added 2026-09-11)
 
 `T-Q18`'s remaining half, and the only half that is about the model rather than
