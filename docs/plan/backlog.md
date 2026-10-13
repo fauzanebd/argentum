@@ -390,6 +390,28 @@ switches in `watcher_service.go`, and a breach posts top-level so it starts its
 own thread instead of landing in an old one. What is still open is the gate: it
 needs a Slack workspace, which no CI job and no local stack can supply.
 
+### WhatsApp voice notes, transcribed (`RIZ-85` slice B)
+**What:** A WhatsApp voice note is answered like a typed question. The handler fetches Twilio's
+`MediaUrl0` (authenticated with the account SID and token) or Meta's media id, runs it through
+`app.VoiceService` (limits, credits, metering) and `speech.Transcriber`, and enqueues the transcript as
+the turn's message. Ogg/Opus is already in `speech.Accept`. The 60-second cap and the credit check apply
+as they do on the dashboard.
+**Why deferred:** Slice A (2026-10-13, [`../coverage/voice.md`](../coverage/voice.md) §6) removed the silent
+drop with a reply asking the sender to type. That fixes the "the bot is broken" experience for about half
+a day of work. Transcription needs an owner decision first.
+**Open questions** (RIZ-85 research, unknowns 1 and 2):
+1. **Answer straight away, or echo first?** Roadmap 11's decision 13 says a transcript is never sent for
+   anyone; on the dashboard the person checks it in the composer. WhatsApp has no composer. The research
+   recommends answering directly with the heard text shown first ("Heard: …"), because a confirm step on
+   WhatsApp is clumsy. Either way it is a new decision, not a reading of 13.
+2. **Reply with a voice note (TTS) too?** The research recommends text only first.
+
+Also to settle: whether a phone-only clip may be stored with `user_id` NULL (allowed by `087`), and how
+long WhatsApp media is kept.
+**Trigger:** The `attachment without text` log count (voice.md §6a) shows real demand over the two weeks
+after slice A deploys, and the owner has answered question 1.
+**Estimate:** 3–4d.
+
 ### Telegram channel
 **Why deferred:** Advertised on the landing page but not built. T-18 fixes the
 copy instead of the code, because Telegram has weaker business adoption in the

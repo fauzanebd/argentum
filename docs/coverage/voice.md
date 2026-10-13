@@ -16,6 +16,13 @@ Unit-gated with 24 mutations, every one killed, the one new statement run on a s
 photographed in real Chromium recording from its fake microphone. No speech or model key exists on this
 machine, so nothing here has transcribed a real voice or read an answer aloud in one.
 
+**Status, 2026-10-13: [`RIZ-85`](https://linear.app/rizkal-uhuy/issue/RIZ-85/voice-replies-work-reliably-end-to-end-with-gaps-found-and-fixed).**
+A WhatsApp voice note, photo or file with no text now gets one reply asking the sender to type, where it
+got silence (§6). WhatsApp still cannot hear a voice note; that is slice B, in the backlog. The ticket
+also scheduled the first real-provider gates for the dashboard path (§5e, live-gate §7n). They are
+owner-run, because they need twenty recordings, someone who speaks Indonesian, production access and a
+real phone. **Not run when this was written.**
+
 ---
 
 ## 1. `T-W7`, and a transcript that is not a message
@@ -858,6 +865,34 @@ In [`live-gate-backlog.md`](live-gate-backlog.md) §7n, with predictions:
 3. The ceiling set against OpenRouter's own record of what twenty answers cost.
 4. `make eval-speech` on the pilot's recordings, through OpenRouter.
 
+**Scheduled by `RIZ-85` (2026-10-13), with spend approved (under $5), and not yet run.** All four are
+owner-run, and §7n now says how and where each one runs. Rows 1–3 run on production, because only
+production holds the key and has voice switched on. The owner grants `voice` to their own user in an
+internal company (not a pilot tenant), and revokes it afterwards. Row 4 runs on a laptop with
+`OPENROUTER_API_KEY` exported in that shell only. It needs no stack, because `cmd/evalspeech` calls the
+provider client directly. The owner supplies the twenty recordings of `testdata/eval/speech.yaml`, read by
+an Indonesian speaker and saved as `<id>.<ext>` in one directory outside the repo:
+
+```bash
+make eval-speech-dry CLIPS=/abs/dir        # expect 20/20 clips present; calls nothing
+OPENROUTER_API_KEY=… make eval-speech CLIPS=/abs/dir \
+  EVAL_ARGS="-providers openrouter,openrouter:openai/gpt-4o-transcribe"
+```
+
+**Results go here and in §7n when they exist**, model by model. Leave these cells unfilled until a run
+fills them:
+
+| Model | WER | Numerals right | Prediction |
+| --- | --- | --- | --- |
+| `openrouter` (`openai/whisper-large-v3-turbo`) | — | — | Numerals are where it errs, in two written forms ("300 juta", "tiga ratus juta") |
+| `openrouter:openai/gpt-4o-transcribe` | — | — | Fewer numeral errors than turbo; `measured: false` |
+
+**§7j's Groq and OpenAI rows are superseded (decision 4).** Voice moved to OpenRouter on 2026-09-15, so
+scoring `groq` and `openai` directly would need two more accounts, only to measure providers this product
+does not run. The same applies to Groq's 10-second minimum. A finding at P2 or worse, such as the ledger
+recording TTS below OpenRouter's charge or turbo getting more numerals wrong than `gpt-4o-transcribe`,
+becomes its own Linear ticket, linked from the §7n row, and is not fixed under `RIZ-85`.
+
 ### 5f. Switched on in production (2026-09-15)
 
 `smartsoft-infra` `1f0dd96`: argentum at `1.15.0` with `SPEECH_ENABLED=true`. Since 16:59 UTC the API's
@@ -868,3 +903,119 @@ grant yet**, so nobody sees the microphone.
 **The deploy took the worker down for three hours** before it got there: migration `089`, which this
 track added, was killed half-way by the API's liveness probe and left the schema version dirty.
 Delivery log, phase 3bt, has the timeline, the repair and the fix; live-gate §7o has what is owed.
+
+---
+
+## 6. WhatsApp: a voice note asks for text (`RIZ-85`, slice A, 2026-10-13)
+
+**Built 2026-10-13.** No migration, no `/v1` change, no tool and no prompt change (so no `make eval`),
+no flag and no generated type.
+
+For a lot of Indonesian users a voice note is the usual way to ask anything on WhatsApp. Until this
+change, a voice note sent to Argentum got no reply and left no trace. The Twilio branch read only `Body`
+and `From` and labelled every message `text`, and an empty `Body` returned 200 with nothing sent and
+nothing logged. Meta did the same for every `type` that was not `text`. To the sender the bot looked
+broken, not limited.
+
+Now an allowlisted sender who sends an attachment with no text gets one reply, the approved copy word for
+word (`whatsapp.AttachmentReply`):
+
+> Maaf, saya belum bisa mendengarkan pesan suara atau membuka lampiran. Silakan ketik pertanyaan Anda.
+>
+> Sorry, I can't listen to voice notes or open attachments yet. Please type your question.
+
+**The attachment is still not read.** No turn runs, no credit is spent, and nothing is stored.
+
+### 6a. What was built
+
+| Piece | Where |
+| --- | --- |
+| `AttachmentReply`; `IsAttachment` (Meta's `audio`, `image`, `video`, `document`, `sticker`); `TwilioMediaKind` (`audio/*`, `image/*`, `video/*`, else `document`) | `internal/whatsapp/attachment.go` |
+| The Twilio branch reads `NumMedia` and `MediaContentType0`. With media and a blank `Body`, `MessageType` becomes the media kind | `internal/transport/http/handlers/webhook.go` |
+| The old single drop is now three cases: text is enqueued; an attachment with no text gets the reply after the allowlist; anything else is logged and dropped | the same |
+| `askForText`: sends the reply, logs Info, or logs Warn if the send fails, and always answers 200 | the same |
+| A signer for the live arm (Q8). It builds the voice-note form, signs it as Twilio does, and is a dry run unless given `-post` | `scripts/live-gates/whatsapp-attachment/` |
+
+The order of checks has not moved: signature first (401, nothing sent), then the attachment check, then
+`ResolveCompanyByPhone`. An unknown number that sends a voice note gets the existing *This phone number is
+not authorised…* reply, the same as for text, and does not get the attachment reply.
+
+**The new log lines**, three of them. None carries the phone number, the body or a media URL:
+
+| Line | Level | Fields |
+| --- | --- | --- |
+| `whatsapp: attachment without text; asked the sender to type` | Info | `transport`, `message_sid`, `company_id`, `media_kind`; on Twilio also `content_type`, `num_media` |
+| `whatsapp: attachment without text; the reply asking the sender to type was not sent` | Warn | the same, plus `error` |
+| `whatsapp: inbound message not handled; dropped` | Info | `transport`, `message_sid`, `message_type` |
+
+**How many people want slice B.** Search the API log for `attachment without text` and group by
+`company_id` and `media_kind`. Both the Info line and the Warn line match, so the count includes messages
+whose reply failed to send. The rollout watches this count for two weeks.
+
+### 6b. Decisions worth the words
+
+- **Bilingual, Indonesian first (decision 1).** A voice note has no text, so there is no language to
+  detect. The users are mostly Indonesian, and the channel's other fixed replies are English. One message
+  in both languages is right for every sender and needs no branding lookup on the webhook path.
+- **Any attachment, not only audio (decision 2).** On Twilio a sticker is just `image/webp`, so leaving
+  stickers out would mean guessing from the subtype. A photo with no caption is also a person waiting for
+  an answer.
+- **A Twilio caption is a question.** `NumMedia=1` with a `Body` keeps `MessageType: text` and is enqueued
+  from its text, as before. **A Meta caption is not read** (a non-goal): `ParseWebhook` reads only
+  `text.body`, so a captioned Meta image gets the reply.
+- **Reactions, locations, contacts, buttons are dropped, not answered.** Nobody sending a thumbs-up is
+  waiting for an answer, and "please type" in reply to one would be noise. These are dropped *before* the
+  allowlist, as before, so an unknown number's reaction does not trigger the not-authorised line either.
+- **Always 200, including when the reply fails to send (R6).** Twilio and Meta retry a non-2xx, and the
+  retry would send the same sentence a second time once the outage ends. `app.SpokenRefusal` answers 200
+  for the same reason.
+- **Only the first attachment's type is read.** WhatsApp sends one item per message, and an album arrives
+  as several messages. The reply is the same whatever the kind; the kind is only there for the log.
+- **A malformed `NumMedia` counts as zero.** The field is Twilio's, and it is inside the signature, so a
+  value that does not parse is not an attack. The message is treated as having no attachment.
+
+### 6c. The acceptance items, quoted back
+
+All in `internal/transport/http/handlers/webhook_test.go`. They run against an allowlisted number and a
+real `ChatEnqueuer` over a recording queue, so "no turn" means the queue saw nothing, not that a nil
+enqueuer would have panicked. A global logrus hook reads the lines.
+
+| AC | Evidence |
+| --- | --- |
+| AC1: a Twilio `audio/ogg` voice note, empty `Body` | `TestWhatsAppWebhook_attachmentWithNoTextAsksForText/twilio_voice_note`: 200; one message, equal to `AttachmentReply`, sent to the sender; no thread, message or queued turn; one Info line with `media_kind=audio` |
+| AC2: image, video, PDF, sticker on Twilio; `audio`/`image`/`video`/`document`/`sticker` on Meta | 13 sub-cases of the same test, including `audio/ogg; codecs=opus`, a whitespace-only `Body`, and a Meta image with a caption |
+| AC3: an unknown number | `…attachmentFromAnUnknownNumberIsRefusedAsText`, both transports: only the not-authorised reply; no turn; no attachment line |
+| AC4: a photo captioned "berapa stok gudang barat?" | `…twilioCaptionIsAnsweredAsText`: one queued turn carrying the caption, nothing sent by the handler, no new line |
+| AC5: plain text, nothing to answer, forged | `…textIsStillEnqueued` (Twilio, Twilio with `NumMedia=0`, Meta); `…messageWithNothingToAnswerIsLoggedAndDropped` (empty form, status callback, location, malformed `NumMedia`, Meta reaction and location: no send, allowlist not asked, one drop line); `…forgedAttachmentIsRefused` (401, nothing sent). The existing webhook tests pass unchanged |
+| AC6: the send fails | `…attachmentReplyThatFailsToSendIsStill200`, both transports: 200, one Warn line whose `error` is the send error, no Info line |
+| AC7: the log lines' fields | Every case above checks the exact field set (no extra field) and scans every line written during the request for the phone number, the caption, the media URL and Meta's media id |
+
+`internal/whatsapp/attachment_test.go` is the MIME-to-kind table, the attachment type set, a check that
+every kind Twilio can produce is one `IsAttachment` accepts, and the copy compared paragraph by paragraph.
+`scripts/live-gates/whatsapp-attachment/main_test.go` signs the form and checks it with the webhook's own
+verifier, then checks that the same signature fails once the form has changed.
+
+### 6d. Where the plan was silent
+
+- **Meta status callbacks stay silent.** AC5 lists "status callback" among the messages that get a
+  `not handled` line. On Twilio that holds: a status form reaches the handler with no `Body` and logs one.
+  Meta's statuses (sent, delivered, read) carry no message at all, so `ParseWebhook` refuses them before the
+  three cases run. That path was not in the design, so it is unchanged. Logging it would add up to three
+  Info lines for every message the bot sends and bury the lines this change exists for.
+  `TestWhatsAppWebhook_metaStatusCallbackIsSilent` pins this.
+- **R5's no-phone rule covers the new lines only.** Two existing lines still carry a number: the
+  unknown-number drop (`from`), and each client's `Message sent successfully to …`. Both are older than this
+  change and out of its scope. They are recorded here so nobody reads R5 as a claim about the whole
+  webhook.
+- **`TwilioClient.ParseWebhook` is not used by the handler.** The handler parses Twilio's form itself, so
+  that method still labels everything `text`. It was left alone because nothing calls it on this path.
+
+### 6e. What is owed
+
+In [`live-gate-backlog.md`](live-gate-backlog.md) §7s:
+
+1. **Q8:** a correctly signed synthetic voice note posted to the local stack from the owner's allowlisted
+   phone, using the committed signer. The owner's phone gets the reply once. **This sends a real WhatsApp
+   message**, so it is owner-run.
+2. **Q9:** after the deploy, a real voice note and a photo sent to the production number. Two replies, and
+   two `attachment without text` lines.
