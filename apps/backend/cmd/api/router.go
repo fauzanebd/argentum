@@ -122,7 +122,14 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewDerivedFiguresHandler(d.derivedFiguresSvc).Register(authed)
 	handlers.NewSuggestionsHandler(d.suggestionSvc).Register(authed)
 	handlers.NewCookbookHandler(d.cookbookSvc).Register(authed)
-	handlers.NewConfigHandler(cfg).Register(authed)
+	// The models route and the workspace chat model (RIZ-97). The resolver is
+	// passed as the interface only when there is one, so a router built without
+	// it (the policy tests) gets a nil interface rather than a typed nil.
+	var primaryResolver handlers.PrimaryResolver
+	if d.llmResolver != nil {
+		primaryResolver = d.llmResolver
+	}
+	handlers.NewConfigHandler(cfg, primaryResolver, d.chatModelSvc).Register(authed)
 	// What the dashboard is told about voice (T-W9), off the same two Enabled
 	// calls that registered — or did not register — the voice routes above.
 	voice := handlers.VoiceAvailability{Transcribe: d.voiceSvc.Enabled(), ReadAloud: d.spokenSvc.Enabled()}

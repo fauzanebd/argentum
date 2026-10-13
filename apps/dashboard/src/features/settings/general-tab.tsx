@@ -9,6 +9,7 @@ import { CheckCircle2 } from "lucide-react";
 import { useModels } from "@/lib/use-models";
 import { apiErrorMessage } from "@/lib/api-error";
 import { BusinessProfileCard } from "./business-profile-card";
+import { ChatModelCard } from "./chat-model-card";
 
 // What each redaction policy means, in the terms the person choosing it thinks
 // in. The values come from the API (`pii_redaction_modes`); the copy is here,
@@ -187,43 +188,9 @@ export function GeneralTab() {
 
       <BusinessProfileCard />
 
-      {models && (
-        <Card>
-          <CardHeader>
-            <CardTitle>AI Models</CardTitle>
-            <CardDescription>
-              Models currently powering Argentum's analytics agent. Configured server-side.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y divide-border">
-            {(["primary", "light", "classifier"] as const).map((role) => {
-              const m = models[role];
-              if (!m) return null;
-              return (
-                <div
-                  key={role}
-                  className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
-                >
-                  <div>
-                    <p className="text-sm font-medium capitalize">{role}</p>
-                    <p className="text-xs text-muted-foreground font-mono">
-                      {m.model}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <Badge variant="secondary">{m.interface}</Badge>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {m.pricing_known
-                        ? `$${m.input_per_1k_usd}/1k in · $${m.output_per_1k_usd}/1k out`
-                        : "Pricing N/A"}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
+      {/* Not rendered until /config/models answers, and absent if it fails —
+          as before RIZ-97 made it a picker. */}
+      {models && <ChatModelCard models={models} />}
     </div>
   );
 }

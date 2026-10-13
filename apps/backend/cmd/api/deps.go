@@ -253,6 +253,12 @@ type apiDeps struct {
 
 	llmCache   *llmtenant.ClientCache
 	embedCache *llmtenant.EmbeddingCache
+	// llmResolver and chatModelSvc are the workspace chat model (RIZ-97): what
+	// a workspace's turns resolve to, for Settings and the chat header, and the
+	// admin's write. Nil in the router tests, where the routes answer from env
+	// and 503 respectively.
+	llmResolver  *llmtenant.Resolver
+	chatModelSvc *app.ChatModelService
 
 	metrics *metrics.Collector
 	// Integrator-facing observability over `/v1` (T-A5). requestObs buffers
