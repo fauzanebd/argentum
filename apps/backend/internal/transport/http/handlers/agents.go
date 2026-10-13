@@ -341,6 +341,7 @@ func (h *AgentsHandler) generationInfo(c *gin.Context) AgentGenerationInfo {
 	return AgentGenerationInfo{
 		Available:        st.Available,
 		CreditsExhausted: st.CreditsExhausted,
+		FreeCredit:       st.FreeCredit,
 	}
 }
 

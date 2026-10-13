@@ -654,6 +654,13 @@ sign-up line now says the credit follows approval. API:
 - **"1 other sign-up"**, singular. The plan only showed N ≥ 2.
 - **A member sees the rejected notice without the link.** There is no mockup for
   it. The sentence matches the Usage card's, which members already read.
+- **Two setup pages still said "out of credit" (review round 1).** The plan
+  listed the chat, Usage and top-up surfaces. But the chat notice sends a
+  pending admin to "connect data and set up agents meanwhile", and the agent
+  generator's disabled button and the business-profile suggestion both said the
+  workspace had used its credit. `GenerationState` and `Suggestion` (and their
+  wire shapes) now carry `free_credit`. `features/settings/credit-reasons.ts`
+  picks the waiting / not approved / used up sentence for each page.
 - **Watchers are untouched.** A refused unattended fire is still recorded as
   `credits_exhausted`. It has no sentence for anyone to read.
 

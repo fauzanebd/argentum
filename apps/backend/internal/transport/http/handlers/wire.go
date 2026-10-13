@@ -172,6 +172,9 @@ type AgentsResponse struct {
 type AgentGenerationInfo struct {
 	Available        bool `json:"available"`
 	CreditsExhausted bool `json:"credits_exhausted"`
+	// FreeCredit is why a workspace with no grant is refused (RIZ-89):
+	// "pending" or "rejected", and absent for a workspace that spent a grant.
+	FreeCredit app.FreeCreditState `json:"free_credit,omitempty"`
 }
 
 // AgentGenerationResult is the body of `POST /api/agents/generate` (T-B4): the
@@ -270,6 +273,9 @@ type ProfileSuggestionResponse struct {
 	// CreditsExhausted says the balance is why there is no draft. Adding a
 	// source never fails for credit, so without this the tenant sees silence.
 	CreditsExhausted bool `json:"credits_exhausted"`
+	// FreeCredit is why, for a workspace whose free credit waits for an
+	// operator or was not approved (RIZ-89); absent otherwise.
+	FreeCredit app.FreeCreditState `json:"free_credit,omitempty"`
 	// RenderedBlock is the draft as the agent would read it, composed by the
 	// same code the turn uses — so what a tenant approves is what they saw.
 	RenderedBlock string `json:"rendered_block,omitempty"`

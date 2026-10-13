@@ -127,6 +127,7 @@ packages:
     # comment beside it. The frontmatter below imports the real one.
     type_mappings:
       app.BudgetState: "BudgetState"
+      app.FreeCreditState: "FreeCreditState"
       domain.Agent: "Agent"
       domain.AgentChannelBinding: "AgentChannelBinding"
       domain.Channel: "Channel"
@@ -153,7 +154,7 @@ packages:
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
       // apps/backend/internal/transport/http/handlers/wire.go.
-      import type { BudgetState, SkillIndexCost } from "./events.js";
+      import type { BudgetState, FreeCreditState, SkillIndexCost } from "./events.js";
       import type {
         AdHocQuestion,
         Agent,

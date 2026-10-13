@@ -756,3 +756,36 @@ func TestOperatorAccountsAreReportedByPosition(t *testing.T) {
 		t.Errorf("warnings = %q, want %q", lines, want)
 	}
 }
+
+// Review round 1 (F1): the agent generator and the profile suggestion, the two
+// pages the chat notice sends a new admin to, carry why the workspace is
+// refused, so they can say "waiting for approval" rather than "used all of its
+// credits". A workspace that spent a grant carries nothing new.
+func TestTheSetupPagesKnowWhyTheyAreRefused(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name    string
+		credits *stubCredits
+		grants  *stubGrants
+		want    FreeCreditState
+	}{
+		{name: "pending", credits: &stubCredits{getErr: domain.ErrNotFound}, grants: newStubGrants(), want: FreeCreditStatePending},
+		{name: "rejected", credits: &stubCredits{getErr: domain.ErrNotFound}, grants: newStubGrants().with("co-1", domain.CreditGrantStatusRejected), want: FreeCreditStateRejected},
+		{name: "spent a grant", credits: &stubCredits{record: &domain.CompanyCredits{CompanyID: "co-1", MonthlyGrantMicroUSD: signupGrant}}, grants: newStubGrants()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			usage := approvalService(tc.credits, tc.grants, nil)
+
+			gen := generateSvc(&fakeGenerateLLM{}).WithBudget(usage).State(ctx, "co-1")
+			if !gen.CreditsExhausted || gen.FreeCredit != tc.want {
+				t.Errorf("generation state = %+v, want exhausted with %q", gen, tc.want)
+			}
+
+			sug, err := NewCompanyProfileService(newProfileRepo()).
+				WithSuggestions(newSourceProfileRepo(), usage).Suggest(ctx, "co-1")
+			if err != nil || !sug.CreditsExhausted || sug.FreeCredit != tc.want {
+				t.Errorf("suggestion = %+v, %v; want exhausted with %q", sug, err, tc.want)
+			}
+		})
+	}
+}
