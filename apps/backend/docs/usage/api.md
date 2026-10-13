@@ -98,6 +98,16 @@ Current credit balance for the company.
 
 Divide `balance_micro_usd` by 1,000,000 to get USD.
 
+`monthly_grant_micro_usd` is the company's one-time free credit, despite the
+name — nothing refills it. The dashboard captions it "free credit".
+
+**A company that has no grant yet** (no row, or a row whose grant is 0) is
+answered, while enforcement is on, with the grant its first budget check will
+provision: `balance_micro_usd` = `monthly_grant_micro_usd` =
+`CREDITS_DEFAULT_GRANT_USD`, `updated_at` the zero time. Nothing is written by
+reading. With enforcement off the stored row is returned as it is, and a
+company with no row gets `{"company_id": "…", "balance_micro_usd": 0}` (RIZ-79).
+
 #### The balance is enforced (T-03)
 
 It is no longer only a report. Before a chat turn is queued — on the
@@ -129,14 +139,18 @@ before any model call is made.
 The field is **absent** on an ordinary turn — do not branch on
 `verdict === "ok"`, branch on the field being present.
 
-**Where the grant comes from.** A company with no grant is provisioned
-`CREDITS_DEFAULT_GRANT_USD` (default `$25`) the first time its balance is
-checked. Nothing else in the system credits a company, so before this the
-balance of every tenant that had ever run a turn was negative.
+**Where the grant comes from.** `POST /api/auth/signup` writes the new
+company's free credit — `CREDITS_DEFAULT_GRANT_USD`, default `$0.50` — as both
+balance and grant, insert-only, whether or not enforcement is on (RIZ-79).
+Accepting an invite never writes one. A company that still has no grant —
+created before that shipped, or whose signup write failed — is provisioned the
+same amount the first time its balance is checked. A company that already has
+a grant keeps it. Nothing else in the system credits a company, so before T-03
+the balance of every tenant that had ever run a turn was negative.
 
 **Operator settings:** `CREDITS_ENFORCEMENT_ENABLED` (default `true`, and the
 kill switch), `CREDITS_WARNING_THRESHOLD_PCT` (default `20`),
-`CREDITS_DEFAULT_GRANT_USD` (default `25`). The verdict is cached in Redis for
+`CREDITS_DEFAULT_GRANT_USD` (default `0.5`; it was `25` before RIZ-79). The verdict is cached in Redis for
 60 seconds, so a balance change takes up to a minute to be observed — in both
 directions.
 

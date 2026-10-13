@@ -6,6 +6,11 @@ Nothing checks it. A tenant on platform LLM keys can spend without limit."*
 
 Landed 2026-07-28. Last item of phase 1b; `T-A1` is now unblocked.
 
+> **Since RIZ-79 (2026-10-12) the grant is written at signup and defaults to
+> $0.50, not $25.** §1–§5 below are T-03's record as it landed and still say
+> "$25" and "lazy"; §6 is what changed and why. The lazy path in §1 still
+> exists — it is now the fallback for companies signup did not credit.
+
 ---
 
 ## 1. What the ticket did not say, and had to be decided
@@ -277,3 +282,137 @@ the composer, so a user who tops up does not have to retype it.
 - **The metering-vs-enforcement split is now two reads of the same table per
   turn** in the worst case (the check, then `Decrement`). The check is cached;
   the decrement is not, and does not need to be.
+
+---
+
+## 6. RIZ-79 — the grant moves to signup, and becomes $0.50 (2026-10-12)
+
+Ticket: [`RIZ-79`](https://linear.app/rizkal-uhuy/issue/RIZ-79/new-users-get-dollar050-free-credit-on-first-sign-up).
+The owner asked for every new signup to get exactly $0.50 of free credit. The
+audit found most of that already built (§1–§5): what was missing was the
+*when*, the *amount*, the label, and anything stopping a script from signing
+up a thousand times.
+
+### What changed
+
+- **Signup writes the grant.** `AuthService.Signup` calls
+  `UsageService.GrantSignupCredit` once the admin user exists — not after the
+  company, because a signup that fails on the user insert leaves an orphan
+  nobody can log into, and crediting it only makes it look like a tenant. The
+  write is `CreditsRepository.InsertIfAbsent`: `INSERT … ON CONFLICT
+  (company_id) DO NOTHING`. It cannot top a company up, forgive a debt, or run
+  twice to any effect. It ignores the kill switch (the switch governs refusal,
+  not bookkeeping) and writes nothing at a grant of 0. A failed write is a
+  `Warn` with `company_id` and a successful signup; the lazy path in §1
+  provisions the same amount on the first check.
+- **One number.** `CREDITS_DEFAULT_GRANT_USD` defaults to `0.5` (was `25`) and
+  is read by both writers. A company that already holds a grant keeps it —
+  both paths skip a company with grant > 0. A company created before this that
+  never ran a turn gets $0.50 on its first check, not $25.
+- **`GET /usage/credits` stops saying $0.00 to a company that has spent
+  nothing.** With enforcement on, no row or a zero-grant row is answered with
+  the grant the first check will provision, and nothing is written — a page
+  view is not a budget check. With enforcement off the old answer stands,
+  because no check will ever provision anything.
+- **The Usage card says "of $X free credit"**, shows a negative balance as
+  `$0.00`, and under a zero balance against a grant adds, in destructive ink,
+  *"Free credit used up. New chats, scheduled reports and API calls are
+  paused."* The refusal sentence and the chat banner are unchanged.
+- **The signup page** has a second line: *"New workspaces start with free
+  credit to try Argentum. No card needed."* No amount — the page is
+  unauthenticated and cannot read the setting.
+- **`POST /auth/signup` is limited to 5 per address, refilling over an hour**
+  (`RateLimiter.SignupMiddleware`, its own `rl:signup:` bucket), mounted on
+  signup alone. The 6th answer is 429 `{"error":"Too many sign-ups from this
+  network. Please try again in an hour."}` with `Retry-After` near 720, and the
+  form prints it in its existing error line. No Redis, no limiter.
+- No migration, no `/v1` change, no generated types, no prompt change.
+
+### Where the plan was wrong
+
+- **The per-address limit can be dodged with a header.** The plan's risk was
+  that `c.ClientIP()` returns the *proxy's* address, so every visitor shares
+  one bucket. The opposite is true here: the engine never calls
+  `SetTrustedProxies`, so gin trusts every hop and `ClientIP()` returns the
+  leftmost `X-Forwarded-For` entry — which the client writes. Measured: a
+  request from `10.0.0.9` carrying `X-Forwarded-For: 1.2.3.4, 10.0.0.8`
+  reports `1.2.3.4`. A script that sets a random header per request is never
+  limited. This was not new — `/share` and the embed mint are keyed the same
+  way. **Fixed in review round 1:** `TRUSTED_PROXIES` (default: every private
+  and loopback range, which is where both the compose nginx and the chart's
+  Traefik sit) goes to `SetTrustedProxies`, and only `X-Forwarded-For` is read
+  (`X-Real-IP` would pass through the compose nginx as written). gin now walks
+  the header from the right and stops at the first non-proxy, the hop the
+  proxy appended. `none` trusts nobody, and so does a list gin refuses:
+  closed, not open. `config.Validate` makes a malformed entry fatal.
+  `TestAddressLimitsIgnoreASpoofedHop` drives all three address limits with a
+  fresh spoofed hop per request and gets 429 on the second. The one shape it
+  does not cover is a load balancer that rewrites clients to *private*
+  addresses and also keeps their header. Such a deployment narrows
+  `TRUSTED_PROXIES` to the proxy's own range, which turns the rewritten
+  address into one shared bucket rather than a hole.
+- **A BYO-key tenant now reads $0.50 it will never spend**, as the plan's
+  compat note said. Worth repeating because the projection makes it true from
+  the first page view, not only after a check.
+- `InsertIfAbsent` cannot report whether it inserted, so its `Info` line says
+  "written if absent" rather than claiming a grant it may not have made.
+
+### Gate
+
+Unit: `TestSignupWritesTheFreeCredit`, `TestSignupSurvivesAFailedGrant` (AC7:
+201, a `Warn` carrying `company_id`, then the lazy grant at 500000),
+`TestSignupGrantPolicy` (on, off, zero), `TestOnlyACompletedSignupAsksForCredit`
+(the orphan cases, a duplicate email, an accepted invite),
+`TestGrantSignupCreditNeverOverwrites`, `TestCreditsForCompanyProjectsTheGrant`
+(6 cases incl. the legacy $25 row), `TestTheSignupGrantInsertNeverUpdates`
+(source-reading: no `DO UPDATE`), `TestSignupIsLimitedPerAddress` and
+`TestSignupBucketIsNotShared` (real Lua on miniredis),
+`TestTheSignupGuardIsOnSignupOnly`. Dashboard: 7 tests on the credit card
+(full, part-spent, overdrawn, exactly zero, legacy $25, no grant, error) and 3
+on the signup page (the line, the 429, the happy path). The T-03 tests above
+pass unedited apart from the new method on three fakes.
+
+Against Postgres (Q2): `TestScratchCreditsInsertIfAbsentLeavesAnExistingRowAlone`,
+behind the `scratch` tag, on the local `argentum_postgres` — the first write
+lands at 500000 / 500000, the row is set to -120000, a second
+`InsertIfAbsent` leaves -120000 / 500000 and one row.
+
+Owed (live-gate §7q): the stack and browser arms Q1, Q3–Q6, Q8–Q10, the paid
+turn Q11, and a read of production's `CREDITS_DEFAULT_GRANT_USD` after deploy.
+
+### QA round 1 — the balance had never gone down
+
+QA ran Q1–Q12 on a local stack; 11 passed. Q11 failed, and the cause is
+older than this ticket and larger than it.
+
+- **No debit ever landed (B1).** `CreditsRepo.Decrement` wrote `-$2` in
+  `VALUES`. Postgres cannot choose a unary minus for an untyped parameter and
+  refuses the statement with `operator is not unique: - unknown`, on every
+  call, and `UsageService.append` discarded the error with `_ =`. So since
+  T-03 `usage_events` recorded every cost, and `company_credits` never moved.
+  §3's live gate set balances by hand with SQL, which is why it never saw
+  this; §5's "`RecordLLM` still decrements past zero" was never true either,
+  because it never decremented at all. A company could only reach the 402 if
+  someone wrote its balance by hand. The parameter is now typed
+  (`$2::bigint` in both places). A failed debit is a `Warn` with the company,
+  the event type and the cost, plus one count on a new
+  `credit_debit_failures_total` metric. The turn is still not failed: it has
+  already run, and its `usage_events` row is what a reconciliation would read.
+  `TestScratchCreditsDecrementLands` proves both arms on the local Postgres:
+  `-1333` minted on a company with no row, and `500000 → 498667` on a granted
+  one. `TestTheDecrementTypesItsParameter` keeps the cast in `make check`.
+- **The signup window was ten minutes (B3).** The token-bucket script expired
+  every key after 600 s idle, whatever the rate, so an exhausted bucket came
+  back full ten minutes later: about 30 signups an hour, not 5. The idle
+  lifetime is now the time an empty bucket takes to refill completely, never
+  less than the old 600 s. Past that point an expired key and a kept one are
+  the same full bucket, so no limiter behaves differently except that the
+  early reset is gone. The widget's per-visitor turn budget (N an hour) had the
+  same hole and is fixed by the same change.
+- **A refused first message showed nothing (B2).** On the new-chat screen
+  the 402 was set as `error` and never drawn: the thread view had the error
+  line, the welcome screen did not. That screen is exactly where a workspace
+  that has just run out lands. It now shows the line above the composer.
+- Left as found: a second signup whose company name gives a slug that is
+  already taken answers the generic 500 (B4). That is RIZ-76's signup path,
+  and it predates this ticket.

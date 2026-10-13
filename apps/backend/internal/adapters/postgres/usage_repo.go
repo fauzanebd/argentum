@@ -421,12 +421,38 @@ func (r *CreditsRepo) Upsert(ctx context.Context, c *domain.CompanyCredits) erro
 	return err
 }
 
+// InsertIfAbsent is Upsert without the UPDATE arm. DO NOTHING rather than DO
+// UPDATE … WHERE monthly_grant_micro_usd = 0 on purpose: a row that is
+// already there was written by something that got to this company first — a
+// lazy grant from a budget check, or a Decrement — and either way it is the
+// balance. Deciding when a grant-less balance is forgiven stays with
+// CheckBudget, which has done it since T-03; a second place making that call
+// is a second place to make it differently.
+func (r *CreditsRepo) InsertIfAbsent(ctx context.Context, c *domain.CompanyCredits) error {
+	const q = `
+		INSERT INTO company_credits (company_id, balance_micro_usd, monthly_grant_micro_usd, updated_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (company_id) DO NOTHING
+	`
+	_, err := r.db.ExecContext(ctx, q, c.CompanyID, c.BalanceMicroUSD, c.MonthlyGrantMicroUSD)
+	return err
+}
+
+// Decrement subtracts a recorded cost from the balance, minting a negative row
+// for a company that has none.
+//
+// The casts are load-bearing (RIZ-79 QA). Written as `-$2`, Postgres has to
+// choose a unary minus for a parameter of unknown type, finds several, and
+// refuses the statement — `operator is not unique: - unknown` — on every
+// call. The caller discarded the error, so no balance ever went down:
+// usage_events filled up and company_credits never moved. `$2::bigint` names
+// the type, and both uses agree with it.
 func (r *CreditsRepo) Decrement(ctx context.Context, companyID string, microUSD int64) error {
 	const q = `
 		INSERT INTO company_credits (company_id, balance_micro_usd, updated_at)
-		VALUES ($1, -$2, now())
+		VALUES ($1, -($2::bigint), now())
 		ON CONFLICT (company_id) DO UPDATE
-			SET balance_micro_usd = company_credits.balance_micro_usd - $2,
+			SET balance_micro_usd = company_credits.balance_micro_usd - $2::bigint,
 				updated_at = now()
 	`
 	_, err := r.db.ExecContext(ctx, q, companyID, microUSD)

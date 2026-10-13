@@ -153,7 +153,12 @@ type Config struct {
 	DSNRetiredKeysHex    []string
 	ControlMigrationsDir string
 	CookieSecure         bool
-	CORSOrigins          []string
+	// TrustedProxies is the set of peers (IPs or CIDRs) whose X-Forwarded-For
+	// the API believes when it decides who a request came from — the address
+	// every per-address rate limit and the request log key on. Empty means
+	// nobody's: the socket's peer is the client. See DefaultTrustedProxies.
+	TrustedProxies []string
+	CORSOrigins    []string
 	// corsOriginsSet records that CORS_ORIGINS carried a value, as opposed to
 	// the development default standing in for one. Unexported: it is about how
 	// the process was configured, not about what it should do.
@@ -313,7 +318,7 @@ type Config struct {
 	// tenant on the day enforcement is switched on.
 	CreditsEnforcementEnabled  bool
 	CreditsWarningThresholdPct int     // remaining % of the grant that triggers a warning
-	CreditsDefaultGrantUSD     float64 // provisioned once per company, in dollars
+	CreditsDefaultGrantUSD     float64 // a new company's free credit, once, in dollars
 
 	// Public `/v1` API (T-13, extended by T-A1). APIV1RatePerMin is the
 	// per-key request budget; it is deliberately the name T-A1 reserves, so
@@ -733,6 +738,7 @@ func Load() (*Config, error) {
 		DSNRetiredKeysHex:    splitCSV(getEnv("ARGENTUM_DSN_KEYS_RETIRED", "")),
 		ControlMigrationsDir: getEnv("CONTROL_MIGRATIONS_DIR", "migrations/control"),
 		CookieSecure:         getEnv("COOKIE_SECURE", "false") == "true",
+		TrustedProxies:       parseTrustedProxies(getEnv("TRUSTED_PROXIES", DefaultTrustedProxies)),
 		CORSOrigins:          splitCSV(getEnv("CORS_ORIGINS", "http://localhost:5173")),
 		// Whether an operator said anything at all, kept apart from what the
 		// list ended up being. getEnv treats unset and empty alike and hands
@@ -801,7 +807,9 @@ func Load() (*Config, error) {
 		// Credit enforcement
 		CreditsEnforcementEnabled:  getEnv("CREDITS_ENFORCEMENT_ENABLED", "true") == "true",
 		CreditsWarningThresholdPct: getEnvAsInt("CREDITS_WARNING_THRESHOLD_PCT", 20),
-		CreditsDefaultGrantUSD:     getEnvAsFloat("CREDITS_DEFAULT_GRANT_USD", 25),
+		// $0.50 since RIZ-79, written at signup; it was $25, provisioned at
+		// the first budget check. A company that already holds a grant keeps it.
+		CreditsDefaultGrantUSD: getEnvAsFloat("CREDITS_DEFAULT_GRANT_USD", 0.5),
 
 		// Public API
 		APIV1RatePerMin:         getEnvAsInt("API_V1_RATE_PER_MIN", 120),
@@ -1149,7 +1157,58 @@ func (c *Config) Validate() error {
 		logrus.Warnf("CORS_ORIGINS is unset in production: the only allowed origin is the development default %q, so the dashboard's own requests will be refused by the browser — set it to the dashboard host", c.CORSOrigins)
 	}
 
+	// Fatal, unlike the two above: a typo here would otherwise be discovered
+	// as a router that trusts nobody and limits every visitor as one address.
+	for _, p := range c.TrustedProxies {
+		if !validProxyEntry(p) {
+			return fmt.Errorf("TRUSTED_PROXIES: %q is neither an IP address nor a CIDR (use %q to trust no proxy)", p, trustNoProxy)
+		}
+	}
+
 	return nil
+}
+
+// DefaultTrustedProxies is every private and loopback range (RIZ-79 review).
+//
+// Until it existed the API believed every peer — gin's default — so
+// c.ClientIP() returned the *leftmost* X-Forwarded-For entry, which is the one
+// the client writes. Any per-address limit (signup, /share, the embed mint)
+// was a header away from never refusing anyone.
+//
+// Private ranges, not "nobody", because both shipped topologies put a proxy
+// on a private address in front of the API: the compose dashboard's nginx on
+// the Docker bridge, and the chart's Traefik on the pod network. Trusting
+// nobody would make that proxy the client, and five sign-ups an hour would
+// then be the whole deployment's allowance. With these ranges gin reads
+// X-Forwarded-For from the right and stops at the first address that is not
+// a proxy — the one the proxy appended, which the client cannot write.
+//
+// What it does not cover, stated: a chain that rewrites the client to a
+// private address (an SNAT load balancer) *and* keeps the client's own header.
+// There the rightmost hop is trusted and the walk reaches a written one. A
+// deployment like that narrows TRUSTED_PROXIES to its proxy's own range, and
+// the SNAT address then becomes the client — one shared bucket, which is
+// failing closed.
+const DefaultTrustedProxies = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7"
+
+// trustNoProxy is the TRUSTED_PROXIES value for an API nobody proxies to.
+// A word rather than an empty string, because getEnv reads empty as unset and
+// would hand back the default.
+const trustNoProxy = "none"
+
+func parseTrustedProxies(s string) []string {
+	if strings.EqualFold(strings.TrimSpace(s), trustNoProxy) {
+		return nil
+	}
+	return splitCSV(s)
+}
+
+func validProxyEntry(s string) bool {
+	if net.ParseIP(s) != nil {
+		return true
+	}
+	_, _, err := net.ParseCIDR(s)
+	return err == nil
 }
 
 func validateLLMInterfaceKind(iface, envPrimary, envFallback string) error {

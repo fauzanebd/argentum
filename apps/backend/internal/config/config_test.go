@@ -477,6 +477,42 @@ func TestValidateAcceptsAGoodConfig(t *testing.T) {
 	}
 }
 
+// RIZ-79 review F1: TRUSTED_PROXIES decides whose X-Forwarded-For is believed.
+func TestTrustedProxies(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		want    []string
+		wantErr bool
+	}{
+		{name: "the default", in: DefaultTrustedProxies, want: strings.Split(DefaultTrustedProxies, ",")},
+		{name: "none trusts nobody", in: "none", want: nil},
+		{name: "NONE, spaced", in: " NONE ", want: nil},
+		{name: "an exact proxy and a range", in: "10.42.0.0/16, 172.18.0.5", want: []string{"10.42.0.0/16", "172.18.0.5"}},
+		{name: "a typo is fatal", in: "10.42.0.0/16,traefik", wantErr: true},
+		{name: "a bad mask is fatal", in: "10.0.0.0/33", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := validCfg()
+			c.TrustedProxies = parseTrustedProxies(tc.in)
+			err := c.Validate()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXIES") {
+					t.Fatalf("Validate() = %v, want a TRUSTED_PROXIES error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Validate() = %v", err)
+			}
+			if strings.Join(c.TrustedProxies, "|") != strings.Join(tc.want, "|") || (tc.want == nil) != (c.TrustedProxies == nil) {
+				t.Errorf("TrustedProxies = %q, want %q", c.TrustedProxies, tc.want)
+			}
+		})
+	}
+}
+
 func TestValidateRejectsMissingSecrets(t *testing.T) {
 	cases := []struct {
 		name    string

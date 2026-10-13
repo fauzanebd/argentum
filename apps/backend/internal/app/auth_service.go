@@ -20,6 +20,7 @@ type AuthService struct {
 	users     domain.UserRepository
 	signer    *auth.TokenSigner
 	roster    RosterSeeder
+	credits   CreditGranter
 }
 
 func NewAuthService(c domain.CompanyRepository, u domain.UserRepository, s *auth.TokenSigner) *AuthService {
@@ -40,6 +41,22 @@ type RosterSeeder interface {
 // finds until T-S2 resolves a turn to no agent at all.
 func (s *AuthService) WithRoster(r RosterSeeder) *AuthService {
 	s.roster = r
+	return s
+}
+
+// CreditGranter gives a new company its free credit (RIZ-79). Narrow for
+// RosterSeeder's reason: signup needs one write, not the whole metering
+// surface. Like EnsureDefault it returns nothing — a signup does not fail
+// over its credit, because CheckBudget provisions the same grant lazily.
+type CreditGranter interface {
+	GrantSignupCredit(ctx context.Context, companyID string)
+}
+
+// WithCredits makes signup write the company's starting balance. Without it a
+// new workspace still gets its grant, at its first budget check rather than
+// at signup — the pre-RIZ-79 behaviour.
+func (s *AuthService) WithCredits(g CreditGranter) *AuthService {
+	s.credits = g
 	return s
 }
 
@@ -106,6 +123,14 @@ func (s *AuthService) Signup(ctx context.Context, companyName, email, password s
 	}
 	if err := s.users.Create(ctx, user); err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
+	}
+	// After the admin exists, not after the company: a signup that fails on
+	// the user insert leaves a company nobody can log into, and giving that
+	// company credit only makes the orphan look more like a real tenant. This
+	// is the only place a grant is written at signup — accepting an invite
+	// joins a company that already has one (RIZ-79 R5).
+	if s.credits != nil {
+		s.credits.GrantSignupCredit(ctx, company.ID)
 	}
 
 	access, err := s.signer.IssueAccessToken(user.ID, user.CompanyID, string(user.Role))

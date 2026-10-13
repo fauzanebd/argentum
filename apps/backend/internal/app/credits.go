@@ -19,18 +19,27 @@ import (
 //
 // Three decisions in here are not obvious from the ticket:
 //
-//  1. **The grant is provisioned here, not by a migration.** Nothing has ever
-//     credited a company. `company_credits` rows are created only by
-//     CreditsRepo.Decrement, which upserts a *negative* balance — so on the
-//     day enforcement is switched on, every tenant that has ever run a turn is
-//     at or below zero and every tenant that has not has no row at all.
-//     Enforcing "balance <= 0 means refuse" against that state is a global
-//     outage, not a spend ceiling. CheckBudget therefore provisions
+//  1. **The grant is provisioned here, not by a migration.** Before T-03
+//     nothing had ever credited a company. `company_credits` rows were created
+//     only by CreditsRepo.Decrement, which upserts a *negative* balance — so
+//     on the day enforcement was switched on, every tenant that had ever run a
+//     turn was at or below zero and every tenant that had not had no row at
+//     all. Enforcing "balance <= 0 means refuse" against that state is a
+//     global outage, not a spend ceiling. CheckBudget therefore provisions
 //     CreditPolicy.GrantMicroUSD the first time it sees a company with no
 //     grant, which also forgives pre-enforcement usage exactly once. Doing it
 //     in Go rather than in SQL keeps one owner for the number: an operator
 //     changing CREDITS_DEFAULT_GRANT_USD does not have to reconcile it with a
 //     value frozen into an applied migration.
+//
+//     Since RIZ-79 that lazy grant is the fallback, not the main road.
+//     Signup writes the same number through GrantSignupCredit, so a new
+//     workspace has its free credit before its first turn rather than at it,
+//     and the Usage page stops showing "$0.00" to someone who has spent
+//     nothing. What the lazy path still covers is every company created
+//     before that shipped, a signup served by an older pod during a rolling
+//     deploy, and a signup whose grant write failed — all of which get the
+//     same amount, because there is still only one setting for it.
 //
 //  2. **A grant is what makes BudgetWarning computable at all.** "<20%
 //     remaining" needs a denominator, and monthly_grant_micro_usd is the only
@@ -60,9 +69,10 @@ type CreditPolicy struct {
 	// WarnPct is the remaining-percentage-of-grant threshold below which a
 	// turn still runs but reports BudgetWarning.
 	WarnPct int
-	// GrantMicroUSD is what a company with no grant is provisioned on first
-	// check. Zero with Enforce true refuses every platform-key tenant, which
-	// is a legitimate operator choice and not a default.
+	// GrantMicroUSD is a new company's free credit: written at signup, and
+	// provisioned on first check for a company that has none. Zero with
+	// Enforce true refuses every platform-key tenant, which is a legitimate
+	// operator choice and not a default.
 	GrantMicroUSD int64
 }
 
@@ -182,11 +192,7 @@ func (s *UsageService) CheckBudget(ctx context.Context, companyID string) (Budge
 // the returned value still reflects the grant, so the turn proceeds and the
 // next check retries the write.
 func (s *UsageService) provisionGrant(ctx context.Context, companyID string) *domain.CompanyCredits {
-	c := &domain.CompanyCredits{
-		CompanyID:            companyID,
-		BalanceMicroUSD:      s.credit.GrantMicroUSD,
-		MonthlyGrantMicroUSD: s.credit.GrantMicroUSD,
-	}
+	c := s.projectedGrant(companyID)
 	if err := s.credits.Upsert(ctx, c); err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
 			"company_id":  companyID,
@@ -199,6 +205,62 @@ func (s *UsageService) provisionGrant(ctx context.Context, companyID string) *do
 		"grant_micro": s.credit.GrantMicroUSD,
 	}).Info("provisioned initial credit grant")
 	return c
+}
+
+// GrantSignupCredit gives a company created by signup its starting balance
+// (RIZ-79): balance and grant both CreditPolicy.GrantMicroUSD.
+//
+// Three things about it are deliberate:
+//
+//   - It ignores Enforce. The kill switch decides whether a balance is
+//     *refused on*, not whether one is kept — decrements carry on with
+//     enforcement off too — so a company that signed up while it was off
+//     still has its credit on the day it is switched back on.
+//   - It is insert-only. CreditsRepository.InsertIfAbsent never touches a row
+//     that exists, so this cannot top a company up, however often it runs.
+//   - It returns nothing. A signup that fails over its free credit is a
+//     visitor with no account, which is worse than an account whose credit
+//     arrives one budget check late: the lazy grant in CheckBudget writes the
+//     same amount the first time this company is checked.
+//
+// A grant of zero writes nothing. CheckBudget treats a zero-grant row exactly
+// as it treats no row, so writing one would add a row and change nothing.
+func (s *UsageService) GrantSignupCredit(ctx context.Context, companyID string) {
+	grant := s.credit.GrantMicroUSD
+	if grant <= 0 || companyID == "" {
+		return
+	}
+	c := &domain.CompanyCredits{
+		CompanyID:            companyID,
+		BalanceMicroUSD:      grant,
+		MonthlyGrantMicroUSD: grant,
+	}
+	if err := s.credits.InsertIfAbsent(ctx, c); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id":  companyID,
+			"grant_micro": grant,
+		}).Warn("signup credit grant failed; the first budget check will provision it")
+		return
+	}
+	// "if absent": DO NOTHING does not say whether it did anything, and a
+	// line claiming a grant for a company that already had a row would be the
+	// one an incident review trusts.
+	logrus.WithFields(logrus.Fields{
+		"company_id":  companyID,
+		"grant_micro": grant,
+	}).Info("signup credit written if absent")
+}
+
+// projectedGrant is what CheckBudget would provision for a company that has
+// no grant yet, as a record nobody wrote. CreditsForCompany answers with it so
+// a company that has not been checked yet reads the balance it will have,
+// rather than a zero it never owed.
+func (s *UsageService) projectedGrant(companyID string) *domain.CompanyCredits {
+	return &domain.CompanyCredits{
+		CompanyID:            companyID,
+		BalanceMicroUSD:      s.credit.GrantMicroUSD,
+		MonthlyGrantMicroUSD: s.credit.GrantMicroUSD,
+	}
 }
 
 // hasOwnPrimaryKey reports whether the tenant supplies their own primary-tier

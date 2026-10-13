@@ -46,6 +46,10 @@ export function SignupPage() {
         <CardHeader>
           <CardTitle className="text-2xl">Create your Argentum workspace</CardTitle>
           <CardDescription>You'll be the admin of your company workspace.</CardDescription>
+          {/* No amount on purpose: this page is unauthenticated and cannot read
+              CREDITS_DEFAULT_GRANT_USD, so a number here would go stale the
+              day an operator changes it. Usage shows the real one (RIZ-79). */}
+          <CardDescription>New workspaces start with free credit to try Argentum. No card needed.</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">

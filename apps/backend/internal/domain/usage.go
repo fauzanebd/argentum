@@ -136,5 +136,10 @@ type CompanyCredits struct {
 type CreditsRepository interface {
 	Get(ctx context.Context, companyID string) (*CompanyCredits, error)
 	Upsert(ctx context.Context, c *CompanyCredits) error
+	// InsertIfAbsent writes c only when the company has no row yet, and is a
+	// silent no-op when it has one. It is the signup grant's write (RIZ-79):
+	// unlike Upsert it can never overwrite a balance, so it can never forgive
+	// a debt or hand a second grant to a company that already spent its first.
+	InsertIfAbsent(ctx context.Context, c *CompanyCredits) error
 	Decrement(ctx context.Context, companyID string, microUSD int64) error
 }

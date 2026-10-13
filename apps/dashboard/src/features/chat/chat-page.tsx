@@ -804,6 +804,19 @@ export function ChatPage() {
                 className="w-full"
               />
             )}
+            {/* A send refused before any thread exists — above all the 402 a
+                workspace out of free credit gets (RIZ-79 QA B2). The thread
+                branch below always showed it; here it was set and never drawn,
+                so the first message of a new chat failed in silence, which is
+                exactly where an exhausted trial lands. */}
+            {error && (
+              <div
+                role="alert"
+                className="w-full px-6 py-2 text-sm text-destructive bg-destructive/5 rounded-lg"
+              >
+                {error}
+              </div>
+            )}
             {/* Since T-U8 the agent picker and the starter questions are slots
                 inside the bar rather than two blocks stacked above it. Both are
                 still new-chat-only: the picker because a thread's agent is

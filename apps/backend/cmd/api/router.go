@@ -23,6 +23,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
+	// Before any route: every c.ClientIP() below — the address-keyed rate
+	// limits most of all — reads what this decides.
+	middleware.TrustProxies(r, cfg.TrustedProxies)
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestLogging())
 	// /v1 is excluded: it is a machine surface authenticated by an API key,
@@ -45,8 +48,14 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// could be sent.
 	api.Use(middleware.Tracing())
 	handlers.NewMetaHandler().Register(api.Group("/meta"))
+	// Five sign-ups per address, refilling over an hour (RIZ-79): each one is a
+	// new company with free credit. On /signup alone — see SignupMiddleware.
+	var signupGuard []gin.HandlerFunc
+	if signupLimiter := middleware.NewRateLimiter(d.rdb, 5, 5.0/3600); signupLimiter != nil {
+		signupGuard = append(signupGuard, signupLimiter.SignupMiddleware())
+	}
 	handlers.NewAuthHandler(d.authSvc, d.teamSvc, cfg.CookieSecure, d.signer.RefreshTTL()).
-		Register(api.Group("/auth"))
+		Register(api.Group("/auth"), signupGuard...)
 
 	authed := api.Group("")
 	authed.Use(authedChain(d)...)

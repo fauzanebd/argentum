@@ -40,6 +40,9 @@ type Collector struct {
 	llmStreamTurnsTotal       int64
 	llmStreamTurnsNoUsage     int64
 	llmStreamUsageEventsTotal int64
+	// creditDebitFailures counts recorded costs that never reached the
+	// company's balance (RIZ-79). See RecordCreditDebitFailure.
+	creditDebitFailures int64
 
 	// Cache metrics
 	cacheHits   int64
@@ -232,6 +235,21 @@ func (c *Collector) RecordLLMStreamTurn(usageEvents int) {
 		return
 	}
 	atomic.AddInt64(&c.llmStreamUsageEventsTotal, int64(usageEvents))
+}
+
+// RecordCreditDebitFailure counts one usage event whose cost was written to
+// usage_events but not subtracted from company_credits (RIZ-79).
+//
+// A counter rather than only a log line because of what it hid: the debit
+// failed on every call, from the day the statement was written, and the
+// error was discarded — so the balance never moved, no workspace ever ran
+// out, and the only symptom was a Usage page that disagreed with itself.
+// Above zero, tenants are spending for free.
+func (c *Collector) RecordCreditDebitFailure() {
+	if c == nil {
+		return
+	}
+	atomic.AddInt64(&c.creditDebitFailures, 1)
 }
 
 // RecordAPIRequest records one finished `/v1` request (T-A5).
@@ -574,6 +592,7 @@ func (c *Collector) GetSnapshot() MetricsSnapshot {
 			StreamTurnsTotal:        atomic.LoadInt64(&c.llmStreamTurnsTotal),
 			StreamTurnsWithoutUsage: atomic.LoadInt64(&c.llmStreamTurnsNoUsage),
 			StreamUsageEventsTotal:  atomic.LoadInt64(&c.llmStreamUsageEventsTotal),
+			CreditDebitFailures:     atomic.LoadInt64(&c.creditDebitFailures),
 		},
 
 		Cache: CacheMetrics{
@@ -740,6 +759,7 @@ func (c *Collector) Reset() {
 	atomic.StoreInt64(&c.llmStreamTurnsTotal, 0)
 	atomic.StoreInt64(&c.llmStreamTurnsNoUsage, 0)
 	atomic.StoreInt64(&c.llmStreamUsageEventsTotal, 0)
+	atomic.StoreInt64(&c.creditDebitFailures, 0)
 	atomic.StoreInt64(&c.cacheHits, 0)
 	atomic.StoreInt64(&c.cacheMisses, 0)
 	atomic.StoreInt64(&c.jobsCreated, 0)
@@ -908,6 +928,9 @@ type LLMMetrics struct {
 	StreamTurnsTotal        int64 `json:"stream_turns_total"`
 	StreamTurnsWithoutUsage int64 `json:"stream_turns_without_usage"`
 	StreamUsageEventsTotal  int64 `json:"stream_usage_events_total"`
+	// CreditDebitFailures > 0 means recorded cost is not reaching balances —
+	// alert on it. See Collector.RecordCreditDebitFailure.
+	CreditDebitFailures int64 `json:"credit_debit_failures"`
 }
 
 // CacheMetrics contains cache performance metrics

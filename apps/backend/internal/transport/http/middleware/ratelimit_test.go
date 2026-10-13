@@ -90,6 +90,83 @@ func TestARefusalCarriesRetryAfterAndTheEnvelope(t *testing.T) {
 	}
 }
 
+// RIZ-79 R10 / AC6: five sign-ups per address, the sixth refused with the
+// sentence the signup page prints, and a second address unaffected.
+func TestSignupIsLimitedPerAddress(t *testing.T) {
+	srv := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: srv.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	limiter := NewRateLimiter(rdb, 5, 5.0/3600)
+
+	r := gin.New()
+	r.POST("/auth/signup", limiter.SignupMiddleware(), func(c *gin.Context) {
+		c.JSON(http.StatusCreated, gin.H{"ok": true})
+	})
+	signupFrom := func(addr string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/signup", nil)
+		req.RemoteAddr = addr + ":40000"
+		r.ServeHTTP(w, req)
+		return w
+	}
+
+	for i := 1; i <= 5; i++ {
+		if w := signupFrom("203.0.113.7"); w.Code != http.StatusCreated {
+			t.Fatalf("signup %d = %d, want 201", i, w.Code)
+		}
+	}
+	w := signupFrom("203.0.113.7")
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("signup 6 = %d, want 429", w.Code)
+	}
+	if got, want := w.Body.String(), `{"error":"Too many sign-ups from this network. Please try again in an hour."}`; got != want {
+		t.Errorf("body = %s\nwant   %s", got, want)
+	}
+	// One token back takes 720 s at five an hour. The header says so, rather
+	// than inviting a retry in a second that will also be refused. A range,
+	// not 720 exactly: the bucket refills by the whole second, so a run that
+	// crosses a second boundary has already earned a sliver of a token.
+	retry, err := strconv.Atoi(w.Header().Get("Retry-After"))
+	if err != nil || retry < 700 || retry > 720 {
+		t.Errorf("Retry-After = %q, want about 720", w.Header().Get("Retry-After"))
+	}
+
+	if w := signupFrom("198.51.100.20"); w.Code != http.StatusCreated {
+		t.Errorf("a second address = %d, want 201 — the bucket is per address", w.Code)
+	}
+}
+
+// The signup bucket is its own namespace: an address that has exhausted the
+// share limiter's bucket can still sign up, and the reverse.
+func TestSignupBucketIsNotShared(t *testing.T) {
+	srv := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: srv.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	limiter := NewRateLimiter(rdb, 1, 1.0/3600)
+
+	r := gin.New()
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	r.POST("/auth/signup", limiter.SignupMiddleware(), ok)
+	r.GET("/share/x", limiter.ShareMiddleware(), ok)
+	hit := func(method, path string) int {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, nil)
+		req.RemoteAddr = "203.0.113.7:40000"
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	if code := hit(http.MethodGet, "/share/x"); code != http.StatusOK {
+		t.Fatalf("first share = %d", code)
+	}
+	if code := hit(http.MethodGet, "/share/x"); code != http.StatusTooManyRequests {
+		t.Fatalf("second share = %d, want 429", code)
+	}
+	if code := hit(http.MethodPost, "/auth/signup"); code != http.StatusOK {
+		t.Errorf("signup after the share bucket emptied = %d, want 200", code)
+	}
+}
+
 // Redis down must not close the API. The limiter has always failed open; this
 // pins that the headers being added did not change it.
 func TestAnUnreachableRedisFailsOpen(t *testing.T) {

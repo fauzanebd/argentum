@@ -17,6 +17,9 @@ func (recordingCredits) Get(context.Context, string) (*domain.CompanyCredits, er
 	return nil, nil
 }
 func (recordingCredits) Upsert(context.Context, *domain.CompanyCredits) error { return nil }
+func (recordingCredits) InsertIfAbsent(context.Context, *domain.CompanyCredits) error {
+	return nil
+}
 func (r *recordingCredits) Decrement(_ context.Context, _ string, microUSD int64) error {
 	r.decrements = append(r.decrements, microUSD)
 	return nil
