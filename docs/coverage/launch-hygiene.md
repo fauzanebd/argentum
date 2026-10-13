@@ -22,6 +22,11 @@ driver or a channel behind it** — because a landing page that names an
 integration is a promise a salesperson repeats, and Telegram was the one a
 customer would try first since it is the cheapest to set up.
 
+The dashboard's Settings → Integrations tab follows the same rule since
+`RIZ-100` (2026-10-13): its Telegram row, disabled form and toast-only
+*Notify me* button are gone, WhatsApp is listed, and
+`integrations-tab.test.tsx` fails if a row without a working action returns.
+
 The hero and the feature grid also carried the old story. The hero now leads
 with the thing that is actually new — *it tells you when a number moves before
 you go looking* — and the "Schedules + automations" card became **"It tells you
