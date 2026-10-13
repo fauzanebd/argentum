@@ -8844,8 +8844,8 @@ there was no `DEMO_DSN` workaround, because QA had reseeded the warehouse and
 **QA (2026-10-13/14): 17 of 17 pass** on a local stack with a reseeded demo
 warehouse and `LLM_ZDR=true`.
 - The live API arms behaved as the handler tests did.
-- A DeepSeek turn cost 3 412 micro-USD at DeepSeek's rate, and the balance fell
-  by exactly that.
+- The DeepSeek call cost 3 412 micro-USD at DeepSeek's rate, and the balance fell
+  by the sum of the turn's events (5 295, the DeepSeek call 3 412 of it).
 - A worker that was never restarted moved back to Kimi on the next turn.
 - The screens match the five mockups.
 - **AC11 is met.** On the paired golden run, one case per process, DeepSeek

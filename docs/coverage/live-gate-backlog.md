@@ -2990,8 +2990,8 @@ one chat turn each, and Q15–Q16 send real email; spend for all six is approved
 **Closed by QA (2026-10-13/14, all 17 checks pass, `.flow/RIZ-97/qa/qa.json`):**
 - The live API arms, Q3–Q8. The rows matched the prediction, and the 409 left a
   real key row md5-identical.
-- The paid turns, Q9 and Q10. A DeepSeek turn cost 3 412 micro-USD at
-  DeepSeek's rate, and the balance fell by exactly that. A worker that was never
+- The paid turns, Q9 and Q10. The DeepSeek call cost 3 412 micro-USD at
+  DeepSeek's rate, and the balance fell by the sum of the turn's events (5 295, the DeepSeek call 3 412 of it). A worker that was never
   restarted moved back to Kimi on the next turn, and another workspace stayed on
   Kimi throughout.
 - The browser arms, Q11–Q16, against the five mockups.
