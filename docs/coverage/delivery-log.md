@@ -8836,7 +8836,10 @@ where the fixture has 30. The failure is ambient, not this change, so the run
 that counts set `DEMO_DSN` to a closed port and the test skipped. The worktree
 needed `@argentum/widget` built first and a `pnpm` shim to
 `corepack pnpm@10.18.0`. No `make openapi` (no `/v1` change) and no `make eval`
-(QA's, Q17).
+(QA's, Q17). After merging `origin/main` (RIZ-87, RIZ-27), `make check` gave
+`MAKE EXIT: 0` again: 78 Go packages `ok` and 259 dashboard tests. This time
+there was no `DEMO_DSN` workaround, because QA had reseeded the warehouse and
+`internal/eval` passed against it.
 
 **QA (2026-10-13/14): 17 of 17 pass** on a local stack with a reseeded demo
 warehouse and `LLM_ZDR=true`.
