@@ -19,7 +19,10 @@ import type {
   FeedbackWithContext,
   MetricGrain,
   MetricUnit,
+  OperatorTopup,
   Skill,
+  Topup,
+  TopupPayee,
 } from "./domain.js";
 
 //////////
@@ -638,4 +641,59 @@ export interface VoiceAvailability {
    * Transcribe is false.
    */
   max_clip_seconds: number /* int */;
+}
+/**
+ * TopupOptionsResponse is `GET /api/topups/options` (RIZ-83 R3): what the
+ * choose screen offers, and the effective rate its preview is computed from.
+ * The preview rate is the one a request created now would freeze — market plus
+ * spread, or the fallback — and it is the only rate a tenant is ever sent. The
+ * market rate and the spread are the operator's (AC28).
+ */
+export interface TopupOptionsResponse {
+  /**
+   * Enabled is false when no payees are configured; Payees is then empty
+   * and the page says top-up is not available.
+   */
+  enabled: boolean;
+  min_idr: number /* int64 */;
+  max_idr: number /* int64 */;
+  step_idr: number /* int64 */;
+  presets_idr: number /* int64 */[];
+  /**
+   * PreviewIDRPerUSDE4 is rupiah per dollar × 10 000. The page computes its
+   * preview with the server's integer formula; the server stays
+   * authoritative, and the waiting card shows the frozen credit.
+   */
+  preview_idr_per_usd_e4: number /* int64 */;
+  payees: TopupPayee[];
+  expires_after_hours: number /* int */;
+}
+/**
+ * TopupsResponse is a workspace's own top-ups, newest first (R7). No storage
+ * key, no URL and no rate is in an element: domain.Topup tags them all out.
+ */
+export interface TopupsResponse {
+  topups: (Topup | undefined)[];
+}
+/**
+ * OperatorTopupsResponse is the operator's queue or decisions (R10).
+ */
+export interface OperatorTopupsResponse {
+  topups: (OperatorTopup | undefined)[];
+}
+/**
+ * TopupProofLinkResponse is View proof (R10): a presigned URL that stops
+ * working after ExpiresIn seconds.
+ */
+export interface TopupProofLinkResponse {
+  url: string;
+  content_type: string;
+  expires_in: number /* int */;
+}
+/**
+ * TopupApproveResponse is an approval (R11) and the balance it left.
+ */
+export interface TopupApproveResponse {
+  topup?: Topup;
+  balance_micro_usd: number /* int64 */;
 }

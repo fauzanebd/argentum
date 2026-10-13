@@ -86,9 +86,13 @@ type Collector struct {
 	// conversationCeilings is dimension -> asks a conversation budget refused
 	// (T-N8). A closed vocabulary in internal/agentbudget: turns, depth, wall.
 	conversationCeilings map[string]int64
-	toolCalls            map[string]*toolAgg // tool name -> count/errors/duration
-	turnDurations        *durationAgg
-	llmLatency           map[string]*durationAgg // model -> latency
+	// topupFXFallbacks is reason -> top-ups priced at the fallback rate
+	// (RIZ-83). A closed vocabulary in internal/app: timeout, http_status,
+	// bad_body, out_of_range, stale.
+	topupFXFallbacks map[string]int64
+	toolCalls        map[string]*toolAgg // tool name -> count/errors/duration
+	turnDurations    *durationAgg
+	llmLatency       map[string]*durationAgg // model -> latency
 
 	// Public API request metrics (T-A5), guarded by mu rather than by atomics:
 	// the unit of update is a map entry and a bucket array, not a counter.
@@ -400,6 +404,25 @@ func (c *Collector) RecordConversationCeiling(dimension string) {
 	c.conversationCeilings[dimension]++
 }
 
+// RecordTopupFXFallback counts one top-up rate that fell back to the configured
+// TOPUP_IDR_PER_USD (RIZ-83), by why the market rate was not usable.
+//
+// It is the one signal that the free FX source has gone away or changed shape:
+// every fallback still prices a top-up — conservatively — so nothing else
+// breaks, and a fallback that quietly became the only rate would otherwise be
+// found at month-end reconciliation.
+func (c *Collector) RecordTopupFXFallback(reason string) {
+	if c == nil || reason == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.topupFXFallbacks == nil {
+		c.topupFXFallbacks = map[string]int64{}
+	}
+	c.topupFXFallbacks[reason]++
+}
+
 // RecordToolCall counts one tool call and how long it took. Called from the
 // audit decorator, which is the one place every tool call passes through — the
 // same reason the audit row is written there.
@@ -652,6 +675,7 @@ func (c *Collector) domainSnapshot() DomainMetrics {
 		ActionExecutions:     copyCounts(c.actionExecutions),
 		ActionFailures:       copyCounts(c.actionFailures),
 		ConversationCeilings: copyCounts(c.conversationCeilings),
+		TopupFXFallbacks:     copyCounts(c.topupFXFallbacks),
 		Tools:                make(map[string]ToolMetrics, len(c.toolCalls)),
 		LLMLatency:           make(map[string]DurationMetrics, len(c.llmLatency)),
 	}
@@ -819,6 +843,9 @@ type DomainMetrics struct {
 	// ConversationCeilings is dimension → asks a conversation budget refused
 	// (T-N8): "turns", "depth", "wall".
 	ConversationCeilings map[string]int64 `json:"conversation_ceilings,omitempty"`
+	// TopupFXFallbacks is reason → top-ups priced at the fallback rate
+	// (RIZ-83): "timeout", "http_status", "bad_body", "out_of_range", "stale".
+	TopupFXFallbacks map[string]int64 `json:"topup_fx_fallbacks,omitempty"`
 }
 
 // GroundingMetrics is the wrong-but-nonempty instrument (T-Q11). Both numbers
@@ -981,4 +1008,11 @@ func DocumentPagesOCR(companyID string, pages int) {
 // runs the asks (T-N6), which is the worker.
 func ConversationCeiling(dimension string) {
 	Default().RecordConversationCeiling(dimension)
+}
+
+// TopupFXFallback is the package-level shorthand the top-up rate source calls
+// (RIZ-83). It counts in the API, which is where a top-up is priced and where
+// /metrics is served.
+func TopupFXFallback(reason string) {
+	Default().RecordTopupFXFallback(reason)
 }

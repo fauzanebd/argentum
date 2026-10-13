@@ -104,6 +104,11 @@ func newRouter(d *apiDeps) *gin.Engine {
 	handlers.NewUsageHandler(d.usageSvc).
 		WithConversationAccess(d.conversationAccess).
 		Register(authed)
+	// Manual credit top-up (RIZ-83): an admin's request and proof, and the
+	// operator's queue under /operator. Registered unconditionally — a nil
+	// service answers 503 — so the role table's classification test sees every
+	// route on every deployment.
+	handlers.NewTopupsHandler(d.topupSvc, d.operatorOnly).Register(authed)
 	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)
 	// Is the metric layer accumulating (T-F4). No migration and no writes: the
 	// answer is a GROUP BY over agent_actions, so it is retroactive to every

@@ -11,8 +11,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Link } from "@tanstack/react-router";
 import type { CompanyCredits, UsageSummary } from "@argentum/api-types";
+import { Button } from "@/components/ui/button";
+import { useIsAdmin } from "@/store/auth";
 import { EVENT_LABELS, microToUsd } from "./labels";
+import { grantCaption, usedUpLine } from "./credit-copy";
 
 /**
  * recharts is ~390 kB and this tab is the only screen that draws a chart.
@@ -25,6 +29,7 @@ const BreakdownChart = lazy(() =>
 );
 
 export function OverviewTab() {
+  const isAdmin = useIsAdmin();
   const { data: summary, isLoading } = useQuery({
     queryKey: ["usage-summary"],
     queryFn: async () => (await api.get<UsageSummary>("/usage/summary")).data,
@@ -78,12 +83,21 @@ export function OverviewTab() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Credit balance</CardDescription>
+            <div className="flex items-center justify-between gap-2">
+              <CardDescription>Credit balance</CardDescription>
+              {/* Admins only (RIZ-83 R19): paying is an admin's decision, and
+                  the top-up page tells a member only to ask one. */}
+              {isAdmin && (
+                <Button asChild variant="outline" size="sm" className="h-7 px-2.5 text-xs">
+                  <Link to="/top-up">Top up</Link>
+                </Button>
+              )}
+            </div>
             <CardTitle className="text-2xl">
               {balanceUsd != null ? `$${balanceUsd.toFixed(2)}` : "—"}
             </CardTitle>
           </CardHeader>
-          {pct != null && (
+          {pct != null && credits && (
             <CardContent className="pt-0">
               <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
                 <div
@@ -92,14 +106,11 @@ export function OverviewTab() {
                 />
               </div>
               {/* "free credit", not "monthly grant": the column is named
-                  monthly_grant_micro_usd but nothing refills it (RIZ-79). */}
-              <p className="text-xs text-muted-foreground mt-1.5">
-                of ${grantUsd?.toFixed(2)} free credit
-              </p>
+                  monthly_grant_micro_usd but nothing refills it (RIZ-79) —
+                  and "at your last top-up" once one has reset it (RIZ-83). */}
+              <p className="text-xs text-muted-foreground mt-1.5">{grantCaption(credits)}</p>
               {usedUp && (
-                <p className="text-xs text-destructive mt-1.5">
-                  Free credit used up. New chats, scheduled reports and API calls are paused.
-                </p>
+                <p className="text-xs text-destructive mt-1.5">{usedUpLine(credits)}</p>
               )}
             </CardContent>
           )}

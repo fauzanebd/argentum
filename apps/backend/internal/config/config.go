@@ -320,6 +320,37 @@ type Config struct {
 	CreditsWarningThresholdPct int     // remaining % of the grant that triggers a warning
 	CreditsDefaultGrantUSD     float64 // a new company's free credit, once, in dollars
 
+	// Manual credit top-up (RIZ-83). Raw values: TopupSettings parses and
+	// validates them, and a bad value turns top-up off with an error at boot
+	// rather than stopping the API — a payment feature misconfigured is not a
+	// reason to take chat down with it.
+	//
+	// TopupPayeesJSON is the accounts a customer pays into, as JSON. No default
+	// and never in git: the owner asked for the numbers to stay out of the
+	// repository, and unset is the kill switch (the page says "not available").
+	TopupPayeesJSON string
+	// TopupFXURL is where the market USD→IDR rate is read. Frankfurter's ECB
+	// reference rate by default: free, keyless, daily.
+	TopupFXURL string
+	// TopupFXSpreadPct is the profit over the market rate, as a percentage
+	// that may carry two decimals ("5", "2.5"). Kept as text so it is parsed
+	// exactly into basis points, never through a float.
+	TopupFXSpreadPct   string
+	TopupFXTimeoutMS   int
+	TopupFXCacheHours  int
+	TopupFXMaxAgeHours int
+	// TopupIDRPerUSD is the fallback effective rate when no market rate young
+	// enough is available. Conservative by default (18 000, above market plus
+	// 5%), so an outage never undersells.
+	TopupIDRPerUSD  int
+	TopupMinIDR     int
+	TopupMaxIDR     int
+	TopupPresetsIDR string
+	// PlatformOperatorEmails may review every workspace's top-ups. Lowercased.
+	// There is no platform-admin role: every signup is the admin of its own
+	// company, so company admin cannot be what approves a payment.
+	PlatformOperatorEmails []string
+
 	// Public `/v1` API (T-13, extended by T-A1). APIV1RatePerMin is the
 	// per-key request budget; it is deliberately the name T-A1 reserves, so
 	// the limiter T-13 ships and the one that ticket configures are the same
@@ -810,6 +841,19 @@ func Load() (*Config, error) {
 		// $0.50 since RIZ-79, written at signup; it was $25, provisioned at
 		// the first budget check. A company that already holds a grant keeps it.
 		CreditsDefaultGrantUSD: getEnvAsFloat("CREDITS_DEFAULT_GRANT_USD", 0.5),
+
+		// Manual credit top-up (RIZ-83)
+		TopupPayeesJSON:        getEnv("TOPUP_PAYEES", ""),
+		TopupFXURL:             getEnv("TOPUP_FX_URL", "https://api.frankfurter.app/latest?from=USD&to=IDR"),
+		TopupFXSpreadPct:       getEnv("TOPUP_FX_SPREAD_PCT", "5"),
+		TopupFXTimeoutMS:       getEnvAsInt("TOPUP_FX_TIMEOUT_MS", 3000),
+		TopupFXCacheHours:      getEnvAsInt("TOPUP_FX_CACHE_HOURS", 24),
+		TopupFXMaxAgeHours:     getEnvAsInt("TOPUP_FX_MAX_AGE_HOURS", 72),
+		TopupIDRPerUSD:         getEnvAsInt("TOPUP_IDR_PER_USD", 18000),
+		TopupMinIDR:            getEnvAsInt("TOPUP_MIN_IDR", 20000),
+		TopupMaxIDR:            getEnvAsInt("TOPUP_MAX_IDR", 5000000),
+		TopupPresetsIDR:        getEnv("TOPUP_PRESETS_IDR", "50000,100000,250000"),
+		PlatformOperatorEmails: lowerAll(splitCSV(getEnv("PLATFORM_OPERATOR_EMAILS", ""))),
 
 		// Public API
 		APIV1RatePerMin:         getEnvAsInt("API_V1_RATE_PER_MIN", 120),
@@ -1365,6 +1409,13 @@ func getEnvAsFloat(key string, defaultValue float64) float64 {
 		}
 	}
 	return defaultValue
+}
+
+func lowerAll(in []string) []string {
+	for i, s := range in {
+		in[i] = strings.ToLower(s)
+	}
+	return in
 }
 
 func splitCSV(s string) []string {

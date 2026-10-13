@@ -562,3 +562,50 @@ type VoiceAvailability struct {
 	// Transcribe is false.
 	MaxClipSeconds int `json:"max_clip_seconds"`
 }
+
+// TopupOptionsResponse is `GET /api/topups/options` (RIZ-83 R3): what the
+// choose screen offers, and the effective rate its preview is computed from.
+//
+// The preview rate is the one a request created now would freeze — market plus
+// spread, or the fallback — and it is the only rate a tenant is ever sent. The
+// market rate and the spread are the operator's (AC28).
+type TopupOptionsResponse struct {
+	// Enabled is false when no payees are configured; Payees is then empty
+	// and the page says top-up is not available.
+	Enabled    bool    `json:"enabled"`
+	MinIDR     int64   `json:"min_idr"`
+	MaxIDR     int64   `json:"max_idr"`
+	StepIDR    int64   `json:"step_idr"`
+	PresetsIDR []int64 `json:"presets_idr"`
+	// PreviewIDRPerUSDE4 is rupiah per dollar × 10 000. The page computes its
+	// preview with the server's integer formula; the server stays
+	// authoritative, and the waiting card shows the frozen credit.
+	PreviewIDRPerUSDE4 int64               `json:"preview_idr_per_usd_e4"`
+	Payees             []domain.TopupPayee `json:"payees"`
+	ExpiresAfterHours  int                 `json:"expires_after_hours"`
+}
+
+// TopupsResponse is a workspace's own top-ups, newest first (R7). No storage
+// key, no URL and no rate is in an element: domain.Topup tags them all out.
+type TopupsResponse struct {
+	Topups []*domain.Topup `json:"topups"`
+}
+
+// OperatorTopupsResponse is the operator's queue or decisions (R10).
+type OperatorTopupsResponse struct {
+	Topups []*domain.OperatorTopup `json:"topups"`
+}
+
+// TopupProofLinkResponse is View proof (R10): a presigned URL that stops
+// working after ExpiresIn seconds.
+type TopupProofLinkResponse struct {
+	URL         string `json:"url"`
+	ContentType string `json:"content_type"`
+	ExpiresIn   int    `json:"expires_in"`
+}
+
+// TopupApproveResponse is an approval (R11) and the balance it left.
+type TopupApproveResponse struct {
+	Topup           *domain.Topup `json:"topup"`
+	BalanceMicroUSD int64         `json:"balance_micro_usd"`
+}

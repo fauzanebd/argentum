@@ -26,6 +26,8 @@ import {
 } from "@/features/dashboards/dashboards-page";
 import { KnowledgePage } from "@/features/knowledge/knowledge-page";
 import { DocumentReviewPage } from "@/features/knowledge/document-review";
+import { TopUpPage } from "@/features/topup/top-up-page";
+import { OperatorTopupsPage } from "@/features/topup/operator-topups-page";
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -145,6 +147,23 @@ const usageRoute = createRoute({
   component: UsagePage,
 });
 
+// Credit top-up (RIZ-83). Not in the sidebar: it is reached from where credit
+// runs out — the Usage credit card, the chat banner and the chat refusal.
+const topUpRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/top-up",
+  component: TopUpPage,
+});
+
+// The operator's review queue (RIZ-83 R21). Deliberately in no navigation: it
+// answers everyone but PLATFORM_OPERATOR_EMAILS with one sentence, and the
+// alert email is how the operator arrives.
+const operatorTopUpsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/operator/top-ups",
+  component: OperatorTopupsPage,
+});
+
 const scheduledTasksRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/scheduled-tasks",
@@ -210,6 +229,8 @@ export const routeTree = rootRoute.addChildren([
       chatThreadRoute,
       settingsRoute,
       usageRoute,
+      topUpRoute,
+      operatorTopUpsRoute,
       qualityRoute,
       scheduledTasksRoute,
       watchersRoute,

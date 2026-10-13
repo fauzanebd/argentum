@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/fauzanebd/argentum/internal/adapters/db"
@@ -218,7 +219,16 @@ type apiDeps struct {
 	// shareSvc it needs no object storage — what it serves is a live query, not
 	// a stored artefact — so it is built unconditionally.
 	dashboardShareSvc *app.DashboardShareService
-	idemStore         idempotency.Store
+	// topupSvc is the manual credit top-up (RIZ-83). Built whenever the
+	// control DB is: with no payees it answers "not available" to a request
+	// and still lets an operator decide what is already in review — the kill
+	// switch stops new requests, not the queue. Nil only in tests, where the
+	// routes answer 503.
+	topupSvc *app.TopupService
+	// operatorOnly gates `/api/operator/*` on PLATFORM_OPERATOR_EMAILS. Nil
+	// refuses every operator route.
+	operatorOnly gin.HandlerFunc
+	idemStore    idempotency.Store
 	// apiKeyAuth overrides what authenticates `/v1`. Nil in production, where
 	// apiKeySvc is used; see apiKeyAuthOf in router.go for why the seam exists.
 	apiKeyAuth middleware.APIKeyAuthenticator

@@ -41,6 +41,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/speech"
 	"github.com/fauzanebd/argentum/internal/tools"
 	"github.com/fauzanebd/argentum/internal/transport/eventbus"
+	"github.com/fauzanebd/argentum/internal/transport/http/middleware"
 	"github.com/fauzanebd/argentum/internal/webhookout"
 	"github.com/fauzanebd/argentum/internal/whatsapp"
 	"github.com/sirupsen/logrus"
@@ -426,6 +427,13 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	if logoStore != nil {
 		deps.postImages = postimage.NewService(pgctl.NewPostImageRepo(controlDB), logoStore)
 	}
+
+	// Manual credit top-up (RIZ-83). Built unconditionally, on the logo bucket
+	// for proofs when there is one: a deployment with no payees still serves
+	// the operator queue, and one with no bucket still takes requests and
+	// answers a proof upload with 503.
+	deps.topupSvc = buildTopupService(cfg, controlDB, rdb, logoStore, deps.usageSvc, deps.mailer, companyRepo, userRepo)
+	deps.operatorOnly = middleware.OperatorOnly(userRepo, cfg.PlatformOperatorEmails)
 
 	// The `/v1` report surface (T-A2). Same constructor the worker's stack
 	// uses for the agent's generate_document, with the untrusted-spec caps
