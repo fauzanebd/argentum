@@ -285,6 +285,47 @@ describe("waiting for payment (R17b, R17c)", () => {
   });
 });
 
+describe("QA round 1", () => {
+  it("F4: a server 400 holds Continue until the amount changes", async () => {
+    post.mockRejectedValueOnce(apiError(400, "The minimum top-up is Rp 50.000."));
+    mount();
+    const field = await screen.findByLabelText("Amount");
+    fireEvent.change(field, { target: { value: "30000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The minimum top-up is Rp 50.000.");
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    fireEvent.change(field, { target: { value: "60000" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
+  });
+
+  it("F5: choosing another account after the API refused one frees Submit", async () => {
+    topups = [{ ...base, id: "t-1", status: "awaiting_payment" }];
+    post.mockRejectedValueOnce(apiError(400, "Choose the account you paid to."));
+    mount();
+    const select = await screen.findByLabelText("Paid to");
+    fireEvent.change(select, { target: { value: "gopay" } });
+    const file = new File(["\x89PNG"], "mutasi.png", { type: "image/png" });
+    fireEvent.change(screen.getByTestId("proof-file"), { target: { files: [file] } });
+    const submit = screen.getByRole("button", { name: "Submit for review" });
+    fireEvent.click(submit);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Choose the account you paid to.");
+    expect(submit).toBeDisabled();
+    fireEvent.change(select, { target: { value: "bri" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(submit).toBeEnabled();
+  });
+
+  it("gives the Paid to placeholder room for its whole sentence", async () => {
+    topups = [{ ...base, id: "t-1", status: "awaiting_payment" }];
+    mount();
+    const select = await screen.findByLabelText("Paid to");
+    // w-60 (240 px) clipped "Choose the account you paid to." under the arrow.
+    expect(select.className).toContain("w-72");
+    expect(select.className).not.toContain("w-60");
+  });
+});
+
 describe("in review and history (R17d, R17e)", () => {
   it("shows the status card and every status in the history", async () => {
     topups = [

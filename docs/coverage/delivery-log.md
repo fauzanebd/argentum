@@ -8536,6 +8536,19 @@ shim to `corepack pnpm@10.18.0` on `PATH`.
 **Owed.** The stack, browser, SMTP, live-FX and production arms (live-gate §7r); Q10 and Q22 are the
 approved spend.
 
+**QA round 1.** 33 of 34 checks passed on a local stack; Q22 was not run (no SMTP credentials).
+Fixed: a server 400 on `POST /topups` left **Continue** enabled (F4); it now holds Continue the way a
+browser refusal does, until the amount changes. After the API refused a payee, choosing another
+cleared the sentence but left **Submit for review** disabled until the file was chosen again (F5).
+The **Paid to** placeholder was clipped at 240 px (now 288 px). Three dashboard tests, each failing
+without its fix. **Accepted exception (F1):** AC21 said no existing test would change except fakes
+gaining `Delete`. `TestMemberRoutesAdmitMembers` also learned to skip `operatorRoutes`, because an
+operator route is a member route only operators reach; its assertions are unchanged.
+**Deferred (F8):** replacing the proof of an `in_review` request moves it to the back of the
+operator queue (ordered by `proof_uploaded_at`) with no "proof replaced" marker. R5 permits it, and
+the old object is kept. The fix is to order by the first proof's time or flag the row; it is left
+for a follow-up.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

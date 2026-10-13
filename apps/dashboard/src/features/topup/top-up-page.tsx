@@ -181,7 +181,9 @@ function ChooseCard({ options }: { options: TopupOptionsResponse }) {
   };
 
   const range = `Between ${formatIdr(options.min_idr)} and ${formatIdr(options.max_idr)}, in whole thousands.`;
-  const canContinue = amount != null && clientError == null && !create.isPending;
+  // A server refusal holds Continue exactly as a browser one does (R17: "a
+  // server 400 shows the same way"); editing the amount clears it.
+  const canContinue = amount != null && error == null && !create.isPending;
 
   return (
     <Card className="px-6 py-5">
@@ -426,9 +428,14 @@ function ProofForm({
         value={payeeId}
         onChange={(e) => {
           setPayeeId(e.target.value);
-          if (error === CHOOSE_PAYEE) setError(null);
+          // The account was the problem — whether the browser or the API said
+          // so — and choosing another fixes it, so Submit is free again too.
+          if (error === CHOOSE_PAYEE) {
+            setError(null);
+            setBlocked(false);
+          }
         }}
-        className="h-9 w-60 max-w-full rounded-md border border-input bg-background px-3 text-sm"
+        className="h-9 w-72 max-w-full rounded-md border border-input bg-background pl-3 pr-8 text-sm"
       >
         <option value="" disabled>
           {CHOOSE_PAYEE}
