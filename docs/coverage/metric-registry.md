@@ -10,6 +10,7 @@ than one the LLM re-derived.
 | ------ | ---- | ---- | ----- |
 | `T-06` | Metric registry: schema, validation, CRUD, dashboard tab | 3d | **gated live 2026-08-02** |
 | `T-07` | `list_metrics` + `query_metric` tools | 1.5d | **gated live and scored 2026-08-02** — the eval found a language regression the registry causes, open (§5) |
+| `RIZ-27` | A member's metric reads follow the metric's source grant | 0.5d | **unit-gated 2026-10-13**, live arm owed — recorded in [`access-grants.md`](access-grants.md) §21 |
 
 ---
 
@@ -25,7 +26,7 @@ than one the LLM re-derived.
 | Parameterised exec | `internal/adapters/db/driver.go` — `Conn.ExecuteReadOnlyParams`, `Dialect.Placeholder`; implemented in all three drivers |
 | Service | `internal/app/metric_service.go` — validate-on-save, `Test`, `Query`, one shared `evaluate()` |
 | Repository | `internal/adapters/postgres/metric_repo.go` |
-| CRUD API | `internal/transport/http/handlers/metrics.go`, `wire.go`; `cmd/api/policy.go` (read=member, write+test=admin) |
+| CRUD API | `internal/transport/http/handlers/metrics.go`, `wire.go`; `cmd/api/policy.go` (read=member, write+test=admin). Since `RIZ-27`, a member's reads are narrowed by the metric's source grant (below) |
 | Wiring | `cmd/api/{deps,bootstrap,router}.go`, `internal/bootstrap/stack.go` |
 | Dashboard | `apps/dashboard/src/features/settings/metrics-tab.tsx`, `settings-page.tsx` |
 | SDK types | `packages/api-types/*` (+ `apps/backend/tygo.yaml` mappings) |
@@ -392,3 +393,20 @@ Not a like-for-like comparison — the set grew by five `metric_registry` cases,
 ten assertions moved from `must_call` to `must_call_any`, and one prompt line
 was added — and all three of those changes are in this file with the measurement
 that motivated them.
+
+---
+
+## RIZ-27 · A member's metric reads follow the source grant
+
+`T-06` opened reads to members, on the reasoning that a definition is the company's own
+configuration. `T-Z6` then let an admin restrict a source, and the registry did not follow: a
+member not granted the HR warehouse still read `payroll_cost` and the SQL against its tables.
+
+Now, for a member, `GET /api/metrics` omits a metric whose source they may not read — one
+`authz.Visible` question for the page over the distinct source ids, order kept, `grains` and
+`units` unchanged — and `GET /api/metrics/:id` answers it `404 {"error":"no such metric"}`, as for
+an id that does not exist. A failed check is the typed `503` and serves nothing. An admin's reads
+are whole and ask nothing, because Settings → Metrics is where metrics are edited. Writes, `Test`,
+`list_metrics`, `query_metric`, the turn catalog and watcher evaluation are unchanged — a grant
+gates what a person is shown, never what an agent queries. No tool or prompt change, so no
+`make eval`. The full record, its acceptance and what is owed: [`access-grants.md`](access-grants.md) §21.

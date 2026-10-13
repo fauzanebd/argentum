@@ -254,6 +254,45 @@ jobs:
         working-directory: apps/backend
         run: go run github.com/securego/gosec/v2/cmd/gosec@latest -quiet -severity high -confidence high ./...
 
+      # No `cache: pnpm` and no install. `pnpm audit` sends the lockfile to the
+      # registry's advisory endpoint and reads nothing in node_modules, so a
+      # store cache would be restored for nothing.
+      - uses: pnpm/action-setup@v6
+        if: needs.changes.outputs.web == 'true' || startsWith(github.ref, 'refs/tags/v')
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v7
+        if: needs.changes.outputs.web == 'true' || startsWith(github.ref, 'refs/tags/v')
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # RIZ-87. govulncheck's counterpart for the JS we ship, which until this
+      # step had nothing. Dependency review above only judges a package a PR
+      # *adds*; an advisory published later against a package we already have
+      # passed every gate in this file, which is how seroval sat in the
+      # dashboard's router at a critical advisory with nothing turning red.
+      #
+      # `--prod` because devDependencies never reach a browser or a server, and
+      # whole-workspace because a filter is one more thing to keep in step with
+      # pnpm-workspace.yaml.
+      #
+      # **The bar is critical deliberately, and here is what it lets through.**
+      # On 2026-10-13, after RIZ-87, `pnpm audit --prod` reports no critical
+      # and 8 high, none of them on a path into the dashboard, the widget, the
+      # landing site or the two widget packages:
+      #   packages/openapi-tools > ajv > fast-uri 3.1.4            6 high (codegen, never shipped)
+      #   apps/render > @remotion/bundler > css-loader > postcss
+      #     > nanoid 3.3.16, > source-map-js 1.2.1                 1 high each (bundler, server-side)
+      # At `high` this step would start red, and a scanner introduced red is a
+      # scanner somebody learns to ignore. Raising it is an edit to this line
+      # once those three are bumped or overridden; docs/coverage/
+      # security-hardening.md (RIZ-87) has the paths, the fixed versions and
+      # the follow-up that owns them.
+      - name: Vulnerable dependencies (pnpm audit)
+        if: needs.changes.outputs.web == 'true' || startsWith(github.ref, 'refs/tags/v')
+        run: pnpm audit --prod --audit-level=critical
+
   tokens:
     name: Design tokens
     needs: changes

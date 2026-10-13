@@ -19,3 +19,26 @@ packages:
 # while the config still looked like it said the right thing.
 allowBuilds:
   esbuild: true
+
+# RIZ-87. seroval is not ours: @tanstack/router-core depends on it to serialise
+# router state, and the router-core this lockfile pins (1.171.15) asks for
+# ^1.5.4, which resolved to 1.5.6. That version carries a critical advisory
+# (GHSA-p6vx-979v-rg4c, fromJSON invoking a plugin-produced callable through a
+# Promise thenable) and a high one (GHSA-jp82-f5mq-hwhp, memory exhaustion from
+# an unchecked TypedArray length), fixed by 1.6.2 and 1.6.3. Neither is
+# reachable from this client-only SPA, which never deserialises an SSR payload,
+# but a critical finding in a shipped bundle fails a customer's security
+# questionnaire whatever its reachability, and `pnpm audit` in CI now blocks on
+# one.
+#
+# An override rather than a router bump: seroval is internal to router-core and
+# exposes no types, so this moves one package, where bumping the router moves
+# its types under every route. The `@<1.6.3` selector is deliberate. It only
+# rewrites a request that would resolve to a vulnerable version, so it goes
+# inert by itself once router-core asks for a fixed one, and it can never force
+# a 2.x on a router that has not asked for it.
+#
+# Remove it once `pnpm why -r seroval` shows router-core itself requiring
+# seroval >=1.6.3 (router-core 1.17x's latest already asks for ^1.6.7).
+overrides:
+  'seroval@<1.6.3': '^1.6.3'

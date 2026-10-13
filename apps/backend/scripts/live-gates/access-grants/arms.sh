@@ -75,6 +75,9 @@ SHARE_LIVE2=a0000000-0004-4000-8000-000000000002
 SHARE_REVOKED=a0000000-0004-4000-8000-000000000003
 SHARE_EXPIRED=a0000000-0004-4000-8000-000000000004
 HR_SRC=a0000000-0005-4000-8000-000000000001
+SALES_SRC=a0000000-0005-4000-8000-000000000002
+MET_PAYROLL=a0000000-000d-4000-8000-000000000001
+MET_REVENUE=a0000000-000d-4000-8000-000000000002
 PAYROLL_PDF=a0000000-0006-4000-8000-000000000001
 HANDBOOK_PDF=a0000000-0006-4000-8000-000000000002
 PAYROLL_TABLE=a0000000-0007-4000-8000-000000000001
@@ -185,6 +188,64 @@ metric() {
 mode() { call PUT "/api/access/$1/$2/mode" "$TA" "{\"access_mode\":\"$3\"}"; }
 grant() { call PUT "/api/access/$1/$2/grants/$3" "$TA"; }
 revoke() { call DELETE "/api/access/$1/$2/grants/$3" "$TA"; }
+
+# no_payroll ARM — the last body carries no trace of the HR warehouse's metric:
+# not its key, not its source's id, not a word of its SQL (RIZ-27 AC1).
+no_payroll() {
+  case "$BODY" in
+    *payroll_cost* | *"$HR_SRC"* | *"$MET_PAYROLL"* | *monthly_salary*) fail "$1" "body names it: ${BODY:0:200}" ;;
+    *) pass "$1" ;;
+  esac
+}
+
+# metrics_arm — RIZ-27: a member's metric reads follow the metric's source grant.
+# Run with the HR warehouse restricted and nobody granted; leaves it so.
+metrics_arm() {
+  local edit unknown
+  call GET /api/metrics "$TM"
+  expect "RIZ-27 M lists only the open source's metric" 200 '[.metrics[].key] == ["net_revenue"] and (.grains | length) > 0'
+  no_payroll "RIZ-27 …and the raw body has no key, source id or SQL of the other"
+  call GET "/api/metrics/$NOBODY" "$TM"
+  unknown=$BODY
+  call GET "/api/metrics/$MET_PAYROLL" "$TM"
+  expect "RIZ-27 M: GET /api/metrics/<payroll_cost> → 404" 404 '.error == "no such metric"'
+  same "RIZ-27 …byte-identical to an unknown id" "$BODY" "$unknown"
+  call GET "/api/metrics/$MET_REVENUE" "$TM"
+  expect "RIZ-27 M: the open source's metric still opens" 200 '.metric.key == "net_revenue"'
+
+  # An admin is not granted the source either, and keeps the whole registry:
+  # metric writes are admin-only, so it is the only place they are managed.
+  call GET /api/metrics "$TA"
+  expect "RIZ-27 A (not granted) lists both" 200 '([.metrics[].key] | sort) == ["net_revenue","payroll_cost"]'
+  call GET "/api/metrics/$MET_PAYROLL" "$TA"
+  expect "RIZ-27 A: GET /api/metrics/<payroll_cost> → 200" 200 '.metric.key == "payroll_cost"'
+  edit=$(printf '%s' "$BODY" | jq -c '.metric | {source_id, key, label, description, sql_template, value_column, grain, unit, currency, higher_is_better, enabled}')
+  call PUT "/api/metrics/$MET_PAYROLL" "$TA" "$(printf '%s' "$edit" | jq -c '.label = "Payroll cost (edited)"')"
+  expect "RIZ-27 A edits its label (writes are never grant-checked)" 200 '.metric.label == "Payroll cost (edited)"'
+  call PUT "/api/metrics/$MET_PAYROLL" "$TA" "$edit"
+  expect "RIZ-27 …and puts it back" 200 '.metric.label == "Payroll cost"'
+
+  grant connection "$HR_SRC" "$U_M"
+  expect "RIZ-27 grant the HR warehouse to M" 204
+  call GET /api/metrics "$TM"
+  expect "RIZ-27 granted M lists payroll_cost, in its place" 200 '[.metrics[].key] | index("payroll_cost") != null'
+  call GET "/api/metrics/$MET_PAYROLL" "$TM"
+  expect "RIZ-27 granted M opens it" 200 '.metric.key == "payroll_cost"'
+  revoke connection "$HR_SRC" "$U_M"
+  expect "RIZ-27 revoke it" 204
+  call GET /api/metrics "$TM"
+  expect "RIZ-27 revoked M no longer lists it" 200 '[.metrics[].key] == ["net_revenue"]'
+  call GET "/api/metrics/$MET_PAYROLL" "$TM"
+  expect "RIZ-27 …and its id is no such metric again" 404 '.error == "no such metric"'
+
+  # AC7: every source restricted, and the registry is empty, not an error.
+  mode connection "$SALES_SRC" restricted
+  expect "RIZ-27 restrict the sales source too" 200
+  call GET /api/metrics "$TM"
+  expect "RIZ-27 M with no readable source: 200 and metrics: []" 200 '.metrics == [] and (.units | length) > 0'
+  mode connection "$SALES_SRC" open
+  expect "RIZ-27 re-open the sales source" 200
+}
 
 refused_rows() {
   sql "SELECT count(*) FROM agent_actions WHERE company_id = '$CO_A' AND tool_name = 'access.refused'"
@@ -681,9 +742,8 @@ call POST "/api/connections/$HR_SRC/freshness/test" "$TA" '{"sql":"SELECT now()"
 expect "T-Z6 A: …/freshness/test → 403" 403 '.resource_kind == "connection"'
 call POST "/api/connections/$HR_SRC/test" "$TA"
 if [ "$CODE" != 403 ]; then pass "T-Z6 A: …/test is not refused ($CODE)"; else fail "T-Z6 A: …/test is not refused" "$CODE $BODY"; fi
-call GET /api/metrics "$TM"
-expect "§17c M still lists the restricted source's metric, sql_template and all (documented gap)" 200 \
-  '[.metrics[] | select(.source_id == "'"$HR_SRC"'") | .sql_template] | length == 1'
+metrics_arm
+
 
 mode document "$PAYROLL_PDF" restricted
 expect "T-Z6 restrict Payroll 2026.pdf, nobody granted" 200

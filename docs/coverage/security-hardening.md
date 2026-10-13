@@ -1670,3 +1670,154 @@ from those routes — [`RIZ-26`](https://linear.app/rizkal-uhuy/issue/RIZ-26/a-m
 handler sites still echo `err.Error()`, so a unique, foreign-key or length violation still
 quotes the driver. That scrub, `/v1`'s malformed ids and uuids inside other bodies are the
 follow-up ticket's.
+
+## 23. `RIZ-87` — JS dependency audit: the bundles we ship carry no critical or high advisory (2026-10-13)
+
+§14 gave the Go side `govulncheck`. The JS side had nothing that knew what an
+advisory is, apart from dependency review, which only judges a package a pull
+request *adds*. An advisory published later against a package we already had
+passed every gate, and that is how `seroval` sat inside the dashboard's router at
+a **critical** advisory with nothing turning red —
+[`RIZ-87`](https://linear.app/rizkal-uhuy/issue/RIZ-87/shipped-js-bundles-carry-no-known-critical-or-high-vulnerabilities).
+
+**Before and after, `pnpm audit --prod`.** pnpm's own summary line counts an
+advisory once per vulnerable version, so `postcss-selector-parser` (6.1.4 and
+7.1.5) is two of the 28.
+
+| | critical | high | moderate | low | total |
+| -- | -- | -- | -- | -- | -- |
+| `c0f389d` (main) | 1 | 17 | 8 | 2 | **28** |
+| this branch | 0 | 8 | 2 | 0 | **10** |
+
+| Where the 28 were | Package (locked) | Advisories | After |
+| -- | -- | -- | -- |
+| In the dashboard bundle | `axios` 1.18.1 | 7 high, 5 moderate | **1.20.0**, none |
+| In the dashboard bundle | `seroval` 1.5.6, via `@tanstack/react-router` > `router-core` | 1 critical (GHSA-p6vx-979v-rg4c), 1 high (GHSA-jp82-f5mq-hwhp) | **1.6.9** by override, none |
+| In the widget iframe bundle | `dompurify` 3.4.13 | 2 low (GHSA-p98j-92pf-mc4p, GHSA-6688-9rhm-gjv2) | **3.4.16**, none |
+| On the dashboard's prod path, build-time only | `braces` 3.0.3, `nanoid` 3.3.16, `source-map-js` 1.2.1, `postcss-selector-parser` 6.1.4, all via `tailwindcss-animate` > `tailwindcss` | 3 high, 1 moderate | path gone (`tailwindcss-animate` is a devDependency now) |
+| Never shipped | `fast-uri` 3.1.4, via `packages/openapi-tools` > `ajv` | 6 high, 1 moderate | unchanged, residue |
+| Never shipped | `postcss-selector-parser` 7.1.5, via `apps/render` > `@remotion/bundler` > `css-loader` | 1 moderate | unchanged, residue |
+
+After: **nothing on a path that starts at `apps/dashboard`, `apps/widget`,
+`apps/landing`, `packages/widget` or `packages/widget-react`, of any severity.**
+`apps/landing` had no finding before either.
+
+**Reachability, for the three that were in a bundle.** None of them was
+exploitable as this code uses it; the bump is so that a security questionnaire
+gets a clean answer, not a reasoned one.
+- **`axios`.** The twelve are prototype-pollution gadgets in the fetch adapter
+  and the default instance's config merge. Every one needs an attacker who has
+  already polluted `Object.prototype`, which is a vulnerability of its own that
+  the dashboard does not have. Used in `src/lib/api.ts` (the instance and the 401
+  refresh-and-retry interceptor), `src/lib/api-error.ts`, `use-carousel.ts`,
+  `use-object-url.ts` and the share pages; none of them changed, and `tsc -b`
+  accepts 1.20's types as they are.
+- **`seroval`.** Both advisories are in `fromJSON`, the path that rehydrates a
+  payload a server serialised. The dashboard is a client-only SPA on Cloudflare
+  Pages with no server functions and no dehydrate step, so `router-core` never
+  deserialises anything it did not produce in the same tab.
+- **`dompurify`.** Both need the `IN_PLACE` option, which sanitises a live DOM
+  node. `apps/widget/src/app/markdown.ts` sanitises a string and never sets it.
+  `renderMarkdown` gives byte-identical output on 3.4.13 and 3.4.16 for a
+  `javascript:` link, a `data:` link, `<img onerror>`, a `<script>`, an https
+  link and a table (run in jsdom against the real `markdown.ts`): both bad hrefs
+  are dropped, `img` and `script` leave nothing, and the https link carries
+  `target="_blank" rel="noopener noreferrer"`. The widget app gzips to 33.9 KB
+  against 33.6 KB before (budget 80 KB).
+
+**What moved.**
+- `apps/dashboard/package.json`: `axios` `^1.7.7` → `^1.20.0`; `tailwindcss-animate`
+  moved to `devDependencies` at the same `^1.0.7`. Only `tailwind.config.ts` loads
+  it, as a plugin, at build time, and every build path already installs dev
+  dependencies (`vite`, `tailwindcss` and `postcss` were devDependencies already;
+  `deploy` is `pnpm build && wrangler pages deploy`).
+- `apps/widget/package.json`: `dompurify` `^3.2.3` → `^3.4.16`.
+- `pnpm-workspace.yaml`: `overrides: 'seroval@<1.6.3': '^1.6.3'`. The router stays
+  at 1.170.18 and `router-core` at 1.171.15, which asks for `seroval ^1.5.4`.
+  The selector form only rewrites a request that would land on a vulnerable
+  version, so it goes inert once `router-core` asks for a fixed one and can never
+  force a 2.x. `seroval-plugins` stays at 1.5.6; its `^1.0` peer range is
+  satisfied by 1.6.9, and pnpm writes that peer as `^1.6.3` in the lockfile
+  because the override applies to peer ranges too. **Remove the override when
+  `pnpm why -r seroval` shows `router-core` itself asking for `>=1.6.3`.**
+- `ci.yaml`, `security` job: `pnpm/action-setup` and `setup-node`, then
+  `Vulnerable dependencies (pnpm audit)` running `pnpm audit --prod
+  --audit-level=critical`, all three gated on `web` or a `v*` tag the way the Go
+  steps are gated on `backend`. No install: `pnpm audit` sends the lockfile to the
+  registry and reads nothing in `node_modules`.
+- No application source file changed.
+
+**The lockfile is written by pnpm 11, not the pnpm 10 CI runs.** The committed
+`pnpm-lock.yaml` re-resolves to exactly itself under `pnpm@11.26.0`, the release
+current when it was last touched. Under any pnpm 10 (10.18.0 and 10.34.7 both
+tried) the smallest real change rewrites about 300 lines that have nothing to do
+with it: every `libc: [glibc]`/`[musl]` field is dropped (10.18 only), and the
+`supports-color@10.2.2` and `lightningcss@1.32.0` peer suffixes move across
+eslint, babel, vitest and `@remotion/bundler`, including `apps/render`'s
+importer. So this lockfile was produced with `corepack pnpm@11.26.0 install
+--lockfile-only` (lockfile-only because pnpm 11 wants to purge a pnpm 10
+`node_modules`), and its diff is the 45 lines R6 allows: the `overrides` block,
+the dashboard importer's axios line and its dependency/devDependency split, the
+widget importer's dompurify line, and the `axios`, `dompurify`, `seroval` and
+`seroval-plugins` entries. The landing and render importers are byte-identical.
+CI's pnpm 10 installs it with `--frozen-lockfile` and leaves it untouched
+(checked locally with 10.18.0 and 10.34.7). **Whoever next changes a JS
+dependency should resolve with pnpm 11 too, or review a 300-line diff that is
+almost all noise.**
+
+**Why the gate is `critical`, and how to raise it.** After this ticket the
+workspace has 8 high advisories, all outside the shipped apps:
+
+| Package | Path | Advisories | Fixed in |
+| -- | -- | -- | -- |
+| `fast-uri` 3.1.4 | `packages/openapi-tools` > `ajv` > `fast-uri` | 6 high, 1 moderate | 3.1.8 (patch) |
+| `nanoid` 3.3.16 | `apps/render` > `@remotion/bundler` > `css-loader` > `postcss` > `nanoid` | 1 high (GHSA-2v37-7h3g-55p8) | 3.3.18 (patch) |
+| `source-map-js` 1.2.1 | `apps/render` > `@remotion/bundler` > `css-loader` > `postcss` > `source-map-js` | 1 high (GHSA-68fv-2mgg-jv7q) | 1.2.2 (patch) |
+| `postcss-selector-parser` 7.1.5 | `apps/render` > `@remotion/bundler` > `css-loader` > `postcss-modules-local-by-default` | 1 moderate (GHSA-rj75-hqrm-r3gf) | 7.1.6 (patch) |
+
+`openapi-tools` is the codegen behind `make openapi` and never ships; `render`
+is the Remotion bundler, which runs server-side and never in a reader's browser.
+At `--audit-level=high` the step would start red, and §14's rule is that a
+scanner introduced red is a scanner somebody learns to ignore. Every one of the
+four has a patch release, so raising the bar is: override or bump those four
+(the follow-up ticket), see `pnpm audit --prod --audit-level=high` exit 0, then
+change `critical` to `high` in `ci.yaml`.
+
+**Where the plan was wrong.**
+- **`braces` is not residue.** The plan expected `braces` (no patched release) to
+  stay on `apps/render`'s path and to be what keeps the gate at `critical`. Its
+  only production path was `tailwindcss-animate` > `tailwindcss` > `chokidar`, so
+  the devDependency move took it out of the prod audit entirely, along with
+  `postcss-selector-parser` 6.1.4. What keeps the gate at `critical` is the four
+  patchable packages above, which makes `high` a smaller step than the plan said.
+  The `ci.yaml` comment names those instead.
+- **`postcss-selector-parser` can be fixed without a major.** The plan's reason
+  for leaving it was that the fix exists only on 7.x and an override would force
+  7.x on tailwind 3's 6.x consumer. That consumer is dev-only now, and the copy
+  `pnpm audit --prod` still reports is `render`'s 7.1.5, one patch from the fix.
+- **AC7's "remove the override, reinstall, and the audit fails" does not hold as
+  written.** With the override removed, `pnpm install` keeps the locked
+  `seroval` 1.6.9, because it still satisfies `router-core`'s `^1.5.4`, and the
+  audit exits 0. The override is what stops a re-resolution from ever landing
+  below 1.6.3; it is not what holds 1.6.9 today. The gate's proof is the
+  lockfile instead: `pnpm audit --prod --audit-level=critical` against
+  `c0f389d`'s `pnpm-lock.yaml` exits **1** (28 found, 1 critical), and against
+  this branch's exits **0**.
+- `dompurify` resolved to 3.4.16, not the newest 3.4.17. 3.4.17 was published
+  on 2026-10-12, the day before, and pnpm 11 holds back a release that new by
+  default (pnpm 10.18.0, given the same change, took 3.4.17). Both are fixed,
+  and R2 asks for 3.4.16 or later.
+
+**Gate.** `pnpm -r build` and `pnpm -r lint` exit 0 (206 dashboard tests, the
+same count as before; tsc on dashboard, landing and widget). The widget's
+`size` is within budget. No generated artefact moved. `pnpm why -r` shows one
+`axios` 1.20.0, `dompurify` 3.4.16, `seroval` 1.6.9 and
+`@tanstack/react-router` 1.170.18, as on main.
+
+**Owed.** The browser half of the QA plan runs against the local stack and
+costs nothing: the widget's `renderMarkdown` in Chromium on main and the branch
+(Q6), the widget harness shots (Q7), the built dashboard's routes, back/forward
+and a reloaded deep link (Q8, which is also the check that `seroval` 1.6.9 and
+`seroval-plugins` 1.5.6 sit together inside the router), the 401 refresh and
+retry (Q9) and a wrong-password toast (Q10). The `security` job's new step
+going green is owed to the PR's first CI run (Q12).

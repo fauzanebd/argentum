@@ -8696,7 +8696,88 @@ a `pnpm` shim to `corepack pnpm@10.18.0` on `PATH`.
 paid chat turns (Q8, Q9, Q19, Q23), real SMTP for both emails (Q15, Q16) and the
 rollout's allowlist check.
 
-## Phase 3cd — An admin chooses the workspace's chat model ([`RIZ-97`](https://linear.app/rizkal-uhuy/issue/RIZ-97/admins-can-choose-which-llm-model-their-workspace-uses), 2026-10-13)
+## Phase 3cd — The dashboard and the widget ship with no known critical or high JS advisory ([`RIZ-87`](https://linear.app/rizkal-uhuy/issue/RIZ-87/shipped-js-bundles-carry-no-known-critical-or-high-vulnerabilities), 2026-10-13)
+
+**Why.** `pnpm audit --prod` on main reported 28 advisories. Three packages were in code we serve to
+browsers: `axios` 1.18.1 (twelve, high and moderate) and `seroval` 1.5.6 (one **critical**, one high) in
+the dashboard, and `dompurify` 3.4.13 (two low) in the widget iframe that tenants embed. None was
+reachable as this code uses them, but a critical finding on a shipped bundle fails a security
+questionnaire, and nothing in CI would have said so: the JS side had no audit at all.
+
+**What changed.**
+- `axios` → **1.20.0** and `dompurify` → **3.4.16**, both inside their major.
+- **`seroval` → 1.6.9 through a pnpm override** (`'seroval@<1.6.3': '^1.6.3'` in `pnpm-workspace.yaml`),
+  with the router left at its locked version. The comment says when to remove it.
+- **`tailwindcss-animate` moved to the dashboard's devDependencies.** It is a build-time Tailwind plugin,
+  and as a runtime dependency it pulled `braces`, `nanoid`, `source-map-js` and `postcss-selector-parser`
+  into the dashboard's production tree.
+- **CI's `security` job runs `pnpm audit --prod --audit-level=critical`** on a web change or a tag, next
+  to `govulncheck`.
+- No application source file, no migration, no API, no generated artefact.
+
+**After.** 10 advisories (8 high, 2 moderate), none on a path into the dashboard, the widget, the landing
+site or the widget packages, and no critical anywhere. What remains is `fast-uri` in
+`packages/openapi-tools` and `nanoid`, `source-map-js` and `postcss-selector-parser` in `apps/render`'s
+Remotion bundler, all patchable; they are the follow-up ticket's, and clearing them is what lets the gate
+move to `high` ([`security-hardening.md`](security-hardening.md) §23).
+
+**Where the plan was wrong.** `braces` was expected to stay as unfixable residue; its only production path
+was through `tailwindcss-animate`, so it left with the move. AC7's "remove the override and the audit
+fails" does not hold, because `pnpm install` keeps the locked 1.6.9; main's lockfile is the proof
+instead (exit 1 there, exit 0 here). And the lockfile is written by pnpm 11: resolving with the pnpm 10
+the flow names produced a 300-line diff of peer-suffix and `libc` churn, including `apps/render`'s
+importer, so it was resolved with `pnpm@11.26.0 --lockfile-only` to a 45-line diff that CI's pnpm 10
+installs frozen.
+
+**Gate.** `pnpm -r build` and `pnpm -r lint` exit 0, with 206 dashboard tests, none new. The widget gzips
+to 33.9 KB (33.6 KB before, budget 80 KB). `renderMarkdown` is byte-identical on both `dompurify`
+versions for the six hostile and ordinary inputs the plan names.
+
+**Owed.** The browser QA (Q6–Q10: markdown in Chromium, the widget shots, dashboard routing, the 401
+refresh and the login error toast) runs on the local stack at no spend, and Q12 is the PR's first
+`security` job run.
+
+## Phase 3ce — Members no longer see metrics on a source they cannot read ([`RIZ-27`](https://linear.app/rizkal-uhuy/issue/RIZ-27/members-no-longer-see-metrics-on-a-source-they-cannot-read), 2026-10-13)
+
+**Why.** Since `T-Z6` an admin can restrict a data source, and it leaves a member's source list. The
+metric registry did not follow: `GET /api/metrics` gave every member every metric, `source_id` and the
+full `sql_template` included, so a member not granted the HR warehouse read `payroll_cost` and the SQL
+against its tables. `RIZ-25` saw it live on 2026-10-11 (access-grants §17c).
+
+**What changed.**
+- **A member's list omits a metric on a source they may not read.** One `authz.Visible(connection)`
+  question per request over the distinct source ids, order kept, `grains` and `units` unchanged. All
+  hidden is `200` with `metrics: []`, which the tab already draws as *"No metrics defined yet."*
+- **By id it is an unknown id**: `404 {"error":"no such metric"}`, byte-identical.
+- **A failed check serves nothing**: the typed access-check `503`, logged with `company_id`.
+- **Unchanged:** an admin's reads (whole, nothing asked — Settings → Metrics is where metrics are edited),
+  every write and `Test`, a stack without `authz`, and every agent: `list_metrics`, `query_metric`, the
+  turn catalog and watcher evaluation, by `T-Z6`'s rule that a grant gates what a person is shown.
+- **The live arm**: `arms.sh` gains `metrics_arm` in place of §17c's re-observation, and `seed.sql`
+  carries one real metric per source.
+- No migration, no `/v1`, no generated type, no tool or prompt change, no dashboard change.
+
+**Where the plan was wrong.** The agent pin belongs in `internal/tools`, where `query_metric` lives, not
+`internal/app`. `RIZ-25`'s seeded metric had grain `none`, so the admin's edit arm could never have
+passed on it; the seed now carries `payroll_cost`, which reads `hired_on`, and `net_revenue`.
+
+**Proven.** Six handler tests over a four-metric fixture (open, granted, restricted, and two on one
+source): the member's single question and its ids, the admin asking nothing, the hidden id against an
+unknown one, the failed check on the list and two gets, no access wired, and the empty registry.
+With the narrowing switched off, the four member tests failed and the two whole-read tests passed. The
+agent pin `TestAMetricOnARestrictedSourceStillAnswersAnAgent` sits beside
+`TestASourceGrantDoesNotNarrowWhatAnAgentMayQuery`, which passes unchanged.
+
+**Gate.** `gofmt -l` printed nothing. `make lint-go` reported `0 issues`. `make check` gave `MAKE EXIT: 0`:
+77 Go packages `ok`, zero `FAIL` or `panic` lines, and 206 dashboard tests, none of them new. No `make eval`,
+`make types` or `make openapi`. As in Phase 3ca, the worktree needed `@argentum/widget` built first and a
+`pnpm` shim to `corepack pnpm@10.18.0` on `PATH`.
+
+**Owed.** Live-gate §7c's `RIZ-27` row: `arms.sh` against the local stack and the browser half over CDP.
+No spend, no `make eval`. Two follow-ups to file: *query_metric honours the agent's own source list* and
+*Watchers list follows the metric's source grant*.
+
+## Phase 3cf — An admin chooses the workspace's chat model ([`RIZ-97`](https://linear.app/rizkal-uhuy/issue/RIZ-97/admins-can-choose-which-llm-model-their-workspace-uses), 2026-10-13)
 
 **Why.** Every workspace ran on the deployment's `LLM_MODEL`, and an admin could
 not pick a cheaper model. A per-company override already existed in
@@ -8757,9 +8838,29 @@ needed `@argentum/widget` built first and a `pnpm` shim to
 `corepack pnpm@10.18.0`. No `make openapi` (no `/v1` change) and no `make eval`
 (QA's, Q17).
 
-**Owed.** Live-gate §7u. The merge waits on the paired eval and the endpoint
-probe (Q17). Also owed: two paid turns (Q9, Q10), the stack and browser arms,
-and the rollout check. The local demo warehouse must be reseeded before Q17.
+**QA (2026-10-13/14): 17 of 17 pass** on a local stack with a reseeded demo
+warehouse and `LLM_ZDR=true`.
+- The live API arms behaved as the handler tests did.
+- A DeepSeek turn cost 3 412 micro-USD at DeepSeek's rate, and the balance fell
+  by exactly that.
+- A worker that was never restarted moved back to Kimi on the next turn.
+- The screens match the five mockups.
+- **AC11 is met.** On the paired golden run, one case per process, DeepSeek
+  scored 59/63 and Kimi 50/63. On security both scored 5/6, failing the same
+  `sec-multi-statement-payload` case.
+- The probe found 24 ZDR endpoints. 22 returned structured tool calls in both
+  stream modes, `baseten/fp8` answered 429 and `baseten/fast` 404 when pinned,
+  and none leaked. Nothing was added to `BrokenToolCallProviders`.
+
+The single `make eval -models` process was not usable. Kimi scored 44/63, with
+the gateway re-routing mid-set, and DeepSeek died at case 37 on a gofpdf panic:
+an emoji in a generated PDF. Kimi under ZDR scored far below its 94–98% history,
+and 14 of its 19 failures from that run passed with ZDR off. Both findings
+predate this ticket and are filed in live-gate §7u ([`chat-model.md`](chat-model.md) §4a).
+
+**Owed.** Live-gate §7u: the production rollout check, plus the two findings
+above (Kimi's ZDR baseline and the PDF panic).
+
 
 ## Feature velocity, measured
 

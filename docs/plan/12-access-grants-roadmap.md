@@ -16,6 +16,19 @@ rejected anyway: this repo has numeric tickets `T-01`→`T-23`, so `T-L1` and
 `T-I1` sit one glyph from `T-11`. `Z` collides with nothing and cannot be
 misread.
 
+> **Status, 2026-10-13 (`RIZ-27`): §17c's metrics are hidden from people.** A member's `GET /api/metrics`
+> omits a metric whose source is restricted and not granted to them — one `Visible(connection)` question per
+> page — and `GET /api/metrics/:id` answers it as an unknown id. An admin's reads are whole; every agent's are
+> unchanged, by `T-Z6`'s rule, now pinned for metrics too. Unit-gated, `make check` green, no migration, no
+> `/v1`, no prompt change. Its live arm is in `arms.sh` and owed (live-gate §7c). Record:
+> [`../coverage/access-grants.md`](../coverage/access-grants.md) §21.
+>
+> - **Where the plan was wrong:** the agent pin belongs in `internal/tools`, where `query_metric` lives, not
+>   `internal/app`; and `RIZ-25`'s seeded metric (grain `none`) could not have survived the admin's edit arm,
+>   so the seed now carries two real ones — `payroll_cost` reads `hired_on`.
+> - **Left, and filed as follow-ups:** `query_metric` honouring the agent's own source list, and the watchers
+>   list following the metric's source grant (a member's watcher on a hidden metric reads *"the metric"*).
+
 > **Status, 2026-10-11 (`RIZ-25`): live-gated, except the Slack arms.** Every arm of
 > [`../coverage/live-gate-backlog.md`](../coverage/live-gate-backlog.md) §7c was run against the local stack at
 > `0cf7a6a` — not production, which still has to apply `083`-`089` on its next deploy. That covers migrations,
