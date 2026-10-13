@@ -149,3 +149,27 @@ func TestSignupFailureBodies(t *testing.T) {
 		})
 	}
 }
+
+// RIZ-89 R16 / AC9: an operator's address — any case, any whitespace — is the
+// 409 an address in use gets, byte for byte, and no company is created (the
+// company insert here would fail loudly as a 500 if it were reached).
+func TestSignupWithAnOperatorAddressIsAnAddressInUse(t *testing.T) {
+	signer, err := auth.NewTokenSigner("0123456789abcdef0123456789abcdef", 15*time.Minute, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("NewTokenSigner: %v", err)
+	}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	svc := app.NewAuthService(signupCompanies{err: errors.New("reached the company insert")}, signupUsers{}, signer).
+		WithOperatorEmails(app.NewOperatorEmails([]string{"ops@argentum.id"}))
+	NewAuthHandler(svc, nil, false, time.Hour).Register(r.Group("/auth"))
+
+	body := `{"company_name":"Ops","email":"OPS@argentum.id","password":"correct-horse"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusConflict || w.Body.String() != `{"error":"email already in use"}` {
+		t.Errorf("signup as an operator = %d %s, want 409 email already in use", w.Code, w.Body)
+	}
+}

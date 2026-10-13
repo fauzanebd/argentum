@@ -102,9 +102,12 @@ export function SettingsPage() {
               <PhonesTab />
             </AdminGate>
           </Tabs.Content>
+          {/* WhatsApp is listed on Integrations so a reader can see the
+              channel exists, but its allowlist is managed on Phone numbers,
+              so its row switches tabs rather than opening a copy of it. */}
           <Tabs.Content value="integrations">
             <AdminGate>
-              <IntegrationsTab />
+              <IntegrationsTab onOpenPhones={() => setTab("phones")} />
             </AdminGate>
           </Tabs.Content>
           <Tabs.Content value="images">

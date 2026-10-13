@@ -2,7 +2,7 @@
 /* eslint-disable */
 // `/api` response bodies that are not domain entities, from
 // apps/backend/internal/transport/http/handlers/wire.go.
-import type { BudgetState, SkillIndexCost } from "./events.js";
+import type { BudgetState, FreeCreditState, SkillIndexCost } from "./events.js";
 import type {
   AdHocQuestion,
   Agent,
@@ -12,6 +12,7 @@ import type {
   APIRequestError,
   CapabilityGrant,
   Channel,
+  CreditGrantRequest,
   CompanyProfile,
   MCPServer,
   MCPTransport,
@@ -19,6 +20,7 @@ import type {
   FeedbackWithContext,
   MetricGrain,
   MetricUnit,
+  OperatorFreeCredit,
   OperatorTopup,
   Skill,
   Topup,
@@ -194,6 +196,11 @@ export interface AgentsResponse {
 export interface AgentGenerationInfo {
   available: boolean;
   credits_exhausted: boolean;
+  /**
+   * FreeCredit is why a workspace with no grant is refused (RIZ-89):
+   * "pending" or "rejected", and absent for a workspace that spent a grant.
+   */
+  free_credit?: FreeCreditState;
 }
 /**
  * AgentGenerationResult is the body of `POST /api/agents/generate` (T-B4): the
@@ -309,6 +316,11 @@ export interface ProfileSuggestionResponse {
    * source never fails for credit, so without this the tenant sees silence.
    */
   credits_exhausted: boolean;
+  /**
+   * FreeCredit is why, for a workspace whose free credit waits for an
+   * operator or was not approved (RIZ-89); absent otherwise.
+   */
+  free_credit?: FreeCreditState;
   /**
    * RenderedBlock is the draft as the agent would read it, composed by the
    * same code the turn uses — so what a tenant approves is what they saw.
@@ -696,4 +708,26 @@ export interface TopupProofLinkResponse {
 export interface TopupApproveResponse {
   topup?: Topup;
   balance_micro_usd: number /* int64 */;
+}
+/**
+ * OperatorFreeCreditResponse is the operator's free-credit queue or decisions
+ * (RIZ-89 R7).
+ */
+export interface OperatorFreeCreditResponse {
+  requests: (OperatorFreeCredit | undefined)[];
+}
+/**
+ * FreeCreditApproveResponse is an approval (R8): how much it added — zero
+ * when the workspace already had its free credit — and the balance it left.
+ */
+export interface FreeCreditApproveResponse {
+  request?: CreditGrantRequest;
+  added_micro_usd: number /* int64 */;
+  balance_micro_usd: number /* int64 */;
+}
+/**
+ * FreeCreditRejectResponse is a rejection (R9).
+ */
+export interface FreeCreditRejectResponse {
+  request?: CreditGrantRequest;
 }

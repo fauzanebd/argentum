@@ -34,12 +34,15 @@ beforeEach(() => {
 });
 
 describe("SignupPage", () => {
-  it("says new workspaces start with free credit, without naming an amount", () => {
+  it("says free credit follows approval, without naming an amount (RIZ-89 R15)", () => {
     render(<SignupPage />);
     expect(screen.getByText("You'll be the admin of your company workspace.")).toBeInTheDocument();
     expect(
-      screen.getByText("New workspaces start with free credit to try Argentum. No card needed."),
+      screen.getByText(
+        "Free credit to try Argentum is added once we've approved your new workspace. No card needed.",
+      ),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/start with free credit/)).toBeNull();
     expect(screen.queryByText(/\$\d/)).toBeNull();
   });
 

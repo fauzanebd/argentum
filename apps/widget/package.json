@@ -14,7 +14,7 @@
   "dependencies": {
     "@argentum/api-types": "workspace:*",
     "@argentum/widget": "workspace:*",
-    "dompurify": "^3.2.3",
+    "dompurify": "^3.4.16",
     "marked": "^15.0.6",
     "preact": "^10.25.4"
   },

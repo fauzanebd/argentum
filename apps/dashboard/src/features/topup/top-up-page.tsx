@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/table";
 import { microToUsd } from "@/features/usage/labels";
 import { grantCaption, usedUpLine } from "@/features/usage/credit-copy";
+import { FreeCreditCardLines } from "@/features/usage/free-credit-lines";
 import {
   amountError,
   digitsOnly,
@@ -144,6 +145,7 @@ function BalanceCard({ credits }: { credits: CompanyCredits | undefined }) {
           {usedUp && <p className="mt-1.5 text-xs text-destructive">{usedUpLine(credits)}</p>}
         </>
       )}
+      {pct == null && <FreeCreditCardLines credits={credits} />}
     </Card>
   );
 }

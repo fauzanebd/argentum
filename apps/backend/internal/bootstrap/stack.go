@@ -44,6 +44,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/creditwiring"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/dashboard"
 	"github.com/fauzanebd/argentum/internal/docchunk"
@@ -305,12 +306,11 @@ func New(ctx context.Context, cfg *config.Config) (*Stack, error) {
 	}
 	s.onClose(func() { _ = s.Redis.Close() })
 
-	s.UsageSvc = app.NewUsageService(s.Usage, creditsRepo, app.DefaultPricing).
-		WithCredits(app.CreditPolicy{
-			Enforce:       cfg.CreditsEnforcementEnabled,
-			WarnPct:       cfg.CreditsWarningThresholdPct,
-			GrantMicroUSD: cfg.CreditsDefaultGrantMicroUSD(),
-		}, llmCredRepo, app.NewRedisBudgetCache(s.Redis))
+	// creditwiring, as cmd/api and cmd/discord build theirs (RIZ-89 R4): the
+	// worker checks budgets on every scheduled fire, so it is a process that
+	// could hand out free credit, and must not without an approval.
+	s.UsageSvc = creditwiring.UsageService(cfg, s.Usage, creditsRepo, llmCredRepo,
+		pgctl.NewCreditGrantRepo(controlDB), app.NewRedisBudgetCache(s.Redis))
 
 	// Env-default light LLM for the process-wide consumers (topic
 	// classifier, rolling thread summary) that carry no tenant context.

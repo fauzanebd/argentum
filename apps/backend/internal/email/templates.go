@@ -130,6 +130,69 @@ func TopupReview(d TopupReviewData) Message {
 	}
 }
 
+// FreeCreditReviewData is a new workspace waiting for its free credit
+// (RIZ-89). Every value arrives formatted, for TopupReviewData's reason.
+type FreeCreditReviewData struct {
+	CompanyName    string
+	RequesterEmail string
+	// SignedUpAt is "13 Oct 2026, 14:32".
+	SignedUpAt string
+	// Amount is the free credit in dollars, "0.50".
+	Amount    string
+	ReviewURL string
+}
+
+// FreeCreditReview renders the operator's alert (R18). The subject names the
+// workspace, because the operator decides from the name and the email whether
+// it looks like a real business before opening anything.
+func FreeCreditReview(d FreeCreditReviewData) Message {
+	who := d.CompanyName
+	if d.RequesterEmail != "" {
+		who = fmt.Sprintf("%s (%s)", d.CompanyName, d.RequesterEmail)
+	}
+	intro := fmt.Sprintf("%s signed up on %s and is waiting for $%s of free credit.", who, d.SignedUpAt, d.Amount)
+	review := "Review it: " + d.ReviewURL
+	text := strings.Join([]string{intro, review}, "\n")
+	body := fmt.Sprintf(`<p>%s</p>
+<p><a href="%s" style="display:inline-block;padding:10px 18px;background:#F25C5C;color:#ffffff;border-radius:6px;text-decoration:none">Review it</a></p>
+<p style="color:#666;font-size:12px">%s</p>`,
+		html.EscapeString(intro),
+		html.EscapeString(d.ReviewURL),
+		html.EscapeString(review))
+	return Message{
+		Subject: "Free credit to approve: " + d.CompanyName,
+		Text:    text,
+		HTML:    wrap(body),
+	}
+}
+
+// FreeCreditReadyData is an approval on its way to the admin who signed up.
+type FreeCreditReadyData struct {
+	CompanyName string
+	// Amount is the credit added, in dollars, "0.50".
+	Amount  string
+	ChatURL string
+}
+
+// FreeCreditReady renders the approval email (R19): the one message that
+// tells a waiting user to come back, so the link is to the chat itself.
+func FreeCreditReady(d FreeCreditReadyData) Message {
+	intro := fmt.Sprintf("We've added $%s of free credit to %s.", d.Amount, d.CompanyName)
+	ask := "Ask your first question: " + d.ChatURL
+	text := strings.Join([]string{intro, ask}, " ")
+	body := fmt.Sprintf(`<p>%s</p>
+<p><a href="%s" style="display:inline-block;padding:10px 18px;background:#F25C5C;color:#ffffff;border-radius:6px;text-decoration:none">Ask your first question</a></p>
+<p style="color:#666;font-size:12px">%s</p>`,
+		html.EscapeString(intro),
+		html.EscapeString(d.ChatURL),
+		html.EscapeString(ask))
+	return Message{
+		Subject: "Your Argentum free credit is ready",
+		Text:    text,
+		HTML:    wrap(body),
+	}
+}
+
 // wrap puts a body in the one shared shell. Inline styles and a table-free
 // layout, because email clients are not browsers and a <style> block is
 // stripped by several of the ones that matter.

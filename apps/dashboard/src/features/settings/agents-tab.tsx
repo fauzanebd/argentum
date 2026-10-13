@@ -25,6 +25,7 @@ import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api-error";
 import { useToast } from "@/hooks/use-toast";
 import { useResourceAccess } from "./use-access";
+import { generateOffReason as generateOffReasonFor } from "./credit-reasons";
 import type {
   Agent,
   AgentBindingsResponse,
@@ -404,11 +405,8 @@ export function AgentsTab() {
   // Both empty is the one rung of the ladder with no input to improve: the
   // button is disabled and no request is sent.
   const canGenerate = !!(draft.name.trim() || draft.description.trim());
-  const generateOffReason = !generation.available
-    ? "Generating is not configured on this deployment."
-    : generation.credits_exhausted
-      ? "This workspace has used all of its Argentum credits. An admin can top up the balance — you can still write the agent yourself."
-      : "";
+  // Which of "waiting for approval", "not approved" or "used up" (RIZ-89).
+  const generateOffReason = generateOffReasonFor(generation);
 
   const remove = useMutation({
     mutationFn: async (id: string) => api.delete(`/agents/${id}`),

@@ -21,6 +21,7 @@ import { useComposerStore } from "@/store/composer";
 import type {
   BudgetState,
   ChatEvent,
+  CompanyCredits,
   ConversationThread,
   Message,
   SendMessageResponse,
@@ -44,7 +45,7 @@ import { PENDING_ACTIONS_KEY } from "@/features/actions/use-actions";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { formatLatencySeconds, formatMessageTimestamp } from "./format";
 import { apiErrorMessage, apiErrorStatus } from "@/lib/api-error";
-import { BudgetWarningBanner, TopUpLink } from "./credit-notices";
+import { BudgetWarningBanner, FreeCreditNotice, TopUpLink } from "./credit-notices";
 import { MicButton } from "./mic-button";
 import { ListenButton } from "./listen-button";
 import { useVoice } from "./use-voice";
@@ -300,6 +301,20 @@ export function ChatPage() {
    */
   const isAdmin = useIsAdmin();
   const onboarding = useOnboardingStatus(isNewChat);
+
+  /**
+   * Whether this workspace's free credit is still waiting for an operator
+   * (RIZ-89 R13). The Usage card's query, under its key, so the two never
+   * disagree and a visit to one warms the other. New-chat only, like the
+   * onboarding notice: it is what to know before the first question. Loading
+   * or failing shows nothing — a send still answers with the 402's sentence.
+   */
+  const { data: credits } = useQuery({
+    queryKey: ["usage-credits"],
+    queryFn: async () => (await api.get<CompanyCredits>("/usage/credits")).data,
+    enabled: isNewChat,
+    retry: false,
+  });
 
   /**
    * The credit warning lives in the query cache, not in component state.
@@ -808,6 +823,7 @@ export function ChatPage() {
               isAdmin={isAdmin}
               className="w-full"
             />
+            <FreeCreditNotice credits={credits} canTopUp={isAdmin} className="w-full" />
             {budgetWarning && (
               <BudgetWarningBanner
                 warning={budgetWarning}

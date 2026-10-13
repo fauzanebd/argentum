@@ -61,11 +61,13 @@ const base = {
 let topups: unknown[];
 let options: () => Promise<unknown>;
 
+let credits: unknown;
+
 function routeGets() {
   get.mockImplementation((path: string) => {
     if (path === "/topups/options") return options();
     if (path === "/topups") return Promise.resolve({ data: { topups } });
-    if (path === "/usage/credits") return Promise.resolve({ data: CREDITS });
+    if (path === "/usage/credits") return Promise.resolve({ data: credits });
     return Promise.reject(new Error(`unexpected GET ${path}`));
   });
 }
@@ -96,6 +98,7 @@ beforeEach(() => {
   get.mockReset();
   post.mockReset();
   topups = [];
+  credits = CREDITS;
   options = () => Promise.resolve({ data: OPTIONS });
   routeGets();
   asRole("admin");
@@ -352,5 +355,27 @@ describe("in review and history (R17d, R17e)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Replace proof" }));
     expect(screen.getByLabelText("Paid to")).toHaveValue("bri");
     expect(screen.getByRole("button", { name: "Submit for review" })).toBeDisabled();
+  });
+});
+
+// RIZ-89 R14: the balance card says what Usage says while free credit waits —
+// topping up is exactly the way out it offers.
+describe("balance card while free credit waits", () => {
+  it("says the amount is waiting for approval, with no bar", async () => {
+    credits = { ...CREDITS, balance_micro_usd: 0, monthly_grant_micro_usd: 0, free_credit_status: "pending", free_credit_micro_usd: 500000 };
+    mount();
+    expect(await screen.findByText("$0.50 free credit waiting for approval")).toBeInTheDocument();
+    expect(
+      screen.getByText("Chat, scheduled reports and API calls start as soon as it's approved."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/free credit$/)).toBeNull();
+  });
+
+  it("says it was not approved", async () => {
+    credits = { ...CREDITS, balance_micro_usd: 0, monthly_grant_micro_usd: 0, free_credit_status: "rejected", free_credit_micro_usd: 500000 };
+    mount();
+    expect(
+      await screen.findByText("Free credit not approved. Top up to use chat, scheduled reports and the API."),
+    ).toBeInTheDocument();
   });
 });

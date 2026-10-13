@@ -134,6 +134,7 @@ func suggestionResponse(s *app.Suggestion) ProfileSuggestionResponse {
 	out := ProfileSuggestionResponse{
 		Sources:          s.Sources,
 		CreditsExhausted: s.CreditsExhausted,
+		FreeCredit:       s.FreeCredit,
 	}
 	if s.Draft != nil {
 		block, truncated := s.Draft.ContextBlock()

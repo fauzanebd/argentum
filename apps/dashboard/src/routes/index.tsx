@@ -28,6 +28,7 @@ import { KnowledgePage } from "@/features/knowledge/knowledge-page";
 import { DocumentReviewPage } from "@/features/knowledge/document-review";
 import { TopUpPage } from "@/features/topup/top-up-page";
 import { OperatorTopupsPage } from "@/features/topup/operator-topups-page";
+import { OperatorFreeCreditPage } from "@/features/topup/operator-free-credit-page";
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -164,6 +165,15 @@ const operatorTopUpsRoute = createRoute({
   component: OperatorTopupsPage,
 });
 
+// The operator's free-credit queue (RIZ-89 R10), beside the top-ups and as
+// hidden: the sign-up alert email links here, and the two pages' tabs link to
+// each other.
+const operatorFreeCreditRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/operator/free-credit",
+  component: OperatorFreeCreditPage,
+});
+
 const scheduledTasksRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/scheduled-tasks",
@@ -231,6 +241,7 @@ export const routeTree = rootRoute.addChildren([
       usageRoute,
       topUpRoute,
       operatorTopUpsRoute,
+      operatorFreeCreditRoute,
       qualityRoute,
       scheduledTasksRoute,
       watchersRoute,

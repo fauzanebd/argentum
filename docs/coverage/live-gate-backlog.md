@@ -2962,6 +2962,29 @@ owner-run, with spend approved by the plan (a handful of Twilio messages). Never
 | `RIZ-85` Q9 | **Post-deploy, on the production number:** send one real voice note, then one photo with no caption. **Prediction: one reply each, matching the mockup. The production API log shows two `attachment without text` lines, `media_kind` `audio` and `image`.** Then type a question and check that the normal answer still arrives | The deploy; an allowlisted phone; `kubectl` read access to the API log |
 | `RIZ-85` rollout | **Two weeks of the `attachment without text` count, by `company_id` and `media_kind`.** It measures demand for slice B ([`../plan/backlog.md`](../plan/backlog.md)). **No prediction**: nothing has ever counted it | Two weeks of production |
 
+## 7t. `RIZ-89`'s free credit by approval — added 2026-10-13
+
+The unit, handler and repository arms have run ([`credit-enforcement.md`](credit-enforcement.md)
+§8). Q5, Q7, Q10, Q14, Q17, Q20 and Q24 ran in `make check`, and 091's
+round-trip, R8's four branches and the ten-way approve race ran against the
+local `argentum_postgres` with the `scratch` tag. What is left needs the local
+compose stack (never `apps/backend/.env`), with `PLATFORM_OPERATOR_EMAILS` set to
+a local account and a browser over CDP for the screens. Q8, Q9, Q19 and Q23 are
+one chat turn each, and Q15–Q16 send real email; spend for all six is approved.
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `RIZ-89` Q1, Q6 | Sign up "Toko Segar", then query both tables. Delete a second local company's `company_credits` row and call `GET /v1/me` with its key. **Prediction: one `pending` row of 500000 with `requested_by` and `signup_ip` = the client address, and no `company_credits` row; then a second request with no `signup_ip`, `/v1/me` `status: exhausted`, and still no grant** | The stack |
+| `RIZ-89` Q13 | `ops@argentum.id` on the list with no account: sign up as ` OPS@argentum.id `, invite it, accept an invite to it made before the list changed, then restart the api. **Prediction: 409 `email already in use` and no company or user row; invite 409; accept 404 `this invitation is invalid or has expired` with the user still pending; a boot line `PLATFORM_OPERATOR_EMAILS entry N has no active account` with no address in it** | The stack |
+| `RIZ-89` Q18 | The pending company: `POST /v1/chat` with an API key, and one widget message with an embed key. **Prediction: both 402 with today's `CreditsExhaustedMessage` byte for byte; `git diff apps/backend/openapi` empty** | The stack |
+| `RIZ-89` Q2–Q4, Q11, Q12, Q21, Q22 | The screens against their mockups: the new-chat notice as admin and as member, the 402 strip after a send, Usage and `/top-up` pending and rejected, the operator queue with the same-IP signal, the empty queue, a failing list, not an operator, the tabs on both pages, and `/signup`. **Prediction: copy word for word; no `usage_events` row for the refused send; 403 `operators only` on all three routes for a company admin** | The stack, a browser |
+| `RIZ-89` Q8 | A company with balance 0.31 / grant 0.50 sends one chat message. **Prediction: the turn runs and no request is filed** | Model spend (approved) |
+| `RIZ-89` Q9 | Approve the pending request on the page, then send one message within 60 s. **Prediction: toast `Added $0.50 free credit to Toko Segar.`; 500000 / 500000; `approved` with `reviewed_by`; `credits:budget:<id>` gone; the turn runs; the notice gone on reload** | Model spend (approved) |
+| `RIZ-89` Q19 | A pending company with its own primary LLM key sends one message. **Prediction: the turn runs, and `/usage/credits` carries no `free_credit_status`** | Model spend (approved) |
+| `RIZ-89` Q23 | A pending company tops up through the RIZ-83 path, the operator approves the top-up, and the company sends one message. **Prediction: the turn runs on the paid balance; the notice is gone because a grant exists; the request is still pending in the queue, and approving it adds $0.50 on top** | Model spend (approved), placeholder `TOPUP_PAYEES`, MinIO |
+| `RIZ-89` Q15, Q16 | Real SMTP, `EMAIL_ENABLED=true`, `APP_BASE_URL` set, the owner's address as operator. Sign up once, approve it, then repeat both with `SMTP_HOST` pointed at a dead host. **Prediction: `Free credit to approve: <workspace>` to each operator, with the sign-up time in WIB and a working `/operator/free-credit` link; `Your Argentum free credit is ready` to the sign-up admin linking `/chat`; with SMTP dead, sign-up 201 and approval 200, with one Warn each** | SMTP credentials, spend (approved) |
+| `RIZ-89` rollout | Production: every `PLATFORM_OPERATOR_EMAILS` address checked read-only to be an active account the owner recognises (created *before* deploying, since R16 blocks it after); the boot log free of `entry N has no active account`; `CREDITS_GRANT_REQUIRES_APPROVAL` unset on api, worker and discord; the owner's smoke test (sign up, get the email, see the notice, approve, ask one question); then two weeks of pending count, oldest pending age and approvals vs rejections, and the §8 check query returning no rows. **No prediction from the repo**: all of this is deployment state | Production access |
+
 ## 7. Needs the paid eval set (added 2026-09-11)
 
 `T-Q18`'s remaining half, and the only half that is about the model rather than

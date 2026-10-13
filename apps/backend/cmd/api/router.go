@@ -109,6 +109,9 @@ func newRouter(d *apiDeps) *gin.Engine {
 	// service answers 503 — so the role table's classification test sees every
 	// route on every deployment.
 	handlers.NewTopupsHandler(d.topupSvc, d.operatorOnly).Register(authed)
+	// Free credit by approval (RIZ-89): the operator's queue, beside the
+	// top-ups and behind the same gate. Unconditional for the same reason.
+	handlers.NewFreeCreditHandler(d.freeCreditSvc, d.operatorOnly).Register(authed)
 	handlers.NewFeedbackHandler(d.feedbackSvc).Register(authed)
 	// Is the metric layer accumulating (T-F4). No migration and no writes: the
 	// answer is a GROUP BY over agent_actions, so it is retroactive to every
