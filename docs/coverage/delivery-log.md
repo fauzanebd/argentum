@@ -8618,8 +8618,8 @@ against its tables. `RIZ-25` saw it live on 2026-10-11 (access-grants §17c).
 - No migration, no `/v1`, no generated type, no tool or prompt change, no dashboard change.
 
 **Where the plan was wrong.** The agent pin belongs in `internal/tools`, where `query_metric` lives, not
-`internal/app`. `RIZ-25`'s seeded metric had grain `none` and a column the warehouse lacks, so the
-admin's edit arm could never have passed on it; the seed now carries `payroll_cost` and `net_revenue`.
+`internal/app`. `RIZ-25`'s seeded metric had grain `none`, so the admin's edit arm could never have
+passed on it; the seed now carries `payroll_cost`, which reads `hired_on`, and `net_revenue`.
 
 **Proven.** Six handler tests over a four-metric fixture (open, granted, restricted, and two on one
 source): the member's single question and its ids, the admin asking nothing, the hidden id against an

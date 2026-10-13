@@ -2239,8 +2239,9 @@ tool is built with anything to ask about a grant.
 2. **The plan placed the agent pin in `internal/app`.** `query_metric` lives in `internal/tools`, so
    the pin sits beside `TestASourceGrantDoesNotNarrowWhatAnAgentMayQuery`, the rule it extends.
 3. **The live seed could not have run the admin's edit.** `RIZ-25` seeded one `headcount` metric
-   with grain `none` and a column the warehouse lacks, which validate-on-save refuses. It is now
-   `payroll_cost` on the HR warehouse and `net_revenue` on the open source, both real templates.
+   with grain `none`, which validate-on-save refuses; its SQL was otherwise valid. It is now
+   `payroll_cost` on the HR warehouse, reading `hired_on` as the `hr_analytics` warehouse has it, and
+   `net_revenue` on the open source.
 4. **Silent: the watchers list.** A member still sees a watcher on a hidden metric, labelled
    *"the metric"* — §17c, a follow-up.
 5. **`Migration: none` was right**: it reads `access_mode` and `resource_grants` on

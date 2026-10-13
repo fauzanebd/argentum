@@ -24,8 +24,8 @@ misread.
 > [`../coverage/access-grants.md`](../coverage/access-grants.md) §21.
 >
 > - **Where the plan was wrong:** the agent pin belongs in `internal/tools`, where `query_metric` lives, not
->   `internal/app`; and `RIZ-25`'s seeded metric (grain `none`, a column the warehouse lacks) could not have
->   survived the admin's edit arm, so the seed now carries two real ones.
+>   `internal/app`; and `RIZ-25`'s seeded metric (grain `none`) could not have survived the admin's edit arm,
+>   so the seed now carries two real ones — `payroll_cost` reads `hired_on`.
 > - **Left, and filed as follow-ups:** `query_metric` honouring the agent's own source list, and the watchers
 >   list following the metric's source grant (a member's watcher on a hidden metric reads *"the metric"*).
 
