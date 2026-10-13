@@ -52,6 +52,22 @@ var modelPricing = map[string]ModelPricing{
 	"deepseek-v3.2":          {InputCostPer1K: 0.000231, OutputCostPer1K: 0.000451},
 	"deepseek/deepseek-v3.2": {InputCostPer1K: 0.000231, OutputCostPer1K: 0.000451},
 
+	// DeepSeek V4.1 Flash — OpenRouter list price, read from its /models
+	// endpoint 2026-10-13. https://openrouter.ai/deepseek/deepseek-v4.1-flash
+	//
+	// Added with the workspace chat model picker (RIZ-97), which offers it, and
+	// before the picker could write a row naming it: an unpriced model bills at
+	// DefaultPricing, about 33x this input rate, and credits refuse turns off
+	// that number. No markup, per the ticket: list price is what a tenant pays.
+	//
+	// Both spellings, as every other OpenRouter model here has. The suffix
+	// fallback would in fact reach the bare key from the prefixed one — it
+	// tries the last '/' before the last '.' — but the id the picker writes is
+	// the one every DeepSeek turn bills against, and an exact key keeps that
+	// off a search whose dotted-name limits are pinned in its own test.
+	"deepseek-v4.1-flash":          {InputCostPer1K: 0.00015, OutputCostPer1K: 0.0006},
+	"deepseek/deepseek-v4.1-flash": {InputCostPer1K: 0.00015, OutputCostPer1K: 0.0006},
+
 	// Moonshot — OpenRouter list price, read from its /models endpoint
 	// 2026-08-14. https://openrouter.ai/moonshotai/kimi-k2.6
 	//
