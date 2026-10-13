@@ -172,6 +172,30 @@ preference, not the plumbing — one live turn through the deployed backend is
 still owed, and is the only thing that can show the transport puts the field on
 the body openai-go actually builds.
 
+## 4a. DeepSeek V4.1 Flash — owed (RIZ-97, 2026-10-13)
+
+A workspace admin can now pick `deepseek/deepseek-v4.1-flash` as the chat model
+([`chat-model.md`](chat-model.md)). The deny-list and the leak guard were
+measured on `kimi-k2.6` only, so this model's endpoints need the §4 probe
+before merge:
+
+```bash
+curl -s https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash/endpoints |
+  jq -r '.data.endpoints[] | "\(.provider_name)\t\(.supported_parameters | index("tools") != null)"'
+```
+
+Then force a tool call on each endpoint that claims `tools`, in both `stream`
+modes. Also check which endpoints are ZDR: production sets `LLM_ZDR=true`, so
+only those can serve a production turn. **Prediction: at
+least one ZDR endpoint returns structured `tool_calls`.** Any endpoint that
+returns `functions.<name>:<n>{…}` as content goes on `BrokenToolCallProviders`,
+with its result recorded here. If no ZDR endpoint serves the model, the owner
+decides before merge, since every DeepSeek turn would then fail.
+
+| Endpoint | ZDR | Tools claimed | Stream: tool call | Non-stream: tool call |
+| --- | --- | --- | --- | --- |
+| — | — | — | owed | owed |
+
 ## 5. Not built
 
 **Recovering the leaked call.** The name and the arguments are right there in

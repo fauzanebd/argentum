@@ -705,3 +705,36 @@ the Usage and top-up cards and the sign-up line.
 Owed (live-gate §7t): the stack and browser arms (Q1–Q4, Q6, Q11–Q13, Q18,
 Q21–Q22), the four paid chat turns (Q8, Q9, Q19, Q23), and real SMTP for both
 emails (Q15, Q16).
+
+## 9. RIZ-97 — credit rates follow the workspace's chat model (2026-10-13)
+
+An admin can now pick the chat model ([`chat-model.md`](chat-model.md)). Credits
+needed no change of their own, because **credits are the metered cost of the
+model that actually ran.** `ClientCache` wraps each tenant client with
+`NewMeteredLLM(inner, profile.Model, …)`, where the model is the resolved one,
+and `RecordLLM` prices it from `modelPricing`. A DeepSeek turn therefore spends
+credit at DeepSeek's rate, and a Kimi turn at Kimi's:
+
+| Model | Per 1K in / out (USD) | Per 1M in / out | Source |
+| --- | --- | --- | --- |
+| `moonshotai/kimi-k2.6` (default) | 0.00095 / 0.004 | $0.95 / $4.00 | OpenRouter list, 2026-08-14. Above today's $0.65 / $3.41, which is allowed to drift conservatively; refreshing it is its own ticket |
+| `deepseek/deepseek-v4.1-flash` | 0.00015 / 0.0006 | $0.15 / $0.60 | OpenRouter list, 2026-10-13, no markup. **New row.** |
+
+**The new row had to land before the picker.** With no row, DeepSeek bills at
+`DefaultPricing` ($5 / $15 per 1M), about 33x its input rate, and
+`CheckBudget` refuses turns off that number. The row and the picker share one
+PR, with the row in an earlier commit. `TestEveryChatModelIsPriced` fails if
+any model on the picker's allow-list has no row, and
+`TestRecordLLMPerModelRates` pins both models' micro-USD per 1K + 1K tokens
+(750 and 4 950).
+
+**BYO is unchanged.** The picker writes a `primary` row with only `model` set.
+`hasOwnPrimaryKey` counts a row as bring-your-own only when it carries
+`api_key_encrypted`, so a workspace on DeepSeek still spends our balance, which
+is correct because it runs on our key. Its BYO status does not change either, so
+the cached `BudgetState` needs no invalidation on a switch.
+
+**Deploy-window exposure.** An API or worker pod older than this change already
+honours a model-only row, but has no DeepSeek price. A turn on such a pod after
+an admin's first switch bills at the default rate. Deploy workers first. The
+signal is a DeepSeek usage event at 0.005 per 1K input.

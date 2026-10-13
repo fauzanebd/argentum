@@ -108,7 +108,8 @@ three of the four rows in this table are.
 | GET    | `/api/phones`               | JWT  | WhatsApp allowlist                         |
 | POST   | `/api/phones`               | JWT+ | Add phone                                  |
 | DELETE | `/api/phones/:phone`        | JWT+ | Remove phone                               |
-| GET    | `/api/config/models`        | JWT  | Resolved models per role + per-1K rates    |
+| GET    | `/api/config/models`        | JWT  | Models per role + per-1K rates; `primary` is the workspace's resolved chat model, plus a `chat_model` block (RIZ-97) |
+| PUT    | `/api/config/chat-model`    | JWT+ | Set the workspace chat model from the allow-list; the default deletes the override (RIZ-97, [`chat-model.md`](chat-model.md)) |
 | GET    | `/api/users/me`             | JWT  | Current user                               |
 
 ## Team (`T-04`)
