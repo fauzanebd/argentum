@@ -9,8 +9,8 @@ directory is what that cost.
 
 | File | What it is |
 | --- | --- |
-| `seed.sql` | Two companies with fixed ids: admin A, member M and a second admin in A; HR (the default), Finance, Ops; Payroll with four links; the HR warehouse; Payroll 2026.pdf and its table; T-Z10's five conversation shapes; generated documents and their links; two proposals; a channel binding; and company B with fifty dashboards and a hundred conversations of fifty messages. **Running it again resets both companies.** |
-| `arms.sh` | Every API arm (R4), the gap re-observations (§17c, §19e, §20d) and the malformed-id sweep (R9). `PASS`/`FAIL` per line, non-zero exit on a `FAIL`. |
+| `seed.sql` | Two companies with fixed ids: admin A, member M and a second admin in A; HR (the default), Finance, Ops; Payroll with four links; the HR warehouse; Payroll 2026.pdf and its table; a metric on each source (`payroll_cost`, `net_revenue`); T-Z10's five conversation shapes; generated documents and their links; two proposals; a channel binding; and company B with fifty dashboards and a hundred conversations of fifty messages. **Running it again resets both companies.** |
+| `arms.sh` | Every API arm (R4), the gap re-observations (§19e, §20d), `RIZ-27`'s metrics arm (which replaced §17c's) and the malformed-id sweep (R9). `PASS`/`FAIL` per line, non-zero exit on a `FAIL`. |
 | `browser-arms.mjs`, `cdp.mjs` | The browser arms (R6) over the DevTools protocol, with a screenshot per step. No dependency beyond Node and Chrome. |
 
 **Everything here writes, and refuses anything that is not this machine.** Never

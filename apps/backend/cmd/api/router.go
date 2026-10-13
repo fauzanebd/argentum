@@ -189,7 +189,12 @@ func newRouter(d *apiDeps) *gin.Engine {
 		WithIndexBounds(d.cfg.SkillIndexMax, d.cfg.SkillIndexMaxChars).
 		WithDrafter(d.skillDraftSvc).
 		Register(authed)
-	handlers.NewMetricsHandler(d.metricSvc).Register(authed)
+	// A member's metric reads follow the metric's source grant (RIZ-27), with the
+	// source list's possibly-nil guard: a nil ConnectionAccess stays a nil
+	// MetricSourceAccess, so a stack without authz reads every metric.
+	handlers.NewMetricsHandler(d.metricSvc).
+		WithAccess(connectionAccessOrNil(d.resourceAuthz)).
+		Register(authed)
 	handlers.NewWatchersHandler(d.watcherSvc).Register(authed)
 	// A proposal is as hidden as its conversation (T-Z14), with T-Z10's
 	// possibly-nil reader, which reads everything when nil.

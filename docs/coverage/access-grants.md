@@ -1700,7 +1700,8 @@ is empty.
 
 | Surface | Why it is not covered |
 | --- | --- |
-| **Metrics on a restricted source** | `GET /api/metrics` lists every metric, `source_id` and `sql_template` included, to members, and `query_metric` evaluates against the metric's own source whatever the agent's list says. A metric is its own registry, and hiding it by its source's grant is a decision this ticket's *Do* list does not name. **Seen live 2026-10-11 (`RIZ-25`):** with the HR warehouse restricted, a member's list still carried its metric and SQL. Filed as **[`RIZ-27`](https://linear.app/rizkal-uhuy/issue/RIZ-27/members-no-longer-see-metrics-on-a-source-they-cannot-read)**, which recommends hiding a metric whose source the caller may not read |
+| **Metrics on a restricted source — the agent half** | `query_metric`, `list_metrics` and the turn's metric catalog still list and evaluate a metric on a source the person on the turn is refused, and `query_metric` evaluates against the metric's own source whatever the agent's own source list says. The person half — `GET /api/metrics` and `/:id` — is closed by **[`RIZ-27`](https://linear.app/rizkal-uhuy/issue/RIZ-27/members-no-longer-see-metrics-on-a-source-they-cannot-read)** (§21). The grant half of the agent side stays open on purpose: a grant gates what a person is shown, never what an agent queries, and `run_sql` on the same agent reaches the same source anyway — pinned by `TestAMetricOnARestrictedSourceStillAnswersAnAgent`. The agent-scope half is a follow-up, *query_metric honours the agent's own source list* |
+| A watcher on a metric a member cannot see | `GET /api/watchers` still lists it to the member, and the Watchers page labels its metric *"the metric"*, its existing fallback for a metric it was not given. Left by `RIZ-27` (§21c); a follow-up, *Watchers list follows the metric's source grant* |
 | An admin's source list | Shows a restricted source's description, allowlist and freshness SQL — §17b item 3 |
 | Tables already published from a restricted document | Rows in the document-warehouse source, queryable by any agent with that source. Restricting that source hides it from members' lists and never from agents — by the rule this ticket exists to keep |
 | `search_documents` on a turn with no person | A channel, `/v1`, the widget and a watcher search every document — decision 7, asserted. The widget case sits against decision 10, as it does for dashboards (§15d); closing both would be a small ticket |
@@ -2184,3 +2185,93 @@ One row in [`live-gate-backlog.md`](live-gate-backlog.md) §7c, including the wa
 - **The badge:** it counted 1 for the member and for the admin.
 - **The waiting case:** HR was granted to the member alone, with `send_message` decided by admins only. The member saw the proposal with `can_decide: false` and was refused by role. The admin did not see it, and it stayed `proposed`. Its TTL expiry was not waited out.
 - **§20d, live:** the admin's ledger lists the hidden proposal's call, as written.
+
+## 21. `RIZ-27` — a member's metric reads follow the metric's source grant
+
+§17c's first row, seen live by `RIZ-25` on 2026-10-11: with the HR warehouse restricted and not
+granted, a member's `GET /api/metrics` still carried its metric — key, label and the full
+`sql_template` against the warehouse's tables. A metric is its source's data in another shape,
+so it now inherits the source's grant. Backend only, no flag, no migration, no `/v1` or type
+change; the dashboard is unchanged and receives fewer rows.
+
+### 21a. What was built
+
+| Route | A member, metric on a restricted, ungranted source | An admin, granted or not |
+| --- | --- | --- |
+| `GET /api/metrics` | omitted, in one `Visible(connection)` question for the page over the distinct source ids, order kept; `grains` and `units` unchanged; everything hidden is `metrics: []` | the whole registry, nothing asked |
+| `GET /api/metrics/:id` | `404 {"error":"no such metric"}`, byte-identical to an unknown id | `200`, nothing asked |
+| — the check cannot be made | `503 {"error":"could not check access; try again"}` on both, carrying no metric, logged with `company_id` | — |
+| `POST`, `PUT`, `DELETE /api/metrics…`, `POST /api/metrics/test` | unchanged — admin-only by the role table, never grant-checked | unchanged |
+
+| Piece | Where |
+| --- | --- |
+| `MetricSourceAccess`, `WithAccess`, `visibleMetrics` | `handlers/metrics.go` |
+| Wired with the source list's possibly-nil reader (`connectionAccessOrNil`) | `cmd/api/router.go` |
+| The handler's tests | `handlers/metrics_access_test.go` |
+| The agent pin | `internal/tools/source_grant_test.go` |
+| The live arm and its two seeded metrics | `scripts/live-gates/access-grants/arms.sh` (`metrics_arm`), `seed.sql` |
+
+**A member, not an admin**, the line `T-Z6` drew for the source list: Settings → Metrics is where
+metrics are configured, every metric write is admin-only, and a metric missing from an ungranted
+admin's list would be one they could no longer edit or delete. **A `404`, not the documents'
+`403`**: no dashboard page links to a metric by id, so a refusal would only confirm that it
+exists. **Hidden whole, not redacted**: a metric's key and label name what the source holds
+(`payroll_cost`), so a row with its SQL blanked still leaks.
+
+A metric whose source row is gone is hidden from a member — `authz` reads an unknown id as
+refused — and still listed for an admin, who can delete it.
+
+### 21b. The line it draws
+
+**Agents are unchanged.** `query_metric`, `list_metrics`, the turn's metric catalog prefetch and
+watcher evaluation read the registry with no person to ask about, which is `T-Z6`'s rule — a
+grant gates what a person is shown, never what an agent queries — applied to metrics. Refusing
+`query_metric` alone would close nothing (`run_sql` on the same agent reaches the same source)
+and would be a model-visible change owing a paired `make eval`. So no tool, description, prompt
+or catalog line changed, and no `make eval` is owed. `TestAMetricOnARestrictedSourceStillAnswersAnAgent`
+pins it: a turn carrying the refused member lists `payroll_cost` and gets its value, and neither
+tool is built with anything to ask about a grant.
+
+### 21c. Where the ticket was wrong, or silent
+
+1. **The brief read `/metrics` in `policy.go` as this registry.** It is Prometheus (`policy.go:776`);
+   the registry's role split is the `/api/metrics` rows, unchanged.
+2. **The plan placed the agent pin in `internal/app`.** `query_metric` lives in `internal/tools`, so
+   the pin sits beside `TestASourceGrantDoesNotNarrowWhatAnAgentMayQuery`, the rule it extends.
+3. **The live seed could not have run the admin's edit.** `RIZ-25` seeded one `headcount` metric
+   with grain `none`, which validate-on-save refuses; its SQL was otherwise valid. It is now
+   `payroll_cost` on the HR warehouse, reading `hired_on` as the `hr_analytics` warehouse has it, and
+   `net_revenue` on the open source.
+4. **Silent: the watchers list.** A member still sees a watcher on a hidden metric, labelled
+   *"the metric"* — §17c, a follow-up.
+5. **`Migration: none` was right**: it reads `access_mode` and `resource_grants` on
+   `db_connections` through `authz`.
+
+### 21d. Acceptance, quoted back
+
+| Acceptance | Evidence |
+| --- | --- |
+| AC1 — Maya's `GET /api/metrics` is `200` with only the open source's metric, and the raw body has neither `payroll_cost`, nor HR warehouse's id, nor any part of its SQL | `TestAMembersMetricListFollowsTheSourceGrant/refused_the_HR_warehouse` — one question over the distinct source ids, for the member; open and granted metrics in the registry's order; no key, label, source id, metric id or SQL fragment of the third |
+| AC2 — an ungranted admin lists both, gets `payroll_cost` `200`, and no access read is made | `TestAnAdminsMetricReadsAreWholeAndAskNothing` |
+| AC3 — Maya's get of `payroll_cost` is `404 {"error":"no such metric"}`, byte-identical to a random uuid | `TestAMembersHiddenMetricIsNoSuchMetric` |
+| AC4 — granted, it is listed and opens; revoked, hidden again | `TestAMembersMetricListFollowsTheSourceGrant/granted_the_HR_warehouse`, the granted half of `TestAMembersHiddenMetricIsNoSuchMetric`; the revoke is the live arm |
+| AC5 — a failed access read is the typed `503` with no metric | `TestAMetricAccessCheckThatFailsServesNothing` — list, a hidden and an open get; no key, SQL or storage error |
+| AC6 — Maya's turn still evaluates `payroll_cost` through `query_metric` | `TestAMetricOnARestrictedSourceStillAnswersAnAgent`; `TestASourceGrantDoesNotNarrowWhatAnAgentMayQuery` passes unchanged |
+| AC7 — everything hidden is `200` with `metrics: []` and the tab's existing *"No metrics defined yet."* | `TestAMemberShownNoMetricGetsAnEmptyListNotAnError` (`[]`, not `null`; grains and units present; an empty registry asks nothing). The tab's copy is the live UI arm |
+
+Beyond it: `TestWithNoAccessWiredEveryMetricIsRead` — a stack without `authz` reads every metric,
+as before.
+
+**Proven failing.** With `visibleMetrics` switched off, 4 of the 6 handler tests failed — every
+member case — and the two that prove a whole read passed, as they should. The file was restored and
+`cmp`'d.
+
+**Cost.** One indexed `Visible` read per list and per get, for members only.
+
+### 21e. Owed
+
+The `metrics` arm of `arms.sh` (live-gate-backlog §7c) — member and admin list and get, the
+admin's edit and its undo, grant, revoke, and every source restricted — and the browser half
+(Settings → Metrics and Watchers as Maya, Settings → Metrics as the admin, then the empty state).
+**Prediction: every arm as §21a lists; the admin's `PUT` needs the HR warehouse reachable, since
+validate-on-save runs the template.** No model spend; no `make eval`.

@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/fauzanebd/argentum/internal/agentscope"
@@ -36,5 +38,46 @@ func TestASourceGrantDoesNotNarrowWhatAnAgentMayQuery(t *testing.T) {
 	}
 	if got.ID != "src-hr" {
 		t.Errorf("resolved %q, want src-hr", got.ID)
+	}
+}
+
+// RIZ-27 drew the same line for metrics. A member not granted the HR warehouse
+// no longer sees `payroll_cost` in Settings → Metrics or by id — that is the
+// dashboard's /api/metrics, narrowed in the handler — but the agent on their
+// turn still lists it and still evaluates it, because a grant gates what a
+// person is shown and never what an agent queries (T-Z6), and run_sql on the
+// same agent reaches the same source anyway. Refusing query_metric alone would
+// close nothing and reverse that rule for one tool.
+//
+// So this is a pin, like the one above: neither tool is built with anything to
+// ask about a person's grants — the store is their only dependency — and a turn
+// carrying the refused member gets the metric and its value. If a later change
+// gives either tool a grant check, this fails, and that change owes the prompt
+// a paired `make eval` and access-grants §17c a rewritten row.
+func TestAMetricOnARestrictedSourceStillAnswersAnAgent(t *testing.T) {
+	res := oneMetricResult(false)
+	res.Metric.Key, res.Metric.Label, res.Metric.SourceID = "payroll_cost", "Payroll cost", "src-hr"
+	store := &fakeMetricStore{result: res}
+
+	ctx := tenantctx.WithCompanyID(context.Background(), "co-1")
+	// The member Settings → Metrics now hides payroll_cost from.
+	ctx = tenantctx.WithUserID(ctx, "u-refused")
+	ctx = agentscope.WithScope(ctx, agentscope.Scope{AgentID: "ag-hr", SourceIDs: []string{"src-hr"}})
+
+	listed, err := NewListMetricsTool(store).Execute(ctx, `{}`)
+	if err != nil || !strings.Contains(listed, `"payroll_cost"`) {
+		t.Fatalf("list_metrics = %s, %v; want the restricted source's metric listed for the agent", listed, err)
+	}
+
+	out, err := NewQueryMetricTool(store, nil).Execute(ctx, `{"metric_key":"payroll_cost","from":"2024-12-01","to":"2024-12-31"}`)
+	if err != nil {
+		t.Fatalf("query_metric = %v, want the metric evaluated whoever is asking", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("result is not JSON: %v: %s", err, out)
+	}
+	if payload["row_count"] != float64(1) || !strings.Contains(out, "3863405700") {
+		t.Errorf("query_metric = %s; want payroll_cost's value, evaluated as before RIZ-27", out)
 	}
 }
