@@ -148,13 +148,24 @@ INSERT INTO agent_sources (agent_id, connection_id) VALUES
     ('a0000000-0002-4000-8000-000000000002', 'a0000000-0005-4000-8000-000000000002'),
     ('a0000000-0002-4000-8000-000000000003', 'a0000000-0005-4000-8000-000000000002');
 
--- §17c's first gap, re-observed by Q16: a metric on the HR warehouse, which
--- GET /api/metrics lists to a member whatever the source's mode.
+-- One metric per source, for RIZ-27's arm: payroll_cost on the HR warehouse,
+-- which a member not granted it no longer sees, and net_revenue on the open one,
+-- which they do. RIZ-25 seeded a single `headcount` here to re-observe §17c's
+-- gap; it had grain 'none' and a column the warehouse lacks, which no PUT could
+-- save, and the arm now round-trips the admin's edit (R7). Both templates are
+-- real against the compose warehouses, so validate-on-save passes.
 INSERT INTO metric_definitions (id, company_id, source_id, key, label, description, sql_template,
-                                value_column, grain, unit) VALUES
+                                value_column, grain, unit, currency) VALUES
     ('a0000000-000d-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
-     'a0000000-0005-4000-8000-000000000001', 'headcount', 'Headcount',
-     'Employees hired in the window', 'SELECT count(*) AS value FROM employees WHERE hired_on >= {{from}} AND hired_on < {{to}}', 'value', 'none', 'count');
+     'a0000000-0005-4000-8000-000000000001', 'payroll_cost', 'Payroll cost',
+     'Monthly salary of employees who joined in the window',
+     'SELECT COALESCE(SUM(monthly_salary), 0) AS value FROM employees WHERE join_date >= {{from}} AND join_date < {{to}}',
+     'value', 'month', 'currency', 'IDR'),
+    ('a0000000-000d-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0005-4000-8000-000000000002', 'net_revenue', 'Net revenue',
+     'Sales amount of orders recorded in the window',
+     'SELECT COALESCE(SUM(sales_amount), 0) AS value FROM fact_sales WHERE created_at >= {{from}} AND created_at < {{to}}',
+     'value', 'month', 'currency', 'IDR');
 
 -- ---------------------------------------------------------------------------
 -- Conversations (company A), the five T-Z10 shapes plus a plain Finance one.
