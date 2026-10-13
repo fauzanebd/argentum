@@ -8549,6 +8549,54 @@ operator queue (ordered by `proof_uploaded_at`) with no "proof replaced" marker.
 the old object is kept. The fix is to order by the first proof's time or flag the row; it is left
 for a follow-up.
 
+## Phase 3ca — WhatsApp answers a voice note instead of ignoring it ([`RIZ-85`](https://linear.app/rizkal-uhuy/issue/RIZ-85/voice-replies-work-reliably-end-to-end-with-gaps-found-and-fixed), 2026-10-13)
+
+**Why.** An audit of voice found the dashboard path sound but never tried on a real voice, and found a
+hole on the channel these users actually use. A WhatsApp voice note got no reply and no log line on
+either transport. The Twilio branch labelled every message `text` and dropped an empty `Body`, and Meta
+dropped every type that was not `text`. To the sender the bot looked broken.
+
+**What changed.**
+- **An attachment with no text gets one reply.** Voice note, audio, photo, video, file or sticker, from an
+  allowlisted number, on Twilio or Meta. The reply is the approved two-paragraph copy, Indonesian then
+  English (`whatsapp.AttachmentReply`). No turn, no credit, nothing stored. An unknown number still gets
+  the not-authorised line, and a forged request is still a 401.
+- **Twilio reads `NumMedia` and `MediaContentType0`.** A captioned photo is still answered from its
+  caption.
+- **Every unhandled message now leaves a log line.** `attachment without text` (Info, or Warn when the send
+  fails, still with 200) and `inbound message not handled; dropped`. None of them carries the phone
+  number, the body or a media URL.
+- **A committed signer for the live arm**, `scripts/live-gates/whatsapp-attachment`. It is a dry run unless
+  given `-post`.
+- **The real-provider gates are scheduled, not run.** Live-gate §7n's four rows now carry `RIZ-85`'s Q10–Q12,
+  how and where each runs, and an empty Result column. §7j's Groq and OpenAI rows are superseded. Slice B,
+  transcribing the voice note, went to the backlog with its two open questions.
+- No migration, no `/v1`, no generated type, no tool or prompt change.
+
+**Where the plan was silent.** AC5 named "status callback" among the messages that get a `not handled`
+line. That holds on Twilio. Meta's statuses carry no message and are refused by `ParseWebhook` before the
+new cases run, so they stay silent; logging them would add up to three lines per outbound message. R5's
+no-phone rule covers the new lines only. The unknown-number drop and both clients' `Message sent
+successfully to …` lines already logged the number, and still do ([`voice.md`](voice.md) §6d).
+
+**Proven.** The handler tests run from an allowlisted number through a real `ChatEnqueuer` over a
+recording queue, with a logrus hook: 13 attachment kinds across both transports, the unknown number, the
+caption, text on both transports, six drop cases, a forged signature, Meta's status callback, and a failed
+send on both transports. Each checks the exact log field set and scans every line for the phone, caption,
+media URL and Meta media id. The `whatsapp` package tests cover the MIME table, the type set and the copy.
+The signer's test checks its output against the webhook's own verifier. The existing webhook tests
+pass unchanged.
+
+**Gate.** `gofmt -l` printed nothing. `make lint-go` reported `0 issues`. `make check` gave `MAKE EXIT: 0`:
+77 Go packages `ok` (76 before, plus the signer's), zero `FAIL` or `panic` lines, and 206 dashboard tests,
+none of them new. No `make eval`, `make types` or `make openapi`. As in Phase 3bz, the worktree needed
+`@argentum/widget` built first and a `pnpm` shim to `corepack pnpm@10.18.0` on `PATH`.
+
+**Owed.** Live-gate §7s: Q8 sends a real WhatsApp message through the local stack, and Q9 runs on the
+production number after the deploy. Live-gate §7n: Q10–Q12 and Q14 need twenty recordings, an Indonesian
+listener, the OpenRouter account and production access. §7j: Q13 needs read access to the production
+worker log and control DB. All are owner-run; Q8–Q12's spend is approved.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

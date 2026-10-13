@@ -17,6 +17,21 @@ P Q S T`. The two obvious mnemonics are both taken: `T-V` is the video track,
 and `T-C1` would sit one character from the finding `C-1`. `W` collides with
 neither list.
 
+> **Status, 2026-10-13: [`RIZ-85`](https://linear.app/rizkal-uhuy/issue/RIZ-85/voice-replies-work-reliably-end-to-end-with-gaps-found-and-fixed)
+> audited Track C. Verdict: good, with gaps.** The dashboard path is well built and has run in production
+> since 2026-09-15, but it has never heard a real voice. Two changes came out of the audit:
+> - **WhatsApp answers a voice note instead of ignoring it (slice A, built).** An attachment with no text
+>   gets one bilingual reply asking the sender to type. The silent drop on both transports is gone. No
+>   migration, no flag. Record: [`../coverage/voice.md`](../coverage/voice.md) §6.
+> - **§7n is scheduled, with spend approved, and not yet run.** All four rows are owner-run, because they
+>   need twenty recordings, someone who speaks Indonesian, production access and the OpenRouter account
+>   (live-gate §7n). §7j's Groq and OpenAI rows are superseded by §7n.
+>
+> **WhatsApp voice-note transcription is slice B**, now in [`backlog.md`](backlog.md). Its open question is
+> one this roadmap never asked: decision 13 says a transcript is never sent for anyone, and WhatsApp has no
+> composer to put one in. **Where the plan was silent:** Meta's status callbacks carry no message, so they
+> stay unlogged (record §6d).
+
 > **Status, 2026-09-15, later: voice runs on OpenRouter**, the owner's call over research 08 §2e's
 > recommendation. The one key production already holds for its model reaches both halves:
 > - **voice in:** `openai/whisper-large-v3-turbo`, billed at OpenRouter's reported charge;
