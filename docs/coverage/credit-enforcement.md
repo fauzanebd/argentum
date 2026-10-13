@@ -738,3 +738,9 @@ the cached `BudgetState` needs no invalidation on a switch.
 honours a model-only row, but has no DeepSeek price. A turn on such a pod after
 an admin's first switch bills at the default rate. Deploy workers first. The
 signal is a DeepSeek usage event at 0.005 per 1K input.
+
+**Proven live by QA (Q9, 2026-10-13).** One DeepSeek turn recorded 14 958
+input, 928 output and 40 832 cache-read tokens for 3 412 micro-USD. That is
+DeepSeek's rate, with cache reads at 10% of input (`usage_service.go`); Kimi's
+rate would have been over 17 900. The balance fell from 500 000 by the sum of
+the turn's events.

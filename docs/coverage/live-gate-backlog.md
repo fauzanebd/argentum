@@ -2985,22 +2985,30 @@ one chat turn each, and Q15–Q16 send real email; spend for all six is approved
 | `RIZ-89` Q15, Q16 | Real SMTP, `EMAIL_ENABLED=true`, `APP_BASE_URL` set, the owner's address as operator. Sign up once, approve it, then repeat both with `SMTP_HOST` pointed at a dead host. **Prediction: `Free credit to approve: <workspace>` to each operator, with the sign-up time in WIB and a working `/operator/free-credit` link; `Your Argentum free credit is ready` to the sign-up admin linking `/chat`; with SMTP dead, sign-up 201 and approval 200, with one Warn each** | SMTP credentials, spend (approved) |
 | `RIZ-89` rollout | Production: every `PLATFORM_OPERATOR_EMAILS` address checked read-only to be an active account the owner recognises (created *before* deploying, since R16 blocks it after); the boot log free of `entry N has no active account`; `CREDITS_GRANT_REQUIRES_APPROVAL` unset on api, worker and discord; the owner's smoke test (sign up, get the email, see the notice, approve, ask one question); then two weeks of pending count, oldest pending age and approvals vs rejections, and the §8 check query returning no rows. **No prediction from the repo**: all of this is deployment state | Production access |
 
-## 7u. `RIZ-97`'s workspace chat model — added 2026-10-13
+## 7u. `RIZ-97`'s workspace chat model — added 2026-10-13, mostly closed 2026-10-14
 
-The unit and handler arms ran in `make check`: Q1 and Q2 in `internal/app`, the
-API arms Q3–Q8 through the real resolver in `handlers/config_test.go`, and the UI
-arms' component halves in `chat-model-card.test.tsx` ([`chat-model.md`](chat-model.md)).
-What is left needs the local compose stack (never `apps/backend/.env`). Q9, Q10
-and Q17 spend model tokens, and that spend is approved. **Q17 gates the merge.**
+**Closed by QA (2026-10-13/14, all 17 checks pass, `.flow/RIZ-97/qa/qa.json`):**
+- The live API arms, Q3–Q8. The rows matched the prediction, and the 409 left a
+  real key row md5-identical.
+- The paid turns, Q9 and Q10. A DeepSeek turn cost 3 412 micro-USD at
+  DeepSeek's rate, and the balance fell by exactly that. A worker that was never
+  restarted moved back to Kimi on the next turn, and another workspace stayed on
+  Kimi throughout.
+- The browser arms, Q11–Q16, against the five mockups.
+- **Q17, the merge gate.** The paired golden run gave DeepSeek 59/63 and Kimi
+  50/63. On security both scored 5/6, failing the same
+  `sec-multi-statement-payload` case. The probe found 22 of 24 ZDR endpoints
+  clean in both stream modes and no leaks. The prediction ("DeepSeek 1–3 under
+  Kimi") was wrong in DeepSeek's favour. See [`chat-model.md`](chat-model.md)
+  §4–5 and [`provider-routing.md`](provider-routing.md) §4a.
+
+Still open:
 
 | Owed by | The gate | Blocker |
 | --- | --- | --- |
-| `RIZ-97` Q3–Q8 live | The same calls against the running API, then `psql` on the `primary` row. **Prediction: as in the handler test. The DeepSeek row has `interface`, `base_url` and `api_key_encrypted` NULL. After choosing Kimi the row is gone. A seeded key row is byte-identical after a 409** | The stack |
-| `RIZ-97` Q9 | A workspace on DeepSeek sends one dashboard turn, with no restart after the PUT. **Prediction: the turn's `usage_events` rows carry `deepseek/deepseek-v4.1-flash`, cost = tokens × 0.00015 / 0.0006 per 1K, and the credit balance falls by the same micro-USD** | Model spend (approved) |
-| `RIZ-97` Q10 | One turn from a second workspace, then switch the first back to Kimi and send one more. **Prediction: both record `moonshotai/kimi-k2.6`** | Model spend (approved) |
-| `RIZ-97` Q11–Q15 | The card against its five mockups: admin open and saved, member, locked, save failed with the API stopped, and the chat header after a switch. **Prediction: copy word for word. The header shows `deepseek/deepseek-v4.1-flash`** | The stack, a browser |
-| `RIZ-97` Q17 | The paired `make eval -models moonshotai/kimi-k2.6,deepseek/deepseek-v4.1-flash` on golden and security, plus the OpenRouter endpoint probe. **Reseed the `localhost:5433` demo warehouse first**: on 2026-10-13 it failed `TestDemoFixtureIsReproducible`. **Prediction: DeepSeek is 1–3 golden cases under Kimi with no security regression, and at least one ZDR endpoint returns structured tool calls.** Record it in `chat-model.md` §4–5 | Model spend (approved), the stack, `METABASE_URL=http://localhost:3000` |
 | `RIZ-97` rollout | Deploy workers and the API before telling admins. Switch one internal workspace to DeepSeek, send one turn, and check its usage event and credit deduction. Then watch for a while: `toolcall_leak` and fabrication-guard trips by model, and usage events on DeepSeek priced at 0.005 per 1K (an old pod). **No prediction from the repo** | Production access |
+| found by `RIZ-97` QA | **Kimi's baseline under `LLM_ZDR=true`.** Kimi scored 50/63 isolated and 44/63 in one process, against its published 94–98%. 14 of the 19 failures from the single-process run passed with ZDR off, one case per process. Re-measure `eval-baseline.md` under ZDR, and decide whether pinning Kimi to Inceptron is acceptable. **Prediction: the ZDR baseline lands near 80%, and most failures are source_id disambiguation or an exhausted budget** | Model spend, owner's call on ZDR |
+| found by `RIZ-97` QA | **A process-wide panic on an emoji in a generated PDF**: gofpdf `generateCIDFontMap` hits `index out of range [65536]` on a rune above U+FFFF (`report/pdf/render.go:286`), with no recover on the agent-sdk-go streaming goroutine. It needs a ticket. **Prediction: a `generate_document` call whose text holds 👇 kills a worker today** | A ticket; no spend to reproduce in a unit test |
 
 ## 7. Needs the paid eval set (added 2026-09-11)
 
