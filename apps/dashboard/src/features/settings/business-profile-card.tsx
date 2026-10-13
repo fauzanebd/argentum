@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api-error";
+import { profileCreditNote } from "./credit-reasons";
 import type {
   CompanyProfileResponse,
   ProfileSuggestionResponse,
@@ -109,6 +110,9 @@ export function BusinessProfileCard() {
     queryFn: async () =>
       (await api.get<ProfileSuggestionResponse>("/company/profile/suggestion")).data,
   });
+  // Which balance reason it is — waiting for approval, not approved, or used
+  // up — comes from the server (RIZ-89).
+  const creditNote = profileCreditNote(suggestion);
 
   const apply = useMutation({
     mutationFn: async () =>
@@ -216,11 +220,9 @@ export function BusinessProfileCard() {
 
         {/* The balance is the one reason for silence a tenant can act on, and
             the only one they would otherwise read as a broken feature. */}
-        {suggestion?.credits_exhausted && !suggestion?.draft && (
+        {creditNote && (
           <p className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-            We could not read your connected data to suggest a profile — this workspace is out of
-            credit. Your sources still work; describe the business below in your own words, or top
-            up and press Re-scan under Settings → Data sources.
+            {creditNote}
           </p>
         )}
 

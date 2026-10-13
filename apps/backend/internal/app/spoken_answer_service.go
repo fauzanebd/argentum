@@ -288,7 +288,7 @@ func (s *SpokenAnswerService) synthesise(ctx context.Context, companyID string, 
 			return speech.Audio{}, fmt.Errorf("check budget: %w", err)
 		}
 		if st.Blocked() {
-			return speech.Audio{}, fmt.Errorf("%w: %s", domain.ErrInsufficientCredits, CreditsExhaustedMessage)
+			return speech.Audio{}, newBudgetRefusal(st)
 		}
 	}
 

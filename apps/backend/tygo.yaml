@@ -127,6 +127,7 @@ packages:
     # comment beside it. The frontmatter below imports the real one.
     type_mappings:
       app.BudgetState: "BudgetState"
+      app.FreeCreditState: "FreeCreditState"
       domain.Agent: "Agent"
       domain.AgentChannelBinding: "AgentChannelBinding"
       domain.Channel: "Channel"
@@ -147,11 +148,13 @@ packages:
       domain.Topup: "Topup"
       domain.OperatorTopup: "OperatorTopup"
       domain.TopupPayee: "TopupPayee"
+      domain.CreditGrantRequest: "CreditGrantRequest"
+      domain.OperatorFreeCredit: "OperatorFreeCredit"
     frontmatter: |
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
       // apps/backend/internal/transport/http/handlers/wire.go.
-      import type { BudgetState, SkillIndexCost } from "./events.js";
+      import type { BudgetState, FreeCreditState, SkillIndexCost } from "./events.js";
       import type {
         AdHocQuestion,
         Agent,
@@ -161,6 +164,7 @@ packages:
         APIRequestError,
         CapabilityGrant,
         Channel,
+        CreditGrantRequest,
         CompanyProfile,
         MCPServer,
         MCPTransport,
@@ -168,6 +172,7 @@ packages:
         FeedbackWithContext,
         MetricGrain,
         MetricUnit,
+        OperatorFreeCredit,
         OperatorTopup,
         Skill,
         Topup,

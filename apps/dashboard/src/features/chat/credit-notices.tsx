@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
-import type { BudgetState } from "@argentum/api-types";
+import type { BudgetState, CompanyCredits } from "@argentum/api-types";
 import { cn } from "@/lib/utils";
 import { microToUsd } from "@/features/usage/labels";
+import { formatCreditUsd } from "@/features/topup/format";
 
 /**
  * TopUpLink is the way out of a credit notice for an admin (RIZ-83 R20).
@@ -75,6 +76,69 @@ export function BudgetWarningBanner({
       >
         <X className="size-4" />
       </button>
+    </div>
+  );
+}
+
+/* ── Free credit waiting for approval ───────────────────────────────── */
+/** Shown on the new-chat screen while the workspace's free credit waits for an
+ *  operator, or was not approved (RIZ-89 R13) — before anybody types, so the
+ *  first thing a new customer learns is not a refusal.
+ *
+ *  Read from `/usage/credits`, which reports the state only while there is no
+ *  grant; a workspace with credit, a BYO workspace, and an API older than
+ *  RIZ-89 all report nothing, and get no notice. The notice palette, not the
+ *  destructive one: nothing has gone wrong. An admin is offered the instant way
+ *  out — topping up — and a member reads the same sentences without it. */
+export function FreeCreditNotice({
+  credits,
+  canTopUp = false,
+  className,
+}: {
+  credits: CompanyCredits | null | undefined;
+  canTopUp?: boolean;
+  className?: string;
+}) {
+  const status = credits?.free_credit_status;
+  if (status !== "pending" && status !== "rejected") return null;
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm",
+        className,
+      )}
+    >
+      {status === "pending" ? (
+        <div className="flex-1 min-w-0">
+          <span className="font-medium">Your free credit is waiting for approval.</span>
+          <span className="text-muted-foreground">
+            {" "}
+            We approve the {formatCreditUsd(credits?.free_credit_micro_usd ?? 0)} free credit for each new
+            workspace by hand.{" "}
+            {canTopUp
+              ? "Connect data and set up agents meanwhile — chat starts working as soon as it's approved."
+              : "Chat starts working as soon as it's approved."}
+          </span>
+          {canTopUp && (
+            <>
+              {" "}
+              <TopUpLink>Top up to start now</TopUpLink>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="flex-1 min-w-0">
+          <span className="font-medium">Your free credit was not approved.</span>
+          <span className="text-muted-foreground"> Top up to use chat, scheduled reports and the API.</span>
+          {canTopUp && (
+            <>
+              {" "}
+              <TopUpLink>Top up credit</TopUpLink>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

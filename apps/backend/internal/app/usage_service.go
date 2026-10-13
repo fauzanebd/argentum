@@ -89,6 +89,13 @@ type UsageService struct {
 	credit      CreditPolicy
 	llmCreds    domain.CompanyLLMCredentialRepository
 	budgetCache BudgetCache
+
+	// Free credit by approval (RIZ-89). grants is where a request is filed
+	// and read; nil refuses a company with no grant rather than granting it.
+	// alerts emails the operators about a sign-up's request; nil sends none.
+	grants     domain.CreditGrantRequestRepository
+	alerts     FreeCreditAlerter
+	syncAlerts bool
 }
 
 func NewUsageService(usage domain.UsageRepository, credits domain.CreditsRepository, pricing Pricing) *UsageService {
@@ -320,18 +327,29 @@ func (s *UsageService) SummaryForCompany(ctx context.Context, companyID string) 
 
 // CreditsForCompany returns the current soft balance.
 //
-// With enforcement on, a company that has no grant yet — no row, or a row
-// whose grant is zero — is answered with the grant its first budget check
-// will provision (RIZ-79 R6), and nothing is written. Before this the Usage
-// page showed such a company "$0.00" with no bar, which reads as "already
-// spent" to someone who has spent nothing. It projects rather than calling
-// provisionGrant because a page view is not a budget check: writing here
-// would make opening Usage a second place that decides when a pre-grant
-// balance is forgiven.
+// With enforcement on and AutoGrant (the pre-RIZ-89 behaviour), a company that
+// has no grant yet — no row, or a row whose grant is zero — is answered with
+// the grant its first budget check will provision (RIZ-79 R6), and nothing is
+// written. Before that the Usage page showed such a company "$0.00" with no
+// bar, which reads as "already spent" to someone who has spent nothing. It
+// projects rather than calling provisionGrant because a page view is not a
+// budget check: writing here would make opening Usage a second place that
+// decides when a pre-grant balance is forgiven.
+//
+// With approval required (RIZ-89 R3) there is no grant to project: nothing
+// will be provisioned until an operator approves. Such a company is answered
+// with its stored balance (or 0) and grant 0, plus where its free credit is —
+// pending or rejected, and the amount it was filed for — so the Usage card and
+// the chat screen can say so before anybody types. It reads the request and
+// never files one, for the reason it never provisioned: a page view is not a
+// budget check. A company with no request yet reads as pending, because its
+// next check files one.
 //
 // With enforcement off the stored row is the whole answer, as it always was:
-// no check will ever provision anything, so a projected grant would promise a
-// balance that never arrives.
+// no check will ever provision or refuse anything, so a projected grant would
+// promise a balance that never arrives and a pending notice would describe a
+// refusal that never comes. Likewise a company on its own LLM key: it is
+// never refused (R5), so it is never told its credit is waiting.
 func (s *UsageService) CreditsForCompany(ctx context.Context, companyID string) (*domain.CompanyCredits, error) {
 	c, err := s.credits.Get(ctx, companyID)
 	if !s.credit.Enforce {
@@ -339,13 +357,54 @@ func (s *UsageService) CreditsForCompany(ctx context.Context, companyID string) 
 	}
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
-		return s.projectedGrant(companyID), nil
+		c = nil
 	case err != nil:
 		return nil, err
-	case c == nil || c.MonthlyGrantMicroUSD == 0:
+	}
+	if c != nil && c.MonthlyGrantMicroUSD != 0 {
+		return c, nil
+	}
+	if s.credit.AutoGrant {
 		return s.projectedGrant(companyID), nil
 	}
-	return c, nil
+
+	out := &domain.CompanyCredits{CompanyID: companyID}
+	if c != nil {
+		out.BalanceMicroUSD = c.BalanceMicroUSD
+		out.UpdatedAt = c.UpdatedAt
+		out.LastTopupAt = c.LastTopupAt
+	}
+	if s.credit.GrantMicroUSD <= 0 {
+		return out, nil
+	}
+	if s.llmCreds != nil {
+		if byo, err := s.hasOwnPrimaryKey(ctx, companyID); err == nil && byo {
+			return out, nil
+		}
+	}
+	out.FreeCreditStatus = domain.CreditGrantStatusPending
+	out.FreeCreditMicroUSD = s.credit.GrantMicroUSD
+	if s.grants == nil {
+		return out, nil
+	}
+	req, err := s.grants.GetForCompany(ctx, companyID)
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+	case err != nil:
+		// The balance is right and the notice is the hint; a page that fails
+		// over the hint would hide the balance too. Pending is what the next
+		// check will make true if nothing is filed yet.
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("free-credit request lookup failed; answering the balance as pending")
+	case req.Status == domain.CreditGrantStatusApproved:
+		// Approval writes the grant in the same transaction, so this is a
+		// hand edit; nothing is waiting.
+		out.FreeCreditStatus, out.FreeCreditMicroUSD = "", 0
+	default:
+		out.FreeCreditStatus = req.Status
+		out.FreeCreditMicroUSD = req.AmountMicroUSD
+	}
+	return out, nil
 }
 
 // parseUsageWindow resolves the from/to query params for audit endpoints.

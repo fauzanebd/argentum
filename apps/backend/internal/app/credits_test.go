@@ -100,6 +100,16 @@ func enforcing() CreditPolicy {
 	return CreditPolicy{Enforce: true, WarnPct: 20, GrantMicroUSD: testGrant}
 }
 
+// autoGranting is enforcing() with the lazy grant on — RIZ-89's kill switch,
+// CREDITS_GRANT_REQUIRES_APPROVAL=false — which is the behaviour the tests
+// below that provision a grant were written against, and which R6 promises
+// is restored exactly. enforcing() itself is approval, the zero value.
+func autoGranting() CreditPolicy {
+	p := enforcing()
+	p.AutoGrant = true
+	return p
+}
+
 func TestCheckBudgetVerdicts(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -147,7 +157,7 @@ func TestCheckBudgetVerdicts(t *testing.T) {
 			// negative balance that no grant was ever set against. It must be
 			// provisioned, not refused.
 			name:   "never granted, negative from pre-enforcement metering",
-			policy: enforcing(),
+			policy: autoGranting(),
 			record: &domain.CompanyCredits{BalanceMicroUSD: -8_000_000, MonthlyGrantMicroUSD: 0},
 			want:   BudgetOK, wantPct: 100, wantUpserts: 1,
 		},
@@ -155,7 +165,7 @@ func TestCheckBudgetVerdicts(t *testing.T) {
 			// An operator who sets the grant to zero has asked for exactly
 			// this. It is a choice, so it is pinned rather than defended.
 			name:   "zero grant refuses everyone",
-			policy: CreditPolicy{Enforce: true, WarnPct: 20, GrantMicroUSD: 0},
+			policy: CreditPolicy{Enforce: true, WarnPct: 20, GrantMicroUSD: 0, AutoGrant: true},
 			record: nil,
 			want:   BudgetExhausted, wantUpserts: 1,
 		},
@@ -191,7 +201,7 @@ func TestCheckBudgetVerdicts(t *testing.T) {
 
 func TestCheckBudgetProvisionsTheGrantOnce(t *testing.T) {
 	credits := &stubCredits{getErr: domain.ErrNotFound}
-	svc := newCreditService(enforcing(), credits, &stubLLMCreds{}, nil)
+	svc := newCreditService(autoGranting(), credits, &stubLLMCreds{}, nil)
 
 	st, err := svc.CheckBudget(context.Background(), "c1")
 	if err != nil {
@@ -330,9 +340,11 @@ func TestCheckBudgetFailsOpen(t *testing.T) {
 		},
 		{
 			// A repository that violates its contract must not panic the
-			// turn; it is treated as "no row".
+			// turn; it is treated as "no row" — provisioned under the lazy
+			// grant, and refused as pending with approval required
+			// (free_credit_gate_test.go), which is not failing open.
 			name:    "credits repository returned no record and no error",
-			policy:  enforcing(),
+			policy:  autoGranting(),
 			credits: &stubCredits{},
 			llm:     &stubLLMCreds{},
 			company: "c1",

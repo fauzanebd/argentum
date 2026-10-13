@@ -313,7 +313,9 @@ func (s *ScheduledTaskService) HandleFire(ctx context.Context, taskID string) er
 			logrus.WithError(err).WithField("company_id", t.CompanyID).
 				Warn("scheduled fire: budget check failed; running the task")
 		} else if st.Blocked() {
-			s.failRun(ctx, run, errors.New(CreditsExhaustedMessage))
+			// The state's sentence: a workspace whose free credit is waiting
+			// is told that, not that it used its credit (RIZ-89).
+			s.failRun(ctx, run, errors.New(st.RefusalMessage()))
 			return nil // recorded on the run; an asynq retry would only refuse again
 		}
 	}

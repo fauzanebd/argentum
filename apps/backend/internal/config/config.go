@@ -319,6 +319,13 @@ type Config struct {
 	CreditsEnforcementEnabled  bool
 	CreditsWarningThresholdPct int     // remaining % of the grant that triggers a warning
 	CreditsDefaultGrantUSD     float64 // a new company's free credit, once, in dollars
+	// CreditsGrantRequiresApproval (RIZ-89) makes free credit something an
+	// operator approves: sign-up files a request instead of writing the
+	// grant, and a company with no grant is refused until it is approved.
+	// False is the kill switch, and restores RIZ-79 exactly — the grant at
+	// sign-up and the lazy grant at the first check. Read by every process
+	// that checks budgets (api, worker, discord) through creditwiring.
+	CreditsGrantRequiresApproval bool
 
 	// Manual credit top-up (RIZ-83). Raw values: TopupSettings parses and
 	// validates them, and a bad value turns top-up off with an error at boot
@@ -841,6 +848,9 @@ func Load() (*Config, error) {
 		// $0.50 since RIZ-79, written at signup; it was $25, provisioned at
 		// the first budget check. A company that already holds a grant keeps it.
 		CreditsDefaultGrantUSD: getEnvAsFloat("CREDITS_DEFAULT_GRANT_USD", 0.5),
+		// Anything but an explicit "false" keeps approval on: a typo in a kill
+		// switch for free money should fail closed.
+		CreditsGrantRequiresApproval: getEnv("CREDITS_GRANT_REQUIRES_APPROVAL", "true") != "false",
 
 		// Manual credit top-up (RIZ-83)
 		TopupPayeesJSON:        getEnv("TOPUP_PAYEES", ""),

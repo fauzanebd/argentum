@@ -297,7 +297,7 @@ func (s *NudgeService) credits(ctx context.Context, companyID, name string) stri
 	if st.Blocked() {
 		return tools.NudgeRefusal("credits_exhausted", fmt.Sprintf(
 			"%s was not asked. %s Answer from what you have, and do not try to ask again.",
-			name, CreditsExhaustedMessage))
+			name, st.RefusalMessage()))
 	}
 	return ""
 }

@@ -506,7 +506,7 @@ func (s *VoiceService) Transcribe(ctx context.Context, in VoiceInput) (*VoiceTra
 			return nil, fmt.Errorf("check budget: %w", err)
 		}
 		if st.Blocked() {
-			return nil, fmt.Errorf("%w: %s", domain.ErrInsufficientCredits, CreditsExhaustedMessage)
+			return nil, newBudgetRefusal(st)
 		}
 	}
 

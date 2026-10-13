@@ -109,12 +109,32 @@ balance it leaves (never below the top-up's own credit), so the bar and the
 then captions the grant "at your last top-up". See
 [`../topups/api.md`](../topups/api.md).
 
-**A company that has no grant yet** (no row, or a row whose grant is 0) is
-answered, while enforcement is on, with the grant its first budget check will
-provision: `balance_micro_usd` = `monthly_grant_micro_usd` =
-`CREDITS_DEFAULT_GRANT_USD`, `updated_at` the zero time. Nothing is written by
-reading. With enforcement off the stored row is returned as it is, and a
-company with no row gets `{"company_id": "…", "balance_micro_usd": 0}` (RIZ-79).
+**A company that has no grant yet** (no row, or a row whose grant is 0), while
+enforcement is on:
+
+- **With approval required** (`CREDITS_GRANT_REQUIRES_APPROVAL`, the default
+  since RIZ-89) its free credit is waiting for an operator. It is answered with
+  its stored balance (or 0), grant 0, and two more fields, present only in this
+  state:
+
+  ```json
+  {"company_id": "…", "balance_micro_usd": 0, "monthly_grant_micro_usd": 0,
+   "free_credit_status": "pending", "free_credit_micro_usd": 500000}
+  ```
+
+  `free_credit_status` is `pending` (including a company whose request its next
+  budget check will file) or `rejected`; `free_credit_micro_usd` is the amount
+  the request was filed for. A company on its own LLM key, or with
+  `CREDITS_DEFAULT_GRANT_USD=0`, gets neither field: it is never refused for
+  want of free credit. See [`../topups/free-credit.md`](../topups/free-credit.md).
+- **With `CREDITS_GRANT_REQUIRES_APPROVAL=false`** it is answered with the grant
+  its first budget check will provision: `balance_micro_usd` =
+  `monthly_grant_micro_usd` = `CREDITS_DEFAULT_GRANT_USD`, `updated_at` the zero
+  time (RIZ-79).
+
+Nothing is written, and no request is filed, by reading. With enforcement off
+the stored row is returned as it is, and a company with no row gets
+`{"company_id": "…", "balance_micro_usd": 0}`.
 
 #### The balance is enforced (T-03)
 
