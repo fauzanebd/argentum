@@ -553,3 +553,148 @@ Owed (live-gate §7r): the stack and browser arms, the alert email through real
 SMTP (Q22), one paid chat turn after an approval (Q10), the live Frankfurter
 fetch (Q33), and the production smoke test.
 
+## 8. RIZ-89 — free credit waits for an operator's approval (2026-10-13)
+
+Ticket: [`RIZ-89`](https://linear.app/rizkal-uhuy/issue/RIZ-89/free-sign-up-credit-is-granted-only-after-an-admin-approves-it).
+Every sign-up was credited $0.50 at once (§6), and the first budget check
+credited any company without a grant (§1). Sign-up verifies no email and its only
+guard is 5 per IP per hour, which fails open when Redis does. So a script could
+farm free credit. The owner wants every grant approved by hand.
+
+### What changed
+
+- **Sign-up files a request, not a balance.** `UsageService.StartSignupCredit`
+  (formerly `GrantSignupCredit`) inserts a pending `credit_grant_requests` row
+  (migration 091, one per company, ever) for `CREDITS_DEFAULT_GRANT_USD`, frozen
+  on the row. The row names the new admin and the client IP. It writes no
+  `company_credits` row and emails each operator off the request path. A failed
+  filing never fails the sign-up: the next budget check files the request.
+- **`CheckBudget` never grants.** For a non-BYO company with no grant (no row,
+  or grant 0), `refuseWithoutGrant` files the request if there is none and
+  refuses with `free_credit: pending | rejected` on `BudgetState`. A failed
+  *lookup* follows §1 decision 3: it warns, allows the turn and does not cache.
+  A failed *filing* refuses as pending without caching, so the next check
+  retries it. With `CREDITS_DEFAULT_GRANT_USD=0` nothing is filed and the
+  refusal is the plain one. A company that holds a grant is never looked up.
+  Its verdict, balance and messages are byte-identical (AC4).
+- **Approval is the only write.** `CreditGrantRepo.Approve` runs the top-up's
+  guard (`WHERE status = 'pending'` in the same transaction as the write). It
+  locks the `company_credits` row and branches. No row or grant 0: balance =
+  grant = amount. Topped up: balance + amount, grant `GREATEST(…)`. Already
+  holds free credit and was never topped up: nothing is added. The third case is
+  a grant written while the flag was off, or by an older pod mid-deploy. It
+  answers `added_micro_usd: 0` and the toast says so. An insert that races a row
+  into existence re-reads that row locked rather than letting an upsert arm guess
+  which case it is. Approve and reject both call `InvalidateBudget`.
+- **One refusal per reason.** `FreeCreditPendingMessage` and
+  `FreeCreditRejectedMessage` sit beside `CreditsExhaustedMessage`, which is
+  byte-identical. A `*BudgetRefusal` error carries the state.
+  `CreditRefusalMessage(err)` answers with that state's sentence on `/api` chat,
+  agents, voice, spoken answers, the four messaging channels
+  (`SpokenRefusal`), scheduled-task failures and nudges. `/v1` and the widget
+  still send the old constant (AC12). `BudgetRefusal.Error()` reads exactly as
+  the old `"%w: %s"` wrap did for a plain exhausted balance.
+- **Every process is gated by one function.** `internal/creditwiring` builds
+  the `UsageService` for cmd/api, the worker's stack and cmd/discord. The zero
+  `CreditPolicy` means approval (`AutoGrant` false), and a nil request repository
+  refuses. `TestEveryProcessBuildsItsBudgetHere` reads the three call sites, so a
+  fourth `CreditPolicy{…}` literal fails the build (R4, Q7).
+- **The kill switch** is `CREDITS_GRANT_REQUIRES_APPROVAL=false`, and only that
+  exact value (a typo fails closed). It restores §6 exactly; the RIZ-79 tests run
+  under `AutoGrant` to prove it (R6, Q14).
+- **The allowlist hole is closed (R16, R17).** Sign-up, `TeamService.Invite` and
+  `TeamService.Accept` refuse a `PLATFORM_OPERATOR_EMAILS` address, trimmed and
+  case-insensitive. Each answers the way an address in use or a dead link is
+  answered, so the list is not revealed. At boot the api warns `PLATFORM_OPERATOR_EMAILS
+  entry N has no active account` by position, never by address.
+
+### Operator and user surfaces
+
+`/operator/free-credit`, with tabs beside `/operator/top-ups` (the count comes
+from the review list). Each row shows sign-up time, workspace and admin email,
+two signals and the amount. The signals are "Data source connected" and "N other
+sign-ups from this IP in 7 days", where the window is seven days either side,
+so a batch's first row is flagged as loudly as its last. Approve and Reject each
+take two clicks, and the Reviewed table shows the last 50 decisions. The
+new-chat screen shows a notice while free credit is pending or rejected, and an
+admin also gets a top-up link. Usage → Overview and `/top-up` show "$0.50 free
+credit waiting for approval" or "Free credit not approved. …", with no bar. The
+sign-up line now says the credit follows approval. API:
+[`apps/backend/docs/topups/free-credit.md`](../../apps/backend/docs/topups/free-credit.md).
+
+### Where the plan was wrong, or silent
+
+- **`provisionGrant` is kept, not removed.** R3 says "removed". R6 and the design
+  keep it behind `AutoGrant`, and the kill switch needs it. With approval on,
+  nothing reaches it.
+- **One wiring function, not three literals.** The design listed a policy flag
+  edit in each of the three binaries. That is the "missed wiring" its own risk
+  table names first, so the three now call `creditwiring.UsageService`. It is a
+  package of its own because cmd/api and cmd/discord do not import
+  `internal/bootstrap`, and `internal/app` does not read config.
+- **The plan was silent on a failed filing.** It covered a failed lookup
+  (allow) but not a failed insert. That case refuses as pending without caching:
+  the company has no grant either way, and allowing it would hand out turns on a
+  balance that only goes negative.
+- **A BYO company is never told its credit is waiting.** R5 says it is never
+  refused, so `CreditsForCompany` omits the free-credit fields for it, and the
+  notice would otherwise describe a refusal that never comes.
+- **The agent generator returned the bare sentinel**, so `agents.go` could
+  never say why. It now returns the state like every other entry point.
+- **`Signup` gained a `clientIP` parameter**, from `c.ClientIP()`. That is the
+  address the sign-up rate limit already keys on.
+- **An approved request with no grant** can only come from a hand edit, because
+  approval writes both in one transaction. It is refused with the plain sentence:
+  nothing is waiting.
+- **The operator alert's time is in Asia/Jakarta.** R18's copy has a date with no
+  zone. The operators are the owner, and the review page beside the link renders
+  the same moment in their browser's time.
+- **The approval email goes only when credit was added.** A zero-add approval has
+  no news to send.
+- **"1 other sign-up"**, singular. The plan only showed N ≥ 2.
+- **A member sees the rejected notice without the link.** There is no mockup for
+  it. The sentence matches the Usage card's, which members already read.
+- **Watchers are untouched.** A refused unattended fire is still recorded as
+  `credits_exhausted`. It has no sentence for anyone to read.
+
+### Risks the code cannot close
+
+- **The rolling deploy.** An older pod still runs the lazy grant, so a sign-up
+  on a new pod can be granted by an old one during the rollout. The third R8
+  branch keeps a later approval from adding a second $0.50.
+- **Signup IPs have no retention rule.** That is a non-goal of RIZ-89. The
+  operator API never sends the address, only the count.
+- **Check query for "a process still provisions free credit"** (read-only, run
+  after the rollout):
+
+  ```sql
+  SELECT cc.company_id, cc.updated_at FROM company_credits cc
+  LEFT JOIN credit_grant_requests r ON r.company_id = cc.company_id AND r.status = 'approved'
+  WHERE cc.monthly_grant_micro_usd = 500000 AND cc.last_topup_at IS NULL
+    AND cc.updated_at > '<deploy time>' AND r.id IS NULL;
+  ```
+
+### Gate
+
+Go: `internal/app` covers the sign-up filing (AC1), every `CheckBudget` branch
+(Q5), the zero policy refusing (R4), decisions reaching the next check through
+the cache, `BudgetRefusal` through `SpokenRefusal` and `CreditRefusalMessage`,
+a channel and a scheduled run saying "waiting" (Q20), `CreditsForCompany`'s
+states, the service's approve/reject/email rules, R16 at all three doors, R17's
+lines (no address logged) and both email bodies word for word. It also covers
+`creditwiring` (the flag table, the built service refusing and filing, the three
+call sites), the handlers (every status and sentence, no IP on the wire, the
+signup 409, `/v1`-side `embedChatFail` unchanged) and `cmd/api` (the three new
+routes behind `TestOperatorRoutesRefuseEveryoneElse`). Source-reading tests
+cover the approve statement and 091. Against Postgres (scratch tag, local
+`argentum_postgres`): 091 up → down → up; filing once; the data-source and
+same-IP signals; R8's four branches (no row → 500000/500000; −20000/0 →
+500000/500000; topped-up 5760000 → 6260000; granted 310000/500000 → +0); and the
+ten-way approve race (one win, nine 409s). Dashboard: vitest for the operator
+page (queue, signals, toasts, 409, empty, error, forbidden, tabs), the top-ups
+page's tabs, the chat notice (admin, member, rejected, loading, the 402 strip),
+the Usage and top-up cards and the sign-up line.
+
+Owed (live-gate §7t): the stack and browser arms (Q1–Q4, Q6, Q11–Q13, Q18,
+Q21–Q22), the four paid chat turns (Q8, Q9, Q19, Q23), and real SMTP for both
+emails (Q15, Q16).
