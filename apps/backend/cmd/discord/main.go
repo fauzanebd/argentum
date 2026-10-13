@@ -21,6 +21,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/creditwiring"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/discord"
 	"github.com/fauzanebd/argentum/internal/domain"
@@ -92,13 +93,10 @@ func main() {
 	// This process never runs the agent, so its UsageService exists only to
 	// answer CheckBudget — records are written by the worker. It is built
 	// from the same config as the other two so a Discord user hits the same
-	// wall a dashboard user does (T-03).
-	usageSvc := app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing).
-		WithCredits(app.CreditPolicy{
-			Enforce:       cfg.CreditsEnforcementEnabled,
-			WarnPct:       cfg.CreditsWarningThresholdPct,
-			GrantMicroUSD: cfg.CreditsDefaultGrantMicroUSD(),
-		}, llmCredRepo, app.NewRedisBudgetCache(rdb))
+	// wall a dashboard user does (T-03), by the same function since RIZ-89 so
+	// it can no more grant free credit unapproved than they can.
+	usageSvc := creditwiring.UsageService(cfg, usageRepo, creditsRepo, llmCredRepo,
+		pgctl.NewCreditGrantRepo(controlDB), app.NewRedisBudgetCache(rdb))
 	// Same roster wiring as cmd/api (T-S2): this process enqueues turns too, so
 	// a Discord message resolves to the company's default agent rather than
 	// leaving the worker to guess. And the same bindings (T-S4) — the gateway

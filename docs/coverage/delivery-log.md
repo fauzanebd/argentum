@@ -8639,6 +8639,63 @@ container should reseed it before trusting a local `make eval`. No `make types`,
 Phone numbers, each Configure against a local stack's `GET /slack`, `/discord` and `/lark`, the member
 view, and an unchanged Discord save. They need the local stack and a browser, and no spend.
 
+## Phase 3cc — Free sign-up credit waits for an operator's approval ([`RIZ-89`](https://linear.app/rizkal-uhuy/issue/RIZ-89/free-sign-up-credit-is-granted-only-after-an-admin-approves-it), 2026-10-13)
+
+**Why.** Every sign-up was credited $0.50 at once, and the first budget check
+credited any company without a grant. Sign-up verifies no email, and its only
+guard fails open without Redis, so a script could farm free credit. The owner
+wants every free grant approved by hand. The operator allowlist that would guard
+that approval matched an unverified email, so anyone could claim a listed address
+that had no account.
+
+**What changed.**
+- **Sign-up files a pending request** (migration `091_credit_grant_requests`,
+  one per company) naming the admin and the client IP. It writes no balance, and
+  every operator gets an email.
+- **No code path writes free credit except an approval.** `CheckBudget` refuses
+  a company with no grant and files its request if there is none. The refusal
+  says "waiting for approval" or "not approved" on the dashboard, channels,
+  scheduled runs and nudges. `/v1` and the widget keep `CreditsExhaustedMessage`
+  byte for byte. Companies that hold a grant, and BYO-key companies, are
+  unchanged.
+- **`/operator/free-credit`**, with tabs beside the top-ups. Each row shows a
+  data-source signal and a same-IP signal. Approve and Reject take two clicks
+  each. Approval is exactly once, takes effect on the next message, and emails
+  the admin. A workspace that already had free credit gets nothing more.
+- **The new user is told.** A notice on the new-chat screen (with top-up for
+  admins), the Usage and `/top-up` cards, and a new line on the sign-up page.
+- **The allowlist hole is closed.** Sign-up, invite and invite-accept refuse an
+  operator's address with the answer an address in use gets. The api warns at
+  boot about a listed address that has no account.
+- **One wiring function** (`internal/creditwiring`) for api, worker and discord.
+  `CREDITS_GRANT_REQUIRES_APPROVAL=false` is the kill switch.
+- No `/v1`, openapi, tool or prompt change. `make types` was run.
+
+**Where the plan was wrong or silent** is recorded in
+[`credit-enforcement.md`](credit-enforcement.md) §8. In short: `provisionGrant`
+is kept behind the kill switch rather than removed; there is one wiring function,
+not three literals; a failed filing refuses without caching; a BYO company is
+never told it is waiting; the agent generator now says why; the alert's time is
+written in WIB.
+
+**Proven.** Unit and handler tests cover every `CheckBudget` branch, sign-up
+filing, R16 at all three doors, R17 (no address logged), both emails word for
+word, the operator routes' statuses and sentences, and the three wiring call
+sites. On the local `argentum_postgres` with the `scratch` tag: 091 up → down →
+up, R8's four branches and the ten-way approve race (one win, nine 409s).
+Dashboard vitest covers the operator page, the tabs, the chat notice, the cards
+and the sign-up line.
+
+**Gate.** `gofmt -l` printed nothing. `make lint-go` reported `0 issues` with a
+cleaned cache. `make check` gave `MAKE EXIT: 0`: 78 Go packages `ok` (77 before,
+plus `creditwiring`), zero `FAIL` or `panic` lines, and 228 dashboard tests (206
+before). As in Phase 3ca, the worktree needed `@argentum/widget` built first and
+a `pnpm` shim to `corepack pnpm@10.18.0` on `PATH`.
+
+**Owed.** Live-gate §7t covers the stack and browser arms, the four approved
+paid chat turns (Q8, Q9, Q19, Q23), real SMTP for both emails (Q15, Q16) and the
+rollout's allowlist check.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

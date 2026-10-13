@@ -16,7 +16,8 @@ import type { CompanyCredits, UsageSummary } from "@argentum/api-types";
 import { Button } from "@/components/ui/button";
 import { useIsAdmin } from "@/store/auth";
 import { EVENT_LABELS, microToUsd } from "./labels";
-import { grantCaption, usedUpLine } from "./credit-copy";
+import { freeCreditLines, grantCaption, usedUpLine } from "./credit-copy";
+import { FreeCreditCardLines } from "./free-credit-lines";
 
 /**
  * recharts is ~390 kB and this tab is the only screen that draws a chart.
@@ -112,6 +113,13 @@ export function OverviewTab() {
               {usedUp && (
                 <p className="text-xs text-destructive mt-1.5">{usedUpLine(credits)}</p>
               )}
+            </CardContent>
+          )}
+          {/* No grant yet because free credit waits for an operator (RIZ-89):
+              no bar, and the lines say why the balance is $0.00. */}
+          {pct == null && freeCreditLines(credits) && (
+            <CardContent className="pt-0">
+              <FreeCreditCardLines credits={credits} />
             </CardContent>
           )}
         </Card>

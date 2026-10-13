@@ -124,6 +124,25 @@ email exists since `T-F6`; whether it has ever delivered is
 sample data, or upload a file to `/knowledge` and ask, not yet verified to
 produce an answerable source without review.
 
+### Sign-up no longer grants credit (RIZ-89, 2026-10-13)
+
+The 2026-10-13 sign-up audit's first finding, **credit farming**, is now
+**mitigated: credit needs approval.** Sign-up has no email verification,
+CAPTCHA or domain check, and its 5-per-IP-per-hour limit fails open without
+Redis, so every scripted sign-up used to earn $0.50 at once. Since RIZ-89 a
+sign-up files a pending free-credit request, which an operator approves or
+rejects on `/operator/free-credit`, and writes no balance. The new workspace
+still goes through onboarding, connects data and sets up agents. Chat shows that
+the credit is waiting, and an admin is offered top-up as the way to start now.
+The sign-up page says "Free credit to try Argentum is added once we've approved
+your new workspace." ([`credit-enforcement.md`](credit-enforcement.md) §8).
+
+What this does *not* fix, all still open from the same audit: no email
+verification or CAPTCHA, no login rate limit, enumeration through sign-up's 409
+(R16 deliberately reuses that 409 for operator addresses, so it adds no new
+signal), and slug squatting. Verification, CAPTCHA and disposable-domain
+blocking are each a ticket of their own.
+
 ## 6. Gates
 
 **Unit.** `TestDataStarterQuestions` (13 cases: order across two sources,

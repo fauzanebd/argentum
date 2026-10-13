@@ -178,7 +178,7 @@ func (h *VoiceHandler) tooLong(c *gin.Context) {
 func voiceFail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, domain.ErrInsufficientCredits):
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditsExhaustedMessage})
+		c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditRefusalMessage(err)})
 	case errors.Is(err, app.ErrTranscriptionFailed):
 		c.JSON(http.StatusBadGateway, gin.H{"error": app.ErrTranscriptionFailed.Error()})
 	case errors.Is(err, speech.ErrDisabled):

@@ -14,6 +14,11 @@ import (
 
 // RIZ-79: a new workspace starts with its free credit at signup rather than at
 // its first budget check.
+//
+// Since RIZ-89 that is the CREDITS_GRANT_REQUIRES_APPROVAL=false behaviour, and
+// these tests pin it under AutoGrant: R6 promises the kill switch restores it
+// exactly. What sign-up does with approval required is
+// free_credit_gate_test.go's.
 
 const signupGrant = int64(500_000) // $0.50, the CREDITS_DEFAULT_GRANT_USD default
 
@@ -48,13 +53,18 @@ func (f failingUserCreate) Create(context.Context, *domain.User) error { return 
 // tests about *when* signup asks rather than what the grant writes.
 type recordingGranter struct{ companies []string }
 
-func (g *recordingGranter) GrantSignupCredit(_ context.Context, companyID string) {
-	g.companies = append(g.companies, companyID)
+func (g *recordingGranter) StartSignupCredit(_ context.Context, sc SignupCredit) {
+	g.companies = append(g.companies, sc.CompanyID)
 }
 
+// signupPolicy is RIZ-79's policy: the grant written at signup and provisioned
+// lazily, which since RIZ-89 needs AutoGrant.
 func signupPolicy(enforce bool, grant int64) CreditPolicy {
-	return CreditPolicy{Enforce: enforce, WarnPct: 20, GrantMicroUSD: grant}
+	return CreditPolicy{Enforce: enforce, WarnPct: 20, GrantMicroUSD: grant, AutoGrant: true}
 }
+
+// signupIP is the address every signup in these tests comes from.
+const signupIP = "203.0.113.7"
 
 // signupWithCredits wires an AuthService to a real UsageService over the given
 // stub, which is how cmd/api wires them.
@@ -73,7 +83,7 @@ func TestSignupWritesTheFreeCredit(t *testing.T) {
 	credits := &stubCredits{getErr: domain.ErrNotFound}
 	auth, usage := signupWithCredits(t, signupPolicy(true, signupGrant), credits)
 
-	res, err := auth.Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse")
+	res, err := auth.Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse", signupIP)
 	if err != nil {
 		t.Fatalf("Signup: %v", err)
 	}
@@ -108,7 +118,7 @@ func TestSignupSurvivesAFailedGrant(t *testing.T) {
 	credits := &stubCredits{getErr: domain.ErrNotFound, insErr: errors.New("connection reset by peer")}
 	auth, usage := signupWithCredits(t, signupPolicy(true, signupGrant), credits)
 
-	res, err := auth.Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse")
+	res, err := auth.Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse", signupIP)
 	if err != nil {
 		t.Fatalf("Signup = %v, want success — the grant is best-effort", err)
 	}
@@ -162,7 +172,7 @@ func TestSignupGrantPolicy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			credits := &stubCredits{getErr: domain.ErrNotFound}
 			auth, _ := signupWithCredits(t, tc.policy, credits)
-			if _, err := auth.Signup(context.Background(), "Toko Segar", "dina@tokosegar.id", "correct-horse"); err != nil {
+			if _, err := auth.Signup(context.Background(), "Toko Segar", "dina@tokosegar.id", "correct-horse", signupIP); err != nil {
 				t.Fatalf("Signup: %v", err)
 			}
 			if got := len(credits.inserts); got != tc.wantInserts {
@@ -183,7 +193,7 @@ func TestOnlyACompletedSignupAsksForCredit(t *testing.T) {
 		svc, _, _ := authFixture(t)
 		svc.companies = &signupCompanyRepo{}
 		g := &recordingGranter{}
-		res, err := svc.WithCredits(g).Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse")
+		res, err := svc.WithCredits(g).Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse", signupIP)
 		if err != nil {
 			t.Fatalf("Signup: %v", err)
 		}
@@ -196,7 +206,7 @@ func TestOnlyACompletedSignupAsksForCredit(t *testing.T) {
 		svc, _, _ := authFixture(t)
 		svc.companies = &signupCompanyRepo{err: boom}
 		g := &recordingGranter{}
-		if _, err := svc.WithCredits(g).Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse"); err == nil {
+		if _, err := svc.WithCredits(g).Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse", signupIP); err == nil {
 			t.Fatal("Signup succeeded with a failing company insert")
 		}
 		if len(g.companies) != 0 {
@@ -209,7 +219,7 @@ func TestOnlyACompletedSignupAsksForCredit(t *testing.T) {
 		svc.companies = &signupCompanyRepo{}
 		svc.users = failingUserCreate{fakeUsers: users, err: boom}
 		g := &recordingGranter{}
-		if _, err := svc.WithCredits(g).Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse"); err == nil {
+		if _, err := svc.WithCredits(g).Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse", signupIP); err == nil {
 			t.Fatal("Signup succeeded with a failing user insert")
 		}
 		if len(g.companies) != 0 {
@@ -222,7 +232,7 @@ func TestOnlyACompletedSignupAsksForCredit(t *testing.T) {
 		svc.companies = &signupCompanyRepo{}
 		seedUser(t, users, "dina@tokosegar.id", "correct-horse", domain.RoleAdmin)
 		g := &recordingGranter{}
-		if _, err := svc.WithCredits(g).Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse"); !errors.Is(err, domain.ErrAlreadyExists) {
+		if _, err := svc.WithCredits(g).Signup(ctx, "Toko Segar", "dina@tokosegar.id", "correct-horse", signupIP); !errors.Is(err, domain.ErrAlreadyExists) {
 			t.Fatalf("Signup = %v, want ErrAlreadyExists", err)
 		}
 		if len(g.companies) != 0 {
@@ -245,14 +255,14 @@ func TestOnlyACompletedSignupAsksForCredit(t *testing.T) {
 	})
 }
 
-// GrantSignupCredit is insert-only: a company that already has a row keeps it,
+// StartSignupCredit is insert-only: a company that already has a row keeps it,
 // whatever it says (R2).
-func TestGrantSignupCreditNeverOverwrites(t *testing.T) {
+func TestStartSignupCreditNeverOverwrites(t *testing.T) {
 	existing := &domain.CompanyCredits{CompanyID: "co-1", BalanceMicroUSD: -120_000, MonthlyGrantMicroUSD: signupGrant}
 	credits := &stubCredits{record: existing}
 	usage := newCreditService(signupPolicy(true, signupGrant), credits, &stubLLMCreds{}, nil)
 
-	usage.GrantSignupCredit(context.Background(), "co-1")
+	usage.StartSignupCredit(context.Background(), SignupCredit{CompanyID: "co-1"})
 
 	if credits.record != existing || existing.BalanceMicroUSD != -120_000 || existing.MonthlyGrantMicroUSD != signupGrant {
 		t.Errorf("record = %+v, want the -120000 / 500000 row untouched", credits.record)

@@ -176,6 +176,10 @@ type GeneratedAgent struct {
 type GenerationState struct {
 	Available        bool `json:"available"`
 	CreditsExhausted bool `json:"credits_exhausted"`
+	// FreeCredit says why a workspace with no grant is refused (RIZ-89), so
+	// the form tells a new workspace its free credit is waiting rather than
+	// that it used credit it never had.
+	FreeCredit FreeCreditState `json:"free_credit,omitempty"`
 }
 
 // State reports whether the button can be pressed. A failing credit lookup
@@ -196,7 +200,7 @@ func (s *AgentGenerateService) State(ctx context.Context, companyID string) Gene
 		return GenerationState{Available: true}
 	}
 	if st.Verdict == BudgetExhausted {
-		return GenerationState{Available: true, CreditsExhausted: true}
+		return GenerationState{Available: true, CreditsExhausted: true, FreeCredit: st.FreeCredit}
 	}
 	return GenerationState{Available: true}
 }
@@ -239,7 +243,7 @@ func (s *AgentGenerateService) Generate(
 			logrus.WithError(err).WithField("company_id", companyID).
 				Warn("credit check failed before agent generation; running it anyway")
 		} else if st.Verdict == BudgetExhausted {
-			return nil, domain.ErrInsufficientCredits
+			return nil, newBudgetRefusal(st)
 		}
 	}
 

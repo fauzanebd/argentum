@@ -21,6 +21,7 @@ import (
 	"github.com/fauzanebd/argentum/internal/authz"
 	"github.com/fauzanebd/argentum/internal/branding"
 	"github.com/fauzanebd/argentum/internal/config"
+	"github.com/fauzanebd/argentum/internal/creditwiring"
 	"github.com/fauzanebd/argentum/internal/crypto"
 	"github.com/fauzanebd/argentum/internal/dashboard"
 	"github.com/fauzanebd/argentum/internal/docgen"
@@ -116,7 +117,10 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		Timeout:  time.Duration(cfg.EmailTimeout) * time.Second,
 	})
 	deps.teamSvc = app.NewTeamService(userRepo, pgctl.NewUserInviteRepo(controlDB)).
-		WithMailer(app.NewInviteMailerAdapter(deps.mailer, companyRepo, userRepo, cfg.AppBaseURL))
+		WithMailer(app.NewInviteMailerAdapter(deps.mailer, companyRepo, userRepo, cfg.AppBaseURL)).
+		// Nobody may invite an operator's address, or accept an invitation
+		// to one (RIZ-89 R16).
+		WithOperatorEmails(app.NewOperatorEmails(cfg.PlatformOperatorEmails))
 	// Capability grants (T-Z1). Read per request behind a ten-second in-process
 	// cache rather than carried on the JWT above, whose fifteen-minute lifetime
 	// would make every revoke wait that long.
@@ -191,12 +195,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// process, independent cache). Used by the API's embedding service for
 	// reindex, and stashed on deps for future tenant-scoped flows.
 	llmResolver := llmtenant.NewResolver(llmCredRepo, dsnCipher, cfg)
-	deps.usageSvc = app.NewUsageService(usageRepo, creditsRepo, app.DefaultPricing).
-		WithCredits(app.CreditPolicy{
-			Enforce:       cfg.CreditsEnforcementEnabled,
-			WarnPct:       cfg.CreditsWarningThresholdPct,
-			GrantMicroUSD: cfg.CreditsDefaultGrantMicroUSD(),
-		}, llmCredRepo, app.NewRedisBudgetCache(rdb))
+	// Built by creditwiring, as the worker's and discord's are (RIZ-89 R4):
+	// one function decides whether a process may hand out free credit.
+	grantRepo := pgctl.NewCreditGrantRepo(controlDB)
+	deps.usageSvc = creditwiring.UsageService(cfg, usageRepo, creditsRepo, llmCredRepo, grantRepo,
+		app.NewRedisBudgetCache(rdb))
 	deps.llmCache = llmtenant.NewClientCache(
 		llmResolver,
 		func(inner interfaces.LLM, model string) interfaces.LLM {
@@ -216,11 +219,15 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 		deps.llmCache.CloseAll()
 	})
 
-	// Signup writes the new company's free credit (RIZ-79) through the same
-	// UsageService whose CheckBudget would otherwise provision it lazily, so
-	// both read the one CREDITS_DEFAULT_GRANT_USD.
+	// Signup starts the new company's free credit through the same
+	// UsageService whose CheckBudget refuses it until then, so both read the
+	// one CREDITS_DEFAULT_GRANT_USD: since RIZ-89 by filing a request the
+	// operators are emailed about, and — with approval switched off — by
+	// writing the grant, as RIZ-79 did. Operator addresses cannot sign up
+	// (R16).
 	deps.authSvc = app.NewAuthService(companyRepo, userRepo, signer).
-		WithCredits(deps.usageSvc)
+		WithCredits(deps.usageSvc).
+		WithOperatorEmails(app.NewOperatorEmails(cfg.PlatformOperatorEmails))
 
 	rawLightLLM, err := llmclient.BuildLight(cfg)
 	if err != nil {
@@ -434,6 +441,11 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// answers a proof upload with 503.
 	deps.topupSvc = buildTopupService(cfg, controlDB, rdb, logoStore, deps.usageSvc, deps.mailer, companyRepo, userRepo)
 	deps.operatorOnly = middleware.OperatorOnly(userRepo, cfg.PlatformOperatorEmails)
+	// Free credit by approval (RIZ-89): the operator's queue beside the
+	// top-ups, the same mailer for the sign-up alert and the approval email,
+	// and the boot line naming any operator entry that has no account to
+	// guard it.
+	deps.freeCreditSvc = buildFreeCreditService(ctx, cfg, grantRepo, deps.usageSvc, deps.mailer, companyRepo, userRepo, userRepo)
 
 	// The `/v1` report surface (T-A2). Same constructor the worker's stack
 	// uses for the agent's generate_document, with the untrusted-spec caps

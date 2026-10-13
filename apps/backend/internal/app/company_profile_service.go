@@ -133,6 +133,10 @@ type Suggestion struct {
 	// Adding a data source never fails for credit, so this is the only place a
 	// tenant would otherwise see silence and assume a bug.
 	CreditsExhausted bool `json:"credits_exhausted"`
+	// FreeCredit is why, when the balance is the reason and the workspace
+	// has never had a grant (RIZ-89): its free credit is waiting for an
+	// operator, or was not approved.
+	FreeCredit FreeCreditState `json:"free_credit,omitempty"`
 }
 
 // Suggest folds the company's source drafts into one suggestion.
@@ -156,6 +160,9 @@ func (s *CompanyProfileService) Suggest(ctx context.Context, companyID string) (
 		// case, is a Redis round-trip per page load for nothing.
 		if st, err := s.budget.CheckBudget(ctx, companyID); err == nil {
 			out.CreditsExhausted = st.Verdict == BudgetExhausted
+			if out.CreditsExhausted {
+				out.FreeCredit = st.FreeCredit
+			}
 		}
 	}
 	return out, nil

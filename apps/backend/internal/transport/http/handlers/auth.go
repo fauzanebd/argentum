@@ -65,7 +65,10 @@ func (h *AuthHandler) signup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	res, err := h.svc.Signup(c.Request.Context(), req.CompanyName, req.Email, req.Password)
+	// ClientIP is the address the signup rate limit already keys on; it is
+	// stored on the free-credit request for the operator's same-IP signal
+	// (RIZ-89 R11).
+	res, err := h.svc.Signup(c.Request.Context(), req.CompanyName, req.Email, req.Password, c.ClientIP())
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrAlreadyExists):

@@ -91,7 +91,7 @@ func spokenFail(c *gin.Context, err error) {
 	case errors.Is(err, app.ErrNotAnAnswer):
 		c.JSON(http.StatusNotFound, gin.H{"error": app.ErrNotAnAnswer.Error()})
 	case errors.Is(err, domain.ErrInsufficientCredits):
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditsExhaustedMessage})
+		c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditRefusalMessage(err)})
 	case errors.Is(err, app.ErrSynthesisFailed):
 		c.JSON(http.StatusBadGateway, gin.H{"error": app.ErrSynthesisFailed.Error()})
 	case errors.Is(err, speech.ErrDisabled):

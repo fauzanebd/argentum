@@ -26,3 +26,36 @@ export function usedUpLine(credits: CompanyCredits): string {
     ? "Credit used up. New chats, scheduled reports and API calls are paused."
     : "Free credit used up. New chats, scheduled reports and API calls are paused.";
 }
+
+/**
+ * The card's lines while free credit waits for an operator (RIZ-89 R14). There
+ * is no grant yet, so there is no bar and no caption; these say why the
+ * balance is $0.00 and when that changes. Null when the API reports no
+ * free-credit state, which is every workspace that holds a grant — and every
+ * answer from an API older than RIZ-89.
+ */
+export type FreeCreditLines =
+  | { status: "pending"; headline: string; detail: string }
+  | { status: "rejected"; headline: string };
+
+export const FREE_CREDIT_PENDING_DETAIL =
+  "Chat, scheduled reports and API calls start as soon as it's approved.";
+export const FREE_CREDIT_REJECTED_LINE =
+  "Free credit not approved. Top up to use chat, scheduled reports and the API.";
+
+export function freeCreditLines(credits: CompanyCredits | null | undefined): FreeCreditLines | null {
+  switch (credits?.free_credit_status) {
+    case "pending": {
+      const amount = microToUsd(credits.free_credit_micro_usd ?? 0).toFixed(2);
+      return {
+        status: "pending",
+        headline: `$${amount} free credit waiting for approval`,
+        detail: FREE_CREDIT_PENDING_DETAIL,
+      };
+    }
+    case "rejected":
+      return { status: "rejected", headline: FREE_CREDIT_REJECTED_LINE };
+    default:
+      return null;
+  }
+}

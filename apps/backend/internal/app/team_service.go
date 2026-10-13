@@ -29,6 +29,11 @@ type TeamService struct {
 	// this product shipped in for two months: the route still returns the
 	// token, and the dashboard still renders a link for the admin to copy.
 	mail InviteMailer
+	// operators are PLATFORM_OPERATOR_EMAILS (RIZ-89 R16). An admin may not
+	// invite one, and an invitation to one is not accepted: without a mail
+	// relay the inviting admin is handed the link, so an invite was a way to
+	// create an operator's account for yourself.
+	operators OperatorEmails
 }
 
 // InviteMailer is the slice of the email surface this service needs. Declared
@@ -62,6 +67,13 @@ func NewTeamService(users domain.UserRepository, invites domain.UserInviteReposi
 // human forwards it.
 func (s *TeamService) WithMailer(m InviteMailer) *TeamService {
 	s.mail = m
+	return s
+}
+
+// WithOperatorEmails makes Invite and Accept refuse every address on
+// PLATFORM_OPERATOR_EMAILS (RIZ-89 R16).
+func (s *TeamService) WithOperatorEmails(o OperatorEmails) *TeamService {
+	s.operators = o
 	return s
 }
 
@@ -147,6 +159,11 @@ func (s *TeamService) Invite(ctx context.Context, companyID, invitedBy, email st
 	}
 	if !role.Valid() {
 		return nil, fmt.Errorf("%w: role must be admin or member", domain.ErrInvalidInput)
+	}
+	// The answer an address already in use gets, for the reason it gets it:
+	// the endpoint must not tell an admin which addresses are special.
+	if s.operators.Has(email) {
+		return nil, domain.ErrAlreadyExists
 	}
 
 	existing, err := s.users.GetByEmail(ctx, email)
@@ -276,6 +293,13 @@ func (s *TeamService) Accept(ctx context.Context, token, password string) (*doma
 	inv, err := s.openInvite(ctx, token)
 	if err != nil {
 		return nil, err
+	}
+	// An invitation to an operator's address — one created before RIZ-89, or
+	// before the address was listed — is answered as a dead link, and the
+	// pending account stays pending. Activating it would hand whoever holds
+	// the link an account the operator check trusts.
+	if s.operators.Has(inv.Email) {
+		return nil, domain.ErrNotFound
 	}
 	user, err := s.users.GetByEmail(ctx, inv.Email)
 	if err != nil {

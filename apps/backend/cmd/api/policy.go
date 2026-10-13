@@ -391,6 +391,12 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/operator/topups/:id/proof":    domain.RoleMember,
 	"POST /api/operator/topups/:id/approve": domain.RoleMember,
 	"POST /api/operator/topups/:id/reject":  domain.RoleMember,
+	// The operator's free-credit queue (RIZ-89 R7), member and narrowed by
+	// OperatorOnly for the top-ups' reason — which is sharper here: admin
+	// would let every sign-up approve its own free credit.
+	"GET /api/operator/free-credit":              domain.RoleMember,
+	"POST /api/operator/free-credit/:id/approve": domain.RoleMember,
+	"POST /api/operator/free-credit/:id/reject":  domain.RoleMember,
 
 	// Model catalogue — read-only metadata.
 	"GET /api/config/models": domain.RoleMember,
@@ -573,6 +579,10 @@ var operatorRoutes = map[string]bool{
 	"GET /api/operator/topups/:id/proof":    true,
 	"POST /api/operator/topups/:id/approve": true,
 	"POST /api/operator/topups/:id/reject":  true,
+	// RIZ-89.
+	"GET /api/operator/free-credit":              true,
+	"POST /api/operator/free-credit/:id/approve": true,
+	"POST /api/operator/free-credit/:id/reject":  true,
 }
 
 // resourcePolicy is the third question a route can ask (T-Z3), and the first
