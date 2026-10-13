@@ -2906,6 +2906,28 @@ model spend, which the owner approved. Run with `CREDITS_DEFAULT_GRANT_USD`
 | `RIZ-79` Q11 | One short chat question on a fresh workspace on platform keys. **Prediction: answered; balance below 500000 and above 0; verdict `ok` or `warning`** — the first real number for how many turns $0.50 buys. **QA round 1 failed it:** the turn cost 1333 micro-USD and the balance stayed at 500000, because no debit had ever landed (`credit-enforcement.md` §6). Re-run after the fix, and read `credit_debit_failures_total`: **prediction 0** | Model spend (approved) |
 | `RIZ-79` rollout | After the production deploy, read the api's env: `CREDITS_DEFAULT_GRANT_USD` must be `0.5` or unset. **No prediction from the repo:** no committed file outside `apps/backend` names the variable, but the deployment's secrets are not in the repo. If it says `25`, every new workspace still gets $25 | Production access |
 
+## 7r. `RIZ-83`'s manual top-up — added 2026-10-13
+
+The unit, handler and repository arms are run ([`credit-enforcement.md`](credit-enforcement.md)
+§7): Q3, Q11 (the repository race), Q21, Q25, Q28–Q30 and Q34 in `make check`,
+and 090's round-trip, both partial unique indexes, AC8's and AC19's balance
+writes and the ten-way approve race against the local `argentum_postgres` with
+the `scratch` tag. What is left needs the local compose stack (never
+`apps/backend/.env`) with **placeholder** `TOPUP_PAYEES`, `TOPUP_FX_URL`
+pointed at a local stub, MinIO, and a browser over CDP for the screens; Q10
+and Q22 spend (both approved), Q33 is the only call to the real Frankfurter.
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `RIZ-83` Q1, Q2, Q26, Q27, Q31 | Against the stub (`{"rates":{"IDR":16000}}`, spread 5): POST with extra fields, POST again, the AC22 amount list, then the stub at 17000 with spread 10 and a 30 s hang. **Prediction: 201 with 8928571 and the extras ignored; 409, one row; the exact 400s and 201 at both bounds; the old request approves for 8928571 and a new one freezes 187000000 / 8021390; the hang answers in under 4 s as `fallback`, reason `timeout`** | The stack |
+| `RIZ-83` Q4, Q5, Q7, Q13, Q14 | Upload a 300 KB PNG, list the MinIO prefix; a 7 MB file, a `.txt` renamed `.png`, an unknown payee, then `MINIO_ENDPOINT` unset; workspace B against A's id; an expired request; cancel twice. **Prediction: one object under `topups/<co>/<id>/` and no key in the list; 413/415/400/503 with nothing stored; 404/404; `expired`, 409, then 201; `cancelled`, then 409** | The stack, MinIO |
+| `RIZ-83` Q8, Q9, Q23 | The operator routes as a company admin, as the operator in another letter case, with the list empty; AC8's exhausted-and-cached workspace approved; AC19's −200000. **Prediction: 403 `operators only`, 200, 403; 5120000 / 5120000 with `credits:budget:<id>` gone (`EXISTS` 0); 4800000 / 5000000** | The stack, Redis |
+| `RIZ-83` Q10 | Right after Q9, one short dashboard chat as that workspace. **Prediction: the turn runs without a 402 and without waiting 60 s** | Model spend (approved) |
+| `RIZ-83` Q6, Q12, Q15–Q20, Q24, Q32 | The screens against their mockups: choose, amount out of range, waiting, upload refused, in review, member, not available, Usage after a top-up and used up, the chat banner and 402 strip as admin and member, the operator queue with a market row, a **Fallback** row and a duplicate image, nothing to review, not an operator; View proof reopened after 6 minutes. **Prediction: copy word for word; the presigned link refused after expiry; tenant JSON with no `fx_*` fields** | The stack, a browser |
+| `RIZ-83` Q22 | Real SMTP, `EMAIL_ENABLED=true`, `PLATFORM_OPERATOR_EMAILS` the owner's address; upload one proof. **Prediction: one email, subject `Top-up to review: <company> · Rp <amount>`, a working `/operator/top-ups` link** | SMTP credentials, spend (approved) |
+| `RIZ-83` Q33 | `TOPUP_FX_URL` unset (Frankfurter), cache flushed, one Rp 100.000 request. **Prediction: `market`, a rate between 14000 and 20000, a date within 4 days, effective = market × 1.05, no fallback line** | Network egress |
+| `RIZ-83` rollout | Production: `TOPUP_PAYEES` and `PLATFORM_OPERATOR_EMAILS` set from the deployment's secret store, never git; `api.frankfurter.app` reachable from the pods (no `topup fx fallback` line after the first request); the owner's Rp 20.000 smoke test end to end with the alert email received and View proof opening from a browser against production storage. **No prediction from the repo** — every one of these is deployment state | Production access |
+
 ## 7. Needs the paid eval set (added 2026-09-11)
 
 `T-Q18`'s remaining half, and the only half that is about the model rather than

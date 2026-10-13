@@ -8492,6 +8492,50 @@ taken slug answers 500) predates this ticket and was left as found
 **Owed.** Q11 again, now that a debit lands; and a read of production's `CREDITS_DEFAULT_GRANT_USD`
 after deploy (live-gate §7q).
 
+## Phase 3bz — A workspace can top up its credit by bank transfer ([`RIZ-83`](https://linear.app/rizkal-uhuy/issue/RIZ-83/users-can-top-up-credit-by-bank-transfer-with-proof-of-payment), 2026-10-13)
+
+**Why.** Enforcement (`T-03`) and the $0.50 signup credit (RIZ-79) are live, so a workspace that
+used its credit was refused everywhere and told to "ask an admin to top up the balance" — with no
+way to. There is no payment provider; the owner takes manual transfers to their own accounts.
+
+**What changed.**
+- **`/top-up`** (admins): any whole thousand from Rp 20.000 to Rp 5.000.000 or a preset, a live
+  credit preview, then the exact amount with a 3-digit matching code, the payee accounts, a proof
+  upload, the in-review card and the history. A member is told to ask an admin.
+- **`/operator/top-ups`** (`PLATFORM_OPERATOR_EMAILS` only, via a new `OperatorOnly`): view the
+  proof through a 5-minute presigned link, approve in two clicks, reject with a reason, a flag on a
+  byte-identical receipt, and the frozen market rate, ECB date, spread and effective rate per row.
+- **Pricing**: Frankfurter's ECB rate, cached 24 h in Redis, plus `TOPUP_FX_SPREAD_PCT`; integer
+  arithmetic throughout; a logged and counted fallback (`TOPUP_IDR_PER_USD`, 18 000) when no market
+  rate younger than 72 h is available.
+- **Approval** credits once in one transaction, resets the grant to the balance it leaves, sets
+  `last_topup_at`, and deletes the cached budget verdict (`BudgetCache.Delete`).
+- **Usage** offers admins **Top up** and captions a topped-up grant "at your last top-up"; the chat
+  banner and the 402 strip link admins to `/top-up`. `CreditsExhaustedMessage` is unchanged.
+- Migration `090_credit_topups`; `make types` (`CompanyCredits.last_topup_at` and the new shapes);
+  no `/v1`, no openapi, no prompt change. Payee accounts are deploy config only.
+
+**Where the plan was wrong.** Four operator routes, not five. `TestMemberRoutesAdmitMembers` had to
+learn to skip operator routes, which AC21 said no existing test would need. The operator's "Paid to"
+needs the payee's label, so `OperatorTopup` gained `payee_label`. R22's `stale` reason needed a
+definition, a reason over 300 characters needed a sentence, and "Paid to" with no default needed
+placeholder words ([`credit-enforcement.md`](credit-enforcement.md) §7).
+
+**Proven.** 51 new Go tests across `internal/app`, `config`, `metrics`, `adapters/postgres`,
+`transport/http/middleware`, `transport/http/handlers` and `cmd/api`; 49 dashboard tests. Behind the
+`scratch` tag on the local `argentum_postgres`: 090 up → down → up, both partial unique indexes,
+AC8 (120000 → 5120000 / 5120000), AC19 (−200000 → 4800000 / 5000000), and ten concurrent approvals
+giving one win and nine 409s.
+
+**Gate.** `gofmt -l`: empty. `make lint-go`: clean. `make check`: `MAKE EXIT: 0`, 76 Go packages
+`ok`, zero `FAIL`/`panic` lines, 203 dashboard tests (154 before, 49 new). `make types-check`: current.
+`git diff apps/backend/openapi`: empty. A `git grep` of the owner's four account numbers and name over
+the tree: nothing. As in Phase 3by, the worktree needed `@argentum/widget` built first and a `pnpm`
+shim to `corepack pnpm@10.18.0` on `PATH`.
+
+**Owed.** The stack, browser, SMTP, live-FX and production arms (live-gate §7r); Q10 and Q22 are the
+approved spend.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |

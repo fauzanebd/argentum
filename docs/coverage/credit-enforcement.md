@@ -10,6 +10,10 @@ Landed 2026-07-28. Last item of phase 1b; `T-A1` is now unblocked.
 > $0.50, not $25.** §1–§5 below are T-03's record as it landed and still say
 > "$25" and "lazy"; §6 is what changed and why. The lazy path in §1 still
 > exists — it is now the fallback for companies signup did not credit.
+>
+> **Since RIZ-83 (2026-10-13) a workspace can top up** by bank transfer with
+> proof of payment, approved by an operator. §5's "there is no way to top up"
+> and "no invalidation on write" are history; §7 is the top-up path.
 
 ---
 
@@ -416,3 +420,136 @@ older than this ticket and larger than it.
 - Left as found: a second signup whose company name gives a slug that is
   already taken answers the generic 500 (B4). That is RIZ-76's signup path,
   and it predates this ticket.
+
+---
+
+## 7. RIZ-83 — top up by bank transfer, with proof of payment (2026-10-13)
+
+Ticket: [`RIZ-83`](https://linear.app/rizkal-uhuy/issue/RIZ-83/users-can-top-up-credit-by-bank-transfer-with-proof-of-payment).
+§5's "there is no way to top up" was the gap: a workspace that spent its $0.50
+was refused on every channel, told to "ask an admin to top up the balance", and
+the admin had nothing to do it with. There is no payment provider; the owner
+takes manual transfers to their own accounts.
+
+### The path
+
+1. **Request.** A workspace admin chooses an amount on `/top-up` — any whole
+   thousand from `TOPUP_MIN_IDR` (Rp 20.000) to `TOPUP_MAX_IDR`
+   (Rp 5.000.000), or a preset — and `POST /api/topups` freezes the credit it
+   buys and a random 3-digit code that makes the amount to transfer unique among
+   open requests (Rp 100.000 → Rp 100.347). One open request per workspace; an
+   unpaid one expires after 48 h (lazily, before every create and list).
+2. **Proof.** The admin transfers exactly that amount to one of the
+   `TOPUP_PAYEES` accounts and uploads a PNG, JPEG, WebP or PDF (by its bytes,
+   ≤ 5 MB) to `topups/<company>/<topup>/`. The request is `in_review`, and
+   every `PLATFORM_OPERATOR_EMAILS` address gets an email when SMTP and
+   `APP_BASE_URL` are set.
+3. **Review.** An operator on `/operator/top-ups` matches the **exact amount**
+   on the bank or GoPay statement — the screenshot is evidence, not proof — and
+   approves or rejects with a reason the customer reads.
+
+### Pricing — market plus spread, frozen, never a float
+
+Credit is priced from Frankfurter's ECB reference rate (fetched server-side,
+cached in Redis key `topup:fx:usd_idr` for `TOPUP_FX_CACHE_HOURS`, one fetch
+in flight per pod, bounded by `TOPUP_FX_TIMEOUT_MS`), plus
+`TOPUP_FX_SPREAD_PCT` (default 5): effective = ⌈market_e4 × (10 000 +
+spread_bp) ÷ 10 000⌉, credit = ⌊amount × 10¹⁰ ÷ effective_e4⌋ micro-USD. The
+source's decimal is parsed as an exact rational (`16523.4` → `165234000`).
+A fetch that fails falls back to a cached quote younger than
+`TOPUP_FX_MAX_AGE_HOURS` (72), then to `TOPUP_IDR_PER_USD` (18 000) as the
+effective rate with no spread. Every fallback is a `topup fx fallback` warn
+line with its reason and a count on `argentum_topup_fx_fallback_total{reason}`.
+The market rate, its ECB date, the spread and the effective rate are frozen on
+the row; a tenant sees only rupiah and dollars, the operator sees all four.
+
+### What an approval does to the balance
+
+One transaction: `UPDATE credit_topups … WHERE id = $1 AND status =
+'in_review'`, then an upsert on `company_credits` — `balance + credit`, grant
+`GREATEST(balance + credit, credit)`, `last_topup_at = now()`, a legacy
+workspace with no row getting balance = grant = credit. A second approve (a
+double click, a second operator) blocks on the first's row lock, re-reads the
+row as approved, and updates nothing — **exactly once without a ledger or an
+idempotency key**; the scratch race test runs ten at once and gets one win and
+nine 409s. A negative balance is paid off first (−$0.20 + $5.00 = $4.80, grant
+$5.00). The grant reset is what keeps §2's "a grant is what makes
+BudgetWarning computable" honest after a top-up: without it a $5 top-up on a
+$0.50 grant would show a full bar until almost nothing was left, and the 20%
+warning would fire only under $0.10. Usage then captions the bar "of $X at your
+last top-up" and the used-up line drops "Free".
+
+**After commit the cached verdict is deleted** (`BudgetCache.Delete`, via
+`UsageService.InvalidateBudget`), so the workspace's next message runs instead
+of waiting out §5's 60-second window. A failed delete is a `Warn` and costs at
+most that window. Every process reads the same Redis key, so one delete
+reaches the worker and the Discord bot too.
+
+### The operator gate
+
+There is no platform-admin role, and company `admin` cannot be one: every
+signup is the admin of its own company, so it would let anyone approve their
+own payment. `OperatorOnly` loads the authenticated user and admits only an
+active account whose email (case-insensitively) is in
+`PLATFORM_OPERATOR_EMAILS`; empty admits nobody. The four operator routes are
+`RoleMember` in `apiPolicy` — the role table still runs first — and listed in
+`operatorRoutes` so the classification tests know why they refuse members.
+
+### Where the plan was wrong, or silent
+
+- **Four operator routes, not five.** The plan counted "5 tenant + 5
+  operator"; the API section lists four operator routes (`view=review` and
+  `view=reviewed` are one route). Four are registered and classified.
+- **One existing test changed beyond a fake.** AC21 said only fakes would
+  gain `Delete`. `TestMemberRoutesAdmitMembers` asserts every member route
+  admits a member, which an operator route by design does not; it now skips
+  `operatorRoutes`, as it already skipped capability- and resource-gated routes,
+  and `TestOperatorRoutesRefuseEveryoneElse` holds the operator routes instead.
+- **The operator needs the payee's label, not its id.** The mockup's "Paid
+  to" reads "GoPay", the row stores `gopay`. `OperatorTopup` gained
+  `payee_label`, resolved from `TOPUP_PAYEES` when the list is read (the id
+  when that payee has since been removed).
+- **`stale` needed a meaning.** R22 lists five fallback reasons; four classify
+  a failed fetch. `stale` is a fallback with a cached quote that was too old to
+  use; the fetch's own reason is logged beside it as `fetch_reason`. With no
+  cached quote at all the reason is the fetch's.
+- **A send error is logged with the top-up id only — not even the error.** An
+  SMTP refusal quotes the address it refused, and the operator list is not
+  something to scatter through a log; the relay's own log has the reason.
+- **Over 300 characters needed a sentence.** R12 bounds the reason at 300
+  and names only the empty case's copy; a long one answers 400 "Keep the reason
+  to 300 characters or fewer." The textarea's `maxLength` keeps the page from
+  ever showing it.
+- **The browser refuses a proof over 5 MB itself**, with the server's sentence:
+  a body cut off at the cap can reach a browser as a dropped connection rather
+  than the 413 that explains it.
+- **"Paid to" has no default**, so its empty option needed words; it reuses the
+  API's own "Choose the account you paid to."
+- **Duplicate detection is one `LATERAL` join, not a separate `FindBySHA`.**
+  Only the later of two identical proofs is flagged — the original is not a
+  copy of its copy.
+- 090 adds `CHECK (expected_amount_idr = amount_idr + unique_code)`, which the
+  plan described but did not constrain.
+
+### Gate
+
+Go: `internal/app` (pricing worked by hand for every Q28 case; the parse of
+`16523.4`, `16523.4012`, `1.65234e4`; zero fetches with a 2-hour-old quote; one
+fetch for twenty concurrent callers; the 30 h / 80 h / empty fallbacks for
+500, no IDR, IDR 900 and IDR 60000 with their log line and counter; a hanging
+source answered within the timeout; create, collision retry, AC24's 347 → 512,
+twenty misses → 503, the AC22 amount table, upload refusals leaving nothing in
+storage, the row-failure cleanup, scoping, expiry, cancel, approve/reject,
+the frozen credit surviving a rate change, the alert email), `config`,
+`middleware` (`OperatorOnly`), `handlers` (every status code and sentence over
+HTTP), `metrics`, `cmd/api` (the operator gate on the real router, the tenant
+routes refusing members), and source-reading tests on the approve statement.
+Against Postgres, behind the `scratch` tag on the local `argentum_postgres`:
+090 up → down → up, both partial unique indexes refusing a direct insert, the
+expiry guard, the duplicate flag, AC8's 120000 → 5120000 / 5120000, AC19's
+−200000 → 4800000 / 5000000, and the ten-way approve race.
+
+Owed (live-gate §7r): the stack and browser arms, the alert email through real
+SMTP (Q22), one paid chat turn after an approval (Q10), the live Frankfurter
+fetch (Q33), and the production smoke test.
+
