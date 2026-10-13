@@ -151,15 +151,16 @@ INSERT INTO agent_sources (agent_id, connection_id) VALUES
 -- One metric per source, for RIZ-27's arm: payroll_cost on the HR warehouse,
 -- which a member not granted it no longer sees, and net_revenue on the open one,
 -- which they do. RIZ-25 seeded a single `headcount` here to re-observe §17c's
--- gap; it had grain 'none' and a column the warehouse lacks, which no PUT could
--- save, and the arm now round-trips the admin's edit (R7). Both templates are
--- real against the compose warehouses, so validate-on-save passes.
+-- gap; its grain was 'none', which no PUT could save, and the arm now
+-- round-trips the admin's edit (R7). Both templates are real against the
+-- warehouses these DSNs name (hr_analytics: employees.hired_on, monthly_salary),
+-- so validate-on-save passes.
 INSERT INTO metric_definitions (id, company_id, source_id, key, label, description, sql_template,
                                 value_column, grain, unit, currency) VALUES
     ('a0000000-000d-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
      'a0000000-0005-4000-8000-000000000001', 'payroll_cost', 'Payroll cost',
      'Monthly salary of employees who joined in the window',
-     'SELECT COALESCE(SUM(monthly_salary), 0) AS value FROM employees WHERE join_date >= {{from}} AND join_date < {{to}}',
+     'SELECT COALESCE(SUM(monthly_salary), 0) AS value FROM employees WHERE hired_on >= {{from}} AND hired_on < {{to}}',
      'value', 'month', 'currency', 'IDR'),
     ('a0000000-000d-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
      'a0000000-0005-4000-8000-000000000002', 'net_revenue', 'Net revenue',
