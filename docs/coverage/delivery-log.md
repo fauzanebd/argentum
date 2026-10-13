@@ -8597,6 +8597,47 @@ production number after the deploy. Live-gate §7n: Q10–Q12 and Q14 need twent
 listener, the OpenRouter account and production access. §7j: Q13 needs read access to the production
 worker log and control DB. All are owner-run; Q8–Q12's spend is approved.
 
+## Phase 3cb — The dashboard and the widget ship with no known critical or high JS advisory ([`RIZ-87`](https://linear.app/rizkal-uhuy/issue/RIZ-87/shipped-js-bundles-carry-no-known-critical-or-high-vulnerabilities), 2026-10-13)
+
+**Why.** `pnpm audit --prod` on main reported 28 advisories. Three packages were in code we serve to
+browsers: `axios` 1.18.1 (twelve, high and moderate) and `seroval` 1.5.6 (one **critical**, one high) in
+the dashboard, and `dompurify` 3.4.13 (two low) in the widget iframe that tenants embed. None was
+reachable as this code uses them, but a critical finding on a shipped bundle fails a security
+questionnaire, and nothing in CI would have said so: the JS side had no audit at all.
+
+**What changed.**
+- `axios` → **1.20.0** and `dompurify` → **3.4.16**, both inside their major.
+- **`seroval` → 1.6.9 through a pnpm override** (`'seroval@<1.6.3': '^1.6.3'` in `pnpm-workspace.yaml`),
+  with the router left at its locked version. The comment says when to remove it.
+- **`tailwindcss-animate` moved to the dashboard's devDependencies.** It is a build-time Tailwind plugin,
+  and as a runtime dependency it pulled `braces`, `nanoid`, `source-map-js` and `postcss-selector-parser`
+  into the dashboard's production tree.
+- **CI's `security` job runs `pnpm audit --prod --audit-level=critical`** on a web change or a tag, next
+  to `govulncheck`.
+- No application source file, no migration, no API, no generated artefact.
+
+**After.** 10 advisories (8 high, 2 moderate), none on a path into the dashboard, the widget, the landing
+site or the widget packages, and no critical anywhere. What remains is `fast-uri` in
+`packages/openapi-tools` and `nanoid`, `source-map-js` and `postcss-selector-parser` in `apps/render`'s
+Remotion bundler, all patchable; they are the follow-up ticket's, and clearing them is what lets the gate
+move to `high` ([`security-hardening.md`](security-hardening.md) §23).
+
+**Where the plan was wrong.** `braces` was expected to stay as unfixable residue; its only production path
+was through `tailwindcss-animate`, so it left with the move. AC7's "remove the override and the audit
+fails" does not hold, because `pnpm install` keeps the locked 1.6.9; main's lockfile is the proof
+instead (exit 1 there, exit 0 here). And the lockfile is written by pnpm 11: resolving with the pnpm 10
+the flow names produced a 300-line diff of peer-suffix and `libc` churn, including `apps/render`'s
+importer, so it was resolved with `pnpm@11.26.0 --lockfile-only` to a 45-line diff that CI's pnpm 10
+installs frozen.
+
+**Gate.** `pnpm -r build` and `pnpm -r lint` exit 0, with 206 dashboard tests, none new. The widget gzips
+to 33.9 KB (33.6 KB before, budget 80 KB). `renderMarkdown` is byte-identical on both `dompurify`
+versions for the six hostile and ordinary inputs the plan names.
+
+**Owed.** The browser QA (Q6–Q10: markdown in Chromium, the widget shots, dashboard routing, the 401
+refresh and the login error toast) runs on the local stack at no spend, and Q12 is the PR's first
+`security` job run.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
