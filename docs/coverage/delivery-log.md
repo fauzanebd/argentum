@@ -8597,6 +8597,46 @@ production number after the deploy. Live-gate §7n: Q10–Q12 and Q14 need twent
 listener, the OpenRouter account and production access. §7j: Q13 needs read access to the production
 worker log and control DB. All are owner-run; Q8–Q12's spend is approved.
 
+## Phase 3cb — Members no longer see metrics on a source they cannot read ([`RIZ-27`](https://linear.app/rizkal-uhuy/issue/RIZ-27/members-no-longer-see-metrics-on-a-source-they-cannot-read), 2026-10-13)
+
+**Why.** Since `T-Z6` an admin can restrict a data source, and it leaves a member's source list. The
+metric registry did not follow: `GET /api/metrics` gave every member every metric, `source_id` and the
+full `sql_template` included, so a member not granted the HR warehouse read `payroll_cost` and the SQL
+against its tables. `RIZ-25` saw it live on 2026-10-11 (access-grants §17c).
+
+**What changed.**
+- **A member's list omits a metric on a source they may not read.** One `authz.Visible(connection)`
+  question per request over the distinct source ids, order kept, `grains` and `units` unchanged. All
+  hidden is `200` with `metrics: []`, which the tab already draws as *"No metrics defined yet."*
+- **By id it is an unknown id**: `404 {"error":"no such metric"}`, byte-identical.
+- **A failed check serves nothing**: the typed access-check `503`, logged with `company_id`.
+- **Unchanged:** an admin's reads (whole, nothing asked — Settings → Metrics is where metrics are edited),
+  every write and `Test`, a stack without `authz`, and every agent: `list_metrics`, `query_metric`, the
+  turn catalog and watcher evaluation, by `T-Z6`'s rule that a grant gates what a person is shown.
+- **The live arm**: `arms.sh` gains `metrics_arm` in place of §17c's re-observation, and `seed.sql`
+  carries one real metric per source.
+- No migration, no `/v1`, no generated type, no tool or prompt change, no dashboard change.
+
+**Where the plan was wrong.** The agent pin belongs in `internal/tools`, where `query_metric` lives, not
+`internal/app`. `RIZ-25`'s seeded metric had grain `none` and a column the warehouse lacks, so the
+admin's edit arm could never have passed on it; the seed now carries `payroll_cost` and `net_revenue`.
+
+**Proven.** Six handler tests over a four-metric fixture (open, granted, restricted, and two on one
+source): the member's single question and its ids, the admin asking nothing, the hidden id against an
+unknown one, the failed check on the list and two gets, no access wired, and the empty registry.
+With the narrowing switched off, the four member tests failed and the two whole-read tests passed. The
+agent pin `TestAMetricOnARestrictedSourceStillAnswersAnAgent` sits beside
+`TestASourceGrantDoesNotNarrowWhatAnAgentMayQuery`, which passes unchanged.
+
+**Gate.** `gofmt -l` printed nothing. `make lint-go` reported `0 issues`. `make check` gave `MAKE EXIT: 0`:
+77 Go packages `ok`, zero `FAIL` or `panic` lines, and 206 dashboard tests, none of them new. No `make eval`,
+`make types` or `make openapi`. As in Phase 3ca, the worktree needed `@argentum/widget` built first and a
+`pnpm` shim to `corepack pnpm@10.18.0` on `PATH`.
+
+**Owed.** Live-gate §7c's `RIZ-27` row: `arms.sh` against the local stack and the browser half over CDP.
+No spend, no `make eval`. Two follow-ups to file: *query_metric honours the agent's own source list* and
+*Watchers list follows the metric's source grant*.
+
 ## Feature velocity, measured
 
 | Phase | Days | Features shipped | Notes                                     |
