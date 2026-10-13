@@ -8597,7 +8597,49 @@ production number after the deploy. Live-gate §7n: Q10–Q12 and Q14 need twent
 listener, the OpenRouter account and production access. §7j: Q13 needs read access to the production
 worker log and control DB. All are owner-run; Q8–Q12's spend is approved.
 
-## Phase 3cb — Free sign-up credit waits for an operator's approval ([`RIZ-89`](https://linear.app/rizkal-uhuy/issue/RIZ-89/free-sign-up-credit-is-granted-only-after-an-admin-approves-it), 2026-10-13)
+## Phase 3cb — Settings → Integrations lists only what works ([`RIZ-100`](https://linear.app/rizkal-uhuy/issue/RIZ-100/integrations-tab-shows-only-what-actually-works-with-no-dead-configure), 2026-10-13)
+
+**Why.** The tab listed Telegram with a *Coming soon* badge and a **Configure** button. Configure opened
+a form with every input and Save disabled, beside **Notify me when ready**, which showed a toast and
+stored nothing. No Telegram backend exists. WhatsApp, the channel most tenants use, was not on the tab
+at all. The landing page dropped the same Telegram claim in T-18 ([`launch-hygiene.md`](launch-hygiene.md) §1).
+
+**What changed.**
+- **Telegram is gone from the dashboard**: the row, `TelegramIcon`, the disabled detail form, the
+  *Coming soon* badge, the "API integration is in development" callout and the Notify button and its
+  toast. The `fields`, `helpText` and `live` members went with them, since only the stub used them.
+- **WhatsApp is the first row**, "Chat with the Argentum bot from WhatsApp, from numbers you
+  authorise.", with **Manage numbers**, which switches Settings to Phone numbers through a new
+  `onOpenPhones` prop. The copy claims the sender allowlist only, because the operator configures
+  the WhatsApp number itself.
+- **Each row's action is a required, typed field** (`configure` with its panel, or `open-tab`), so
+  a row cannot be added without something behind its button. Slack, Discord and Lark are unchanged
+  in icon, copy, order and detail screen.
+- Dashboard only: no backend, `/v1`, migration, generated type, prompt or flag.
+
+**Proven.** `integrations-tab.test.tsx`, 9 tests: the four rows in order; no Telegram, Coming soon,
+Notify me or "in development" text; each row has exactly one button and clicking it either opens a
+config panel or calls `onOpenPhones`; Configure opens that integration's own panel (Slack, Discord
+and Lark mocked) and Back returns to the list; a member sees the four rows behind `AdminGate` with
+every button disabled; and, through `SettingsPage`, **Manage numbers** makes the Phone numbers tab
+active. With a fifth *Coming soon* row added, 8 of the 9 fail (the `SettingsPage` test does not look
+at rows). `git grep` under `apps/dashboard/src` finds no `Notify me when ready` and no `id: "telegram"`.
+
+**Gate.** `gofmt -l` printed nothing. `make lint-go` reported `0 issues`. `make check` gave `MAKE EXIT: 0`:
+77 Go packages `ok`, zero `FAIL` or `panic` lines, and 215 dashboard tests (206 before, 9 new). The
+first run gave `MAKE EXIT: 2` on one test, `internal/eval`'s `TestDemoFixtureIsReproducible`. It reads
+whatever demo warehouse listens on `localhost:5433`, and the one on this machine held 2 products where
+the fixture has 30. That is an ambient container, not this change, so the run that counts set
+`DEMO_DSN` to a closed port and the test skipped, as it does with no stack. Whoever owns that local
+container should reseed it before trusting a local `make eval`. No `make types`, `make openapi` or
+`make eval`. As in Phase 3ca, the worktree needed `@argentum/widget` built first and a `pnpm` shim to
+`corepack pnpm@10.18.0` on `PATH`.
+
+**Owed.** The browser arms of QA (Q1–Q3, Q5, Q7): the list against the mockup, the hand-off to
+Phone numbers, each Configure against a local stack's `GET /slack`, `/discord` and `/lark`, the member
+view, and an unchanged Discord save. They need the local stack and a browser, and no spend.
+
+## Phase 3cc — Free sign-up credit waits for an operator's approval ([`RIZ-89`](https://linear.app/rizkal-uhuy/issue/RIZ-89/free-sign-up-credit-is-granted-only-after-an-admin-approves-it), 2026-10-13)
 
 **Why.** Every sign-up was credited $0.50 at once, and the first budget check
 credited any company without a grant. Sign-up verifies no email, and its only
