@@ -150,6 +150,7 @@ packages:
       domain.TopupPayee: "TopupPayee"
       domain.CreditGrantRequest: "CreditGrantRequest"
       domain.OperatorFreeCredit: "OperatorFreeCredit"
+      domain.ChatModelSetting: "ChatModelSetting"
     frontmatter: |
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
@@ -164,6 +165,7 @@ packages:
         APIRequestError,
         CapabilityGrant,
         Channel,
+        ChatModelSetting,
         CreditGrantRequest,
         CompanyProfile,
         MCPServer,

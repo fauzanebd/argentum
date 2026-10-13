@@ -172,6 +172,47 @@ preference, not the plumbing — one live turn through the deployed backend is
 still owed, and is the only thing that can show the transport puts the field on
 the body openai-go actually builds.
 
+## 4a. DeepSeek V4.1 Flash — measured clean (RIZ-97, 2026-10-13)
+
+A workspace admin can now pick `deepseek/deepseek-v4.1-flash` as the chat model
+([`chat-model.md`](chat-model.md)). The deny-list and the leak guard were
+measured on `kimi-k2.6` only, so this model's endpoints needed the §4 probe
+before merge:
+
+```bash
+curl -s https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash/endpoints |
+  jq -r '.data.endpoints[] | "\(.provider_name)\t\(.supported_parameters | index("tools") != null)"'
+```
+
+Then force a tool call on each endpoint that claims `tools`, in both `stream`
+modes. Also check which endpoints are ZDR: production sets `LLM_ZDR=true`, so
+only those can serve a production turn. **Prediction: at
+least one ZDR endpoint returns structured `tool_calls`.** Any endpoint that
+returns `functions.<name>:<n>{…}` as content goes on `BrokenToolCallProviders`,
+with its result recorded here. If no ZDR endpoint serves the model, the owner
+decides before merge, since every DeepSeek turn would then fail.
+
+**Result (RIZ-97 QA, `.flow/RIZ-97/qa/probe.log`, `probe_nonzdr.log`).** Of
+31 endpoints, 24 are ZDR. Each was pinned with `order: [tag]`,
+`allow_fallbacks: false` and `zdr: true`. It was given a `run_sql` tool with
+`tool_choice: auto` and a system prompt that requires the tool, then asked once
+streamed and once not.
+
+| Result | ZDR endpoints (24) |
+| --- | --- |
+| Structured `tool_calls`, `finish_reason: tool_calls`, in **both** stream modes (22) | coreweave/fp8, crusoe/fp8, decart/fp4, deepinfra/fp8, digitalocean, fireworks, fireworks/us, inference-net/fp8, ionstream, makora/fp8, modal, morph/fp8, novita/fp8, open-inference/fp4, parasail/fp8, phala, relace, sail-research/fp4, siliconflow/fp8, together, venice/fp8, wafer |
+| Not testable when pinned (2) | baseten/fp8 (429 Too Many Requests), baseten/fast (404, "No endpoints found") |
+| Tool call leaked as text | **none** |
+
+Of the 7 non-ZDR endpoints, 6 were clean (alibaba, atlas-cloud/fp8,
+baidu/fp8, cloudflare, gmicloud/fp8, streamlake/fp8), and DeepSeek's own
+first-party endpoint answered 404.
+
+**Nothing was added to `BrokenToolCallProviders`.** `decart` returned
+structured calls for *this* model. It stays on the list anyway, because the list
+is model-agnostic and decart was measured broken on Kimi. Live traffic under
+`LLM_ZDR=true` went to Morph for DeepSeek and to Inceptron for Kimi.
+
 ## 5. Not built
 
 **Recovering the leaked call.** The name and the arguments are right there in

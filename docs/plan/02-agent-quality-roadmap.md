@@ -4,6 +4,21 @@ Written 2026-08-11. Nine tickets, ~12 days, five tracks. Ticket ids are `T-Q1`
 → `T-Q9`; they are tickets, not findings, and do not collide with the `Q-n`
 finding codes in the research docs.
 
+> **Status, 2026-10-13 ([`RIZ-97`](https://linear.app/rizkal-uhuy/issue/RIZ-97/admins-can-choose-which-llm-model-their-workspace-uses)): a workspace's
+> admin now chooses the chat model**, so the model this roadmap's evals are
+> scored on is no longer the only model a tenant can run. The choice is Kimi K2.6
+> (the default) or DeepSeek V4.1 Flash, made in Settings → General. It shipped
+> with QA's 17 of 17. On the paired golden run, one case per process under ZDR,
+> DeepSeek scored 59/63 and Kimi 50/63. On security both scored 5/6, and the
+> DeepSeek endpoint probe was clean
+> ([`../coverage/chat-model.md`](../coverage/chat-model.md) §4–5). **That run
+> also found that Kimi under `LLM_ZDR=true` scores far below this roadmap's
+> 94–98%.** 14 of the 19 failures from the single-process run passed with ZDR
+> off, so the published baseline may not describe production
+> (live-gate §7u). The plan was wrong that the pricing suffix fallback cannot
+> reach `deepseek-v4.1-flash` (§6 there). Any model added to `app.ChatModels` owes
+> the same paired run against Kimi.
+
 > **All nine are code-complete as of 2026-08-11**, with `go build`, `go vet`,
 > `go test ./...` and `tsc -b` clean. What is **not** done is the half this
 > repo's delivery log says finds the defects: **nothing here has been run

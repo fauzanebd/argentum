@@ -45,9 +45,16 @@ name: demo-retail-v1
 # to, so two runs against different revisions are visibly different afterwards
 # even though the request was byte-identical. Pin these the day OpenRouter
 # publishes a dated form.
+#
+# deepseek/deepseek-v4.1-flash joined with RIZ-97, because a workspace admin
+# can now pick it as the chat model: every model the Settings picker offers
+# (app.ChatModels) is a model this set has to be able to score without the
+# report calling it unknown. Its paired run against Kimi is in
+# ../../../../docs/coverage/chat-model.md.
 models:
   - moonshotai/kimi-k2.6
   - deepseek/deepseek-v3.2
+  - deepseek/deepseek-v4.1-flash
 
 cases:
   # ── simple aggregates ──────────────────────────────────────────────────

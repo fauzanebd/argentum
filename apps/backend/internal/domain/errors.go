@@ -60,4 +60,14 @@ var (
 	// that is no longer pending (RIZ-89) — decided by this operator's other
 	// click or by another operator. A 409, for ErrTopupAlreadyReviewed's reason.
 	ErrCreditGrantAlreadyReviewed = errors.New("the free-credit request was already reviewed")
+
+	// The chat model picker's two refusals (RIZ-97). Sentinels rather than
+	// ErrInvalidInput / ErrConflict, for the top-ups' reason: each carries a
+	// `code` the dashboard can tell apart, and the sentence is the handler's.
+	//
+	// ErrModelNotOffered: the model is not on the workspace's allow-list. A 400.
+	ErrModelNotOffered = errors.New("chat model is not offered")
+	// ErrOwnProvider: the workspace's primary row carries its own provider, so
+	// its model is support's to change. A 409.
+	ErrOwnProvider = errors.New("workspace runs on its own model provider")
 )

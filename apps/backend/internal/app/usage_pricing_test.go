@@ -91,6 +91,10 @@ func TestLookupModelPricing(t *testing.T) {
 		// DefaultPricing, which over- rather than under-charges, so it is a
 		// reporting inaccuracy and not a billing hole.
 		{"prefix in front of a dotted name", "vertex.gemini-1.5-pro", ModelPricing{}, false},
+		// RIZ-97: the picker writes the OpenRouter id and a direct deployment
+		// would use the bare one; neither may fall through to DefaultPricing.
+		{"deepseek v4.1 flash via openrouter", "deepseek/deepseek-v4.1-flash", ModelPricing{InputCostPer1K: 0.00015, OutputCostPer1K: 0.0006}, true},
+		{"deepseek v4.1 flash bare", "deepseek-v4.1-flash", ModelPricing{InputCostPer1K: 0.00015, OutputCostPer1K: 0.0006}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,6 +130,10 @@ func TestRecordLLMPerModelRates(t *testing.T) {
 		{"gpt-5-mini", "gpt-5-mini", 250 + 2_000},
 		{"claude sonnet 4.5", "claude-sonnet-4-5", 3_000 + 15_000},
 		{"via a gateway prefix", "openai/gpt-4o", 2_500 + 10_000},
+		// RIZ-97 AC3: a turn on the workspace's picked model is billed at that
+		// model's rate — 150 + 600 micro-USD, not the fallback's 20 000.
+		{"deepseek v4.1 flash, the picker's cheaper model", "deepseek/deepseek-v4.1-flash", 150 + 600},
+		{"kimi k2.6, the picker's default", "moonshotai/kimi-k2.6", 950 + 4_000},
 		// An unrecognised model must not be free. Falling back to the flat
 		// DefaultPricing is what stops a new model string from silently
 		// billing a tenant nothing.

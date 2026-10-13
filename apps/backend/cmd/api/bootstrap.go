@@ -195,6 +195,10 @@ func bootstrap(ctx context.Context, cfg *config.Config) (_ *apiDeps, err error) 
 	// process, independent cache). Used by the API's embedding service for
 	// reindex, and stashed on deps for future tenant-scoped flows.
 	llmResolver := llmtenant.NewResolver(llmCredRepo, dsnCipher, cfg)
+	deps.llmResolver = llmResolver
+	// The workspace chat model (RIZ-97) writes the same table the resolver
+	// reads; the worker's cache sees the row's new updated_at on its next turn.
+	deps.chatModelSvc = app.NewChatModelService(llmCredRepo, cfg.LLMModel)
 	// Built by creditwiring, as the worker's and discord's are (RIZ-89 R4):
 	// one function decides whether a process may hand out free credit.
 	grantRepo := pgctl.NewCreditGrantRepo(controlDB)

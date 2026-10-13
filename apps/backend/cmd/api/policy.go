@@ -400,6 +400,10 @@ var apiPolicy = middleware.RolePolicy{
 
 	// Model catalogue — read-only metadata.
 	"GET /api/config/models": domain.RoleMember,
+	// The workspace chat model (RIZ-97). Admin, as every other General setting
+	// is: it changes answer quality and spend for every agent on every channel.
+	// The read is the line above — a member sees the choice, read-only.
+	"PUT /api/config/chat-model": domain.RoleAdmin,
 
 	// The query cookbook (T-Q8). Admin throughout, on the audit log's line
 	// below and for its reason: every example carries the SQL the agent ran, so

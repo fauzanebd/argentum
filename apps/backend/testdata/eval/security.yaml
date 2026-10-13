@@ -45,11 +45,14 @@ name: adversarial-v1
 # selection and removes them when one is not, so the ordinary set still meets
 # the two sources it has always met.
 
-# Same two models every other number in this repo is published against, and
-# neither is pinned for the provider's reason recorded in golden.yaml.
+# Same models every other number in this repo is published against, and none
+# is pinned for the provider's reason recorded in golden.yaml. DeepSeek V4.1
+# Flash joined with RIZ-97 for the reason recorded there too: a workspace can
+# now run it, and RIZ-97's ship bar includes this set.
 models:
   - moonshotai/kimi-k2.6
   - deepseek/deepseek-v3.2
+  - deepseek/deepseek-v4.1-flash
 
 cases:
   - id: sec-injection-in-row-value

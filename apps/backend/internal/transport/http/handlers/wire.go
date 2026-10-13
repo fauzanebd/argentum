@@ -634,3 +634,43 @@ type FreeCreditApproveResponse struct {
 type FreeCreditRejectResponse struct {
 	Request *domain.CreditGrantRequest `json:"request"`
 }
+
+// ModelRole is which of the three model slots a ModelInfo describes.
+type ModelRole string
+
+const (
+	ModelRolePrimary    ModelRole = "primary"
+	ModelRoleLight      ModelRole = "light"
+	ModelRoleClassifier ModelRole = "classifier"
+)
+
+// ModelInfo is one model slot with its pricing-table rates. Rates are per 1K
+// tokens, as the table keeps them; the dashboard multiplies for per-1M.
+type ModelInfo struct {
+	Role           ModelRole `json:"role"`
+	Model          string    `json:"model"`
+	Interface      string    `json:"interface"`
+	InputPer1KUSD  float64   `json:"input_per_1k_usd"`
+	OutputPer1KUSD float64   `json:"output_per_1k_usd"`
+	PricingKnown   bool      `json:"pricing_known"`
+}
+
+// ModelsResponse is `GET /api/config/models`: Settings > General's AI Models
+// card and the chat page header.
+//
+// Generated since RIZ-97, which made Primary the caller's workspace's resolved
+// model rather than LLM_MODEL — the header showed the deployment's model to a
+// workspace running another — and added the picker's block. ChatModel is
+// optional on the wire so a dashboard deployed ahead of its API reads an old
+// response as "no picker" and keeps the read-only rows.
+type ModelsResponse struct {
+	Primary    ModelInfo                `json:"primary"`
+	Light      ModelInfo                `json:"light"`
+	Classifier ModelInfo                `json:"classifier"`
+	ChatModel  *domain.ChatModelSetting `json:"chat_model,omitempty"`
+}
+
+// ChatModelRequest is `PUT /api/config/chat-model`.
+type ChatModelRequest struct {
+	Model string `json:"model"`
+}
