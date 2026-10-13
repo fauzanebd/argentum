@@ -1111,6 +1111,73 @@ export const OriginDocument = "document";
 export type Origin = typeof OriginTenant | typeof OriginDocument;
 
 //////////
+// source: credit_grant.go
+
+/**
+ * CreditGrantStatus is where a free-credit request is. There is no way back
+ * from approved or rejected in v1: a rejected workspace can still top up.
+ */
+export const CreditGrantStatusPending = "pending";
+export const CreditGrantStatusApproved = "approved";
+export const CreditGrantStatusRejected = "rejected";
+export type CreditGrantStatus = typeof CreditGrantStatusPending | typeof CreditGrantStatusApproved | typeof CreditGrantStatusRejected;
+/**
+ * CreditGrantRequest is one company's free-credit request. There is at most
+ * one per company, ever.
+ */
+export interface CreditGrantRequest {
+  id: string;
+  company_id: string;
+  status: CreditGrantStatus;
+  /**
+   * AmountMicroUSD is CREDITS_DEFAULT_GRANT_USD when the request was filed,
+   * frozen: the operator approves what the user was told is waiting.
+   */
+  amount_micro_usd: number /* int64 */;
+  created_at: string;
+  reviewed_at?: string;
+}
+/**
+ * OperatorFreeCredit is a request as the operator reviews it: across every
+ * workspace, with the two signals that tell a real business from a farmed
+ * sign-up.
+ */
+export interface OperatorFreeCredit extends CreditGrantRequest {
+  company_name: string;
+  /**
+   * RequestedByEmail is the sign-up admin's email; empty for a request a
+   * budget check filed, and for an admin since deleted.
+   */
+  requested_by_email: string;
+  reviewed_by_email: string;
+  /**
+   * HasDataSource is whether the workspace has connected a database:
+   * the clearest sign of a real business.
+   */
+  has_data_source: boolean;
+  /**
+   * SameIPSignups7d counts the *other* sign-ups whose IP matched this one's
+   * within seven days either side of it: the clearest sign of farming. Zero
+   * for a request with no IP.
+   */
+  same_ip_signups_7d: number /* int */;
+}
+/**
+ * CreditGrantApproval is what an approval did to the balance.
+ */
+export interface CreditGrantApproval {
+  Request?: CreditGrantRequest;
+  /**
+   * AddedMicroUSD is zero when the company already held free credit — a
+   * grant written while CREDITS_GRANT_REQUIRES_APPROVAL was off, or by an
+   * older pod's lazy grant during a rolling deploy. Approving then marks
+   * the request approved and adds nothing.
+   */
+  AddedMicroUSD: number /* int64 */;
+  BalanceMicroUSD: number /* int64 */;
+}
+
+//////////
 // source: currency.go
 
 /**
@@ -3606,6 +3673,15 @@ export interface CompanyCredits {
    * leaves, so the bar and the 20% warning measure from there.
    */
   last_topup_at?: string;
+  /**
+   * FreeCreditStatus and FreeCreditMicroUSD are not columns (RIZ-89). Only
+   * `GET /api/usage/credits` fills them, and only while the company has no
+   * grant and its free credit waits for an operator: pending, or rejected,
+   * and the amount it was filed for. A company with a grant never carries
+   * them, so the JSON every existing tenant reads is unchanged.
+   */
+  free_credit_status?: CreditGrantStatus;
+  free_credit_micro_usd?: number /* int64 */;
 }
 
 //////////

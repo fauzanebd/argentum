@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -41,6 +43,16 @@ import (
 //     deploy, and a signup whose grant write failed — all of which get the
 //     same amount, because there is still only one setting for it.
 //
+//     **Since RIZ-89 neither road runs by default.** Free credit was farmable
+//     — sign-up has no email verification, so a script earned $0.50 a
+//     sign-up — and the owner wants every grant approved by hand. With
+//     CreditPolicy.AutoGrant false (the zero value, and
+//     CREDITS_GRANT_REQUIRES_APPROVAL's default) a company with no grant is
+//     refused, and the check files a pending free-credit request for it if it
+//     has none; an operator approving that request is the only thing that
+//     writes free credit (FreeCreditService). AutoGrant true is the kill
+//     switch, and restores both roads above exactly.
+//
 //  2. **A grant is what makes BudgetWarning computable at all.** "<20%
 //     remaining" needs a denominator, and monthly_grant_micro_usd is the only
 //     column that can be one.
@@ -69,11 +81,19 @@ type CreditPolicy struct {
 	// WarnPct is the remaining-percentage-of-grant threshold below which a
 	// turn still runs but reports BudgetWarning.
 	WarnPct int
-	// GrantMicroUSD is a new company's free credit: written at signup, and
-	// provisioned on first check for a company that has none. Zero with
-	// Enforce true refuses every platform-key tenant, which is a legitimate
-	// operator choice and not a default.
+	// GrantMicroUSD is a new company's free credit: the amount a free-credit
+	// request is filed for, or — with AutoGrant — written at signup and
+	// provisioned on first check. Zero with Enforce true refuses every
+	// platform-key tenant with no grant, which is a legitimate operator choice
+	// and not a default.
 	GrantMicroUSD int64
+	// AutoGrant restores the pre-RIZ-89 behaviour: signup writes the grant
+	// and CheckBudget provisions it lazily, with no operator in the loop
+	// (CREDITS_GRANT_REQUIRES_APPROVAL=false). **False is the zero value on
+	// purpose**: a process wired without this setting — a fourth binary, a
+	// test, a forgotten call site — cannot hand out free credit, it can only
+	// refuse.
+	AutoGrant bool
 }
 
 // Normalize clamps operator input rather than rejecting it, matching the
@@ -150,6 +170,29 @@ func (s *UsageService) WithCredits(policy CreditPolicy, llmCreds domain.CompanyL
 	return s
 }
 
+// WithGrantRequests gives the budget check somewhere to file a free-credit
+// request (RIZ-89). Without it a company with no grant is still refused — as
+// pending — rather than granted: R4's "a process wired without the request
+// repository refuses rather than grants".
+func (s *UsageService) WithGrantRequests(repo domain.CreditGrantRequestRepository) *UsageService {
+	s.grants = repo
+	return s
+}
+
+// FreeCreditAlerter tells the operators a sign-up is waiting for its free
+// credit (RIZ-89 R18). TopupMailer satisfies it.
+type FreeCreditAlerter interface {
+	NotifyFreeCredit(ctx context.Context, a FreeCreditAlert)
+}
+
+// WithFreeCreditAlerts makes a sign-up's request email the operators. Only a
+// request sign-up filed is alerted on: a lazy one is a legacy workspace being
+// checked, not somebody waiting at the door.
+func (s *UsageService) WithFreeCreditAlerts(a FreeCreditAlerter) *UsageService {
+	s.alerts = a
+	return s
+}
+
 // CheckBudget resolves whether companyID may spend. Callers refuse the turn
 // on BudgetState.Blocked and surface BudgetWarning to the user; nothing else
 // should read the balance directly.
@@ -179,17 +222,21 @@ func (s *UsageService) CheckBudget(ctx context.Context, companyID string) (Budge
 	credits, err := s.credits.Get(ctx, companyID)
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
-		credits = s.provisionGrant(ctx, companyID)
+		credits = nil
 	case err != nil:
 		logrus.WithError(err).WithField("company_id", companyID).
 			Warn("credit balance lookup failed; allowing the turn")
 		return budgetOK, nil
-	case credits == nil || credits.MonthlyGrantMicroUSD == 0:
+	}
+	if credits == nil || credits.MonthlyGrantMicroUSD == 0 {
 		// Never granted anything. The balance is whatever pre-enforcement
 		// metering happened to subtract from zero, which is not a debt the
 		// tenant agreed to — see (1) at the top of this file. The nil check
 		// is not redundant: a repository returning (nil, nil) is a contract
 		// violation, and dereferencing it here would take down every turn.
+		if !s.credit.AutoGrant {
+			return s.refuseWithoutGrant(ctx, companyID, credits)
+		}
 		credits = s.provisionGrant(ctx, companyID)
 	}
 
@@ -211,10 +258,84 @@ func (s *UsageService) CheckBudget(ctx context.Context, companyID string) (Budge
 	return st, nil
 }
 
+// refuseWithoutGrant is CheckBudget's answer, with approval required, for a
+// company that holds no grant (RIZ-89 R3): it files the company's free-credit
+// request if there is none, and refuses the turn saying why.
+//
+// Every path out of it refuses but one, and that one is the house rule for a
+// repository that errors (decision 3 above): a request lookup that fails
+// allows the turn, with a Warn, and is not cached, so the next check asks
+// again. Refusing there would make a control-DB hiccup refuse every legacy
+// workspace's turn for a minute, and the window it opens — turns on a
+// balance that only goes negative — is the one decision 3 already accepts.
+//
+// What it never does is write a balance. That is the point of the ticket.
+func (s *UsageService) refuseWithoutGrant(ctx context.Context, companyID string, credits *domain.CompanyCredits) (BudgetState, error) {
+	st := BudgetState{Verdict: BudgetExhausted, Enforced: true}
+	if credits != nil {
+		st.BalanceMicroUSD = credits.BalanceMicroUSD
+	}
+	// A grant of zero is an operator who decided nobody gets free credit.
+	// There is nothing to wait for, so nothing is filed and the refusal is
+	// the plain one — which is what this configuration answered before too.
+	if s.credit.GrantMicroUSD <= 0 {
+		s.cacheBudget(ctx, companyID, st)
+		return st, nil
+	}
+	st.FreeCredit = FreeCreditStatePending
+	if s.grants == nil {
+		// Wired without the repository: nowhere to file, and nothing that
+		// may grant. Refuse as pending; the deployment is wrong, not the
+		// tenant, and a grant here is exactly what R4 forbids.
+		logrus.WithField("company_id", companyID).
+			Warn("free credit needs approval but no request repository is wired; refusing the turn")
+		s.cacheBudget(ctx, companyID, st)
+		return st, nil
+	}
+
+	req, err := s.grants.GetForCompany(ctx, companyID)
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		inserted, ferr := s.grants.InsertIfAbsent(ctx, &domain.CreditGrantRequest{
+			CompanyID:      companyID,
+			AmountMicroUSD: s.credit.GrantMicroUSD,
+		})
+		if ferr != nil {
+			// Still pending — the company has no grant either way — but not
+			// cached, so the next check files it.
+			logrus.WithError(ferr).WithField("company_id", companyID).
+				Warn("free-credit request could not be filed; refusing the turn and retrying on the next check")
+			return st, nil
+		}
+		if inserted {
+			logrus.WithFields(logrus.Fields{
+				"company_id":  companyID,
+				"grant_micro": s.credit.GrantMicroUSD,
+			}).Info("filed a free-credit request at a budget check")
+		}
+	case err != nil:
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("free-credit request lookup failed; allowing the turn")
+		return budgetOK, nil
+	case req.Status == domain.CreditGrantStatusRejected:
+		st.FreeCredit = FreeCreditStateRejected
+	case req.Status == domain.CreditGrantStatusApproved:
+		// Approved and still no grant: approval writes the grant in the same
+		// transaction, so only a hand edit of company_credits gets here.
+		// Nothing is waiting, so the plain refusal is the true one.
+		st.FreeCredit = ""
+	}
+	s.cacheBudget(ctx, companyID, st)
+	return st, nil
+}
+
 // provisionGrant writes the configured grant for a company that has none and
 // returns the record as if it had been read. A write failure is not fatal:
 // the returned value still reflects the grant, so the turn proceeds and the
 // next check retries the write.
+//
+// Reached only with CreditPolicy.AutoGrant (RIZ-89's kill switch). With
+// approval required nothing in this file writes free credit.
 func (s *UsageService) provisionGrant(ctx context.Context, companyID string) *domain.CompanyCredits {
 	c := s.projectedGrant(companyID)
 	if err := s.credits.Upsert(ctx, c); err != nil {
@@ -231,37 +352,62 @@ func (s *UsageService) provisionGrant(ctx context.Context, companyID string) *do
 	return c
 }
 
-// GrantSignupCredit gives a company created by signup its starting balance
-// (RIZ-79): balance and grant both CreditPolicy.GrantMicroUSD.
+// SignupCredit is what sign-up knows about the workspace it just created,
+// which is everything a free-credit request and its alert need.
+type SignupCredit struct {
+	CompanyID   string
+	CompanyName string
+	// UserID and Email are the new admin's: requested_by on the request, and
+	// who the operator alert and the approval email name.
+	UserID string
+	Email  string
+	// IP is the client address sign-up came from, for the operator's same-IP
+	// signal. Anything that does not parse as an address is dropped rather
+	// than failing the insert over a column that is only a hint.
+	IP string
+}
+
+// StartSignupCredit starts a company created by signup on its free credit.
 //
-// Three things about it are deliberate:
+// With AutoGrant it is RIZ-79's GrantSignupCredit unchanged: balance and grant
+// both CreditPolicy.GrantMicroUSD, insert-only. With approval required (RIZ-89)
+// it files a pending free-credit request for that amount instead, writes no
+// balance, and emails the operators when it filed one.
+//
+// Things about it that are deliberate:
 //
 //   - It ignores Enforce. The kill switch decides whether a balance is
 //     *refused on*, not whether one is kept — decrements carry on with
 //     enforcement off too — so a company that signed up while it was off
-//     still has its credit on the day it is switched back on.
+//     still has its credit, or its request, on the day it is switched back on.
 //   - It is insert-only. CreditsRepository.InsertIfAbsent never touches a row
-//     that exists, so this cannot top a company up, however often it runs.
+//     that exists, and CreditGrantRequestRepository.InsertIfAbsent never files
+//     a second request, so this cannot top a company up however often it runs.
 //   - It returns nothing. A signup that fails over its free credit is a
-//     visitor with no account, which is worse than an account whose credit
-//     arrives one budget check late: the lazy grant in CheckBudget writes the
-//     same amount the first time this company is checked.
+//     visitor with no account, which is worse than an account whose credit (or
+//     request) arrives one budget check late: CheckBudget writes the grant
+//     (AutoGrant) or files the request (approval) the first time this company
+//     is checked.
 //
-// A grant of zero writes nothing. CheckBudget treats a zero-grant row exactly
-// as it treats no row, so writing one would add a row and change nothing.
-func (s *UsageService) GrantSignupCredit(ctx context.Context, companyID string) {
+// A grant of zero writes and files nothing. CheckBudget treats a zero-grant row
+// exactly as it treats no row, and a request for $0 is a request for nothing.
+func (s *UsageService) StartSignupCredit(ctx context.Context, sc SignupCredit) {
 	grant := s.credit.GrantMicroUSD
-	if grant <= 0 || companyID == "" {
+	if grant <= 0 || sc.CompanyID == "" {
+		return
+	}
+	if !s.credit.AutoGrant {
+		s.fileSignupRequest(ctx, sc, grant)
 		return
 	}
 	c := &domain.CompanyCredits{
-		CompanyID:            companyID,
+		CompanyID:            sc.CompanyID,
 		BalanceMicroUSD:      grant,
 		MonthlyGrantMicroUSD: grant,
 	}
 	if err := s.credits.InsertIfAbsent(ctx, c); err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
-			"company_id":  companyID,
+			"company_id":  sc.CompanyID,
 			"grant_micro": grant,
 		}).Warn("signup credit grant failed; the first budget check will provision it")
 		return
@@ -270,21 +416,112 @@ func (s *UsageService) GrantSignupCredit(ctx context.Context, companyID string) 
 	// line claiming a grant for a company that already had a row would be the
 	// one an incident review trusts.
 	logrus.WithFields(logrus.Fields{
-		"company_id":  companyID,
+		"company_id":  sc.CompanyID,
 		"grant_micro": grant,
 	}).Info("signup credit written if absent")
+}
+
+// fileSignupRequest is StartSignupCredit with approval required.
+func (s *UsageService) fileSignupRequest(ctx context.Context, sc SignupCredit, grant int64) {
+	if s.grants == nil {
+		logrus.WithField("company_id", sc.CompanyID).
+			Warn("free credit needs approval but no request repository is wired; the workspace stays refused")
+		return
+	}
+	ip := ""
+	if addr := net.ParseIP(strings.TrimSpace(sc.IP)); addr != nil {
+		ip = addr.String()
+	}
+	req := &domain.CreditGrantRequest{
+		CompanyID:      sc.CompanyID,
+		AmountMicroUSD: grant,
+		RequestedBy:    sc.UserID,
+		SignupIP:       ip,
+	}
+	inserted, err := s.grants.InsertIfAbsent(ctx, req)
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"company_id":  sc.CompanyID,
+			"grant_micro": grant,
+		}).Warn("free-credit request could not be filed at signup; the first budget check will file it")
+		return
+	}
+	if !inserted {
+		return
+	}
+	logrus.WithFields(logrus.Fields{
+		"company_id":  sc.CompanyID,
+		"grant_micro": grant,
+	}).Info("filed a free-credit request at signup")
+	if s.alerts == nil {
+		return
+	}
+	alert := FreeCreditAlert{
+		CompanyName:    sc.CompanyName,
+		RequesterEmail: sc.Email,
+		SignedUpAt:     req.CreatedAt,
+		AmountMicroUSD: grant,
+	}
+	// Off the request path, for TopupService.UploadProof's reason: SMTP can
+	// take its timeout, and the visitor is waiting on their new account, not
+	// on our inbox.
+	actx := context.WithoutCancel(ctx)
+	s.alertAsync(func() { s.alerts.NotifyFreeCredit(actx, alert) })
 }
 
 // projectedGrant is what CheckBudget would provision for a company that has
 // no grant yet, as a record nobody wrote. CreditsForCompany answers with it so
 // a company that has not been checked yet reads the balance it will have,
-// rather than a zero it never owed.
+// rather than a zero it never owed. AutoGrant only: with approval required
+// nothing will be provisioned, and projecting a grant would promise one.
 func (s *UsageService) projectedGrant(companyID string) *domain.CompanyCredits {
 	return &domain.CompanyCredits{
 		CompanyID:            companyID,
 		BalanceMicroUSD:      s.credit.GrantMicroUSD,
 		MonthlyGrantMicroUSD: s.credit.GrantMicroUSD,
 	}
+}
+
+// alertAsync runs an operator alert off the caller's path. syncAlerts is the
+// tests' switch, for TopupService.withSyncAlerts' reason: an alert that has
+// been sent by the time the call returns.
+func (s *UsageService) alertAsync(f func()) {
+	if s.syncAlerts {
+		f()
+		return
+	}
+	go f()
+}
+
+// BudgetRefusal is ErrInsufficientCredits carrying the state that refused the
+// turn (RIZ-89), so the handler that answers it can say *why*: out of credit,
+// or free credit waiting for approval, or not approved. errors.Is still
+// matches ErrInsufficientCredits, so every caller that only knows the
+// sentinel — `/v1`, the widget — answers exactly as before, and its Error()
+// reads exactly as the "%w: %s" wrap it replaces did for an ordinary
+// exhausted balance.
+type BudgetRefusal struct{ State BudgetState }
+
+func (e *BudgetRefusal) Error() string {
+	return domain.ErrInsufficientCredits.Error() + ": " + e.State.RefusalMessage()
+}
+
+func (e *BudgetRefusal) Unwrap() error { return domain.ErrInsufficientCredits }
+
+// newBudgetRefusal is the error every budget-checked entry point returns for
+// a refused state.
+func newBudgetRefusal(st BudgetState) error { return &BudgetRefusal{State: st} }
+
+// CreditRefusalMessage is the sentence the dashboard and the team's channels
+// answer a refused turn with: the refusing state's own when err carries one,
+// and CreditsExhaustedMessage otherwise — which is every refusal that
+// predates RIZ-89 and every caller that wraps the bare sentinel.
+func CreditRefusalMessage(err error) string {
+	var r *BudgetRefusal
+	if errors.As(err, &r) {
+		return r.State.RefusalMessage()
+	}
+	return CreditsExhaustedMessage
 }
 
 // hasOwnPrimaryKey reports whether the tenant supplies their own primary-tier

@@ -12,6 +12,13 @@ const get = vi.fn();
 const post = vi.fn();
 const toast = vi.fn();
 
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ to, children, ...rest }: { to: string; children?: React.ReactNode }) => (
+    <a href={to} {...rest}>
+      {children}
+    </a>
+  ),
+}));
 vi.mock("@/lib/api", () => ({
   api: {
     get: (...args: unknown[]) => get(...args),
@@ -51,6 +58,7 @@ const row = (over: Record<string, unknown>) => ({
 let review: unknown[];
 let reviewed: unknown[];
 let failWith: unknown;
+let freeCredit: unknown[] = [];
 
 function mount() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -74,11 +82,14 @@ beforeEach(() => {
   failWith = null;
   review = [];
   reviewed = [];
+  freeCredit = [];
   get.mockImplementation((path: string, cfg?: { params?: { view?: string } }) => {
     if (failWith) return Promise.reject(failWith);
     if (path === "/operator/topups") {
       return Promise.resolve({ data: { topups: cfg?.params?.view === "reviewed" ? reviewed : review } });
     }
+    // The tabs' count (RIZ-89).
+    if (path === "/operator/free-credit") return Promise.resolve({ data: { requests: freeCredit } });
     return Promise.reject(new Error(`unexpected GET ${path}`));
   });
 });
@@ -89,6 +100,18 @@ describe("Top-ups to review", () => {
     mount();
     expect(await screen.findByText("This page is for Argentum operators.")).toBeInTheDocument();
     expect(screen.queryByText(/Match each one/)).toBeNull();
+    expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  it("links to the free-credit queue with its pending count (RIZ-89 R10)", async () => {
+    freeCredit = [{ id: "g-1" }, { id: "g-2" }, { id: "g-3" }];
+    mount();
+    const tabs = await screen.findByRole("navigation", { name: "Operator queues" });
+    expect(within(tabs).getByRole("link", { name: "Top-ups" })).toHaveAttribute("href", "/operator/top-ups");
+    expect(await within(tabs).findByRole("link", { name: "Free credit 3" })).toHaveAttribute(
+      "href",
+      "/operator/free-credit",
+    );
   });
 
   it("says when there is nothing to review, and keeps the Reviewed table", async () => {

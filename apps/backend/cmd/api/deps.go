@@ -228,7 +228,11 @@ type apiDeps struct {
 	// operatorOnly gates `/api/operator/*` on PLATFORM_OPERATOR_EMAILS. Nil
 	// refuses every operator route.
 	operatorOnly gin.HandlerFunc
-	idemStore    idempotency.Store
+	// freeCreditSvc is the operator's free-credit queue (RIZ-89). Built
+	// whenever the control DB is; nil only in tests, where its routes answer
+	// 503 behind the operator gate.
+	freeCreditSvc *app.FreeCreditService
+	idemStore     idempotency.Store
 	// apiKeyAuth overrides what authenticates `/v1`. Nil in production, where
 	// apiKeySvc is used; see apiKeyAuthOf in router.go for why the seam exists.
 	apiKeyAuth middleware.APIKeyAuthenticator

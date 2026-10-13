@@ -55,4 +55,9 @@ var (
 	// ErrTopupAlreadyReviewed: approve or reject on a request that is not in
 	// review — already decided, by this operator's other click or another's.
 	ErrTopupAlreadyReviewed = errors.New("the top-up was already reviewed")
+
+	// ErrCreditGrantAlreadyReviewed: approve or reject on a free-credit request
+	// that is no longer pending (RIZ-89) — decided by this operator's other
+	// click or by another operator. A 409, for ErrTopupAlreadyReviewed's reason.
+	ErrCreditGrantAlreadyReviewed = errors.New("the free-credit request was already reviewed")
 )

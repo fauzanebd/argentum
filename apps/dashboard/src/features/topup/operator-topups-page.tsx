@@ -31,6 +31,7 @@ import {
   formatSpreadPct,
 } from "./format";
 import { WARNING_TONE } from "./labels";
+import { OperatorTabs } from "./operator-tabs";
 import { Pill, TopupStatusBadge } from "./status";
 
 /**
@@ -65,6 +66,9 @@ export function OperatorTopupsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-5xl px-6 py-8">
+        {/* The free-credit queue sits beside this one (RIZ-89); a
+            non-operator sees neither tab. */}
+        {!forbidden && <OperatorTabs active="top-ups" />}
         <h1 className="mb-1 text-2xl font-bold">Top-ups to review</h1>
         {forbidden ? (
           <Card className="mt-5 px-6 py-5">

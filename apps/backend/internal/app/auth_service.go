@@ -21,6 +21,9 @@ type AuthService struct {
 	signer    *auth.TokenSigner
 	roster    RosterSeeder
 	credits   CreditGranter
+	// operators are PLATFORM_OPERATOR_EMAILS (RIZ-89 R16): addresses sign-up
+	// refuses, so nobody can create the account the operator check trusts.
+	operators OperatorEmails
 }
 
 func NewAuthService(c domain.CompanyRepository, u domain.UserRepository, s *auth.TokenSigner) *AuthService {
@@ -44,19 +47,29 @@ func (s *AuthService) WithRoster(r RosterSeeder) *AuthService {
 	return s
 }
 
-// CreditGranter gives a new company its free credit (RIZ-79). Narrow for
-// RosterSeeder's reason: signup needs one write, not the whole metering
-// surface. Like EnsureDefault it returns nothing — a signup does not fail
-// over its credit, because CheckBudget provisions the same grant lazily.
+// CreditGranter starts a new company on its free credit: since RIZ-89 by
+// filing a request an operator approves, or — with
+// CREDITS_GRANT_REQUIRES_APPROVAL=false — by writing the grant, as RIZ-79 did.
+// Narrow for RosterSeeder's reason: signup needs one call, not the whole
+// metering surface. Like EnsureDefault it returns nothing — a signup does not
+// fail over its credit, because CheckBudget files the request (or provisions
+// the grant) the first time the company is checked.
 type CreditGranter interface {
-	GrantSignupCredit(ctx context.Context, companyID string)
+	StartSignupCredit(ctx context.Context, sc SignupCredit)
 }
 
-// WithCredits makes signup write the company's starting balance. Without it a
-// new workspace still gets its grant, at its first budget check rather than
-// at signup — the pre-RIZ-79 behaviour.
+// WithCredits makes signup start the company's free credit. Without it a new
+// workspace's request is filed at its first budget check rather than at
+// signup.
 func (s *AuthService) WithCredits(g CreditGranter) *AuthService {
 	s.credits = g
+	return s
+}
+
+// WithOperatorEmails makes signup refuse every address on
+// PLATFORM_OPERATOR_EMAILS (RIZ-89 R16).
+func (s *AuthService) WithOperatorEmails(o OperatorEmails) *AuthService {
+	s.operators = o
 	return s
 }
 
@@ -78,8 +91,10 @@ type LoginResult struct {
 }
 
 // Signup creates a new company + admin user atomically, then issues a token
-// pair. companyName + email + password are required.
-func (s *AuthService) Signup(ctx context.Context, companyName, email, password string) (*SignupResult, error) {
+// pair. companyName + email + password are required. clientIP is where the
+// request came from, stored on the free-credit request for the operator's
+// same-IP signal; empty is fine.
+func (s *AuthService) Signup(ctx context.Context, companyName, email, password, clientIP string) (*SignupResult, error) {
 	companyName = strings.TrimSpace(companyName)
 	email = strings.ToLower(strings.TrimSpace(email))
 	if companyName == "" || email == "" || password == "" {
@@ -89,6 +104,14 @@ func (s *AuthService) Signup(ctx context.Context, companyName, email, password s
 		return nil, err
 	}
 
+	// An operator's address is answered exactly as an address in use is
+	// (RIZ-89 R16). The operator check matches an unverified email, so before
+	// this anyone could sign up as an operator who had no account yet and
+	// approve their own free credit; and a different answer would publish the
+	// allowlist one probe at a time.
+	if s.operators.Has(email) {
+		return nil, domain.ErrAlreadyExists
+	}
 	if existing, err := s.users.GetByEmail(ctx, email); err == nil && existing != nil {
 		return nil, domain.ErrAlreadyExists
 	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -126,11 +149,18 @@ func (s *AuthService) Signup(ctx context.Context, companyName, email, password s
 	}
 	// After the admin exists, not after the company: a signup that fails on
 	// the user insert leaves a company nobody can log into, and giving that
-	// company credit only makes the orphan look more like a real tenant. This
-	// is the only place a grant is written at signup — accepting an invite
-	// joins a company that already has one (RIZ-79 R5).
+	// company credit — or putting it in front of an operator — only makes the
+	// orphan look more like a real tenant. This is the only place free credit
+	// is started at signup — accepting an invite joins a company that already
+	// has its credit or its request (RIZ-79 R5).
 	if s.credits != nil {
-		s.credits.GrantSignupCredit(ctx, company.ID)
+		s.credits.StartSignupCredit(ctx, SignupCredit{
+			CompanyID:   company.ID,
+			CompanyName: company.Name,
+			UserID:      user.ID,
+			Email:       user.Email,
+			IP:          clientIP,
+		})
 	}
 
 	access, err := s.signer.IssueAccessToken(user.ID, user.CompanyID, string(user.Role))

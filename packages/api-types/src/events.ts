@@ -54,15 +54,52 @@ export interface BudgetState {
    * nothing was enforced for that call either.
    */
   enforced: boolean;
+  /**
+   * FreeCredit says why a company with no grant is refused (RIZ-89): its
+   * free credit is waiting for an operator, or was not approved. Empty for
+   * every other state, including a company that spent a grant it had, so
+   * the shape every existing tenant receives is unchanged.
+   */
+  free_credit?: FreeCreditState;
 }
+/**
+ * FreeCreditState is where a workspace's free credit is while it has none.
+ */
+/**
+ * FreeCreditStatePending — an operator has not decided yet.
+ */
+export const FreeCreditStatePending = "pending";
+/**
+ * FreeCreditStateRejected — an operator declined it. Topping up still
+ * works.
+ */
+export const FreeCreditStateRejected = "rejected";
+export type FreeCreditState = typeof FreeCreditStatePending | typeof FreeCreditStateRejected;
 /**
  * CreditsExhaustedMessage is the single refusal every channel sends. It is
  * one string rather than one per channel because a WhatsApp user and a
  * dashboard user hitting the same wall should be told the same thing, and
  * because the alternative is four wordings that drift. It names the fix and
  * avoids the word "error": nothing has gone wrong.
+ * Since RIZ-89 it has two siblings, one per *reason* rather than per channel —
+ * free credit waiting for approval, and not approved — chosen by
+ * BudgetState.RefusalMessage. This one stays byte-identical: `/v1` and the
+ * widget send it whatever the reason.
  */
 export const CreditsExhaustedMessage = "This workspace has used all of its Argentum credits, " + "so I can't run that right now. Ask an admin to top up the balance — " + "current usage is on the Usage page in the dashboard.";
+/**
+ * FreeCreditPendingMessage refuses a workspace whose free credit an operator
+ * has not approved yet (RIZ-89). It is CreditsExhaustedMessage's voice — it
+ * names the fix, and says nothing has gone wrong — and it does not say "used
+ * all of its credits" to someone who has spent nothing.
+ */
+export const FreeCreditPendingMessage = "This workspace's free Argentum credit is waiting for approval, " + "so I can't run that yet. Chat starts working as soon as it's approved — " + "or an admin can top up now from the Usage page in the dashboard.";
+/**
+ * FreeCreditRejectedMessage refuses a workspace whose free credit was not
+ * approved. One fixed sentence, no reason: a rejection is final in v1, and
+ * topping up is the way on.
+ */
+export const FreeCreditRejectedMessage = "This workspace's free Argentum credit was not approved, " + "so I can't run that. Ask an admin to top up the balance from the Usage page in the dashboard.";
 
 //////////
 // source: event_bus.go

@@ -472,7 +472,7 @@ func (h *ChatHandler) sendMessage(c *gin.Context) {
 		// fix this, which is exactly what Payment Required means. T-A1's
 		// error envelope reuses this status for the same condition.
 		if errors.Is(err, domain.ErrInsufficientCredits) {
-			c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditsExhaustedMessage})
+			c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditRefusalMessage(err)})
 			return
 		}
 		chatFail(c, err)

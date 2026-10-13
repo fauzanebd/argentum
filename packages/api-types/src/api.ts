@@ -12,6 +12,7 @@ import type {
   APIRequestError,
   CapabilityGrant,
   Channel,
+  CreditGrantRequest,
   CompanyProfile,
   MCPServer,
   MCPTransport,
@@ -19,6 +20,7 @@ import type {
   FeedbackWithContext,
   MetricGrain,
   MetricUnit,
+  OperatorFreeCredit,
   OperatorTopup,
   Skill,
   Topup,
@@ -696,4 +698,26 @@ export interface TopupProofLinkResponse {
 export interface TopupApproveResponse {
   topup?: Topup;
   balance_micro_usd: number /* int64 */;
+}
+/**
+ * OperatorFreeCreditResponse is the operator's free-credit queue or decisions
+ * (RIZ-89 R7).
+ */
+export interface OperatorFreeCreditResponse {
+  requests: (OperatorFreeCredit | undefined)[];
+}
+/**
+ * FreeCreditApproveResponse is an approval (R8): how much it added — zero
+ * when the workspace already had its free credit — and the balance it left.
+ */
+export interface FreeCreditApproveResponse {
+  request?: CreditGrantRequest;
+  added_micro_usd: number /* int64 */;
+  balance_micro_usd: number /* int64 */;
+}
+/**
+ * FreeCreditRejectResponse is a rejection (R9).
+ */
+export interface FreeCreditRejectResponse {
+  request?: CreditGrantRequest;
 }

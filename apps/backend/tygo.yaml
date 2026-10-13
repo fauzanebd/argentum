@@ -147,6 +147,8 @@ packages:
       domain.Topup: "Topup"
       domain.OperatorTopup: "OperatorTopup"
       domain.TopupPayee: "TopupPayee"
+      domain.CreditGrantRequest: "CreditGrantRequest"
+      domain.OperatorFreeCredit: "OperatorFreeCredit"
     frontmatter: |
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
@@ -161,6 +163,7 @@ packages:
         APIRequestError,
         CapabilityGrant,
         Channel,
+        CreditGrantRequest,
         CompanyProfile,
         MCPServer,
         MCPTransport,
@@ -168,6 +171,7 @@ packages:
         FeedbackWithContext,
         MetricGrain,
         MetricUnit,
+        OperatorFreeCredit,
         OperatorTopup,
         Skill,
         Topup,

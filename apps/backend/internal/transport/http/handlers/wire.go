@@ -609,3 +609,22 @@ type TopupApproveResponse struct {
 	Topup           *domain.Topup `json:"topup"`
 	BalanceMicroUSD int64         `json:"balance_micro_usd"`
 }
+
+// OperatorFreeCreditResponse is the operator's free-credit queue or decisions
+// (RIZ-89 R7).
+type OperatorFreeCreditResponse struct {
+	Requests []*domain.OperatorFreeCredit `json:"requests"`
+}
+
+// FreeCreditApproveResponse is an approval (R8): how much it added — zero
+// when the workspace already had its free credit — and the balance it left.
+type FreeCreditApproveResponse struct {
+	Request         *domain.CreditGrantRequest `json:"request"`
+	AddedMicroUSD   int64                      `json:"added_micro_usd"`
+	BalanceMicroUSD int64                      `json:"balance_micro_usd"`
+}
+
+// FreeCreditRejectResponse is a rejection (R9).
+type FreeCreditRejectResponse struct {
+	Request *domain.CreditGrantRequest `json:"request"`
+}

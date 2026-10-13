@@ -184,7 +184,10 @@ var ErrAgentNotAllowed = errors.New("this API key may not use the agent this con
 func SpokenRefusal(err error) (string, bool) {
 	switch {
 	case errors.Is(err, domain.ErrInsufficientCredits):
-		return CreditsExhaustedMessage, true
+		// The refusing state's own sentence (RIZ-89): "waiting for
+		// approval" to a workspace that has spent nothing, not "used all
+		// of its credits".
+		return CreditRefusalMessage(err), true
 	case errors.Is(err, ErrAgentNotClearedHere):
 		return AgentNotClearedMessage, true
 	}
@@ -1777,9 +1780,11 @@ func (s *ChatEnqueuer) defaultAgent(ctx context.Context, companyID string) strin
 	return def.ID
 }
 
-// checkBudget returns the tenant's spend position, or ErrInsufficientCredits
-// wrapped with the message the caller should show. Callers distinguish it
-// with errors.Is and answer in whatever way their channel can.
+// checkBudget returns the tenant's spend position, or a *BudgetRefusal — an
+// ErrInsufficientCredits carrying the state, whose sentence the caller should
+// show. Callers distinguish it with errors.Is and answer in whatever way their
+// channel can: CreditRefusalMessage on the dashboard and the team's channels,
+// CreditsExhaustedMessage on `/v1` and the widget.
 func (s *ChatEnqueuer) checkBudget(ctx context.Context, companyID string) (BudgetState, error) {
 	if s.budget == nil {
 		return budgetOK, nil
@@ -1789,7 +1794,7 @@ func (s *ChatEnqueuer) checkBudget(ctx context.Context, companyID string) (Budge
 		return budgetOK, fmt.Errorf("check budget: %w", err)
 	}
 	if st.Blocked() {
-		return st, fmt.Errorf("%w: %s", domain.ErrInsufficientCredits, CreditsExhaustedMessage)
+		return st, newBudgetRefusal(st)
 	}
 	return st, nil
 }

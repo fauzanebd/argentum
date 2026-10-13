@@ -135,6 +135,14 @@ type CompanyCredits struct {
 	// top-up" once it is set: approval resets the grant to the balance it
 	// leaves, so the bar and the 20% warning measure from there.
 	LastTopupAt *time.Time `json:"last_topup_at"`
+
+	// FreeCreditStatus and FreeCreditMicroUSD are not columns (RIZ-89). Only
+	// `GET /api/usage/credits` fills them, and only while the company has no
+	// grant and its free credit waits for an operator: pending, or rejected,
+	// and the amount it was filed for. A company with a grant never carries
+	// them, so the JSON every existing tenant reads is unchanged.
+	FreeCreditStatus   CreditGrantStatus `json:"free_credit_status,omitempty"`
+	FreeCreditMicroUSD int64             `json:"free_credit_micro_usd,omitempty"`
 }
 
 // CreditsRepository persists soft credit balances.

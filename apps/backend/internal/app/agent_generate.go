@@ -239,7 +239,7 @@ func (s *AgentGenerateService) Generate(
 			logrus.WithError(err).WithField("company_id", companyID).
 				Warn("credit check failed before agent generation; running it anyway")
 		} else if st.Verdict == BudgetExhausted {
-			return nil, domain.ErrInsufficientCredits
+			return nil, newBudgetRefusal(st)
 		}
 	}
 

@@ -364,7 +364,7 @@ func (h *AgentsHandler) generate(c *gin.Context) {
 	out, err := h.gen.Generate(c.Request.Context(), companyID(c), in)
 	switch {
 	case errors.Is(err, domain.ErrInsufficientCredits):
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditsExhaustedMessage})
+		c.JSON(http.StatusPaymentRequired, gin.H{"error": app.CreditRefusalMessage(err)})
 	case errors.Is(err, domain.ErrInvalidInput):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case err != nil:

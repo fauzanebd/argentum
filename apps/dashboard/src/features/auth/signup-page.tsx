@@ -48,8 +48,13 @@ export function SignupPage() {
           <CardDescription>You'll be the admin of your company workspace.</CardDescription>
           {/* No amount on purpose: this page is unauthenticated and cannot read
               CREDITS_DEFAULT_GRANT_USD, so a number here would go stale the
-              day an operator changes it. Usage shows the real one (RIZ-79). */}
-          <CardDescription>New workspaces start with free credit to try Argentum. No card needed.</CardDescription>
+              day an operator changes it. Usage shows the real one (RIZ-79).
+              "Once we've approved" since RIZ-89: free credit waits for an
+              operator, and promising it at once would be the first thing this
+              product tells a new customer that is not true. */}
+          <CardDescription>
+            Free credit to try Argentum is added once we've approved your new workspace. No card needed.
+          </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">
