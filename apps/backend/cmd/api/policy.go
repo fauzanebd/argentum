@@ -371,6 +371,27 @@ var apiPolicy = middleware.RolePolicy{
 	"GET /api/usage/by-channel":         domain.RoleMember,
 	"GET /api/usage/by-user":            domain.RoleMember,
 
+	// Credit top-up (RIZ-83). Admin throughout: paying is a decision about the
+	// company's money, the options carry the payee accounts, and the history
+	// is what was paid. A member is told to ask an admin.
+	"GET /api/topups/options":     domain.RoleAdmin,
+	"GET /api/topups":             domain.RoleAdmin,
+	"POST /api/topups":            domain.RoleAdmin,
+	"POST /api/topups/:id/proof":  domain.RoleAdmin,
+	"POST /api/topups/:id/cancel": domain.RoleAdmin,
+
+	// The operator's review (RIZ-83 R9). **Member here on purpose**, and the
+	// narrowing is OperatorOnly on the handler's group: an operator is an
+	// email on PLATFORM_OPERATOR_EMAILS, not a role, and every signup is the
+	// admin of its own company — so admin here would admit anyone to approve
+	// their own payment, and admin-plus-allow-list would refuse an operator who
+	// is a member of the workspace they log in with. operatorRoutes lists the
+	// same four so the member-admission test knows why they 403.
+	"GET /api/operator/topups":              domain.RoleMember,
+	"GET /api/operator/topups/:id/proof":    domain.RoleMember,
+	"POST /api/operator/topups/:id/approve": domain.RoleMember,
+	"POST /api/operator/topups/:id/reject":  domain.RoleMember,
+
 	// Model catalogue — read-only metadata.
 	"GET /api/config/models": domain.RoleMember,
 
@@ -539,6 +560,19 @@ var apiPolicy = middleware.RolePolicy{
 var capabilityPolicy = middleware.CapabilityPolicy{
 	"POST /api/threads/:id/voice": domain.CapabilityVoice,
 	"GET /api/messages/:id/audio": domain.CapabilityVoice,
+}
+
+// operatorRoutes are the routes OperatorOnly narrows (RIZ-83 R9). Not a policy
+// table — the middleware is installed on the handler's own group, and it reads
+// PLATFORM_OPERATOR_EMAILS, not this map. It exists so the tests can tell a
+// member route that refuses members for a reason from one that refuses them by
+// mistake, and so a fifth operator route added without its gate fails
+// TestOperatorRoutesRefuseEveryoneElse rather than shipping open.
+var operatorRoutes = map[string]bool{
+	"GET /api/operator/topups":              true,
+	"GET /api/operator/topups/:id/proof":    true,
+	"POST /api/operator/topups/:id/approve": true,
+	"POST /api/operator/topups/:id/reject":  true,
 }
 
 // resourcePolicy is the third question a route can ask (T-Z3), and the first

@@ -81,6 +81,10 @@ func (m *mapBudgetCache) Get(_ context.Context, key string) ([]byte, bool) {
 func (m *mapBudgetCache) Set(_ context.Context, key string, val []byte, _ time.Duration) {
 	m.entries[key] = val
 }
+func (m *mapBudgetCache) Delete(_ context.Context, key string) error {
+	delete(m.entries, key)
+	return nil
+}
 
 const testGrant = int64(25_000_000) // $25
 

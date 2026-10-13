@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Send, Loader2, X, Copy, Check } from "lucide-react";
+import { Send, Loader2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Shimmer, Elapsed } from "@/components/ui/shimmer";
@@ -18,7 +18,6 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore, useIsAdmin } from "@/store/auth";
 import { useComposerStore } from "@/store/composer";
-import { microToUsd } from "@/features/usage/labels";
 import type {
   BudgetState,
   ChatEvent,
@@ -44,7 +43,8 @@ import { PendingApprovals } from "@/features/actions/approval-card";
 import { PENDING_ACTIONS_KEY } from "@/features/actions/use-actions";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { formatLatencySeconds, formatMessageTimestamp } from "./format";
-import { apiErrorMessage } from "@/lib/api-error";
+import { apiErrorMessage, apiErrorStatus } from "@/lib/api-error";
+import { BudgetWarningBanner, TopUpLink } from "./credit-notices";
 import { MicButton } from "./mic-button";
 import { ListenButton } from "./listen-button";
 import { useVoice } from "./use-voice";
@@ -219,6 +219,13 @@ export function ChatPage() {
   }, []);
 
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Whether `error` is the 402 a workspace out of credit gets (RIZ-83 R20). The
+   * sentence itself is the server's and is shown unchanged; this only decides
+   * whether an admin is offered the way out under it. A member is not — they
+   * cannot pay, and the sentence already tells them to ask an admin.
+   */
+  const [creditRefused, setCreditRefused] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   /**
@@ -408,6 +415,7 @@ export function ChatPage() {
   useLayoutEffect(() => {
     setLiveTurns({});
     setError(null);
+    setCreditRefused(false);
     resumeEchoRef.current = null;
 
     const prev = prevThreadIdRef.current;
@@ -555,6 +563,7 @@ export function ChatPage() {
         resumeEchoRef.current = null;
         stopPolling();
       }
+      setCreditRefused(false);
       setError(who + (evt.error ?? "Something went wrong"));
     }
   });
@@ -571,6 +580,7 @@ export function ChatPage() {
     const text = (override ?? input).trim();
     if (!text || sending) return;
     setError(null);
+    setCreditRefused(false);
     setSending(true);
 
     const targetThreadId = activeThreadId;
@@ -619,6 +629,7 @@ export function ChatPage() {
       }
     } catch (e: unknown) {
       setError(apiErrorMessage(e, "Send failed"));
+      setCreditRefused(apiErrorStatus(e) === 402);
     } finally {
       setSending(false);
     }
@@ -801,6 +812,7 @@ export function ChatPage() {
               <BudgetWarningBanner
                 warning={budgetWarning}
                 onDismiss={() => setBudgetWarning(null)}
+                canTopUp={isAdmin}
                 className="w-full"
               />
             )}
@@ -815,6 +827,12 @@ export function ChatPage() {
                 className="w-full px-6 py-2 text-sm text-destructive bg-destructive/5 rounded-lg"
               >
                 {error}
+                {creditRefused && isAdmin && (
+                  <>
+                    {" "}
+                    <TopUpLink>Top up credit</TopUpLink>
+                  </>
+                )}
               </div>
             )}
             {/* Since T-U8 the agent picker and the starter questions are slots
@@ -931,12 +949,19 @@ export function ChatPage() {
             <BudgetWarningBanner
               warning={budgetWarning}
               onDismiss={() => setBudgetWarning(null)}
+              canTopUp={isAdmin}
               className="mx-3 sm:mx-4 mb-2 shrink-0"
             />
           )}
           {error && (
             <div className="px-6 py-2 text-sm text-destructive bg-destructive/5 rounded-lg mx-3 sm:mx-4 mb-2 shrink-0">
               {error}
+              {creditRefused && isAdmin && (
+                <>
+                  {" "}
+                  <TopUpLink>Top up credit</TopUpLink>
+                </>
+              )}
             </div>
           )}
           <div className="mx-3 sm:mx-4 shrink-0">
@@ -975,50 +1000,6 @@ export function ChatPage() {
         </>
       )}
     </section>
-  );
-}
-
-/* ── Credit warning banner ───────────────────────────────────────────── */
-/** Shown when the workspace is close to the end of its credit grant. The turn
- *  already ran — this is a heads-up, not a refusal, so it is styled as a
- *  notice rather than with the destructive palette the error strip uses. */
-function BudgetWarningBanner({
-  warning,
-  onDismiss,
-  className,
-}: {
-  warning: BudgetState;
-  onDismiss: () => void;
-  className?: string;
-}) {
-  const balance = microToUsd(warning.balance_micro_usd);
-  return (
-    <div
-      role="status"
-      className={cn(
-        "flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm",
-        className,
-      )}
-    >
-      <div className="flex-1 min-w-0">
-        <span className="font-medium">
-          {warning.remaining_pct}% of your Argentum credit is left
-        </span>
-        <span className="text-muted-foreground">
-          {" "}
-          — ${balance.toFixed(2)} remaining. Top up before it runs out to keep
-          chat, scheduled reports and the API working.
-        </span>
-      </div>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss credit warning"
-        className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <X className="size-4" />
-      </button>
-    </div>
   );
 }
 

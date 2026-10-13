@@ -36,4 +36,23 @@ var (
 	// wrong, the world just moved on — so the message is "this proposal has
 	// expired; ask the agent to propose it again" rather than a flat refusal.
 	ErrActionExpired = errors.New("action proposal expired")
+
+	// The top-up refusals (RIZ-83). Each is a 409 with its own sentence, and
+	// they are separate sentinels rather than ErrConflict with a message
+	// because the handler's copy is the product's, not the repository's.
+	//
+	// ErrTopupInProgress: the workspace already has an open request — the
+	// one-open-per-company partial index refused the insert.
+	ErrTopupInProgress = errors.New("a top-up is already in progress")
+	// ErrTopupCodeTaken: another open request already uses this exact
+	// expected amount. Never reaches a caller: the service draws another code.
+	ErrTopupCodeTaken = errors.New("the top-up matching code is taken")
+	// ErrTopupClosed: proof sent to a request that is no longer open.
+	ErrTopupClosed = errors.New("the top-up is closed")
+	// ErrTopupNotCancellable: only a request still waiting for payment can be
+	// cancelled; one with proof is the operator's to decide.
+	ErrTopupNotCancellable = errors.New("only a top-up waiting for payment can be cancelled")
+	// ErrTopupAlreadyReviewed: approve or reject on a request that is not in
+	// review — already decided, by this operator's other click or another's.
+	ErrTopupAlreadyReviewed = errors.New("the top-up was already reviewed")
 )

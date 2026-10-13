@@ -103,12 +103,36 @@ func (p CreditPolicy) Normalize() CreditPolicy {
 type BudgetCache interface {
 	Get(ctx context.Context, key string) ([]byte, bool)
 	Set(ctx context.Context, key string, val []byte, ttl time.Duration)
+	// Delete drops a cached verdict (RIZ-83). Unlike Get and Set it reports
+	// its error, because its one caller has something to say when it fails:
+	// a top-up that was approved and is still refused for up to one TTL.
+	Delete(ctx context.Context, key string) error
 }
 
 // budgetCacheTTL bounds how stale a verdict may be. The window cuts both
 // ways: a tenant can overspend by up to one TTL of turns, and a tenant whose
-// balance was just topped up stays refused for up to one TTL.
+// balance was just topped up would stay refused for up to one TTL — which is
+// why an approved top-up deletes the verdict rather than waiting it out
+// (InvalidateBudget).
 const budgetCacheTTL = 60 * time.Second
+
+// InvalidateBudget drops companyID's cached verdict, so the next budget check
+// reads the balance a top-up just changed (RIZ-83 R13). Every process that
+// enforces — api, worker, discord — reads the same Redis key, so one delete
+// here reaches all of them.
+//
+// Best-effort and silent to the caller: the balance is already written, and a
+// failed delete costs at most one budget-cache TTL of a refusal the next check
+// corrects by itself. Undoing the approval over it would be the wrong trade.
+func (s *UsageService) InvalidateBudget(ctx context.Context, companyID string) {
+	if s == nil || s.budgetCache == nil || companyID == "" {
+		return
+	}
+	if err := s.budgetCache.Delete(ctx, budgetCacheKey(companyID)); err != nil {
+		logrus.WithError(err).WithField("company_id", companyID).
+			Warn("budget cache delete failed; the old verdict expires within a minute")
+	}
+}
 
 // WithCredits turns on enforcement. llmCreds is required, not optional: the
 // "never block a tenant using their own key" rule cannot be honoured without

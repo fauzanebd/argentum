@@ -116,6 +116,34 @@ func TestExpositionCarriesTheConversationCeilings(t *testing.T) {
 	}
 }
 
+// A top-up priced at the fallback rate is a series by reason (RIZ-83 R22), and
+// the metric is declared before anything has fallen back, so an alert on it
+// does not error on a healthy deployment.
+func TestExpositionCarriesTheTopupFXFallbacks(t *testing.T) {
+	c := NewCollector()
+	if out := renderSnapshot(t, c); !strings.Contains(out, "# TYPE argentum_topup_fx_fallback_total counter") {
+		t.Errorf("a process that has never fallen back does not declare the series:\n%s", out)
+	}
+
+	c.RecordTopupFXFallback("timeout")
+	c.RecordTopupFXFallback("timeout")
+	c.RecordTopupFXFallback("stale")
+	c.RecordTopupFXFallback("")
+
+	out := renderSnapshot(t, c)
+	for _, want := range []string{
+		`argentum_topup_fx_fallback_total{reason="stale"} 1`,
+		`argentum_topup_fx_fallback_total{reason="timeout"} 2`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("exposition is missing:\n  %s\n\ngot:\n%s", want, out)
+		}
+	}
+	if got := strings.Count(out, "argentum_topup_fx_fallback_total{"); got != 2 {
+		t.Errorf("%d fallback series, want 2 — an empty reason is not a series", got)
+	}
+}
+
 func TestExpositionCarriesTheGroundingCounters(t *testing.T) {
 	c := NewCollector()
 	// A clean reply must not touch either counter, or the rate is meaningless.

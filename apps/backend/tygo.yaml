@@ -144,6 +144,9 @@ packages:
       domain.FeedbackWithContext: "FeedbackWithContext"
       domain.AdHocQuestion: "AdHocQuestion"
       domain.CapabilityGrant: "CapabilityGrant"
+      domain.Topup: "Topup"
+      domain.OperatorTopup: "OperatorTopup"
+      domain.TopupPayee: "TopupPayee"
     frontmatter: |
       /* eslint-disable */
       // `/api` response bodies that are not domain entities, from
@@ -165,7 +168,10 @@ packages:
         FeedbackWithContext,
         MetricGrain,
         MetricUnit,
+        OperatorTopup,
         Skill,
+        Topup,
+        TopupPayee,
       } from "./domain.js";
 
   # The widget's `/api/embed` contract (T-19, T-20, T-23). Its own Go package

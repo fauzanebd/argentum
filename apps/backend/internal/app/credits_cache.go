@@ -45,3 +45,13 @@ func (c *RedisBudgetCache) Set(ctx context.Context, key string, val []byte, ttl 
 		logrus.WithError(err).Debug("budget cache write failed; next check will re-query")
 	}
 }
+
+// Delete removes a verdict. A key that is not there is not an error: the
+// caller wanted it gone. Returned rather than swallowed, unlike the two above
+// — see BudgetCache.Delete.
+func (c *RedisBudgetCache) Delete(ctx context.Context, key string) error {
+	if c == nil {
+		return nil
+	}
+	return c.rdb.Del(ctx, key).Err()
+}

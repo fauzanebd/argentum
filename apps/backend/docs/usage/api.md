@@ -92,14 +92,22 @@ Current credit balance for the company.
   "company_id": "…",
   "balance_micro_usd": 87654321,
   "monthly_grant_micro_usd": 100000000,
-  "updated_at": "2026-05-17T08:00:00Z"
+  "updated_at": "2026-05-17T08:00:00Z",
+  "last_topup_at": null
 }
 ```
 
 Divide `balance_micro_usd` by 1,000,000 to get USD.
 
 `monthly_grant_micro_usd` is the company's one-time free credit, despite the
-name — nothing refills it. The dashboard captions it "free credit".
+name — nothing refills it on a schedule. The dashboard captions it "free credit".
+
+`last_topup_at` is when an operator last approved a top-up for the company
+(RIZ-83), `null` if never. An approval resets `monthly_grant_micro_usd` to the
+balance it leaves (never below the top-up's own credit), so the bar and the
+20% warning measure from the level right after the last top-up; the dashboard
+then captions the grant "at your last top-up". See
+[`../topups/api.md`](../topups/api.md).
 
 **A company that has no grant yet** (no row, or a row whose grant is 0) is
 answered, while enforcement is on, with the grant its first budget check will
@@ -152,7 +160,8 @@ the balance of every tenant that had ever run a turn was negative.
 kill switch), `CREDITS_WARNING_THRESHOLD_PCT` (default `20`),
 `CREDITS_DEFAULT_GRANT_USD` (default `0.5`; it was `25` before RIZ-79). The verdict is cached in Redis for
 60 seconds, so a balance change takes up to a minute to be observed — in both
-directions.
+directions — except an approved top-up, which deletes the cached verdict
+(RIZ-83), so the next message runs.
 
 ---
 

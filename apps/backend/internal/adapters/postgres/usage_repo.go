@@ -398,12 +398,17 @@ type CreditsRepo struct{ db *sql.DB }
 func NewCreditsRepo(db *sql.DB) *CreditsRepo { return &CreditsRepo{db: db} }
 
 func (r *CreditsRepo) Get(ctx context.Context, companyID string) (*domain.CompanyCredits, error) {
-	const q = `SELECT company_id, balance_micro_usd, monthly_grant_micro_usd, updated_at FROM company_credits WHERE company_id = $1`
+	const q = `SELECT company_id, balance_micro_usd, monthly_grant_micro_usd, updated_at, last_topup_at FROM company_credits WHERE company_id = $1`
 	c := &domain.CompanyCredits{}
+	var lastTopup sql.NullTime
 	err := r.db.QueryRowContext(ctx, q, companyID).
-		Scan(&c.CompanyID, &c.BalanceMicroUSD, &c.MonthlyGrantMicroUSD, &c.UpdatedAt)
+		Scan(&c.CompanyID, &c.BalanceMicroUSD, &c.MonthlyGrantMicroUSD, &c.UpdatedAt, &lastTopup)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
+	}
+	if lastTopup.Valid {
+		t := lastTopup.Time
+		c.LastTopupAt = &t
 	}
 	return c, err
 }

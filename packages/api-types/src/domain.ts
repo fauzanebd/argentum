@@ -3328,6 +3328,147 @@ export interface ThreadParticipant {
 export const MaxThreadParticipants = 4;
 
 //////////
+// source: topup.go
+
+/**
+ * TopupStatus is where a top-up request is in its life.
+ */
+/**
+ * TopupStatusAwaitingPayment is a request the customer has not proved
+ * payment for yet. It expires at ExpiresAt and frees its code.
+ */
+export const TopupStatusAwaitingPayment = "awaiting_payment";
+/**
+ * TopupStatusInReview has proof and waits for an operator. It never
+ * expires: the customer may have paid.
+ */
+export const TopupStatusInReview = "in_review";
+export const TopupStatusApproved = "approved";
+export const TopupStatusRejected = "rejected";
+export const TopupStatusExpired = "expired";
+export const TopupStatusCancelled = "cancelled";
+export type TopupStatus = typeof TopupStatusAwaitingPayment | typeof TopupStatusInReview | typeof TopupStatusApproved | typeof TopupStatusRejected | typeof TopupStatusExpired | typeof TopupStatusCancelled;
+/**
+ * TopupFXSource says where a request's rate came from.
+ */
+/**
+ * TopupFXSourceMarket is the ECB reference rate plus the spread.
+ */
+export const TopupFXSourceMarket = "market";
+/**
+ * TopupFXSourceFallback is TOPUP_IDR_PER_USD, used as the effective rate
+ * with no spread, because no market rate young enough was available.
+ */
+export const TopupFXSourceFallback = "fallback";
+export type TopupFXSource = typeof TopupFXSourceMarket | typeof TopupFXSourceFallback;
+/**
+ * TopupFX is the rate a request was priced at, frozen when it was created.
+ */
+export interface TopupFX {
+  Source: TopupFXSource;
+  /**
+   * MarketIDRPerUSDE4 is nil on a fallback.
+   */
+  MarketIDRPerUSDE4?: number /* int64 */;
+  /**
+   * RateDate is the ECB reference date, "2026-10-12". Empty on a fallback.
+   */
+  RateDate: string;
+  /**
+   * SpreadBP is the spread in basis points (500 = 5%). Nil on a fallback.
+   */
+  SpreadBP?: number /* int */;
+  EffectiveIDRPerUSDE4: number /* int64 */;
+}
+/**
+ * Topup is one top-up request as the workspace that made it sees it. Nothing
+ * here is a storage key or a URL, and nothing is a rate: GET /api/topups
+ * answers with exactly these fields (R7, AC28).
+ */
+export interface Topup {
+  id: string;
+  /**
+   * AmountIDR is what the customer chose, in whole thousands. The credit is
+   * computed from this alone; the code adds nothing to it.
+   */
+  amount_idr: number /* int64 */;
+  unique_code: number /* int */;
+  /**
+   * ExpectedAmountIDR is AmountIDR + UniqueCode: the exact amount to
+   * transfer, and what the operator looks for on the statement.
+   */
+  expected_amount_idr: number /* int64 */;
+  credit_micro_usd: number /* int64 */;
+  status: TopupStatus;
+  /**
+   * PayeeID is the configured account the customer says they paid.
+   */
+  payee_id?: string;
+  proof_uploaded_at?: string;
+  expires_at: string;
+  created_at: string;
+  reviewed_at?: string;
+  /**
+   * RejectReason is the operator's sentence to the customer.
+   */
+  reject_reason?: string;
+}
+/**
+ * TopupDuplicate names an earlier top-up whose proof is byte-identical to
+ * this one's (R15). A flag for the operator, never a block: the same receipt
+ * uploaded twice is suspicious, not proof of anything.
+ */
+export interface TopupDuplicate {
+  company_name: string;
+  expected_amount_idr: number /* int64 */;
+  created_at: string;
+}
+/**
+ * OperatorTopup is a top-up as the operator reviews it: across every
+ * workspace, with who asked, which account, and the frozen rate.
+ */
+export interface OperatorTopup extends Topup {
+  company_name: string;
+  requested_by_email: string;
+  reviewed_by_email?: string;
+  /**
+   * PayeeLabel is the configured label for PayeeID ("GoPay" for "gopay"),
+   * resolved from TOPUP_PAYEES when the list is read; the id itself when that
+   * payee has since been removed from config.
+   */
+  payee_label: string;
+  /**
+   * The frozen rate, flattened for the table's Rate column.
+   */
+  fx_source: TopupFXSource;
+  fx_market_idr_per_usd_e4?: number /* int64 */;
+  fx_rate_date?: string;
+  fx_spread_bp?: number /* int */;
+  fx_effective_idr_per_usd_e4: number /* int64 */;
+  duplicate_of?: TopupDuplicate;
+}
+/**
+ * TopupPayee is one account a customer may pay into. Deploy config
+ * (TOPUP_PAYEES), never a row and never in git: the owner asked for the
+ * numbers to stay out of the repository.
+ */
+export interface TopupPayee {
+  id: string;
+  label: string;
+  account_number: string;
+  account_name: string;
+}
+/**
+ * TopupProof is what an upload records on the request.
+ */
+export interface TopupProof {
+  Key: string;
+  ContentType: string;
+  SHA256: string;
+  PayeeID: string;
+}
+
+//////////
 // source: usage.go
 
 /**
@@ -3458,6 +3599,13 @@ export interface CompanyCredits {
   balance_micro_usd: number /* int64 */;
   monthly_grant_micro_usd: number /* int64 */;
   updated_at: string;
+  /**
+   * LastTopupAt is when an operator last approved a top-up for this company
+   * (RIZ-83), nil if never. The Usage card reads the grant as "at your last
+   * top-up" once it is set: approval resets the grant to the balance it
+   * leaves, so the bar and the 20% warning measure from there.
+   */
+  last_topup_at?: string;
 }
 
 //////////

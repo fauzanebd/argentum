@@ -317,6 +317,11 @@ func TestMemberRoutesAdmitMembers(t *testing.T) {
 		if _, gated := resourcePolicy[key]; gated {
 			continue
 		}
+		// And an operator route is a member route only operators reach
+		// (RIZ-83) — TestOperatorRoutesRefuseEveryoneElse holds that one.
+		if operatorRoutes[key] {
+			continue
+		}
 		if role == domain.RoleMember {
 			keys = append(keys, key)
 		}

@@ -93,6 +93,43 @@ func Alert(d AlertData) Message {
 	return Message{Subject: d.Title, Text: text, HTML: wrap(body)}
 }
 
+// TopupReviewData is a proof of payment waiting for an operator (RIZ-83). Every
+// amount arrives formatted: this package has no opinion on rupiah.
+type TopupReviewData struct {
+	CompanyName    string
+	RequesterEmail string
+	// Amount is the exact amount to match on the statement, "100.347".
+	Amount     string
+	PayeeLabel string
+	// Credit is the frozen credit, "5.76".
+	Credit    string
+	ReviewURL string
+}
+
+// TopupReview renders the operator's alert (R14). The subject carries the two
+// facts that decide whether to open it now — who, and how much to look for on
+// the statement — so the inbox list is the queue.
+func TopupReview(d TopupReviewData) Message {
+	intro := fmt.Sprintf("%s (%s) uploaded proof for a top-up.", d.CompanyName, d.RequesterEmail)
+	amount := fmt.Sprintf("Amount: Rp %s to %s", d.Amount, d.PayeeLabel)
+	credit := fmt.Sprintf("Credit: $%s", d.Credit)
+	review := "Review it: " + d.ReviewURL
+	text := strings.Join([]string{intro, amount, credit, review}, "\n")
+	body := fmt.Sprintf(`<p>%s</p>
+<p>%s<br>%s</p>
+<p><a href="%s" style="display:inline-block;padding:10px 18px;background:#F25C5C;color:#ffffff;border-radius:6px;text-decoration:none">Review it</a></p>
+<p style="color:#666;font-size:12px">%s</p>`,
+		html.EscapeString(intro),
+		html.EscapeString(amount), html.EscapeString(credit),
+		html.EscapeString(d.ReviewURL),
+		html.EscapeString(review))
+	return Message{
+		Subject: fmt.Sprintf("Top-up to review: %s · Rp %s", d.CompanyName, d.Amount),
+		Text:    text,
+		HTML:    wrap(body),
+	}
+}
+
 // wrap puts a body in the one shared shell. Inline styles and a table-free
 // layout, because email clients are not browsers and a <style> block is
 // stripped by several of the ones that matter.

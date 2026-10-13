@@ -130,6 +130,11 @@ type CompanyCredits struct {
 	BalanceMicroUSD      int64     `json:"balance_micro_usd"`
 	MonthlyGrantMicroUSD int64     `json:"monthly_grant_micro_usd"`
 	UpdatedAt            time.Time `json:"updated_at"`
+	// LastTopupAt is when an operator last approved a top-up for this company
+	// (RIZ-83), nil if never. The Usage card reads the grant as "at your last
+	// top-up" once it is set: approval resets the grant to the balance it
+	// leaves, so the bar and the 20% warning measure from there.
+	LastTopupAt *time.Time `json:"last_topup_at"`
 }
 
 // CreditsRepository persists soft credit balances.

@@ -148,6 +148,15 @@ func (s MetricsSnapshot) WriteProm(w io.Writer) error {
 		"Asks a conversation budget refused, by the ceiling that refused them.",
 		"dimension", asFloats(s.Domain.ConversationCeilings))
 
+	// --- credit top-up (RIZ-83) ---
+	//
+	// Written even with no series, like the access refusals above: a scrape
+	// that has never seen a fallback should still say the metric exists, so an
+	// alert on it is not an error on a healthy deployment.
+	p.counterVec("topup_fx_fallback_total",
+		"Top-ups priced at the fallback TOPUP_IDR_PER_USD because no usable market rate was available, by reason.",
+		"reason", asFloats(s.Domain.TopupFXFallbacks))
+
 	p.duration("turn_duration_ms", "Agent turn wall clock.", nil, s.Domain.Turns)
 
 	// Tool traffic: three metric names, each with every tool's series together,
