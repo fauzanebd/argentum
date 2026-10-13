@@ -1,21 +1,27 @@
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
 import { DiscordTab } from "./discord-tab";
 import { LarkTab } from "./lark-tab";
 import { SlackTab } from "./slack-tab";
+
+function WhatsAppIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path
+        fill="#25D366"
+        d="M12 2.2a9.7 9.7 0 0 0-8.4 14.6L2.3 21.7l5-1.3A9.7 9.7 0 1 0 12 2.2Zm0 17.7c-1.5 0-2.9-.4-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 19.9Zm4.4-6c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.5.1l-.8.9c-.1.2-.3.2-.5.1a6.5 6.5 0 0 1-3.2-2.8c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.7-1.8c-.2-.5-.4-.4-.5-.4h-.5a.9.9 0 0 0-.7.3 2.8 2.8 0 0 0-.9 2.1 4.9 4.9 0 0 0 1 2.6 11.2 11.2 0 0 0 4.3 3.8c1.6.7 2.2.7 3 .6.5-.1 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1l-.5-.3Z"
+      />
+    </svg>
+  );
+}
 
 function SlackIcon({ className }: { className?: string }) {
   return (
@@ -60,86 +66,85 @@ function LarkIcon({ className }: { className?: string }) {
   );
 }
 
-function TelegramIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M9.999 15.2 9.84 19.4c.36 0 .516-.155.703-.34l1.687-1.61 3.495 2.555c.641.354 1.094.168 1.266-.594l2.297-10.762h.001c.203-.953-.343-1.325-.969-1.094L4.484 12.78c-.93.36-.918.875-.16 1.109l3.797 1.184 8.812-5.547c.414-.273.793-.121.484.152" />
-    </svg>
-  );
-}
-
-type Field = {
-  name: string;
-  label: string;
-  placeholder: string;
-  type?: "text" | "password";
-};
+/**
+ * What a row's button does. Required, and only these two kinds, so that a row
+ * cannot be added to this list without something real behind its button.
+ *
+ * That is the rule this tab broke until RIZ-100 (2026-10-13): Telegram had a
+ * row with a not-yet-released badge and a Configure button, which opened a
+ * form whose every input and Save were disabled, beside a button offering to
+ * tell you when it shipped that showed a toast and recorded nothing. No
+ * Telegram backend existed. The landing page had already dropped the same claim in T-18, for the
+ * same reason: a listed integration is a promise somebody repeats. A channel
+ * that is not built goes in `docs/plan/backlog.md`, not here.
+ *
+ * - `configure` opens the channel's own config panel in place of the list.
+ * - `open-tab` hands off to another Settings tab that already does the work.
+ *   WhatsApp is the case: its allowlist lives on Phone numbers, and a second
+ *   copy of that screen here would be two places to edit one list.
+ */
+type IntegrationAction =
+  | { kind: "configure"; panel: React.ComponentType }
+  | { kind: "open-tab"; tab: "phones"; label: "Manage numbers" };
 
 type Integration = {
   id: string;
   name: string;
   description: string;
-  helpText: string;
   icon: React.ComponentType<{ className?: string }>;
-  fields: Field[];
-  live?: boolean;
+  action: IntegrationAction;
 };
 
 const integrations: Integration[] = [
   {
+    id: "whatsapp",
+    name: "WhatsApp",
+    // "from numbers you authorise", and not "connect your WhatsApp": the
+    // operator configures the WhatsApp number itself, and what a tenant
+    // controls is which senders it answers.
+    description: "Chat with the Argentum bot from WhatsApp, from numbers you authorise.",
+    icon: WhatsAppIcon,
+    action: { kind: "open-tab", tab: "phones", label: "Manage numbers" },
+  },
+  {
     id: "slack",
     name: "Slack",
     description: "Chat with the Argentum bot from Slack @mentions or DMs.",
-    helpText: "Create a Slack app, install it to your workspace, and grant messaging scopes.",
     icon: SlackIcon,
-    fields: [],
-    live: true,
+    action: { kind: "configure", panel: SlackTab },
   },
   {
     id: "discord",
     name: "Discord",
     description: "Chat with the Argentum bot from Discord DMs or @mentions.",
-    helpText: "The bot must be invited to the target server.",
     icon: DiscordIcon,
-    fields: [],
-    live: true,
+    action: { kind: "configure", panel: DiscordTab },
   },
   {
     id: "lark",
     name: "Lark",
     description: "Chat with the Argentum bot via Lark @mentions.",
-    helpText: "Create a custom app in Lark Open Platform and grant messaging scopes.",
     icon: LarkIcon,
-    fields: [],
-    live: true,
-  },
-  {
-    id: "telegram",
-    name: "Telegram",
-    description: "Receive answers and alerts in Telegram chats.",
-    helpText: "Create a bot via @BotFather and add it to your chat.",
-    icon: TelegramIcon,
-    fields: [
-      { name: "token", label: "Bot token", placeholder: "1234567890:AA…", type: "password" },
-      { name: "chat", label: "Default chat ID", placeholder: "-1001234567890" },
-    ],
+    action: { kind: "configure", panel: LarkTab },
   },
 ];
 
-export function IntegrationsTab() {
+/**
+ * The Settings tab is local state in `SettingsPage` rather than a URL, so a
+ * row that hands off to another tab does it through a callback from there.
+ * Only Phone numbers is a target today, hence one named prop instead of a
+ * generic `onOpenTab(id)` that would accept tabs nothing links to.
+ */
+export function IntegrationsTab({ onOpenPhones }: { onOpenPhones: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
 
   const integration = integrations.find((i) => i.id === selected) ?? null;
 
-  if (integration) {
+  if (integration && integration.action.kind === "configure") {
     return (
       <IntegrationDetail
         integration={integration}
+        panel={integration.action.panel}
         onBack={() => setSelected(null)}
       />
     );
@@ -154,29 +159,32 @@ export function IntegrationsTab() {
             Connect Argentum to your team's messaging tools. More integrations on the way.
           </CardDescription>
         </CardHeader>
-        <CardContent className="divide-y divide-border">
-          {integrations.map(({ id, name, description, icon: Icon, live }) => (
+        <CardContent role="list" className="divide-y divide-border">
+          {integrations.map(({ id, name, description, icon: Icon, action }) => (
             <div
               key={id}
+              role="listitem"
+              aria-label={name}
               className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-md border bg-muted">
                   <Icon className="h-5 w-5 text-foreground" />
                 </div>
-                <div className="flex items-center gap-2">
-                  <div>
-                    <p className="text-sm font-medium">{name}</p>
-                    <p className="text-xs text-muted-foreground">{description}</p>
-                  </div>
+                <div>
+                  <p className="text-sm font-medium">{name}</p>
+                  <p className="text-xs text-muted-foreground">{description}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {!live && <Badge variant="secondary">Coming soon</Badge>}
+              {action.kind === "configure" ? (
                 <Button variant="outline" onClick={() => setSelected(id)}>
                   Configure
                 </Button>
-              </div>
+              ) : (
+                <Button variant="outline" onClick={onOpenPhones}>
+                  {action.label}
+                </Button>
+              )}
             </div>
           ))}
         </CardContent>
@@ -187,43 +195,14 @@ export function IntegrationsTab() {
 
 function IntegrationDetail({
   integration,
+  panel: Panel,
   onBack,
 }: {
   integration: Integration;
+  panel: React.ComponentType;
   onBack: () => void;
 }) {
-  const { toast } = useToast();
   const Icon = integration.icon;
-
-  function handleNotify() {
-    toast({
-      title: "Coming soon",
-      description: `${integration.name} integration is in development. We'll let you know when it's ready.`,
-    });
-  }
-
-  if (integration.live) {
-    return (
-      <div className="space-y-6">
-        <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
-          <ArrowLeft className="h-4 w-4" />
-          Back to integrations
-        </Button>
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md border bg-muted">
-            <Icon className="h-5 w-5 text-foreground" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold">{integration.name}</h2>
-            <p className="text-sm text-muted-foreground">{integration.description}</p>
-          </div>
-        </div>
-        {integration.id === "slack" && <SlackTab />}
-        {integration.id === "discord" && <DiscordTab />}
-        {integration.id === "lark" && <LarkTab />}
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -231,44 +210,16 @@ function IntegrationDetail({
         <ArrowLeft className="h-4 w-4" />
         Back to integrations
       </Button>
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md border bg-muted">
-              <Icon className="h-5 w-5 text-foreground" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <CardTitle>{integration.name}</CardTitle>
-                <Badge variant="secondary">Coming soon</Badge>
-              </div>
-              <CardDescription className="mt-1">{integration.description}</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-md border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground">
-            API integration is in development. Configuration is disabled until release.
-          </div>
-          {integration.fields.map((field) => (
-            <div key={field.name} className="space-y-1.5">
-              <Label>{field.label}</Label>
-              <Input
-                disabled
-                type={field.type ?? "text"}
-                placeholder={field.placeholder}
-              />
-            </div>
-          ))}
-          <p className="text-xs text-muted-foreground">{integration.helpText}</p>
-        </CardContent>
-        <CardFooter className="gap-2">
-          <Button disabled>Save</Button>
-          <Button variant="outline" onClick={handleNotify}>
-            Notify me when ready
-          </Button>
-        </CardFooter>
-      </Card>
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md border bg-muted">
+          <Icon className="h-5 w-5 text-foreground" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold">{integration.name}</h2>
+          <p className="text-sm text-muted-foreground">{integration.description}</p>
+        </div>
+      </div>
+      <Panel />
     </div>
   );
 }
