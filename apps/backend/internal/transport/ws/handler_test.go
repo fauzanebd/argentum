@@ -2,6 +2,7 @@ package ws
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/fauzanebd/argentum/internal/app"
 	"github.com/fauzanebd/argentum/internal/domain"
 )
 
@@ -61,6 +63,30 @@ func TestTheStreamOfAHiddenConversationIsNotFound(t *testing.T) {
 	}
 	if len(asked) != 1 || asked[0] != "co-1/u-1/th-1" {
 		t.Errorf("asked %v, want once about co-1/u-1/th-1", asked)
+	}
+}
+
+// RIZ-95: the catch-up frame carries the turn's agent like every event after
+// it, so the dashboard keys both to one bubble instead of two.
+func TestTheStateFrameCarriesTheTurnsAgent(t *testing.T) {
+	frame := liveTurnFrame("th-1", &app.LiveTurn{JobID: "job-1", AgentID: "ag-fin", AgentName: "Finance"})
+	body, err := json.Marshal(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]interface{}
+	_ = json.Unmarshal(body, &wire)
+	if wire["type"] != "state" || wire["agent_id"] != "ag-fin" || wire["agent_name"] != "Finance" {
+		t.Errorf("frame = %s, want a state event stamped ag-fin/Finance", body)
+	}
+	if live, _ := wire["live"].(map[string]interface{}); live["job_id"] != "job-1" {
+		t.Errorf("live = %v, want the turn", wire["live"])
+	}
+
+	// An unscoped turn's frame is what it always was: no agent fields at all.
+	body, _ = json.Marshal(liveTurnFrame("th-1", &app.LiveTurn{JobID: "job-1"}))
+	if strings.Contains(string(body), "agent_") {
+		t.Errorf("unscoped frame = %s, want no agent", body)
 	}
 }
 
