@@ -38,6 +38,12 @@ import { agentColorIndex, colorForAgent } from "./agent-colors";
 import { MentionMenu, mentionQueryAt, applyMention, type MentionQuery } from "./mention-menu";
 import { useThreadStream } from "./use-thread-stream";
 import { ToolCallCard } from "./tool-call-card";
+import {
+  ToolStepsGroup,
+  pairToolSteps,
+  snapshotToolEntries,
+  type ToolEntry,
+} from "./tool-steps-group";
 import { MessageFeedback } from "./message-feedback";
 import { NextStepChips } from "./next-steps";
 import { PendingApprovals } from "@/features/actions/approval-card";
@@ -77,7 +83,11 @@ type LiveTurn = {
    *  sentence — the earlier steps arrived, were rendered for a moment, and were
    *  dropped. They were always on the wire; nothing kept them. */
   thinkingSteps: string[];
-  toolCalls?: Array<{ name: string; payload: unknown }>;
+  /** Every `tool_call` and `tool_result` event of this turn, in arrival order.
+   *  `kind` keeps which one it was, so `pairToolSteps` can fold a call and its
+   *  result into the one step they are (RIZ-95) — without it the count
+   *  doubles and every call shows twice, once with its SQL and once without. */
+  toolCalls?: ToolEntry[];
   /** Tool-calling round the agent is on, and how many it may spend. A
    *  multi-step turn can go quiet for tens of seconds between deltas; this is
    *  what distinguishes "still working" from "stalled". */
@@ -128,12 +138,7 @@ function resumedTurn(live: NonNullable<ChatEvent["live"]>, agentId = "", agentNa
     agentName,
     content: live.content ?? "",
     thinkingSteps: live.thinking_steps ?? [],
-    toolCalls: (live.tool_calls ?? []).map((tc) => ({
-      name: tc.name,
-      // A tool_result was recorded with its result and a tool_call with its
-      // arguments; whichever the snapshot kept is the payload for the card.
-      payload: tc.result ?? tc.arguments ?? {},
-    })),
+    toolCalls: snapshotToolEntries(live.tool_calls ?? []),
     iteration: live.iteration
       ? { current: live.iteration, max: live.max_iterations ?? 0 }
       : undefined,
@@ -519,6 +524,7 @@ export function ChatPage() {
               evt.type === "tool_call"
                 ? (evt.tool_call.arguments ?? {})
                 : (evt.tool_call.result ?? {}),
+            kind: evt.type === "tool_call" ? "call" : "result",
           });
         }
         return { ...prev, toolCalls: calls };
@@ -1201,13 +1207,7 @@ export function MessageBubble({
         {isUser ? (
           <div className="inline-block max-w-[78%] rounded-3xl rounded-br-md px-4 py-3 text-sm leading-relaxed bg-[#212427] text-white dark:bg-white dark:text-[#212427]">
             <div className="whitespace-pre-wrap">{message.content}</div>
-            {message.tool_calls && (
-              <div className="mt-3 pt-3 border-t border-border/30 space-y-2 text-left">
-                {Object.entries(message.tool_calls).map(([key, value]) => (
-                  <ToolCallCard key={key} name={key} payload={value} />
-                ))}
-              </div>
-            )}
+            <MessageTools toolCalls={message.tool_calls} />
           </div>
         ) : (
           <div className="text-sm leading-relaxed text-foreground">
@@ -1230,13 +1230,7 @@ export function MessageBubble({
               </div>
             )}
             <MarkdownRenderer content={message.content} />
-            {message.tool_calls && (
-              <div className="mt-3 pt-3 border-t border-border/30 space-y-2 text-left">
-                {Object.entries(message.tool_calls).map(([key, value]) => (
-                  <ToolCallCard key={key} name={key} payload={value} />
-                ))}
-              </div>
-            )}
+            <MessageTools toolCalls={message.tool_calls} />
           </div>
         )}
         <div
@@ -1288,6 +1282,34 @@ export function MessageBubble({
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A saved message's tools, under its divider (RIZ-95).
+ *
+ * Two or more fold into one closed line; one stays the bare chip it always was,
+ * because a single chip is already one line and wrapping it would add a click
+ * and hide nothing. None renders no divider at all — an empty `tool_calls` map
+ * used to draw a rule over nothing.
+ *
+ * The map is keyed by tool name (`domain.Message.ToolCalls`), so this is one
+ * entry per tool used, not per call, and the order is `Object.entries`' — the
+ * order the chips have always had.
+ */
+function MessageTools({ toolCalls }: { toolCalls?: Message["tool_calls"] }) {
+  const entries = Object.entries(toolCalls ?? {});
+  if (entries.length === 0) return null;
+  return (
+    <div className="mt-3 pt-3 border-t border-border/30 space-y-2 text-left">
+      {entries.length === 1 ? (
+        <ToolCallCard name={entries[0][0]} payload={entries[0][1]} />
+      ) : (
+        <ToolStepsGroup
+          steps={entries.map(([name, payload]) => ({ name, payload }))}
+        />
+      )}
     </div>
   );
 }
@@ -1347,7 +1369,7 @@ function PendingBubble({
 }: {
   content: string;
   thinkingSteps: string[];
-  toolCalls?: Array<{ name: string; payload: unknown }>;
+  toolCalls?: ToolEntry[];
   iteration?: { current: number; max: number };
   startedAt: number;
   /** Who is producing this turn (T-N4). Undefined outside a room, which is
@@ -1416,16 +1438,12 @@ function PendingBubble({
           </div>
         )}
 
+        {/* One closed line however many tools have run (RIZ-95): a turn of
+            seven queries used to stack fifteen chips here and push the
+            conversation off screen while the reader waited. Not a live region
+            — the status line above stays the one thing announced. */}
         {toolCalls && toolCalls.length > 0 && (
-          <div className="space-y-2">
-            {toolCalls.map((tc, i) => (
-              <ToolCallCard
-                key={`${tc.name}-${i}`}
-                name={tc.name}
-                payload={tc.payload}
-              />
-            ))}
-          </div>
+          <ToolStepsGroup live steps={pairToolSteps(toolCalls)} />
         )}
       </div>
     </div>
