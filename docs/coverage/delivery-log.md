@@ -8864,6 +8864,86 @@ predate this ticket and are filed in live-gate §7u ([`chat-model.md`](chat-mode
 **Owed.** Live-gate §7u: the production rollout check, plus the two findings
 above (Kimi's ZDR baseline and the PDF panic).
 
+## Phase 3cg — A long turn folds its tool steps into one line ([`RIZ-95`](https://linear.app/rizkal-uhuy/issue/RIZ-95/a-long-agent-turn-collapses-its-tool-steps-instead-of-filling-the-chat), 2026-10-14)
+
+**Why.** The pending bubble added a `ToolCallCard` for every `tool_call` event
+and every `tool_result` event. A turn that ran 7 queries stacked 15 chips
+under the answer and pushed the conversation off screen while the reader
+waited. Half of those chips had no chevron, because a result carries no `sql`.
+Finished messages rendered their saved `tool_calls` as the same flat list.
+
+**What changed.** Dashboard only: no API, event, migration, prompt or flag.
+- **`ToolStepsGroup`** (`features/chat/tool-steps-group.tsx`) is one closed line
+  in the thinking trace's style. While a turn runs it reads a primary spinner,
+  **Using tools**, then `N calls · <label>`. The label names the newest call
+  still running, or the newest call once all have answered. On a finished
+  message it reads a wrench, **Used N tools**, then each label once, with an
+  ellipsis when too long. Opening it lists the unchanged chips in a `bg-inset`
+  panel, and the running chip gets `loading`. It is a native button with
+  `aria-expanded` and `aria-controls`, and it is not a live region.
+- **`pairToolSteps`** turns the live events into one step per call. A result
+  completes the oldest open call of its name, and its keys are laid over the
+  arguments, so a `run_sql` chip keeps its SQL and a `create_dashboard` chip
+  gains its link. A result with no call becomes its own finished step.
+  `LiveTurn.toolCalls` entries gained `kind`.
+- **A saved message** with 2 or more `tool_calls` entries shows the group. One
+  entry shows the bare chip as before. None draws nothing: an empty map used to
+  draw a divider over nothing.
+- `tool-call-card.tsx` exports `toolLabel`. The card itself is unchanged.
+
+**Where the plan was wrong.**
+- **R8's tag rule miscounts a resumed turn.** The rule was "a result when
+  `tc.result !== undefined`, a call otherwise". `ToolCallEvent` marshals both
+  fields `omitempty`, so a result that parsed to nothing reaches the snapshot as
+  a bare name, just like a call with no arguments. Every `load_skill` result is
+  like that (a framed string, not JSON), and so is every tool that failed with
+  a plain error. With the PRD's rule, a reload counts each of those twice and
+  leaves a spinner on it until `final`. `snapshotToolEntries` keeps the PRD's
+  rule whenever a field is set. A bare entry answers an open call of its name
+  if there is one; otherwise it is a call.
+- **"The same count as before the reload" holds only up to 10 calls.** The
+  snapshot keeps the last 20 tool events (`maxLiveTools`). It also drops any
+  event over 8 KB (`maxToolPayload`), so a call whose big result was dropped
+  spins until `final`. Fixing either is a backend change and out of scope;
+  it is recorded in live-gate §7v.
+
+**Proven.** `tool-steps-group.test.tsx`, 23 tests:
+- `pairToolSteps` on AC2's exact sequence, seven call/result pairs, an orphan
+  result, another tool's result, empty input, and the caller's payloads left
+  unmutated.
+- `snapshotToolEntries` on AC7's 5+5, tagging by field, and both bare-entry
+  cases.
+- The live captions: `7 calls · SQL query`, `1 call`, the running call over the
+  newest finished one, and the newest call once all have answered.
+- Open, an 8th call arriving, then close; a closed group staying closed; the
+  SQL and *Open dashboard* behind merged payloads.
+- The finished caption, its order and its de-duplication.
+- The empty group, the native button, the focus ring, and no live region.
+
+`chat-page.tools.test.tsx`, 5 tests, through `ChatPage` with the socket
+replaced:
+- AC5 and AC6 on saved messages with 3, 1 and 0 tools, and a user bubble with 2.
+- AC1 and AC4 from live events.
+- AC8: exactly one `role=status` with the group open.
+- AC7: a `state` snapshot of 5+5 reads `5 calls`.
+
+The existing `tool-call-card` and `chat-page` suites pass with no edits (Q11).
+Q11 also names thinking-trace tests, but there is no such suite.
+
+**Gate.** `gofmt -l` printed nothing and `make lint-go` passed; no Go changed.
+`make check` gave `MAKE EXIT: 0`, with 78 Go packages `ok` and 287 dashboard
+tests in 36 files (259 before RIZ-95's 28). `tsc` and eslint were clean, with
+three new fast-refresh warnings for helpers exported beside components
+(`toolLabel`, `pairToolSteps`, `snapshotToolEntries`). That is the file layout
+the PRD asked for, and `mention-menu.tsx` sets the precedent. As in Phase 3cf,
+the fresh worktree needed `@argentum/widget` built first and a `pnpm` shim to
+`corepack pnpm@10.18.0`. No `make types` or `make openapi`, and no `make eval`
+(no prompt change).
+
+**Owed.** Live-gate §7v: Q8 (the finished states in both themes), Q9 and Q10
+(a live turn and a mid-turn reload, with spend approved), and the follow-up
+ticket to save every tool call in order.
+
 
 ## Feature velocity, measured
 
