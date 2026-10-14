@@ -2130,13 +2130,44 @@ export interface Message {
    * expects from a roster they can edit.
    */
   agent_name?: string;
-  tool_calls?: { [key: string]: unknown};
+  /**
+   * ToolCalls is every tool the turn ran, in the order it ran them (RIZ-95).
+   * Only an assistant answer that streamed has any. Answers written before
+   * RIZ-95 have none: nothing saved them.
+   */
+  tool_calls?: ToolCallList;
   tokens_in?: number /* int */;
   tokens_out?: number /* int */;
   latency_ms?: number /* int64 */;
   metadata?: { [key: string]: unknown};
   created_at: string;
 }
+/**
+ * ToolCallRecord is one tool call a turn made, as the answer keeps it (RIZ-95):
+ * what the dashboard's tool chip needs to say what ran, and nothing more.
+ * Arguments are redacted the way the audit log's are, and Result is cut down
+ * to the handful of keys the chip reads — a query's rows are not something a
+ * transcript should carry a second copy of. ChatRunner builds these
+ * (toolCallRecord); nothing else writes them.
+ */
+export interface ToolCallRecord {
+  name: string;
+  arguments?: { [key: string]: unknown};
+  result?: { [key: string]: unknown};
+}
+/**
+ * ToolCallList is a turn's tool calls in run order — a list, because one tool
+ * runs many times in a turn and the order is the story.
+ * **It reads two shapes.** `messages.tool_calls` was declared a map keyed by
+ * tool name long before anything wrote it, and a row in that shape keeps one
+ * call per tool and no order. UnmarshalJSON turns one into a list, one record
+ * per key in sorted key order — the order those chips always rendered in,
+ * because Go's encoder sorts a map's keys when it serves one — so a reader only
+ * ever sees the list. Anything else (`null`, a string, a number) reads as no
+ * calls rather than an error: this is display data, and a row nobody can
+ * render is better shown without its tools than not shown.
+ */
+export type ToolCallList = ToolCallRecord[];
 /**
  * NextStep is one thing worth asking next, written by the agent that just
  * answered (T-Q10).

@@ -1,7 +1,10 @@
 package domain
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"sort"
 	"time"
 )
 
@@ -36,13 +39,81 @@ type Message struct {
 	// the same reason, as AgentChannelBinding.AgentName. A renamed agent
 	// therefore renames its past messages, which is the behaviour a reader
 	// expects from a roster they can edit.
-	AgentName string                 `json:"agent_name,omitempty"`
-	ToolCalls map[string]interface{} `json:"tool_calls,omitempty"`
+	AgentName string `json:"agent_name,omitempty"`
+	// ToolCalls is every tool the turn ran, in the order it ran them (RIZ-95).
+	// Only an assistant answer that streamed has any. Answers written before
+	// RIZ-95 have none: nothing saved them.
+	ToolCalls ToolCallList           `json:"tool_calls,omitempty"`
 	TokensIn  int                    `json:"tokens_in,omitempty"`
 	TokensOut int                    `json:"tokens_out,omitempty"`
 	LatencyMs int64                  `json:"latency_ms,omitempty"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 	CreatedAt time.Time              `json:"created_at"`
+}
+
+// ToolCallRecord is one tool call a turn made, as the answer keeps it (RIZ-95):
+// what the dashboard's tool chip needs to say what ran, and nothing more.
+//
+// Arguments are redacted the way the audit log's are, and Result is cut down
+// to the handful of keys the chip reads — a query's rows are not something a
+// transcript should carry a second copy of. ChatRunner builds these
+// (toolCallRecord); nothing else writes them.
+type ToolCallRecord struct {
+	Name      string                 `json:"name"`
+	Arguments map[string]interface{} `json:"arguments,omitempty"`
+	Result    map[string]interface{} `json:"result,omitempty"`
+}
+
+// ToolCallList is a turn's tool calls in run order — a list, because one tool
+// runs many times in a turn and the order is the story.
+//
+// **It reads two shapes.** `messages.tool_calls` was declared a map keyed by
+// tool name long before anything wrote it, and a row in that shape keeps one
+// call per tool and no order. UnmarshalJSON turns one into a list, one record
+// per key in sorted key order — the order those chips always rendered in,
+// because Go's encoder sorts a map's keys when it serves one — so a reader only
+// ever sees the list. Anything else (`null`, a string, a number) reads as no
+// calls rather than an error: this is display data, and a row nobody can
+// render is better shown without its tools than not shown.
+type ToolCallList []ToolCallRecord
+
+// UnmarshalJSON accepts the current list shape, the legacy by-name object, and
+// anything else as empty. It never returns an error; see the type's comment.
+func (l *ToolCallList) UnmarshalJSON(b []byte) error {
+	*l = nil
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 {
+		return nil
+	}
+	switch b[0] {
+	case '[':
+		var records []ToolCallRecord
+		if err := json.Unmarshal(b, &records); err == nil && len(records) > 0 {
+			*l = records
+		}
+	case '{':
+		var legacy map[string]interface{}
+		if err := json.Unmarshal(b, &legacy); err != nil || len(legacy) == 0 {
+			return nil
+		}
+		names := make([]string, 0, len(legacy))
+		for name := range legacy {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		records := make([]ToolCallRecord, 0, len(names))
+		for _, name := range names {
+			rec := ToolCallRecord{Name: name}
+			// The legacy value was whatever payload the chip was given, so it
+			// lands where the chip will read it from.
+			if payload, ok := legacy[name].(map[string]interface{}); ok && len(payload) > 0 {
+				rec.Result = payload
+			}
+			records = append(records, rec)
+		}
+		*l = records
+	}
+	return nil
 }
 
 // NextStep is one thing worth asking next, written by the agent that just

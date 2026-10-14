@@ -351,7 +351,7 @@ func TestEmbedTranscriptCarriesNoToolWork(t *testing.T) {
 		{
 			ID: "m-3", ThreadID: "th-mine", Role: domain.MessageRoleAssistant,
 			Content:   "Revenue last month was Rp3.8B.",
-			ToolCalls: map[string]interface{}{"run_sql": map[string]interface{}{"sql": sql}},
+			ToolCalls: domain.ToolCallList{{Name: "run_sql", Arguments: map[string]interface{}{"sql": sql}}},
 			Metadata:  map[string]interface{}{"source_id": "src-9f1"},
 			TokensIn:  4211, TokensOut: 87,
 		},
