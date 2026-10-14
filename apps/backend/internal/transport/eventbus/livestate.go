@@ -30,11 +30,15 @@ const (
 	// and collapses the rest; a runaway loop should not be able to grow this
 	// without limit.
 	maxLiveSteps = 50
-	// maxLiveTools caps the restored tool cards, for the same reason.
-	maxLiveTools = 20
-	// maxToolPayload skips one oversized tool payload rather than truncating
-	// it into malformed JSON. A 200-row query result is not worth resending on
-	// reconnect; the card it belongs to still arrives with the `final` turn.
+	// maxLiveTools caps the restored tool events, for the same reason. It was
+	// 20, and the dashboard counts calls by pairing these events (RIZ-95), so
+	// a turn past ten calls reloaded showing fewer than it had a second
+	// earlier. 100 events is fifty calls, four times the default turn budget.
+	maxLiveTools = 100
+	// maxToolPayload replaces one oversized tool payload with a stub carrying
+	// only the name, rather than truncating it into malformed JSON. A 200-row
+	// query result is not worth resending on reconnect; the event itself is,
+	// because a skipped result leaves its call counted as still running.
 	maxToolPayload = 8 * 1024
 )
 
@@ -81,6 +85,15 @@ func recordLive(ctx context.Context, pipe redis.Pipeliner, threadID string, evt 
 	// that opens with a tool call publishes no `started` before it.
 	pipe.HSet(ctx, keys[0], "job_id", evt.JobID, "last_event_at", stamp)
 	pipe.HSetNX(ctx, keys[0], "started_at", stamp)
+	// Who is producing the turn (RIZ-95). The dashboard keys a turn by its
+	// agent, and every event after the catch-up frame carries one
+	// (ChatRunner.publish) — so a frame without it opened a second bubble for
+	// the same turn on every reload. Overwritten by each stamped event, which
+	// in a room means the agent that spoke last: the snapshot was always one
+	// per thread, and that is the closest it can come.
+	if evt.AgentID != "" {
+		pipe.HSet(ctx, keys[0], "agent_id", evt.AgentID, "agent_name", evt.AgentName)
+	}
 
 	switch evt.Type {
 	case "delta":
@@ -100,16 +113,39 @@ func recordLive(ctx context.Context, pipe redis.Pipeliner, threadID string, evt 
 		}
 	case "tool_call", "tool_result":
 		if evt.ToolCall != nil {
-			if body, err := json.Marshal(evt.ToolCall); err == nil && len(body) <= maxToolPayload {
-				pipe.RPush(ctx, liveToolsKey(threadID), body)
-				pipe.LTrim(ctx, liveToolsKey(threadID), -maxLiveTools, -1)
+			body, err := json.Marshal(evt.ToolCall)
+			if err != nil || len(body) > maxToolPayload {
+				body = toolStub(evt.Type, evt.ToolCall.Name)
 			}
+			pipe.RPush(ctx, liveToolsKey(threadID), body)
+			pipe.LTrim(ctx, liveToolsKey(threadID), -maxLiveTools, -1)
 		}
 	}
 
 	for _, k := range keys {
 		pipe.Expire(ctx, k, liveTTL)
 	}
+}
+
+// toolStub stands in for a tool event too large to keep: the name, and a
+// marker under the field that says which kind of event it was — the snapshot
+// stores the event's body and not its type, so that field is the only thing
+// telling a call from a result when the dashboard pairs them.
+//
+// `{"truncated":true}` rather than `{}`: the body is read back into
+// ToolCallEvent and re-sent on the `state` frame, and the struct's `omitempty`
+// drops an empty map, which would send a bare name and lose the kind on the
+// way out.
+func toolStub(eventType, name string) []byte {
+	stub := app.ToolCallEvent{Name: name}
+	marker := map[string]interface{}{"truncated": true}
+	if eventType == "tool_result" {
+		stub.Result = marker
+	} else {
+		stub.Arguments = marker
+	}
+	body, _ := json.Marshal(stub)
+	return body
 }
 
 // metaInt reads a numeric metadata field. The map has been through JSON on
@@ -161,6 +197,8 @@ func LoadLiveTurn(ctx context.Context, rdb *redis.Client, threadID string) (*app
 		ThinkingSteps: stepsCmd.Val(),
 		Iteration:     atoiOrZero(fields["iteration"]),
 		MaxIterations: atoiOrZero(fields["max_iterations"]),
+		AgentID:       fields["agent_id"],
+		AgentName:     fields["agent_name"],
 	}
 	for _, raw := range toolsCmd.Val() {
 		var tc app.ToolCallEvent

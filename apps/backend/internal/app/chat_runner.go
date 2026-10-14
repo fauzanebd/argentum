@@ -1018,10 +1018,15 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	// The document this turn generated, if it generated one. Empty after a
 	// blocking run for the same reason returnedNumbers is: no tool events.
 	var generatedDocID string
+	// Every tool call the turn made, in order, for the answer to keep
+	// (RIZ-95). Empty after a blocking run for the same reason as the two
+	// above. A turn that ran out of budget still reaches completeWith below
+	// through this same path, so its refused calls are saved too.
+	var toolCalls domain.ToolCallList
 	if agent.GetLLM().SupportsStreaming() {
 		sp := p
 		sp.Message = agentMsg
-		if streamResp, err := r.runStream(ctx, agent, sp, &returnedNumbers, &generatedDocID); err == nil {
+		if streamResp, err := r.runStream(ctx, agent, sp, &returnedNumbers, &generatedDocID, &toolCalls); err == nil {
 			response = streamResp
 			streaming = true
 		} else {
@@ -1115,7 +1120,7 @@ func (r *ChatRunner) Run(ctx context.Context, p queue.ChatRunPayload) error {
 	steps := r.suggestNextSteps(ctx, p, response,
 		heldToolNames(agent.GetTools()), snap.Tools,
 		response != agentWrote)
-	r.completeWith(ctx, p, response, 0, 0, latency, steps, generatedDocID, groundingRecord)
+	r.completeWith(ctx, p, response, 0, 0, latency, steps, generatedDocID, groundingRecord, toolCalls...)
 	// One line per turn, carrying what the turn cost and what it may have got
 	// wrong (T-Q11). `ungrounded` is here rather than only in checkGrounding's
 	// own Warn because a turn is found by its completion line: a rate nobody
@@ -1726,12 +1731,22 @@ func sha256Hex(s string) string {
 // runStream executes the agent with streaming and fans out delta / thinking /
 // tool_call / tool_result events to the EventBus. It returns the full
 // assembled response text.
-func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p queue.ChatRunPayload, groundTruth *[]float64, producedDoc *string) (string, error) {
+func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p queue.ChatRunPayload, groundTruth *[]float64, producedDoc *string, toolCalls *domain.ToolCallList) (string, error) {
 	events, err := agent.RunStream(ctx, p.Message)
 	if err != nil {
 		return "", err
 	}
+	return r.consumeStream(ctx, p, events, groundTruth, producedDoc, toolCalls), nil
+}
 
+// consumeStream is runStream once the stream is open: everything it does with
+// the events. Split out so a test can hand it a channel of events directly —
+// an SDK agent that streams needs a streaming LLM fake, and what is under test
+// is what this side does with the events, not how the SDK produces them.
+func (r *ChatRunner) consumeStream(
+	ctx context.Context, p queue.ChatRunPayload, events <-chan interfaces.AgentStreamEvent,
+	groundTruth *[]float64, producedDoc *string, toolCalls *domain.ToolCallList,
+) string {
 	// What this turn did, for the turns after it (T-Q6). Collected here because
 	// this is the only place both an argument list and its result are in hand:
 	// the audit decorator sees them too, but it writes a control-plane row the
@@ -1756,6 +1771,12 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 	// ran the tool and read the id back.
 	var generatedDoc string
 	defer func() { *producedDoc = generatedDoc }()
+
+	// Every call the turn made, for the answer to keep (RIZ-95). One record per
+	// result rather than per call: the result event carries the call's own
+	// arguments, so it is already the pair. Threaded out like the two above.
+	var calls domain.ToolCallList
+	defer func() { *toolCalls = capToolCalls(p, calls) }()
 
 	// The reply, kept per iteration rather than concatenated (T-Q11). What the
 	// reader watches is unchanged — every delta is published below — but what
@@ -1844,6 +1865,10 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 				// leave a digest saying nothing happened wrong (T-Q12).
 				digests = append(digests,
 					BuildToolDigest(evt.ToolCall.Name, callArgs, res, rawResult))
+				// Every result, refusals included: a call the budget refused
+				// answers with a sentence rather than JSON, so `res` is empty,
+				// and it is still a call the reader should be able to count.
+				calls = append(calls, toolCallRecord(evt.ToolCall.Name, evt.ToolCall.Arguments, res))
 
 				// Every number this turn's data tools actually returned (T-Q9),
 				// for the grounding check after the answer is written. Only the
@@ -1946,7 +1971,7 @@ func (r *ChatRunner) runStream(ctx context.Context, agent *sdkagent.Agent, p que
 			"iterations":    lastIteration,
 		}).Info("pre-tool prose dropped from the stored reply; the record is the last iteration's answer")
 	}
-	return fullResponse.String(), nil
+	return fullResponse.String()
 }
 
 // maxGroundingNumbers bounds how many returned values the grounding check
@@ -2111,9 +2136,11 @@ func (r *ChatRunner) rememberToolWork(ctx context.Context, p queue.ChatRunPayloa
 		Role:     domain.MessageRoleTool,
 		Content:  EncodeDigests(kept),
 		// Metadata rather than ToolCalls: the dashboard renders `tool_calls` on
-		// a message as expandable cards, and these rows are not shown at all —
-		// the assistant turn beside them already carries the cards a reader
-		// wants. This is memory, not transcript.
+		// a message as tool chips, and these rows are not shown at all. The
+		// chips come from the assistant answer's own `tool_calls`, which
+		// consumeStream collects and finish saves (RIZ-95) — before that, no
+		// answer carried any, and this comment said otherwise. This is memory,
+		// not transcript.
 		Metadata: map[string]interface{}{
 			"kind":       "tool_digest",
 			"turn_msg":   p.UserMsgID,
@@ -2346,6 +2373,10 @@ func (r *ChatRunner) completeWith(
 	// measured — the small-talk path, a guardrail refusal, a reply a gate
 	// replaced (T-W3).
 	grounding *guardrails.GroundingReport,
+	// toolCalls is every tool the turn ran, in order (RIZ-95). Only the
+	// streamed answer has any; every other ending passes none and its row is
+	// written as it always was.
+	toolCalls ...domain.ToolCallRecord,
 ) {
 	// The suggestions ride the message's metadata column, which already exists
 	// and is already marshalled at both ends (T-Q10). Nil steps produce a nil map
@@ -2356,7 +2387,7 @@ func (r *ChatRunner) completeWith(
 	// stream reaches the widget and `/v1` callers, and a measurement about a
 	// reply is not something either of them asked for.
 	meta := withGroundingRecord(nextStepsMetadata(steps), p.UserMsgID, grounding)
-	r.finish(ctx, p, response, tokensIn, tokensOut, latency, steps, generatedDocID, meta)
+	r.finish(ctx, p, response, tokensIn, tokensOut, latency, steps, generatedDocID, meta, toolCalls...)
 }
 
 // finish is completeWith once the stored metadata is decided: the message
@@ -2370,10 +2401,10 @@ func (r *ChatRunner) completeWith(
 func (r *ChatRunner) finish(
 	ctx context.Context, p queue.ChatRunPayload, response string,
 	tokensIn, tokensOut int, latency time.Duration, steps []domain.NextStep,
-	generatedDocID string, meta map[string]any,
+	generatedDocID string, meta map[string]any, toolCalls ...domain.ToolCallRecord,
 ) {
 	assistantMsg, err := r.threads.AppendAssistantMessage(
-		ctx, p.ThreadID, response, tokensIn, tokensOut, latency.Milliseconds(), meta,
+		ctx, p.ThreadID, response, tokensIn, tokensOut, latency.Milliseconds(), meta, toolCalls...,
 	)
 	if err != nil {
 		logrus.WithError(err).Warn("append assistant message")

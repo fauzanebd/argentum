@@ -3010,6 +3010,26 @@ Still open:
 | found by `RIZ-97` QA | **Kimi's baseline under `LLM_ZDR=true`.** Kimi scored 50/63 isolated and 44/63 in one process, against its published 94–98%. 14 of the 19 failures from the single-process run passed with ZDR off, one case per process. Re-measure `eval-baseline.md` under ZDR, and decide whether pinning Kimi to Inceptron is acceptable. **Prediction: the ZDR baseline lands near 80%, and most failures are source_id disambiguation or an exhausted budget** | Model spend, owner's call on ZDR |
 | found by `RIZ-97` QA | **A process-wide panic on an emoji in a generated PDF**: gofpdf `generateCIDFontMap` hits `index out of range [65536]` on a rune above U+FFFF (`report/pdf/render.go:286`), with no recover on the agent-sdk-go streaming goroutine. It needs a ticket. **Prediction: a `generate_document` call whose text holds 👇 kills a worker today** | A ticket; no spend to reproduce in a unit test |
 
+## 7v. `RIZ-95`'s collapsible tool steps — added 2026-10-14, revised for PRD v2
+
+**Closed by QA round 1 (2026-10-14, `.flow/RIZ-95/qa/qa.json`):** the history
+check in both themes, and the live group on one turn attached mid-run: a
+closed line whose count rose, that stayed open on a new call, and that kept
+its count over a reload. The same round found the two bugs v2 fixes: no answer
+saved its tool calls, and a reload opened a second bubble.
+
+The rest is unit-gated (`tool-steps-group.test.tsx`, `chat-page.tools.test.tsx`,
+`chat_runner_toolcalls_test.go`, `domain/message_test.go`, `livestate_test.go`,
+`ws/handler_test.go`). Still owed, on the v2 code:
+
+| Owed by | The gate | Blocker |
+| --- | --- | --- |
+| `RIZ-95` Q12 | On the local stack with no new turn, open an existing thread in the light and dark themes. **Prediction: answers saved before the deploy show no tool area and no stray `0`/`1` chips; everything else looks as it did** | The stack, a browser |
+| `RIZ-95` Q13 | A normal turn on `Compare this week's sales with last week by region, and flag any region that dropped more than 5%`, watched to `final`, then reloaded, then `SELECT tool_calls FROM messages WHERE id = …`. **Prediction: during the turn, one line whose count rises at a fixed height; after `final` and after the reload, `Used tools · N calls · …` opening to N chips in run order; the row is a JSON array of N records with `password`-style keys redacted and no `rows` in any result.** Also press Enter and Space on the header, which jsdom cannot do | Model spend (approved), the stack, a browser |
+| `RIZ-95` Q14 | The same question with the worker restarted on `AGENT_MAX_TOOL_CALLS=2`. **Prediction: the answer's count includes the refused calls, and the row lists them after the executed ones with no `result`.** Restart the worker without the override afterwards | Model spend (approved), the stack |
+| `RIZ-95` Q15 | The same question, reloaded after 3 or more calls and watched to `final`. **Prediction: one live bubble after the reload, at the count it had, rising in that bubble; the `state` frame in DevTools has `agent_id`** | Model spend (approved), the stack, a browser |
+| `RIZ-95` rollout | Deploy the dashboard before the api and worker. The new bundle reads both shapes; an old bundle would draw a list as chips labelled `0`, `1`. **Prediction: no `0`/`1` chips in any window of the rollout** | Production access |
+
 ## 7. Needs the paid eval set (added 2026-09-11)
 
 `T-Q18`'s remaining half, and the only half that is about the model rather than

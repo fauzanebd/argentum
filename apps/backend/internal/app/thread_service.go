@@ -620,6 +620,10 @@ func (s *ThreadService) AppendUserMessageWithMetadata(
 func (s *ThreadService) AppendAssistantMessage(
 	ctx context.Context, threadID, content string,
 	tokensIn, tokensOut int, latencyMs int64, metadata map[string]any,
+	// toolCalls is what the turn ran, in order (RIZ-95). Variadic so the
+	// endings that ran no tools — a room line, a settle, a nudge's note —
+	// call this exactly as they did and write NULL as they always have.
+	toolCalls ...domain.ToolCallRecord,
 ) (*domain.Message, error) {
 	now := time.Now()
 	// A colleague's answer records who asked for it (T-N10), read off the context
@@ -643,6 +647,11 @@ func (s *ThreadService) AppendAssistantMessage(
 		LatencyMs: latencyMs,
 		Metadata:  metadata,
 		CreatedAt: now,
+	}
+	// Nil rather than an empty list when there are none, so the column stays
+	// NULL (jsonbOrNull) instead of becoming `[]` on every tool-free reply.
+	if len(toolCalls) > 0 {
+		m.ToolCalls = domain.ToolCallList(toolCalls)
 	}
 	if err := s.messages.Append(ctx, m); err != nil {
 		return nil, err

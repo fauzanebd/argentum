@@ -67,6 +67,16 @@ function prettifySlug(slug: string): string {
   return words.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** toolLabel is the name a chip shows for a tool, without the chip: the same
+ *  lookup `ToolCallCard` does, for the one-line captions that summarise several
+ *  chips (RIZ-95). It reads the same `TOOL_META` and `mcpMeta`, so a label
+ *  changed there changes the caption and the chip together. The procedure name
+ *  a `load_skill` chip appends is left out: a caption names tools, not what
+ *  each call was given. */
+export function toolLabel(name: string): string {
+  return (mcpMeta(name) ?? TOOL_META[name])?.label ?? name;
+}
+
 function humanCron(expr: string): string | null {
   try {
     return cronstrue.toString(expr, { use24HourTimeFormat: true });

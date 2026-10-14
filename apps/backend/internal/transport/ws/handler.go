@@ -235,6 +235,23 @@ func (h *Handler) pump(c *gin.Context, threadID string, upgrader websocket.Upgra
 	}
 }
 
+// liveTurnFrame is the `state` event for a running turn. It carries the turn's
+// agent like every event after it (RIZ-95): the dashboard keys a turn by
+// `agent_id || job_id`, and a frame without the agent was keyed by the job id
+// while the next event was keyed by the agent — two bubbles for one turn, each
+// counting half of it.
+func liveTurnFrame(threadID string, turn *app.LiveTurn) app.ChatEvent {
+	return app.ChatEvent{
+		JobID:     turn.JobID,
+		ThreadID:  threadID,
+		Type:      app.EventState,
+		AgentID:   turn.AgentID,
+		AgentName: turn.AgentName,
+		Live:      turn,
+		Timestamp: time.Now(),
+	}
+}
+
 // sendLiveTurn writes the `state` frame for a socket that opened while the
 // agent was mid-turn — the case of a reader who left this conversation for
 // another one and came back. Without it the connection is silent until the
@@ -254,13 +271,7 @@ func (h *Handler) sendLiveTurn(ctx context.Context, conn *websocket.Conn, thread
 	if turn == nil {
 		return
 	}
-	body, err := json.Marshal(app.ChatEvent{
-		JobID:     turn.JobID,
-		ThreadID:  threadID,
-		Type:      app.EventState,
-		Live:      turn,
-		Timestamp: time.Now(),
-	})
+	body, err := json.Marshal(liveTurnFrame(threadID, turn))
 	if err != nil {
 		return
 	}

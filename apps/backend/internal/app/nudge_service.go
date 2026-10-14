@@ -84,7 +84,11 @@ type ParticipantLister interface {
 // speaker is the tenant's setting, not a thing a model may edit.
 type RoomNoteWriter interface {
 	AppendAssistantMessage(ctx context.Context, threadID, content string,
-		tokensIn, tokensOut int, latencyMs int64, metadata map[string]any) (*domain.Message, error)
+		tokensIn, tokensOut int, latencyMs int64, metadata map[string]any,
+		// Never passed from here: a room line ran no tools. Declared because
+		// it is *ThreadService's signature (RIZ-95), which must still satisfy
+		// this interface.
+		toolCalls ...domain.ToolCallRecord) (*domain.Message, error)
 }
 
 // NudgeService is `nudge_agent` (T-N6) and `hand_off_to_agent` (T-N7),

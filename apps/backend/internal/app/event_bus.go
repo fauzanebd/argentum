@@ -109,6 +109,12 @@ type LiveTurn struct {
 	ToolCalls     []ToolCallEvent `json:"tool_calls,omitempty"`
 	Iteration     int             `json:"iteration,omitempty"`
 	MaxIterations int             `json:"max_iterations,omitempty"`
+	// AgentID and AgentName are who is producing the turn (RIZ-95), for the
+	// `state` frame's own AgentID and AgentName — where every other event
+	// carries them, and where the dashboard reads them to key the turn.
+	// Not serialised here: they belong to the event, not to what it describes.
+	AgentID   string `json:"-"`
+	AgentName string `json:"-"`
 }
 
 // EventState is the catch-up frame described on LiveTurn, sent once per

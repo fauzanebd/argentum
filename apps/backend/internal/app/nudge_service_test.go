@@ -55,6 +55,7 @@ type recordingNotes struct {
 
 func (r *recordingNotes) AppendAssistantMessage(
 	ctx context.Context, _, content string, _, _ int, _ int64, meta map[string]any,
+	_ ...domain.ToolCallRecord,
 ) (*domain.Message, error) {
 	if r.err != nil {
 		return nil, r.err
