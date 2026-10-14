@@ -101,7 +101,9 @@ export function pairToolSteps(entries: ToolEntry[]): ToolStep[] {
  * with a plain error. Reading such an entry as a call would count a finished
  * `load_skill` twice and leave a spinner on it until the turn ends, so it
  * answers the oldest call of its name still open when there is one, and only
- * otherwise starts a step of its own.
+ * otherwise starts a step of its own. (An event too large for the snapshot is
+ * not one of these: the server keeps it as a stub with `{truncated: true}`
+ * under the field that says its kind, precisely so that field survives.)
  */
 export function snapshotToolEntries(events: ToolCallEvent[]): ToolEntry[] {
   const open = new Map<string, number>();
@@ -126,6 +128,35 @@ export function snapshotToolEntries(events: ToolCallEvent[]): ToolEntry[] {
   });
 }
 
+/**
+ * savedToolSteps reads a saved answer's `tool_calls` into steps (RIZ-95).
+ *
+ * The api now serves a list, one record per call in run order, already paired
+ * by the server: each record's payload is its arguments with its result laid
+ * over them, exactly as `pairToolSteps` builds a live step, so a chip opens
+ * onto the same thing before and after the reload.
+ *
+ * **It also reads the old by-name object**, which is what an api not yet
+ * redeployed still serves. The dashboard ships first (the PRD's deploy order),
+ * and an `Object.entries` over the new list would draw chips labelled `0` and
+ * `1`, so this has to read both rather than trust the generated type, which
+ * describes only the new api. Anything else is no steps.
+ */
+export function savedToolSteps(toolCalls: unknown): ToolStep[] {
+  if (Array.isArray(toolCalls)) {
+    return toolCalls.flatMap((rec): ToolStep[] => {
+      if (!isRecord(rec) || typeof rec.name !== "string") return [];
+      const args = isRecord(rec.arguments) ? rec.arguments : {};
+      const result = isRecord(rec.result) ? rec.result : {};
+      return [{ name: rec.name, payload: { ...args, ...result } }];
+    });
+  }
+  if (isRecord(toolCalls)) {
+    return Object.entries(toolCalls).map(([name, payload]) => ({ name, payload }));
+  }
+  return [];
+}
+
 export function ToolStepsGroup({
   steps,
   live,
@@ -133,7 +164,8 @@ export function ToolStepsGroup({
 }: {
   steps: ToolStep[];
   /** The turn is still running: the caption counts calls and names the one in
-   *  progress. Otherwise it is past tense and names every tool used. */
+   *  progress. Otherwise it is past tense, counts calls and names every tool
+   *  used. */
   live?: boolean;
   className?: string;
 }) {
@@ -154,11 +186,13 @@ export function ToolStepsGroup({
     summary = "Using tools";
     caption = `${steps.length} call${steps.length === 1 ? "" : "s"} · ${toolLabel(current.name)}`;
   } else {
-    // "tools", not "calls": a saved message keeps one entry per tool *name*
-    // (`domain.Message.ToolCalls` is a map), so eleven queries reload as one
-    // and a count of calls here would be a number this screen cannot know.
-    summary = `Used ${steps.length} tool${steps.length === 1 ? "" : "s"}`;
-    caption = [...new Set(steps.map((s) => toolLabel(s.name)))].join(", ");
+    // The same count as the live line, and the same unit: the answer keeps
+    // every call in run order (RIZ-95), so the number a reader watched rise is
+    // the number they find after the reload. The tools are named once each,
+    // in the order each first ran — eleven queries are one "SQL query".
+    summary = "Used tools";
+    const labels = [...new Set(steps.map((s) => toolLabel(s.name)))].join(", ");
+    caption = `${steps.length} call${steps.length === 1 ? "" : "s"} · ${labels}`;
   }
 
   return (

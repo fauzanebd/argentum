@@ -18,6 +18,7 @@ vi.mock("@tanstack/react-router", () => ({
 import {
   ToolStepsGroup,
   pairToolSteps,
+  savedToolSteps,
   snapshotToolEntries,
   type ToolEntry,
   type ToolStep,
@@ -108,7 +109,7 @@ describe("pairToolSteps", () => {
 });
 
 describe("snapshotToolEntries", () => {
-  it("reads a resumed turn of five calls and five results as five steps (AC7)", () => {
+  it("reads a resumed turn of five calls and five results as five steps (AC8)", () => {
     const snapshot = [];
     for (let i = 0; i < 5; i++) {
       snapshot.push({ name: "run_sql", arguments: { sql: `SELECT ${i}` } });
@@ -143,6 +144,17 @@ describe("snapshotToolEntries", () => {
     expect(steps).toEqual([
       { name: "load_skill", payload: { name: "Weekly revenue" }, running: false },
     ]);
+  });
+
+  it("reads the server's oversize stubs by their marker", () => {
+    const steps = pairToolSteps(
+      snapshotToolEntries([
+        { name: "run_sql", arguments: { truncated: true } },
+        { name: "run_sql", arguments: { sql: "SELECT 2" } },
+        { name: "run_sql", result: { truncated: true } },
+      ]),
+    );
+    expect(steps.map((s) => s.running)).toEqual([false, true]);
   });
 
   it("reads a bare entry with no open call as a call made with no arguments", () => {
@@ -271,32 +283,74 @@ describe("ToolStepsGroup, live", () => {
   });
 });
 
-describe("ToolStepsGroup, finished", () => {
-  const saved: ToolStep[] = [
-    { name: "compute", payload: { expression: "a/b" } },
-    { name: "run_sql", payload: { sql: "SELECT region, SUM(total) FROM orders GROUP BY 1" } },
-    { name: "get_schema", payload: {} },
-  ];
+/** The turn in the finished mockups, as the api now serves it: one record per
+ *  call in run order, already paired. */
+const SAVED = [
+  { name: "get_schema", result: { status: "ok" } },
+  { name: "run_sql", arguments: { sql: "SELECT region, SUM(total) FROM orders GROUP BY 1" } },
+  { name: "run_sql", arguments: { sql: "SELECT 2" }, result: { status: "ok" } },
+  { name: "compute", arguments: { expression: "a/b" } },
+];
 
-  it("reads Used N tools and names each tool once (AC5)", () => {
+describe("savedToolSteps", () => {
+  it("reads the list one step per call, arguments under the result (R8)", () => {
+    expect(
+      savedToolSteps([
+        { name: "run_sql", arguments: { sql: "SELECT 1", source_id: "s1" }, result: { source_id: "s2" } },
+        { name: "create_dashboard", result: { url: "https://x" } },
+        { name: "get_schema" },
+      ]),
+    ).toEqual<ToolStep[]>([
+      { name: "run_sql", payload: { sql: "SELECT 1", source_id: "s2" } },
+      { name: "create_dashboard", payload: { url: "https://x" } },
+      { name: "get_schema", payload: {} },
+    ]);
+  });
+
+  it("reads the legacy by-name object an older api still serves, one step per key", () => {
+    expect(savedToolSteps({ run_sql: { sql: "SELECT 1" }, get_schema: {} })).toEqual<ToolStep[]>([
+      { name: "run_sql", payload: { sql: "SELECT 1" } },
+      { name: "get_schema", payload: {} },
+    ]);
+  });
+
+  it("reads anything else as no steps, and skips records with no name", () => {
+    for (const junk of [undefined, null, "x", 42, []]) expect(savedToolSteps(junk)).toEqual([]);
+    expect(savedToolSteps([1, "x", { arguments: {} }, { name: "run_sql" }])).toEqual([
+      { name: "run_sql", payload: {} },
+    ]);
+  });
+});
+
+describe("ToolStepsGroup, finished", () => {
+  const saved = savedToolSteps(SAVED);
+
+  it("reads Used tools, counts the calls and names each tool once in run order (AC5)", () => {
     render(<ToolStepsGroup steps={saved} />);
     const header = screen.getByRole("button");
-    expect(header).toHaveTextContent("Used 3 tools");
-    expect(header).toHaveTextContent("Calculation, SQL query, Schema lookup");
+    expect(header).toHaveTextContent("Used tools");
+    expect(header).toHaveTextContent("4 calls · Schema lookup, SQL query, Calculation");
     expect(header).toHaveAttribute("aria-expanded", "false");
     // A wrench, not a spinner: nothing is running.
     expect(header.querySelector(".animate-spin")).toBeNull();
     expect(header.querySelector(".lucide-wrench")).not.toBeNull();
   });
 
-  it("opens onto today's chips, and the SQL one opens its SQL", () => {
+  it("opens onto one chip per call, repeats included, and each SQL chip opens its own statement", () => {
     render(<ToolStepsGroup steps={saved} />);
     fireEvent.click(screen.getByRole("button"));
     const open = chips();
-    expect(open.map((c) => c.textContent)).toEqual(["Calculation", "SQL query", "Schema lookup"]);
+    expect(open.map((c) => c.textContent)).toEqual([
+      "Schema lookup",
+      "SQL query",
+      "SQL query",
+      "Calculation",
+    ]);
     expect(open.some((c) => c.querySelector(".animate-spin"))).toBe(false);
     fireEvent.click(open[1]);
     expect(screen.getByText(/SELECT region, SUM\(total\)/)).toBeInTheDocument();
+    fireEvent.click(open[2]);
+    expect(screen.getByText("SELECT 2")).toBeInTheDocument();
   });
 
   it("names a label once even when two tools share it", () => {
@@ -319,7 +373,7 @@ describe("ToolStepsGroup, finished", () => {
   });
 });
 
-describe("ToolStepsGroup, keyboard and screen readers (AC8)", () => {
+describe("ToolStepsGroup, keyboard and screen readers (AC10)", () => {
   // jsdom does not turn Enter or Space on a button into a click; a browser
   // does, for a native <button> and only for one. So the contract held here is
   // that the header *is* that native button, takes focus, shows the ring, and

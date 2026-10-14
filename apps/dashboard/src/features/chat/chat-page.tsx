@@ -41,6 +41,7 @@ import { ToolCallCard } from "./tool-call-card";
 import {
   ToolStepsGroup,
   pairToolSteps,
+  savedToolSteps,
   snapshotToolEntries,
   type ToolEntry,
 } from "./tool-steps-group";
@@ -735,11 +736,12 @@ export function ChatPage() {
     );
     const merged = [...persistedMessages, ...threadOptimistic]
       // role="tool" rows are the agent's memory of its own work (T-Q6), not
-      // transcript: one row per turn holding the digests a later turn reads.
-      // The assistant message beside them already carries the tool cards a
-      // reader wants, and MessageBubble treats anything that is not "user" as
-      // an assistant turn — so leaving them in would render a block of JSON
-      // in the middle of the conversation.
+      // transcript: one row per turn holding the digests a later turn reads,
+      // and MessageBubble treats anything that is not "user" as an assistant
+      // turn — so leaving them in would render a block of JSON in the middle
+      // of the conversation. The chips come from the answer's own
+      // `tool_calls`, which turns save since RIZ-95; before that no answer
+      // carried any, whatever this comment used to say.
       .filter((m) => m.role !== "tool");
     const map = new Map<string, Message>();
     for (const m of merged) map.set(m.id, m);
@@ -1289,26 +1291,24 @@ export function MessageBubble({
 /**
  * A saved message's tools, under its divider (RIZ-95).
  *
- * Two or more fold into one closed line; one stays the bare chip it always was,
- * because a single chip is already one line and wrapping it would add a click
- * and hide nothing. None renders no divider at all — an empty `tool_calls` map
- * used to draw a rule over nothing.
+ * Two or more calls fold into one closed line; one stays the bare chip it
+ * always was, because a single chip is already one line and wrapping it would
+ * add a click and hide nothing. None renders no divider at all — an empty
+ * `tool_calls` used to draw a rule over nothing.
  *
- * The map is keyed by tool name (`domain.Message.ToolCalls`), so this is one
- * entry per tool used, not per call, and the order is `Object.entries`' — the
- * order the chips have always had.
+ * `savedToolSteps` reads both the list the api serves now (every call, in run
+ * order) and the by-name object an older api still serves, so this bundle can
+ * ship ahead of the api it talks to.
  */
 function MessageTools({ toolCalls }: { toolCalls?: Message["tool_calls"] }) {
-  const entries = Object.entries(toolCalls ?? {});
-  if (entries.length === 0) return null;
+  const steps = savedToolSteps(toolCalls);
+  if (steps.length === 0) return null;
   return (
     <div className="mt-3 pt-3 border-t border-border/30 space-y-2 text-left">
-      {entries.length === 1 ? (
-        <ToolCallCard name={entries[0][0]} payload={entries[0][1]} />
+      {steps.length === 1 ? (
+        <ToolCallCard name={steps[0].name} payload={steps[0].payload} />
       ) : (
-        <ToolStepsGroup
-          steps={entries.map(([name, payload]) => ({ name, payload }))}
-        />
+        <ToolStepsGroup steps={steps} />
       )}
     </div>
   );

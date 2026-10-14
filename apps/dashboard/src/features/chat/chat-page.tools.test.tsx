@@ -45,7 +45,9 @@ vi.mock("./use-thread-stream", () => ({
 
 import { ChatPage } from "./chat-page";
 
-function message(id: string, role: "user" | "assistant", content: string, tool_calls?: Record<string, unknown>): Message {
+// `tool_calls` is unknown rather than the generated type on purpose: the
+// legacy by-name object is exactly the shape that type no longer describes.
+function message(id: string, role: "user" | "assistant", content: string, tool_calls?: unknown): Message {
   return {
     id,
     thread_id: THREAD,
@@ -85,38 +87,45 @@ beforeEach(() => {
 });
 
 describe("a saved message's tools", () => {
-  it("groups two or more, keeps one bare, and draws nothing for none (AC5, AC6)", async () => {
+  it("groups two or more calls, keeps one bare, and draws nothing for none (AC5, AC7)", async () => {
     messages = [
       message("u1", "user", "How many orders came in yesterday?"),
-      message("a1", "assistant", "Yesterday took 1,284 orders.", { run_sql: { sql: "SELECT count(*) FROM orders" } }),
+      message("a1", "assistant", "Yesterday took 1,284 orders.", [
+        { name: "run_sql", arguments: { sql: "SELECT count(*) FROM orders" } },
+      ]),
       message("u2", "user", "Compare this week with last week by region."),
-      message("a2", "assistant", "Surabaya dropped 7.4%.", {
-        compute: { expression: "a/b" },
-        run_sql: { sql: "SELECT region FROM orders" },
-        get_schema: {},
-      }),
+      message("a2", "assistant", "Surabaya dropped 7.4%.", [
+        { name: "get_schema", result: { status: "ok" } },
+        { name: "run_sql", arguments: { sql: "SELECT region FROM orders" } },
+        { name: "run_sql", arguments: { sql: "SELECT region FROM returns" } },
+        { name: "compute", arguments: { expression: "a/b" } },
+      ]),
       message("a3", "assistant", "Hello, how can I help?"),
     ];
     mount();
     await screen.findByText("Surabaya dropped 7.4%.");
 
-    // Three tools: one closed line.
+    // Four calls: one closed line.
     const grouped = within(bubbleOf("Surabaya dropped 7.4%."));
-    const header = grouped.getByRole("button", { name: /Used 3 tools/ });
-    expect(header).toHaveTextContent("Calculation, SQL query, Schema lookup");
+    const header = grouped.getByRole("button", { name: /Used tools/ });
+    expect(header).toHaveTextContent("4 calls · Schema lookup, SQL query, Calculation");
     expect(header).toHaveAttribute("aria-expanded", "false");
     expect(grouped.queryByRole("button", { name: "SQL query" })).toBeNull();
     fireEvent.click(header);
     expect(grouped.getAllByRole("button").map((b) => b.textContent)).toEqual([
-      expect.stringContaining("Used 3 tools"),
-      "Calculation",
-      "SQL query",
+      expect.stringContaining("Used tools"),
       "Schema lookup",
+      "SQL query",
+      "SQL query",
+      "Calculation",
     ]);
-    fireEvent.click(grouped.getByRole("button", { name: "SQL query" }));
+    const [first, second] = grouped.getAllByRole("button", { name: "SQL query" });
+    fireEvent.click(first);
+    fireEvent.click(second);
     expect(grouped.getByText("SELECT region FROM orders")).toBeInTheDocument();
+    expect(grouped.getByText("SELECT region FROM returns")).toBeInTheDocument();
 
-    // One tool: the bare chip, as before, with no group around it.
+    // One call: the bare chip, as before, with no group around it.
     const single = within(bubbleOf("Yesterday took 1,284 orders."));
     expect(single.queryByRole("button", { name: /Used/ })).toBeNull();
     expect(single.getByRole("button", { name: "SQL query" })).toHaveAttribute("aria-expanded", "false");
@@ -125,15 +134,38 @@ describe("a saved message's tools", () => {
     expect(bubbleOf("Hello, how can I help?").querySelector(".border-t")).toBeNull();
   });
 
+  // What an api not yet redeployed serves: the by-name object. The dashboard
+  // ships first, so it must not read it as a list (chips labelled 0 and 1).
+  it("reads a legacy by-name row, one chip per key (AC7)", async () => {
+    messages = [
+      message("a1", "assistant", "Old answer, two tools.", {
+        run_sql: { sql: "SELECT 1" },
+        get_schema: {},
+      }),
+      message("a2", "assistant", "Old answer, one tool.", { run_sql: { sql: "SELECT 2" } }),
+    ];
+    mount();
+    await screen.findByText("Old answer, two tools.");
+    const header = within(bubbleOf("Old answer, two tools.")).getByRole("button", { name: /Used tools/ });
+    expect(header).toHaveTextContent("2 calls · SQL query, Schema lookup");
+    expect(
+      within(bubbleOf("Old answer, one tool.")).getByRole("button", { name: "SQL query" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^[01]$/ })).toBeNull();
+  });
+
   it("groups a user bubble's tools the same way", async () => {
     messages = [
-      message("u1", "user", "Run these for me.", { run_sql: { sql: "SELECT 1" }, get_schema: {} }),
+      message("u1", "user", "Run these for me.", [
+        { name: "run_sql", arguments: { sql: "SELECT 1" } },
+        { name: "get_schema" },
+      ]),
     ];
     mount();
     await screen.findByText("Run these for me.");
     expect(
-      within(bubbleOf("Run these for me.")).getByRole("button", { name: /Used 2 tools/ }),
-    ).toHaveTextContent("SQL query, Schema lookup");
+      within(bubbleOf("Run these for me.")).getByRole("button", { name: /Used tools/ }),
+    ).toHaveTextContent("2 calls · SQL query, Schema lookup");
   });
 });
 
@@ -163,7 +195,7 @@ describe("the turn in flight", () => {
     expect(chips[7].querySelector(".animate-spin")).not.toBeNull();
   });
 
-  it("leaves the status line the only thing a screen reader is told (AC8)", async () => {
+  it("leaves the status line the only thing a screen reader is told (AC10)", async () => {
     mount();
     await screen.findByText(/No messages yet/);
     send({ type: "tool_call", tool_call: { name: "run_sql", arguments: { sql: "SELECT 1" } } });
@@ -172,7 +204,40 @@ describe("the turn in flight", () => {
     expect(document.querySelectorAll("[aria-live]")).toHaveLength(1);
   });
 
-  it("counts a resumed turn's calls once, not once per event (AC7)", async () => {
+  // The state frame now carries the agent like every event after it, so the
+  // resumed turn and the stream are keyed alike: one bubble that keeps counting.
+  it("resumes a reloaded turn as one bubble that keeps counting (AC8, AC9)", async () => {
+    mount();
+    await screen.findByText(/No messages yet/);
+    const agent = { agent_id: "ag-fin", agent_name: "Finance" };
+    const tool_calls = [];
+    for (let i = 0; i < 5; i++) {
+      tool_calls.push({ name: "run_sql", arguments: { sql: `SELECT ${i}` } });
+      tool_calls.push({ name: "run_sql", result: { row_count: i } });
+    }
+    send({
+      type: "state",
+      ...agent,
+      live: {
+        job_id: "m9",
+        started_at: new Date().toISOString(),
+        last_event_at: new Date().toISOString(),
+        tool_calls,
+      },
+    });
+    expect(screen.getByRole("button", { name: /Using tools/ })).toHaveTextContent("5 calls");
+
+    send({ type: "tool_call", ...agent, tool_call: { name: "run_sql", arguments: { sql: "SELECT 5" } } });
+    send({ type: "tool_result", ...agent, tool_call: { name: "run_sql", result: { row_count: 5 } } });
+    send({ type: "tool_call", ...agent, tool_call: { name: "compute", arguments: {} } });
+
+    const groups = screen.getAllByRole("button", { name: /Using tools/ });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveTextContent("7 calls · Calculation");
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
+
+  it("counts a resumed turn's calls once, not once per event (AC8)", async () => {
     mount();
     await screen.findByText(/No messages yet/);
     const tool_calls = [];
